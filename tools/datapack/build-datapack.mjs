@@ -219,7 +219,7 @@ function insertCatalogMetadata(database, pack) {
     ...Object.entries(pack.metadata ?? {}),
   ];
   const statement = database.prepare("INSERT INTO catalog_metadata (key, value, updated_at) VALUES (?, ?, ?)");
-  const updatedAt = Date.UTC(2026, 5, 19);
+  const updatedAt = Date.UTC(2026, 5, 19) / 1000;
   for (const [key, value] of rows) {
     statement.run(key, String(value), updatedAt);
   }
@@ -301,7 +301,7 @@ function timestamp(value) {
   if (Number.isNaN(millis)) {
     throw new Error(`invalid timestamp: ${value}`);
   }
-  return millis;
+  return Math.floor(millis / 1000);
 }
 
 function sha256(bytes) {

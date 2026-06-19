@@ -59,6 +59,10 @@ function validateSqlite(sqlitePath, pack) {
     if (!metadata || metadata.value !== pack.schemaVersion) {
       throw new Error(`${pack.id}@${pack.version} schemaVersion mismatch`);
     }
+    const userVersion = database.prepare("PRAGMA user_version").get().user_version;
+    if (userVersion !== Number(pack.schemaVersion)) {
+      throw new Error(`${pack.id}@${pack.version} PRAGMA user_version mismatch`);
+    }
 
     for (const tableName of pack.requiredTables) {
       const table = database.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?").get(tableName);
