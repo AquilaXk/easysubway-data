@@ -23,8 +23,6 @@ jobs:
     name: Data Pack Release
     runs-on: ubuntu-latest
     env:
-      EASYSUBWAY_DATAPACK_OUTPUT: ${{ runner.temp }}/easysubway-datapacks
-      EASYSUBWAY_DATAPACK_STAGE: ${{ runner.temp }}/easysubway-datapack-stage
       NODE_OPTIONS: --disable-warning=ExperimentalWarning
 
     steps:
@@ -37,6 +35,14 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: "24"
+
+      - name: Data Pack Release / Configure temp directories
+        run: |
+          set -euo pipefail
+          {
+            echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
+            echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
+          } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Build data packs
         run: |
@@ -74,6 +80,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: easysubway-datapacks-${{ github.sha }}
-          path: ${{ env.EASYSUBWAY_DATAPACK_STAGE }}
+          path: ${{ runner.temp }}/easysubway-datapack-stage
           if-no-files-found: error
           retention-days: 14
