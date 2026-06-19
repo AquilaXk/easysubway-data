@@ -65,9 +65,9 @@ jobs:
       - name: Data Pack Release / Stage manifest
         run: |
           set -euo pipefail
-          cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/current.json"
+          cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
           node tools/datapack/validate-datapack.mjs \
-            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/current.json" \
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Upload staged data packs
