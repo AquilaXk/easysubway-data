@@ -92,8 +92,19 @@ function validateManifest(manifest) {
   if (!Array.isArray(manifest.packs)) {
     throw new Error("manifest packs must be an array");
   }
+  const packIdentities = new Set(
+    manifest.packs.map((pack) => `${pack.id ?? ""}@${pack.version ?? ""}`),
+  );
   if (manifest.activePack !== undefined) {
     validatePackIdentity(manifest.activePack, "activePack");
+    const activePackIdentity = `${manifest.activePack.id}@${manifest.activePack.version}`;
+    if (!packIdentities.has(activePackIdentity)) {
+      throw new Error("activePack must match one of manifest packs");
+    }
+  }
+  if (manifest.emergencyOverride !== undefined) {
+    validatePackIdentity(manifest.emergencyOverride, "emergencyOverride");
+    requiredString(manifest.emergencyOverride.reason, "emergencyOverride.reason");
   }
   for (const pack of manifest.packs) {
     validatePackIdentity(pack, "pack");

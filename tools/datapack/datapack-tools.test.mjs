@@ -121,6 +121,82 @@ test("데이터팩 검증기는 manifest checksum 불일치를 거부한다", as
   );
 });
 
+test("데이터팩 검증기는 packs에 없는 activePack을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-active-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.activePack = { id: "capital", version: "999" };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root },
+    ),
+    /activePack must match one of manifest packs/,
+  );
+});
+
+test("데이터팩 검증기는 invalid emergencyOverride를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-override-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.emergencyOverride = { id: "capital", version: "1" };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root },
+    ),
+    /emergencyOverride.reason must be a non-empty string/,
+  );
+});
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }

@@ -249,13 +249,40 @@ function validateFixture(fixture) {
   if (!Array.isArray(fixture.packs) || fixture.packs.length === 0) {
     throw new Error("fixture packs must be a non-empty array");
   }
+  const packIdentities = new Set(
+    fixture.packs.map((pack) => `${pack.id ?? ""}@${pack.version ?? ""}`),
+  );
+  if (fixture.manifest.activePack !== undefined) {
+    validatePackIdentity(fixture.manifest.activePack, "manifest.activePack");
+    const activePackIdentity = `${fixture.manifest.activePack.id}@${fixture.manifest.activePack.version}`;
+    if (!packIdentities.has(activePackIdentity)) {
+      throw new Error("manifest.activePack must match one of fixture packs");
+    }
+  }
+  if (fixture.manifest.emergencyOverride !== undefined) {
+    validatePackIdentity(fixture.manifest.emergencyOverride, "manifest.emergencyOverride");
+    requiredString(fixture.manifest.emergencyOverride.reason, "manifest.emergencyOverride.reason");
+  }
   for (const pack of fixture.packs) {
-    requiredString(pack.id, "pack.id");
-    requiredString(pack.version, "pack.version");
+    validatePackIdentity(pack, "pack");
     requiredString(pack.schemaVersion, "pack.schemaVersion");
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
     }
+  }
+}
+
+function validatePackIdentity(value, label) {
+  if (!value || typeof value !== "object") {
+    throw new Error(`${label} must be an object`);
+  }
+  const packId = requiredString(value.id, `${label}.id`);
+  const version = requiredString(value.version, `${label}.version`);
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(packId)) {
+    throw new Error(`${label}.id is invalid`);
+  }
+  if (!/^[0-9]+$/.test(version)) {
+    throw new Error(`${label}.version is invalid`);
   }
 }
 
