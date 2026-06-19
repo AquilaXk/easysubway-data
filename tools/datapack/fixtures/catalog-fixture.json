@@ -1,0 +1,197 @@
+{
+  "manifest": {
+    "ttlSeconds": 3600,
+    "activePack": {
+      "id": "capital",
+      "version": "1"
+    }
+  },
+  "packs": [
+    {
+      "id": "capital",
+      "version": "1",
+      "schemaVersion": "1",
+      "url": "catalog/capital-v1.sqlite.gz",
+      "requiredTables": [
+        "catalog_metadata",
+        "operators",
+        "lines",
+        "stations",
+        "station_lines",
+        "station_exits",
+        "facilities"
+      ],
+      "minimumTableRows": {
+        "catalog_metadata": 2,
+        "operators": 2,
+        "lines": 2,
+        "stations": 2,
+        "station_lines": 3,
+        "station_exits": 1,
+        "facilities": 1
+      },
+      "metadata": {
+        "activePack": "capital"
+      },
+      "operators": [
+        {
+          "id": "seoul-metro",
+          "nameKo": "서울교통공사",
+          "nameEn": "Seoul Metro"
+        },
+        {
+          "id": "korail",
+          "nameKo": "한국철도공사",
+          "nameEn": "KORAIL"
+        }
+      ],
+      "lines": [
+        {
+          "id": "seoul-2",
+          "operatorId": "seoul-metro",
+          "nameKo": "수도권 2호선",
+          "nameEn": "Seoul Subway Line 2",
+          "color": "#00A84D"
+        },
+        {
+          "id": "seoul-4",
+          "operatorId": "seoul-metro",
+          "nameKo": "수도권 4호선",
+          "nameEn": "Seoul Subway Line 4",
+          "color": "#00A5DE"
+        }
+      ],
+      "stations": [
+        {
+          "id": "station-sangnoksu",
+          "nameKo": "상록수",
+          "nameEn": "Sangnoksu",
+          "normalizedName": "상록수",
+          "region": "수도권",
+          "latitude": 37.3028,
+          "longitude": 126.8666,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-sadang",
+          "nameKo": "사당",
+          "nameEn": "Sadang",
+          "normalizedName": "사당",
+          "region": "수도권",
+          "latitude": 37.4766,
+          "longitude": 126.9816,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        }
+      ],
+      "stationAliases": [
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "상록수역",
+          "normalizedAlias": "상록수역"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "Sangnoksu",
+          "normalizedAlias": "sangnoksu"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "448",
+          "normalizedAlias": "448"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "alias": "4호선 상록수",
+          "normalizedAlias": "4호선상록수"
+        }
+      ],
+      "stationLines": [
+        {
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "stationCode": "448",
+          "lineSequence": 48,
+          "platformInfo": "당고개 방면 / 오이도 방면"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "stationCode": "226",
+          "lineSequence": 26,
+          "platformInfo": "내선 / 외선"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "stationCode": "433",
+          "lineSequence": 33,
+          "platformInfo": "당고개 방면 / 오이도 방면"
+        }
+      ],
+      "stationExits": [
+        {
+          "id": "exit-sangnoksu-1",
+          "stationId": "station-sangnoksu",
+          "exitNumber": "1",
+          "description": "상록수역 1번 출구"
+        }
+      ],
+      "facilities": [
+        {
+          "id": "facility-sangnoksu-elevator-1",
+          "stationId": "station-sangnoksu",
+          "exitId": "exit-sangnoksu-1",
+          "type": "ELEVATOR",
+          "name": "1번 출구 엘리베이터",
+          "status": "NORMAL",
+          "floorFrom": "B1",
+          "floorTo": "1F",
+          "description": "대합실과 1번 출구 지상을 연결"
+        }
+      ],
+      "stationAccessibilitySummaries": [
+        {
+          "stationId": "station-sangnoksu",
+          "summary": "1번 출구 엘리베이터 이용 가능",
+          "warning": ""
+        }
+      ],
+      "internalRouteNodes": [
+        {
+          "id": "node-sangnoksu-concourse",
+          "stationId": "station-sangnoksu",
+          "label": "상록수역 대합실",
+          "nodeType": "CONCOURSE"
+        },
+        {
+          "id": "node-sangnoksu-exit-1",
+          "stationId": "station-sangnoksu",
+          "label": "상록수역 1번 출구",
+          "nodeType": "EXIT"
+        }
+      ],
+      "internalRouteEdges": [
+        {
+          "id": "edge-sangnoksu-concourse-exit-1",
+          "fromNodeId": "node-sangnoksu-concourse",
+          "toNodeId": "node-sangnoksu-exit-1",
+          "durationSeconds": 120,
+          "instruction": "엘리베이터를 이용해 1번 출구로 이동"
+        }
+      ],
+      "dataQualityRecords": [
+        {
+          "id": "quality-station-sangnoksu",
+          "targetType": "station",
+          "targetId": "station-sangnoksu",
+          "qualityLevel": "LEVEL_2",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}

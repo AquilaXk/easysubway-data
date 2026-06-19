@@ -1,0 +1,79 @@
+name: Data Pack Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/datapack/**
+      - apps/mobile/lib/core/datapack/**
+      - apps/mobile/lib/core/database/catalog/**
+      - .github/workflows/datapack-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: datapack-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  data-pack-release:
+    name: Data Pack Release
+    runs-on: ubuntu-latest
+    env:
+      EASYSUBWAY_DATAPACK_OUTPUT: ${{ runner.temp }}/easysubway-datapacks
+      EASYSUBWAY_DATAPACK_STAGE: ${{ runner.temp }}/easysubway-datapack-stage
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
+
+    steps:
+      - name: Data Pack Release / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Data Pack Release / Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Data Pack Release / Build data packs
+        run: |
+          set -euo pipefail
+          node tools/datapack/build-datapack.mjs \
+            --fixture tools/datapack/fixtures/catalog-fixture.json \
+            --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
+
+      - name: Data Pack Release / Validate generated data packs
+        run: |
+          set -euo pipefail
+          node tools/datapack/validate-datapack.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+            --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
+
+      - name: Data Pack Release / Stage pack files
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}/catalog"
+          find "${EASYSUBWAY_DATAPACK_OUTPUT}/catalog" -name "*.sqlite.gz" -type f -print0 \
+            | while IFS= read -r -d '' pack_file; do
+                cp "${pack_file}" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/$(basename "${pack_file}")"
+              done
+          test -n "$(find "${EASYSUBWAY_DATAPACK_STAGE}/catalog" -name "*.sqlite.gz" -type f -print -quit)"
+
+      - name: Data Pack Release / Stage manifest
+        run: |
+          set -euo pipefail
+          cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/current.json"
+          node tools/datapack/validate-datapack.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/current.json" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}"
+
+      - name: Data Pack Release / Upload staged data packs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-datapacks-${{ github.sha }}
+          path: ${{ env.EASYSUBWAY_DATAPACK_STAGE }}
+          if-no-files-found: error
+          retention-days: 14
