@@ -54,9 +54,11 @@ jobs:
       - name: Data Pack Release / Validate generated data packs
         run: |
           set -euo pipefail
+          test -f tools/datapack/schema/manifest.schema.json
           node tools/datapack/validate-datapack.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
             --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
+          node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
       - name: Data Pack Release / Stage pack files
         run: |
@@ -67,6 +69,13 @@ jobs:
                 cp "${pack_file}" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/$(basename "${pack_file}")"
               done
           test -n "$(find "${EASYSUBWAY_DATAPACK_STAGE}/catalog" -name "*.sqlite.gz" -type f -print -quit)"
+
+      - name: Data Pack Release / Verify uploaded pack checksums before manifest publish
+        run: |
+          set -euo pipefail
+          node tools/datapack/validate-datapack.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Stage manifest
         run: |

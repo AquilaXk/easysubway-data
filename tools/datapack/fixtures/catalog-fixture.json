@@ -10,8 +10,31 @@
     {
       "id": "capital",
       "version": "1",
+      "artifactKind": "fixture",
       "schemaVersion": "1",
       "url": "catalog/capital-v1.sqlite.gz",
+      "sourceInventory": [
+        {
+          "id": "fixture-capital-catalog",
+          "owner": "EasySubway local fixture",
+          "url": "https://easysubway.local/fixtures/catalog-fixture.json",
+          "license": "fixture-only",
+          "licenseStatus": "fixture-only",
+          "redistributionAllowed": false,
+          "updateFrequency": "manual",
+          "updatedAt": "2026-06-19T00:00:00.000Z",
+          "fields": [
+            "operators",
+            "lines",
+            "stations",
+            "station_lines",
+            "network_edges",
+            "station_exits",
+            "facilities",
+            "internal_routes"
+          ]
+        }
+      ],
       "requiredTables": [
         "catalog_metadata",
         "operators",

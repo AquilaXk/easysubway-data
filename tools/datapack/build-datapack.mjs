@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
+import { createHash, createSign } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
@@ -19,9 +19,13 @@ async function main() {
 
   const manifestPacks = [];
   for (const pack of fixture.packs) {
+    const artifactKind = pack.artifactKind ?? "fixture";
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
-    const sqlitePath = path.join(outputDir, packUrl.replace(/\.gz$/, ""));
-    const compressedPath = path.join(outputDir, packUrl);
+    validatePackUrl(packUrl, "pack.url");
+    validatePackUrlMatchesStagedPath(packUrl, pack, "pack.url");
+    const outputPackPath = outputPathForPack(outputDir, packUrl, pack);
+    const sqlitePath = outputPackPath.replace(/\.gz$/, "");
+    const compressedPath = outputPackPath;
 
     await mkdir(path.dirname(sqlitePath), { recursive: true });
     await rm(sqlitePath, { force: true });
@@ -32,14 +36,30 @@ async function main() {
     const sqliteBytes = await readFile(sqlitePath);
     const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
     await writeFile(compressedPath, compressedBytes);
+    const compressedSha256 = sha256(compressedBytes);
+    const sqliteSha256 = sha256(sqliteBytes);
+    const sizeBytes = compressedBytes.length;
 
     manifestPacks.push({
       id: pack.id,
       version: pack.version,
+      artifactKind,
       url: packUrl,
-      sha256: sha256(compressedBytes),
-      sqliteSha256: sha256(sqliteBytes),
+      sha256: compressedSha256,
+      sqliteSha256,
+      sizeBytes,
+      signature: packSignature({
+        id: pack.id,
+        version: pack.version,
+        artifactKind,
+        url: packUrl,
+        sha256: compressedSha256,
+        sqliteSha256,
+        sizeBytes,
+      }),
       schemaVersion: pack.schemaVersion,
+      sourceInventory: pack.sourceInventory,
+      regionalQualityMetrics: regionalQualityMetrics(pack),
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
     });
@@ -55,6 +75,109 @@ async function main() {
   }
 
   await writeFile(path.join(outputDir, "current.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function outputPathForPack(outputDir, packUrl, pack) {
+  if (/^https:\/\//.test(packUrl)) {
+    return path.join(outputDir, stagedPackPath(pack));
+  }
+  return path.join(outputDir, packUrl);
+}
+
+function validatePackUrl(packUrl, label) {
+  requiredString(packUrl, label);
+  if (/%[0-9a-f]{2}/i.test(packUrl)) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  if (/^https:\/\//.test(packUrl)) {
+    if (!isAbsoluteHttpsWithHost(packUrl)) {
+      throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+    }
+    return;
+  }
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(packUrl) || packUrl.startsWith("/") || packUrl.startsWith("//") || packUrl.includes("\\")) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  if (packUrl.split("/").includes("..")) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  const normalized = path.posix.normalize(packUrl);
+  if (normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+}
+
+function validatePackUrlMatchesStagedPath(packUrl, pack, label) {
+  if (!/^https:\/\//.test(packUrl)) {
+    return;
+  }
+  const url = new URL(packUrl);
+  const expectedPathSuffix = `/${stagedPackPath(pack)}`;
+  if (!url.pathname.endsWith(expectedPathSuffix) || url.search !== "" || url.hash !== "") {
+    throw new Error(`${label} absolute HTTPS URL path must end with ${stagedPackPath(pack)}`);
+  }
+}
+
+function stagedPackPath(pack) {
+  return `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
+}
+
+function packSignature(pack) {
+  if (pack.artifactKind === "production") {
+    const canonical = productionSignaturePayload(pack);
+    return {
+      algorithm: "rsa-sha256-pack-manifest-v1",
+      value: rsaSha256Signature(signingPrivateKey(), canonical),
+    };
+  }
+  return {
+    algorithm: "sha256-pack-manifest-v1",
+    value: sha256(Buffer.from(fixtureSignaturePayload(pack))),
+  };
+}
+
+function fixtureSignaturePayload(pack) {
+  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+}
+
+function productionSignaturePayload(pack) {
+  return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
+}
+
+function canonicalProductionPackUrl(packUrl) {
+  return new URL(packUrl).toString();
+}
+
+function signingPrivateKey() {
+  const key = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM?.trim();
+  if (!key) {
+    throw new Error("EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM is required for production data pack signatures");
+  }
+  return key;
+}
+
+function rsaSha256Signature(privateKey, value) {
+  return createSign("RSA-SHA256").update(value).sign(privateKey).toString("base64url");
+}
+
+function regionalQualityMetrics(pack) {
+  const stationIds = new Set((pack.stations ?? []).map((station) => station.id));
+  const stationCount = stationIds.size;
+  const coveredStationIds = new Set(
+    (pack.facilities ?? [])
+      .map((facility) => facility.stationId)
+      .filter((stationId) => stationIds.has(stationId)),
+  );
+  const edgeCount = pack.networkEdges?.length ?? 0;
+  const unknownAccessibilityCount = (pack.networkEdges ?? []).filter(
+    (edge) => (edge.accessibilityStatus ?? "UNKNOWN") === "UNKNOWN",
+  ).length;
+  return {
+    stationCount,
+    facilityCoverageRatio: stationCount === 0 ? 0 : Number((coveredStationIds.size / stationCount).toFixed(4)),
+    edgeCount,
+    unknownAccessibilityRatio: edgeCount === 0 ? 0 : Number((unknownAccessibilityCount / edgeCount).toFixed(4)),
+  };
 }
 
 function buildSqlitePack(sqlitePath, schema, pack) {
@@ -315,10 +438,61 @@ function validateFixture(fixture) {
   }
   for (const pack of fixture.packs) {
     validatePackIdentity(pack, "pack");
+    const artifactKind = pack.artifactKind ?? "fixture";
+    if (artifactKind !== "fixture" && artifactKind !== "production") {
+      throw new Error("pack.artifactKind must be fixture or production");
+    }
     requiredString(pack.schemaVersion, "pack.schemaVersion");
+    validatePackUrl(pack.url ?? stagedPackPath(pack), "pack.url");
+    validatePackUrlMatchesStagedPath(pack.url ?? stagedPackPath(pack), pack, "pack.url");
+    if (artifactKind === "production" && !isAbsoluteHttpsWithHost(pack.url)) {
+      throw new Error("production pack url must be an absolute HTTPS URL");
+    }
+    validateSourceInventory(pack.sourceInventory, artifactKind);
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
     }
+  }
+}
+
+function validateSourceInventory(sourceInventory, artifactKind) {
+  if (!Array.isArray(sourceInventory) || sourceInventory.length === 0) {
+    throw new Error("pack.sourceInventory must be a non-empty array");
+  }
+  for (const source of sourceInventory) {
+    requiredString(source.id, "sourceInventory.id");
+    requiredString(source.owner, "sourceInventory.owner");
+    requiredString(source.url, "sourceInventory.url");
+    requiredString(source.license, "sourceInventory.license");
+    const licenseStatus = requiredString(source.licenseStatus, "sourceInventory.licenseStatus");
+    if (typeof source.redistributionAllowed !== "boolean") {
+      throw new Error("sourceInventory.redistributionAllowed must be a boolean");
+    }
+    requiredString(source.updateFrequency, "sourceInventory.updateFrequency");
+    requiredString(source.updatedAt, "sourceInventory.updatedAt");
+    if (!Array.isArray(source.fields) || source.fields.length === 0) {
+      throw new Error("sourceInventory.fields must be a non-empty array");
+    }
+    for (const field of source.fields) {
+      requiredString(field, "sourceInventory.fields");
+    }
+    if (artifactKind === "production") {
+      if (licenseStatus !== "redistributable" || source.redistributionAllowed !== true) {
+        throw new Error("production sourceInventory must be redistributable");
+      }
+      if (!isAbsoluteHttpsWithHost(source.url)) {
+        throw new Error("production sourceInventory.url must be HTTPS");
+      }
+    }
+  }
+}
+
+function isAbsoluteHttpsWithHost(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname !== "";
+  } catch {
+    return false;
   }
 }
 

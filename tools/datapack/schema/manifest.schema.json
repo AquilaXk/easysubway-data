@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-manifest.schema.json",
+  "title": "EasySubway data pack manifest",
+  "type": "object",
+  "required": ["ttlSeconds", "packs"],
+  "additionalProperties": false,
+  "properties": {
+    "ttlSeconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "activePack": {
+      "$ref": "#/$defs/packIdentity"
+    },
+    "emergencyOverride": {
+      "allOf": [
+        { "$ref": "#/$defs/packIdentity" },
+        {
+          "type": "object",
+          "required": ["reason"],
+          "properties": {
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "packs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "artifactKind",
+          "url",
+          "sha256",
+          "sqliteSha256",
+          "sizeBytes",
+          "signature",
+          "schemaVersion",
+          "sourceInventory",
+          "regionalQualityMetrics",
+          "requiredTables"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+          "version": { "type": "string", "pattern": "^[0-9]+$" },
+          "artifactKind": { "enum": ["fixture", "production"] },
+          "url": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "sqliteSha256": { "$ref": "#/$defs/sha256" },
+          "sizeBytes": { "type": "integer", "minimum": 1 },
+          "signature": {
+            "type": "object",
+            "required": ["algorithm", "value"],
+            "properties": {
+              "algorithm": {
+                "enum": [
+                  "sha256-pack-manifest-v1",
+                  "rsa-sha256-pack-manifest-v1"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          },
+          "schemaVersion": { "type": "string", "minLength": 1 },
+          "sourceInventory": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/source" }
+          },
+          "regionalQualityMetrics": {
+            "type": "object",
+            "required": [
+              "stationCount",
+              "facilityCoverageRatio",
+              "edgeCount",
+              "unknownAccessibilityRatio"
+            ],
+            "properties": {
+              "stationCount": { "type": "integer", "minimum": 0 },
+              "facilityCoverageRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "edgeCount": { "type": "integer", "minimum": 0 },
+              "unknownAccessibilityRatio": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          },
+          "requiredTables": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+          },
+          "minimumTableRows": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "packIdentity": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+        "version": { "type": "string", "pattern": "^[0-9]+$" }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "url",
+        "license",
+        "licenseStatus",
+        "redistributionAllowed",
+        "updateFrequency",
+        "updatedAt",
+        "fields"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 },
+        "license": { "type": "string", "minLength": 1 },
+        "licenseStatus": { "type": "string", "minLength": 1 },
+        "redistributionAllowed": { "type": "boolean" },
+        "updateFrequency": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
