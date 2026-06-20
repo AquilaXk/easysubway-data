@@ -58,7 +58,12 @@ CREATE TABLE network_edges (
   from_node_id TEXT NOT NULL,
   to_node_id TEXT NOT NULL,
   duration_seconds INTEGER NOT NULL DEFAULT 0,
-  edge_type TEXT NOT NULL DEFAULT 'WALK'
+  edge_type TEXT NOT NULL DEFAULT 'WALK',
+  service_pattern TEXT NOT NULL DEFAULT '',
+  includes_stairs INTEGER NOT NULL DEFAULT 0,
+  accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  reliability_score INTEGER NOT NULL DEFAULT 100,
+  last_verified_at INTEGER
 );
 
 CREATE TABLE station_exits (
