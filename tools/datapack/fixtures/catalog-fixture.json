@@ -209,7 +209,15 @@
           "id": "edge-sangnoksu-concourse-exit-1",
           "fromNodeId": "node-sangnoksu-concourse",
           "toNodeId": "node-sangnoksu-exit-1",
+          "edgeType": "ELEVATOR",
+          "distanceMeters": 42,
           "durationSeconds": 120,
+          "includesStairs": false,
+          "requiresElevator": true,
+          "requiresEscalator": false,
+          "slopeLevel": 1,
+          "widthLevel": 3,
+          "reliabilityScore": 88,
           "instruction": "엘리베이터를 이용해 1번 출구로 이동"
         }
       ],
