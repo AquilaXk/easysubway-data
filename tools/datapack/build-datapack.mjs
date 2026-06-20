@@ -216,6 +216,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "slope_level",
           "width_level",
           "reliability_score",
+          "accessibility_status",
           "instruction",
         ],
         pack.internalRouteEdges ?? [],
@@ -232,6 +233,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           row.slopeLevel ?? 1,
           row.widthLevel ?? 2,
           row.reliabilityScore ?? 100,
+          row.accessibilityStatus ?? "UNKNOWN",
           row.instruction ?? "",
         ],
       );

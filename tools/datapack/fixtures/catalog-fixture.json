@@ -220,6 +220,7 @@
           "slopeLevel": 1,
           "widthLevel": 3,
           "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
           "instruction": "엘리베이터를 이용해 1번 출구로 이동"
         }
       ],

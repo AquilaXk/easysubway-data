@@ -118,6 +118,7 @@ CREATE TABLE internal_route_edges (
   slope_level INTEGER NOT NULL DEFAULT 1,
   width_level INTEGER NOT NULL DEFAULT 2,
   reliability_score INTEGER NOT NULL DEFAULT 100,
+  accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   instruction TEXT NOT NULL DEFAULT '',
   FOREIGN KEY (from_node_id) REFERENCES internal_route_nodes(id),
   FOREIGN KEY (to_node_id) REFERENCES internal_route_nodes(id)
