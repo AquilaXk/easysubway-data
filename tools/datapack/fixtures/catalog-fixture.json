@@ -140,14 +140,24 @@
           "fromNodeId": "station-sangnoksu:seoul-4",
           "toNodeId": "station-sadang:seoul-4",
           "durationSeconds": 420,
-          "edgeType": "RIDE"
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
         },
         {
           "id": "edge-sadang-sangnoksu-seoul-4",
           "fromNodeId": "station-sadang:seoul-4",
           "toNodeId": "station-sangnoksu:seoul-4",
           "durationSeconds": 420,
-          "edgeType": "RIDE"
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
         }
       ],
       "stationExits": [

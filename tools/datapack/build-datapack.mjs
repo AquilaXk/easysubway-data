@@ -126,7 +126,18 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       insertRows(
         database,
         "network_edges",
-        ["id", "from_node_id", "to_node_id", "duration_seconds", "edge_type"],
+        [
+          "id",
+          "from_node_id",
+          "to_node_id",
+          "duration_seconds",
+          "edge_type",
+          "service_pattern",
+          "includes_stairs",
+          "accessibility_status",
+          "reliability_score",
+          "last_verified_at",
+        ],
         pack.networkEdges ?? [],
         (row) => [
           requiredString(row.id, "networkEdges.id"),
@@ -134,6 +145,11 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           requiredString(row.toNodeId, "networkEdges.toNodeId"),
           row.durationSeconds ?? 0,
           row.edgeType ?? "WALK",
+          row.servicePattern ?? "",
+          row.includesStairs ? 1 : 0,
+          row.accessibilityStatus ?? "UNKNOWN",
+          row.reliabilityScore ?? 100,
+          timestamp(row.lastVerifiedAt),
         ],
       );
       insertRows(database, "station_exits", ["id", "station_id", "exit_number", "description"], pack.stationExits ?? [], (row) => [
