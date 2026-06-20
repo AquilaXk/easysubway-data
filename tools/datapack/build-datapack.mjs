@@ -138,6 +138,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "stair_access_state",
           "accessibility_status",
           "reliability_score",
+          "facility_id",
           "last_verified_at",
         ],
         pack.networkEdges ?? [],
@@ -156,6 +157,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
             stairAccessState,
             row.accessibilityStatus ?? "UNKNOWN",
             row.reliabilityScore ?? 100,
+            row.facilityId ?? null,
             timestamp(row.lastVerifiedAt),
           ];
         },
