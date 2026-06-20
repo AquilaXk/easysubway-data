@@ -62,6 +62,7 @@ CREATE TABLE network_edges (
   edge_type TEXT NOT NULL DEFAULT 'WALK',
   service_pattern TEXT NOT NULL DEFAULT '',
   includes_stairs INTEGER NOT NULL DEFAULT 0,
+  stair_access_state TEXT NOT NULL DEFAULT 'UNKNOWN',
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   reliability_score INTEGER NOT NULL DEFAULT 100,
   last_verified_at INTEGER

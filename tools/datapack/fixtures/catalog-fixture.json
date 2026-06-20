@@ -144,6 +144,7 @@
           "edgeType": "RIDE",
           "servicePattern": "LOCAL",
           "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
           "accessibilityStatus": "AVAILABLE",
           "reliabilityScore": 90,
           "lastVerifiedAt": "2026-06-19T00:00:00Z"
@@ -157,6 +158,7 @@
           "edgeType": "RIDE",
           "servicePattern": "LOCAL",
           "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
           "accessibilityStatus": "AVAILABLE",
           "reliabilityScore": 90,
           "lastVerifiedAt": "2026-06-19T00:00:00Z"

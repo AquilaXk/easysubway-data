@@ -135,24 +135,30 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "edge_type",
           "service_pattern",
           "includes_stairs",
+          "stair_access_state",
           "accessibility_status",
           "reliability_score",
           "last_verified_at",
         ],
         pack.networkEdges ?? [],
-        (row) => [
-          requiredString(row.id, "networkEdges.id"),
-          requiredString(row.fromNodeId, "networkEdges.fromNodeId"),
-          requiredString(row.toNodeId, "networkEdges.toNodeId"),
-          row.durationSeconds ?? 0,
-          row.distanceMeters ?? 0,
-          row.edgeType ?? "WALK",
-          row.servicePattern ?? "",
-          row.includesStairs ? 1 : 0,
-          row.accessibilityStatus ?? "UNKNOWN",
-          row.reliabilityScore ?? 100,
-          timestamp(row.lastVerifiedAt),
-        ],
+        (row) => {
+          const stairAccessState = row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN");
+
+          return [
+            requiredString(row.id, "networkEdges.id"),
+            requiredString(row.fromNodeId, "networkEdges.fromNodeId"),
+            requiredString(row.toNodeId, "networkEdges.toNodeId"),
+            row.durationSeconds ?? 0,
+            row.distanceMeters ?? 0,
+            row.edgeType ?? "WALK",
+            row.servicePattern ?? "",
+            stairAccessState === "STAIR_ONLY" ? 1 : 0,
+            stairAccessState,
+            row.accessibilityStatus ?? "UNKNOWN",
+            row.reliabilityScore ?? 100,
+            timestamp(row.lastVerifiedAt),
+          ];
+        },
       );
       insertRows(database, "station_exits", ["id", "station_id", "exit_number", "description"], pack.stationExits ?? [], (row) => [
         requiredString(row.id, "stationExits.id"),
