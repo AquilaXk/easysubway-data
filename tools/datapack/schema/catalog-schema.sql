@@ -58,6 +58,7 @@ CREATE TABLE network_edges (
   from_node_id TEXT NOT NULL,
   to_node_id TEXT NOT NULL,
   duration_seconds INTEGER NOT NULL DEFAULT 0,
+  distance_meters INTEGER NOT NULL DEFAULT 0,
   edge_type TEXT NOT NULL DEFAULT 'WALK',
   service_pattern TEXT NOT NULL DEFAULT '',
   includes_stairs INTEGER NOT NULL DEFAULT 0,
