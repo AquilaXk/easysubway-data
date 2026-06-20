@@ -194,6 +194,44 @@ test("데이터팩 생성기는 stairAccessState 누락 edge를 미확인 상태
   }
 });
 
+test("데이터팩 검증기는 존재하지 않는 facility edge 참조를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-invalid-facility-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].networkEdges[0].facilityId = "facility-does-not-exist";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root },
+    ),
+    /network_edges facility_id references missing facility/,
+  );
+});
+
 test("데이터팩 생성기는 stairAccessState 계단 전용 값을 legacy flag에 반영한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-stair-legacy-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
