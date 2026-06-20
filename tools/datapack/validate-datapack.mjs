@@ -71,6 +71,8 @@ function validateSqlite(sqlitePath, pack) {
       }
     }
 
+    validateNetworkEdgeFacilityReferences(database, pack);
+
     for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows ?? {})) {
       const row = database.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get();
       if (row.count < minimumRows) {
@@ -80,6 +82,44 @@ function validateSqlite(sqlitePath, pack) {
   } finally {
     database.close();
   }
+}
+
+function validateNetworkEdgeFacilityReferences(database, pack) {
+  if (!hasTable(database, "network_edges") || !hasTable(database, "facilities")) {
+    return;
+  }
+  const hasFacilityIdColumn = database
+    .prepare("PRAGMA table_info(network_edges)")
+    .all()
+    .some((row) => row.name === "facility_id");
+  if (!hasFacilityIdColumn) {
+    return;
+  }
+
+  const missingReference = database
+    .prepare(`
+      SELECT ne.id AS edge_id, ne.facility_id AS facility_id
+      FROM network_edges ne
+      LEFT JOIN facilities f ON f.id = ne.facility_id
+      WHERE ne.facility_id IS NOT NULL
+        AND f.id IS NULL
+      ORDER BY ne.id
+      LIMIT 1
+    `)
+    .get();
+  if (missingReference) {
+    throw new Error(
+      `${pack.id}@${pack.version} network_edges facility_id references missing facility: ${missingReference.edge_id} -> ${missingReference.facility_id}`,
+    );
+  }
+}
+
+function hasTable(database, tableName) {
+  return Boolean(
+    database
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?")
+      .get(tableName),
+  );
 }
 
 function validateManifest(manifest) {

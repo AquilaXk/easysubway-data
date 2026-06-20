@@ -65,6 +65,7 @@ CREATE TABLE network_edges (
   stair_access_state TEXT NOT NULL DEFAULT 'UNKNOWN',
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   reliability_score INTEGER NOT NULL DEFAULT 100,
+  facility_id TEXT,
   last_verified_at INTEGER
 );
 
