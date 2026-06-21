@@ -89,6 +89,8 @@ function validateSqlite(sqlitePath, pack) {
     }
 
     validateNetworkEdgeReferences(database, pack);
+    validateRegionalQualityMetricsMatchDatabase(database, pack);
+    validateRepresentativeRouteRegressions(database, pack);
 
     for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows ?? {})) {
       const row = database.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get();
@@ -104,6 +106,143 @@ function validateSqlite(sqlitePath, pack) {
 function validateNetworkEdgeReferences(database, pack) {
   validateNetworkEdgeStationLineEndpoints(database, pack);
   validateNetworkEdgeFacilityReferences(database, pack);
+}
+
+function validateRegionalQualityMetricsMatchDatabase(database, pack) {
+  if (!hasTable(database, "stations") || !hasTable(database, "facilities") || !hasTable(database, "network_edges")) {
+    return;
+  }
+  const stationCount = database.prepare("SELECT COUNT(DISTINCT id) AS count FROM stations").get().count;
+  const coveredStationCount = database
+    .prepare(`
+      SELECT COUNT(DISTINCT f.station_id) AS count
+      FROM facilities f
+      INNER JOIN stations s ON s.id = f.station_id
+    `)
+    .get().count;
+  const edgeCount = database.prepare("SELECT COUNT(*) AS count FROM network_edges").get().count;
+  const unknownAccessibilityCount = database
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM network_edges
+      WHERE UPPER(COALESCE(accessibility_status, 'UNKNOWN')) = 'UNKNOWN'
+    `)
+    .get().count;
+  const expectedMetrics = {
+    stationCount,
+    facilityCoverageRatio: stationCount === 0 ? 0 : Number((coveredStationCount / stationCount).toFixed(4)),
+    edgeCount,
+    unknownAccessibilityRatio: edgeCount === 0 ? 0 : Number((unknownAccessibilityCount / edgeCount).toFixed(4)),
+  };
+  for (const [key, expectedValue] of Object.entries(expectedMetrics)) {
+    if (pack.regionalQualityMetrics[key] !== expectedValue) {
+      throw new Error(
+        `${pack.id}@${pack.version} regionalQualityMetrics mismatch: ${key} ${pack.regionalQualityMetrics[key]} != ${expectedValue}`,
+      );
+    }
+  }
+}
+
+function validateRepresentativeRouteRegressions(database, pack) {
+  if (!hasTable(database, "stations") || !hasTable(database, "station_lines") || !hasTable(database, "network_edges")) {
+    return;
+  }
+  const routes = pack.representativeRouteRegressions;
+  const requiredPatterns = requiredRepresentativeRoutePatterns();
+  const seenPatterns = new Set(routes.map((route) => route.pattern));
+  for (const pattern of requiredPatterns) {
+    if (!seenPatterns.has(pattern)) {
+      throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions missing required pattern: ${pattern}`);
+    }
+  }
+
+  const graph = representativeRouteGraph(database);
+  for (const route of routes) {
+    const fromEndpoint = routeEndpoint(route.fromNodeId, graph.stationIds, graph.stationLineNodes);
+    const toEndpoint = routeEndpoint(route.toNodeId, graph.stationIds, graph.stationLineNodes);
+    if (
+      !fromEndpoint.valid ||
+      !toEndpoint.valid ||
+      fromEndpoint.stationLineNode === null ||
+      toEndpoint.stationLineNode === null
+    ) {
+      throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions endpoint invalid: ${route.id}`);
+    }
+    for (const edgeId of route.requiredEdgeIds) {
+      if (!graph.routeEdgeIds.has(edgeId)) {
+        throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge missing: ${route.id} -> ${edgeId}`);
+      }
+    }
+    const reachableNodes = reachableNodesFrom(fromEndpoint.stationLineNode, graph.directedAdjacency);
+    if (!reachableNodes.has(toEndpoint.stationLineNode)) {
+      throw new Error(
+        `${pack.id}@${pack.version} representativeRouteRegressions route unreachable: ${route.id}`,
+      );
+    }
+  }
+}
+
+function representativeRouteGraph(database) {
+  const stationLineRows = database
+    .prepare("SELECT station_id, line_id FROM station_lines")
+    .all();
+  const stationIds = new Set(
+    database
+      .prepare("SELECT id FROM stations")
+      .all()
+      .map((row) => row.id),
+  );
+  const stationLineNodes = new Set(
+    stationLineRows.map((row) => stationLineNodeId(row.station_id, row.line_id)),
+  );
+  const connectedNodes = new Set();
+  const directedAdjacency = new Map(
+    [...stationLineNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const undirectedAdjacency = new Map(
+    [...stationLineNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const routeEdgeIds = new Set();
+  addGeneratedStationTransferEdges(
+    stationLineRows,
+    stationLineNodes,
+    connectedNodes,
+    directedAdjacency,
+    undirectedAdjacency,
+  );
+
+  const edges = database
+    .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
+    .all();
+  for (const edge of edges) {
+    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edge.edge_type);
+    if (routeGraphEdgeType === null) {
+      continue;
+    }
+    const fromEndpoint = routeEndpoint(edge.from_node_id, stationIds, stationLineNodes);
+    const toEndpoint = routeEndpoint(edge.to_node_id, stationIds, stationLineNodes);
+    if (fromEndpoint.stationLineNode === null || toEndpoint.stationLineNode === null) {
+      continue;
+    }
+    routeEdgeIds.add(edge.id);
+    addRouteGraphEdge(
+      fromEndpoint.stationLineNode,
+      toEndpoint.stationLineNode,
+      connectedNodes,
+      directedAdjacency,
+      undirectedAdjacency,
+    );
+    if (routeGraphEdgeType === "TRANSFER") {
+      addRouteGraphEdge(
+        toEndpoint.stationLineNode,
+        fromEndpoint.stationLineNode,
+        connectedNodes,
+        directedAdjacency,
+        undirectedAdjacency,
+      );
+    }
+  }
+  return { stationIds, stationLineNodes, directedAdjacency, routeEdgeIds };
 }
 
 function validateNetworkEdgeStationLineEndpoints(database, pack) {
@@ -474,6 +613,7 @@ function validateManifest(manifest) {
     validateSignature(pack.signature, `${pack.id}@${pack.version}`);
     validateSourceInventory(pack.sourceInventory, artifactKind, `${pack.id}@${pack.version}`);
     validateRegionalQualityMetrics(pack.regionalQualityMetrics, `${pack.id}@${pack.version}`);
+    validateRepresentativeRouteRegressionManifest(pack.representativeRouteRegressions, `${pack.id}@${pack.version}`);
     requiredString(pack.schemaVersion, "pack.schemaVersion");
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id}@${pack.version} requiredTables must be a non-empty array`);
@@ -604,6 +744,42 @@ function validateRegionalQualityMetrics(metrics, label) {
       throw new Error(`${label} regionalQualityMetrics.${key} must be a ratio`);
     }
   }
+}
+
+function validateRepresentativeRouteRegressionManifest(routes, label) {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    throw new Error(`${label} representativeRouteRegressions must be a non-empty array`);
+  }
+  const requiredPatterns = requiredRepresentativeRoutePatterns();
+  const seenPatterns = new Set();
+  for (const route of routes) {
+    if (!route || typeof route !== "object" || Array.isArray(route)) {
+      throw new Error(`${label} representativeRouteRegressions entries must be objects`);
+    }
+    requiredString(route.id, "representativeRouteRegressions.id");
+    const pattern = requiredString(route.pattern, "representativeRouteRegressions.pattern");
+    if (!requiredPatterns.has(pattern)) {
+      throw new Error(`${label} representativeRouteRegressions pattern is invalid: ${pattern}`);
+    }
+    seenPatterns.add(pattern);
+    requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId");
+    requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId");
+    if (!Array.isArray(route.requiredEdgeIds) || route.requiredEdgeIds.length === 0) {
+      throw new Error(`${label} representativeRouteRegressions.requiredEdgeIds must be a non-empty array`);
+    }
+    for (const edgeId of route.requiredEdgeIds) {
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds");
+    }
+  }
+  for (const pattern of requiredPatterns) {
+    if (!seenPatterns.has(pattern)) {
+      throw new Error(`${label} representativeRouteRegressions missing required pattern: ${pattern}`);
+    }
+  }
+}
+
+function requiredRepresentativeRoutePatterns() {
+  return new Set(["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]);
 }
 
 function packSignature(pack) {

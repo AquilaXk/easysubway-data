@@ -42,6 +42,7 @@
           "schemaVersion",
           "sourceInventory",
           "regionalQualityMetrics",
+          "representativeRouteRegressions",
           "requiredTables"
         ],
         "properties": {
@@ -90,6 +91,11 @@
               "unknownAccessibilityRatio": { "type": "number", "minimum": 0, "maximum": 1 }
             }
           },
+          "representativeRouteRegressions": {
+            "type": "array",
+            "minItems": 5,
+            "items": { "$ref": "#/$defs/representativeRouteRegression" }
+          },
           "requiredTables": {
             "type": "array",
             "minItems": 1,
@@ -118,6 +124,29 @@
     "sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
+    },
+    "representativeRouteRegression": {
+      "type": "object",
+      "required": ["id", "pattern", "fromNodeId", "toNodeId", "requiredEdgeIds"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "pattern": {
+          "enum": [
+            "DIRECT",
+            "TRANSFER",
+            "MULTI_TRANSFER",
+            "LOOP_BRANCH",
+            "EXPRESS_LOCAL"
+          ]
+        },
+        "fromNodeId": { "type": "string", "minLength": 1 },
+        "toNodeId": { "type": "string", "minLength": 1 },
+        "requiredEdgeIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
     },
     "source": {
       "type": "object",

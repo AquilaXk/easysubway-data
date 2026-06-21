@@ -60,6 +60,7 @@ async function main() {
       schemaVersion: pack.schemaVersion,
       sourceInventory: pack.sourceInventory,
       regionalQualityMetrics: regionalQualityMetrics(pack),
+      representativeRouteRegressions: pack.representativeRouteRegressions,
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
     });
@@ -449,8 +450,44 @@ function validateFixture(fixture) {
       throw new Error("production pack url must be an absolute HTTPS URL");
     }
     validateSourceInventory(pack.sourceInventory, artifactKind);
+    validateRepresentativeRouteRegressions(pack.representativeRouteRegressions);
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
+    }
+  }
+}
+
+function validateRepresentativeRouteRegressions(routes) {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    throw new Error("pack.representativeRouteRegressions must be a non-empty array");
+  }
+  const requiredPatterns = new Set([
+    "DIRECT",
+    "TRANSFER",
+    "MULTI_TRANSFER",
+    "LOOP_BRANCH",
+    "EXPRESS_LOCAL",
+  ]);
+  const seenPatterns = new Set();
+  for (const route of routes) {
+    requiredString(route.id, "representativeRouteRegressions.id");
+    const pattern = requiredString(route.pattern, "representativeRouteRegressions.pattern");
+    if (!requiredPatterns.has(pattern)) {
+      throw new Error("representativeRouteRegressions.pattern is invalid");
+    }
+    seenPatterns.add(pattern);
+    requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId");
+    requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId");
+    if (!Array.isArray(route.requiredEdgeIds) || route.requiredEdgeIds.length === 0) {
+      throw new Error("representativeRouteRegressions.requiredEdgeIds must be a non-empty array");
+    }
+    for (const edgeId of route.requiredEdgeIds) {
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds");
+    }
+  }
+  for (const pattern of requiredPatterns) {
+    if (!seenPatterns.has(pattern)) {
+      throw new Error(`representativeRouteRegressions missing required pattern: ${pattern}`);
     }
   }
 }
