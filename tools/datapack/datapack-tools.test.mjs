@@ -2,6 +2,7 @@ import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
+import { createServer } from "node:http";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -370,6 +371,161 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
     ),
     /capital@1 sizeBytes mismatch/,
   );
+});
+
+test("데이터팩 object storage publisher는 pack 검증 후 manifest를 마지막에 PUT한다", async () => {
+  const stageDir = path.join(tmpdir(), `easysubway-datapack-object-publish-${Date.now()}`);
+  await rm(stageDir, { recursive: true, force: true });
+  await mkdir(path.join(stageDir, "catalog"), { recursive: true });
+
+  const packBytes = Buffer.from("pack payload");
+  const manifestBytes = Buffer.from('{"packs":[{"id":"capital","version":"1"}]}\n');
+  await writeFile(path.join(stageDir, "catalog", "capital-v1.sqlite.gz"), packBytes);
+  await writeFile(path.join(stageDir, "catalog", "current.json"), manifestBytes);
+  const planPath = path.join(stageDir, "publish-plan.json");
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        steps: [
+          {
+            type: "put-pack-object",
+            sourcePath: "catalog/capital-v1.sqlite.gz",
+            objectKey: "catalog/capital-v1.sqlite.gz",
+            sha256: sha256(packBytes),
+            sizeBytes: packBytes.length,
+          },
+          {
+            type: "verify-pack-object",
+            objectKey: "catalog/capital-v1.sqlite.gz",
+            sha256: sha256(packBytes),
+            sizeBytes: packBytes.length,
+          },
+          {
+            type: "put-manifest-object",
+            sourcePath: "catalog/current.json",
+            objectKey: "catalog/current.json",
+            sha256: sha256(manifestBytes),
+            sizeBytes: manifestBytes.length,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const server = await startObjectStorageServer();
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/publish-object-storage.mjs",
+        "--plan",
+        planPath,
+        "--root",
+        stageDir,
+      ],
+      {
+        cwd: root,
+        env: objectStorageEnv(server.origin),
+      },
+    );
+
+    assert.deepEqual(
+      server.requests.map((request) => `${request.method} ${request.path}`),
+      [
+        "PUT /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+        "HEAD /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+        "PUT /easysubway-datapacks/catalog/current.json",
+      ],
+    );
+    assert.ok(
+      server.requests.every((request) => request.authorization?.startsWith("AWS4-HMAC-SHA256 ")),
+      "publisher must sign every object storage request",
+    );
+    assert.equal(server.objects.get("catalog/capital-v1.sqlite.gz").sha256, sha256(packBytes));
+    assert.equal(server.objects.get("catalog/current.json").sha256, sha256(manifestBytes));
+  } finally {
+    await server.close();
+  }
+});
+
+test("데이터팩 object storage publisher는 pack 검증 실패 시 manifest를 게시하지 않는다", async () => {
+  const stageDir = path.join(tmpdir(), `easysubway-datapack-object-publish-fail-${Date.now()}`);
+  await rm(stageDir, { recursive: true, force: true });
+  await mkdir(path.join(stageDir, "catalog"), { recursive: true });
+
+  const packBytes = Buffer.from("pack payload");
+  const manifestBytes = Buffer.from('{"packs":[{"id":"capital","version":"1"}]}\n');
+  await writeFile(path.join(stageDir, "catalog", "capital-v1.sqlite.gz"), packBytes);
+  await writeFile(path.join(stageDir, "catalog", "current.json"), manifestBytes);
+  const planPath = path.join(stageDir, "publish-plan.json");
+  await writeFile(
+    planPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        steps: [
+          {
+            type: "put-pack-object",
+            sourcePath: "catalog/capital-v1.sqlite.gz",
+            objectKey: "catalog/capital-v1.sqlite.gz",
+            sha256: sha256(packBytes),
+            sizeBytes: packBytes.length,
+          },
+          {
+            type: "verify-pack-object",
+            objectKey: "catalog/capital-v1.sqlite.gz",
+            sha256: "0".repeat(64),
+            sizeBytes: packBytes.length,
+          },
+          {
+            type: "put-manifest-object",
+            sourcePath: "catalog/current.json",
+            objectKey: "catalog/current.json",
+            sha256: sha256(manifestBytes),
+            sizeBytes: manifestBytes.length,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const server = await startObjectStorageServer();
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/publish-object-storage.mjs",
+          "--plan",
+          planPath,
+          "--root",
+          stageDir,
+        ],
+        {
+          cwd: root,
+          env: objectStorageEnv(server.origin),
+        },
+      ),
+      /catalog\/capital-v1\.sqlite\.gz uploaded checksum mismatch/,
+    );
+
+    assert.deepEqual(
+      server.requests.map((request) => `${request.method} ${request.path}`),
+      [
+        "PUT /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+        "HEAD /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+      ],
+    );
+    assert.equal(server.objects.has("catalog/current.json"), false);
+  } finally {
+    await server.close();
+  }
 });
 
 test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 기준으로 정규화한다", async () => {
@@ -2256,6 +2412,82 @@ test("공식 source ingest adapter는 중복 CLI 인자를 거부한다", async 
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function objectStorageEnv(origin) {
+  return {
+    ...process.env,
+    EASYSUBWAY_OBJECT_STORAGE_ENDPOINT: origin,
+    EASYSUBWAY_DATAPACK_BUCKET: "easysubway-datapacks",
+    EASYSUBWAY_OBJECT_STORAGE_REGION: "ap-northeast-2",
+    EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY: "test-access-key",
+    EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY: "test-secret-key",
+  };
+}
+
+async function startObjectStorageServer() {
+  const requests = [];
+  const objects = new Map();
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks);
+      const url = new URL(request.url, "http://127.0.0.1");
+      const key = decodeURIComponent(url.pathname.replace(/^\/easysubway-datapacks\/?/, ""));
+      requests.push({
+        method: request.method,
+        path: url.pathname,
+        authorization: request.headers.authorization,
+        contentSha256: request.headers["x-amz-content-sha256"],
+      });
+
+      if (!request.headers.authorization) {
+        response.writeHead(403);
+        response.end("missing authorization");
+        return;
+      }
+
+      if (request.method === "PUT") {
+        objects.set(key, {
+          body,
+          sha256: sha256(body),
+          sizeBytes: body.length,
+          metadataSha256: request.headers["x-amz-meta-sha256"],
+        });
+        response.writeHead(200, { etag: `"${sha256(body).slice(0, 32)}"` });
+        response.end();
+        return;
+      }
+
+      if (request.method === "HEAD") {
+        const object = objects.get(key);
+        if (!object) {
+          response.writeHead(404);
+          response.end();
+          return;
+        }
+        response.writeHead(200, {
+          "content-length": String(object.sizeBytes),
+          "x-amz-meta-sha256": object.metadataSha256,
+        });
+        response.end();
+        return;
+      }
+
+      response.writeHead(405);
+      response.end("method not allowed");
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    requests,
+    objects,
+    close: () => new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+  };
 }
 
 function sourceIngestInput() {
