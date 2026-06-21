@@ -928,15 +928,19 @@ function representativeRouteRegressionSignaturePayload(pack) {
 }
 
 function representativeRouteRegressionPayload(routes) {
-  return JSON.stringify(
-    routes.map((route) => ({
-      id: route.id,
-      pattern: route.pattern,
-      fromNodeId: route.fromNodeId,
-      toNodeId: route.toNodeId,
-      requiredEdgeIds: route.requiredEdgeIds,
-    })),
-  );
+  return JSON.stringify(canonicalRepresentativeRouteRegressions(routes));
+}
+
+function canonicalRepresentativeRouteRegressions(routes) {
+  return routes.map((route) => ({
+    id: requiredString(route.id, "representativeRouteRegressions.id"),
+    pattern: requiredString(route.pattern, "representativeRouteRegressions.pattern"),
+    fromNodeId: requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId"),
+    toNodeId: requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId"),
+    requiredEdgeIds: route.requiredEdgeIds.map((edgeId) =>
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds"),
+    ),
+  }));
 }
 
 function canonicalProductionPackUrl(packUrl) {

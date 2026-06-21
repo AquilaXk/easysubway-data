@@ -39,6 +39,9 @@ async function main() {
     const compressedSha256 = sha256(compressedBytes);
     const sqliteSha256 = sha256(sqliteBytes);
     const sizeBytes = compressedBytes.length;
+    const representativeRouteRegressions = canonicalRepresentativeRouteRegressions(
+      pack.representativeRouteRegressions,
+    );
 
     manifestPacks.push({
       id: pack.id,
@@ -60,7 +63,7 @@ async function main() {
       schemaVersion: pack.schemaVersion,
       sourceInventory: pack.sourceInventory,
       regionalQualityMetrics: regionalQualityMetrics(pack),
-      representativeRouteRegressions: pack.representativeRouteRegressions,
+      representativeRouteRegressions,
       representativeRouteRegressionSignature: representativeRouteRegressionSignature({
         id: pack.id,
         version: pack.version,
@@ -69,7 +72,7 @@ async function main() {
         sha256: compressedSha256,
         sqliteSha256,
         sizeBytes,
-        representativeRouteRegressions: pack.representativeRouteRegressions,
+        representativeRouteRegressions,
       }),
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
@@ -177,15 +180,19 @@ function representativeRouteRegressionSignaturePayload(pack) {
 }
 
 function representativeRouteRegressionPayload(routes) {
-  return JSON.stringify(
-    routes.map((route) => ({
-      id: route.id,
-      pattern: route.pattern,
-      fromNodeId: route.fromNodeId,
-      toNodeId: route.toNodeId,
-      requiredEdgeIds: route.requiredEdgeIds,
-    })),
-  );
+  return JSON.stringify(canonicalRepresentativeRouteRegressions(routes));
+}
+
+function canonicalRepresentativeRouteRegressions(routes) {
+  return routes.map((route) => ({
+    id: requiredString(route.id, "representativeRouteRegressions.id"),
+    pattern: requiredString(route.pattern, "representativeRouteRegressions.pattern"),
+    fromNodeId: requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId"),
+    toNodeId: requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId"),
+    requiredEdgeIds: route.requiredEdgeIds.map((edgeId) =>
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds"),
+    ),
+  }));
 }
 
 function canonicalProductionPackUrl(packUrl) {
