@@ -88,7 +88,7 @@ function validateSqlite(sqlitePath, pack) {
       }
     }
 
-    validateNetworkEdgeFacilityReferences(database, pack);
+    validateNetworkEdgeReferences(database, pack);
 
     for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows ?? {})) {
       const row = database.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get();
@@ -98,6 +98,100 @@ function validateSqlite(sqlitePath, pack) {
     }
   } finally {
     database.close();
+  }
+}
+
+function validateNetworkEdgeReferences(database, pack) {
+  validateNetworkEdgeStationLineEndpoints(database, pack);
+  validateNetworkEdgeFacilityReferences(database, pack);
+}
+
+function validateNetworkEdgeStationLineEndpoints(database, pack) {
+  if (!hasTable(database, "station_lines") || !hasTable(database, "network_edges")) {
+    return;
+  }
+  const stationLineRows = database
+    .prepare("SELECT station_id, line_id FROM station_lines")
+    .all();
+  const stationLineNodes = new Set(
+    stationLineRows.map((row) => stationLineNodeId(row.station_id, row.line_id)),
+  );
+  if (stationLineNodes.size === 0) {
+    return;
+  }
+  const routeGraphRequiredNodes = connectedLineNodes(stationLineRows);
+
+  const connectedNodes = new Set();
+  const adjacency = new Map(
+    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const edges = database
+    .prepare("SELECT id, from_node_id, to_node_id FROM network_edges ORDER BY id")
+    .all();
+  for (const edge of edges) {
+    for (const endpoint of [edge.from_node_id, edge.to_node_id]) {
+      if (!stationLineNodes.has(endpoint)) {
+        throw new Error(
+          `${pack.id}@${pack.version} network_edges endpoint references missing station-line: ${edge.id} -> ${endpoint}`,
+        );
+      }
+      connectedNodes.add(endpoint);
+    }
+    if (routeGraphRequiredNodes.has(edge.from_node_id) && routeGraphRequiredNodes.has(edge.to_node_id)) {
+      adjacency.get(edge.from_node_id).add(edge.to_node_id);
+      adjacency.get(edge.to_node_id).add(edge.from_node_id);
+    }
+  }
+
+  for (const nodeId of routeGraphRequiredNodes) {
+    if (!connectedNodes.has(nodeId)) {
+      throw new Error(`${pack.id}@${pack.version} station-line node is isolated from route graph: ${nodeId}`);
+    }
+  }
+  validateRouteGraphSingleComponent(adjacency, pack);
+}
+
+function stationLineNodeId(stationId, lineId) {
+  return `${stationId}:${lineId}`;
+}
+
+function connectedLineNodes(stationLineRows) {
+  const lineCounts = new Map();
+  for (const row of stationLineRows) {
+    lineCounts.set(row.line_id, (lineCounts.get(row.line_id) ?? 0) + 1);
+  }
+  return new Set(
+    stationLineRows
+      .filter((row) => (lineCounts.get(row.line_id) ?? 0) > 1)
+      .map((row) => stationLineNodeId(row.station_id, row.line_id)),
+  );
+}
+
+function validateRouteGraphSingleComponent(adjacency, pack) {
+  const [startNode] = adjacency.keys();
+  if (!startNode) {
+    return;
+  }
+
+  const visited = new Set();
+  const stack = [startNode];
+  while (stack.length > 0) {
+    const nodeId = stack.pop();
+    if (visited.has(nodeId)) {
+      continue;
+    }
+    visited.add(nodeId);
+    for (const nextNodeId of adjacency.get(nodeId) ?? []) {
+      if (!visited.has(nextNodeId)) {
+        stack.push(nextNodeId);
+      }
+    }
+  }
+
+  for (const nodeId of adjacency.keys()) {
+    if (!visited.has(nodeId)) {
+      throw new Error(`${pack.id}@${pack.version} route graph has disconnected component: ${nodeId}`);
+    }
   }
 }
 
