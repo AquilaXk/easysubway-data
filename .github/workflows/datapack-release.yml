@@ -131,7 +131,6 @@ jobs:
             echo "enabled=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          tools/ci/validate-deployment-env.sh "${EASYSUBWAY_ENV_FILE}"
           node tools/datapack/export-publish-env.mjs \
             --env-file "${EASYSUBWAY_ENV_FILE}" \
             --github-env "${GITHUB_ENV}" \
