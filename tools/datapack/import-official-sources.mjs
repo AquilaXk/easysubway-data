@@ -29,13 +29,7 @@ function buildFixture(inventory, input) {
   const mappingBySourceKey = stationMappingBySourceKey(input.stationMappings, allowedSourceIds, retiredStationIds);
   const stationRows = stationLineRows(input.stationLineRows, allowedSourceIds, mappingBySourceKey);
   const stations = normalizedStations(stationRows);
-  const stationLines = stationRows.map(({ row, mapping }) => ({
-    stationId: mapping.stationId,
-    lineId: mapping.lineId,
-    stationCode: requiredString(row.stationCode ?? row.sourceStationCode, "stationLineRows.stationCode"),
-    lineSequence: requiredInteger(row.lineSequence, "stationLineRows.lineSequence"),
-    platformInfo: row.platformInfo ?? "",
-  }));
+  const stationLines = normalizedStationLines(stationRows);
 
   return {
     manifest: input.manifest,
@@ -243,6 +237,35 @@ function normalizedStations(stationRows) {
     stations.set(station.id, existing ?? station);
   }
   return [...stations.values()];
+}
+
+function normalizedStationLines(stationRows) {
+  const stationLines = new Map();
+  for (const { row, mapping } of stationRows) {
+    const stationLine = {
+      stationId: mapping.stationId,
+      lineId: mapping.lineId,
+      stationCode: requiredString(row.stationCode ?? row.sourceStationCode, "stationLineRows.stationCode"),
+      lineSequence: requiredInteger(row.lineSequence, "stationLineRows.lineSequence"),
+      platformInfo: row.platformInfo ?? "",
+    };
+    const key = `${stationLine.stationId}:${stationLine.lineId}`;
+    const existing = stationLines.get(key);
+    if (existing) {
+      assertSameStationLine(existing, stationLine, key);
+      continue;
+    }
+    stationLines.set(key, stationLine);
+  }
+  return [...stationLines.values()];
+}
+
+function assertSameStationLine(existing, next, key) {
+  for (const field of ["stationCode", "lineSequence", "platformInfo"]) {
+    if (existing[field] !== next[field]) {
+      throw new Error(`station line mapping conflict: ${key}.${field}`);
+    }
+  }
 }
 
 function stationAliases(stationMappings, mappingBySourceKey) {
