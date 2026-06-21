@@ -1,0 +1,129 @@
+#!/usr/bin/env node
+import { appendFile, readFile } from "node:fs/promises";
+
+const exportedNames = [
+  "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT",
+  "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY",
+  "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY",
+  "EASYSUBWAY_OBJECT_STORAGE_REGION",
+  "EASYSUBWAY_DATAPACK_BUCKET",
+];
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const envFile = requireArg(args, "env-file");
+  const githubEnv = requireArg(args, "github-env");
+  const githubOutput = requireArg(args, "github-output");
+  const env = parseDotenv(await readFile(envFile, "utf8"));
+
+  if (env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_ENABLED !== "true") {
+    await appendFile(githubEnv, "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled\n");
+    await appendFile(githubOutput, "enabled=false\n");
+    return;
+  }
+
+  requireHttpsPublicUrl(env.EASYSUBWAY_DATA_PACK_BASE_URL, "EASYSUBWAY_DATA_PACK_BASE_URL");
+  requireHttpsPublicUrl(env.EASYSUBWAY_OBJECT_STORAGE_ENDPOINT, "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT");
+  requireSafeSegment(env.EASYSUBWAY_DATAPACK_BUCKET, "EASYSUBWAY_DATAPACK_BUCKET");
+
+  for (const name of exportedNames) {
+    requireNonEmpty(env[name], name);
+  }
+
+  const lines = [
+    "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled",
+    ...exportedNames.map((name) => `${name}=${env[name]}`),
+  ];
+  await appendFile(githubEnv, `${lines.join("\n")}\n`);
+  await appendFile(githubOutput, "enabled=true\n");
+}
+
+function parseDotenv(source) {
+  const values = {};
+  for (const line of source.split(/\r?\n/)) {
+    if (!line || line.trimStart().startsWith("#")) {
+      continue;
+    }
+    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (!match) {
+      continue;
+    }
+    values[match[1]] = unquote(match[2]);
+  }
+  return values;
+}
+
+function unquote(value) {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith("\"") && trimmed.endsWith("\""))
+    || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return value;
+}
+
+function requireHttpsPublicUrl(value, name) {
+  requireNonEmpty(value, name);
+  const url = new URL(value);
+  if (url.protocol !== "https:" || isLocalHost(url.hostname)) {
+    throw new Error(`${name} must be an HTTPS public URL`);
+  }
+  return url;
+}
+
+function isLocalHost(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    normalized === "localhost"
+    || normalized === "::1"
+    || normalized === "0.0.0.0"
+    || normalized.startsWith("127.")
+    || normalized.endsWith(".localhost")
+  );
+}
+
+function requireSafeSegment(value, name) {
+  requireNonEmpty(value, name);
+  if (!/^[A-Za-z0-9._-]+$/.test(value) || value === "." || value === "..") {
+    throw new Error(`${name} must be a safe object storage segment`);
+  }
+}
+
+function parseArgs(argv) {
+  const args = new Map();
+  for (let index = 0; index < argv.length; index += 1) {
+    const key = argv[index];
+    const value = argv[index + 1];
+    if (!key?.startsWith("--") || value === undefined || value.startsWith("--")) {
+      throw new Error(`invalid argument near ${key ?? "<end>"}`);
+    }
+    const normalized = key.slice(2);
+    if (args.has(normalized)) {
+      throw new Error(`duplicate argument: ${key}`);
+    }
+    args.set(normalized, value);
+    index += 1;
+  }
+  return args;
+}
+
+function requireArg(args, name) {
+  const value = args.get(name);
+  if (!value) {
+    throw new Error(`missing required argument: --${name}`);
+  }
+  return value;
+}
+
+function requireNonEmpty(value, name) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${name} is required`);
+  }
+}
+
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});
