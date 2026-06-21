@@ -1,6 +1,6 @@
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -239,6 +239,95 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   } finally {
     database.close();
   }
+});
+
+test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를 마지막 단계로 고정한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-publish-plan-${Date.now()}`);
+  const stageDir = path.join(tmpdir(), `easysubway-datapack-publish-stage-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(stageDir, { recursive: true, force: true });
+  await mkdir(path.join(stageDir, "catalog"), { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const pack = manifest.packs[0];
+  await copyFile(path.join(outputDir, pack.url), path.join(stageDir, pack.url));
+
+  const publishPlanPath = path.join(stageDir, "publish-plan.json");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/create-publish-plan.mjs",
+      "--manifest",
+      manifestPath,
+      "--root",
+      stageDir,
+      "--output",
+      publishPlanPath,
+    ],
+    { cwd: root },
+  );
+
+  const plan = JSON.parse(await readFile(publishPlanPath, "utf8"));
+  assert.equal(plan.schemaVersion, 1);
+  assert.equal(plan.manifestObjectKey, "catalog/current.json");
+  assert.deepEqual(plan.steps.map((step) => step.type), [
+    "put-pack-object",
+    "verify-pack-object",
+    "put-manifest-object",
+  ]);
+  assert.deepEqual(plan.steps[0], {
+    type: "put-pack-object",
+    packId: "capital",
+    packVersion: "1",
+    sourcePath: "catalog/capital-v1.sqlite.gz",
+    objectKey: "catalog/capital-v1.sqlite.gz",
+    sha256: pack.sha256,
+    sizeBytes: pack.sizeBytes,
+  });
+  assert.deepEqual(plan.steps[1], {
+    type: "verify-pack-object",
+    packId: "capital",
+    packVersion: "1",
+    objectKey: "catalog/capital-v1.sqlite.gz",
+    sha256: pack.sha256,
+    sizeBytes: pack.sizeBytes,
+  });
+  assert.equal(plan.steps[2].type, "put-manifest-object");
+  assert.equal(plan.steps[2].sourcePath, "current.json");
+  assert.equal(plan.steps[2].objectKey, "catalog/current.json");
+  assert.equal(plan.steps[2].packCount, 1);
+  assert.equal(plan.steps[2].sha256, sha256(await readFile(manifestPath)));
+
+  await writeFile(path.join(stageDir, pack.url), "corrupt pack bytes");
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/create-publish-plan.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        stageDir,
+        "--output",
+        publishPlanPath,
+      ],
+      { cwd: root },
+    ),
+    /capital@1 sizeBytes mismatch/,
+  );
 });
 
 test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 기준으로 정규화한다", async () => {
