@@ -137,6 +137,13 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
   const edges = database
     .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
     .all();
+  addGeneratedStationTransferEdges(
+    stationLineRows,
+    routeGraphRequiredNodes,
+    connectedNodes,
+    directedAdjacency,
+    undirectedAdjacency,
+  );
   for (const edge of edges) {
     const endpoints = [
       routeEndpoint(edge.from_node_id, stationIds, stationLineNodes),
@@ -148,9 +155,7 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
           `${pack.id}@${pack.version} network_edges endpoint references missing station-line or station: ${edge.id} -> ${endpoint.value}`,
         );
       }
-      if (endpoint.stationLineNode !== null) {
-        connectedNodes.add(endpoint.stationLineNode);
-      } else if (!isAccessEdge(edge.edge_type)) {
+      if (endpoint.stationLineNode === null && !isAccessEdge(edge.edge_type)) {
         throw new Error(
           `${pack.id}@${pack.version} network_edges station endpoint must be ENTRY or EXIT: ${edge.id} -> ${endpoint.value}`,
         );
@@ -158,10 +163,28 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     }
     const fromNode = endpoints[0].stationLineNode;
     const toNode = endpoints[1].stationLineNode;
-    if (routeGraphRequiredNodes.has(fromNode) && routeGraphRequiredNodes.has(toNode)) {
-      directedAdjacency.get(fromNode).add(toNode);
-      undirectedAdjacency.get(fromNode).add(toNode);
-      undirectedAdjacency.get(toNode).add(fromNode);
+    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edge.edge_type);
+    if (
+      routeGraphEdgeType !== null &&
+      routeGraphRequiredNodes.has(fromNode) &&
+      routeGraphRequiredNodes.has(toNode)
+    ) {
+      addRouteGraphEdge(
+        fromNode,
+        toNode,
+        connectedNodes,
+        directedAdjacency,
+        undirectedAdjacency,
+      );
+      if (routeGraphEdgeType === "TRANSFER") {
+        addRouteGraphEdge(
+          toNode,
+          fromNode,
+          connectedNodes,
+          directedAdjacency,
+          undirectedAdjacency,
+        );
+      }
     }
   }
 
@@ -198,8 +221,20 @@ function stationLineNodeFromRouteNodeId(nodeId) {
 }
 
 function isAccessEdge(edgeType) {
-  const normalized = String(edgeType ?? "").toUpperCase();
+  const normalized = normalizedEdgeType(edgeType);
   return normalized === "ENTRY" || normalized === "EXIT";
+}
+
+function routeGraphConnectivityEdgeType(edgeType) {
+  const normalized = normalizedEdgeType(edgeType);
+  if (normalized === "RIDE" || normalized === "TRANSFER") {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizedEdgeType(edgeType) {
+  return String(edgeType ?? "").toUpperCase();
 }
 
 function connectedLineNodes(stationLineRows) {
@@ -212,6 +247,56 @@ function connectedLineNodes(stationLineRows) {
       .filter((row) => (lineCounts.get(row.line_id) ?? 0) > 1)
       .map((row) => stationLineNodeId(row.station_id, row.line_id)),
   );
+}
+
+function addGeneratedStationTransferEdges(
+  stationLineRows,
+  routeGraphRequiredNodes,
+  connectedNodes,
+  directedAdjacency,
+  undirectedAdjacency,
+) {
+  const nodesByStation = new Map();
+  for (const row of stationLineRows) {
+    const nodeId = stationLineNodeId(row.station_id, row.line_id);
+    if (!routeGraphRequiredNodes.has(nodeId)) {
+      continue;
+    }
+    const stationNodes = nodesByStation.get(row.station_id) ?? [];
+    stationNodes.push(nodeId);
+    nodesByStation.set(row.station_id, stationNodes);
+  }
+
+  for (const stationNodes of nodesByStation.values()) {
+    for (const fromNode of stationNodes) {
+      for (const toNode of stationNodes) {
+        if (fromNode === toNode) {
+          continue;
+        }
+        addRouteGraphEdge(
+          fromNode,
+          toNode,
+          connectedNodes,
+          directedAdjacency,
+          undirectedAdjacency,
+        );
+      }
+    }
+  }
+}
+
+function addRouteGraphEdge(
+  fromNode,
+  toNode,
+  connectedNodes,
+  directedAdjacency,
+  undirectedAdjacency,
+) {
+  connectedNodes.add(fromNode);
+  connectedNodes.add(toNode);
+  directedAdjacency.get(fromNode)?.add(toNode);
+  undirectedAdjacency.get(fromNode)?.add(toNode);
+  undirectedAdjacency.get(toNode)?.add(fromNode);
 }
 
 function validateRouteGraphSingleComponent(adjacency, pack) {

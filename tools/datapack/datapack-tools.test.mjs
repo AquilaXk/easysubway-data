@@ -981,6 +981,144 @@ test("데이터팩 검증기는 역방향 route edge 누락을 거부한다", as
   );
 });
 
+test("데이터팩 검증기는 WALK edge를 route graph 연결성으로 인정하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-walk-only-route-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  for (const edge of fixture.packs[0].networkEdges) {
+    edge.edgeType = "WALK";
+  }
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root },
+    ),
+    /station-line node is isolated from route graph/,
+  );
+});
+
+test("데이터팩 검증기는 app처럼 transfer route를 양방향으로 평가한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-transfer-bidirectional-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].stations.push({
+    id: "station-gangnam",
+    nameKo: "강남",
+    nameEn: "Gangnam",
+    normalizedName: "gangnam",
+    region: "capital",
+    latitude: 37.4979,
+    longitude: 127.0276,
+    dataQualityLevel: "LEVEL_2",
+    dataSourceType: "OFFICIAL_FILE",
+    lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+  });
+  fixture.packs[0].stationLines.push({
+    stationId: "station-gangnam",
+    lineId: "seoul-2",
+    stationCode: "222",
+    lineSequence: 22,
+    platformInfo: "내선 / 외선",
+  });
+  fixture.packs[0].networkEdges.push(
+    {
+      id: "edge-sadang-gangnam-seoul-2",
+      fromNodeId: "station-sadang:seoul-2",
+      toNodeId: "station-gangnam:seoul-2",
+      durationSeconds: 180,
+      distanceMeters: 2200,
+      edgeType: "RIDE",
+      servicePattern: "LOCAL",
+      includesStairs: false,
+      stairAccessState: "STEP_FREE",
+      accessibilityStatus: "AVAILABLE",
+      reliabilityScore: 90,
+      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+    },
+    {
+      id: "edge-gangnam-sadang-seoul-2",
+      fromNodeId: "station-gangnam:seoul-2",
+      toNodeId: "station-sadang:seoul-2",
+      durationSeconds: 180,
+      distanceMeters: 2200,
+      edgeType: "RIDE",
+      servicePattern: "LOCAL",
+      includesStairs: false,
+      stairAccessState: "STEP_FREE",
+      accessibilityStatus: "AVAILABLE",
+      reliabilityScore: 90,
+      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+    },
+    {
+      id: "edge-sadang-line4-line2-transfer",
+      fromNodeId: "station-sadang:seoul-4",
+      toNodeId: "station-sadang:seoul-2",
+      durationSeconds: 140,
+      distanceMeters: 80,
+      edgeType: "TRANSFER",
+      servicePattern: "LOCAL",
+      includesStairs: false,
+      stairAccessState: "STEP_FREE",
+      accessibilityStatus: "AVAILABLE",
+      reliabilityScore: 90,
+      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+    },
+  );
+  fixture.packs[0].minimumTableRows.stations = 3;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+});
+
 test("데이터팩 검증기는 access edge와 service pattern station-line endpoint를 허용한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-service-pattern-endpoints-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
