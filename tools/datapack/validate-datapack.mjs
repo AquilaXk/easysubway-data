@@ -219,6 +219,9 @@ function stationLineNodeFromRouteNodeId(nodeId) {
   if (parts.length < 2 || parts[0] === "" || parts[1] === "") {
     return null;
   }
+  if (parts.length > 2 && parts.slice(2).some((part) => part === "")) {
+    return null;
+  }
   return stationLineNodeId(parts[0], parts[1]);
 }
 
