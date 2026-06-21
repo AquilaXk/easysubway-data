@@ -214,7 +214,7 @@ function regionalQualityMetrics(pack) {
   );
   const edgeCount = pack.networkEdges?.length ?? 0;
   const unknownAccessibilityCount = (pack.networkEdges ?? []).filter(
-    (edge) => (edge.accessibilityStatus ?? "UNKNOWN") === "UNKNOWN",
+    (edge) => normalizedAccessibilityStatus(edge.accessibilityStatus, "networkEdges.accessibilityStatus") === "UNKNOWN",
   ).length;
   return {
     stationCount,
@@ -311,6 +311,10 @@ function buildSqlitePack(sqlitePath, schema, pack) {
         pack.networkEdges ?? [],
         (row) => {
           const stairAccessState = row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN");
+          const accessibilityStatus = normalizedAccessibilityStatus(
+            row.accessibilityStatus,
+            "networkEdges.accessibilityStatus",
+          );
 
           return [
             requiredString(row.id, "networkEdges.id"),
@@ -322,7 +326,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
             row.servicePattern ?? "",
             stairAccessState === "STAIR_ONLY" ? 1 : 0,
             stairAccessState,
-            row.accessibilityStatus ?? "UNKNOWN",
+            accessibilityStatus,
             row.reliabilityScore ?? 100,
             row.facilityId ?? null,
             timestamp(row.lastVerifiedAt),
@@ -402,7 +406,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           row.slopeLevel ?? 1,
           row.widthLevel ?? 2,
           row.reliabilityScore ?? 100,
-          row.accessibilityStatus ?? "UNKNOWN",
+          normalizedAccessibilityStatus(row.accessibilityStatus, "internalRouteEdges.accessibilityStatus"),
           row.instruction ?? "",
         ],
       );
@@ -615,6 +619,10 @@ function requiredString(value, label) {
     throw new Error(`${label} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function normalizedAccessibilityStatus(value, label) {
+  return requiredString(value ?? "UNKNOWN", label).toUpperCase();
 }
 
 function requiredInteger(value, label) {
