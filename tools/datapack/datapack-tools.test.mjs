@@ -264,6 +264,8 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const pack = manifest.packs[0];
   await copyFile(path.join(outputDir, pack.url), path.join(stageDir, pack.url));
+  const stagedManifestPath = path.join(stageDir, "catalog", "current.json");
+  await copyFile(manifestPath, stagedManifestPath);
 
   const publishPlanPath = path.join(stageDir, "publish-plan.json");
   await execFileAsync(
@@ -271,7 +273,7 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
     [
       "tools/datapack/create-publish-plan.mjs",
       "--manifest",
-      manifestPath,
+      stagedManifestPath,
       "--root",
       stageDir,
       "--output",
@@ -306,19 +308,59 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
     sizeBytes: pack.sizeBytes,
   });
   assert.equal(plan.steps[2].type, "put-manifest-object");
-  assert.equal(plan.steps[2].sourcePath, "current.json");
+  assert.equal(plan.steps[2].sourcePath, "catalog/current.json");
   assert.equal(plan.steps[2].objectKey, "catalog/current.json");
   assert.equal(plan.steps[2].packCount, 1);
-  assert.equal(plan.steps[2].sha256, sha256(await readFile(manifestPath)));
+  assert.equal(plan.steps[2].sha256, sha256(await readFile(stagedManifestPath)));
+
+  const customPackBytes = Buffer.from("custom relative pack bytes");
+  const customPackPath = path.join(stageDir, "packs", "custom-capital.sqlite.gz");
+  await mkdir(path.dirname(customPackPath), { recursive: true });
+  await writeFile(customPackPath, customPackBytes);
+  await writeFile(
+    stagedManifestPath,
+    `${JSON.stringify(
+      {
+        packs: [
+          {
+            id: "capital",
+            version: "1",
+            url: "packs/custom-capital.sqlite.gz",
+            sha256: sha256(customPackBytes),
+            sizeBytes: customPackBytes.length,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/create-publish-plan.mjs",
+      "--manifest",
+      stagedManifestPath,
+      "--root",
+      stageDir,
+      "--output",
+      publishPlanPath,
+    ],
+    { cwd: root },
+  );
+  const customPlan = JSON.parse(await readFile(publishPlanPath, "utf8"));
+  assert.equal(customPlan.steps[0].sourcePath, "packs/custom-capital.sqlite.gz");
+  assert.equal(customPlan.steps[0].objectKey, "packs/custom-capital.sqlite.gz");
 
   await writeFile(path.join(stageDir, pack.url), "corrupt pack bytes");
+  await copyFile(manifestPath, stagedManifestPath);
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/create-publish-plan.mjs",
         "--manifest",
-        manifestPath,
+        stagedManifestPath,
         "--root",
         stageDir,
         "--output",

@@ -14,7 +14,7 @@ async function main() {
 
   const packPlans = [];
   for (const pack of manifest.packs) {
-    const stagedPath = stagedPackPath(pack);
+    const stagedPath = stagedPackPathForUrl(pack);
     const bytes = await readFile(path.join(root, stagedPath));
     if (bytes.length !== pack.sizeBytes) {
       throw new Error(`${pack.id}@${pack.version} sizeBytes mismatch: ${bytes.length}`);
@@ -54,7 +54,7 @@ async function main() {
       })),
       {
         type: "put-manifest-object",
-        sourcePath: path.basename(manifestPath),
+        sourcePath: "catalog/current.json",
         objectKey: "catalog/current.json",
         sha256: sha256(manifestBytes),
         sizeBytes: manifestBytes.length,
@@ -102,6 +102,38 @@ function stagedPackPath(pack) {
   const id = requiredSafePathSegment(pack.id, "pack.id");
   const version = requiredSafePathSegment(pack.version, "pack.version");
   return `catalog/${id}-v${version}.sqlite.gz`;
+}
+
+function stagedPackPathForUrl(pack) {
+  const packUrl = requiredString(pack.url ?? stagedPackPath(pack), "pack.url");
+  if (/^https:\/\//.test(packUrl)) {
+    return stagedPackPath(pack);
+  }
+  return safeRelativeObjectPath(packUrl, "pack.url");
+}
+
+function requiredString(value, label) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function safeRelativeObjectPath(value, label) {
+  if (/%[0-9a-f]{2}/i.test(value)) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) || value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  if (value.split("/").includes("..")) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  const normalized = path.posix.normalize(value);
+  if (normalized === "." || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
+    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
+  }
+  return normalized;
 }
 
 function requiredSafePathSegment(value, label) {
