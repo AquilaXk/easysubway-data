@@ -145,6 +145,7 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     undirectedAdjacency,
   );
   for (const edge of edges) {
+    const edgeType = normalizedEdgeType(edge.edge_type);
     const endpoints = [
       routeEndpoint(edge.from_node_id, stationIds, stationLineNodes),
       routeEndpoint(edge.to_node_id, stationIds, stationLineNodes),
@@ -155,15 +156,16 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
           `${pack.id}@${pack.version} network_edges endpoint references missing station-line or station: ${edge.id} -> ${endpoint.value}`,
         );
       }
-      if (endpoint.stationLineNode === null && !isAccessEdge(edge.edge_type)) {
+      if (endpoint.stationLineNode === null && !isAccessEdge(edgeType)) {
         throw new Error(
           `${pack.id}@${pack.version} network_edges station endpoint must be ENTRY or EXIT: ${edge.id} -> ${endpoint.value}`,
         );
       }
     }
+    validateAccessEdgeEndpointShape(edge, edgeType, endpoints, pack);
     const fromNode = endpoints[0].stationLineNode;
     const toNode = endpoints[1].stationLineNode;
-    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edge.edge_type);
+    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edgeType);
     if (
       routeGraphEdgeType !== null &&
       routeGraphRequiredNodes.has(fromNode) &&
@@ -223,6 +225,22 @@ function stationLineNodeFromRouteNodeId(nodeId) {
 function isAccessEdge(edgeType) {
   const normalized = normalizedEdgeType(edgeType);
   return normalized === "ENTRY" || normalized === "EXIT";
+}
+
+function validateAccessEdgeEndpointShape(edge, edgeType, endpoints, pack) {
+  if (edgeType === "ENTRY") {
+    if (endpoints[0].stationLineNode !== null || endpoints[1].stationLineNode === null) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge must connect station and station-line: ${edge.id}`,
+      );
+    }
+  } else if (edgeType === "EXIT") {
+    if (endpoints[0].stationLineNode === null || endpoints[1].stationLineNode !== null) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge must connect station and station-line: ${edge.id}`,
+      );
+    }
+  }
 }
 
 function routeGraphConnectivityEdgeType(edgeType) {
