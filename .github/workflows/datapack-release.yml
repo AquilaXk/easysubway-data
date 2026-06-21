@@ -153,6 +153,43 @@ jobs:
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
+      - name: Data Pack Release / Write observability metadata
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
+          node - <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const stage = process.env.EASYSUBWAY_DATAPACK_STAGE;
+          const manifestPath = path.join(stage, "catalog", "current.json");
+          let packVersion = "missing";
+          let sourceUpdatedAt = "missing";
+          if (fs.existsSync(manifestPath)) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            packVersion = manifest.version ?? manifest.manifestVersion ?? "unknown";
+            const updatedAtValues = (manifest.packs ?? [])
+              .flatMap((pack) => pack.sourceInventory ?? [])
+              .map((source) => source.updatedAt ?? source.observedDataUpdatedAt)
+              .filter(Boolean)
+              .sort();
+            sourceUpdatedAt = updatedAtValues.at(-1) ?? "unknown";
+          }
+          const remotePublishEnabled = "${{ steps.remote-publish-env.outputs.enabled }}";
+          const publishResult = remotePublishEnabled === "true" && process.env.GITHUB_REF === "refs/heads/main"
+            ? "attempted"
+            : "disabled-or-skipped";
+          const lines = [
+            `commit=${process.env.GITHUB_SHA ?? "unknown"}`,
+            `pack_version=${packVersion}`,
+            `source_updated_at=${sourceUpdatedAt}`,
+            `remote_publish_enabled=${remotePublishEnabled || "false"}`,
+            `publish_result=${publishResult}`,
+          ];
+          fs.writeFileSync(path.join(stage, "datapack-observability.txt"), `${lines.join("\n")}\n`);
+          NODE
+
       - name: Data Pack Release / Upload staged data packs
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
