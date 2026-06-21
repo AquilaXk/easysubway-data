@@ -152,6 +152,7 @@ jobs:
           node tools/datapack/publish-object-storage.mjs \
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=success" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Write observability metadata
         if: ${{ always() }}
@@ -168,7 +169,15 @@ jobs:
           let sourceUpdatedAt = "missing";
           if (fs.existsSync(manifestPath)) {
             const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-            packVersion = manifest.version ?? manifest.manifestVersion ?? "unknown";
+            const activePack = manifest.activePack;
+            const fallbackPack = (manifest.packs ?? [])[0];
+            if (activePack?.id && activePack?.version) {
+              packVersion = `${activePack.id}@${activePack.version}`;
+            } else if (fallbackPack?.id && fallbackPack?.version) {
+              packVersion = `${fallbackPack.id}@${fallbackPack.version}`;
+            } else {
+              packVersion = "unknown";
+            }
             const updatedAtValues = (manifest.packs ?? [])
               .flatMap((pack) => pack.sourceInventory ?? [])
               .map((source) => source.updatedAt ?? source.observedDataUpdatedAt)
@@ -177,8 +186,9 @@ jobs:
             sourceUpdatedAt = updatedAtValues.at(-1) ?? "unknown";
           }
           const remotePublishEnabled = "${{ steps.remote-publish-env.outputs.enabled }}";
+          const remotePublishResult = process.env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT ?? "";
           const publishResult = remotePublishEnabled === "true" && process.env.GITHUB_REF === "refs/heads/main"
-            ? "attempted"
+            ? (remotePublishResult === "success" ? "success" : "failed")
             : "disabled-or-skipped";
           const lines = [
             `commit=${process.env.GITHUB_SHA ?? "unknown"}`,
