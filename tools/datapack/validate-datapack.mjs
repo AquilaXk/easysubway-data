@@ -237,13 +237,27 @@ function validateAccessEdgeEndpointShape(edge, edgeType, endpoints, pack) {
         `${pack.id}@${pack.version} network_edges access edge must connect station and station-line: ${edge.id}`,
       );
     }
+    if (endpoints[0].value !== stationIdFromStationLineNode(endpoints[1].stationLineNode)) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge station mismatch: ${edge.id}`,
+      );
+    }
   } else if (edgeType === "EXIT") {
     if (endpoints[0].stationLineNode === null || endpoints[1].stationLineNode !== null) {
       throw new Error(
         `${pack.id}@${pack.version} network_edges access edge must connect station and station-line: ${edge.id}`,
       );
     }
+    if (stationIdFromStationLineNode(endpoints[0].stationLineNode) !== endpoints[1].value) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge station mismatch: ${edge.id}`,
+      );
+    }
   }
+}
+
+function stationIdFromStationLineNode(stationLineNode) {
+  return stationLineNode.split(":")[0];
 }
 
 function routeGraphConnectivityEdgeType(edgeType) {
