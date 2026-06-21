@@ -128,7 +128,10 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
   const routeGraphRequiredNodes = connectedLineNodes(stationLineRows);
 
   const connectedNodes = new Set();
-  const adjacency = new Map(
+  const directedAdjacency = new Map(
+    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const undirectedAdjacency = new Map(
     [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
   );
   const edges = database
@@ -156,8 +159,9 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     const fromNode = endpoints[0].stationLineNode;
     const toNode = endpoints[1].stationLineNode;
     if (routeGraphRequiredNodes.has(fromNode) && routeGraphRequiredNodes.has(toNode)) {
-      adjacency.get(fromNode).add(toNode);
-      adjacency.get(toNode).add(fromNode);
+      directedAdjacency.get(fromNode).add(toNode);
+      undirectedAdjacency.get(fromNode).add(toNode);
+      undirectedAdjacency.get(toNode).add(fromNode);
     }
   }
 
@@ -166,7 +170,8 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
       throw new Error(`${pack.id}@${pack.version} station-line node is isolated from route graph: ${nodeId}`);
     }
   }
-  validateRouteGraphSingleComponent(adjacency, pack);
+  validateRouteGraphSingleComponent(undirectedAdjacency, pack);
+  validateRouteGraphDirectedReachability(directedAdjacency, pack);
 }
 
 function stationLineNodeId(stationId, lineId) {
@@ -235,6 +240,37 @@ function validateRouteGraphSingleComponent(adjacency, pack) {
       throw new Error(`${pack.id}@${pack.version} route graph has disconnected component: ${nodeId}`);
     }
   }
+}
+
+function validateRouteGraphDirectedReachability(adjacency, pack) {
+  for (const startNode of adjacency.keys()) {
+    const visited = reachableNodesFrom(startNode, adjacency);
+    for (const nodeId of adjacency.keys()) {
+      if (!visited.has(nodeId)) {
+        throw new Error(
+          `${pack.id}@${pack.version} route graph has unreachable directed path: ${startNode} -> ${nodeId}`,
+        );
+      }
+    }
+  }
+}
+
+function reachableNodesFrom(startNode, adjacency) {
+  const visited = new Set();
+  const stack = [startNode];
+  while (stack.length > 0) {
+    const nodeId = stack.pop();
+    if (visited.has(nodeId)) {
+      continue;
+    }
+    visited.add(nodeId);
+    for (const nextNodeId of adjacency.get(nodeId) ?? []) {
+      if (!visited.has(nextNodeId)) {
+        stack.push(nextNodeId);
+      }
+    }
+  }
+  return visited;
 }
 
 function validateNetworkEdgeFacilityReferences(database, pack) {

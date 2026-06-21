@@ -940,6 +940,47 @@ test("데이터팩 검증기는 분리된 route graph component를 거부한다"
   );
 });
 
+test("데이터팩 검증기는 역방향 route edge 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-one-way-route-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].networkEdges = fixture.packs[0].networkEdges.filter(
+    (edge) => edge.id !== "edge-sadang-sangnoksu-seoul-4",
+  );
+  fixture.packs[0].minimumTableRows.network_edges = 1;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root },
+    ),
+    /route graph has unreachable directed path/,
+  );
+});
+
 test("데이터팩 검증기는 access edge와 service pattern station-line endpoint를 허용한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-service-pattern-endpoints-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
