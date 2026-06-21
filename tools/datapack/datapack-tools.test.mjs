@@ -940,6 +940,84 @@ test("데이터팩 검증기는 분리된 route graph component를 거부한다"
   );
 });
 
+test("데이터팩 검증기는 access edge와 service pattern station-line endpoint를 허용한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-service-pattern-endpoints-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].networkEdges.push(
+    {
+      id: "entry-sangnoksu-line4-local",
+      fromNodeId: "station-sangnoksu",
+      toNodeId: "station-sangnoksu:seoul-4:LOCAL",
+      durationSeconds: 90,
+      distanceMeters: 20,
+      edgeType: "ENTRY",
+      servicePattern: "LOCAL",
+      includesStairs: false,
+      stairAccessState: "STEP_FREE",
+      accessibilityStatus: "AVAILABLE",
+      reliabilityScore: 90,
+      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+    },
+    {
+      id: "ride-sangnoksu-sadang-line4-local",
+      fromNodeId: "station-sangnoksu:seoul-4:LOCAL",
+      toNodeId: "station-sadang:seoul-4:LOCAL",
+      durationSeconds: 420,
+      distanceMeters: 18600,
+      edgeType: "RIDE",
+      servicePattern: "LOCAL",
+      includesStairs: false,
+      stairAccessState: "STEP_FREE",
+      accessibilityStatus: "AVAILABLE",
+      reliabilityScore: 90,
+      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+    },
+    {
+      id: "exit-sadang-line4-local",
+      fromNodeId: "station-sadang:seoul-4:LOCAL",
+      toNodeId: "station-sadang",
+      durationSeconds: 60,
+      distanceMeters: 15,
+      edgeType: "EXIT",
+      servicePattern: "LOCAL",
+      includesStairs: false,
+      stairAccessState: "STEP_FREE",
+      accessibilityStatus: "AVAILABLE",
+      reliabilityScore: 90,
+      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+    },
+  );
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+});
+
 test("데이터팩 생성기는 stairAccessState 계단 전용 값을 legacy flag에 반영한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-stair-legacy-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");

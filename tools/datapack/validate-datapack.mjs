@@ -113,6 +113,12 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
   const stationLineRows = database
     .prepare("SELECT station_id, line_id FROM station_lines")
     .all();
+  const stationIds = new Set(
+    database
+      .prepare("SELECT id FROM stations")
+      .all()
+      .map((row) => row.id),
+  );
   const stationLineNodes = new Set(
     stationLineRows.map((row) => stationLineNodeId(row.station_id, row.line_id)),
   );
@@ -126,20 +132,32 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
   );
   const edges = database
-    .prepare("SELECT id, from_node_id, to_node_id FROM network_edges ORDER BY id")
+    .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
     .all();
   for (const edge of edges) {
-    for (const endpoint of [edge.from_node_id, edge.to_node_id]) {
-      if (!stationLineNodes.has(endpoint)) {
+    const endpoints = [
+      routeEndpoint(edge.from_node_id, stationIds, stationLineNodes),
+      routeEndpoint(edge.to_node_id, stationIds, stationLineNodes),
+    ];
+    for (const endpoint of endpoints) {
+      if (!endpoint.valid) {
         throw new Error(
-          `${pack.id}@${pack.version} network_edges endpoint references missing station-line: ${edge.id} -> ${endpoint}`,
+          `${pack.id}@${pack.version} network_edges endpoint references missing station-line or station: ${edge.id} -> ${endpoint.value}`,
         );
       }
-      connectedNodes.add(endpoint);
+      if (endpoint.stationLineNode !== null) {
+        connectedNodes.add(endpoint.stationLineNode);
+      } else if (!isAccessEdge(edge.edge_type)) {
+        throw new Error(
+          `${pack.id}@${pack.version} network_edges station endpoint must be ENTRY or EXIT: ${edge.id} -> ${endpoint.value}`,
+        );
+      }
     }
-    if (routeGraphRequiredNodes.has(edge.from_node_id) && routeGraphRequiredNodes.has(edge.to_node_id)) {
-      adjacency.get(edge.from_node_id).add(edge.to_node_id);
-      adjacency.get(edge.to_node_id).add(edge.from_node_id);
+    const fromNode = endpoints[0].stationLineNode;
+    const toNode = endpoints[1].stationLineNode;
+    if (routeGraphRequiredNodes.has(fromNode) && routeGraphRequiredNodes.has(toNode)) {
+      adjacency.get(fromNode).add(toNode);
+      adjacency.get(toNode).add(fromNode);
     }
   }
 
@@ -153,6 +171,30 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
 
 function stationLineNodeId(stationId, lineId) {
   return `${stationId}:${lineId}`;
+}
+
+function routeEndpoint(value, stationIds, stationLineNodes) {
+  if (stationIds.has(value)) {
+    return { valid: true, value, stationLineNode: null };
+  }
+  const stationLineNode = stationLineNodeFromRouteNodeId(value);
+  if (stationLineNode !== null && stationLineNodes.has(stationLineNode)) {
+    return { valid: true, value, stationLineNode };
+  }
+  return { valid: false, value, stationLineNode: null };
+}
+
+function stationLineNodeFromRouteNodeId(nodeId) {
+  const parts = nodeId.split(":");
+  if (parts.length < 2 || parts[0] === "" || parts[1] === "") {
+    return null;
+  }
+  return stationLineNodeId(parts[0], parts[1]);
+}
+
+function isAccessEdge(edgeType) {
+  const normalized = String(edgeType ?? "").toUpperCase();
+  return normalized === "ENTRY" || normalized === "EXIT";
 }
 
 function connectedLineNodes(stationLineRows) {
