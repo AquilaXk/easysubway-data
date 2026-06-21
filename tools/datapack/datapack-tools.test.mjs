@@ -944,6 +944,32 @@ test("데이터팩 검증기는 invalid emergencyOverride를 거부한다", asyn
   );
 });
 
+test("source inventory 검증기는 required source의 라이선스와 갱신일 누락을 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  invalidInventory.sources[0].license.type = "";
+  invalidInventory.sources[1].observedDataUpdatedAt = "";
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /license.type is required|observedDataUpdatedAt is required/,
+  );
+});
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
