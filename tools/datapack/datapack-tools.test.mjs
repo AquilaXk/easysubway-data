@@ -1864,8 +1864,324 @@ test("source inventory 검증기는 알 수 없는 라이선스 유형을 거부
   );
 });
 
+test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pack을 만든다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-${Date.now()}`);
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(sourceIngestInput(), null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const packOutputDir = path.join(outputDir, "pack");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      outputPath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const generated = JSON.parse(await readFile(outputPath, "utf8"));
+  const pack = generated.packs[0];
+  assert.equal(pack.artifactKind, "fixture");
+  assert.equal(pack.sourceInventory.length, 2);
+  assert.equal(pack.sourceInventory[0].licenseStatus, "redistributable");
+  assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-21T00:00:00.000Z");
+  assert.deepEqual(
+    pack.stations.map((station) => station.id),
+    ["station-sangnoksu", "station-sadang"],
+  );
+  assert.deepEqual(
+    pack.stationLines.map((stationLine) => `${stationLine.stationId}:${stationLine.lineId}`),
+    ["station-sangnoksu:seoul-4", "station-sadang:seoul-4"],
+  );
+  assert.deepEqual(pack.networkEdges[0], {
+    id: "edge-sangnoksu-sadang-seoul-4",
+    fromNodeId: "station-sangnoksu:seoul-4",
+    toNodeId: "station-sadang:seoul-4",
+    durationSeconds: 420,
+    distanceMeters: 18600,
+    edgeType: "RIDE",
+    servicePattern: "LOCAL",
+    includesStairs: false,
+    stairAccessState: "STEP_FREE",
+    accessibilityStatus: "AVAILABLE",
+    reliabilityScore: 90,
+    lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+  });
+});
+
+test("공식 source ingest adapter는 mapping 없는 source row를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-missing-mapping-${Date.now()}`);
+  const input = sourceIngestInput();
+  input.stationLineRows[0].sourceStationCode = "missing-code";
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        inputPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root },
+    ),
+    /source mapping missing: seoulmetro-station-line-info:missing-code:seoul-4/,
+  );
+});
+
+test("공식 source ingest adapter는 retired station id 재사용을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-retired-id-${Date.now()}`);
+  const input = sourceIngestInput();
+  input.stationMappings[0].stationId = "station-retired-demo";
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        inputPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root },
+    ),
+    /station id reuse is forbidden: station-retired-demo/,
+  );
+});
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function sourceIngestInput() {
+  return {
+    schemaVersion: 1,
+    region: "capital",
+    pack: {
+      id: "capital",
+      version: "1",
+      schemaVersion: "1",
+      artifactKind: "fixture",
+      url: "catalog/capital-v1.sqlite.gz",
+    },
+    manifest: {
+      ttlSeconds: 3600,
+      activePack: {
+        id: "capital",
+        version: "1",
+      },
+    },
+    sourceIds: [
+      "seoulmetro-station-line-info",
+      "seoul-realtime-arrival-station-info",
+    ],
+    retiredStationIds: [
+      {
+        stationId: "station-retired-demo",
+        reason: "closed",
+        replacementStationId: "station-sadang",
+      },
+    ],
+    operators: [
+      {
+        id: "seoul-metro",
+        nameKo: "서울교통공사",
+        nameEn: "Seoul Metro",
+      },
+    ],
+    lines: [
+      {
+        id: "seoul-4",
+        operatorId: "seoul-metro",
+        nameKo: "수도권 4호선",
+        nameEn: "Seoul Subway Line 4",
+        color: "#00A5DE",
+      },
+    ],
+    stationMappings: [
+      {
+        sourceId: "seoulmetro-station-line-info",
+        sourceStationCode: "448",
+        lineId: "seoul-4",
+        stationId: "station-sangnoksu",
+        stationLineId: "station-sangnoksu:seoul-4",
+        mappingStatus: "active",
+      },
+      {
+        sourceId: "seoulmetro-station-line-info",
+        sourceStationCode: "433",
+        lineId: "seoul-4",
+        stationId: "station-sadang",
+        stationLineId: "station-sadang:seoul-4",
+        mappingStatus: "renamed",
+        previousNames: ["총신대입구"],
+      },
+    ],
+    stationLineRows: [
+      {
+        sourceId: "seoulmetro-station-line-info",
+        sourceStationCode: "448",
+        lineId: "seoul-4",
+        stationNameKo: "상록수",
+        stationNameEn: "Sangnoksu",
+        normalizedName: "상록수",
+        region: "수도권",
+        latitude: 37.3028,
+        longitude: 126.8666,
+        stationCode: "448",
+        lineSequence: 48,
+        platformInfo: "당고개 방면 / 오이도 방면",
+        lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+      },
+      {
+        sourceId: "seoulmetro-station-line-info",
+        sourceStationCode: "433",
+        lineId: "seoul-4",
+        stationNameKo: "사당",
+        stationNameEn: "Sadang",
+        normalizedName: "사당",
+        region: "수도권",
+        latitude: 37.4766,
+        longitude: 126.9816,
+        stationCode: "433",
+        lineSequence: 33,
+        platformInfo: "당고개 방면 / 오이도 방면",
+        lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+      },
+    ],
+    routeEdges: [
+      {
+        id: "edge-sangnoksu-sadang-seoul-4",
+        sourceId: "seoulmetro-station-line-info",
+        from: {
+          sourceId: "seoulmetro-station-line-info",
+          sourceStationCode: "448",
+          lineId: "seoul-4",
+        },
+        to: {
+          sourceId: "seoulmetro-station-line-info",
+          sourceStationCode: "433",
+          lineId: "seoul-4",
+        },
+        durationSeconds: 420,
+        distanceMeters: 18600,
+        edgeType: "RIDE",
+        servicePattern: "LOCAL",
+        includesStairs: false,
+        stairAccessState: "STEP_FREE",
+        accessibilityStatus: "AVAILABLE",
+        reliabilityScore: 90,
+        lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+      },
+      {
+        id: "edge-sadang-sangnoksu-seoul-4",
+        sourceId: "seoulmetro-station-line-info",
+        from: {
+          sourceId: "seoulmetro-station-line-info",
+          sourceStationCode: "433",
+          lineId: "seoul-4",
+        },
+        to: {
+          sourceId: "seoulmetro-station-line-info",
+          sourceStationCode: "448",
+          lineId: "seoul-4",
+        },
+        durationSeconds: 420,
+        distanceMeters: 18600,
+        edgeType: "RIDE",
+        servicePattern: "LOCAL",
+        includesStairs: false,
+        stairAccessState: "STEP_FREE",
+        accessibilityStatus: "AVAILABLE",
+        reliabilityScore: 90,
+        lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+      },
+    ],
+    representativeRouteRegressions: [
+      {
+        id: "direct-local-capital",
+        pattern: "DIRECT",
+        fromNodeId: "station-sangnoksu:seoul-4",
+        toNodeId: "station-sadang:seoul-4",
+        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
+      },
+      {
+        id: "transfer-capital",
+        pattern: "TRANSFER",
+        fromNodeId: "station-sangnoksu:seoul-4",
+        toNodeId: "station-sadang:seoul-4",
+        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
+      },
+      {
+        id: "multi-transfer-capital",
+        pattern: "MULTI_TRANSFER",
+        fromNodeId: "station-sangnoksu:seoul-4",
+        toNodeId: "station-sadang:seoul-4",
+        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
+      },
+      {
+        id: "loop-branch-capital",
+        pattern: "LOOP_BRANCH",
+        fromNodeId: "station-sangnoksu:seoul-4",
+        toNodeId: "station-sadang:seoul-4",
+        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
+      },
+      {
+        id: "express-local-capital",
+        pattern: "EXPRESS_LOCAL",
+        fromNodeId: "station-sangnoksu:seoul-4",
+        toNodeId: "station-sadang:seoul-4",
+        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
+      },
+    ],
+  };
 }
 
 function packSignaturePayload(pack) {
