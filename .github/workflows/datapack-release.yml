@@ -152,6 +152,55 @@ jobs:
           node tools/datapack/publish-object-storage.mjs \
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=success" >> "${GITHUB_ENV}"
+
+      - name: Data Pack Release / Write observability metadata
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
+          node - <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const stage = process.env.EASYSUBWAY_DATAPACK_STAGE;
+          const manifestPath = path.join(stage, "catalog", "current.json");
+          let packVersion = "missing";
+          let sourceUpdatedAt = "missing";
+          if (fs.existsSync(manifestPath)) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const activePack = manifest.activePack;
+            const fallbackPack = (manifest.packs ?? [])[0];
+            if (activePack?.id && activePack?.version) {
+              packVersion = `${activePack.id}@${activePack.version}`;
+            } else if (fallbackPack?.id && fallbackPack?.version) {
+              packVersion = `${fallbackPack.id}@${fallbackPack.version}`;
+            } else {
+              packVersion = "unknown";
+            }
+            const updatedAtValues = (manifest.packs ?? [])
+              .flatMap((pack) => pack.sourceInventory ?? [])
+              .map((source) => source.updatedAt ?? source.observedDataUpdatedAt)
+              .filter(Boolean)
+              .sort();
+            sourceUpdatedAt = updatedAtValues.at(-1) ?? "unknown";
+          }
+          const remotePublishEnabled = "${{ steps.remote-publish-env.outputs.enabled }}";
+          const remotePublishResult = process.env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT ?? "";
+          const isMainBranch = process.env.GITHUB_REF === "refs/heads/main";
+          let publishResult = "disabled-or-skipped";
+          if (isMainBranch && remotePublishEnabled !== "false") {
+            publishResult = remotePublishResult === "success" ? "success" : "failed";
+          }
+          const lines = [
+            `commit=${process.env.GITHUB_SHA ?? "unknown"}`,
+            `pack_version=${packVersion}`,
+            `source_updated_at=${sourceUpdatedAt}`,
+            `remote_publish_enabled=${remotePublishEnabled || "false"}`,
+            `publish_result=${publishResult}`,
+          ];
+          fs.writeFileSync(path.join(stage, "datapack-observability.txt"), `${lines.join("\n")}\n`);
+          NODE
 
       - name: Data Pack Release / Upload staged data packs
         if: ${{ always() }}
