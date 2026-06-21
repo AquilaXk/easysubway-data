@@ -970,6 +970,31 @@ test("source inventory 검증기는 required source의 라이선스와 갱신일
   );
 });
 
+test("source inventory 검증기는 알 수 없는 라이선스 유형을 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  invalidInventory.sources[0].license.type = "UNKNOWN";
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-unknown-license-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /license.type must be KOGL-1/,
+  );
+});
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }

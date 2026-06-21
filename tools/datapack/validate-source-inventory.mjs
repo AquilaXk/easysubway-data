@@ -79,6 +79,9 @@ function validateLicense(license, sourceId) {
     throw new Error(`${sourceId}.license must be an object`);
   }
   assertString(license.type, `${sourceId}.license.type`);
+  if (license.type !== "KOGL-1") {
+    throw new Error(`${sourceId}.license.type must be KOGL-1`);
+  }
   assertString(license.name, `${sourceId}.license.name`);
   assertString(license.attribution, `${sourceId}.license.attribution`);
   assertHttpsUrl(license.evidenceUrl, `${sourceId}.license.evidenceUrl`);
