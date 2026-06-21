@@ -88,7 +88,7 @@ function validateSqlite(sqlitePath, pack) {
       }
     }
 
-    validateNetworkEdgeFacilityReferences(database, pack);
+    validateNetworkEdgeReferences(database, pack);
 
     for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows ?? {})) {
       const row = database.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get();
@@ -99,6 +99,298 @@ function validateSqlite(sqlitePath, pack) {
   } finally {
     database.close();
   }
+}
+
+function validateNetworkEdgeReferences(database, pack) {
+  validateNetworkEdgeStationLineEndpoints(database, pack);
+  validateNetworkEdgeFacilityReferences(database, pack);
+}
+
+function validateNetworkEdgeStationLineEndpoints(database, pack) {
+  if (!hasTable(database, "station_lines") || !hasTable(database, "network_edges")) {
+    return;
+  }
+  const stationLineRows = database
+    .prepare("SELECT station_id, line_id FROM station_lines")
+    .all();
+  const stationIds = new Set(
+    database
+      .prepare("SELECT id FROM stations")
+      .all()
+      .map((row) => row.id),
+  );
+  const stationLineNodes = new Set(
+    stationLineRows.map((row) => stationLineNodeId(row.station_id, row.line_id)),
+  );
+  if (stationLineNodes.size === 0) {
+    return;
+  }
+  const routeGraphRequiredNodes = connectedLineNodes(stationLineRows);
+
+  const connectedNodes = new Set();
+  const directedAdjacency = new Map(
+    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const undirectedAdjacency = new Map(
+    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const edges = database
+    .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
+    .all();
+  addGeneratedStationTransferEdges(
+    stationLineRows,
+    routeGraphRequiredNodes,
+    connectedNodes,
+    directedAdjacency,
+    undirectedAdjacency,
+  );
+  for (const edge of edges) {
+    const edgeType = normalizedEdgeType(edge.edge_type);
+    const endpoints = [
+      routeEndpoint(edge.from_node_id, stationIds, stationLineNodes),
+      routeEndpoint(edge.to_node_id, stationIds, stationLineNodes),
+    ];
+    for (const endpoint of endpoints) {
+      if (!endpoint.valid) {
+        throw new Error(
+          `${pack.id}@${pack.version} network_edges endpoint references missing station-line or station: ${edge.id} -> ${endpoint.value}`,
+        );
+      }
+      if (endpoint.stationLineNode === null && !isAccessEdge(edgeType)) {
+        throw new Error(
+          `${pack.id}@${pack.version} network_edges station endpoint must be ENTRY or EXIT: ${edge.id} -> ${endpoint.value}`,
+        );
+      }
+    }
+    validateAccessEdgeEndpointShape(edge, edgeType, endpoints, pack);
+    const fromNode = endpoints[0].stationLineNode;
+    const toNode = endpoints[1].stationLineNode;
+    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edgeType);
+    if (
+      routeGraphEdgeType !== null &&
+      routeGraphRequiredNodes.has(fromNode) &&
+      routeGraphRequiredNodes.has(toNode)
+    ) {
+      addRouteGraphEdge(
+        fromNode,
+        toNode,
+        connectedNodes,
+        directedAdjacency,
+        undirectedAdjacency,
+      );
+      if (routeGraphEdgeType === "TRANSFER") {
+        addRouteGraphEdge(
+          toNode,
+          fromNode,
+          connectedNodes,
+          directedAdjacency,
+          undirectedAdjacency,
+        );
+      }
+    }
+  }
+
+  for (const nodeId of routeGraphRequiredNodes) {
+    if (!connectedNodes.has(nodeId)) {
+      throw new Error(`${pack.id}@${pack.version} station-line node is isolated from route graph: ${nodeId}`);
+    }
+  }
+  validateRouteGraphSingleComponent(undirectedAdjacency, pack);
+  validateRouteGraphDirectedReachability(directedAdjacency, pack);
+}
+
+function stationLineNodeId(stationId, lineId) {
+  return `${stationId}:${lineId}`;
+}
+
+function routeEndpoint(value, stationIds, stationLineNodes) {
+  if (stationIds.has(value)) {
+    return { valid: true, value, stationLineNode: null };
+  }
+  const stationLineNode = stationLineNodeFromRouteNodeId(value);
+  if (stationLineNode !== null && stationLineNodes.has(stationLineNode)) {
+    return { valid: true, value, stationLineNode };
+  }
+  return { valid: false, value, stationLineNode: null };
+}
+
+function stationLineNodeFromRouteNodeId(nodeId) {
+  const parts = nodeId.split(":");
+  if (parts.length < 2 || parts[0] === "" || parts[1] === "") {
+    return null;
+  }
+  if (parts.length > 2 && parts.slice(2).some((part) => part === "")) {
+    return null;
+  }
+  return stationLineNodeId(parts[0], parts[1]);
+}
+
+function isAccessEdge(edgeType) {
+  const normalized = normalizedEdgeType(edgeType);
+  return normalized === "ENTRY" || normalized === "EXIT";
+}
+
+function validateAccessEdgeEndpointShape(edge, edgeType, endpoints, pack) {
+  if (edgeType === "ENTRY") {
+    if (endpoints[0].stationLineNode !== null || endpoints[1].stationLineNode === null) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge must connect station and station-line: ${edge.id}`,
+      );
+    }
+    if (endpoints[0].value !== stationIdFromStationLineNode(endpoints[1].stationLineNode)) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge station mismatch: ${edge.id}`,
+      );
+    }
+  } else if (edgeType === "EXIT") {
+    if (endpoints[0].stationLineNode === null || endpoints[1].stationLineNode !== null) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge must connect station and station-line: ${edge.id}`,
+      );
+    }
+    if (stationIdFromStationLineNode(endpoints[0].stationLineNode) !== endpoints[1].value) {
+      throw new Error(
+        `${pack.id}@${pack.version} network_edges access edge station mismatch: ${edge.id}`,
+      );
+    }
+  }
+}
+
+function stationIdFromStationLineNode(stationLineNode) {
+  return stationLineNode.split(":")[0];
+}
+
+function routeGraphConnectivityEdgeType(edgeType) {
+  const normalized = normalizedEdgeType(edgeType);
+  if (normalized === "RIDE" || normalized === "TRANSFER") {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizedEdgeType(edgeType) {
+  return String(edgeType ?? "").toUpperCase();
+}
+
+function connectedLineNodes(stationLineRows) {
+  const lineCounts = new Map();
+  for (const row of stationLineRows) {
+    lineCounts.set(row.line_id, (lineCounts.get(row.line_id) ?? 0) + 1);
+  }
+  return new Set(
+    stationLineRows
+      .filter((row) => (lineCounts.get(row.line_id) ?? 0) > 1)
+      .map((row) => stationLineNodeId(row.station_id, row.line_id)),
+  );
+}
+
+function addGeneratedStationTransferEdges(
+  stationLineRows,
+  routeGraphRequiredNodes,
+  connectedNodes,
+  directedAdjacency,
+  undirectedAdjacency,
+) {
+  const nodesByStation = new Map();
+  for (const row of stationLineRows) {
+    const nodeId = stationLineNodeId(row.station_id, row.line_id);
+    if (!routeGraphRequiredNodes.has(nodeId)) {
+      continue;
+    }
+    const stationNodes = nodesByStation.get(row.station_id) ?? [];
+    stationNodes.push(nodeId);
+    nodesByStation.set(row.station_id, stationNodes);
+  }
+
+  for (const stationNodes of nodesByStation.values()) {
+    for (const fromNode of stationNodes) {
+      for (const toNode of stationNodes) {
+        if (fromNode === toNode) {
+          continue;
+        }
+        addRouteGraphEdge(
+          fromNode,
+          toNode,
+          connectedNodes,
+          directedAdjacency,
+          undirectedAdjacency,
+        );
+      }
+    }
+  }
+}
+
+function addRouteGraphEdge(
+  fromNode,
+  toNode,
+  connectedNodes,
+  directedAdjacency,
+  undirectedAdjacency,
+) {
+  connectedNodes.add(fromNode);
+  connectedNodes.add(toNode);
+  directedAdjacency.get(fromNode)?.add(toNode);
+  undirectedAdjacency.get(fromNode)?.add(toNode);
+  undirectedAdjacency.get(toNode)?.add(fromNode);
+}
+
+function validateRouteGraphSingleComponent(adjacency, pack) {
+  const [startNode] = adjacency.keys();
+  if (!startNode) {
+    return;
+  }
+
+  const visited = new Set();
+  const stack = [startNode];
+  while (stack.length > 0) {
+    const nodeId = stack.pop();
+    if (visited.has(nodeId)) {
+      continue;
+    }
+    visited.add(nodeId);
+    for (const nextNodeId of adjacency.get(nodeId) ?? []) {
+      if (!visited.has(nextNodeId)) {
+        stack.push(nextNodeId);
+      }
+    }
+  }
+
+  for (const nodeId of adjacency.keys()) {
+    if (!visited.has(nodeId)) {
+      throw new Error(`${pack.id}@${pack.version} route graph has disconnected component: ${nodeId}`);
+    }
+  }
+}
+
+function validateRouteGraphDirectedReachability(adjacency, pack) {
+  for (const startNode of adjacency.keys()) {
+    const visited = reachableNodesFrom(startNode, adjacency);
+    for (const nodeId of adjacency.keys()) {
+      if (!visited.has(nodeId)) {
+        throw new Error(
+          `${pack.id}@${pack.version} route graph has unreachable directed path: ${startNode} -> ${nodeId}`,
+        );
+      }
+    }
+  }
+}
+
+function reachableNodesFrom(startNode, adjacency) {
+  const visited = new Set();
+  const stack = [startNode];
+  while (stack.length > 0) {
+    const nodeId = stack.pop();
+    if (visited.has(nodeId)) {
+      continue;
+    }
+    visited.add(nodeId);
+    for (const nextNodeId of adjacency.get(nodeId) ?? []) {
+      if (!visited.has(nextNodeId)) {
+        stack.push(nextNodeId);
+      }
+    }
+  }
+  return visited;
 }
 
 function validateNetworkEdgeFacilityReferences(database, pack) {
