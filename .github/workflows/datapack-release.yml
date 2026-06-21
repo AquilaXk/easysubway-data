@@ -42,6 +42,7 @@ jobs:
           {
             echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
+            echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
           } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Build data packs
@@ -90,6 +91,15 @@ jobs:
           node tools/datapack/validate-datapack.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+
+      - name: Data Pack Release / Create manifest-last publish preflight plan
+        run: |
+          set -euo pipefail
+          node tools/datapack/create-publish-plan.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}" \
+            --output "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
+          test -f "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
 
       - name: Data Pack Release / Upload staged data packs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
