@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
+import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -503,6 +504,9 @@ function validateFixture(fixture) {
     if (artifactKind === "production" && !isAbsoluteHttpsWithHost(pack.url)) {
       throw new Error("production pack url must be an absolute HTTPS URL");
     }
+    if (artifactKind === "production" && usesLocalPlaceholderHost(pack.url)) {
+      throw new Error("production pack url must not use a local placeholder host");
+    }
     validateSourceInventory(pack.sourceInventory, artifactKind);
     validateRepresentativeRouteRegressions(pack.representativeRouteRegressions);
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
@@ -573,6 +577,9 @@ function validateSourceInventory(sourceInventory, artifactKind) {
       }
       if (!isAbsoluteHttpsWithHost(source.url)) {
         throw new Error("production sourceInventory.url must be HTTPS");
+      }
+      if (usesLocalPlaceholderHost(source.url)) {
+        throw new Error("production sourceInventory.url must not use a local placeholder host");
       }
     }
   }

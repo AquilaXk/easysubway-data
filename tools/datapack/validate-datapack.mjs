@@ -5,6 +5,7 @@ import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -673,6 +674,9 @@ function validateManifest(manifest) {
     if (artifactKind === "production" && !isAbsoluteHttpsWithHost(pack.url)) {
       throw new Error(`${pack.id}@${pack.version} production pack url must be an absolute HTTPS URL`);
     }
+    if (artifactKind === "production" && usesLocalPlaceholderHost(pack.url)) {
+      throw new Error(`${pack.id}@${pack.version} production pack url must not use a local placeholder host`);
+    }
     requiredSha256(pack.sha256, "pack.sha256");
     requiredSha256(pack.sqliteSha256, "pack.sqliteSha256");
     if (!Number.isInteger(pack.sizeBytes) || pack.sizeBytes <= 0) {
@@ -803,6 +807,9 @@ function validateSourceInventory(sourceInventory, artifactKind, label) {
       }
       if (!isAbsoluteHttpsWithHost(source.url)) {
         throw new Error(`${label} production sourceInventory.url must be HTTPS`);
+      }
+      if (usesLocalPlaceholderHost(source.url)) {
+        throw new Error(`${label} production sourceInventory.url must not use a local placeholder host`);
       }
     }
   }
