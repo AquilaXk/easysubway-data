@@ -101,6 +101,14 @@ jobs:
             --output "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
           test -f "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
 
+      - name: Data Pack Release / Validate object storage publish executor dry run
+        run: |
+          set -euo pipefail
+          node tools/datapack/publish-object-storage.mjs \
+            --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}" \
+            --dry-run
+
       - name: Data Pack Release / Upload staged data packs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
