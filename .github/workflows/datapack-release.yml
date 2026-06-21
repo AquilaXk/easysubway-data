@@ -187,9 +187,11 @@ jobs:
           }
           const remotePublishEnabled = "${{ steps.remote-publish-env.outputs.enabled }}";
           const remotePublishResult = process.env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT ?? "";
-          const publishResult = remotePublishEnabled === "true" && process.env.GITHUB_REF === "refs/heads/main"
-            ? (remotePublishResult === "success" ? "success" : "failed")
-            : "disabled-or-skipped";
+          const isMainBranch = process.env.GITHUB_REF === "refs/heads/main";
+          let publishResult = "disabled-or-skipped";
+          if (isMainBranch && remotePublishEnabled !== "false") {
+            publishResult = remotePublishResult === "success" ? "success" : "failed";
+          }
           const lines = [
             `commit=${process.env.GITHUB_SHA ?? "unknown"}`,
             `pack_version=${packVersion}`,
