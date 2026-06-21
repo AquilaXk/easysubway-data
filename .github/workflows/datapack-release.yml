@@ -43,13 +43,22 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
+            echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
           } >> "${GITHUB_ENV}"
+
+      - name: Data Pack Release / Apply admin review overrides
+        run: |
+          set -euo pipefail
+          node tools/datapack/apply-admin-review-overrides.mjs \
+            --fixture tools/datapack/fixtures/catalog-fixture.json \
+            --overrides tools/datapack/fixtures/admin-review-overrides.json \
+            --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
 
       - name: Data Pack Release / Build data packs
         run: |
           set -euo pipefail
           node tools/datapack/build-datapack.mjs \
-            --fixture tools/datapack/fixtures/catalog-fixture.json \
+            --fixture "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}" \
             --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
 
       - name: Data Pack Release / Validate source inventory
