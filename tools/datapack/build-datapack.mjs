@@ -56,6 +56,7 @@ async function main() {
         sha256: compressedSha256,
         sqliteSha256,
         sizeBytes,
+        representativeRouteRegressions: pack.representativeRouteRegressions,
       }),
       schemaVersion: pack.schemaVersion,
       sourceInventory: pack.sourceInventory,
@@ -138,11 +139,23 @@ function packSignature(pack) {
 }
 
 function fixtureSignaturePayload(pack) {
-  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
 }
 
 function productionSignaturePayload(pack) {
   return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
+}
+
+function representativeRouteRegressionPayload(routes) {
+  return JSON.stringify(
+    routes.map((route) => ({
+      id: route.id,
+      pattern: route.pattern,
+      fromNodeId: route.fromNodeId,
+      toNodeId: route.toNodeId,
+      requiredEdgeIds: route.requiredEdgeIds,
+    })),
+  );
 }
 
 function canonicalProductionPackUrl(packUrl) {
