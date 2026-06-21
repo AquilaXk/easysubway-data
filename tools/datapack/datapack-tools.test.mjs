@@ -1205,6 +1205,49 @@ test("데이터팩 검증기는 대표 route regression required edge 누락을 
   );
 });
 
+test("데이터팩 검증기는 대표 route regression required edge 경로 이탈을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-route-edge-drift-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const expressEdge = fixture.packs[0].networkEdges.find(
+    (edge) => edge.id === "edge-sangnoksu-sadang-seoul-4-express",
+  );
+  expressEdge.fromNodeId = "station-sangnoksu:seoul-4";
+  expressEdge.toNodeId = "station-sadang:seoul-4";
+  expressEdge.servicePattern = "LOCAL";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /representativeRouteRegressions required edge not on route/,
+  );
+});
+
 test("데이터팩 검증기는 station-to-station access edge를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-station-access-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");

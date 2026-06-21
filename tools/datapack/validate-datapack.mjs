@@ -173,6 +173,7 @@ function validateRepresentativeRouteRegressions(database, pack) {
         throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge missing: ${route.id} -> ${edgeId}`);
       }
     }
+    validateRequiredRouteEdgeSequence(route, graph, pack);
     const reachableNodes = reachableNodesFrom(fromEndpoint.stationLineNode, graph.directedAdjacency);
     if (!reachableNodes.has(toEndpoint.stationLineNode)) {
       throw new Error(
@@ -203,6 +204,7 @@ function representativeRouteGraph(database) {
     [...stationLineNodes].map((nodeId) => [nodeId, new Set()]),
   );
   const routeEdgeIds = new Set();
+  const routeEdges = new Map();
   addGeneratedStationTransferEdges(
     stationLineRows,
     stationLineNodes,
@@ -212,7 +214,7 @@ function representativeRouteGraph(database) {
   );
 
   const edges = database
-    .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
+    .prepare("SELECT id, from_node_id, to_node_id, edge_type, service_pattern FROM network_edges ORDER BY id")
     .all();
   for (const edge of edges) {
     const routeGraphEdgeType = routeGraphConnectivityEdgeType(edge.edge_type);
@@ -225,6 +227,14 @@ function representativeRouteGraph(database) {
       continue;
     }
     routeEdgeIds.add(edge.id);
+    routeEdges.set(edge.id, {
+      fromNode: fromEndpoint.stationLineNode,
+      toNode: toEndpoint.stationLineNode,
+      fromRouteNodeId: edge.from_node_id,
+      toRouteNodeId: edge.to_node_id,
+      edgeType: routeGraphEdgeType,
+      servicePattern: edge.service_pattern,
+    });
     addRouteGraphEdge(
       fromEndpoint.stationLineNode,
       toEndpoint.stationLineNode,
@@ -242,7 +252,58 @@ function representativeRouteGraph(database) {
       );
     }
   }
-  return { stationIds, stationLineNodes, directedAdjacency, routeEdgeIds };
+  return { stationIds, stationLineNodes, directedAdjacency, routeEdgeIds, routeEdges };
+}
+
+function validateRequiredRouteEdgeSequence(route, graph, pack) {
+  let currentRouteNodeId = route.fromNodeId;
+  for (const edgeId of route.requiredEdgeIds) {
+    const edge = graph.routeEdges.get(edgeId);
+    if (!edge) {
+      continue;
+    }
+    if (routeNodeMatches(currentRouteNodeId, edge.fromRouteNodeId, edge.servicePattern)) {
+      currentRouteNodeId = edge.toRouteNodeId;
+      continue;
+    }
+    if (
+      edge.edgeType === "TRANSFER" &&
+      routeNodeMatches(currentRouteNodeId, edge.toRouteNodeId, edge.servicePattern)
+    ) {
+      currentRouteNodeId = edge.fromRouteNodeId;
+      continue;
+    }
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge not on route: ${route.id} -> ${edgeId}`);
+  }
+  const lastEdge = graph.routeEdges.get(route.requiredEdgeIds.at(-1));
+  if (!routeNodeMatches(route.toNodeId, currentRouteNodeId, lastEdge?.servicePattern)) {
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge not on route: ${route.id} -> ${route.requiredEdgeIds.at(-1)}`);
+  }
+}
+
+function routeNodeMatches(expectedRouteNodeId, actualRouteNodeId, servicePattern) {
+  if (expectedRouteNodeId === actualRouteNodeId) {
+    return true;
+  }
+  const expectedStationLineNode = stationLineNodeFromRouteNodeId(expectedRouteNodeId);
+  const actualStationLineNode = stationLineNodeFromRouteNodeId(actualRouteNodeId);
+  if (expectedStationLineNode === null || expectedStationLineNode !== actualStationLineNode) {
+    return false;
+  }
+  const expectedSuffix = routeNodeServicePattern(expectedRouteNodeId);
+  if (expectedSuffix === null) {
+    return true;
+  }
+  const actualSuffix = routeNodeServicePattern(actualRouteNodeId) ?? String(servicePattern ?? "").toUpperCase();
+  return actualSuffix === expectedSuffix;
+}
+
+function routeNodeServicePattern(routeNodeId) {
+  const parts = routeNodeId.split(":");
+  if (parts.length <= 2) {
+    return null;
+  }
+  return parts.slice(2).join(":").toUpperCase();
 }
 
 function validateNetworkEdgeStationLineEndpoints(database, pack) {
