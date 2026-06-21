@@ -39,6 +39,9 @@ async function main() {
     const compressedSha256 = sha256(compressedBytes);
     const sqliteSha256 = sha256(sqliteBytes);
     const sizeBytes = compressedBytes.length;
+    const representativeRouteRegressions = canonicalRepresentativeRouteRegressions(
+      pack.representativeRouteRegressions,
+    );
 
     manifestPacks.push({
       id: pack.id,
@@ -60,6 +63,17 @@ async function main() {
       schemaVersion: pack.schemaVersion,
       sourceInventory: pack.sourceInventory,
       regionalQualityMetrics: regionalQualityMetrics(pack),
+      representativeRouteRegressions,
+      representativeRouteRegressionSignature: representativeRouteRegressionSignature({
+        id: pack.id,
+        version: pack.version,
+        artifactKind,
+        url: packUrl,
+        sha256: compressedSha256,
+        sqliteSha256,
+        sizeBytes,
+        representativeRouteRegressions,
+      }),
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
     });
@@ -144,6 +158,43 @@ function productionSignaturePayload(pack) {
   return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
 }
 
+function representativeRouteRegressionSignature(pack) {
+  if (pack.artifactKind === "production") {
+    return {
+      algorithm: "rsa-sha256-route-regression-v1",
+      value: rsaSha256Signature(signingPrivateKey(), representativeRouteRegressionSignaturePayload(pack)),
+    };
+  }
+  return {
+    algorithm: "sha256-route-regression-v1",
+    value: sha256(Buffer.from(representativeRouteRegressionSignaturePayload(pack))),
+  };
+}
+
+function representativeRouteRegressionSignaturePayload(pack) {
+  const basePayload = `${fixtureSignaturePayload(pack)}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+  if (pack.artifactKind === "production") {
+    return `${basePayload}:${canonicalProductionPackUrl(pack.url)}`;
+  }
+  return basePayload;
+}
+
+function representativeRouteRegressionPayload(routes) {
+  return JSON.stringify(canonicalRepresentativeRouteRegressions(routes));
+}
+
+function canonicalRepresentativeRouteRegressions(routes) {
+  return routes.map((route) => ({
+    id: requiredString(route.id, "representativeRouteRegressions.id"),
+    pattern: requiredString(route.pattern, "representativeRouteRegressions.pattern"),
+    fromNodeId: requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId"),
+    toNodeId: requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId"),
+    requiredEdgeIds: route.requiredEdgeIds.map((edgeId) =>
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds"),
+    ),
+  }));
+}
+
 function canonicalProductionPackUrl(packUrl) {
   return new URL(packUrl).toString();
 }
@@ -170,7 +221,7 @@ function regionalQualityMetrics(pack) {
   );
   const edgeCount = pack.networkEdges?.length ?? 0;
   const unknownAccessibilityCount = (pack.networkEdges ?? []).filter(
-    (edge) => (edge.accessibilityStatus ?? "UNKNOWN") === "UNKNOWN",
+    (edge) => normalizedAccessibilityStatus(edge.accessibilityStatus, "networkEdges.accessibilityStatus") === "UNKNOWN",
   ).length;
   return {
     stationCount,
@@ -267,6 +318,10 @@ function buildSqlitePack(sqlitePath, schema, pack) {
         pack.networkEdges ?? [],
         (row) => {
           const stairAccessState = row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN");
+          const accessibilityStatus = normalizedAccessibilityStatus(
+            row.accessibilityStatus,
+            "networkEdges.accessibilityStatus",
+          );
 
           return [
             requiredString(row.id, "networkEdges.id"),
@@ -278,7 +333,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
             row.servicePattern ?? "",
             stairAccessState === "STAIR_ONLY" ? 1 : 0,
             stairAccessState,
-            row.accessibilityStatus ?? "UNKNOWN",
+            accessibilityStatus,
             row.reliabilityScore ?? 100,
             row.facilityId ?? null,
             timestamp(row.lastVerifiedAt),
@@ -358,7 +413,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           row.slopeLevel ?? 1,
           row.widthLevel ?? 2,
           row.reliabilityScore ?? 100,
-          row.accessibilityStatus ?? "UNKNOWN",
+          normalizedAccessibilityStatus(row.accessibilityStatus, "internalRouteEdges.accessibilityStatus"),
           row.instruction ?? "",
         ],
       );
@@ -449,8 +504,44 @@ function validateFixture(fixture) {
       throw new Error("production pack url must be an absolute HTTPS URL");
     }
     validateSourceInventory(pack.sourceInventory, artifactKind);
+    validateRepresentativeRouteRegressions(pack.representativeRouteRegressions);
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
+    }
+  }
+}
+
+function validateRepresentativeRouteRegressions(routes) {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    throw new Error("pack.representativeRouteRegressions must be a non-empty array");
+  }
+  const requiredPatterns = new Set([
+    "DIRECT",
+    "TRANSFER",
+    "MULTI_TRANSFER",
+    "LOOP_BRANCH",
+    "EXPRESS_LOCAL",
+  ]);
+  const seenPatterns = new Set();
+  for (const route of routes) {
+    requiredString(route.id, "representativeRouteRegressions.id");
+    const pattern = requiredString(route.pattern, "representativeRouteRegressions.pattern");
+    if (!requiredPatterns.has(pattern)) {
+      throw new Error("representativeRouteRegressions.pattern is invalid");
+    }
+    seenPatterns.add(pattern);
+    requiredString(route.fromNodeId, "representativeRouteRegressions.fromNodeId");
+    requiredString(route.toNodeId, "representativeRouteRegressions.toNodeId");
+    if (!Array.isArray(route.requiredEdgeIds) || route.requiredEdgeIds.length === 0) {
+      throw new Error("representativeRouteRegressions.requiredEdgeIds must be a non-empty array");
+    }
+    for (const edgeId of route.requiredEdgeIds) {
+      requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds");
+    }
+  }
+  for (const pattern of requiredPatterns) {
+    if (!seenPatterns.has(pattern)) {
+      throw new Error(`representativeRouteRegressions missing required pattern: ${pattern}`);
     }
   }
 }
@@ -535,6 +626,10 @@ function requiredString(value, label) {
     throw new Error(`${label} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function normalizedAccessibilityStatus(value, label) {
+  return requiredString(value ?? "UNKNOWN", label).toUpperCase();
 }
 
 function requiredInteger(value, label) {

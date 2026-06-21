@@ -85,10 +85,14 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.sourceInventory[0].id, "fixture-capital-catalog");
   assert.equal(pack.sourceInventory[0].licenseStatus, "fixture-only");
   assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-19T00:00:00.000Z");
-  assert.equal(pack.regionalQualityMetrics.stationCount, 2);
-  assert.equal(pack.regionalQualityMetrics.facilityCoverageRatio, 0.5);
-  assert.equal(pack.regionalQualityMetrics.edgeCount, 2);
+  assert.equal(pack.regionalQualityMetrics.stationCount, 6);
+  assert.equal(pack.regionalQualityMetrics.facilityCoverageRatio, 0.1667);
+  assert.equal(pack.regionalQualityMetrics.edgeCount, 15);
   assert.equal(pack.regionalQualityMetrics.unknownAccessibilityRatio, 0);
+  assert.deepEqual(
+    pack.representativeRouteRegressions.map((route) => route.pattern).sort(),
+    ["DIRECT", "EXPRESS_LOCAL", "LOOP_BRANCH", "MULTI_TRANSFER", "TRANSFER"],
+  );
   assert.deepEqual(pack.requiredTables, [
     "catalog_metadata",
     "operators",
@@ -99,7 +103,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     "station_exits",
     "facilities",
   ]);
-  assert.equal(pack.minimumTableRows.stations, 2);
+  assert.equal(pack.minimumTableRows.stations, 6);
   assert.match(pack.sha256, /^[a-f0-9]{64}$/);
   assert.match(pack.sqliteSha256, /^[a-f0-9]{64}$/);
 
@@ -111,6 +115,10 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.deepEqual(pack.signature, {
     algorithm: "sha256-pack-manifest-v1",
     value: sha256(Buffer.from(`${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`)),
+  });
+  assert.deepEqual(pack.representativeRouteRegressionSignature, {
+    algorithm: "sha256-route-regression-v1",
+    value: sha256(Buffer.from(packSignaturePayload(pack))),
   });
 
   const sqlitePath = path.join(outputDir, "catalog", "capital-v1.sqlite");
@@ -134,50 +142,71 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
     assert.equal(database.prepare("SELECT checked_at FROM data_quality_records WHERE id = 'quality-station-sangnoksu'").get().checked_at, 1781827200);
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM stations").get().count, 2);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM stations").get().count, 6);
+    const networkEdges = database
+      .prepare(`
+        SELECT id, from_node_id, to_node_id, duration_seconds, edge_type,
+               distance_meters, service_pattern, includes_stairs, stair_access_state,
+               accessibility_status, reliability_score, facility_id, last_verified_at
+        FROM network_edges
+        ORDER BY id
+      `)
+      .all()
+      .map((row) => ({ ...row }));
+    assert.equal(networkEdges.length, 15);
     assert.deepEqual(
-      database
-        .prepare(`
-          SELECT id, from_node_id, to_node_id, duration_seconds, edge_type,
-                 distance_meters, service_pattern, includes_stairs, stair_access_state,
-                 accessibility_status, reliability_score, facility_id, last_verified_at
-          FROM network_edges
-          ORDER BY id
-        `)
-        .all()
-        .map((row) => ({ ...row })),
-      [
-        {
-          id: "edge-sadang-sangnoksu-seoul-4",
-          from_node_id: "station-sadang:seoul-4",
-          to_node_id: "station-sangnoksu:seoul-4",
-          duration_seconds: 420,
-          distance_meters: 18600,
-          edge_type: "RIDE",
-          service_pattern: "LOCAL",
-          includes_stairs: 0,
-          stair_access_state: "STEP_FREE",
-          accessibility_status: "AVAILABLE",
-          reliability_score: 90,
-          facility_id: null,
-          last_verified_at: 1781827200,
-        },
-        {
-          id: "edge-sangnoksu-sadang-seoul-4",
-          from_node_id: "station-sangnoksu:seoul-4",
-          to_node_id: "station-sadang:seoul-4",
-          duration_seconds: 420,
-          distance_meters: 18600,
-          edge_type: "RIDE",
-          service_pattern: "LOCAL",
-          includes_stairs: 0,
-          stair_access_state: "STEP_FREE",
-          accessibility_status: "AVAILABLE",
-          reliability_score: 90,
-          facility_id: null,
-          last_verified_at: 1781827200,
-        },
-      ],
+      networkEdges.find((row) => row.id === "edge-sangnoksu-sadang-seoul-4"),
+      {
+        id: "edge-sangnoksu-sadang-seoul-4",
+        from_node_id: "station-sangnoksu:seoul-4",
+        to_node_id: "station-sadang:seoul-4",
+        duration_seconds: 420,
+        distance_meters: 18600,
+        edge_type: "RIDE",
+        service_pattern: "LOCAL",
+        includes_stairs: 0,
+        stair_access_state: "STEP_FREE",
+        accessibility_status: "AVAILABLE",
+        reliability_score: 90,
+        facility_id: null,
+        last_verified_at: 1781827200,
+      },
+    );
+    assert.deepEqual(
+      networkEdges.find((row) => row.id === "edge-sangnoksu-sadang-seoul-4-express"),
+      {
+        id: "edge-sangnoksu-sadang-seoul-4-express",
+        from_node_id: "station-sangnoksu:seoul-4:EXPRESS",
+        to_node_id: "station-sadang:seoul-4:EXPRESS",
+        duration_seconds: 360,
+        distance_meters: 18600,
+        edge_type: "RIDE",
+        service_pattern: "EXPRESS",
+        includes_stairs: 0,
+        stair_access_state: "STEP_FREE",
+        accessibility_status: "AVAILABLE",
+        reliability_score: 90,
+        facility_id: null,
+        last_verified_at: 1781827200,
+      },
+    );
+    assert.deepEqual(
+      networkEdges.find((row) => row.id === "edge-sadang-line4-line2-transfer"),
+      {
+        id: "edge-sadang-line4-line2-transfer",
+        from_node_id: "station-sadang:seoul-4",
+        to_node_id: "station-sadang:seoul-2",
+        duration_seconds: 140,
+        distance_meters: 80,
+        edge_type: "TRANSFER",
+        service_pattern: "LOCAL",
+        includes_stairs: 0,
+        stair_access_state: "STEP_FREE",
+        accessibility_status: "AVAILABLE",
+        reliability_score: 90,
+        facility_id: null,
+        last_verified_at: 1781827200,
+      },
     );
     assert.deepEqual(
       database
@@ -210,6 +239,62 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   } finally {
     database.close();
   }
+});
+
+test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 기준으로 정규화한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-route-canonical-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].representativeRouteRegressions[0] = {
+    ...fixture.packs[0].representativeRouteRegressions[0],
+    id: " direct-local-sangnoksu-sadang ",
+    pattern: " DIRECT ",
+    fromNodeId: " station-sangnoksu:seoul-4:LOCAL ",
+    toNodeId: " station-sadang:seoul-4:LOCAL ",
+    requiredEdgeIds: [" edge-sangnoksu-sadang-seoul-4 "],
+  };
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+  const route = manifest.packs[0].representativeRouteRegressions[0];
+  assert.deepEqual(route, {
+    id: "direct-local-sangnoksu-sadang",
+    pattern: "DIRECT",
+    fromNodeId: "station-sangnoksu:seoul-4:LOCAL",
+    toNodeId: "station-sadang:seoul-4:LOCAL",
+    requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
+  });
+  assert.deepEqual(manifest.packs[0].representativeRouteRegressionSignature, {
+    algorithm: "sha256-route-regression-v1",
+    value: sha256(Buffer.from(packSignaturePayload(manifest.packs[0]))),
+  });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root },
+  );
 });
 
 test("데이터팩 생성기는 production pack의 source metadata와 HTTPS URL을 강제한다", async () => {
@@ -398,7 +483,28 @@ test("데이터팩 검증기는 production HTTPS URL과 staged artifact path 불
     /capital@1 signature mismatch/,
   );
 
+  manifest.packs[0].url = "https://CDN.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
+  manifest.packs[0].representativeRouteRegressions[0].requiredEdgeIds = ["edge-sangnoksu-sadang-local"];
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /capital@1 representativeRouteRegressionSignature mismatch/,
+  );
+
   manifest.packs[0].url = "https://cdn.easysubway.example/packs/capital-v1.sqlite.gz";
+  manifest.packs[0].representativeRouteRegressions =
+    JSON.parse(JSON.stringify(fixture.packs[0].representativeRouteRegressions));
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   await assert.rejects(
@@ -632,11 +738,14 @@ test("데이터팩 생성기는 시설 coverage를 시설이 있는 역 비율�
   await mkdir(outputDir, { recursive: true });
 
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  fixture.packs[0].facilities.push({
+  const secondStationFacility = {
     ...fixture.packs[0].facilities[0],
-    id: "facility-sangnoksu-elevator-2",
-    name: "2번 출구 엘리베이터",
-  });
+    id: "facility-sadang-elevator",
+    stationId: "station-sadang",
+    name: "사당역 엘리베이터",
+  };
+  delete secondStationFacility.exitId;
+  fixture.packs[0].facilities.push(secondStationFacility);
   fixture.packs[0].minimumTableRows.facilities = 2;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
@@ -653,8 +762,8 @@ test("데이터팩 생성기는 시설 coverage를 시설이 있는 역 비율�
   );
 
   const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
-  assert.equal(manifest.packs[0].regionalQualityMetrics.stationCount, 2);
-  assert.equal(manifest.packs[0].regionalQualityMetrics.facilityCoverageRatio, 0.5);
+  assert.equal(manifest.packs[0].regionalQualityMetrics.stationCount, 6);
+  assert.equal(manifest.packs[0].regionalQualityMetrics.facilityCoverageRatio, 0.3333);
   await execFileAsync(
     process.execPath,
     [
@@ -665,6 +774,97 @@ test("데이터팩 생성기는 시설 coverage를 시설이 있는 역 비율�
       outputDir,
     ],
     { cwd: root },
+  );
+});
+
+test("데이터팩 생성기는 accessibilityStatus 대소문자를 정규화해 산출물을 검증 가능하게 만든다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-accessibility-status-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].networkEdges[0].accessibilityStatus = "unknown";
+  fixture.packs[0].internalRouteEdges[0].accessibilityStatus = "unknown";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+  assert.equal(manifest.packs[0].regionalQualityMetrics.unknownAccessibilityRatio, 0.0667);
+
+  const database = new DatabaseSync(path.join(outputDir, "catalog/capital-v1.sqlite"));
+  try {
+    const edge = database
+      .prepare("SELECT accessibility_status FROM network_edges WHERE id = ?")
+      .get("edge-sangnoksu-sadang-seoul-4");
+    const internalEdge = database
+      .prepare("SELECT accessibility_status FROM internal_route_edges WHERE id = ?")
+      .get("edge-sangnoksu-concourse-exit-1");
+    assert.equal(edge.accessibility_status, "UNKNOWN");
+    assert.equal(internalEdge.accessibility_status, "UNKNOWN");
+  } finally {
+    database.close();
+  }
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+});
+
+test("데이터팩 검증기는 manifest regional quality metrics와 SQLite 내용을 대조한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-quality-mismatch-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.packs[0].regionalQualityMetrics.edgeCount = 1;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /regionalQualityMetrics mismatch/,
   );
 });
 
@@ -948,9 +1148,11 @@ test("데이터팩 검증기는 역방향 route edge 누락을 거부한다", as
 
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
   fixture.packs[0].networkEdges = fixture.packs[0].networkEdges.filter(
-    (edge) => edge.id !== "edge-sadang-sangnoksu-seoul-4",
+    (edge) =>
+      edge.id !== "edge-sadang-sangnoksu-seoul-4" &&
+      edge.id !== "edge-sadang-sangnoksu-seoul-4-express",
   );
-  fixture.packs[0].minimumTableRows.network_edges = 1;
+  fixture.packs[0].minimumTableRows.network_edges = 13;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await execFileAsync(
@@ -1028,70 +1230,6 @@ test("데이터팩 검증기는 app처럼 transfer route를 양방향으로 평�
   await mkdir(outputDir, { recursive: true });
 
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  fixture.packs[0].stations.push({
-    id: "station-gangnam",
-    nameKo: "강남",
-    nameEn: "Gangnam",
-    normalizedName: "gangnam",
-    region: "capital",
-    latitude: 37.4979,
-    longitude: 127.0276,
-    dataQualityLevel: "LEVEL_2",
-    dataSourceType: "OFFICIAL_FILE",
-    lastVerifiedAt: "2026-06-19T00:00:00.000Z",
-  });
-  fixture.packs[0].stationLines.push({
-    stationId: "station-gangnam",
-    lineId: "seoul-2",
-    stationCode: "222",
-    lineSequence: 22,
-    platformInfo: "내선 / 외선",
-  });
-  fixture.packs[0].networkEdges.push(
-    {
-      id: "edge-sadang-gangnam-seoul-2",
-      fromNodeId: "station-sadang:seoul-2",
-      toNodeId: "station-gangnam:seoul-2",
-      durationSeconds: 180,
-      distanceMeters: 2200,
-      edgeType: "RIDE",
-      servicePattern: "LOCAL",
-      includesStairs: false,
-      stairAccessState: "STEP_FREE",
-      accessibilityStatus: "AVAILABLE",
-      reliabilityScore: 90,
-      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
-    },
-    {
-      id: "edge-gangnam-sadang-seoul-2",
-      fromNodeId: "station-gangnam:seoul-2",
-      toNodeId: "station-sadang:seoul-2",
-      durationSeconds: 180,
-      distanceMeters: 2200,
-      edgeType: "RIDE",
-      servicePattern: "LOCAL",
-      includesStairs: false,
-      stairAccessState: "STEP_FREE",
-      accessibilityStatus: "AVAILABLE",
-      reliabilityScore: 90,
-      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
-    },
-    {
-      id: "edge-sadang-line4-line2-transfer",
-      fromNodeId: "station-sadang:seoul-4",
-      toNodeId: "station-sadang:seoul-2",
-      durationSeconds: 140,
-      distanceMeters: 80,
-      edgeType: "TRANSFER",
-      servicePattern: "LOCAL",
-      includesStairs: false,
-      stairAccessState: "STEP_FREE",
-      accessibilityStatus: "AVAILABLE",
-      reliabilityScore: 90,
-      lastVerifiedAt: "2026-06-19T00:00:00.000Z",
-    },
-  );
-  fixture.packs[0].minimumTableRows.stations = 3;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await execFileAsync(
@@ -1116,6 +1254,131 @@ test("데이터팩 검증기는 app처럼 transfer route를 양방향으로 평�
       outputDir,
     ],
     { cwd: root },
+  );
+});
+
+test("데이터팩 검증기는 대표 route regression 필수 pattern 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-missing-route-pattern-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.packs[0].representativeRouteRegressions =
+    manifest.packs[0].representativeRouteRegressions.filter(
+      (route) => route.pattern !== "MULTI_TRANSFER",
+    );
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /representativeRouteRegressions missing required pattern/,
+  );
+});
+
+test("데이터팩 검증기는 대표 route regression required edge 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-missing-route-edge-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].networkEdges = fixture.packs[0].networkEdges.filter(
+    (edge) => edge.id !== "edge-sangnoksu-sadang-seoul-4-express",
+  );
+  fixture.packs[0].minimumTableRows.network_edges = 14;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /representativeRouteRegressions required edge missing/,
+  );
+});
+
+test("데이터팩 검증기는 대표 route regression required edge 경로 이탈을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-route-edge-drift-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const expressEdge = fixture.packs[0].networkEdges.find(
+    (edge) => edge.id === "edge-sangnoksu-sadang-seoul-4-express",
+  );
+  expressEdge.fromNodeId = "station-sangnoksu:seoul-4";
+  expressEdge.toNodeId = "station-sadang:seoul-4";
+  expressEdge.servicePattern = "LOCAL";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /representativeRouteRegressions required edge not on route/,
   );
 });
 
@@ -1603,4 +1866,20 @@ test("source inventory 검증기는 알 수 없는 라이선스 유형을 거부
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function packSignaturePayload(pack) {
+  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+}
+
+function representativeRouteRegressionPayload(routes) {
+  return JSON.stringify(
+    routes.map((route) => ({
+      id: route.id,
+      pattern: route.pattern,
+      fromNodeId: route.fromNodeId,
+      toNodeId: route.toNodeId,
+      requiredEdgeIds: route.requiredEdgeIds,
+    })),
+  );
 }

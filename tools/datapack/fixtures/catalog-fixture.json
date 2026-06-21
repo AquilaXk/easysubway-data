@@ -48,10 +48,10 @@
       "minimumTableRows": {
         "catalog_metadata": 2,
         "operators": 2,
-        "lines": 2,
-        "stations": 2,
-        "station_lines": 3,
-        "network_edges": 2,
+        "lines": 4,
+        "stations": 6,
+        "station_lines": 9,
+        "network_edges": 15,
         "station_exits": 1,
         "facilities": 1
       },
@@ -84,6 +84,20 @@
           "nameKo": "수도권 4호선",
           "nameEn": "Seoul Subway Line 4",
           "color": "#00A5DE"
+        },
+        {
+          "id": "shinbundang",
+          "operatorId": "seoul-metro",
+          "nameKo": "신분당선",
+          "nameEn": "Shinbundang Line",
+          "color": "#D4003B"
+        },
+        {
+          "id": "seoul-2-branch",
+          "operatorId": "seoul-metro",
+          "nameKo": "수도권 2호선 지선",
+          "nameEn": "Seoul Subway Line 2 Branch",
+          "color": "#00A84D"
         }
       ],
       "stations": [
@@ -107,6 +121,54 @@
           "region": "수도권",
           "latitude": 37.4766,
           "longitude": 126.9816,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-gangnam",
+          "nameKo": "강남",
+          "nameEn": "Gangnam",
+          "normalizedName": "강남",
+          "region": "수도권",
+          "latitude": 37.4979,
+          "longitude": 127.0276,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-jeongja",
+          "nameKo": "정자",
+          "nameEn": "Jeongja",
+          "normalizedName": "정자",
+          "region": "수도권",
+          "latitude": 37.3671,
+          "longitude": 127.1081,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-seongsu",
+          "nameKo": "성수",
+          "nameEn": "Seongsu",
+          "normalizedName": "성수",
+          "region": "수도권",
+          "latitude": 37.5446,
+          "longitude": 127.0559,
+          "dataQualityLevel": "LEVEL_2",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "station-sinseoldong",
+          "nameKo": "신설동",
+          "nameEn": "Sinseoldong",
+          "normalizedName": "신설동",
+          "region": "수도권",
+          "latitude": 37.5753,
+          "longitude": 127.0251,
           "dataQualityLevel": "LEVEL_2",
           "dataSourceType": "OFFICIAL_FILE",
           "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
@@ -155,6 +217,48 @@
           "stationCode": "433",
           "lineSequence": 33,
           "platformInfo": "당고개 방면 / 오이도 방면"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "stationCode": "222",
+          "lineSequence": 22,
+          "platformInfo": "내선 / 외선"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "shinbundang",
+          "stationCode": "D07",
+          "lineSequence": 7,
+          "platformInfo": "신사 방면 / 광교 방면"
+        },
+        {
+          "stationId": "station-jeongja",
+          "lineId": "shinbundang",
+          "stationCode": "D12",
+          "lineSequence": 12,
+          "platformInfo": "신사 방면 / 광교 방면"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "stationCode": "211",
+          "lineSequence": 11,
+          "platformInfo": "내선 / 외선"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2-branch",
+          "stationCode": "211-1",
+          "lineSequence": 1,
+          "platformInfo": "신설동 방면"
+        },
+        {
+          "stationId": "station-sinseoldong",
+          "lineId": "seoul-2-branch",
+          "stationCode": "211-4",
+          "lineSequence": 4,
+          "platformInfo": "성수 방면"
         }
       ],
       "networkEdges": [
@@ -185,6 +289,243 @@
           "accessibilityStatus": "AVAILABLE",
           "reliabilityScore": 90,
           "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sangnoksu-sadang-seoul-4-express",
+          "fromNodeId": "station-sangnoksu:seoul-4:EXPRESS",
+          "toNodeId": "station-sadang:seoul-4:EXPRESS",
+          "durationSeconds": 360,
+          "distanceMeters": 18600,
+          "edgeType": "RIDE",
+          "servicePattern": "EXPRESS",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-sangnoksu-seoul-4-express",
+          "fromNodeId": "station-sadang:seoul-4:EXPRESS",
+          "toNodeId": "station-sangnoksu:seoul-4:EXPRESS",
+          "durationSeconds": 360,
+          "distanceMeters": 18600,
+          "edgeType": "RIDE",
+          "servicePattern": "EXPRESS",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-gangnam-seoul-2",
+          "fromNodeId": "station-sadang:seoul-2",
+          "toNodeId": "station-gangnam:seoul-2",
+          "durationSeconds": 180,
+          "distanceMeters": 2200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-sadang-seoul-2",
+          "fromNodeId": "station-gangnam:seoul-2",
+          "toNodeId": "station-sadang:seoul-2",
+          "durationSeconds": 180,
+          "distanceMeters": 2200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-jeongja-shinbundang",
+          "fromNodeId": "station-gangnam:shinbundang",
+          "toNodeId": "station-jeongja:shinbundang",
+          "durationSeconds": 960,
+          "distanceMeters": 17400,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-jeongja-gangnam-shinbundang",
+          "fromNodeId": "station-jeongja:shinbundang",
+          "toNodeId": "station-gangnam:shinbundang",
+          "durationSeconds": 960,
+          "distanceMeters": 17400,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-seongsu-seoul-2",
+          "fromNodeId": "station-gangnam:seoul-2",
+          "toNodeId": "station-seongsu:seoul-2",
+          "durationSeconds": 720,
+          "distanceMeters": 8900,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-seongsu-gangnam-seoul-2",
+          "fromNodeId": "station-seongsu:seoul-2",
+          "toNodeId": "station-gangnam:seoul-2",
+          "durationSeconds": 720,
+          "distanceMeters": 8900,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-seongsu-sinseoldong-branch",
+          "fromNodeId": "station-seongsu:seoul-2-branch",
+          "toNodeId": "station-sinseoldong:seoul-2-branch",
+          "durationSeconds": 300,
+          "distanceMeters": 5200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sinseoldong-seongsu-branch",
+          "fromNodeId": "station-sinseoldong:seoul-2-branch",
+          "toNodeId": "station-seongsu:seoul-2-branch",
+          "durationSeconds": 300,
+          "distanceMeters": 5200,
+          "edgeType": "RIDE",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-sadang-line4-line2-transfer",
+          "fromNodeId": "station-sadang:seoul-4",
+          "toNodeId": "station-sadang:seoul-2",
+          "durationSeconds": 140,
+          "distanceMeters": 80,
+          "edgeType": "TRANSFER",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-gangnam-line2-shinbundang-transfer",
+          "fromNodeId": "station-gangnam:seoul-2",
+          "toNodeId": "station-gangnam:shinbundang",
+          "durationSeconds": 180,
+          "distanceMeters": 110,
+          "edgeType": "TRANSFER",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        },
+        {
+          "id": "edge-seongsu-loop-branch-transfer",
+          "fromNodeId": "station-seongsu:seoul-2",
+          "toNodeId": "station-seongsu:seoul-2-branch",
+          "durationSeconds": 120,
+          "distanceMeters": 60,
+          "edgeType": "TRANSFER",
+          "servicePattern": "LOCAL",
+          "includesStairs": false,
+          "stairAccessState": "STEP_FREE",
+          "accessibilityStatus": "AVAILABLE",
+          "reliabilityScore": 90,
+          "lastVerifiedAt": "2026-06-19T00:00:00Z"
+        }
+      ],
+      "representativeRouteRegressions": [
+        {
+          "id": "direct-local-sangnoksu-sadang",
+          "pattern": "DIRECT",
+          "fromNodeId": "station-sangnoksu:seoul-4:LOCAL",
+          "toNodeId": "station-sadang:seoul-4:LOCAL",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4"
+          ]
+        },
+        {
+          "id": "transfer-sangnoksu-gangnam",
+          "pattern": "TRANSFER",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-gangnam:seoul-2",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4",
+            "edge-sadang-line4-line2-transfer",
+            "edge-sadang-gangnam-seoul-2"
+          ]
+        },
+        {
+          "id": "multi-transfer-sangnoksu-jeongja",
+          "pattern": "MULTI_TRANSFER",
+          "fromNodeId": "station-sangnoksu:seoul-4",
+          "toNodeId": "station-jeongja:shinbundang",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4",
+            "edge-sadang-line4-line2-transfer",
+            "edge-sadang-gangnam-seoul-2",
+            "edge-gangnam-line2-shinbundang-transfer",
+            "edge-gangnam-jeongja-shinbundang"
+          ]
+        },
+        {
+          "id": "loop-branch-sinseoldong-gangnam",
+          "pattern": "LOOP_BRANCH",
+          "fromNodeId": "station-sinseoldong:seoul-2-branch",
+          "toNodeId": "station-gangnam:seoul-2",
+          "requiredEdgeIds": [
+            "edge-sinseoldong-seongsu-branch",
+            "edge-seongsu-loop-branch-transfer",
+            "edge-seongsu-gangnam-seoul-2"
+          ]
+        },
+        {
+          "id": "express-sangnoksu-sadang",
+          "pattern": "EXPRESS_LOCAL",
+          "fromNodeId": "station-sangnoksu:seoul-4:EXPRESS",
+          "toNodeId": "station-sadang:seoul-4:EXPRESS",
+          "requiredEdgeIds": [
+            "edge-sangnoksu-sadang-seoul-4-express"
+          ]
         }
       ],
       "stationExits": [
