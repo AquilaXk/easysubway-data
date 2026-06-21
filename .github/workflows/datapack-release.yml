@@ -51,6 +51,12 @@ jobs:
             --fixture tools/datapack/fixtures/catalog-fixture.json \
             --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
 
+      - name: Data Pack Release / Validate source inventory
+        run: |
+          set -euo pipefail
+          node tools/datapack/validate-source-inventory.mjs \
+            --inventory tools/datapack/source-inventory.json
+
       - name: Data Pack Release / Validate generated data packs
         run: |
           set -euo pipefail
