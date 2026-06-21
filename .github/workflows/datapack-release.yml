@@ -109,7 +109,43 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --dry-run
 
+      - name: Data Pack Release / Restore GitHub Actions dotenv secret
+        env:
+          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
+            echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          env_file="${RUNNER_TEMP}/easysubway-deploy.env"
+          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${env_file}"
+          chmod 600 "${env_file}"
+          echo "EASYSUBWAY_ENV_FILE=${env_file}" >> "${GITHUB_ENV}"
+
+      - name: Data Pack Release / Validate remote object storage publish env
+        id: remote-publish-env
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          node tools/datapack/export-publish-env.mjs \
+            --env-file "${EASYSUBWAY_ENV_FILE}" \
+            --github-env "${GITHUB_ENV}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Data Pack Release / Publish staged data packs to object storage
+        if: ${{ steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/publish-object-storage.mjs \
+            --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}"
+
       - name: Data Pack Release / Upload staged data packs
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: easysubway-datapacks-${{ github.sha }}
