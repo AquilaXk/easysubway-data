@@ -56,12 +56,21 @@ async function main() {
         sha256: compressedSha256,
         sqliteSha256,
         sizeBytes,
-        representativeRouteRegressions: pack.representativeRouteRegressions,
       }),
       schemaVersion: pack.schemaVersion,
       sourceInventory: pack.sourceInventory,
       regionalQualityMetrics: regionalQualityMetrics(pack),
       representativeRouteRegressions: pack.representativeRouteRegressions,
+      representativeRouteRegressionSignature: representativeRouteRegressionSignature({
+        id: pack.id,
+        version: pack.version,
+        artifactKind,
+        url: packUrl,
+        sha256: compressedSha256,
+        sqliteSha256,
+        sizeBytes,
+        representativeRouteRegressions: pack.representativeRouteRegressions,
+      }),
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
     });
@@ -139,11 +148,32 @@ function packSignature(pack) {
 }
 
 function fixtureSignaturePayload(pack) {
-  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
 }
 
 function productionSignaturePayload(pack) {
   return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
+}
+
+function representativeRouteRegressionSignature(pack) {
+  if (pack.artifactKind === "production") {
+    return {
+      algorithm: "rsa-sha256-route-regression-v1",
+      value: rsaSha256Signature(signingPrivateKey(), representativeRouteRegressionSignaturePayload(pack)),
+    };
+  }
+  return {
+    algorithm: "sha256-route-regression-v1",
+    value: sha256(Buffer.from(representativeRouteRegressionSignaturePayload(pack))),
+  };
+}
+
+function representativeRouteRegressionSignaturePayload(pack) {
+  const basePayload = `${fixtureSignaturePayload(pack)}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+  if (pack.artifactKind === "production") {
+    return `${basePayload}:${canonicalProductionPackUrl(pack.url)}`;
+  }
+  return basePayload;
 }
 
 function representativeRouteRegressionPayload(routes) {

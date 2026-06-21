@@ -46,6 +46,13 @@ async function validatePack(root, temporaryDir, pack) {
   ) {
     throw new Error(`${pack.id}@${pack.version} signature mismatch`);
   }
+  const routeRegressionSignature = representativeRouteRegressionSignature(pack);
+  if (
+    pack.representativeRouteRegressionSignature.algorithm !== routeRegressionSignature.algorithm ||
+    pack.representativeRouteRegressionSignature.value !== routeRegressionSignature.value
+  ) {
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressionSignature mismatch`);
+  }
 
   const sqlitePath = path.join(temporaryDir, `${pack.id}-v${pack.version}.sqlite`);
   await writeFile(sqlitePath, sqliteBytes);
@@ -675,6 +682,10 @@ function validateManifest(manifest) {
     validateSourceInventory(pack.sourceInventory, artifactKind, `${pack.id}@${pack.version}`);
     validateRegionalQualityMetrics(pack.regionalQualityMetrics, `${pack.id}@${pack.version}`);
     validateRepresentativeRouteRegressionManifest(pack.representativeRouteRegressions, `${pack.id}@${pack.version}`);
+    validateRepresentativeRouteRegressionSignature(
+      pack.representativeRouteRegressionSignature,
+      `${pack.id}@${pack.version}`,
+    );
     requiredString(pack.schemaVersion, "pack.schemaVersion");
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id}@${pack.version} requiredTables must be a non-empty array`);
@@ -746,6 +757,22 @@ function validateSignature(signature, label) {
     requiredSha256(value, "signature.value");
   } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
     throw new Error("signature.value must be a base64url string");
+  }
+}
+
+function validateRepresentativeRouteRegressionSignature(signature, label) {
+  if (!signature || typeof signature !== "object") {
+    throw new Error(`${label} representativeRouteRegressionSignature must be an object`);
+  }
+  const algorithm = requiredString(signature.algorithm, "representativeRouteRegressionSignature.algorithm");
+  if (algorithm !== "sha256-route-regression-v1" && algorithm !== "rsa-sha256-route-regression-v1") {
+    throw new Error(`${label} representativeRouteRegressionSignature algorithm is unsupported`);
+  }
+  const value = requiredString(signature.value, "representativeRouteRegressionSignature.value");
+  if (algorithm === "sha256-route-regression-v1") {
+    requiredSha256(value, "representativeRouteRegressionSignature.value");
+  } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("representativeRouteRegressionSignature.value must be a base64url string");
   }
 }
 
@@ -865,11 +892,39 @@ function packSignature(pack) {
 }
 
 function fixtureSignaturePayload(pack) {
-  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+  return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
 }
 
 function productionSignaturePayload(pack) {
   return `${fixtureSignaturePayload(pack)}:${canonicalProductionPackUrl(pack.url)}`;
+}
+
+function representativeRouteRegressionSignature(pack) {
+  if (pack.artifactKind === "production") {
+    const signature = {
+      algorithm: "rsa-sha256-route-regression-v1",
+      value: pack.representativeRouteRegressionSignature.value,
+    };
+    if (!verifyRsaSha256Signature(signingPublicKey(), representativeRouteRegressionSignaturePayload(pack), pack.representativeRouteRegressionSignature.value)) {
+      return {
+        algorithm: signature.algorithm,
+        value: "",
+      };
+    }
+    return signature;
+  }
+  return {
+    algorithm: "sha256-route-regression-v1",
+    value: sha256(Buffer.from(representativeRouteRegressionSignaturePayload(pack))),
+  };
+}
+
+function representativeRouteRegressionSignaturePayload(pack) {
+  const basePayload = `${fixtureSignaturePayload(pack)}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+  if (pack.artifactKind === "production") {
+    return `${basePayload}:${canonicalProductionPackUrl(pack.url)}`;
+  }
+  return basePayload;
 }
 
 function representativeRouteRegressionPayload(routes) {

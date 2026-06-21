@@ -43,6 +43,7 @@
           "sourceInventory",
           "regionalQualityMetrics",
           "representativeRouteRegressions",
+          "representativeRouteRegressionSignature",
           "requiredTables"
         ],
         "properties": {
@@ -95,6 +96,23 @@
             "type": "array",
             "minItems": 5,
             "items": { "$ref": "#/$defs/representativeRouteRegression" }
+          },
+          "representativeRouteRegressionSignature": {
+            "type": "object",
+            "required": ["algorithm", "value"],
+            "properties": {
+              "algorithm": {
+                "enum": [
+                  "sha256-route-regression-v1",
+                  "rsa-sha256-route-regression-v1"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
           },
           "requiredTables": {
             "type": "array",
