@@ -15,6 +15,7 @@ async function main() {
 
 function buildFixture(inventory, input) {
   validateHeader(input);
+  validateInventoryHeader(inventory, input.region);
   const inventorySources = inventorySourceMap(inventory);
   const sourceIds = requiredStringArray(input.sourceIds, "sourceIds");
   const selectedSources = sourceIds.map((sourceId) => {
@@ -93,6 +94,19 @@ function validateHeader(input) {
   }
   if (!Number.isInteger(input.manifest.ttlSeconds) || input.manifest.ttlSeconds <= 0) {
     throw new Error("manifest.ttlSeconds must be a positive integer");
+  }
+}
+
+function validateInventoryHeader(inventory, expectedRegion) {
+  if (!inventory || typeof inventory !== "object" || Array.isArray(inventory)) {
+    throw new Error("source inventory must be an object");
+  }
+  if (inventory.schemaVersion !== 1) {
+    throw new Error("source inventory schemaVersion must be 1");
+  }
+  const inventoryRegion = requiredString(inventory.region, "inventory.region");
+  if (inventoryRegion !== expectedRegion) {
+    throw new Error(`inventory.region must match input.region: ${inventoryRegion} !== ${expectedRegion}`);
   }
 }
 
@@ -382,7 +396,11 @@ function parseArgs(argv) {
     if (!key?.startsWith("--") || value === undefined) {
       throw new Error(`invalid argument: ${key ?? ""}`);
     }
-    args[key.slice(2)] = value;
+    const normalizedKey = key.slice(2);
+    if (Object.hasOwn(args, normalizedKey)) {
+      throw new Error(`duplicate argument: --${normalizedKey}`);
+    }
+    args[normalizedKey] = value;
   }
   return args;
 }

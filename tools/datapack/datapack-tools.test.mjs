@@ -1912,10 +1912,12 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
 
   const generated = JSON.parse(await readFile(outputPath, "utf8"));
   const pack = generated.packs[0];
+  const seoulMetroSource = pack.sourceInventory.find((source) => source.id === "seoulmetro-station-line-info");
   assert.equal(pack.artifactKind, "fixture");
   assert.equal(pack.sourceInventory.length, 2);
-  assert.equal(pack.sourceInventory[0].licenseStatus, "redistributable");
-  assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-21T00:00:00.000Z");
+  assert.ok(seoulMetroSource);
+  assert.equal(seoulMetroSource.licenseStatus, "redistributable");
+  assert.match(seoulMetroSource.updatedAt, /^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00\.000Z$/);
   assert.deepEqual(
     pack.stations.map((station) => station.id),
     ["station-sangnoksu", "station-sadang"],
@@ -1937,6 +1939,17 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     accessibilityStatus: "AVAILABLE",
     reliabilityScore: 90,
     lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+  });
+  assert.deepEqual(pack.facilities[0], {
+    id: "facility-sangnoksu-elevator-1",
+    stationId: "station-sangnoksu",
+    exitId: null,
+    type: "ELEVATOR",
+    name: "상록수역 1번 승강기",
+    status: "NORMAL",
+    floorFrom: "B2",
+    floorTo: "1F",
+    description: "상록수역 승강장과 지상을 연결합니다.",
   });
 });
 
@@ -2021,6 +2034,92 @@ test("공식 source ingest adapter는 같은 stable station-line의 상충 row�
       { cwd: root },
     ),
     /station line mapping conflict: station-sangnoksu:seoul-4.platformInfo/,
+  );
+});
+
+test("공식 source ingest adapter는 inventory header가 input과 다르면 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-inventory-header-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  inventory.region = "busan";
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(inputPath, `${JSON.stringify(sourceIngestInput(), null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        inventoryPath,
+        "--input",
+        inputPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root },
+    ),
+    /inventory\.region must match input\.region: busan !== capital/,
+  );
+});
+
+test("공식 source ingest adapter는 facility row의 mapping 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-facility-mapping-${Date.now()}`);
+  const input = sourceIngestInput();
+  input.facilityRows[0].station.sourceStationCode = "missing-code";
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        inputPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root },
+    ),
+    /source mapping missing: seoulmetro-station-line-info:missing-code:seoul-4/,
+  );
+});
+
+test("공식 source ingest adapter는 중복 CLI 인자를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-duplicate-arg-${Date.now()}`);
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(sourceIngestInput(), null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        inputPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root },
+    ),
+    /duplicate argument: --inventory/,
   );
 });
 
@@ -2193,6 +2292,22 @@ function sourceIngestInput() {
         accessibilityStatus: "AVAILABLE",
         reliabilityScore: 90,
         lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+      },
+    ],
+    facilityRows: [
+      {
+        id: "facility-sangnoksu-elevator-1",
+        station: {
+          sourceId: "seoulmetro-station-line-info",
+          sourceStationCode: "448",
+          lineId: "seoul-4",
+        },
+        type: "ELEVATOR",
+        name: "상록수역 1번 승강기",
+        status: "NORMAL",
+        floorFrom: "B2",
+        floorTo: "1F",
+        description: "상록수역 승강장과 지상을 연결합니다.",
       },
     ],
     representativeRouteRegressions: [
