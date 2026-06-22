@@ -3246,8 +3246,10 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
     "kric-platform-train-distance",
     "kric-safety-platform",
     "kric-station-elevator",
+    "kric-station-elevator-movement",
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
+    "kric-wheelchair-lift-movement",
   ]);
 });
 
@@ -4270,6 +4272,60 @@ test("공식 source ingest adapter는 KRIC 접근성 facility row를 stable stat
   assert.equal(fixture.packs[0].networkEdges.length, 0);
 });
 
+test("공식 source ingest adapter는 KRIC 이동동선을 확정 edge가 아닌 검수 후보로 보존한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-kric-movement-candidate-ingest-${Date.now()}`);
+  const input = kricMovementCandidateSourceIngestInput();
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const fixture = JSON.parse(await readFile(outputPath, "utf8"));
+  assert.deepEqual(
+    fixture.packs[0].sourceInventory.map((source) => source.id).sort(),
+    ["kric-station-elevator-movement", "kric-wheelchair-lift-movement", "molit-urban-rail-full-route"],
+  );
+  assert.deepEqual(
+    fixture.packs[0].movementPathCandidates.map(({ id, sourceId, stationId, reviewStatus }) => ({
+      id,
+      sourceId,
+      stationId,
+      reviewStatus,
+    })),
+    [
+      {
+        id: "movement-sangnoksu-elevator-kric-1",
+        sourceId: "kric-station-elevator-movement",
+        stationId: "station-sangnoksu",
+        reviewStatus: "PENDING_ADMIN_REVIEW",
+      },
+      {
+        id: "movement-sangnoksu-wheelchair-lift-kric-1",
+        sourceId: "kric-wheelchair-lift-movement",
+        stationId: "station-sangnoksu",
+        reviewStatus: "PENDING_ADMIN_REVIEW",
+      },
+    ],
+  );
+  assert.equal(fixture.packs[0].networkEdges.length, 0);
+  assert.equal((fixture.packs[0].internalRouteEdges ?? []).length, 0);
+});
+
 test("공식 source ingest adapter는 중복 CLI 인자를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-duplicate-arg-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
@@ -4780,6 +4836,73 @@ function kricAccessibilityFacilitySourceIngestInput() {
       description: "KRIC 접근성 시설 source ingest 검증용",
     })),
     routeEdges: [],
+    representativeRouteRegressions: [],
+  };
+}
+
+function kricMovementCandidateSourceIngestInput() {
+  return {
+    ...nationwideMasterSourceIngestInput(),
+    sourceIds: ["molit-urban-rail-full-route", "kric-station-elevator-movement", "kric-wheelchair-lift-movement"],
+    stationMappings: [
+      {
+        sourceId: "molit-urban-rail-full-route",
+        sourceStationCode: "MOLIT-SEOUL-4-448",
+        lineId: "seoul-4",
+        stationId: "station-sangnoksu",
+        stationLineId: "station-sangnoksu:seoul-4",
+        mappingStatus: "active",
+      },
+    ],
+    stationLineRows: [
+      nationwideMasterStationLineRow([
+        "molit-urban-rail-full-route",
+        "MOLIT-SEOUL-4-448",
+        "seoul-4",
+        "station-sangnoksu",
+        "448",
+        48,
+        "상록수",
+        "Sangnoksu",
+        "수도권",
+        37.3028,
+        126.8666,
+      ]),
+    ],
+    movementPathCandidates: [
+      {
+        sourceId: "kric-station-elevator-movement",
+        id: "movement-sangnoksu-elevator-kric-1",
+        station: {
+          sourceId: "molit-urban-rail-full-route",
+          sourceStationCode: "MOLIT-SEOUL-4-448",
+          lineId: "seoul-4",
+        },
+        facilityType: "ELEVATOR",
+        fromLabel: "1번 출입구",
+        toLabel: "승강장",
+        movementOrder: 1,
+        instruction: "1번 출입구에서 엘리베이터를 이용해 승강장으로 이동",
+        sourceImageUrl: "https://www.data.go.kr/kric/elevator-movement/example.png",
+      },
+      {
+        sourceId: "kric-wheelchair-lift-movement",
+        id: "movement-sangnoksu-wheelchair-lift-kric-1",
+        station: {
+          sourceId: "molit-urban-rail-full-route",
+          sourceStationCode: "MOLIT-SEOUL-4-448",
+          lineId: "seoul-4",
+        },
+        facilityType: "WHEELCHAIR_LIFT",
+        fromLabel: "대합실",
+        toLabel: "승강장",
+        movementOrder: 2,
+        instruction: "대합실에서 휠체어리프트 위치까지 이동 후 승강장으로 이동",
+        sourceImageUrl: "https://www.data.go.kr/kric/wheelchair-lift-movement/example.png",
+      },
+    ],
+    routeEdges: [],
+    internalRouteEdges: [],
     representativeRouteRegressions: [],
   };
 }

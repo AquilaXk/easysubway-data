@@ -33,6 +33,7 @@ function buildFixture(inventory, input) {
   const stationLines = normalizedStationLines(stationRows);
   const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey);
   const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey);
+  const movementCandidates = movementPathCandidates(input.movementPathCandidates ?? [], allowedSourceIds, mappingBySourceKey);
   const productionMinimumRows = productionMinimumTableRows(input, {
     stations: stations.length,
     stationLines: stationLines.length,
@@ -72,6 +73,11 @@ function buildFixture(inventory, input) {
           activePack: requiredString(input.pack.id, "pack.id"),
           sourceIngestAdapter: "official-source-ingest-v1",
           sourceInventoryRetrievedAt: requiredString(inventory.retrievedAt, "inventory.retrievedAt"),
+          ...(movementCandidates.length > 0
+            ? {
+                movementPathCandidateCount: String(movementCandidates.length),
+              }
+            : {}),
           ...(productionCoverageEvidence
             ? {
                 productionCoverageEvidence: JSON.stringify(productionCoverageEvidence),
@@ -86,6 +92,7 @@ function buildFixture(inventory, input) {
         networkEdges,
         stationExits: input.stationExits ?? [],
         facilities,
+        movementPathCandidates: movementCandidates,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
         representativeRouteRegressions: input.representativeRouteRegressions ?? [],
       },
@@ -458,6 +465,24 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey) {
     floorTo: row.floorTo ?? "",
     description: row.description ?? "",
   }));
+}
+
+function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey) {
+  return rows.map((row) => {
+    requiredKnownSource(row.sourceId, allowedSourceIds, "movementPathCandidates.sourceId");
+    return {
+      id: requiredString(row.id, "movementPathCandidates.id"),
+      sourceId: requiredString(row.sourceId, "movementPathCandidates.sourceId"),
+      stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
+      facilityType: requiredString(row.facilityType, "movementPathCandidates.facilityType"),
+      fromLabel: requiredString(row.fromLabel, "movementPathCandidates.fromLabel"),
+      toLabel: requiredString(row.toLabel, "movementPathCandidates.toLabel"),
+      movementOrder: requiredInteger(row.movementOrder, "movementPathCandidates.movementOrder"),
+      instruction: requiredString(row.instruction, "movementPathCandidates.instruction"),
+      sourceImageUrl: row.sourceImageUrl ?? "",
+      reviewStatus: "PENDING_ADMIN_REVIEW",
+    };
+  });
 }
 
 function nodeIdForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey) {

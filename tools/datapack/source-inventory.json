@@ -330,6 +330,61 @@
       ]
     },
     {
+      "id": "kric-station-elevator-movement",
+      "displayName": "국가철도공단_역사별 엘리베이터 이동동선",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 엘리베이터 이동동선 문구와 이미지 경로를 관리자 검수 후보로 제공",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041689/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "from_location",
+        "to_location",
+        "movement_order",
+        "facility_type",
+        "instruction",
+        "image_path"
+      ]
+    },
+    {
       "id": "kric-station-escalator",
       "displayName": "국가철도공단_역사별 에스컬레이터 현황",
       "owner": "국가철도공단",
@@ -432,6 +487,61 @@
         "location",
         "floor_from",
         "floor_to"
+      ]
+    },
+    {
+      "id": "kric-wheelchair-lift-movement",
+      "displayName": "국가철도공단_역사별 휠체어리프트 이동동선",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 휠체어리프트 이동동선 문구와 이미지 경로를 관리자 검수 후보로 제공",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041690/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "from_location",
+        "to_location",
+        "movement_order",
+        "facility_type",
+        "instruction",
+        "image_path"
       ]
     },
     {
