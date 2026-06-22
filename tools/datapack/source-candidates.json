@@ -91,23 +91,28 @@
       "priority": "P0",
       "domain": "station_line_membership",
       "displayName": "열차운영기관정보",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=3",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
-      "licenseEvidenceStatus": "partial",
+      "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=3",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
+        "usePermissionRange": "저작권표시",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan?serviceKey=[서비스키값]&format=xml&railOprIsttCd=DJ&railOprIsttNm=대전도시철도",
         "formats": [
           "JSON",
           "XML"
         ],
+        "outputFields": [
+          "railOprIsttCd",
+          "railOprIsttNm"
+        ],
         "missingEvidence": [
-          "licenseDetail",
-          "outputFields"
+          "sampleResponse"
         ]
       },
       "nextAction": "verify operator coverage for airport rail, GTX, and light rail before production inventory admission"
