@@ -653,6 +653,48 @@ test("데이터팩 remote publish env exporter는 opt-in된 로컬 placeholder p
   );
 });
 
+test("데이터팩 remote publish env exporter는 허용된 workflow에서 invalid publish env를 skip 처리한다", async () => {
+  const dir = path.join(tmpdir(), `easysubway-datapack-publish-env-invalid-skip-${Date.now()}`);
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  const envFile = path.join(dir, "deploy.env");
+  const githubEnvFile = path.join(dir, "github.env");
+  const githubOutputFile = path.join(dir, "github-output.txt");
+  await writeFile(
+    envFile,
+    [
+      "EASYSUBWAY_DATA_PACK_BASE_URL=http://localhost:9000/easysubway-datapacks",
+      "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_ENABLED=true",
+      "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT=http://localhost:9000",
+      "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY=access-key",
+      "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=secret-key",
+      "EASYSUBWAY_OBJECT_STORAGE_REGION=ap-northeast-2",
+      "EASYSUBWAY_DATAPACK_BUCKET=easysubway-datapacks",
+      "",
+    ].join("\n"),
+  );
+
+  const { stderr } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/export-publish-env.mjs",
+      "--env-file",
+      envFile,
+      "--github-env",
+      githubEnvFile,
+      "--github-output",
+      githubOutputFile,
+      "--allow-invalid-disabled",
+    ],
+    { cwd: root },
+  );
+
+  assert.match(stderr, /remote publish disabled: EASYSUBWAY_DATA_PACK_BASE_URL must be an HTTPS public URL/);
+  assert.match(await readFile(githubEnvFile, "utf8"), /^EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled$/m);
+  assert.match(await readFile(githubOutputFile, "utf8"), /^enabled=false$/m);
+  assert.match(await readFile(githubOutputFile, "utf8"), /^invalid=true$/m);
+});
+
 test("데이터팩 생성기는 대표 route regression 문자열을 앱 서명 기준으로 정규화한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-route-canonical-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");

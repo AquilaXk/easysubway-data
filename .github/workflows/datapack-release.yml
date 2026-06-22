@@ -143,7 +143,8 @@ jobs:
           node tools/datapack/export-publish-env.mjs \
             --env-file "${EASYSUBWAY_ENV_FILE}" \
             --github-env "${GITHUB_ENV}" \
-            --github-output "${GITHUB_OUTPUT}"
+            --github-output "${GITHUB_OUTPUT}" \
+            --allow-invalid-disabled
 
       - name: Data Pack Release / Publish staged data packs to object storage
         if: ${{ steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
