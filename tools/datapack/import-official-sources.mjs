@@ -39,6 +39,7 @@ function buildFixture(inventory, input) {
     routeEdges: networkEdges.length,
     facilities: facilities.length,
   });
+  const productionCoverageEvidence = productionCoverageEvidenceSummary(input, selectedSources, allowedSourceIds);
 
   return {
     manifest: input.manifest,
@@ -71,6 +72,11 @@ function buildFixture(inventory, input) {
           activePack: requiredString(input.pack.id, "pack.id"),
           sourceIngestAdapter: "official-source-ingest-v1",
           sourceInventoryRetrievedAt: requiredString(inventory.retrievedAt, "inventory.retrievedAt"),
+          ...(productionCoverageEvidence
+            ? {
+                productionCoverageEvidence: JSON.stringify(productionCoverageEvidence),
+              }
+            : {}),
         },
         operators: input.operators ?? [],
         lines: input.lines ?? [],
@@ -85,6 +91,88 @@ function buildFixture(inventory, input) {
       },
     ],
   };
+}
+
+function productionCoverageEvidenceSummary(input, selectedSources, allowedSourceIds) {
+  if ((input.pack.artifactKind ?? "fixture") !== "production") {
+    return null;
+  }
+  if (!Array.isArray(input.coverageEvidence) || input.coverageEvidence.length === 0) {
+    throw new Error("coverageEvidence must be a non-empty array for production pack");
+  }
+
+  const sourceCoverage = sourceCoverageIndex(selectedSources);
+  const evidenceByKey = new Map();
+  for (const entry of input.coverageEvidence) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("coverageEvidence entries must be objects");
+    }
+    const regionId = requiredString(entry.regionId, "coverageEvidence.regionId");
+    const operatorId = requiredString(entry.operatorId, "coverageEvidence.operatorId");
+    const sourceDomain = requiredString(entry.sourceDomain, "coverageEvidence.sourceDomain");
+    requiredString(entry.evidence, "coverageEvidence.evidence");
+    const sourceIds = [...new Set(requiredStringArray(entry.sourceIds, "coverageEvidence.sourceIds"))].sort();
+    const key = coverageKey(regionId, operatorId, sourceDomain);
+    if (evidenceByKey.has(key)) {
+      throw new Error(`duplicate production coverage evidence: ${key}`);
+    }
+    for (const sourceId of sourceIds) {
+      requiredKnownSource(sourceId, allowedSourceIds, "coverageEvidence.sourceIds[]");
+      const coveredKeys = sourceCoverage.bySourceId.get(sourceId) ?? new Set();
+      if (!coveredKeys.has(key)) {
+        throw new Error(`coverage evidence unsupported by source inventory: ${key}`);
+      }
+    }
+    evidenceByKey.set(key, {
+      regionId,
+      operatorId,
+      sourceDomain,
+      sourceIds,
+    });
+  }
+
+  for (const key of sourceCoverage.requiredKeys) {
+    if (!evidenceByKey.has(key)) {
+      throw new Error(`production coverage evidence missing: ${key}`);
+    }
+  }
+
+  return [...evidenceByKey.values()].sort((left, right) =>
+    coverageKey(left.regionId, left.operatorId, left.sourceDomain).localeCompare(
+      coverageKey(right.regionId, right.operatorId, right.sourceDomain),
+    ),
+  );
+}
+
+function sourceCoverageIndex(selectedSources) {
+  const bySourceId = new Map();
+  const requiredKeys = new Set();
+  for (const source of selectedSources) {
+    const sourceId = requiredString(source.id, "source.id");
+    const coverage = source.coverageScope;
+    if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
+      throw new Error(`${sourceId}.coverageScope must be an object`);
+    }
+    const keys = new Set();
+    for (const regionId of requiredStringArray(coverage.regionIds, `${sourceId}.coverageScope.regionIds`)) {
+      for (const operatorId of requiredStringArray(coverage.operatorIds, `${sourceId}.coverageScope.operatorIds`)) {
+        for (const sourceDomain of requiredStringArray(coverage.sourceDomains, `${sourceId}.coverageScope.sourceDomains`)) {
+          const key = coverageKey(regionId, operatorId, sourceDomain);
+          keys.add(key);
+          requiredKeys.add(key);
+        }
+      }
+    }
+    bySourceId.set(sourceId, keys);
+  }
+  return {
+    bySourceId,
+    requiredKeys: [...requiredKeys].sort(),
+  };
+}
+
+function coverageKey(regionId, operatorId, sourceDomain) {
+  return `${regionId}:${operatorId}:${sourceDomain}`;
 }
 
 function productionMinimumTableRows(input, actualCounts) {
@@ -181,6 +269,11 @@ function packSourceInventoryEntry(source) {
     updateFrequency: requiredString(source.updateFrequency, `${source.id}.updateFrequency`),
     updatedAt: `${requiredString(source.observedDataUpdatedAt, `${source.id}.observedDataUpdatedAt`)}T00:00:00.000Z`,
     fields: requiredStringArray(source.fieldsProvided, `${source.id}.fieldsProvided`),
+    coverageScope: {
+      regionIds: requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`),
+      operatorIds: requiredStringArray(source.coverageScope?.operatorIds, `${source.id}.coverageScope.operatorIds`),
+      sourceDomains: requiredStringArray(source.coverageScope?.sourceDomains, `${source.id}.coverageScope.sourceDomains`),
+    },
   };
 }
 

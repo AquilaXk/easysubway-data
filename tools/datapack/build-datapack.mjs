@@ -622,6 +622,12 @@ function validateSourceInventory(sourceInventory, artifactKind) {
     for (const field of source.fields) {
       requiredString(field, "sourceInventory.fields");
     }
+    if (artifactKind === "production" || source.coverageScope !== undefined) {
+      validateSourceInventoryCoverageScope(
+        source.coverageScope,
+        artifactKind === "production" ? "production sourceInventory.coverageScope" : "sourceInventory.coverageScope",
+      );
+    }
     if (artifactKind === "production") {
       if (licenseStatus !== "redistributable" || source.redistributionAllowed !== true) {
         throw new Error("production sourceInventory must be redistributable");
@@ -634,6 +640,15 @@ function validateSourceInventory(sourceInventory, artifactKind) {
       }
     }
   }
+}
+
+function validateSourceInventoryCoverageScope(coverageScope, label) {
+  if (!coverageScope || typeof coverageScope !== "object" || Array.isArray(coverageScope)) {
+    throw new Error(`${label} must be an object`);
+  }
+  requiredStringArray(coverageScope.regionIds, `${label}.regionIds`);
+  requiredStringArray(coverageScope.operatorIds, `${label}.operatorIds`);
+  requiredStringArray(coverageScope.sourceDomains, `${label}.sourceDomains`);
 }
 
 function isAbsoluteHttpsWithHost(value) {
@@ -684,6 +699,13 @@ function requiredString(value, label) {
     throw new Error(`${label} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function requiredStringArray(value, label) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must be a non-empty string array`);
+  }
+  return value.map((entry) => requiredString(entry, `${label}[]`));
 }
 
 function normalizedAccessibilityStatus(value, label) {
