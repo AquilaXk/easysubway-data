@@ -113,26 +113,42 @@
       "priority": "P0",
       "domain": "accessibility_platform",
       "displayName": "역사별 승강장 정보",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=433&service=convenientInfo&operation=stPlf&page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
-      "licenseEvidenceStatus": "partial",
+      "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=433&service=convenientInfo&operation=stPlf&page=1",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=1&stinCd=152",
+        "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
           "XML"
         ],
+        "outputFields": [
+          "grndDvCd",
+          "lnCd",
+          "plfCplFlg",
+          "plfNo",
+          "plfTpCd",
+          "plfTpNm",
+          "railOprIsttCd",
+          "runDirTmnStinCd",
+          "scrCharExt",
+          "sfFotExt",
+          "stinCd",
+          "stinFlor",
+          "updnDvcd"
+        ],
         "missingEvidence": [
-          "licenseDetail",
-          "outputFields"
+          "sampleResponse"
         ]
       },
-      "nextAction": "verify operator field completeness and platform direction codes before production inventory admission"
+      "nextAction": "verify live sample response and operator field completeness before production inventory admission"
     },
     {
       "id": "kric-station-movement-standard",
