@@ -46,26 +46,45 @@
       "priority": "P0",
       "domain": "station_line_membership",
       "displayName": "역사별 정보",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=183&service=convenientInfo&operation=stationInfo&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
-      "licenseEvidenceStatus": "partial",
+      "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=183&service=convenientInfo&operation=stationInfo&page=2",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo?serviceKey=[서비스키값]&format=xml&railOprIsttCd=KR&lnCd=1&stinCd=135&stinNm=용산",
+        "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
           "XML"
         ],
+        "outputFields": [
+          "lnCd",
+          "lonmAdr",
+          "mapCordX",
+          "mapCordY",
+          "railOprIsttCd",
+          "roadNmAdr",
+          "stinCd",
+          "stinLocLat",
+          "stinLocLon",
+          "stinNm",
+          "stinNmEng",
+          "stinNmJpn",
+          "stinNmRom",
+          "stinNmSimpcina",
+          "stinNmTradcina",
+          "strkZone"
+        ],
         "missingEvidence": [
-          "licenseDetail",
-          "outputFields"
+          "sampleResponse"
         ]
       },
-      "nextAction": "compare with KRIC standard station file and verify license evidence before production inventory admission"
+      "nextAction": "verify live sample response and compare with KRIC standard station file before production inventory admission"
     },
     {
       "id": "kric-train-operation-organ",
