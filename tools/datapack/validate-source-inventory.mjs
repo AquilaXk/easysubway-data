@@ -65,6 +65,7 @@ function validateSource(source, label) {
   }
   assertDate(source.observedDataUpdatedAt, `${id}.observedDataUpdatedAt`);
   validateLicense(source.license, id);
+  validateCoverageScope(source.coverageScope, id);
 
   if (!Array.isArray(source.fieldsProvided) || source.fieldsProvided.length === 0) {
     throw new Error(`${id}.fieldsProvided must be a non-empty array`);
@@ -72,6 +73,15 @@ function validateSource(source, label) {
   for (const field of source.fieldsProvided) {
     assertString(field, `${id}.fieldsProvided[]`);
   }
+}
+
+function validateCoverageScope(coverageScope, sourceId) {
+  if (!coverageScope || typeof coverageScope !== "object" || Array.isArray(coverageScope)) {
+    throw new Error(`${sourceId}.coverageScope must be an object`);
+  }
+  assertStringArray(coverageScope.regionIds, `${sourceId}.coverageScope.regionIds`);
+  assertStringArray(coverageScope.operatorIds, `${sourceId}.coverageScope.operatorIds`);
+  assertStringArray(coverageScope.sourceDomains, `${sourceId}.coverageScope.sourceDomains`);
 }
 
 function validateLicense(license, sourceId) {
@@ -104,6 +114,15 @@ function assertString(value, label) {
     throw new Error(`${label} is required`);
   }
   return value;
+}
+
+function assertStringArray(value, label) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must be a non-empty array`);
+  }
+  for (const entry of value) {
+    assertString(entry, `${label}[]`);
+  }
 }
 
 function assertDate(value, label) {
