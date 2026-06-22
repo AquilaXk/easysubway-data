@@ -258,13 +258,14 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "편의정보(표준)",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
-      "licenseEvidenceStatus": "partial",
+      "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
@@ -272,12 +273,21 @@
           "JSON",
           "XML"
         ],
+        "usePermissionRange": "저작권표시",
+        "outputFields": [
+          "dtlLoc",
+          "grndDvCd",
+          "gubun",
+          "imgPath",
+          "mlFmlDvCd",
+          "stinFlor",
+          "trfcWeakDvCd"
+        ],
         "missingEvidence": [
-          "licenseDetail",
-          "outputFields"
+          "sampleResponse"
         ]
       },
-      "nextAction": "decide primary or secondary role against detailed facility APIs before production inventory admission"
+      "nextAction": "verify live sample response and decide primary or secondary role against detailed facility APIs before production inventory admission"
     }
   ]
 }
