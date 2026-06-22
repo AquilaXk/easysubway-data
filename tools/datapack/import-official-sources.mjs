@@ -31,6 +31,14 @@ function buildFixture(inventory, input) {
   const stationRows = stationLineRows(input.stationLineRows, allowedSourceIds, mappingBySourceKey);
   const stations = normalizedStations(stationRows);
   const stationLines = normalizedStationLines(stationRows);
+  const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey);
+  const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey);
+  const productionMinimumRows = productionMinimumTableRows(input, {
+    stations: stations.length,
+    stationLines: stationLines.length,
+    routeEdges: networkEdges.length,
+    facilities: facilities.length,
+  });
 
   return {
     manifest: input.manifest,
@@ -54,9 +62,10 @@ function buildFixture(inventory, input) {
           catalog_metadata: 2,
           operators: input.operators?.length ?? 0,
           lines: input.lines?.length ?? 0,
-          stations: stations.length,
-          station_lines: stationLines.length,
-          network_edges: input.routeEdges?.length ?? 0,
+          stations: productionMinimumRows?.stations ?? stations.length,
+          station_lines: productionMinimumRows?.station_lines ?? stationLines.length,
+          network_edges: productionMinimumRows?.network_edges ?? networkEdges.length,
+          facilities: productionMinimumRows?.facilities ?? facilities.length,
         },
         metadata: {
           activePack: requiredString(input.pack.id, "pack.id"),
@@ -68,14 +77,40 @@ function buildFixture(inventory, input) {
         stations,
         stationLines,
         stationAliases: stationAliases(input.stationMappings ?? [], mappingBySourceKey),
-        networkEdges: routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey),
+        networkEdges,
         stationExits: input.stationExits ?? [],
-        facilities: facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey),
+        facilities,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
         representativeRouteRegressions: input.representativeRouteRegressions ?? [],
       },
     ],
   };
+}
+
+function productionMinimumTableRows(input, actualCounts) {
+  if ((input.pack.artifactKind ?? "fixture") !== "production") {
+    return null;
+  }
+  const coverage = input.minimumProductionCoverage;
+  if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
+    throw new Error("minimumProductionCoverage must be an object for production pack");
+  }
+  return {
+    stations: requiredCoverageCount(coverage.stations, "stations", actualCounts.stations),
+    station_lines: requiredCoverageCount(coverage.stationLines, "stationLines", actualCounts.stationLines),
+    network_edges: requiredCoverageCount(coverage.routeEdges, "routeEdges", actualCounts.routeEdges),
+    facilities: requiredCoverageCount(coverage.facilities, "facilities", actualCounts.facilities),
+  };
+}
+
+function requiredCoverageCount(value, label, actualCount) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`minimumProductionCoverage.${label} must be a positive integer`);
+  }
+  if (actualCount < value) {
+    throw new Error(`production coverage ${label} ${actualCount} is below required minimum ${value}`);
+  }
+  return value;
 }
 
 function validateHeader(input) {

@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
+const productionMinimumTableRowNames = ["stations", "station_lines", "network_edges", "facilities"];
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const manifestPath = path.resolve(requireArg(args, "manifest"));
@@ -697,18 +699,37 @@ function validateManifest(manifest) {
     for (const tableName of pack.requiredTables) {
       validateTableName(tableName);
     }
-    if (pack.minimumTableRows !== undefined) {
-      if (!pack.minimumTableRows || typeof pack.minimumTableRows !== "object" || Array.isArray(pack.minimumTableRows)) {
-        throw new Error(`${pack.id}@${pack.version} minimumTableRows must be an object`);
-      }
-      for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows)) {
-        validateTableName(tableName);
-        if (!Number.isInteger(minimumRows) || minimumRows < 0) {
-          throw new Error(`${pack.id}@${pack.version} minimumTableRows entry must be a non-negative integer`);
-        }
+    validateMinimumTableRows(pack, artifactKind, `${pack.id}@${pack.version}`);
+  }
+}
+
+function validateMinimumTableRows(pack, artifactKind, label) {
+  if (pack.minimumTableRows !== undefined) {
+    if (!pack.minimumTableRows || typeof pack.minimumTableRows !== "object" || Array.isArray(pack.minimumTableRows)) {
+      throw new Error(`${label} minimumTableRows must be an object`);
+    }
+    for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows)) {
+      validateTableName(tableName);
+      if (!Number.isInteger(minimumRows) || minimumRows < 0) {
+        throw new Error(`${label} minimumTableRows entry must be a non-negative integer`);
       }
     }
   }
+  if (artifactKind !== "production") {
+    return;
+  }
+  if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
+    throw new Error(`${label} production minimumTableRows must define stations, station_lines, network_edges, and facilities`);
+  }
+}
+
+function hasProductionMinimumTableRows(minimumTableRows) {
+  return (
+    minimumTableRows &&
+    typeof minimumTableRows === "object" &&
+    !Array.isArray(minimumTableRows) &&
+    productionMinimumTableRowNames.every((tableName) => Number.isInteger(minimumTableRows[tableName]))
+  );
 }
 
 function validatePackUrl(packUrl, label) {
