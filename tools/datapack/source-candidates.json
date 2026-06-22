@@ -355,9 +355,12 @@
         "missingConfirmedEdgeFields": [
           "distanceMeters",
           "durationSeconds"
+        ],
+        "missingEvidence": [
+          "sampleResponse"
         ]
       },
-      "nextAction": "verify image redistribution rights and keep as admin review candidate until distance and duration evidence exists"
+      "nextAction": "verify live sample response, image redistribution rights, and keep as admin review candidate until distance and duration evidence exists"
     },
     {
       "id": "kric-station-convenience-standard",
