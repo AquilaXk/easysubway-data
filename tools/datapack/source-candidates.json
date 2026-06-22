@@ -38,7 +38,22 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo?serviceKey=[서비스키값]&format=xml&railOprIsttCd=KR&lnCd=1&stinCd=135&stinNm=용산",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "compare with KRIC standard station file and verify license evidence before production inventory admission"
     },
     {
