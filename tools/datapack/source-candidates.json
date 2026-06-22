@@ -90,7 +90,22 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTransferInfo",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTransferInfo",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTransferInfo?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=312",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "separate transfer relationship evidence from step-free movement evidence before production inventory admission"
     },
     {
