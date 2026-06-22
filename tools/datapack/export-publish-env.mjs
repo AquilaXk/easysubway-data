@@ -14,20 +14,29 @@ async function main() {
   const envFile = requireArg(args, "env-file");
   const githubEnv = requireArg(args, "github-env");
   const githubOutput = requireArg(args, "github-output");
+  const allowInvalidDisabled = args.has("allow-invalid-disabled");
   const env = parseDotenv(await readFile(envFile, "utf8"));
 
   if (env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_ENABLED !== "true") {
-    await appendFile(githubEnv, "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled\n");
-    await appendFile(githubOutput, "enabled=false\n");
+    await disableRemotePublish(githubEnv, githubOutput);
     return;
   }
 
-  requireHttpsPublicUrl(env.EASYSUBWAY_DATA_PACK_BASE_URL, "EASYSUBWAY_DATA_PACK_BASE_URL");
-  requireHttpsPublicUrl(env.EASYSUBWAY_OBJECT_STORAGE_ENDPOINT, "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT");
-  requireSafeSegment(env.EASYSUBWAY_DATAPACK_BUCKET, "EASYSUBWAY_DATAPACK_BUCKET");
+  try {
+    requireHttpsPublicUrl(env.EASYSUBWAY_DATA_PACK_BASE_URL, "EASYSUBWAY_DATA_PACK_BASE_URL");
+    requireHttpsPublicUrl(env.EASYSUBWAY_OBJECT_STORAGE_ENDPOINT, "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT");
+    requireSafeSegment(env.EASYSUBWAY_DATAPACK_BUCKET, "EASYSUBWAY_DATAPACK_BUCKET");
 
-  for (const name of exportedNames) {
-    requireNonEmpty(env[name], name);
+    for (const name of exportedNames) {
+      requireNonEmpty(env[name], name);
+    }
+  } catch (error) {
+    if (!allowInvalidDisabled) {
+      throw error;
+    }
+    console.error(`remote publish disabled: ${error.message}`);
+    await disableRemotePublish(githubEnv, githubOutput, { invalid: true });
+    return;
   }
 
   const lines = [
@@ -36,6 +45,11 @@ async function main() {
   ];
   await appendFile(githubEnv, `${lines.join("\n")}\n`);
   await appendFile(githubOutput, "enabled=true\n");
+}
+
+async function disableRemotePublish(githubEnv, githubOutput, { invalid = false } = {}) {
+  await appendFile(githubEnv, "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled\n");
+  await appendFile(githubOutput, `enabled=false\n${invalid ? "invalid=true\n" : ""}`);
 }
 
 function parseDotenv(source) {
@@ -95,6 +109,10 @@ function parseArgs(argv) {
   const args = new Map();
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
+    if (key === "--allow-invalid-disabled") {
+      args.set("allow-invalid-disabled", true);
+      continue;
+    }
     const value = argv[index + 1];
     if (!key?.startsWith("--") || value === undefined || value.startsWith("--")) {
       throw new Error(`invalid argument near ${key ?? "<end>"}`);
