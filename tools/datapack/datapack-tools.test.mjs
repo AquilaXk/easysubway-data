@@ -3092,6 +3092,36 @@ test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 rep
   assert.ok(report.requirements.every((entry) => Array.isArray(entry.sourceIds)));
 });
 
+test("전국 coverage gap report는 targets에 없는 coverageScope domain을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-invalid-domain-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  inventory.sources[0].coverageScope.sourceDomains = ["unknown_domain"];
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory",
+        inventoryPath,
+        "--output",
+        reportPath,
+        "--allow-gaps",
+      ],
+      { cwd: root },
+    ),
+    /undefined source domain: unknown_domain/,
+  );
+});
+
 test("전국 coverage gap report는 target coverage가 모두 충족되면 성공한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-complete-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");

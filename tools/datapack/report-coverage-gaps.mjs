@@ -19,8 +19,9 @@ async function main() {
 
 function buildCoverageGapReport(targets, inventory) {
   validateTargets(targets);
+  const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
-  const sources = inventory.sources.map(normalizeSource);
+  const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
   const requirements = [];
 
   for (const region of targets.regions) {
@@ -55,6 +56,14 @@ function buildCoverageGapReport(targets, inventory) {
       coverageComplete: missingRequirements === 0,
     },
     requirements,
+  };
+}
+
+function coverageTargetIndex(targets) {
+  return {
+    regionIds: new Set(targets.regions.map((region) => region.id)),
+    operatorIds: new Set(targets.regions.flatMap((region) => region.operatorIds)),
+    sourceDomains: new Set(targets.requiredSourceDomains.map((domain) => domain.id)),
   };
 }
 
@@ -122,18 +131,32 @@ function validateInventory(inventory) {
   requiredString(inventory.retrievedAt, "inventory.retrievedAt");
 }
 
-function normalizeSource(source) {
+function normalizeSource(source, targetIndex) {
   const id = requiredString(source.id, "source.id");
   const coverage = source.coverageScope;
   if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
     throw new Error(`${id}.coverageScope must be an object`);
   }
+  const regionIds = requiredStringArray(coverage.regionIds, `${id}.coverageScope.regionIds`);
+  const operatorIds = requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`);
+  const sourceDomains = requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`);
+  validateKnownValues(regionIds, targetIndex.regionIds, `${id}.coverageScope.regionIds`, "region");
+  validateKnownValues(operatorIds, targetIndex.operatorIds, `${id}.coverageScope.operatorIds`, "operator");
+  validateKnownValues(sourceDomains, targetIndex.sourceDomains, `${id}.coverageScope.sourceDomains`, "source domain");
   return {
     id,
-    regionIds: requiredStringArray(coverage.regionIds, `${id}.coverageScope.regionIds`),
-    operatorIds: requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`),
-    sourceDomains: requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`),
+    regionIds,
+    operatorIds,
+    sourceDomains,
   };
+}
+
+function validateKnownValues(values, knownValues, label, valueLabel) {
+  for (const value of values) {
+    if (!knownValues.has(value)) {
+      throw new Error(`${label} contains undefined ${valueLabel}: ${value}`);
+    }
+  }
 }
 
 function requiredString(value, label) {
