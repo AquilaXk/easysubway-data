@@ -196,7 +196,23 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "automaticRouteGraphEdgeAllowed": false,
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=331&prevStinCd=422&chthTgtLn=4&chtnNextStinCd=424",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "verify line and station-code combinations before production inventory admission"
     },
     {
