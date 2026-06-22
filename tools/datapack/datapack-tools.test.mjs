@@ -3138,6 +3138,209 @@ test("source inventory 검증기는 coverageScope 누락을 거부한다", async
   );
 });
 
+test("source candidate sample 검증기는 KRIC live evidence metadata를 허용한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-sample-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(
+      {
+        candidateId: "kric-subway-route-info",
+        endpoint: "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+        format: "json",
+        fields: [
+          "lnCd",
+          "mreaWideCd",
+          "railOprIsttCd",
+          "routCd",
+          "routNm",
+          "stinCd",
+          "stinConsOrdr",
+          "stinNm",
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-candidate-sample.mjs",
+      "--candidate",
+      "kric-subway-route-info",
+      "--sample",
+      samplePath,
+    ],
+    { cwd: root },
+  );
+
+  assert.match(stdout, /source candidate sample evidence valid: kric-subway-route-info/);
+});
+
+test("source candidate sample 검증기는 endpoint mismatch를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-endpoint-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(
+      {
+        candidateId: "kric-subway-route-info",
+        endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
+        format: "json",
+        fields: [
+          "lnCd",
+          "mreaWideCd",
+          "railOprIsttCd",
+          "routCd",
+          "routNm",
+          "stinCd",
+          "stinConsOrdr",
+          "stinNm",
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "kric-subway-route-info",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /endpoint mismatch/,
+  );
+});
+
+test("source candidate sample 검증기는 output field 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-field-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(
+      {
+        candidateId: "kric-subway-route-info",
+        endpoint: "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+        format: "json",
+        fields: ["lnCd", "mreaWideCd", "railOprIsttCd", "routCd", "routNm", "stinCd", "stinNm"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "kric-subway-route-info",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /output field missing: stinConsOrdr/,
+  );
+});
+
+test("source candidate sample 검증기는 KRIC 이동동선 route graph 자동 승격을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-route-edge-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(
+      {
+        candidateId: "kric-transfer-movement-standard",
+        endpoint: "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
+        format: "json",
+        fields: [
+          "chtnMvTpOrdr",
+          "edMovePath",
+          "elvtSttCd",
+          "elvtTpCd",
+          "imgPath",
+          "mvContDtl",
+          "mvPathMgNo",
+          "stMovePath",
+        ],
+        routeGraphEdgeAdmission: "allowed",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "kric-transfer-movement-standard",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /route graph edge admission requires confirmed fields: distanceMeters, durationSeconds/,
+  );
+});
+
+test("source candidate sample 검증기는 serviceKey credential 포함을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-secret-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(
+      {
+        candidateId: "kric-train-operation-organ",
+        endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
+        format: "json",
+        fields: ["railOprIsttCd", "railOprIsttNm"],
+        observedUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan?serviceKey=actual-secret",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /sample evidence must not contain serviceKey credentials: observedUrl/,
+  );
+});
+
 test("전국 coverage gap report는 현재 source inventory의 누락 coverage를 실패로 노출한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-fail-${Date.now()}`);
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
