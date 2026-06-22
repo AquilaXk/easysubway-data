@@ -3341,6 +3341,129 @@ test("source candidate sample 검증기는 serviceKey credential 포함을 거�
   );
 });
 
+test("source candidate sample evidence builder는 raw JSON response를 validator 입력으로 변환한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-json-evidence-${Date.now()}`);
+  const responsePath = path.join(outputDir, "response.json");
+  const evidencePath = path.join(outputDir, "evidence.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    responsePath,
+    `${JSON.stringify({
+      response: {
+        body: {
+          pageNo: 1,
+          numOfRows: 10,
+          totalCount: 1,
+          items: {
+            item: [
+              {
+                railOprIsttCd: "S1",
+              },
+              {
+                railOprIsttNm: "서울교통공사",
+              },
+            ],
+          },
+        },
+      },
+    })}\n`,
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-source-candidate-sample-evidence.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--response",
+      responsePath,
+    ],
+    { cwd: root },
+  );
+  await writeFile(evidencePath, stdout);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-candidate-sample.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--sample",
+      evidencePath,
+    ],
+    { cwd: root },
+  );
+});
+
+test("source candidate sample evidence builder는 raw XML response를 validator 입력으로 변환한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-xml-evidence-${Date.now()}`);
+  const responsePath = path.join(outputDir, "response.xml");
+  const evidencePath = path.join(outputDir, "evidence.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    responsePath,
+    `<response><body><items><item>
+      <railOprIsttCd>S1</railOprIsttCd>
+    </item><item>
+      <railOprIsttCd>S2</railOprIsttCd>
+      <railOprIsttNm/>
+    </item></items></body></response>\n`,
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-source-candidate-sample-evidence.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--response",
+      responsePath,
+    ],
+    { cwd: root },
+  );
+  await writeFile(evidencePath, stdout);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-candidate-sample.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--sample",
+      evidencePath,
+    ],
+    { cwd: root },
+  );
+});
+
+test("source candidate sample evidence builder는 raw response의 serviceKey credential을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-raw-secret-${Date.now()}`);
+  const responsePath = path.join(outputDir, "response.xml");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    responsePath,
+    `${JSON.stringify({ response: { body: { serviceKey: "actual-secret" } } })}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-source-candidate-sample-evidence.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--response",
+        responsePath,
+      ],
+      { cwd: root },
+    ),
+    /raw sample response must not contain serviceKey credentials/,
+  );
+});
+
 test("전국 coverage gap report는 현재 source inventory의 누락 coverage를 실패로 노출한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-fail-${Date.now()}`);
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
