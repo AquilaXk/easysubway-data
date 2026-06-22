@@ -140,7 +140,7 @@ function validateInventoryHeader(inventory, expectedRegion) {
     throw new Error("source inventory schemaVersion must be 1");
   }
   const inventoryRegion = requiredString(inventory.region, "inventory.region");
-  if (inventoryRegion !== expectedRegion) {
+  if (inventoryRegion !== "nationwide" && inventoryRegion !== expectedRegion) {
     throw new Error(`inventory.region must match input.region: ${inventoryRegion} !== ${expectedRegion}`);
   }
 }

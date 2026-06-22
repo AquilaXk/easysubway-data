@@ -3009,6 +3009,36 @@ test("source inventory 검증기는 알 수 없는 라이선스 유형을 거부
   );
 });
 
+test("source inventory 검증기는 공공데이터포털 이용허락범위 제한 없음 source를 허용한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const freeUseInventory = structuredClone(sourceInventory);
+  freeUseInventory.sources[0].license = {
+    type: "PUBLIC_DATA_FREE_USE",
+    name: "공공데이터포털 이용허락범위 제한 없음",
+    attribution: "공공데이터포털 이용허락범위 제한 없음",
+    commercialUseAllowed: true,
+    derivativeWorkAllowed: true,
+    redistributionAllowed: true,
+    evidenceUrl: "https://www.data.go.kr/data/15098554/openapi.do",
+  };
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-free-use-license-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(freeUseInventory, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-inventory.mjs",
+      "--inventory",
+      inventoryPath,
+    ],
+    { cwd: root },
+  );
+});
+
 test("source inventory 검증기는 coverageScope 누락을 거부한다", async () => {
   const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const invalidInventory = structuredClone(sourceInventory);
@@ -3090,6 +3120,45 @@ test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 rep
   assert.ok(report.requirements.some((entry) => entry.status === "covered"));
   assert.ok(report.requirements.some((entry) => entry.status === "missing"));
   assert.ok(report.requirements.every((entry) => Array.isArray(entry.sourceIds)));
+});
+
+test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inventory coverage를 반영한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-official-source-${Date.now()}`);
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--output",
+      reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.totalRequirements, 35);
+  assert.equal(report.summary.coveredRequirements, 9);
+  assert.equal(report.summary.missingRequirements, 26);
+
+  const busanStationMembership = report.requirements.find(
+    (entry) =>
+      entry.regionId === "busan" &&
+      entry.operatorId === "busan-transportation" &&
+      entry.sourceDomain === "station_line_membership",
+  );
+  assert.deepEqual(busanStationMembership?.sourceIds, [
+    "busan-transportation-urban-rail-station-info",
+    "kric-metropolitan-rail-station-info",
+    "molit-tago-subway-info",
+  ]);
 });
 
 test("전국 coverage gap report는 targets에 없는 coverageScope domain을 거부한다", async () => {
