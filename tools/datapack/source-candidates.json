@@ -12,7 +12,22 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo?serviceKey=[서비스키값]&format=xml&mreaWideCd=01&lnCd=A1",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "verify KRIC sample response and redistributable license evidence before production inventory admission"
     },
     {
