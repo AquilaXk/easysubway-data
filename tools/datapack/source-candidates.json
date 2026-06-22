@@ -78,7 +78,23 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationMovement",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "automaticRouteGraphEdgeAllowed": false,
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationMovement",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=321",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "compare with standard movement API before choosing a primary source"
     },
     {
