@@ -113,10 +113,25 @@
       "priority": "P0",
       "domain": "accessibility_platform",
       "displayName": "역사별 승강장 정보",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=1&stinCd=152",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "verify operator field completeness and platform direction codes before production inventory admission"
     },
     {
