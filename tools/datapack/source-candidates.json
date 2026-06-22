@@ -99,8 +99,35 @@
       "displayName": "환승 이동경로",
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=307&operation=transferMovement&service=vulnerableUserInfo",
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/transferMovement",
-      "licenseEvidenceStatus": "partial",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=307&operation=transferMovement&service=vulnerableUserInfo",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/transferMovement",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=321&prevStinCd=422&chthTgtLn=4&chtnNextStinCd=424",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "usePermissionRange": "저작권표시",
+        "outputFields": [
+          "chtnMvTpOrdr",
+          "edMovePath",
+          "elvtSttCd",
+          "elvtTpCd",
+          "imgPath",
+          "mvContDtl",
+          "mvPathMgNo",
+          "stMovePath"
+        ],
+        "missingConfirmedEdgeFields": [
+          "distanceMeters",
+          "durationSeconds"
+        ]
+      },
       "nextAction": "verify image redistribution rights and keep as admin review candidate until distance and duration evidence exists"
     },
     {
