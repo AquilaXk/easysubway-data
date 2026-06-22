@@ -224,27 +224,42 @@
       "priority": "P0",
       "domain": "indoor_movement_paths",
       "displayName": "환승 이동경로(표준)",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=428&service=handicapped&operation=transferMovement&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
-      "licenseEvidenceStatus": "partial",
+      "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "automaticRouteGraphEdgeAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=428&service=handicapped&operation=transferMovement&page=2",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=331&prevStinCd=422&chthTgtLn=4&chtnNextStinCd=424",
+        "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
           "XML"
         ],
+        "outputFields": [
+          "chtnMvTpOrdr",
+          "edMovePath",
+          "elvtSttCd",
+          "elvtTpCd",
+          "imgPath",
+          "mvContDtl",
+          "mvPathMgNo",
+          "stMovePath"
+        ],
         "missingEvidence": [
-          "licenseDetail",
-          "outputFields"
+          "sampleResponse"
+        ],
+        "missingConfirmedEdgeFields": [
+          "distanceMeters",
+          "durationSeconds"
         ]
       },
-      "nextAction": "verify line and station-code combinations before production inventory admission"
+      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists"
     },
     {
       "id": "kric-transfer-movement-detailed",
