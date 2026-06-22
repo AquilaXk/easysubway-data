@@ -58,6 +58,11 @@ async function main() {
 }
 
 function objectStorageClient() {
+  const preauthBaseUrl = process.env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL?.trim();
+  if (preauthBaseUrl) {
+    return preauthenticatedObjectStorageClient(new URL(preauthBaseUrl));
+  }
+
   const endpoint = new URL(requireEnv("EASYSUBWAY_OBJECT_STORAGE_ENDPOINT"));
   const bucket = requiredSafeObjectSegment(requireEnv("EASYSUBWAY_DATAPACK_BUCKET"), "EASYSUBWAY_DATAPACK_BUCKET");
   const region = requireEnv("EASYSUBWAY_OBJECT_STORAGE_REGION");
@@ -110,6 +115,43 @@ function objectStorageClient() {
   };
 }
 
+function preauthenticatedObjectStorageClient(baseUrl) {
+  return {
+    putObject: async (key, bytes, step) => {
+      const response = await unsignedRequest({
+        url: preauthObjectUrl(baseUrl, key),
+        method: "PUT",
+        body: bytes,
+        headers: {
+          "content-length": String(bytes.length),
+          "content-type": contentTypeForKey(key),
+          "opc-meta-sha256": step.sha256,
+          "opc-meta-size-bytes": String(step.sizeBytes),
+        },
+      });
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`${key} PUT failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+      }
+    },
+    verifyObject: async (key, step) => {
+      const response = await unsignedRequest({
+        url: preauthObjectUrl(baseUrl, key),
+        method: "GET",
+        body: Buffer.alloc(0),
+      });
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+      }
+      if (response.body.length !== step.sizeBytes) {
+        throw new Error(`${key} uploaded size mismatch`);
+      }
+      if (sha256(response.body) !== step.sha256) {
+        throw new Error(`${key} uploaded checksum mismatch`);
+      }
+    },
+  };
+}
+
 async function signedRequest(options) {
   const requestUrl = objectUrl(options.endpoint, options.bucket, options.key);
   const body = options.body ?? Buffer.alloc(0);
@@ -151,6 +193,33 @@ async function signedRequest(options) {
     );
     request.on("error", reject);
     if (options.method !== "HEAD") {
+      request.write(body);
+    }
+    request.end();
+  });
+}
+
+async function unsignedRequest(options) {
+  const transport = options.url.protocol === "https:" ? https : http;
+  const body = options.body ?? Buffer.alloc(0);
+  return await new Promise((resolve, reject) => {
+    const chunks = [];
+    const request = transport.request(
+      options.url,
+      {
+        method: options.method,
+        headers: options.headers ?? {},
+      },
+      (response) => {
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          response.body = Buffer.concat(chunks);
+          resolve(response);
+        });
+      },
+    );
+    request.on("error", reject);
+    if (options.method !== "HEAD" && body.length > 0) {
       request.write(body);
     }
     request.end();
@@ -246,6 +315,21 @@ function objectUrl(endpoint, bucket, key) {
     .join("/")}`;
   url.search = "";
   return url;
+}
+
+function preauthObjectUrl(baseUrl, key) {
+  const url = new URL(baseUrl.toString());
+  const basePath = url.pathname.replace(/\/+$/, "");
+  url.pathname = `${basePath}/${safeRelativeObjectPath(key, "objectKey")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")}`;
+  return url;
+}
+
+function errorBodySuffix(body) {
+  const text = body?.toString("utf8").trim();
+  return text ? `: ${text.slice(0, 500)}` : "";
 }
 
 function parseArgs(argv) {

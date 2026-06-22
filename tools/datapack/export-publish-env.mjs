@@ -11,6 +11,7 @@ const exportedNames = [
 const maskedExportedNames = new Set([
   "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY",
   "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY",
+  "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL",
 ]);
 
 async function main() {
@@ -28,11 +29,18 @@ async function main() {
 
   try {
     requireHttpsPublicUrl(env.EASYSUBWAY_DATA_PACK_BASE_URL, "EASYSUBWAY_DATA_PACK_BASE_URL");
-    requireHttpsPublicUrl(env.EASYSUBWAY_OBJECT_STORAGE_ENDPOINT, "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT");
-    requireSafeSegment(env.EASYSUBWAY_DATAPACK_BUCKET, "EASYSUBWAY_DATAPACK_BUCKET");
+    if (env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL) {
+      requireHttpsPublicUrl(
+        env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL,
+        "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL",
+      );
+    } else {
+      requireHttpsPublicUrl(env.EASYSUBWAY_OBJECT_STORAGE_ENDPOINT, "EASYSUBWAY_OBJECT_STORAGE_ENDPOINT");
+      requireSafeSegment(env.EASYSUBWAY_DATAPACK_BUCKET, "EASYSUBWAY_DATAPACK_BUCKET");
 
-    for (const name of exportedNames) {
-      requireNonEmpty(env[name], name);
+      for (const name of exportedNames) {
+        requireNonEmpty(env[name], name);
+      }
     }
   } catch (error) {
     if (!allowInvalidDisabled) {
@@ -45,7 +53,9 @@ async function main() {
 
   const lines = [
     "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled",
-    ...exportedNames.map((name) => `${name}=${env[name]}`),
+    ...(env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL
+      ? [`EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL=${env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}`]
+      : exportedNames.map((name) => `${name}=${env[name]}`)),
   ];
   registerGithubMasks(env);
   await appendFile(githubEnv, `${lines.join("\n")}\n`);
