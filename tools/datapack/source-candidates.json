@@ -183,9 +183,11 @@
           "stMovePath"
         ],
         "missingEvidence": [
-          "distanceMeters",
-          "durationSeconds",
           "sampleResponse"
+        ],
+        "missingConfirmedEdgeFields": [
+          "distanceMeters",
+          "durationSeconds"
         ]
       },
       "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists"
