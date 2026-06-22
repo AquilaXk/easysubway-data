@@ -14,6 +14,17 @@
       "datasetUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
       "datasetKind": "sheet-open-api",
       "coverage": "서울교통공사 1~8호선, 9호선 2~3단계 노선별 지하철역",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
       "requiredForProductionPack": true,
       "updateFrequency": "irregular-on-change",
       "observedDataUpdatedAt": "2026-06-21",
@@ -43,6 +54,17 @@
       "datasetUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
       "datasetKind": "file-and-open-api",
       "coverage": "서울시 지하철 실시간 도착정보 조회 API와 역정보 파일",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "realtime_arrivals"
+        ]
+      },
       "requiredForProductionPack": true,
       "updateFrequency": "irregular-file-snapshot",
       "observedDataUpdatedAt": "2026-06-05",
@@ -72,6 +94,17 @@
       "datasetUrl": "https://data.seoul.go.kr/dataList/OA-12252/S/1/datasetView.do",
       "datasetKind": "sheet-open-api",
       "coverage": "서울시 관할 운송기관 1~9호선 시간대별 승하차 인원",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "demand_reference"
+        ]
+      },
       "requiredForProductionPack": true,
       "updateFrequency": "monthly-day-5",
       "observedDataUpdatedAt": "2026-06-06",

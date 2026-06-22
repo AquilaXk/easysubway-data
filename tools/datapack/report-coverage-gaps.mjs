@@ -1,0 +1,186 @@
+#!/usr/bin/env node
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const targets = JSON.parse(await readFile(requireArg(args, "targets"), "utf8"));
+  const inventory = JSON.parse(await readFile(requireArg(args, "inventory"), "utf8"));
+  const outputPath = requireArg(args, "output");
+  const report = buildCoverageGapReport(targets, inventory);
+
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+
+  if (!args.allowGaps && !report.summary.coverageComplete) {
+    throw new Error(`nationwide coverage gaps remain: ${report.summary.missingRequirements} missing requirements`);
+  }
+}
+
+function buildCoverageGapReport(targets, inventory) {
+  validateTargets(targets);
+  validateInventory(inventory);
+  const sources = inventory.sources.map(normalizeSource);
+  const requirements = [];
+
+  for (const region of targets.regions) {
+    for (const operatorId of region.operatorIds) {
+      for (const domain of targets.requiredSourceDomains) {
+        const sourceIds = coveringSourceIds(sources, region.id, operatorId, domain.id);
+        requirements.push({
+          regionId: region.id,
+          regionName: region.displayName,
+          operatorId,
+          sourceDomain: domain.id,
+          status: sourceIds.length > 0 ? "covered" : "missing",
+          sourceIds,
+        });
+      }
+    }
+  }
+
+  const coveredRequirements = requirements.filter((entry) => entry.status === "covered").length;
+  const totalRequirements = requirements.length;
+  const missingRequirements = totalRequirements - coveredRequirements;
+  return {
+    schemaVersion: 1,
+    artifactKind: "nationwide-coverage-gap-report",
+    targetVersion: targets.targetVersion,
+    inventoryRetrievedAt: inventory.retrievedAt,
+    summary: {
+      totalRequirements,
+      coveredRequirements,
+      missingRequirements,
+      coverageRatio: totalRequirements === 0 ? 0 : Number((coveredRequirements / totalRequirements).toFixed(4)),
+      coverageComplete: missingRequirements === 0,
+    },
+    requirements,
+  };
+}
+
+function coveringSourceIds(sources, regionId, operatorId, sourceDomain) {
+  return sources
+    .filter(
+      (source) =>
+        source.regionIds.includes(regionId) &&
+        source.operatorIds.includes(operatorId) &&
+        source.sourceDomains.includes(sourceDomain),
+    )
+    .map((source) => source.id)
+    .sort();
+}
+
+function validateTargets(targets) {
+  if (!targets || typeof targets !== "object" || Array.isArray(targets)) {
+    throw new Error("coverage targets must be an object");
+  }
+  if (targets.schemaVersion !== 1) {
+    throw new Error("coverage targets schemaVersion must be 1");
+  }
+  if (targets.artifactKind !== "nationwide-datapack-coverage-targets") {
+    throw new Error("coverage targets artifactKind must be nationwide-datapack-coverage-targets");
+  }
+  requiredString(targets.targetVersion, "targetVersion");
+  if (!Array.isArray(targets.requiredSourceDomains) || targets.requiredSourceDomains.length === 0) {
+    throw new Error("requiredSourceDomains must be a non-empty array");
+  }
+  const domainIds = new Set();
+  for (const domain of targets.requiredSourceDomains) {
+    const id = requiredString(domain.id, "requiredSourceDomains.id");
+    if (domainIds.has(id)) {
+      throw new Error(`duplicate source domain id: ${id}`);
+    }
+    domainIds.add(id);
+    requiredString(domain.displayName, `${id}.displayName`);
+    requiredStringArray(domain.requiredFields, `${id}.requiredFields`);
+  }
+  if (!Array.isArray(targets.regions) || targets.regions.length === 0) {
+    throw new Error("regions must be a non-empty array");
+  }
+  const regionIds = new Set();
+  for (const region of targets.regions) {
+    const id = requiredString(region.id, "regions.id");
+    if (regionIds.has(id)) {
+      throw new Error(`duplicate region id: ${id}`);
+    }
+    regionIds.add(id);
+    requiredString(region.displayName, `${id}.displayName`);
+    requiredStringArray(region.operatorIds, `${id}.operatorIds`);
+  }
+}
+
+function validateInventory(inventory) {
+  if (!inventory || typeof inventory !== "object" || Array.isArray(inventory)) {
+    throw new Error("source inventory must be an object");
+  }
+  if (inventory.schemaVersion !== 1) {
+    throw new Error("source inventory schemaVersion must be 1");
+  }
+  if (!Array.isArray(inventory.sources) || inventory.sources.length === 0) {
+    throw new Error("source inventory sources must be a non-empty array");
+  }
+  requiredString(inventory.retrievedAt, "inventory.retrievedAt");
+}
+
+function normalizeSource(source) {
+  const id = requiredString(source.id, "source.id");
+  const coverage = source.coverageScope;
+  if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
+    throw new Error(`${id}.coverageScope must be an object`);
+  }
+  return {
+    id,
+    regionIds: requiredStringArray(coverage.regionIds, `${id}.coverageScope.regionIds`),
+    operatorIds: requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`),
+    sourceDomains: requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`),
+  };
+}
+
+function requiredString(value, label) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+}
+
+function requiredStringArray(value, label) {
+  if (!Array.isArray(value) || value.length === 0 || value.some((entry) => typeof entry !== "string" || entry.trim() === "")) {
+    throw new Error(`${label} must be a non-empty string array`);
+  }
+  return value;
+}
+
+function parseArgs(argv) {
+  const args = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--allow-gaps") {
+      args.allowGaps = true;
+      continue;
+    }
+    if (!arg.startsWith("--")) {
+      throw new Error(`unexpected argument: ${arg}`);
+    }
+    const key = arg.slice(2);
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new Error(`missing value for --${key}`);
+    }
+    args[key] = value;
+    index += 1;
+  }
+  return args;
+}
+
+function requireArg(args, key) {
+  const value = args[key];
+  if (!value) {
+    throw new Error(`--${key} is required`);
+  }
+  return value;
+}
+
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

@@ -3009,6 +3009,120 @@ test("source inventory 검증기는 알 수 없는 라이선스 유형을 거부
   );
 });
 
+test("source inventory 검증기는 coverageScope 누락을 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  delete invalidInventory.sources[0].coverageScope;
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-coverage-scope-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /coverageScope must be an object/,
+  );
+});
+
+test("전국 coverage gap report는 현재 source inventory의 누락 coverage를 실패로 노출한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-fail-${Date.now()}`);
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--output",
+        reportPath,
+      ],
+      { cwd: root },
+    ),
+    /nationwide coverage gaps remain/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.artifactKind, "nationwide-coverage-gap-report");
+  assert.equal(report.summary.coverageComplete, false);
+  assert.ok(report.summary.missingRequirements > 0);
+});
+
+test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 report를 생성한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-report-${Date.now()}`);
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--output",
+      reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, false);
+  assert.ok(report.summary.coveredRequirements > 0);
+  assert.ok(report.requirements.some((entry) => entry.status === "covered"));
+  assert.ok(report.requirements.some((entry) => entry.status === "missing"));
+  assert.ok(report.requirements.every((entry) => Array.isArray(entry.sourceIds)));
+});
+
+test("전국 coverage gap report는 target coverage가 모두 충족되면 성공한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-complete-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      inventoryPath,
+      "--output",
+      reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, true);
+  assert.equal(report.summary.missingRequirements, 0);
+  assert.equal(report.summary.coverageRatio, 1);
+});
+
 test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pack을 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
@@ -4075,6 +4189,48 @@ function productionSourceIngestInput() {
     facilities: 1,
   };
   return input;
+}
+
+function completeCoverageInventory(targets) {
+  return {
+    schemaVersion: 1,
+    region: "nationwide",
+    artifactKind: "production-source-inventory",
+    retrievedAt: "2026-06-22",
+    sources: targets.regions.flatMap((region) =>
+      region.operatorIds.flatMap((operatorId) =>
+        targets.requiredSourceDomains.map((domain) => ({
+          id: `${region.id}-${operatorId}-${domain.id}`,
+          displayName: `${region.displayName} ${operatorId} ${domain.id}`,
+          owner: "테스트 운영기관",
+          provider: "테스트 운영기관",
+          providerDepartment: "테스트",
+          sourceSystem: "테스트",
+          datasetUrl: `https://example.invalid/${region.id}/${operatorId}/${domain.id}`,
+          datasetKind: "fixture-only",
+          coverageScope: {
+            regionIds: [region.id],
+            operatorIds: [operatorId],
+            sourceDomains: [domain.id],
+          },
+          requiredForProductionPack: true,
+          updateFrequency: "daily",
+          observedDataUpdatedAt: "2026-06-22",
+          retrievedAt: "2026-06-22",
+          license: {
+            type: "KOGL-1",
+            name: "공공누리 1유형",
+            attribution: "테스트",
+            commercialUseAllowed: true,
+            derivativeWorkAllowed: true,
+            redistributionAllowed: true,
+            evidenceUrl: "https://example.invalid/license",
+          },
+          fieldsProvided: domain.requiredFields,
+        })),
+      ),
+    ),
+  };
 }
 
 function markFixturePackProduction(fixture) {

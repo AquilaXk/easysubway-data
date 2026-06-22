@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "nationwide-datapack-coverage-targets",
+  "targetVersion": "2026-06-22",
+  "coverageGoal": "pre-store nationwide 100 percent functional subway coverage",
+  "requiredSourceDomains": [
+    {
+      "id": "station_line_membership",
+      "displayName": "역/노선/운영기관 소속",
+      "requiredFields": [
+        "line",
+        "station_name",
+        "station_code"
+      ]
+    },
+    {
+      "id": "route_graph_topology",
+      "displayName": "경로 그래프 연결성과 이동 비용",
+      "requiredFields": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters"
+      ]
+    },
+    {
+      "id": "accessibility_facilities",
+      "displayName": "교통약자 접근성 시설과 상태",
+      "requiredFields": [
+        "elevator",
+        "escalator",
+        "wheelchair_lift",
+        "status",
+        "verified_at"
+      ]
+    },
+    {
+      "id": "realtime_arrivals",
+      "displayName": "실시간 도착/열차 참조",
+      "requiredFields": [
+        "realtime_arrival_reference"
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "id": "capital",
+      "displayName": "수도권",
+      "operatorIds": [
+        "seoul-metro",
+        "korail",
+        "incheon-transit"
+      ]
+    },
+    {
+      "id": "busan",
+      "displayName": "부산권",
+      "operatorIds": [
+        "busan-transportation"
+      ]
+    },
+    {
+      "id": "daegu",
+      "displayName": "대구권",
+      "operatorIds": [
+        "daegu-transportation"
+      ]
+    },
+    {
+      "id": "gwangju",
+      "displayName": "광주권",
+      "operatorIds": [
+        "gwangju-metropolitan-rapid-transit"
+      ]
+    },
+    {
+      "id": "daejeon",
+      "displayName": "대전권",
+      "operatorIds": [
+        "daejeon-transportation"
+      ]
+    }
+  ]
+}
