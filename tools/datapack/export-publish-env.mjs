@@ -8,6 +8,10 @@ const exportedNames = [
   "EASYSUBWAY_OBJECT_STORAGE_REGION",
   "EASYSUBWAY_DATAPACK_BUCKET",
 ];
+const maskedExportedNames = new Set([
+  "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY",
+  "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY",
+]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -43,8 +47,25 @@ async function main() {
     "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled",
     ...exportedNames.map((name) => `${name}=${env[name]}`),
   ];
+  registerGithubMasks(env);
   await appendFile(githubEnv, `${lines.join("\n")}\n`);
   await appendFile(githubOutput, "enabled=true\n");
+}
+
+function registerGithubMasks(env) {
+  for (const name of maskedExportedNames) {
+    const value = env[name];
+    if (value) {
+      process.stdout.write(`::add-mask::${escapeGithubCommandValue(value)}\n`);
+    }
+  }
+}
+
+function escapeGithubCommandValue(value) {
+  return String(value)
+    .replaceAll("%", "%25")
+    .replaceAll("\r", "%0D")
+    .replaceAll("\n", "%0A");
 }
 
 async function disableRemotePublish(githubEnv, githubOutput, { invalid = false } = {}) {
