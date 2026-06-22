@@ -64,7 +64,22 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=3",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=3",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan?serviceKey=[서비스키값]&format=xml&railOprIsttCd=DJ&railOprIsttNm=대전도시철도",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "verify operator coverage for airport rail, GTX, and light rail before production inventory admission"
     },
     {
