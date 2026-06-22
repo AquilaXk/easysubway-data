@@ -719,7 +719,7 @@ function validateMinimumTableRows(pack, artifactKind, label) {
     return;
   }
   if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
-    throw new Error(`${label} production minimumTableRows must define stations, station_lines, network_edges, and facilities`);
+    throw new Error(`${label} production minimumTableRows must define positive stations, station_lines, network_edges, and facilities`);
   }
 }
 
@@ -728,7 +728,7 @@ function hasProductionMinimumTableRows(minimumTableRows) {
     minimumTableRows &&
     typeof minimumTableRows === "object" &&
     !Array.isArray(minimumTableRows) &&
-    productionMinimumTableRowNames.every((tableName) => Number.isInteger(minimumTableRows[tableName]))
+    productionMinimumTableRowNames.every((tableName) => Number.isInteger(minimumTableRows[tableName]) && minimumTableRows[tableName] > 0)
   );
 }
 
