@@ -7,6 +7,7 @@ import path from "node:path";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const productionMinimumTableRowNames = ["stations", "station_lines", "network_edges", "facilities"];
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -512,6 +513,56 @@ function validateFixture(fixture) {
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
     }
+    validateMinimumTableRows(pack, artifactKind);
+  }
+}
+
+function validateMinimumTableRows(pack, artifactKind) {
+  if (pack.minimumTableRows !== undefined) {
+    if (!pack.minimumTableRows || typeof pack.minimumTableRows !== "object" || Array.isArray(pack.minimumTableRows)) {
+      throw new Error(`${pack.id} minimumTableRows must be an object`);
+    }
+    for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows)) {
+      validateTableName(tableName);
+      if (!Number.isInteger(minimumRows) || minimumRows < 0) {
+        throw new Error(`${pack.id} minimumTableRows entry must be a non-negative integer`);
+      }
+    }
+  }
+  if (artifactKind !== "production") {
+    return;
+  }
+  if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
+    throw new Error("production minimumTableRows must define positive stations, station_lines, network_edges, and facilities");
+  }
+  const actualRowsByTable = {
+    stations: pack.stations?.length ?? 0,
+    station_lines: pack.stationLines?.length ?? 0,
+    network_edges: pack.networkEdges?.length ?? 0,
+    facilities: pack.facilities?.length ?? 0,
+  };
+  for (const tableName of productionMinimumTableRowNames) {
+    if (actualRowsByTable[tableName] < pack.minimumTableRows[tableName]) {
+      throw new Error(
+        `production ${tableName} rows ${actualRowsByTable[tableName]} are below minimumTableRows ${pack.minimumTableRows[tableName]}`,
+      );
+    }
+  }
+}
+
+function hasProductionMinimumTableRows(minimumTableRows) {
+  return (
+    minimumTableRows &&
+    typeof minimumTableRows === "object" &&
+    !Array.isArray(minimumTableRows) &&
+    productionMinimumTableRowNames.every((tableName) => Number.isInteger(minimumTableRows[tableName]) && minimumTableRows[tableName] > 0)
+  );
+}
+
+function validateTableName(value) {
+  const tableName = requiredString(value, "tableName");
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
+    throw new Error(`invalid table name: ${tableName}`);
   }
 }
 
