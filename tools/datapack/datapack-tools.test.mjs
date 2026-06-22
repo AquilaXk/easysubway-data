@@ -3230,6 +3230,7 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
     "busan-transportation-urban-rail-station-info",
     "kric-metropolitan-rail-station-info",
     "molit-tago-subway-info",
+    "molit-urban-rail-full-route",
   ]);
 });
 
@@ -3386,6 +3387,66 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     floorTo: "1F",
     description: "상록수역 승강장과 지상을 연결합니다.",
   });
+});
+
+test("공식 source ingest adapter는 전국 마스터 source를 canonical 역·노선 row로 병합한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-nationwide-master-${Date.now()}`);
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(nationwideMasterSourceIngestInput(), null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const generated = JSON.parse(await readFile(outputPath, "utf8"));
+  const pack = generated.packs[0];
+  assert.deepEqual(
+    pack.sourceInventory.map((source) => source.id),
+    [
+      "molit-urban-rail-full-route",
+      "molit-tago-subway-info",
+      "kric-metropolitan-rail-station-info",
+    ],
+  );
+  assert.deepEqual(
+    pack.stations.map((station) => station.id),
+    ["station-sangnoksu", "station-busan-station"],
+  );
+  assert.deepEqual(
+    pack.stationLines.map((stationLine) => ({
+      stationId: stationLine.stationId,
+      lineId: stationLine.lineId,
+      stationCode: stationLine.stationCode,
+      lineSequence: stationLine.lineSequence,
+    })),
+    [
+      {
+        stationId: "station-sangnoksu",
+        lineId: "seoul-4",
+        stationCode: "448",
+        lineSequence: 48,
+      },
+      {
+        stationId: "station-busan-station",
+        lineId: "busan-1",
+        stationCode: "113",
+        lineSequence: 13,
+      },
+    ],
+  );
 });
 
 test("공식 source ingest adapter는 production pack의 최소 coverage 기준 누락을 거부한다", async () => {
@@ -4473,6 +4534,107 @@ function sourceIngestInput() {
         requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
       },
     ],
+  };
+}
+
+function nationwideMasterSourceIngestInput() {
+  const stationSources = [
+    ["molit-urban-rail-full-route", "MOLIT-SEOUL-4-448", "seoul-4", "station-sangnoksu", "448", 48, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
+    ["molit-tago-subway-info", "448", "seoul-4", "station-sangnoksu", "448", 48, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
+    ["kric-metropolitan-rail-station-info", "KRIC-SEOUL-4-448", "seoul-4", "station-sangnoksu", "448", 48, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
+    ["molit-urban-rail-full-route", "MOLIT-BUSAN-1-113", "busan-1", "station-busan-station", "113", 13, "부산역", "Busan Station", "부산권", 35.1152, 129.0422],
+    ["kric-metropolitan-rail-station-info", "KRIC-BUSAN-1-113", "busan-1", "station-busan-station", "113", 13, "부산역", "Busan Station", "부산권", 35.1152, 129.0422],
+  ];
+  return {
+    schemaVersion: 1,
+    region: "nationwide",
+    pack: {
+      id: "nationwide",
+      version: "1",
+      schemaVersion: "1",
+      artifactKind: "fixture",
+      url: "catalog/nationwide-v1.sqlite.gz",
+    },
+    manifest: {
+      ttlSeconds: 3600,
+      activePack: {
+        id: "nationwide",
+        version: "1",
+      },
+    },
+    sourceIds: [
+      "molit-urban-rail-full-route",
+      "molit-tago-subway-info",
+      "kric-metropolitan-rail-station-info",
+    ],
+    operators: [
+      {
+        id: "seoul-metro",
+        nameKo: "서울교통공사",
+        nameEn: "Seoul Metro",
+      },
+      {
+        id: "busan-transportation",
+        nameKo: "부산교통공사",
+        nameEn: "Busan Transportation Corporation",
+      },
+    ],
+    lines: [
+      {
+        id: "seoul-4",
+        operatorId: "seoul-metro",
+        nameKo: "수도권 4호선",
+        nameEn: "Seoul Subway Line 4",
+        color: "#00A5DE",
+      },
+      {
+        id: "busan-1",
+        operatorId: "busan-transportation",
+        nameKo: "부산 1호선",
+        nameEn: "Busan Metro Line 1",
+        color: "#F06A00",
+      },
+    ],
+    stationMappings: stationSources.map(([sourceId, sourceStationCode, lineId, stationId]) => ({
+      sourceId,
+      sourceStationCode,
+      lineId,
+      stationId,
+      stationLineId: `${stationId}:${lineId}`,
+      mappingStatus: "active",
+    })),
+    stationLineRows: stationSources.map(nationwideMasterStationLineRow),
+    representativeRouteRegressions: [],
+  };
+}
+
+function nationwideMasterStationLineRow([
+  sourceId,
+  sourceStationCode,
+  lineId,
+  ,
+  stationCode,
+  lineSequence,
+  stationNameKo,
+  stationNameEn,
+  region,
+  latitude,
+  longitude,
+]) {
+  return {
+    sourceId,
+    sourceStationCode,
+    lineId,
+    stationNameKo,
+    stationNameEn,
+    normalizedName: stationNameKo,
+    region,
+    latitude,
+    longitude,
+    stationCode,
+    lineSequence,
+    platformInfo: "마스터 병합 검증용",
+    lastVerifiedAt: "2026-06-22T00:00:00.000Z",
   };
 }
 
