@@ -43,7 +43,8 @@
         "station_lines",
         "network_edges",
         "station_exits",
-        "facilities"
+        "facilities",
+        "data_quality_records"
       ],
       "minimumTableRows": {
         "catalog_metadata": 2,
@@ -53,7 +54,8 @@
         "station_lines": 9,
         "network_edges": 15,
         "station_exits": 1,
-        "facilities": 1
+        "facilities": 3,
+        "data_quality_records": 5
       },
       "metadata": {
         "activePack": "capital"
@@ -547,6 +549,27 @@
           "floorFrom": "B1",
           "floorTo": "1F",
           "description": "대합실과 1번 출구 지상을 연결"
+        },
+        {
+          "id": "facility-sangnoksu-escalator-1",
+          "stationId": "station-sangnoksu",
+          "exitId": "exit-sangnoksu-1",
+          "type": "ESCALATOR",
+          "name": "1번 출구 에스컬레이터",
+          "status": "NORMAL",
+          "floorFrom": "B1",
+          "floorTo": "1F",
+          "description": "현장 검증 전 이동 보조 시설"
+        },
+        {
+          "id": "facility-sangnoksu-accessible-toilet-1",
+          "stationId": "station-sangnoksu",
+          "type": "ACCESSIBLE_TOILET",
+          "name": "대합실 장애인 화장실",
+          "status": "NORMAL",
+          "floorFrom": "B1",
+          "floorTo": "B1",
+          "description": "대합실 내부"
         }
       ],
       "stationAccessibilitySummaries": [
@@ -594,6 +617,40 @@
           "targetType": "station",
           "targetId": "station-sangnoksu",
           "qualityLevel": "LEVEL_2",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "quality-exit-sangnoksu-1-field",
+          "targetType": "station_exit",
+          "targetId": "exit-sangnoksu-1",
+          "qualityLevel": "FIELD_VERIFIED",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "quality-facility-sangnoksu-elevator-1-field",
+          "targetType": "facility",
+          "targetId": "facility-sangnoksu-elevator-1",
+          "qualityLevel": "FIELD_VERIFIED",
+          "checkedAt": "2026-06-19T00:00:00.000Z"
+        },
+        {
+          "id": "quality-facility-sangnoksu-escalator-1-field",
+          "targetType": "facility",
+          "targetId": "facility-sangnoksu-escalator-1",
+          "qualityLevel": "FIELD_UNKNOWN"
+        },
+        {
+          "id": "quality-facility-sangnoksu-accessible-toilet-1-field",
+          "targetType": "facility",
+          "targetId": "facility-sangnoksu-accessible-toilet-1",
+          "qualityLevel": "FIELD_STALE",
+          "checkedAt": "2025-06-01T00:00:00.000Z"
+        },
+        {
+          "id": "quality-internal-route-sangnoksu-concourse-exit-1-field",
+          "targetType": "internal_route_edge",
+          "targetId": "edge-sangnoksu-concourse-exit-1",
+          "qualityLevel": "FIELD_VERIFIED",
           "checkedAt": "2026-06-19T00:00:00.000Z"
         }
       ]
