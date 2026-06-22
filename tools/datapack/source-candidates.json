@@ -258,10 +258,25 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "편의정보(표준)",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
       "licenseEvidenceStatus": "partial",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "needs_sample_and_license_evidence",
+      "evidence": {
+        "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "missingEvidence": [
+          "licenseDetail",
+          "outputFields"
+        ]
+      },
       "nextAction": "decide primary or secondary role against detailed facility APIs before production inventory admission"
     }
   ]
