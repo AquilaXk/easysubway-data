@@ -155,27 +155,42 @@
       "priority": "P0",
       "domain": "indoor_movement_paths",
       "displayName": "출입구-승강장 이동경로(표준)",
-      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=429&service=handicapped&operation=stationMovement&page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationMovement",
-      "licenseEvidenceStatus": "partial",
+      "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "needs_sample_and_license_evidence",
+      "admissionStatus": "evidence_recorded_admin_review_required",
       "automaticRouteGraphEdgeAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=429&service=handicapped&operation=stationMovement&page=1",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/stationMovement",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=322&nextStinCd=323",
+        "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
           "XML"
         ],
+        "outputFields": [
+          "edMovePath",
+          "elvtSttCd",
+          "elvtTpCd",
+          "exitMvTpOrdr",
+          "imgPath",
+          "mvContDtl",
+          "mvPathMgNo",
+          "stMovePath"
+        ],
         "missingEvidence": [
-          "licenseDetail",
-          "outputFields"
+          "sampleResponse"
+        ],
+        "missingConfirmedEdgeFields": [
+          "distanceMeters",
+          "durationSeconds"
         ]
       },
-      "nextAction": "keep as admin review candidate until distance and duration evidence exists"
+      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists"
     },
     {
       "id": "kric-station-movement-detailed",
