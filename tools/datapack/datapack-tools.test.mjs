@@ -3217,8 +3217,8 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   assert.equal(report.summary.totalRequirements, 35);
-  assert.equal(report.summary.coveredRequirements, 9);
-  assert.equal(report.summary.missingRequirements, 26);
+  assert.equal(report.summary.coveredRequirements, 16);
+  assert.equal(report.summary.missingRequirements, 19);
 
   const busanStationMembership = report.requirements.find(
     (entry) =>
@@ -3231,6 +3231,23 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
     "kric-metropolitan-rail-station-info",
     "molit-tago-subway-info",
     "molit-urban-rail-full-route",
+  ]);
+
+  const capitalAccessibilityFacilities = report.requirements.find(
+    (entry) =>
+      entry.regionId === "capital" &&
+      entry.operatorId === "seoul-metro" &&
+      entry.sourceDomain === "accessibility_facilities",
+  );
+  assert.deepEqual(capitalAccessibilityFacilities?.sourceIds, [
+    "kric-braille-displays",
+    "kric-disabled-toilet",
+    "kric-elevator-car-number",
+    "kric-platform-train-distance",
+    "kric-safety-platform",
+    "kric-station-elevator",
+    "kric-station-escalator",
+    "kric-wheelchair-lift-location",
   ]);
 });
 
@@ -4187,6 +4204,72 @@ test("공식 source ingest adapter는 facility row의 mapping 누락을 거부�
   );
 });
 
+test("공식 source ingest adapter는 KRIC 접근성 facility row를 stable station에 연결한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-kric-facility-ingest-${Date.now()}`);
+  const input = kricAccessibilityFacilitySourceIngestInput();
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const fixture = JSON.parse(await readFile(outputPath, "utf8"));
+  assert.deepEqual(
+    fixture.packs[0].sourceInventory.map((source) => source.id).sort(),
+    [
+      "kric-disabled-toilet",
+      "kric-station-elevator",
+      "kric-station-escalator",
+      "kric-wheelchair-lift-location",
+      "molit-urban-rail-full-route",
+    ],
+  );
+  assert.deepEqual(
+    fixture.packs[0].facilities.map(({ id, stationId, type, status }) => ({ id, stationId, type, status })),
+    [
+      {
+        id: "facility-sangnoksu-elevator-kric-1",
+        stationId: "station-sangnoksu",
+        type: "ELEVATOR",
+        status: "UNKNOWN",
+      },
+      {
+        id: "facility-sangnoksu-escalator-kric-1",
+        stationId: "station-sangnoksu",
+        type: "ESCALATOR",
+        status: "UNKNOWN",
+      },
+      {
+        id: "facility-sangnoksu-wheelchair-lift-kric-1",
+        stationId: "station-sangnoksu",
+        type: "WHEELCHAIR_LIFT",
+        status: "UNKNOWN",
+      },
+      {
+        id: "facility-sangnoksu-accessible-toilet-kric-1",
+        stationId: "station-sangnoksu",
+        type: "ACCESSIBLE_TOILET",
+        status: "UNKNOWN",
+      },
+    ],
+  );
+  assert.equal(fixture.packs[0].networkEdges.length, 0);
+});
+
 test("공식 source ingest adapter는 중복 CLI 인자를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-duplicate-arg-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
@@ -4635,6 +4718,69 @@ function nationwideMasterStationLineRow([
     lineSequence,
     platformInfo: "마스터 병합 검증용",
     lastVerifiedAt: "2026-06-22T00:00:00.000Z",
+  };
+}
+
+function kricAccessibilityFacilitySourceIngestInput() {
+  return {
+    ...nationwideMasterSourceIngestInput(),
+    sourceIds: [
+      "molit-urban-rail-full-route",
+      "kric-station-elevator",
+      "kric-station-escalator",
+      "kric-wheelchair-lift-location",
+      "kric-disabled-toilet",
+    ],
+    stationMappings: [
+      {
+        sourceId: "molit-urban-rail-full-route",
+        sourceStationCode: "MOLIT-SEOUL-4-448",
+        lineId: "seoul-4",
+        stationId: "station-sangnoksu",
+        stationLineId: "station-sangnoksu:seoul-4",
+        mappingStatus: "active",
+      },
+    ],
+    stationLineRows: [
+      nationwideMasterStationLineRow([
+        "molit-urban-rail-full-route",
+        "MOLIT-SEOUL-4-448",
+        "seoul-4",
+        "station-sangnoksu",
+        "448",
+        48,
+        "상록수",
+        "Sangnoksu",
+        "수도권",
+        37.3028,
+        126.8666,
+      ]),
+    ],
+    facilityRows: [
+      ["kric-station-elevator", "facility-sangnoksu-elevator-kric-1", "ELEVATOR", "상록수역 1번 엘리베이터"],
+      ["kric-station-escalator", "facility-sangnoksu-escalator-kric-1", "ESCALATOR", "상록수역 1번 에스컬레이터"],
+      [
+        "kric-wheelchair-lift-location",
+        "facility-sangnoksu-wheelchair-lift-kric-1",
+        "WHEELCHAIR_LIFT",
+        "상록수역 휠체어리프트",
+      ],
+      ["kric-disabled-toilet", "facility-sangnoksu-accessible-toilet-kric-1", "ACCESSIBLE_TOILET", "상록수역 장애인 화장실"],
+    ].map(([sourceId, id, type, name]) => ({
+      sourceId,
+      id,
+      station: {
+        sourceId: "molit-urban-rail-full-route",
+        sourceStationCode: "MOLIT-SEOUL-4-448",
+        lineId: "seoul-4",
+      },
+      type,
+      name,
+      status: "UNKNOWN",
+      description: "KRIC 접근성 시설 source ingest 검증용",
+    })),
+    routeEdges: [],
+    representativeRouteRegressions: [],
   };
 }
 

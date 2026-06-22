@@ -276,6 +276,421 @@
       ]
     },
     {
+      "id": "kric-station-elevator",
+      "displayName": "국가철도공단_역사별 엘리베이터 현황",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 엘리베이터 위치, 출구, 운행층, 정원 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041682/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "exit_no",
+        "location",
+        "floor_from",
+        "floor_to",
+        "capacity"
+      ]
+    },
+    {
+      "id": "kric-station-escalator",
+      "displayName": "국가철도공단_역사별 에스컬레이터 현황",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 에스컬레이터 위치와 운행 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041683/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "location",
+        "direction",
+        "floor_from",
+        "floor_to"
+      ]
+    },
+    {
+      "id": "kric-wheelchair-lift-location",
+      "displayName": "국가철도공단_역사별 휠체어리프트 위치",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 휠체어리프트 위치 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041686/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "location",
+        "floor_from",
+        "floor_to"
+      ]
+    },
+    {
+      "id": "kric-disabled-toilet",
+      "displayName": "국가철도공단_역사별 장애인 화장실 위치",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041692/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 장애인 화장실 위치 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041692/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "location",
+        "floor"
+      ]
+    },
+    {
+      "id": "kric-braille-displays",
+      "displayName": "국가철도공단_역사별 점자표지판",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041685/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 역사별 점자표지판 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041685/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "location",
+        "display_type"
+      ]
+    },
+    {
+      "id": "kric-platform-train-distance",
+      "displayName": "국가철도공단_승강장 열차 간격",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041687/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 승강장과 열차 사이 간격 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041687/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "platform",
+        "train_distance"
+      ]
+    },
+    {
+      "id": "kric-safety-platform",
+      "displayName": "국가철도공단_안전발판 설치정보",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041688/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 안전발판 설치 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041688/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "platform",
+        "safety_platform"
+      ]
+    },
+    {
+      "id": "kric-elevator-car-number",
+      "displayName": "국가철도공단_엘리베이터 인접 승강장 차량번호",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041691/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "전국 도시철도 엘리베이터 인접 승강장 차량번호 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital",
+          "busan",
+          "daegu",
+          "gwangju",
+          "daejeon"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail",
+          "incheon-transit",
+          "busan-transportation",
+          "daegu-transportation",
+          "gwangju-metropolitan-rapid-transit",
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041691/openapi.do"
+      },
+      "fieldsProvided": [
+        "station_code",
+        "station_name",
+        "platform",
+        "car_number",
+        "elevator_location"
+      ]
+    },
+    {
       "id": "kric-metropolitan-rail-station-info",
       "displayName": "국가철도공단_도시광역철도_역사정보",
       "owner": "국가철도공단",
