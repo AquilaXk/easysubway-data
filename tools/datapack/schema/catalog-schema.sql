@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -51,6 +51,39 @@ CREATE TABLE station_lines (
   PRIMARY KEY (station_id, line_id),
   FOREIGN KEY (station_id) REFERENCES stations(id),
   FOREIGN KEY (line_id) REFERENCES lines(id)
+);
+
+CREATE TABLE realtime_provider_line_mappings (
+  provider_id TEXT NOT NULL,
+  provider_line_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  supports_arrivals INTEGER NOT NULL DEFAULT 0 CHECK (supports_arrivals IN (0, 1)),
+  supports_train_positions INTEGER NOT NULL DEFAULT 0 CHECK (supports_train_positions IN (0, 1)),
+  mapping_confidence TEXT NOT NULL DEFAULT 'UNKNOWN' CHECK (mapping_confidence IN ('OFFICIAL', 'MANUAL', 'HEURISTIC', 'UNKNOWN')),
+  updated_at INTEGER,
+  PRIMARY KEY (provider_id, provider_line_id),
+  UNIQUE (provider_id, line_id),
+  UNIQUE (provider_id, provider_line_id, line_id),
+  FOREIGN KEY (line_id) REFERENCES lines(id)
+);
+
+CREATE TABLE realtime_provider_station_mappings (
+  provider_id TEXT NOT NULL,
+  provider_line_id TEXT NOT NULL,
+  provider_station_id TEXT NOT NULL,
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  query_name TEXT NOT NULL DEFAULT '',
+  supports_arrivals INTEGER NOT NULL DEFAULT 0 CHECK (supports_arrivals IN (0, 1)),
+  supports_train_positions INTEGER NOT NULL DEFAULT 0 CHECK (supports_train_positions IN (0, 1)),
+  mapping_confidence TEXT NOT NULL DEFAULT 'UNKNOWN' CHECK (mapping_confidence IN ('OFFICIAL', 'MANUAL', 'HEURISTIC', 'UNKNOWN')),
+  updated_at INTEGER,
+  PRIMARY KEY (provider_id, provider_line_id, provider_station_id),
+  UNIQUE (provider_id, line_id, station_id),
+  FOREIGN KEY (provider_id, provider_line_id, line_id) REFERENCES realtime_provider_line_mappings(provider_id, provider_line_id, line_id),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
 );
 
 CREATE TABLE network_edges (
@@ -135,6 +168,7 @@ CREATE TABLE data_quality_records (
 
 CREATE INDEX idx_stations_normalized_name ON stations(normalized_name);
 CREATE INDEX idx_station_lines_line_sequence ON station_lines(line_id, line_sequence);
+CREATE INDEX idx_realtime_provider_stations_internal ON realtime_provider_station_mappings(station_id, line_id);
 CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
 CREATE INDEX idx_facilities_station ON facilities(station_id);
 CREATE INDEX idx_internal_route_edges_from ON internal_route_edges(from_node_id);

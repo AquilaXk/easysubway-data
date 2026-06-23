@@ -87,7 +87,11 @@ function validateSqlite(sqlitePath, pack) {
       throw new Error(`${pack.id}@${pack.version} schemaVersion mismatch`);
     }
     const userVersion = database.prepare("PRAGMA user_version").get().user_version;
-    if (userVersion !== Number(pack.schemaVersion)) {
+    const manifestSchemaVersion = Number(pack.schemaVersion);
+    if (!Number.isInteger(manifestSchemaVersion) || manifestSchemaVersion <= 0) {
+      throw new Error(`${pack.id}@${pack.version} schemaVersion must be a positive integer string`);
+    }
+    if (userVersion < manifestSchemaVersion) {
       throw new Error(`${pack.id}@${pack.version} PRAGMA user_version mismatch`);
     }
 
