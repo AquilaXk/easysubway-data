@@ -397,6 +397,102 @@
         ]
       },
       "nextAction": "verify live sample response and decide primary or secondary role against detailed facility APIs before production inventory admission"
+    },
+    {
+      "id": "seoul-topis-realtime-station-arrival",
+      "priority": "P0",
+      "domain": "realtime_arrivals",
+      "displayName": "서울시 지하철 실시간 도착정보",
+      "detailUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
+      "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "productionInventoryReferenceId": "seoul-realtime-arrival-station-info",
+      "productionInventoryRelationship": "same_dataset_station_reference_is_production_live_provider_contract_remains_candidate",
+      "serviceKeyHandling": "backend_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "dataRetentionPolicy": "provider_does_not_offer_past_realtime_data",
+      "evidence": {
+        "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival",
+        "sampleUrl": "http://swopenapi.seoul.go.kr/api/subway/[서비스키값]/json/realtimeStationArrival/0/5/서울",
+        "formats": [
+          "JSON"
+        ],
+        "usePermissionRange": "공공누리 1유형",
+        "coverageLimitations": [
+          "서울시 이외의 역구간은 미제공",
+          "recptnDt 기준 수신 지연 보정 필요",
+          "과거 실시간 데이터는 별도 제공하지 않음"
+        ],
+        "outputFields": [
+          "arvlCd",
+          "arvlMsg2",
+          "arvlMsg3",
+          "barvlDt",
+          "bstatnNm",
+          "btrainNo",
+          "recptnDt",
+          "statnId",
+          "statnNm",
+          "subwayId",
+          "trainLineNm",
+          "updnLine"
+        ],
+        "missingEvidence": [
+          "sampleResponse"
+        ]
+      },
+      "nextAction": "capture sanitized live sample with backend-only Seoul API key and confirm quota before production provider adapter"
+    },
+    {
+      "id": "seoul-topis-realtime-train-position",
+      "priority": "P0",
+      "domain": "realtime_train_positions",
+      "displayName": "서울시 지하철 실시간 열차 위치정보",
+      "detailUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do",
+      "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimePosition",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "serviceKeyHandling": "backend_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "dataRetentionPolicy": "provider_does_not_offer_past_realtime_data",
+      "evidence": {
+        "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do",
+        "retrievedAt": "2026-06-23",
+        "endpoint": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimePosition",
+        "sampleUrl": "http://swopenapi.seoul.go.kr/api/subway/[서비스키값]/json/realtimePosition/0/5/1호선",
+        "formats": [
+          "JSON"
+        ],
+        "usePermissionRange": "공공누리 1유형",
+        "coverageLimitations": [
+          "서울시 TOPIS 제공 범위로 한정",
+          "열차 위치는 GPS 정밀 위치가 아니라 운영 상태 snapshot으로 취급",
+          "과거 실시간 데이터는 별도 제공하지 않음"
+        ],
+        "outputFields": [
+          "directAt",
+          "lastRecptnDt",
+          "recptnDt",
+          "statnId",
+          "statnNm",
+          "statnTid",
+          "statnTnm",
+          "subwayId",
+          "subwayNm",
+          "trainNo",
+          "trainSttus",
+          "updnLine"
+        ],
+        "missingEvidence": [
+          "sampleResponse"
+        ]
+      },
+      "nextAction": "capture sanitized live sample with backend-only Seoul API key and keep train position separate from precise GPS claims"
     }
   ]
 }

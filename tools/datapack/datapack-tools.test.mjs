@@ -3341,6 +3341,55 @@ test("source candidate sample 검증기는 serviceKey credential 포함을 거�
   );
 });
 
+test("source candidate sample 검증기는 TOPIS path serviceKey credential 포함을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-topis-secret-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(
+      {
+        candidateId: "seoul-topis-realtime-station-arrival",
+        endpoint: "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival",
+        format: "json",
+        fields: [
+          "arvlCd",
+          "arvlMsg2",
+          "arvlMsg3",
+          "barvlDt",
+          "bstatnNm",
+          "btrainNo",
+          "recptnDt",
+          "statnId",
+          "statnNm",
+          "subwayId",
+          "trainLineNm",
+          "updnLine",
+        ],
+        observedUrl: "http://swopenapi.seoul.go.kr/api/subway/actual-secret/json/realtimeStationArrival/0/5/서울",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "seoul-topis-realtime-station-arrival",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /sample evidence must not contain serviceKey credentials: observedUrl/,
+  );
+});
+
 test("source candidate sample evidence builder는 raw JSON response를 validator 입력으로 변환한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-candidate-json-evidence-${Date.now()}`);
   const responsePath = path.join(outputDir, "response.json");
@@ -3455,6 +3504,39 @@ test("source candidate sample evidence builder는 raw response의 serviceKey cre
         "tools/datapack/build-source-candidate-sample-evidence.mjs",
         "--candidate",
         "kric-train-operation-organ",
+        "--response",
+        responsePath,
+      ],
+      { cwd: root },
+    ),
+    /raw sample response must not contain serviceKey credentials/,
+  );
+});
+
+test("source candidate sample evidence builder는 raw response의 TOPIS path serviceKey credential을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-raw-topis-secret-${Date.now()}`);
+  const responsePath = path.join(outputDir, "response.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    responsePath,
+    `${JSON.stringify({
+      response: {
+        url: "http://swopenapi.seoul.go.kr/api/subway/actual-secret/json/realtimePosition/0/5/1호선",
+        body: {
+          statnNm: "서울",
+        },
+      },
+    })}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-source-candidate-sample-evidence.mjs",
+        "--candidate",
+        "seoul-topis-realtime-train-position",
         "--response",
         responsePath,
       ],

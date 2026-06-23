@@ -31,6 +31,7 @@ async function readJson(filePath) {
 function assertNoServiceKey(value) {
   if (
     /serviceKey=(?!\[서비스키값\])[^&\s<"]+/i.test(value) ||
+    /swopenapi\.seoul\.go\.kr\/api\/subway\/(?!\[서비스키값\]\/)(?!\{serviceKey\}\/)[^/\s<"]+\/json\//i.test(value) ||
     /"serviceKey"\s*:\s*"(?!\[서비스키값\]")[^"]+"/i.test(value) ||
     /<serviceKey\b[^>]*>\s*(?!\[서비스키값\]\s*<\/serviceKey>)[\s\S]*?<\/serviceKey>/i.test(value)
   ) {

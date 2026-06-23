@@ -35,7 +35,10 @@ async function readJson(filePath) {
 
 function findCredentialLeak(value, pathParts = []) {
   if (typeof value === "string") {
-    if (/serviceKey=(?!\[서비스키값\])[^&\s]+/i.test(value)) {
+    if (
+      /serviceKey=(?!\[서비스키값\])[^&\s]+/i.test(value) ||
+      /swopenapi\.seoul\.go\.kr\/api\/subway\/(?!\[서비스키값\]\/)(?!\{serviceKey\}\/)[^/\s<"]+\/json\//i.test(value)
+    ) {
       return pathParts.join(".") || "sample";
     }
     return null;
