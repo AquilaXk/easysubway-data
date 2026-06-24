@@ -481,6 +481,75 @@ test("데이터팩 object storage publisher는 pack 검증 후 manifest를 마�
   }
 });
 
+test("데이터팩 object storage publisher는 PDF와 SVG content type을 보존한다", async () => {
+  const stageDir = path.join(tmpdir(), `easysubway-datapack-map-asset-publish-${Date.now()}`);
+  await rm(stageDir, { recursive: true, force: true });
+  await mkdir(path.join(stageDir, "maps"), { recursive: true });
+
+  const pdfBytes = Buffer.from("%PDF-1.6\n");
+  const svgBytes = Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\" />\n");
+  await writeFile(path.join(stageDir, "maps", "seoul.pdf"), pdfBytes);
+  await writeFile(path.join(stageDir, "maps", "gwangju.svg"), svgBytes);
+  const planPath = path.join(stageDir, "publish-plan.json");
+  await writeFile(
+    planPath,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      steps: [
+        {
+          type: "put-pack-object",
+          sourcePath: "maps/seoul.pdf",
+          objectKey: "maps/seoul.pdf",
+          sha256: sha256(pdfBytes),
+          sizeBytes: pdfBytes.length,
+        },
+        {
+          type: "verify-pack-object",
+          objectKey: "maps/seoul.pdf",
+          sha256: sha256(pdfBytes),
+          sizeBytes: pdfBytes.length,
+        },
+        {
+          type: "put-pack-object",
+          sourcePath: "maps/gwangju.svg",
+          objectKey: "maps/gwangju.svg",
+          sha256: sha256(svgBytes),
+          sizeBytes: svgBytes.length,
+        },
+        {
+          type: "verify-pack-object",
+          objectKey: "maps/gwangju.svg",
+          sha256: sha256(svgBytes),
+          sizeBytes: svgBytes.length,
+        },
+      ],
+    })}\n`,
+  );
+
+  const server = await startObjectStorageServer();
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/publish-object-storage.mjs",
+        "--plan",
+        planPath,
+        "--root",
+        stageDir,
+      ],
+      {
+        cwd: root,
+        env: objectStorageEnv(server.origin),
+      },
+    );
+
+    assert.equal(server.objects.get("maps/seoul.pdf").contentType, "application/pdf");
+    assert.equal(server.objects.get("maps/gwangju.svg").contentType, "image/svg+xml");
+  } finally {
+    await server.close();
+  }
+});
+
 test("데이터팩 object storage publisher는 PAR URL로 pack 검증 후 manifest를 마지막에 PUT한다", async () => {
   const stageDir = path.join(tmpdir(), `easysubway-datapack-par-publish-${Date.now()}`);
   await rm(stageDir, { recursive: true, force: true });
@@ -5072,6 +5141,7 @@ async function startObjectStorageServer({ requireAuthorization = true, basePath 
           body,
           sha256: sha256(body),
           sizeBytes: body.length,
+          contentType: request.headers["content-type"],
           metadataSha256: request.headers["x-amz-meta-sha256"],
         });
         response.writeHead(200, { etag: `"${sha256(body).slice(0, 32)}"` });

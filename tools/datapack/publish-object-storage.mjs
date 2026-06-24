@@ -402,7 +402,16 @@ function safeRelativeObjectPath(value, label) {
 }
 
 function contentTypeForKey(key) {
-  return key.endsWith(".json") ? "application/json" : "application/octet-stream";
+  if (key.endsWith(".json")) {
+    return "application/json";
+  }
+  if (key.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+  if (key.endsWith(".svg")) {
+    return "image/svg+xml";
+  }
+  return "application/octet-stream";
 }
 
 function amzTimestamp(date) {
