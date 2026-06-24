@@ -398,6 +398,51 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           ];
         },
       );
+      insertRows(
+        database,
+        "route_map_positions",
+        [
+          "station_id",
+          "line_id",
+          "region",
+          "x",
+          "y",
+          "label_dx",
+          "label_dy",
+          "up_path",
+          "down_path",
+          "source_id",
+          "source_name",
+          "source_url",
+          "license",
+          "license_status",
+          "commercial_use_allowed",
+          "attribution_required",
+          "reviewed_at",
+          "updated_at",
+        ],
+        pack.routeMapPositions ?? [],
+        (row) => [
+          requiredString(row.stationId, "routeMapPositions.stationId"),
+          requiredString(row.lineId, "routeMapPositions.lineId"),
+          requiredString(row.region, "routeMapPositions.region"),
+          requiredNonNegativeInteger(row.x, "routeMapPositions.x"),
+          requiredNonNegativeInteger(row.y, "routeMapPositions.y"),
+          row.labelDx ?? 0,
+          row.labelDy ?? 0,
+          row.upPath ?? "",
+          row.downPath ?? "",
+          requiredString(row.sourceId, "routeMapPositions.sourceId"),
+          requiredString(row.sourceName, "routeMapPositions.sourceName"),
+          requiredString(row.sourceUrl, "routeMapPositions.sourceUrl"),
+          requiredString(row.license, "routeMapPositions.license"),
+          requiredString(row.licenseStatus, "routeMapPositions.licenseStatus"),
+          boolFlag(row.commercialUseAllowed, "routeMapPositions.commercialUseAllowed"),
+          boolFlag(row.attributionRequired, "routeMapPositions.attributionRequired"),
+          timestamp(row.reviewedAt),
+          timestamp(row.updatedAt),
+        ],
+      );
       insertRows(database, "station_exits", ["id", "station_id", "exit_number", "description"], pack.stationExits ?? [], (row) => [
         requiredString(row.id, "stationExits.id"),
         requiredString(row.stationId, "stationExits.stationId"),
@@ -773,6 +818,14 @@ function requiredInteger(value, label) {
     throw new Error(`${label} must be an integer`);
   }
   return value;
+}
+
+function requiredNonNegativeInteger(value, label) {
+  const integer = requiredInteger(value, label);
+  if (integer < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  return integer;
 }
 
 function schemaVersionNumber(value, label) {

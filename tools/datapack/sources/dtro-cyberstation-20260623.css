@@ -1,0 +1,477 @@
+@charset "utf-8";
+
+/**************************************************
+	Cyberstation CSS Document
+	IEETU Web Standardization Team
+	2021-10-14
+**************************************************/
+
+/**************************************************
+	Common
+**************************************************/
+/* Sprite image */
+.sp_com,
+#header .srch_area .rarr,
+#header .srch_area > button.depart:after,
+#header .srch_area > button.arrive:after,
+#header .srch_area > button.srch:before,
+#header .srch_area .pop_station .pop_tit:before,
+.srch_rs_area .sr_head .rarr,
+.sm_layer_container .ly_box .ly_close,
+.sm_layer_container .ly_box .line_box .btn_line:after,
+.sm_layer_container .ly_box .search_box .btn_srch:after,
+.sm_layer_container .ly_box .info_box .btn_info:after,
+.sm_area .pin_box .pin span,
+.sm_area .pin_box .pin .close_pin{display:inline-block; overflow:hidden; background:url(../images/sp_com.png) repeat 0 0; color:transparent !important; white-space:nowrap;}
+
+html[lang="en"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/eng/cyberstation/images/sp_com.png);}
+html[lang="ja"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/jpn/cyberstation/images/sp_com.png);}
+html[lang="zh"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/chn/cyberstation/images/sp_com.png);}
+
+html[lang="en"] #cyberstation_wrap *,
+html[lang="ja"] #cyberstation_wrap *,
+html[lang="zh"] #cyberstation_wrap *{letter-spacing:0!important;}
+
+/**************************************************
+	사이버스테이션
+**************************************************/
+#cyberstation_wrap{padding-top:75px;}
+/*** Header ***/
+#header{display:flex; position:fixed; top:0; left:0; right:0; z-index:100; height:75px; padding:15px 30px; background:#009ddf; text-align:center;}
+#header .logo_area{position:absolute; top:12px; left:50px;}
+#header .srch_area{display:flex; align-items:center; margin:0 auto; position:relative;}
+#header .srch_area .rarr{width:24px; height:17px; margin:0 4px; background-position:0 -64px;}
+#header .srch_area > button{display:flex; align-items:center; margin:0 6px; height:45px; line-height:1.2; padding:0 20px; border:0; border-radius:8px; background:#fff; font-weight:600; font-size:17px; letter-spacing:-2px; box-shadow:inset 0 0 4px rgba(0,0,0,.2);}
+#header .srch_area > button.depart:after,
+#header .srch_area > button.arrive:after{content:''; width:24px; height:20px; margin-left:5px; background-position:-29px -56px;}
+#header .srch_area > button.srch{background:#38366a; font-size:19px; color:#fff;}
+#header .srch_area > button.srch:before{content:''; width:16px; height:18px; margin-right:5px; background-position:-340px 0;}
+
+body.fixed_lp{overflow:hidden; width:100%; height:100%;}
+body.fixed_ly_box{overflow:hidden; width:100%; height:100%;}
+#header .srch_area .pop_station{visibility:hidden; opacity:0; position:fixed; top:0; left:0; right:0; bottom:0; z-index:1001; transition:all .3s;}
+#header .srch_area .pop_station.open{visibility:visible; opacity:1;}
+#header .srch_area .pop_station>.inr{position:absolute; top:0; left:0; right:0; bottom:0; z-index:1001; overflow:hidden; width:calc(100% - 20px); height:60%; max-width:640px; max-height:580px; margin:auto; border-radius:30px; background:linear-gradient(transparent 30px,#fff 0); box-shadow:0 0 20px rgba(0,0,0,.3);}
+#header .srch_area .pop_station:after{content:''; position:fixed; top:0; left:0; right:0; bottom:0; z-index:1000; background:#000; opacity:0.5;}
+#header .srch_area .pop_station .close{display:inline-block; position:absolute; top:0; right:10px; overflow:hidden; width:55px; height:55px; border:0; background:transparent; color:transparent;}
+#header .srch_area .pop_station .close:before,
+#header .srch_area .pop_station .close:after{content:''; display:block; overflow:hidden; position:absolute; top:35%; right:35%; bottom:35%; left:35%; height:2px; transform:rotate(45deg); margin:auto 0; background:#fff; color:transparent;}
+#header .srch_area .pop_station .close:after{transform:rotate(135deg);}
+#header .srch_area .pop_station .pop_tit{display:flex; align-items:center; height:55px; padding-left:40px; background:#3a3a68; font-family:"Elice Digital Baeum"; font-size:20px; color:#fff;}
+#header .srch_area .pop_station .pop_tit:before{content:''; width:40px; height:40px; margin-right:10px; background-position:100% 0;}
+#header .srch_area .pop_station .area_scroll{position:relative; overflow:hidden; overflow-y:auto; height:calc(100% - 100px); padding:0 55px;}
+#header .srch_area .pop_station .area_scroll .head{margin:0 -55px; padding:15px; background:#f5f5f5; font-size:16px; text-align:center;}
+#header .srch_area .pop_station .area_scroll .nav_button{display:flex; flex-wrap:wrap; justify-content:center; margin:30px 0 40px;}
+#header .srch_area .pop_station .area_scroll .nav_button button{width:28px; height:28px; margin:3px 4px; border:1px solid #159ddb; border-radius:3px; background:#fff; font-size:16px; color:#005b95;}
+#header .srch_area .pop_station .area_scroll .nav_button button.active{border-color:#3a3a68; background:#2b41dd; color:#fff;}
+
+/*** Container ***/
+#container{position:relative;}
+/* 노선도 */
+.subway_map{position:relative;}
+.sm_area{display:flex; position:relative; width:calc(100% - 370px); box-sizing:content-box; padding:350px 185px 250px;}
+.sm_area > .inr{margin:auto; position:relative;}
+.sm_area .img_map{width:auto; height:auto; max-width:none;}
+.sm_area .lst_legendary li{display:none; position:absolute; top:0; left:0; transform:translate(-50%, -15px); overflow:hidden; width:24px; height:24px; background:url(../images/sp_ico.png) no-repeat 0 0; color:transparent;}
+.sm_area .lst_legendary li.s129,
+.sm_area .lst_legendary li.s130,
+.sm_area .lst_legendary li.s229{transform:translate(-50%, 10px);}
+/*
+	한글
+ */
+.sm_area .lst_legendary li[data-info-type="갈아타는곳"]{background-position:-34px 0;}
+.sm_area .lst_legendary li[data-info-type="유실물센터"]{background-position:-34px -28px;}
+.sm_area .lst_legendary li[data-info-type="무료자전거대여"]{background-position:-34px -56px;}
+.sm_area .lst_legendary li[data-info-type="휠체어리프트"]{background-position:-34px -84px;}
+.sm_area .lst_legendary li[data-info-type="역세권주차장"]{background-position:-34px -112px;}
+.sm_area .lst_legendary li[data-info-type="모유수유실"]{background-position:-34px -140px;}
+.sm_area .lst_legendary li[data-info-type="공항"]{background-position:-34px -168px;}
+.sm_area .lst_legendary li[data-info-type="기차역"]{background-position:-34px -196px;}
+.sm_area .lst_legendary li[data-info-type="버스터미널"]{background-position:-34px -224px;}
+.sm_area .lst_legendary li[data-info-type="엘리베이터"]{background-position:-34px -252px;}
+.sm_area .lst_legendary li[data-info-type="DRT"]{background-position:-34px -280px;}
+/*
+	영문
+ */
+.sm_area .lst_legendary li[data-info-type="TransitStation"]{background-position:-34px 0;}
+.sm_area .lst_legendary li[data-info-type="LostAndFound"]{background-position:-34px -28px;}
+.sm_area .lst_legendary li[data-info-type="FreeBicycleRental"]{background-position:-34px -56px;}
+.sm_area .lst_legendary li[data-info-type="WheelchairLift"]{background-position:-34px -84px;}
+.sm_area .lst_legendary li[data-info-type="StationAreaParkingLot"]{background-position:-34px -112px;}
+.sm_area .lst_legendary li[data-info-type="BreastFeedingRoom"]{background-position:-34px -140px;}
+.sm_area .lst_legendary li[data-info-type="Airport"]{background-position:-34px -168px;}
+.sm_area .lst_legendary li[data-info-type="TrainStation"]{background-position:-34px -196px;}
+.sm_area .lst_legendary li[data-info-type="BusTerminal"]{background-position:-34px -224px;}
+.sm_area .lst_legendary li[data-info-type="Elevator"]{background-position:-34px -252px;}
+/*
+	중국어
+ */
+.sm_area .lst_legendary li[data-info-type="中转站"]{background-position:-34px 0;}
+.sm_area .lst_legendary li[data-info-type="失物招领"]{background-position:-34px -28px;}
+.sm_area .lst_legendary li[data-info-type="免费出借自行车"]{background-position:-34px -56px;}
+.sm_area .lst_legendary li[data-info-type="轮椅升降机"]{background-position:-34px -84px;}
+.sm_area .lst_legendary li[data-info-type="临地铁站地角停车场"]{background-position:-34px -112px;}
+.sm_area .lst_legendary li[data-info-type="母乳喂养室"]{background-position:-34px -140px;}
+.sm_area .lst_legendary li[data-info-type="飞机"]{background-position:-34px -168px;}
+.sm_area .lst_legendary li[data-info-type="火车站"]{background-position:-34px -196px;}
+.sm_area .lst_legendary li[data-info-type="巴士总站"]{background-position:-34px -224px;}
+.sm_area .lst_legendary li[data-info-type="电梯"]{background-position:-34px -252px;}
+/*
+	일본어
+ */
+.sm_area .lst_legendary li[data-info-type="乗換駅"]{background-position:-34px 0;}
+.sm_area .lst_legendary li[data-info-type="お忘れ物"]{background-position:-34px -28px;}
+.sm_area .lst_legendary li[data-info-type="無料レンタル自転車"]{background-position:-34px -56px;}
+.sm_area .lst_legendary li[data-info-type="車椅子リフト"]{background-position:-34px -84px;}
+.sm_area .lst_legendary li[data-info-type="駅勢圏駐車場"]{background-position:-34px -112px;}
+.sm_area .lst_legendary li[data-info-type="授乳室"]{background-position:-34px -140px;}
+.sm_area .lst_legendary li[data-info-type="空港"]{background-position:-34px -168px;}
+.sm_area .lst_legendary li[data-info-type="汽車駅"]{background-position:-34px -196px;}
+.sm_area .lst_legendary li[data-info-type="バスターミナル"]{background-position:-34px -224px;}
+.sm_area .lst_legendary li[data-info-type="エレベーター"]{background-position:-34px -252px;}
+
+.sm_layer_container{}
+.sm_layer_container .ly_box{display:none; position:absolute; top:50%; left:50%; z-index:30; width:250px; margin-top:-10px; border:1px solid #6f6f6f; border-radius:10px; background:#fff; box-shadow:3px 3px 5px rgba(0,0,0,.15); transform:translate(-30px, -100%);}
+.sm_layer_container .ly_box:before{content:''; display:inline-block; position:absolute; left:30px; top:100%; width:0; height:0; border:10px solid transparent; border-width:0 0 10px 12px; border-left-color:#6f6f6f;}
+.sm_layer_container .ly_box:after{content:''; display:inline-block; position:absolute; left:30px; top:100%; width:0; height:0; border:8px solid transparent; border-width:0 0 8px 10px; border-left-color:#fff; transform:translate(1px, -1px);}
+.sm_layer_container .ly_box .ly_close{position:absolute; top:0; right:0; transform:translate(5px, -50%); width:30px; height:30px; background-position:-56px 0;}
+.sm_layer_container .ly_box .title_box{display:flex; justify-content:center; align-items:center; padding:15px; border-radius:10px 10px 0 0; background:#f5f5f5; font-weight:600; font-size:15px;}
+.sm_layer_container .ly_box .title_box .line{flex:0 0 auto; width:20px; height:20px; line-height:20px; margin-right:3px; border-radius:50%; background:rgba(239,94,55,1); font-size:13px; color:#fff; text-align:center;}
+.sm_layer_container .ly_box .title_box .line01{background:rgba(239,94,55,1);}
+.sm_layer_container .ly_box .title_box .line02{background:rgba(51,170,70,1);}
+.sm_layer_container .ly_box .title_box .line03{background:rgba(253,162,8,1);}
+.sm_layer_container .ly_box .line_box{display:flex; flex-wrap:wrap; justify-content:center; align-items:center; padding:15px 10px;}
+.sm_layer_container .ly_box .line_box .btn_line{display:flex; justify-content:center; align-items:center; height:32px; margin:2px 3px; padding:0 15px; border:1px solid #a85205; border-radius:30px; background:#ef5e37; font-weight:600; font-size:14px; text-shadow:0 0 2px rgba(0,0,0,.5); color:#fff;}
+.sm_layer_container .ly_box .line_box .btn_line:after{content:''; width:8px; height:11px; margin-left:5px; background-position:0 -132px;}
+.sm_layer_container .ly_box .line_box .btn_line.line01{border-color:#a85205; background:rgba(239,94,55,1);}
+.sm_layer_container .ly_box .line_box .btn_line.line02{border-color:#01664a; background:rgba(51,170,70,1);}
+.sm_layer_container .ly_box .line_box .btn_line.line03{border-color:#855123; background:rgba(253,162,8,1);}
+.sm_layer_container .ly_box .line_box .btn_line.line01:after{background-position:0 -132px;}
+.sm_layer_container .ly_box .line_box .btn_line.line02:after{background-position:0 -147px;}
+.sm_layer_container .ly_box .line_box .btn_line.line03:after{background-position:0 -162px;}
+.sm_layer_container .ly_box .schedule_box{display:flex; margin:0 15px; padding:10px 0; border-bottom:1px solid #e1e1e1;}
+.sm_layer_container .ly_box .schedule_box .lst_station_schedule{width:50%; padding-left:8px; border-left:1px solid #e1e1e1;}
+.sm_layer_container .ly_box .schedule_box .lst_station_schedule:first-child{padding:0 8px 0 0; border:0;}
+.sm_layer_container .ly_box[data-line-type="3호선"] .schedule_box .lst_station_schedule:first-child{flex:0 0 60%;}
+.sm_layer_container .ly_box .schedule_box .lst_station_schedule li{display:flex; justify-content:space-between; margin:5px 0; font-size:13px; line-height:1.3; word-break:break-all;}
+html[lang="en"] .sm_layer_container .ly_box .schedule_box .lst_station_schedule li{font-size:12px;}
+.sm_layer_container .ly_box .schedule_box .lst_station_schedule li .schedule_duration{flex:0 0 auto; margin-left:5px; color:#e30f0f;}
+.sm_layer_container .ly_box .search_box{display:flex; flex-wrap:wrap; justify-content:center; align-items:center; margin:0 15px; padding:10px 0;}
+.sm_layer_container .ly_box .search_box .btn_srch{display:flex; justify-content:center; align-items:center; height:32px; margin:0 2px; padding:0 10px 0 13px; border:1px solid transparent; border-radius:30px; background:#fff; font-weight:600; font-size:14px; letter-spacing:-1px;}
+.sm_layer_container .ly_box .search_box .btn_srch:after{content:''; width:15px; height:11px; margin-left:3px;}
+.sm_layer_container .ly_box .search_box .btn_srch.depart{border-color:#0367a6; color:#0367a6;}
+.sm_layer_container .ly_box .search_box .btn_srch.arrive{border-color:#c60240; color:#c60240;}
+.sm_layer_container .ly_box .search_box .btn_srch.depart:after{background-position:1px -176px;}
+.sm_layer_container .ly_box .search_box .btn_srch.arrive:after{background-position:1px -189px;}
+.sm_layer_container .ly_box .search_box .btn_srch.depart:hover{background:#30a0e6; color:#fff;}
+.sm_layer_container .ly_box .search_box .btn_srch.arrive:hover{background:#f65285; color:#fff;}
+.sm_layer_container .ly_box .search_box .btn_srch.depart:hover:after{background-position:-17px -176px;}
+.sm_layer_container .ly_box .search_box .btn_srch.arrive:hover:after{background-position:-17px -189px;}
+.sm_layer_container .ly_box .info_box{margin:0 15px; padding:10px 0 15px; border-top:1px solid #e1e1e1;}
+.sm_layer_container .ly_box .info_box .btn_info{display:flex; justify-content:center; align-items:center; height:32px; border:1px solid #6f6f6f; border-radius:30px; font-weight:600; font-size:14px;}
+.sm_layer_container .ly_box .info_box .btn_info:after{content:''; width:15px; height:14px; margin-left:3px; background-position:-29px -80px;}
+.sm_area .pin_box{}
+.sm_area .pin_box .pin{display:none; position:absolute; top:50%; left:50%; z-index:10; transform:translate(-50%, -100%);}
+.sm_area .pin_box .pin span{display:block; width:40px; height:64px; background-position:-316px -44px;}
+.sm_area .pin_box .pin.arrive span{background-position:-360px -44px;}
+.sm_area .pin_box .pin .close_pin{position:absolute; top:-5px; right:-5px; width:18px; height:18px; background-position:-56px -34px;}
+
+
+/* 노선검색 결과 레이어 */
+.srch_rs_area{display:flex; flex-direction:column; position:fixed; top:105px; left:0; bottom:30px; width:470px; border-radius:30px; background:#f4f4f3; transform:translateX(-100%); transition:all .4s;}
+.srch_rs_area.open{left:30px; transform:none;}
+.srch_rs_area .sr_close{position:absolute; top:0; left:100%; bottom:0; width:21px; height:55px; margin:auto 0; border:1px solid #d3d3d3; border-left:0; border-radius:0 2px 2px 0; background:#fff;}
+.srch_rs_area .sr_close span{position:absolute; top:0; left:0; right:0; bottom:0; width:9px; height:16px; margin:auto; background-position:0 -112px; transform:scaleX(-1);}
+.srch_rs_area.open .sr_close span{transform:none;}
+.srch_rs_area .sr_head{display:flex; justify-content:center; align-items:center; padding:15px 30px; border:1px solid #d3d3d3; border-bottom:0; border-radius:30px 30px 0 0; background:#545454; color:#fff;}
+.srch_rs_area .sr_head .station{display:flex; align-items:baseline; font-size:13px; letter-spacing:-1px;}
+.srch_rs_area .sr_head .station .num{flex:0 0 auto; width:28px; height:28px; line-height:28px; border-radius:50%; background:rgba(239,94,55,1); font-weight:600; font-size:16px; text-align:center;}
+.srch_rs_area .sr_head .station.line02 .num{background:rgba(51,170,70,1);}
+.srch_rs_area .sr_head .station.line03 .num{background:#945D00;}
+.srch_rs_area .sr_head .station .txt{margin:0 5px;}
+.srch_rs_area .sr_head .station .name{font-weight:600; font-size:16px;}
+.srch_rs_area .sr_head .rarr{width:19px; height:12px; margin:0 8px; background-position:0 -84px;}
+.srch_rs_area .sr_body{position:relative; overflow-y:auto; border:1px solid #d3d3d3; border-top:0; border-bottom:0; background:#ffffff;}
+.srch_rs_area .sr_body > .inr{padding:30px;}
+.srch_rs_area .sr_body .srinfo_tabmn{display:flex; position:relative; margin:0 0 20px;}
+.srch_rs_area .sr_body .srinfo_tabmn:after{content:''; display:block; position:absolute; left:0; bottom:0; right:0; height:1px; background:#888;}
+.srch_rs_area .sr_body .srinfo_tabmn li{margin-left:5px; border:1px solid #ddd; border-bottom:0; border-radius:20px 20px 0 0; background:#f5f5f5; color:#666; text-align:center;}
+.srch_rs_area .sr_body .srinfo_tabmn li:first-child{margin-left:0;}
+.srch_rs_area .sr_body .srinfo_tabmn li.active{position:relative; z-index:10; border-color:#888; background:#fff; color:#333;}
+.srch_rs_area .sr_body .srinfo_tabmn li a{display:block; height:100%; padding:12px 15px 8px; font-weight:600; font-size:15px; color:inherit;}
+.srch_rs_area .sr_body .box_tab{display:none;}
+.srch_rs_area .sr_body .box_tab.active{display:block;}
+/* 역검색 정보 */
+.srch_rs_area .sr_body .box_tab .title_area{display:flex; flex-wrap:wrap; align-items:baseline; margin:0 0 20px;}
+.srch_rs_area .sr_body .box_tab .title_area .title{margin-right:5px; font-size:18px; letter-spacing:-2px;}
+.srch_rs_area .sr_body .box_tab .title_area .lst_info{display:flex; font-size:14px;}
+.srch_rs_area .sr_body .box_tab .title_area .lst_info li{display:flex; align-items:baseline; margin-left:8px;}
+.srch_rs_area .sr_body .box_tab .title_area .lst_info li:before{content:''; display:block; width:1px; height:12px; margin-right:8px; background:#ccc; transform:skewX(-15deg);}
+.srch_rs_area .sr_body .box_tab .title_area .lst_info li:first-child:before{display:none;}
+.srch_rs_area .sr_body .lst_route > li{position:relative; padding:0 0 30px 40px;}
+.srch_rs_area .sr_body .lst_route > li:last-child{padding-bottom:0;}
+.srch_rs_area .sr_body .lst_route > li:before{content:''; display:block; position:absolute; top:0; left:9px; bottom:0; width:3px; background:rgba(239,94,55,1);}
+.srch_rs_area .sr_body .lst_route > li.line01:before{background:rgba(239,94,55,1);}
+.srch_rs_area .sr_body .lst_route > li.line02:before{background:rgba(51,170,70,1);}
+.srch_rs_area .sr_body .lst_route > li.line03:before{background:rgba(253,162,8,1);}
+.srch_rs_area .sr_body .lst_route > li:last-child:before{display:none;}
+.srch_rs_area .sr_body .lst_route > li:after{content:''; display:block; position:absolute; left:40px; right:0; bottom:15px; height:1px; background:linear-gradient(to right, #c7c7c7 2px, #fff 0) 0 0/4px 1px;}
+.srch_rs_area .sr_body .lst_route > li:last-child:after{display:none;}
+.srch_rs_area .sr_body .lst_route > li .line_num{display:inline-block; position:absolute; top:0; left:0; width:22px; height:22px; line-height:22px; border-radius:50%; background:rgba(239,94,55,1); font-weight:600; font-size:13px; color:#fff; text-align:center;}
+.srch_rs_area .sr_body .lst_route > li.line01 .line_num{background:rgba(239,94,55,1);}
+.srch_rs_area .sr_body .lst_route > li.line02 .line_num{background:rgba(51,170,70,1);}
+.srch_rs_area .sr_body .lst_route > li.line03 .line_num{background:#945D00;}
+.srch_rs_area .sr_body .lst_route .title_box{font-size:15px;}
+.srch_rs_area .sr_body .lst_route .title_box .direct{color:#f90d0d;}
+.srch_rs_area .sr_body .lst_route .info_box{margin-top:10px; font-size:13px; line-height:1.4;}
+.srch_rs_area .sr_body .lst_route .info_box .time{margin-bottom:10px; font-size:14px;}
+/* 도착역 출구.버스 정보 */
+.srch_rs_area .sr_body .exit_box{border:1px solid #dedede; border-radius:2px;}
+.srch_rs_area .sr_body .exit_box .top_area{padding:12px; background:#f4f4f3;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2{display:flex; flex-wrap:wrap; justify-content:center;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li{margin:2px 3px;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li a{display:flex; align-items:center; position:relative; padding:6px 18px; border:1px solid #d9d9d9; border-radius:30px; background:#fff; font-size:15px;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li.active a{border-color:transparent; background:#6c2e6f; color:#fff;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li a .num{flex:0 0 auto; position:relative; width:20px; height:20px; line-height:18px; margin-right:2px; border:1px solid #333; border-radius:50%; font-weight:600; font-size:16px; text-align:center;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li.active a .num{border-color:#fff;}
+.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li.active a:after{content:''; display:block; position:absolute; top:100%; left:0; right:0; width:0; height:0; margin:auto; border:7px solid transparent; border-top-color:#6c2e6f; border-bottom:0;}
+.srch_rs_area .sr_body .exit_box .box_tab{padding:20px;}
+.srch_rs_area .sr_body .exit_box .box_tab .tit_box{margin:0 0 15px; padding:0 0 12px; border-bottom:1px solid #e1e1e1;font-weight:600; font-size:15px; text-align:center;}
+.srch_rs_area .sr_body .exit_box .box_tab .lst_businfo{display:flex; flex-wrap:wrap;}
+.srch_rs_area .sr_body .exit_box .box_tab .lst_businfo li{flex:0 0 50%; margin:3px 0; padding:0 5px;}
+/* 검색 가이드 */
+.srch_rs_area .sr_guide{position:relative; padding:60px 20px 30px; border-radius:0 30px 30px 0;}
+.srch_rs_area .sr_guide:before{content:''; display:block; position:absolute; top:0; left:0; right:0; height:30px; border:1px solid #d3d3d3; border-top:0; border-radius:0 0 30px 30px; background:#fff;}
+.srch_rs_area .sr_guide .line_lst{display:flex; justify-content:center; margin:10px 0 15px;}
+.srch_rs_area .sr_guide .line_lst li{display:flex; align-items:center; margin:0 15px; font-size:13px;}
+.srch_rs_area .sr_guide .line_lst li:before{content:''; display:block; width:10px; height:10px; margin-right:3px; border-radius:50%; background:rgba(239,94,55,1);}
+.srch_rs_area .sr_guide .line_lst li:nth-child(1):before{background:rgba(239,94,55,1);}
+.srch_rs_area .sr_guide .line_lst li:nth-child(2):before{background:rgba(51,170,70,1);}
+.srch_rs_area .sr_guide .line_lst li:nth-child(3):before{background:rgba(253,162,8,1);}
+.srch_rs_area .sr_guide .txt{font-size:14px; letter-spacing:-1px; text-align:center;}
+
+/* 범례 */
+.legendary_area{display:flex; flex-direction:column; justify-content:space-between; position:fixed; top:205px; right:30px; bottom:133px; width:155px; height:625px; margin:auto 0; padding:30px 17px; border:1px solid #d3d3d3; border-radius:20px; background:#fff; font-size:14px; letter-spacing:-1px;}
+.legendary_area .lst_legendary{overflow-y:auto;}
+.legendary_area .lst_legendary li{border-bottom:1px solid #dedede; line-height:1.2;}
+.legendary_area .lst_legendary li a{display:flex; align-items:center; padding:6px 0;}
+.legendary_area .lst_legendary li a:before{content:''; flex:0 0 auto; width:30px; height:30px; margin:0 10px 0 0; background:url(../images/sp_ico.png) no-repeat 0 0;}
+.legendary_area .lst_legendary li.i01 a:before{background-position:0 0;}
+.legendary_area .lst_legendary li.i02 a:before{background-position:0 -34px;}
+.legendary_area .lst_legendary li.i03 a:before{background-position:0 -68px;}
+.legendary_area .lst_legendary li.i04 a:before{background-position:0 -102px;}
+.legendary_area .lst_legendary li.i05 a:before{background-position:0 -136px;}
+.legendary_area .lst_legendary li.i06 a:before{background-position:0 -170px;}
+.legendary_area .lst_legendary li.i07 a:before{background-position:0 -204px;}
+.legendary_area .lst_legendary li.i08 a:before{background-position:0 -238px;}
+.legendary_area .lst_legendary li.i09 a:before{background-position:0 -272px;}
+.legendary_area .lst_legendary li.i10 a:before{background-position:0 -306px;}
+.legendary_area .lst_legendary li.i11 a:before{background-position:0 -340px;}
+.legendary_area .lst_legendary li a span{}
+.legendary_area .txt{margin-top:15px; line-height:1.4;}
+
+/* Tablet  ~ 1599px */
+@media screen and (max-width:1599px){
+	/**************************************************
+		Common
+	**************************************************/
+
+	/**************************************************
+		사이버스테이션
+	**************************************************/
+	/*** Header ***/
+	#header{padding:15px 20px;}
+	#header .srch_area{margin:0 0 0 auto;}
+
+	/*** Container ***/
+	/* 노선도 */
+
+	/* 노선검색 결과 */
+
+	/* 범례 */
+		/* 범례 */
+	.legendary_area{top:auto; left:10px; right:10px; bottom:10px; z-index:10; width:auto; height:auto; max-height:none; padding:8px 5px; border-radius:2px; box-shadow:0 1px 3px 0 rgba(0, 0, 0, 0.1); font-size:12px;}
+	.legendary_area .lst_legendary{display:flex; flex-wrap:wrap; justify-content:center; overflow:hidden;}
+	.legendary_area .lst_legendary li{margin:4px 5px; border-bottom:0;}
+	.legendary_area .lst_legendary li a{padding:0;}
+	.legendary_area .lst_legendary li a br{display:none;}
+	.legendary_area .lst_legendary li a:before{width:15px; height:15px; margin-right:3px; background-size:200px 200px;}
+	.legendary_area .lst_legendary li.i01 a:before{background-position:0 0;}
+	.legendary_area .lst_legendary li.i02 a:before{background-position:0 -17px;}
+	.legendary_area .lst_legendary li.i03 a:before{background-position:0 -34px;}
+	.legendary_area .lst_legendary li.i04 a:before{background-position:0 -51px;}
+	.legendary_area .lst_legendary li.i05 a:before{background-position:0 -68px;}
+	.legendary_area .lst_legendary li.i06 a:before{background-position:0 -85px;}
+	.legendary_area .lst_legendary li.i07 a:before{background-position:0 -102px;}
+	.legendary_area .lst_legendary li.i08 a:before{background-position:0 -119px;}
+	.legendary_area .lst_legendary li.i09 a:before{background-position:0 -136px;}
+	.legendary_area .lst_legendary li.i10 a:before{background-position:0 -153px;}
+	.legendary_area .lst_legendary li.i11 a:before{background-position:0 -170px;}
+	.legendary_area .txt{margin-top:10px; padding-top:10px; border-top:1px solid #ddd; text-align:center;}
+
+}
+
+/* 01. Tablet 768px ~ 1023px */
+@media screen and (max-width:1023px){
+	/**************************************************
+		Common
+	**************************************************/
+	/* Sprite image */
+	.sp_com,
+	#header .srch_area .rarr,
+	#header .srch_area > button.depart:after,
+	#header .srch_area > button.arrive:after,
+	#header .srch_area > button.srch:before,
+	#header .srch_area .pop_station .pop_tit:before,
+	.srch_rs_area .sr_head .rarr,
+	.sm_layer_container .ly_box .ly_close,
+	.sm_layer_container .ly_box .line_box .btn_line:after,
+	.sm_layer_container .ly_box .search_box .btn_srch:after,
+	.sm_layer_container .ly_box .info_box .btn_info:after,
+	.sm_area .pin_box .pin span,
+	.sm_area .pin_box .pin .close_pin{background:url(../images/sp_com_m.png) repeat 0 0/400px 400px;}
+
+	html[lang="en"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/eng/cyberstation/images/sp_com_m.png);}
+	html[lang="ja"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/jpn/cyberstation/images/sp_com_m.png);}
+	html[lang="zh"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/chn/cyberstation/images/sp_com_m.png);}
+
+	/**************************************************
+		사이버스테이션
+	**************************************************/
+	#cyberstation_wrap{padding-top:87px;}
+	/*** Header ***/
+	#header{display:block; height:87px; padding:15px 10px;}
+	#header .logo_area{position:relative; top:auto; left:auto;}
+	#header .logo_area .logo{overflow:hidden; width:269px; height:18px; margin:0 auto; background:url(../images/logo_header_m.png) no-repeat 0 0/cover;}
+	/*
+		외국어
+	 */
+	html[lang="en"] #header .logo_area .logo{background:url(/cmsh/dtro.or.kr/eng/cyberstation/images/logo_header_m.png) no-repeat 50% 0/contain;}
+	html[lang="ja"] #header .logo_area .logo{background:url(/cmsh/dtro.or.kr/jpn/cyberstation/images/logo_header_m.png) no-repeat 50% 0/contain;}
+	html[lang="zh"] #header .logo_area .logo{background:url(/cmsh/dtro.or.kr/chn/cyberstation/images/logo_header_m.png) no-repeat 50% 0/contain;}
+
+	#header .logo_area .logo img{opacity:0;}
+	#header .srch_area{justify-content:center; margin:15px auto 0;}
+	#header .srch_area > button{height:23px; line-height:23px; margin:0 4px; padding:0 10px; border-radius:5px; font-size:14px;}
+	#header .srch_area > button.srch{font-size:14px;}
+	#header .srch_area > button.depart:after,
+	#header .srch_area > button.arrive:after{width:14px; height:12px; background-position:-30px -48px;}
+	#header .srch_area > button.srch:before{width:8px; height:9px; background-position:-63px 0;}
+	#header .srch_area .rarr{width:12px; height:8px; background-position:0 -74px;}
+	#header .srch_area .pop_station>.inr{border-radius:15px;}
+	#header .srch_area .pop_station .pop_tit{padding-left:20px; font-size:18px;}
+	#header .srch_area .pop_station .pop_tit:before{background-position:-162px 0;}
+	#header .srch_area .pop_station .close{right:0;}
+	#header .srch_area .pop_station .area_scroll{padding:0 20px;}
+	#header .srch_area .pop_station .area_scroll .head{margin:0 -20px; padding:10px 15px; font-size:14px; word-break:keep-all; word-wrap:break-word;}
+	#header .srch_area .pop_station .area_scroll .nav_button{margin:20px 0;}
+
+	/*** Container ***/
+	/* 노선도 */
+	body.fixed_ly_box .sm_layer_container:after{content:''; position:fixed; top:0; left:0; right:0; bottom:0; z-index:1000; background:#000; opacity:0.5;}
+	.sm_layer_container .ly_box{position:fixed; top:50% !important; left:50% !important; width:225px; transform:translate(-50%, -50%);}
+	.sm_layer_container .ly_box:before,
+	.sm_layer_container .ly_box:after{display:none;}
+	.sm_layer_container .ly_box .ly_close{width:28px; height:28px;}
+	.sm_layer_container .ly_box .line_box .btn_line.line01:after{background-position:0 -84px;}
+	.sm_layer_container .ly_box .line_box .btn_line.line02:after{background-position:0 -97px;}
+	.sm_layer_container .ly_box .line_box .btn_line.line03:after{background-position:0 -110px;}
+	.sm_layer_container .ly_box .search_box .btn_srch:after{height:14px;}
+	.sm_layer_container .ly_box .search_box .btn_srch.depart:after{background-position:-17px -123px;}
+	.sm_layer_container .ly_box .search_box .btn_srch.arrive:after{background-position:-17px -139px;}
+	.sm_layer_container .ly_box .search_box .btn_srch.depart:hover:after{background-position:0 -123px;}
+	.sm_layer_container .ly_box .search_box .btn_srch.arrive:hover:after{background-position:0 -139px;}
+	.sm_layer_container .ly_box .info_box .btn_info:after{width:14px; height:13px; background-position:-30px -33px;}
+	.sm_area .pin_box .pin span{background-position:-78px 0;}
+	.sm_area .pin_box .pin.arrive span{background-position:-120px 0;}
+	.sm_area .pin_box .pin .close_pin{background-position:-46px -33px;}
+
+	/* 노선검색 결과 */
+	.srch_rs_area{display:none; top:87px; left:0; right:0; bottom:0; z-index:30; width:auto; border-radius:0; background:#fff; transform:none; transition:none;}
+	.srch_rs_area.open{display:block; left:0;}
+	.srch_rs_area .sr_close{left:auto; bottom:auto; right:10px; top:11px; width:26px; height:26px; margin:0; border:0; border-radius:50%; background:none;}
+	.srch_rs_area .sr_close span{width:100%; height:100%; background-position:0 -30px; transform:none;}
+	.srch_rs_area .sr_head{height:50px; padding:11px 30px; border:0; border-radius:0;}
+	.srch_rs_area .sr_head .station{flex-wrap:wrap; font-size:14px;}
+	.srch_rs_area .sr_head .rarr{width:21px; height:14px; background-position:0 -58px;}
+	.srch_rs_area .sr_body{height:calc(100% - 50px); border:0;}
+	.srch_rs_area .sr_body > .inr{padding:20px;}
+
+	.srch_rs_area .sr_guide{display:none;}
+
+
+
+}
+
+/* 02. Mobile 640px ~ 767px */
+@media screen and (max-width:767px){
+	/**************************************************
+		Common
+	**************************************************/
+
+	/**************************************************
+		사이버스테이션
+	**************************************************/
+	/*** Header ***/
+
+	/*** Container ***/
+	/* 노선도 */
+
+	/* 노선검색 결과 */
+
+	/* 범례 */
+
+
+}
+/* 03. Mobile  ~ 639px */
+@media screen and (max-width:639px){
+	/**************************************************
+		Common
+	**************************************************/
+
+	/**************************************************
+		사이버스테이션
+	**************************************************/
+	/*** Header ***/
+	#header{padding:15px 5px;}
+	#header .srch_area > button{margin:0 2px; padding:0 5px; font-size:12px;}
+	#header .srch_area > button.srch{font-size:13px;}
+
+	/*** Container ***/
+	/* 노선도 */
+
+	/* 노선검색 결과 */
+	.srch_rs_area .sr_head{padding:11px 10px;}
+	.srch_rs_area .sr_head .station{font-size:12px;}
+	.srch_rs_area .sr_head .station .num{width:24px; height:24px; line-height:24px;}
+	.srch_rs_area .sr_head .station .txt{margin-left:3px;}
+	.srch_rs_area .sr_head .station .name{font-size:14px;}
+	.srch_rs_area .sr_body .srinfo_tabmn li{border-radius:10px 10px 0 0;}
+	.srch_rs_area .sr_body .srinfo_tabmn li a{padding:10px 8px 8px; font-size:14px;}
+	.srch_rs_area .sr_body .exit_box .top_area{padding:10px 5px;}
+	.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li a{padding:5px 15px;font-size:14px; line-height:18px;}
+	.srch_rs_area .sr_body .exit_box .top_area .tab_mn2 li a .num{width:18px; height:18px; line-height:16px; font-size:12px;}
+
+	/* 범례 */
+
+
+}
+/* 03. Mobile  ~ 537px */
+@media screen and (max-width:537px){
+	/**************************************************
+		Common
+	**************************************************/
+
+	/**************************************************
+		사이버스테이션
+	**************************************************/
+	/*** Header ***/
+
+	/*** Container ***/
+	/* 노선도 */
+
+	/* 노선검색 결과 */
+
+	/* 범례 */
+
+}

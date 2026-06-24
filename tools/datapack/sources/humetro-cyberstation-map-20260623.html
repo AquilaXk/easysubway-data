@@ -1,0 +1,1317 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!doctype html>
+<!--[if IE 7]> <html lang="ko" class="ie7"> <![endif]-->
+<!--[if IE 8]> <html lang="ko" class="ie8"> <![endif]-->
+<!--[if IE 9]> <html lang="ko" class="ie9"> <![endif]-->
+<html lang="ko">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<!--[if IE 8]> <meta http-equiv="X-UA-Compatible" content="IE=8" /> <![endif]-->
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="description" content="" />
+<meta name="keywords" content="" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" media="all" href="/css/webfont.css" />
+<link rel="stylesheet" media="all" href="/css/common.css" />
+<link rel="stylesheet" media="all" href="/css/style.default.css" />
+<link rel="stylesheet" media="all" href="/css/board/board.css" />
+<link rel="stylesheet" media="all" href="/css/board/board.rspnsv.css" />
+<link rel="stylesheet" media="all" href="/css/board/style.default.css" />
+<link rel="stylesheet" type="text/css" href="/jsp/module/board/common_css/paging.css" />
+
+<script src="/js/jquery.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/userfunc.js"></script>
+<script src="/js/zoom.js"></script>
+<script src="/js/paging.js"></script>
+
+<script src="/homepage/default/js/cyber-station.js"></script>
+<script src="/homepage/default/js/jquery.easydrag.js"></script>
+
+
+<script  >
+var _isLowBr_ = false;
+var _isMobile_ = false;
+</script>
+
+<!--[if lt IE 9]>
+<script> _isLowBr_ = true;</script>
+<script src="/js/html5shiv.js"></script>
+<![endif]-->
+
+<!--[if lt IE 8]>
+<link rel="stylesheet" media="" href="/css/ie7.css" />
+<![endif]-->
+
+<link rel="stylesheet" media="all" href="/homepage/default/css/layout.css" />
+<link rel="stylesheet" media="all" href="/homepage/default/css/cyber-station.css?v=20250310c" />
+
+<link rel="shortcut icon" href="/img/common/favicon.ico" />
+
+
+
+<script  >
+
+function onStart(t){
+	var fo = t;
+
+	if( fo.value != ""){
+
+		$.ajax({
+			  type : "get",
+			  url : "/homepage/cyberstation/stationCodeAjax.do",
+			  data:{
+			  line:fo.value,
+			  se:'s'
+			  },
+
+			  complete : function( XMLHttpRequest, statusText,response,data ) {
+			  },
+			  success:function(data,textStatus,xhr) {
+				$(".s-station_r").html(data);
+			  },
+
+			  error : function( XMLHttpRequest, textStatus, errorThrown ) {
+
+			  }
+		  })
+
+	}else{
+		$(".s-station_r").html("<select id='s-station' name='STATION1'><option value=''>- 역명 선택 -</option></select>");
+	}
+
+}
+
+function onEnd(t){
+	var fo = t;
+
+	if( fo.value != ""){
+
+		$.ajax({
+			  type : "get",
+			  url : "/homepage/cyberstation/stationCodeAjax.do",
+			  data:{
+			  line:fo.value,
+			  se:'e'
+			  },
+
+			  complete : function( XMLHttpRequest, statusText,response,data ) {
+			  },
+			  success:function(data,textStatus,xhr) {
+				$(".e-station_r").html(data);
+			  },
+
+			  error : function( XMLHttpRequest, textStatus, errorThrown ) {
+
+			  }
+		  })
+
+	}else{
+		$(".e-station_r").html("<select id='e-station' name='STATION2' ><option value=''>- 역명 선택 -</option></select>");
+	}
+
+}
+
+
+
+function searchshort(){
+	var form = document.frm_search;
+
+
+	if($(':radio[name="cyber_kinds"]:checked').length < 1){
+		alert("검색 종류를 선택해야 합니다.");
+		$("input[name='cyber_kinds']:radio[value='1']").prop("checked","checked"); // 원하는 값 체크하기
+		return false;
+	}
+
+	if( form.s_name.value == "" && form.e_name.value == "" ){
+
+		alert("출발역을 입력해 주세요.");
+		form.s_name.focus();
+		return false;
+
+	}else if( form.s_name.value != "" && form.e_name.value == "" ){
+
+		alert("도착역을 입력해 주세요.");
+		form.e_name.focus();
+		return false;
+
+	}else if( form.s_name.value == "" && form.e_name.value != "" ){
+
+		alert("출발역을 입력해 주세요.");
+		form.s_name.focus();
+		return false;
+
+	}
+
+
+	//시작 도착 역 이름이 동일할때
+	if( form.s_name.value == form.e_name.value ){
+
+		alert("동일한 역을 선택 할 수 없습니다.");
+
+		form.s_name.value = "";
+		form.e_name.value = "";
+
+		return false;
+
+	}
+
+
+
+	showAlertLoading('kor');
+	if( $(':radio[name="cyber_kinds"]:checked').val() == "1" ){								//최소거리
+		form.action = '/homepage/cyberstation/map.do';
+	}else if( $(':radio[name="cyber_kinds"]:checked').val() == "3" ){		//최소시간
+		form.action = '/homepage/cyberstation/mapshorttime.do';
+	}else{																	//최소환승
+		form.action = '/homepage/cyberstation/changeroad.do';
+	}
+
+	form.method = "post";
+
+	form.submit();
+
+}
+
+
+</script>
+
+
+<script>
+function popup_close(){
+
+	$(".pop-result").hide();
+
+
+}
+
+function conven(no, id) {
+	var conven_no = no;
+	var conven_id = "#" + id;
+
+	if($(conven_id).attr("data-isOpen")=="0"){
+		$('#conven').load("/homepage/cyberstation/convenience.do",{conven_no:conven_no});
+		$('#conven').focus();
+	} else {
+		$(conven_id).attr("data-isOpen","0");
+		$('[class*=choice]').removeClass('choice');
+		$('[class*=on]').removeClass('on');
+	}
+}
+</script>
+
+
+
+
+
+
+<script>
+
+$(document).ready(function() {
+
+
+
+
+
+
+
+})
+
+
+</script>
+
+
+
+
+
+
+<script>
+
+var p_1 = "";
+var p_2 = "";
+
+function one_point(point, li, na, ev ){	//역번호, 호선, 역이름, 위치 잡기위한 이벤트값
+	var form = document.frm_mouse_search;
+
+	var blackBG = $(".black-bg");
+
+	if( blackBG.css('display') == "block" ){
+		return false;
+	}
+
+	if( p_1 == "" ){	//처음 선택시
+		p_1 = point;
+
+		if(li=="8"){
+			var point8;
+			if(point == 801){point8 = 10280525}
+			else if(point == 802){point8 = 14676248}
+			else if(point == 803){point8 = 10280644}
+			else if(point == 804){point8 = 14676253}
+			else if(point == 805){point8 = 10280519}
+			else if(point == 806){point8 = 14676264}
+			else if(point == 807){point8 = 15036023}
+			else if(point == 808){point8 = 14676269}
+			else if(point == 809){point8 = 10281594}
+			else if(point == 810){point8 = 14676273}
+			else if(point == 811){point8 = 10280228}
+			else if(point == 812){point8 = 10280514}
+			else if(point == 813){point8 = 14676278}
+			else if(point == 814){point8 = 10280510}
+			else if(point == 815){point8 = 10280692}
+			else if(point == 816){point8 = 10280224}
+			else if(point == 817){point8 = 10280648}
+			else if(point == 818){point8 = 15036046}
+			else if(point == 819){point8 = 15036044}
+			else if(point == 820){point8 = 15036045}
+			else if(point == 821){point8 = 10280612}
+			else if(point == 822){point8 = 15036043}
+			else if(point == 823){point8 = 10280218}
+			$(".s"+point).append("<div class='start-pop popuppo'><span class='blind'>출발</span><div class='info-sta-box'>"+na+"<a href='https://www.letskorail.com/ebizprd/stationMetroView.do?stationSeq="+point8+"' title='새창열림' target='_blank' ><span class='blind'> 역정보</span><img src='/homepage/default/img/cyber-station/start-a.png' alt='더보기' /></a></div><div class='end-bg'></div></div>");
+		}else if(li=="9"){
+			$(".s"+point).append("<div class='start-pop popuppo'><span class='blind'>출발</span><div class='info-sta-box'>"+na+"<a href='https://www.bglrt.com/00011/00149.web?scode="+point+"' title='새창열림' target='_blank' ><span class='blind'> 역정보</span><img src='/homepage/default/img/cyber-station/start-a.png' alt='더보기' /></a></div><div class='end-bg'></div></div>");
+		}else{
+			$(".s"+point).append("<div class='start-pop popuppo'><span class='blind'>출발</span><div class='info-sta-box'>"+na+"<a href='/homepage/default/stationinfo/page/list01.do?menu_no=1001010201&S_LINE="+li+"&S_STATION="+point+"' title='새창열림' target='_blank' ><span class='blind'> 역정보</span><img src='/homepage/default/img/cyber-station/start-a.png' alt='더보기' /></a></div><div class='end-bg'></div></div>");
+		}
+
+		$(".start-pop").draggable();
+		$('.map-img').off();
+
+	}else if(p_1 != "" && p_2 == ""){	//두번째 선택시
+
+		if( p_1 == point ){	//부번째 선택시 처음 선택한 값을 눌렀을때
+			p_1 = "";
+			$(".popuppo").remove();
+			$('.map-img').easydrag();
+		}else{
+			p_2 = point;
+
+		}
+
+	}
+
+
+	if( p_1 != "" && p_2 !="" ){	//값이 둘다 있을때
+		form.mo_scode_s.value = p_1;
+		form.mo_scode_e.value = p_2;
+
+		if( $(':radio[name="cyber_kinds"]:checked').val() == "1" ){								//최소거리
+			form.action = '/homepage/cyberstation/map.do';
+			form.cyber_kinds.value = "1";
+		}else if( $(':radio[name="cyber_kinds"]:checked').val() == "3" ){		//최소시간
+			form.action = '/homepage/cyberstation/mapshorttime.do';
+			form.cyber_kinds.value = "3";
+		}else{																	//최소환승
+			form.action = '/homepage/cyberstation/changeroad.do';
+			form.cyber_kinds.value = "2";
+		}
+
+		form.method = "post";
+		showAlertLoading('kor');
+		form.submit();
+	}
+
+}
+
+</script>
+
+
+<script>
+
+function radio_click(){		//최단거리  최소시간	 최소환승 의 라디오 박스를 직접 선택 했을때 동작
+
+	var form = document.frm_search;
+
+	if( form.s_name.value != "" && form.e_name.value != "" ){	// 1 두 값이 다 입력 되어 있을때
+
+			//시작 도착 역 이름이 동일할때
+			if( form.s_name.value == form.e_name.value ){
+
+				alert("동일한 역을 선택 할 수 없습니다.");
+
+				form.s_name.value = "";
+				form.e_name.value = "";
+
+				return false;
+
+			}
+
+			showAlertLoading('kor');
+			if( $(':radio[name="cyber_kinds"]:checked').val() == "1" ){								//최소거리
+				form.action = '/homepage/cyberstation/map.do';
+			}else if( $(':radio[name="cyber_kinds"]:checked').val() == "3" ){		//최소시간
+				form.action = '/homepage/cyberstation/mapshorttime.do';
+			}else{																	//최소환승
+				form.action = '/homepage/cyberstation/changeroad.do';
+			}
+
+			form.method = "post";
+
+			form.submit();
+
+
+	}	//1
+
+}
+
+</script>
+
+
+<!--================== -->
+
+  <script>
+  $(function() {
+
+
+    var availableTags = [
+
+"가야",
+
+"가야대",
+
+"감전",
+
+"강서구청",
+
+"개금",
+
+"개운포",
+
+"거제(3)",
+
+"거제(동해선)",
+
+"거제해맞이",
+
+"경성대·부경대",
+
+"고촌",
+
+"공항",
+
+"광안",
+
+"괘법르네시떼",
+
+"괴정",
+
+"교대(1)",
+
+"교대(동해선)",
+
+"구남",
+
+"구명",
+
+"구서",
+
+"구포",
+
+"국제금융센터·부산은행",
+
+"금곡",
+
+"금련산",
+
+"금사",
+
+"기장",
+
+"김해대학",
+
+"김해시청",
+
+"낙민",
+
+"남산",
+
+"남산정",
+
+"남양산",
+
+"남창",
+
+"남천",
+
+"남포",
+
+"낫개",
+
+"냉정",
+
+"노포",
+
+"다대포항",
+
+"다대포해수욕장",
+
+"당리",
+
+"대사",
+
+"대연",
+
+"대저(3)",
+
+"대저(경전철)",
+
+"대티",
+
+"덕두",
+
+"덕천(2)",
+
+"덕천(3)",
+
+"덕포",
+
+"덕하",
+
+"동대신",
+
+"동래(1)",
+
+"동래(4)",
+
+"동래(동해선)",
+
+"동매",
+
+"동백",
+
+"동원",
+
+"동의대",
+
+"두실",
+
+"등구",
+
+"만덕",
+
+"망미",
+
+"망양",
+
+"명륜",
+
+"명장",
+
+"모덕",
+
+"모라",
+
+"못골",
+
+"문현",
+
+"물만골",
+
+"미남(3)",
+
+"미남(4)",
+
+"민락",
+
+"박물관",
+
+"반여농산물시장",
+
+"배산",
+
+"범내골",
+
+"범어사",
+
+"범일",
+
+"벡스코(동해선)",
+
+"벡스코(시립미술관)",
+
+"봉황",
+
+"부산",
+
+"부산대",
+
+"부산대양산캠퍼스",
+
+"부산원동",
+
+"부산진",
+
+"부암",
+
+"부원",
+
+"부전",
+
+"부전(동해선)",
+
+"불암",
+
+"사상(2)",
+
+"사상(경전철)",
+
+"사직",
+
+"사하",
+
+"서대신",
+
+"서동",
+
+"서면(1)",
+
+"서면(2)",
+
+"서부산유통지구",
+
+"서생",
+
+"석대",
+
+"센텀",
+
+"센텀시티",
+
+"송정",
+
+"수로왕릉",
+
+"수안",
+
+"수영(2)",
+
+"수영(3)",
+
+"수정",
+
+"숙등",
+
+"시청",
+
+"신장림",
+
+"신평",
+
+"신해운대",
+
+"안락",
+
+"안평",
+
+"양산",
+
+"양정",
+
+"연산(1)",
+
+"연산(3)",
+
+"연지공원",
+
+"영산대",
+
+"오시리아",
+
+"온천장",
+
+"월내",
+
+"윗반송",
+
+"율리",
+
+"인제대",
+
+"일광",
+
+"자갈치",
+
+"장림",
+
+"장산",
+
+"장신대",
+
+"장전",
+
+"재송",
+
+"전포",
+
+"종합운동장",
+
+"좌천",
+
+"좌천(동해선)",
+
+"주례",
+
+"중동",
+
+"중앙",
+
+"증산",
+
+"지게골",
+
+"지내",
+
+"체육공원",
+
+"초량",
+
+"충렬사",
+
+"태화강",
+
+"토성",
+
+"평강",
+
+"하단",
+
+"해운대",
+
+"호포",
+
+"화명",
+
+    ];
+
+    $( "#s-line" ).autocomplete({
+      source: availableTags
+      , focus:function(event,ui){event.preventDefault();}
+    });
+
+    $( "#e-line" ).autocomplete({
+        source: availableTags
+        , focus:function(event,ui){event.preventDefault();}
+      });
+
+
+  });
+
+  </script>
+<!-- ================= -->
+
+<script>
+
+function closestation(){
+	window.close();
+	return false;
+
+}
+
+
+function replacelayer(){
+	location.href="/homepage/cyberstation/map.do";
+}
+
+
+</script>
+
+
+<title>사이버스테이션</title>
+
+</head>
+
+
+<body>
+
+
+<form name="frm_mouse_search" method="post" >
+<input type="hidden" name="mo_scode_s" value="" />
+<input type="hidden" name="mo_scode_e" value="" />
+<input type="hidden" name="cyber_kinds" value=""  />
+</form>
+
+<div id="cyberstation-wrap">
+
+	<div class="cyber-top-wrap">
+		<div class="cyber-logo-wrap">
+			<a href="/default/main.do" class="c-pc-only" title="새창열림" target="_blank"><img src="/homepage/default/img/cyber-station/logo.png" alt="행복 실은 도시철도 Humetro" /></a>
+		</div>
+		<div class="cyber-title-wrap">
+			<img src="/homepage/default/img/cyber-station/cyber-title-logo.png" alt="노선검색 Search routes" />
+		</div>
+
+		<div class="cyber-search">
+			<form name="frm_search" method="post" >
+
+				<span class="cyber-kinds-wrap">
+					<input type="radio" name="cyber_kinds" id="cyber-kinds-1" value="1" onclick="radio_click();" checked >
+					<label for="cyber-kinds-1">최단거리</label>
+					<input type="radio" name="cyber_kinds" id="cyber-kinds-3" value="3" onclick="radio_click();"  >
+					<label for="cyber-kinds-3">최소시간</label>
+					<input type="radio" name="cyber_kinds" id="cyber-kinds-2" value="2" onclick="radio_click();"  >
+					<label for="cyber-kinds-2">최소환승</label>
+				</span>
+
+				<span class="cyber-input-wrap">
+					<label for="s-line">출발</label>
+					<input type="text" id="s-line" name="s_name" value="" >
+
+					<span class="station-arrow"></span>
+
+					<label for="e-line">도착</label>
+					<input type="text" id="e-line" name="e_name" value="" >
+				</span>
+
+				<span class="cyber-tbtn-wrap">
+					<button type="button" class="cyber-search-btn" onclick="searchshort(); return false;">노선검색</button>
+
+					<a href="/homepage/cyberstation/map.do" class="cyber-re-btn">새로고침</a>
+				</span>
+
+				<span class="cyber-print-btn-wrap">
+					<button class="bw-btn" onclick="closestation(); return false;"  >창닫기</button>
+				</span>
+
+			</form>
+		</div>
+	</div>
+
+	<div class="cyber-top-wrap-line"></div>
+
+<!-- 검색 값이 없으면 미출력  top1 -->
+
+<!-- 검색 값이 없으면 미출력  top1 -->
+
+
+
+	<div class="cyber-map">
+		<h3 class="blind">지하철노선도</h3>
+		<div class="sero-notice c-m-only"><span>가로방향으로 회전하여 보시면<br/>노선도 상에서 검색하실 수 있습니다.</span></div>
+		<div class="map-view-btn-bg c-m-only">
+			<a href="/upload/cyber-station/routemap_kor_2020.jpg" target="_blank" title="새창으로 열림">
+				<img src="/homepage/default/img/cyber-station/map-view-btn.png" alt="노선도 확대보기" />
+			</a>
+		</div>
+		<div class="map-img-wrap" data-isOpen="0">
+			<div class="map-img">
+				<div class="line-bg"></div>
+				<div class="black-bg"></div>
+
+				<!-- 1호선 -->
+				<div class="line-1">
+					<div class="line-1-start"><span class="blind">1호선</span></div>
+					<div class="s95 s-1 text11"><a href="#n" onclick="one_point('95', '1', '다대포 해수욕장', event ); return false;"><span class="sta-title">다대포해수욕장</span></a><div class="spot"></div></div>
+					<div class="l95-96 l96-95 h-1"></div>
+					<div class="s96 s-1 text5"><a href="#n" onclick="one_point('96', '1', '다대포항', event ); return false;"><span class="sta-title">다대포항</span></a><div class="spot"></div></div>
+					<div class="l96-97 l97-96 h-1"></div>
+					<div class="s97 s-1"><a href="#n" onclick="one_point('97', '1', '낫개', event ); return false;"><span class="sta-title">낫개</span></a><div class="spot"></div></div>
+					<div class="l97-98 l98-97 h-1"></div>
+					<div class="s98 s-1 text5"><a href="#n" onclick="one_point('98', '1', '신장림', event ); return false;"><span class="sta-title">신장림</span></a><div class="spot"></div></div>
+					<div class="l98-99 l99-98 h-1"></div>
+					<div class="s99 s-1"><a href="#n" onclick="one_point('99', '1', '장림', event ); return false;"><span class="sta-title">장림</span></a><div class="spot"></div></div>
+					<div class="l99-100 l100-99 w-1"></div>
+					<div class="s100 s-1"><a href="#n" onclick="one_point('100', '1', '동매', event ); return false;"><span class="sta-title">동매</span></a><div class="spot"></div></div>
+					<div class="l100-101 l101-100 w-1"></div>
+					<div class="s101 s-1"><a href="#n" onclick="one_point('101', '1', '신평', event ); return false;"><span class="sta-title">신평</span></a><div class="spot"></div></div>
+					<div class="l101-102 l102-101 w-1"></div>
+					<div class="s102 s-1"><a href="#n" onclick="one_point('102', '1', '하단', event ); return false;"><span class="sta-title">하단</span></a><div class="spot"></div></div>
+					<div class="l102-103 l103-102 w-1"></div>
+					<div class="s103 s-1"><a href="#n" onclick="one_point('103', '1', '당리', event ); return false;"><span class="sta-title">당리</span></a><div class="spot"></div></div>
+					<div class="l103-104 l104-103 w-1"></div>
+					<div class="s104 s-1"><a href="#n" onclick="one_point('104', '1', '사하', event ); return false;"><span class="sta-title">사하</span></a><div class="spot"></div></div>
+					<div class="l104-105 l105-104 w-1"></div>
+					<div class="s105 s-1"><a href="#n" onclick="one_point('105', '1', '괴정', event ); return false;"><span class="sta-title">괴정</span></a><div class="spot"></div></div>
+					<div class="l105-106 l106-105 w-1"></div>
+					<div class="s106 s-1"><a href="#n" onclick="one_point('106', '1', '대티', event ); return false;"><span class="sta-title">대티</span></a><div class="spot"></div></div>
+					<div class="l106-107 l107-106 w-1"></div>
+					<div class="s107 s-1 text3"><a href="#n" onclick="one_point('107', '1', '서대신', event ); return false;"><span class="sta-title">서대신</span></a><div class="spot"></div></div>
+					<div class="l107-108 l108-107 w-1"></div>
+					<div class="s108 s-1 text3"><a href="#n" onclick="one_point('108', '1', '동대신', event ); return false;"><span class="sta-title">동대신</span></a><div class="spot"></div></div>
+					<div class="l108-109 l109-108 w-1"></div>
+					<div class="s109 s-1"><a href="#n" onclick="one_point('109', '1', '토성', event ); return false;"><span class="sta-title">토성</span></a><div class="spot"></div></div>
+					<div class="l109-110 l110-109 w-1"></div>
+					<div class="s110 s-1 text3"><a href="#n" onclick="one_point('110', '1', '자갈치', event ); return false;"><span class="sta-title">자갈치</span></a><div class="spot"></div></div>
+					<div class="l110-111 l111-110 w-1"></div>
+					<div class="s111 s-1"><a href="#n" onclick="one_point('111', '1', '남포', event ); return false;"><span class="sta-title">남포</span></a><div class="spot"></div></div>
+					<div class="l111-112 l112-111 w-1"></div>
+					<div class="s112 s-1"><a href="#n" onclick="one_point('112', '1', '중앙', event ); return false;"><span class="sta-title">중앙</span></a><div class="spot"></div></div>
+					<div class="l112-113 l113-112 w-1"></div>
+					<div class="s113 s-1 text3"><a href="#n" onclick="one_point('113', '1', '부산역', event ); return false;"><span class="sta-title">부산역</span></a><div class="spot"></div></div>
+					<div class="l113-114 l114-113 h-1"></div>
+					<div class="s114 s-1"><a href="#n" onclick="one_point('114', '1', '초량', event ); return false;"><span class="sta-title">초량</span></a><div class="spot"></div></div>
+					<div class="l114-115 l115-114 h-1"></div>
+					<div class="s115 s-1 text3"><a href="#n" onclick="one_point('115', '1', '부산진', event ); return false;"><span class="sta-title">부산진</span></a><div class="spot"></div></div>
+					<div class="l115-116 l116-115 h-1"></div>
+					<div class="s116 s-1"><a href="#n" onclick="one_point('116', '1', '좌천', event ); return false;"><span class="sta-title">좌천</span></a><div class="spot"></div></div>
+					<div class="l116-117 l117-116 h-1"></div>
+					<div class="s117 s-1"><a href="#n" onclick="one_point('117', '1', '범일', event ); return false;"><span class="sta-title">범일</span></a><div class="spot"></div></div>
+					<div class="l117-118 l118-117 h-1"></div>
+					<div class="s118 s-1 text3"><a href="#n" onclick="one_point('118', '1', '범내골', event ); return false;"><span class="sta-title">범내골</span></a><div class="spot"></div></div>
+					<div class="l118-119 l119-118 h-1"></div>
+					<div class="s119 trans tr-1-2 s-1"><a href="#n" onclick="one_point('119', '1', '서면', event ); return false;"><span class="sta-title">서면 <span class="blind">1호선/2호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l119-120 l120-119 h-1"></div>
+					<div class="s120 s-1"><a href="#n" onclick="one_point('120', '1', '부전', event ); return false;"><span class="sta-title">부전</span></a><div class="spot"></div></div>
+					<div class="l120-121 l121-120 h-1"></div>
+					<div class="s121 s-1"><a href="#n" onclick="one_point('121', '1', '양정', event ); return false;"><span class="sta-title">양정</span></a><div class="spot"></div></div>
+					<div class="l121-122 l122-121 h-1"></div>
+					<div class="s122 s-1"><a href="#n" onclick="one_point('122', '1', '시청', event ); return false;"><span class="sta-title">시청</span></a><div class="spot"></div></div>
+					<div class="l122-123 l123-122 h-1"></div>
+					<div class="s123 trans tr-1-3 s-1"><a href="#n" onclick="one_point('123', '1', '연산', event ); return false;"><span class="sta-title">연산 <span class="blind">1호선/3호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l123-124 l124-123 h-1"></div>
+					<div class="s124 trans tr-1-8 s-1"><a href="#n" onclick="one_point('124', '1', '교대', event ); return false;"><span class="sta-title">교대 <span class="blind">1호선/동해선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l124-125 l125-124 h-1"></div>
+					<div class="s125 trans tr-1-4 s-1"><a href="#n" onclick="one_point('125', '1', '동래', event ); return false;"><span class="sta-title">동래 <span class="blind">1호선/4호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l125-126 l126-125 h-1"></div>
+					<div class="s126 s-1"><a href="#n" onclick="one_point('126', '1', '명륜', event ); return false;"><span class="sta-title">명륜</span></a><div class="spot"></div></div>
+					<div class="l126-127 l127-126 h-1"></div>
+					<div class="s127 s-1 text3"><a href="#n" onclick="one_point('127', '1', '온천장', event ); return false;"><span class="sta-title">온천장</span></a><div class="spot"></div></div>
+					<div class="l127-128 l128-127 h-1"></div>
+					<div class="s128 s-1 text3"><a href="#n" onclick="one_point('128', '1', '부산대', event ); return false;"><span class="sta-title">부산대</span></a><div class="spot"></div></div>
+					<div class="l128-129 l129-128 h-1"></div>
+					<div class="s129 s-1"><a href="#n" onclick="one_point('129', '1', '장전', event ); return false;"><span class="sta-title">장전</span></a><div class="spot"></div></div>
+					<div class="l129-130 l130-129 h-1"></div>
+					<div class="s130 s-1"><a href="#n" onclick="one_point('130', '1', '구서', event ); return false;"><span class="sta-title">구서</span></a><div class="spot"></div></div>
+					<div class="l130-131 l131-130 h-1"></div>
+					<div class="s131 s-1"><a href="#n" onclick="one_point('131', '1', '두실', event ); return false;"><span class="sta-title">두실</span></a><div class="spot"></div></div>
+					<div class="l131-132 l132-131 h-1"></div>
+					<div class="s132 s-1"><a href="#n" onclick="one_point('132', '1', '남산', event ); return false;"><span class="sta-title">남산</span></a><div class="spot"></div></div>
+					<div class="l132-133 l133-132 h-1"></div>
+					<div class="s133 s-1 text3"><a href="#n" onclick="one_point('133', '1', '범어사', event ); return false;"><span class="sta-title">범어사</span></a><div class="spot"></div></div>
+					<div class="l133-134 l134-133 h-1"></div>
+					<div class="s134 s-1"><a href="#n" onclick="one_point('134', '1', '노포', event); return false;"><span class="sta-title">노포</span></a><div class="spot"></div>
+
+					</div>
+					<div class="line-1-end"><span class="blind">1호선</span></div>
+				</div>
+
+
+				<!-- 2호선 -->
+				<div class="line-2">
+					<div class="line-2-start"><span class="blind">2호선</span></div>
+					<div class="s201 s-2"><a href="#n" onclick="one_point('201', '2', '장산', event ); return false;"><span class="sta-title">장산</span></a><div class="spot"></div></div>
+					<div class="l201-202 l202-201 w-2"></div>
+					<div class="s202 s-2"><a href="#n" onclick="one_point('202', '2', '중동', event ); return false;"><span class="sta-title">중동</span></a><div class="spot"></div></div>
+					<div class="l202-203 l203-202 w-2"></div>
+					<div class="s203 s-2 text3"><a href="#n" onclick="one_point('203', '2', '해운대', event ); return false;"><span class="sta-title">해운대</span></a><div class="spot"></div></div>
+					<div class="l203-204 l204-203 w-2"></div>
+					<div class="s204 s-2"><a href="#n" onclick="one_point('204', '2', '동백', event ); return false;"><span class="sta-title">동백</span></a><div class="spot"></div></div>
+					<div class="l204-205 l205-204 w-2"></div>
+					<div class="s205 trans tr-2-8 s-2 text11"><a href="#n" onclick="one_point('205', '2', '벡스코(시립미술관)', event ); return false;"><span class="sta-title">벡스코<br/>(시립미술관) <span class="blind">2호선/동해선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l205-206 l206-205 w-2"></div>
+					<div class="s206 s-2 text4"><a href="#n" onclick="one_point('206', '2', '센텀시티', event ); return false;"><span class="sta-title">센텀시티</span></a><div class="spot"></div></div>
+					<div class="l206-207 l207-206 w-2"></div>
+					<div class="s207 s-2"><a href="#n" onclick="one_point('207', '2', '민락', event ); return false;"><span class="sta-title">민락</span></a><div class="spot"></div></div>
+					<div class="l207-208 l208-207 w-2"></div>
+					<div class="s208 trans tr-2-3 s-2"><a href="#n" onclick="one_point('208', '2', '수영', event ); return false;"><span class="sta-title">수영 <span class="blind">2호선/3호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l208-209 l209-208 h-2"></div>
+					<div class="s209 s-2"><a href="#n" onclick="one_point('209', '2', '광안', event ); return false;"><span class="sta-title">광안</span></a><div class="spot"></div></div>
+					<div class="l209-210 l210-209 h-2"></div>
+					<div class="s210 s-2 text3"><a href="#n" onclick="one_point('210', '2', '금련산', event ); return false;"><span class="sta-title">금련산</span></a><div class="spot"></div></div>
+					<div class="l210-211 l211-210 h-2"></div>
+					<div class="s211 s-2"><a href="#n" onclick="one_point('211', '2', '남천', event ); return false;"><span class="sta-title">남천</span></a><div class="spot"></div></div>
+					<div class="l211-212 l212-211 w-2"></div>
+					<div class="s212 s-2 text7"><a href="#n" onclick="one_point('212', '2', '경성대·부경대', event ); return false;"><span class="sta-title">경성대·부경대</span></a><div class="spot"></div></div>
+					<div class="l212-213 l213-212 w-2"></div>
+					<div class="s213 s-2"><a href="#n" onclick="one_point('213', '2', '대연', event ); return false;"><span class="sta-title">대연</span></a><div class="spot"></div></div>
+					<div class="l213-214 l214-213 w-2"></div>
+					<div class="s214 s-2"><a href="#n" onclick="one_point('214', '2', '못골', event ); return false;"><span class="sta-title">못골</span></a><div class="spot"></div></div>
+					<div class="l214-215 l215-214 w-2"></div>
+					<div class="s215 s-2 text3"><a href="#n" onclick="one_point('215', '2', '지게골', event ); return false;"><span class="sta-title">지게골</span></a><div class="spot"></div></div>
+					<div class="l215-216 l216-215 w-2"></div>
+					<div class="s216 s-2"><a href="#n" onclick="one_point('216', '2', '문현', event ); return false;"><span class="sta-title">문현</span></a><div class="spot"></div></div>
+					<div class="l216-217 l217-216 w-2"></div>
+					<div class="s217 s-2 text11"><a href="#n" onclick="one_point('217', '2', '국제금융센터·부산은행', event ); return false;"><span class="sta-title">국제금융센터·부산은행</span></a><div class="spot"></div></div>
+					<div class="l217-218 l218-217 w-2"></div>
+					<div class="s218 s-2"><a href="#n" onclick="one_point('218', '2', '전포', event ); return false;"><span class="sta-title">전포</span></a><div class="spot"></div></div>
+					<div class="l218-219 l219-218 w-2"></div>
+					<div class="s219 trans tr-1-2 s-2"><a href="#n" onclick="one_point('219', '2', '서면', event ); return false;"><span class="sta-title blind">서면 2호선/1호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l219-220 l220-219 w-2"></div>
+					<div class="s220 s-2"><a href="#n" onclick="one_point('220', '2', '부암', event ); return false;"><span class="sta-title">부암</span></a><div class="spot"></div></div>
+					<div class="l220-221 l221-220 w-2"></div>
+					<div class="s221 s-2"><a href="#n" onclick="one_point('221', '2', '가야', event ); return false;"><span class="sta-title">가야</span></a><div class="spot"></div></div>
+					<div class="l221-222 l222-221 w-2"></div>
+					<div class="s222 s-2 text3"><a href="#n" onclick="one_point('222', '2', '동의대', event ); return false;"><span class="sta-title">동의대</span></a><div class="spot"></div></div>
+					<div class="l222-223 l223-222 w-2"></div>
+					<div class="s223 s-2"><a href="#n" onclick="one_point('223', '2', '개금', event ); return false;"><span class="sta-title">개금</span></a><div class="spot"></div></div>
+					<div class="l223-224 l224-223 w-2"></div>
+					<div class="s224 s-2"><a href="#n" onclick="one_point('224', '2', '냉정', event ); return false;"><span class="sta-title">냉정</span></a><div class="spot"></div></div>
+					<div class="l224-225 l225-224 w-2"></div>
+					<div class="s225 s-2"><a href="#n" onclick="one_point('225', '2', '주례', event ); return false;"><span class="sta-title">주례</span></a><div class="spot"></div></div>
+					<div class="l225-226 l226-225 w-2"></div>
+					<div class="s226 s-2"><a href="#n" onclick="one_point('226', '2', '감전', event ); return false;"><span class="sta-title">감전</span></a><div class="spot"></div></div>
+					<div class="l226-227 l227-226 w-2"></div>
+					<div class="s227 trans tr-2-9 s-2"><a href="#n" onclick="one_point('227', '2', '사상', event ); return false;"><span class="sta-title">사상 <span class="blind">2호선/부산김해 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l227-228 l228-227 h-2"></div>
+					<div class="s228 s-2"><a href="#n" onclick="one_point('228', '2', '덕포', event ); return false;"><span class="sta-title">덕포</span></a><div class="spot"></div></div>
+					<div class="l228-229 l229-228 h-2"></div>
+					<div class="s229 s-2"><a href="#n" onclick="one_point('229', '2', '모덕', event ); return false;"><span class="sta-title">모덕</span></a><div class="spot"></div></div>
+					<div class="l229-230 l230-229 h-2"></div>
+					<div class="s230 s-2"><a href="#n" onclick="one_point('230', '2', '모라', event ); return false;"><span class="sta-title">모라</span></a><div class="spot"></div></div>
+					<div class="l230-231 l231-230 h-2"></div>
+					<div class="s231 s-2"><a href="#n" onclick="one_point('231', '2', '구남', event ); return false;"><span class="sta-title">구남</span></a><div class="spot"></div></div>
+					<div class="l231-232 l232-231 h-2"></div>
+					<div class="s232 s-2"><a href="#n" onclick="one_point('232', '2', '구명', event ); return false;"><span class="sta-title">구명</span></a><div class="spot"></div></div>
+					<div class="l232-233 l233-232 h-2"></div>
+					<div class="s233 trans tr-2-3 s-2"><a href="#n" onclick="one_point('233', '2', '덕천', event ); return false;"><span class="sta-title">덕천 <span class="blind">2호선/3호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l233-234 l234-233  h-2"></div>
+					<div class="s234 s-2"><a href="#n" onclick="one_point('234', '2', '수정', event ); return false;"><span class="sta-title">수정</span></a><div class="spot"></div></div>
+					<div class="l234-235 l235-234 h-2"></div>
+					<div class="s235 s-2"><a href="#n" onclick="one_point('235', '2', '화명', event ); return false;"><span class="sta-title">화명</span></a><div class="spot"></div></div>
+					<div class="l235-236 l236-235 h-2"></div>
+					<div class="s236 s-2"><a href="#n" onclick="one_point('236', '2', '율리', event ); return false;"><span class="sta-title">율리</span></a><div class="spot"></div></div>
+					<div class="l236-237 l237-236 h-2"></div>
+					<div class="s237 s-2"><a href="#n" onclick="one_point('237', '2', '동원', event ); return false;"><span class="sta-title">동원</span></a><div class="spot"></div></div>
+					<div class="l237-238 l238-237 h-2"></div>
+					<div class="s238 s-2"><a href="#n" onclick="one_point('238', '2', '금곡', event ); return false;"><span class="sta-title">금곡</span></a><div class="spot"></div></div>
+					<div class="l238-239 l239-238 h-2"></div>
+					<div class="s239 s-2"><a href="#n" onclick="one_point('239', '2', '호포', event ); return false;"><span class="sta-title">호포</span></a><div class="spot"></div></div>
+					<div class="l239-240 l240-239 h-2"></div>
+					<div class="s240 s-2"><a href="#n" onclick="one_point('240', '2', '증산', event ); return false;"><span class="sta-title">증산</span></a><div class="spot"></div></div>
+					<div class="l240-241 l241-240 h-2"></div>
+					<div class="s241 s-2 text8"><a href="#n" onclick="one_point('241', '2', '부산대양산캠퍼스', event ); return false;"><span class="sta-title">부산대양산캠퍼스</span></a><div class="spot"></div></div>
+					<div class="l241-242 l242-241 h-2"></div>
+					<div class="s242 s-2 text3"><a href="#n" onclick="one_point('242', '2', '남양산', event ); return false;"><span class="sta-title">남양산</span></a><div class="spot"></div></div>
+					<div class="l242-243 l243-242 h-2"></div>
+					<div class="s243 s-2"><a href="#n" onclick="one_point('243', '2', '양산', event ); return false;"><span class="sta-title">양산</span></a><div class="spot"></div></div>
+					<div class="line-2-end"><span class="blind">2호선</span></div>
+				</div>
+
+
+				<!-- 3호선 -->
+				<div class="line-3">
+					<div class="line-3-start"><span class="blind">3호선</span></div>
+					<div class="s301 trans tr-2-3 s-3"><a href="#n" onclick="one_point('301', '3', '수영', event ); return false;"><span class="sta-title blind">수영 <span class="blind">3호선/2호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l301-302 l302-301 w-3"></div>
+					<div class="s302 s-3"><a href="#n" onclick="one_point('302', '3', '망미', event ); return false;"><span class="sta-title">망미</span></a><div class="spot"></div></div>
+					<div class="l302-303 l303-302 w-3"></div>
+					<div class="s303 s-3"><a href="#n" onclick="one_point('303', '3', '배산', event ); return false;"><span class="sta-title">배산</span></a><div class="spot"></div></div>
+					<div class="l303-304 l304-303 w-3"></div>
+					<div class="s304 s-3 text3"><a href="#n" onclick="one_point('304', '3', '물만골', event ); return false;"><span class="sta-title">물만골</span></a><div class="spot"></div></div>
+					<div class="l304-305 l305-304 w-3"></div>
+					<div class="s305 trans tr-1-3 s-3"><a href="#n" onclick="one_point('305', '3', '연산', event ); return false;"><span class="sta-title blind">연산 3호선/1호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l305-306 l306-305 w-3"></div>
+					<div class="s306 trans tr-8-3 s-3"><a href="#n" onclick="one_point('306', '3', '거제', event ); return false;"><span class="sta-title blind">거제 3호선/동해선 환승역</span></a><div class="spot"></div></div>
+					<div class="l306-307 l307-306 w-3"></div>
+					<div class="s307 s-3 text5"><a href="#n" onclick="one_point('307', '3', '종합운동장', event ); return false;"><span class="sta-title">종합운동장</span></a><div class="spot"></div></div>
+					<div class="l307-308 l308-307 w-3"></div>
+					<div class="s308 s-3"><a href="#n" onclick="one_point('308', '3', '사직', event ); return false;"><span class="sta-title">사직</span></a><div class="spot"></div></div>
+					<div class="l308-309 l309-308 w-3"></div>
+					<div class="s309 trans tr-3-4 s-3"><a href="#n" onclick="one_point('309', '3', '미남', event ); return false;"><span class="sta-title">미남 <span class="blind">3호선/4호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l309-310 l310-309 w-3"></div>
+					<div class="s310 s-3"><a href="#n" onclick="one_point('310', '3', '만덕', event ); return false;"><span class="sta-title">만덕</span></a><div class="spot"></div></div>
+					<div class="l310-311 l311-310 w-3"></div>
+					<div class="s311 s-3 text3"><a href="#n" onclick="one_point('311', '3', '남산정', event ); return false;"><span class="sta-title">남산정</span></a><div class="spot"></div></div>
+					<div class="l311-312 l312-311 l312-311 w-3"></div>
+					<div class="s312 s-3"><a href="#n" onclick="one_point('312', '3', '숙등', event ); return false;"><span class="sta-title">숙등</span></a><div class="spot"></div></div>
+					<div class="l312-313 l313-312 l313-312 w-3"></div>
+					<div class="s313 trans tr-2-3 s-3"><a href="#n" onclick="one_point('313', '3', '덕천', event ); return false;"><span class="sta-title blind">덕천 3호선/2호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l313-314 l314-313 w-3"></div>
+					<div class="s314 s-3"><a href="#n" onclick="one_point('314', '3', '구포', event ); return false;"><span class="sta-title">구포</span></a><div class="spot"></div></div>
+					<div class="l314-315 l315-314 w-3"></div>
+					<div class="s315 s-3 text4"><a href="#n" onclick="one_point('315', '3', '강서구청', event ); return false;"><span class="sta-title">강서구청</span></a><div class="spot"></div></div>
+					<div class="l315-316 l316-315 w-3"></div>
+					<div class="s316 s-3 text4"><a href="#n" onclick="one_point('316', '3', '체육공원', event ); return false;"><span class="sta-title">체육공원</span></a><div class="spot"></div></div>
+					<div class="l316-317 l317-316 w-3"></div>
+					<div class="s317 trans tr-3-9 s-3"><a href="#n" onclick="one_point('317', '3', '대저', event ); return false;"><span class="sta-title">대저 <span class="blind">3호선/부산김해 환승역</span></span></a><div class="spot"></div></div>
+					<div class="line-3-end"><span class="blind">3호선</span></div>
+				</div>
+
+
+				<!-- 4호선 -->
+				<div class="line-4">
+					<div class="line-4-start"><span class="blind">4호선</span></div>
+					<div class="s401 trans tr-3-4 s-4"><a href="#n" onclick="one_point('401', '4', '미남', event ); return false;"><span class="sta-title blind">미남 4호선/3호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l401-402 l402-401 w-4"></div>
+					<div class="s402 trans tr-1-4 s-4"><a href="#n" onclick="one_point('402', '4', '동래', event ); return false;"><span class="sta-title blind">동래 4호선/1호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l402-403 l403-402 w-4"></div>
+					<div class="s403 s-4"><a href="#n" onclick="one_point('403', '4', '수안', event ); return false;"><span class="sta-title">수안</span></a><div class="spot"></div></div>
+					<div class="l403-404 l404-403 w-4"></div>
+					<div class="s404 s-4"><a href="#n" onclick="one_point('404', '4', '낙민', event ); return false;"><span class="sta-title">낙민</span></a><div class="spot"></div></div>
+					<div class="l404-405 l405-404 w-4"></div>
+					<div class="s405 s-4 text3"><a href="#n" onclick="one_point('405', '4', '충렬사', event ); return false;"><span class="sta-title">충렬사</span></a><div class="spot"></div></div>
+					<div class="l405-406 l406-405 w-4"></div>
+					<div class="s406 s-4"><a href="#n" onclick="one_point('406', '4', '명장', event ); return false;"><span class="sta-title">명장</span></a><div class="spot"></div></div>
+					<div class="l406-407 l407-406 w-4"></div>
+					<div class="s407 s-4"><a href="#n" onclick="one_point('407', '4', '서동', event ); return false;"><span class="sta-title">서동</span></a><div class="spot"></div></div>
+					<div class="l407-408 l408-407 w-4"></div>
+					<div class="s408 s-4"><a href="#n" onclick="one_point('408', '4', '금사', event ); return false;"><span class="sta-title">금사</span></a><div class="spot"></div></div>
+					<div class="l408-409 l409-408 w-4"></div>
+					<div class="s409 s-4 text7"><a href="#n" onclick="one_point('409', '4', '반여농산물시장', event ); return false;"><span class="sta-title">반여농산물시장</span></a><div class="spot"></div></div>
+					<div class="l409-410 l410-409 h-4"></div>
+					<div class="s410 s-4"><a href="#n" onclick="one_point('410', '4', '석대', event ); return false;"><span class="sta-title">석대</span></a><div class="spot"></div></div>
+					<div class="l410-411 l411-410 h-4"></div>
+					<div class="s411 s-4 text3"><a href="#n" onclick="one_point('411', '4', '영산대', event ); return false;"><span class="sta-title">영산대</span></a><div class="spot"></div></div>
+					<div class="l411-412 l412-411 h-4"></div>
+					<div class="s412 s-4 text5"><a href="#n" onclick="one_point('412', '4', '윗반송', event ); return false;"><span class="sta-title">윗반송</span></a><div class="spot"></div></div>
+					<div class="l412-413 l413-412 h-4"></div>
+					<div class="s413 s-4"><a href="#n" onclick="one_point('413', '4', '고촌', event ); return false;"><span class="sta-title">고촌</span></a><div class="spot"></div></div>
+					<div class="l413-414 l414-413 h-4"></div>
+					<div class="s414 s-4"><a href="#n" onclick="one_point('414', '4', '안평', event ); return false;"><span class="sta-title">안평</span></a><div class="spot"></div></div>
+					<div class="line-4-end"><span class="blind">4호선</span></div>
+				</div>
+
+				<!-- 동해선 -->
+				<div class="line-8">
+					<div class="line-8-start"><span class="blind">동해선</span></div>
+					<div class="s801 trans tr-1-8-rotate s-8"><a href="#n" onclick="one_point('801', '8', '부전', event ); return false;"><span class="sta-title">부전 <span class="blind">동해선/1호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l801-802 l802-801 h-8"></div>
+					<div class="s802 s-8 text5"><a href="#n" onclick="one_point('802', '8', '거제해맞이', event ); return false;"><span class="sta-title">거제해맞이</span></a><div class="spot"></div></div>
+					<div class="l802-803 l803-802 h-8"></div>
+					<div class="s803 trans tr-8-3 s-8"><a href="#n" onclick="one_point('803', '8', '거제', event ); return false;"><span class="sta-title">거제  <span class="blind">동해선/3호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l803-804 l804-803 w-8"></div>
+					<div class="s804 trans tr-1-8 s-8"><a href="#n" onclick="one_point('804', '8', '교대', event ); return false;"><span class="sta-title">교대  <span class="blind">동해선/1호선 환승역</span></span></a><div class="spot"></div></div>
+					<div class="l804-805 l805-804 w-8"></div>
+					<div class="s805 s-8 text7"><a href="#n" onclick="one_point('805', '8', '동래', event ); return false;"><span class="sta-title">동래</span></a><div class="spot"></div></div>
+					<div class="l805-806 l806-805 w-8"></div>
+					<div class="s806 s-8"><a href="#n" onclick="one_point('806', '8', '안락', event ); return false;"><span class="sta-title">안락</span></a><div class="spot"></div></div>
+					<div class="l806-807 l807-806 w-8"></div>
+					<div class="s807 s-8 text7"><a href="#n" onclick="one_point('807', '8', '부산원동', event ); return false;"><span class="sta-title">부산원동</span></a><div class="spot"></div></div>
+					<div class="l807-808 l808-807 w-8"></div>
+					<div class="s808 s-8"><a href="#n" onclick="one_point('808', '8', '재송', event ); return false;"><span class="sta-title">재송</span></a><div class="spot"></div></div>
+					<div class="l808-809 l809-808 w-8"></div>
+					<div class="s809 s-8"><a href="#n" onclick="one_point('809', '8', '센텀', event ); return false;"><span class="sta-title">센텀</span></a><div class="spot"></div></div>
+					<div class="l809-810 l810-809 w-8"></div>
+					<div class="s810 trans tr-2-8 s-8 text7"><a href="#n" onclick="one_point('810', '8', '벡스코', event ); return false;"><span class="sta-title blind">벡스코 동해선/2호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l810-811 l811-810 h-8"></div>
+					<div class="s811 s-8 text5"><a href="#n" onclick="one_point('811', '8', '신해운대', event ); return false;"><span class="sta-title">신해운대</span></a><div class="spot"></div></div>
+					<div class="l811-812 l812-811 h-8"></div>
+					<div class="s812 s-8 text3"><a href="#n" onclick="one_point('812', '8', '송정', event ); return false;"><span class="sta-title">송정</span></a><div class="spot"></div></div>
+					<div class="l812-813 l813-812 h-8"></div>
+					<div class="s813 s-8 text5"><a href="#n" onclick="one_point('813', '8', '오시리아', event ); return false;"><span class="sta-title">오시리아</span></a><div class="spot"></div></div>
+					<div class="l813-814 l814-813 h-8"></div>
+					<div class="s814 s-8"><a href="#n" onclick="one_point('814', '8', '기장', event ); return false;"><span class="sta-title">기장</span></a><div class="spot"></div></div>
+					<div class="l814-815 l815-814 h-8"></div>
+					<div class="s815 s-8"><a href="#n" onclick="one_point('815', '8', '일광', event ); return false;"><span class="sta-title">일광</span></a><div class="spot"></div></div>
+					<div class="l815-816 l816-815 h-8"></div>
+					<div class="s816 s-8"><a href="#n" onclick="one_point('816', '8', '좌천', event ); return false;"><span class="sta-title">좌천</span></a><div class="spot"></div></div>
+					<div class="l816-817 l817-816 h-8"></div>
+					<div class="s817 s-8"><a href="#n" onclick="one_point('817', '8', '월내', event ); return false;"><span class="sta-title">월내</span></a><div class="spot"></div></div>
+					<div class="l817-818 l818-817 h-8"></div>
+					<div class="s818 s-8"><a href="#n" onclick="one_point('818', '8', '서생', event ); return false;"><span class="sta-title">서생</span></a><div class="spot"></div></div>
+					<div class="l818-819 l819-818 h-8"></div>
+					<div class="s819 s-8"><a href="#n" onclick="one_point('819', '8', '남창', event ); return false;"><span class="sta-title">남창</span></a><div class="spot"></div></div>
+					<div class="l819-820 l820-819 w-8"></div>
+					<div class="s820 s-8"><a href="#n" onclick="one_point('820', '8', '망양', event ); return false;"><span class="sta-title">망양</span></a><div class="spot"></div></div>
+					<div class="l820-821 l821-820 w-8"></div>
+					<div class="s821 s-8"><a href="#n" onclick="one_point('821', '8', '덕하', event ); return false;"><span class="sta-title">덕하</span></a><div class="spot"></div></div>
+					<div class="l821-822 l822-821 w-8"></div>
+					<div class="s822 s-8 text5"><a href="#n" onclick="one_point('822', '8', '개운포', event ); return false;"><span class="sta-title">개운포</span></a><div class="spot"></div></div>
+					<div class="l822-823 l823-822 w-8"></div>
+					<div class="s823 s-8 text5"><a href="#n" onclick="one_point('823', '8', '태화강', event ); return false;"><span class="sta-title">태화강</span></a><div class="spot"></div></div>
+					<div class="line-8-end"><span class="blind">동해선</span></div>
+				</div>
+
+
+				<!-- 김해경전철 -->
+				<div class="line-9">
+					<div class="line-9-start"><span class="blind">부산김해</span></div>
+					<div class="s901 trans tr-2-9 s-9"><a href="#n" onclick="one_point('901', '9', '사상', event ); return false;"><span class="sta-title blind">사상 부산김해/2호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l901-902 l902-901 h-9"></div>
+					<div class="s902 s-9 text7"><a href="#n" onclick="one_point('902', '9', '괘법르네시떼', event ); return false;"><span class="sta-title"><span style="display:block">괘법</span>르네시떼</span></a><div class="spot"></div></div>
+					<div class="l902-903 l903-902 h-9"></div>
+					<div class="s903 s-9 text7"><a href="#n" onclick="one_point('903', '9', '서부산유통지구', event ); return false;"><span class="sta-title">서부산 유통지구</span></a><div class="spot"></div></div>
+					<div class="l903-904 l904-903 h-9"></div>
+					<div class="s904 s-9 text4"><a href="#n" onclick="one_point('904', '9', '공항', event ); return false;"><span class="sta-title">공항</span></a><div class="spot"></div></div>
+					<div class="l904-905 l905-904 h-9"></div>
+					<div class="s905 s-9"><a href="#n" onclick="one_point('905', '9', '덕두', event ); return false;"><span class="sta-title">덕두</span></a><div class="spot"></div></div>
+					<div class="l905-906 l906-905 h-9"></div>
+					<div class="s906 s-9"><a href="#n" onclick="one_point('906', '9', '동구', event ); return false;"><span class="sta-title">등구</span></a><div class="spot"></div></div>
+					<div class="l906-907 l907-906 h-9"></div>
+					<div class="s907 trans tr-3-9 s-9"><a href="#n" onclick="one_point('907', '9', '대저', event ); return false;"><span class="sta-title blind">대저 부산김해/3호선 환승역</span></a><div class="spot"></div></div>
+					<div class="l907-908 l908-907 h-9"></div>
+					<div class="s908 s-9"><a href="#n" onclick="one_point('908', '9', '평강', event ); return false;"><span class="sta-title">평강</span></a><div class="spot"></div></div>
+					<div class="l908-909 l909-908 h-9"></div>
+					<div class="s909 s-9"><a href="#n" onclick="one_point('909', '9', '대사', event ); return false;"><span class="sta-title">대사</span></a><div class="spot"></div></div>
+					<div class="l909-910 l910-909 h-9"></div>
+					<div class="s910 s-9"><a href="#n" onclick="one_point('910', '9', '불암', event ); return false;"><span class="sta-title">불암</span></a><div class="spot"></div></div>
+					<div class="l910-911 l911-910 h-9"></div>
+					<div class="s911 s-9"><a href="#n" onclick="one_point('911', '9', '지내', event ); return false;"><span class="sta-title">지내</span></a><div class="spot"></div></div>
+					<div class="l911-912 l912-911 h-9"></div>
+					<div class="s912 s-9 text4"><a href="#n" onclick="one_point('912', '9', '김해대학', event ); return false;"><span class="sta-title">김해대학</span></a><div class="spot"></div></div>
+					<div class="l912-913 l913-912 h-9"></div>
+					<div class="s913 s-9 text3"><a href="#n" onclick="one_point('913', '9', '인제대', event ); return false;"><span class="sta-title">인제대</span></a><div class="spot"></div></div>
+					<div class="l913-914 l914-913 h-9"></div>
+					<div class="s914 s-9 text4"><a href="#n" onclick="one_point('914', '9', '김해시청', event ); return false;"><span class="sta-title">김해시청</span></a><div class="spot"></div></div>
+					<div class="l914-915 l915-914 h-9"></div>
+					<div class="s915 s-9"><a href="#n" onclick="one_point('915', '9', '부원', event ); return false;"><span class="sta-title">부원</span></a><div class="spot"></div></div>
+					<div class="l915-916 l916-915 h-9"></div>
+					<div class="s916 s-9"><a href="#n" onclick="one_point('916', '9', '봉황', event ); return false;"><span class="sta-title">봉황</span></a><div class="spot"></div></div>
+					<div class="l916-917 l917-916 h-9"></div>
+					<div class="s917 s-9 text4"><a href="#n" onclick="one_point('917', '9', '수로왕릉', event ); return false;"><span class="sta-title">수로왕릉</span></a><div class="spot"></div></div>
+					<div class="l917-918 l918-917 h-9"></div>
+					<div class="s918 s-9 text3"><a href="#n" onclick="one_point('918', '9', '박물관', event ); return false;"><span class="sta-title">박물관</span></a><div class="spot"></div></div>
+					<div class="l918-919 l919-918 h-9"></div>
+					<div class="s919 s-9 text4"><a href="#n" onclick="one_point('919', '9', '연지공원', event ); return false;"><span class="sta-title">연지공원</span></a><div class="spot"></div></div>
+					<div class="l919-920 l920-919 h-9"></div>
+					<div class="s920 s-9 text3"><a href="#n" onclick="one_point('920', '9', '장신대', event ); return false;"><span class="sta-title">장신대</span></a><div class="spot"></div></div>
+					<div class="l920-921 l921-920 h-9"></div>
+					<div class="s921 s-9 text3"><a href="#n" onclick="one_point('921', '9', '가야대', event ); return false;"><span class="sta-title">가야대</span></a><div class="spot"></div></div>
+					<div class="line-9-end"><span class="blind">부산김해</span></div>
+				</div>
+
+
+				<!--<div class="conven1"><img src="/homepage/default/img/cyber-station/conven1.png" alt="엘리베이터 설치되어 있는 역" /></div>
+				<div class="conven2"><img src="/homepage/default/img/cyber-station/conven2.png" alt="휠체어리프트 설치되어 있는 역" /></div>
+				<div class="conven3"><img src="/homepage/default/img/cyber-station/conven3.png" alt="환승주차장 설치되어 있는 역" /></div>
+				<div class="conven4"><img src="/homepage/default/img/cyber-station/conven4.png" alt="자전거보관소 설치되어 있는 역" /></div>
+				<div class="conven5"><img src="/homepage/default/img/cyber-station/conven5.png" alt="물품보관함 설치되어 있는 역" /></div>
+				<div class="conven6"><img src="/homepage/default/img/cyber-station/conven6.png" alt="자동사진기 설치되어 있는 역" /></div>
+				<div class="conven7"><img src="/homepage/default/img/cyber-station/conven7.png" alt="도시철도경찰대 설치되어 있는 역" /></div>
+				<div class="conven8"><img src="/homepage/default/img/cyber-station/conven8.png" alt="섬식형(아일랜드형) 설치되어 있는 역" /></div>
+				<div class="conven9"><img src="/homepage/default/img/cyber-station/conven9.png" alt="반대방향 갈아 탈 수 있는 역" /></div> -->
+
+			</div>
+		</div><!-- //map-img-wrap -->
+
+
+		<div class="pop-result popuppo" style="display:none;">
+			<div class="pop-result-1">
+
+				<div>
+
+
+
+
+
+
+
+
+
+					<span class="result-1-sta">역</span>
+
+
+
+
+							<a href="/homepage/default/stationinfo/page/list01.do?menu_no=1001010201&S_LINE=&S_STATION=" class="result-1-a" id="result-1-a-1" title="새창 열림" target="_blank"><span class="blind">역 </span>역정보</a>
+							<a href="/homepage/default/stationtime/page/view.do?menu_no=1001010301&S_HO=&S_STATION=" class="result-1-a" title="새창 열림" target="_blank"><span class="blind">역 </span>시간표</a>
+
+
+				</div>
+				<div>
+					<span class="result-1-arr"><img src="/homepage/default/img/cyber-station/arrow-new.png" alt="화살표"></span>
+				</div>
+				<div>
+
+
+
+
+
+
+
+
+
+					<span class="result-1-sta">역</span>
+
+
+
+
+							<a href="/homepage/default/stationinfo/page/list01.do?menu_no=1001010201&S_LINE=&S_STATION=" class="result-1-a" id="result-1-a-2" title="새창 열림" target="_blank"><span class="blind">역 </span>역정보</a>
+							<a href="/homepage/default/stationtime/page/view.do?menu_no=1001010301&S_HO=&S_STATION=" class="result-1-a"  title="새창 열림" target="_blank"><span class="blind">역 </span>시간표</a>
+
+
+
+				</div>
+			</div>
+			<div class="pop-result-2">
+				<dl class="pop-result-dl">
+					<dt>소요시간</dt>
+					<dd>
+
+
+
+
+
+
+
+
+					</dd>
+					<dt>거리</dt>
+					<dd>km</dd>
+					<dt>요금정보</dt>
+					<dd>카드:<span class="discountCard2">300</span>원/현금:<span class="discountMoney2"></span>원</dd>
+					<dt>환승횟수</dt>
+					<dd>번</dd>
+				</dl>
+			</div>
+			<div class="pop-close-wrap">
+				<button type="button" class="cyber-search-btn" id="close" onclick="replacelayer(); return false;">닫기</button>
+			</div>
+		</div>
+
+
+
+
+
+
+
+
+
+
+		<div class="map-down-box">
+			<dl>
+				<dt class="os-r">노선도 다운로드</dt>
+				<dd><a href="/upload/default/integrate.zip" class="map-down-btn">종합노선도</a></dd>
+				<dd><a href="/upload/default/line01.zip" class="map-down-btn">1호선노선도</a></dd>
+				<dd><a href="/upload/default/line02.zip" class="map-down-btn">2호선노선도</a></dd>
+				<dd><a href="/upload/default/line03.zip" class="map-down-btn">3호선노선도</a></dd>
+				<dd><a href="/upload/default/line04.zip" class="map-down-btn">4호선노선도</a></dd>
+			</dl>
+
+			<ul class="map-color-wrap">
+				<li class="map-color-1">1호선</li>
+				<li class="map-color-2">2호선</li>
+				<li class="map-color-3">3호선</li>
+				<li class="map-color-4">4호선</li>
+				<li class="map-color-8">동해선</li>
+				<li class="map-color-5">부산김해</li>
+				<li class="map-color-6">환승역</li>
+			</ul>
+		</div>
+
+	</div> <!-- ///cyber-map -->
+
+	<div class="cyber-btn-wrap">
+		<ul class="cyber-btn-1">
+			<li class="cyber-btn-title">전체노선</li>
+			<li class="cyber-btn-1-1"><button type="button" id="onlyLine1" data-isOpen="0">1호선</button></li>
+			<li class="cyber-btn-1-2"><button type="button" id="onlyLine2" data-isOpen="0">2호선</button></li>
+			<li class="cyber-btn-1-3"><button type="button" id="onlyLine3" data-isOpen="0">3호선</button></li>
+			<li class="cyber-btn-1-4"><button type="button" id="onlyLine4" data-isOpen="0">4호선</button></li>
+			<li class="cyber-btn-1-8"><button type="button" id="onlyLine8" data-isOpen="0">동해선</button></li>
+			<li class="cyber-btn-1-5"><button type="button" id="onlyLine9" data-isOpen="0">부산김해경전철</button></li>
+		</ul>
+		<ul class="cyber-btn-2">
+			<li class="cyber-btn-title">편의시설현황</li>
+			<li class="cyber-btn-2-1"><a href="#conven" class="button" id="conven-1" data-isOpen="0" onclick="conven('1', this.id); return false;"><span class='blind'>엘리베이터</span><span class="text-cloud tc-5">엘리베이터<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-2"><a href="#conven" class="button" id="conven-2" data-isOpen="0" onclick="conven('2', this.id); return false;"><span class='blind'>휠체어리프트</span><span class="text-cloud tc-6">휠체어리프트<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-3"><a href="#conven" class="button" id="conven-3" data-isOpen="0" onclick="conven('3', this.id); return false;"><span class='blind'>환승주차장</span><span class="text-cloud tc-5">환승주차장<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-4"><a href="#conven" class="button" id="conven-4" data-isOpen="0" onclick="conven('4', this.id); return false;"><span class='blind'>자전거보관소</span><span class="text-cloud tc-6">자전거보관소<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-5"><a href="#conven" class="button" id="conven-5" data-isOpen="0" onclick="conven('5', this.id); return false;"><span class='blind'>물품보관함</span><span class="text-cloud tc-5">물품보관함<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-6"><a href="#conven" class="button" id="conven-6" data-isOpen="0" onclick="conven('6', this.id); return false;"><span class='blind'>자동사진기</span><span class="text-cloud tc-5">자동사진기<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-7"><a href="#conven" class="button" id="conven-7" data-isOpen="0" onclick="conven('7', this.id); return false;"><span class='blind'>도시철도경찰대</span><span class="text-cloud tc-7">도시철도경찰대<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-8"><a href="#conven" class="button" id="conven-8" data-isOpen="0" onclick="conven('8', this.id); return false;"><span class='blind'>섬식형(아일랜드형)</span><span class="text-cloud tc-8">섬식형(아일랜드형)<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+			<li class="cyber-btn-2-9"><a href="#conven" class="button" id="conven-9" data-isOpen="0" onclick="conven('9', this.id); return false;"><span class='blind'>반대방향 갈아탈 수 있는 역</span><span class="text-cloud tc-etc">반대방향 갈아탈 수 있는 역<span><img src="/homepage/default/img/cyber-station/text-cloud-close.png" alt="닫기" /></span></span></a></li>
+		</ul>
+		<div class="conven" id="conven"></div>
+	</div>
+
+</div>
+
+</body>
+</html>

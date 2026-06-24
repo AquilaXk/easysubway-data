@@ -1,0 +1,6771 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<link rel="shortcut icon" href="/images/favi.png">
+	<link rel="icon" href="/images/favi.png">
+	<link rel="stylesheet" href='/css/main/default.css?v13'>
+	<link href='/css/common/form.css?v11' rel="stylesheet">
+	<link href='/css/common/jquery-confirm.css' rel="stylesheet">
+	<title>
+
+
+
+
+			광주교통공사 사이버스테이션
+
+	</title>
+	<script src="//code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+	<script src="//code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
+
+
+	<script src='/js/main/swiper.min.js'></script>
+
+	<script src='/js/main/default.js'></script>
+
+	<!-- select2 script -->
+	<script src='/js/subway/main.js?v11'></script>
+
+	<!-- select2 script -->
+	<script src='/js/common/plugins/select2/select2.full.min.js'></script>
+
+	<!-- jQuery Confirm script -->
+	<script src='/js/common/plugins/confirm/confirm.min.js'></script>
+</head>
+<body>
+
+<div class="wrapper">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	<input type="hidden" id="sitecode" value="cyber" />
+	<div class="cyber-station">
+		<div class="left-menu">
+			<h1 class="cyberLogo">
+				<!--
+	<a href="/cyber">
+
+
+
+
+			<img src="/images/cyber/logo.png" alt="광주교통공사 사이버스테이션" />
+
+	</a>
+	-->
+
+
+
+
+
+						<a href="/subway"><img src="/images/cyber/kor_01.png" alt="광주교통공사" /></a>
+						<a href="/cyber"><img src="/images/cyber/kor_03.png" alt="사이버스테이션 CYBER STATION" /></a>
+
+
+			</h1>
+			<h2>
+
+
+
+
+					1호선 노선검색
+
+			</h2>
+
+			<div class="search-line">
+				<form action="/cyber">
+					<div class="select stSelect">
+						<label class="hide" for="fromStationid" title="출발역">출발역</label>
+						<select class="custom-select" name="fromStationid" id="fromStationid"><option value="">출발역을 선택하세요</option><option value="20" >녹동역</option><option value="19" >소태역</option><option value="18" >학동·증심사입구역</option><option value="17" >남광주역</option><option value="16" >문화전당(구도청)역</option><option value="15" >금남로4가역</option><option value="14" >금남로5가역</option><option value="13" >양동시장역</option><option value="12" >돌고개역</option><option value="11" >농성역</option><option value="10" >화정역</option><option value="09" >쌍촌역</option><option value="08" >운천역</option><option value="07" >상무역</option><option value="06" >김대중컨벤션센터(마륵)역</option><option value="05" >공항역</option><option value="04" >송정공원역</option><option value="03" >광주송정역</option><option value="02" >도산역</option><option value="01" >평동역</option></select>
+					</div>
+					<div class="select edSelect">
+						<label class="hide" for="toStationid" title="도착역">도착역</label>
+						<select class="custom-select" name="toStationid" id="toStationid">
+							<option value="">   도착역을 선택하세요</option>
+
+
+
+								<option value="20" >
+
+
+
+
+
+											녹동역
+
+
+								</option>
+
+								<option value="19" >
+
+
+
+
+
+											소태역
+
+
+								</option>
+
+								<option value="18" >
+
+
+
+
+
+											학동·증심사입구역
+
+
+								</option>
+
+								<option value="17" >
+
+
+
+
+
+											남광주역
+
+
+								</option>
+
+								<option value="16" >
+
+
+
+
+
+											문화전당(구도청)역
+
+
+								</option>
+
+								<option value="15" >
+
+
+
+
+
+											금남로4가역
+
+
+								</option>
+
+								<option value="14" >
+
+
+
+
+
+											금남로5가역
+
+
+								</option>
+
+								<option value="13" >
+
+
+
+
+
+											양동시장역
+
+
+								</option>
+
+								<option value="12" >
+
+
+
+
+
+											돌고개역
+
+
+								</option>
+
+								<option value="11" >
+
+
+
+
+
+											농성역
+
+
+								</option>
+
+								<option value="10" >
+
+
+
+
+
+											화정역
+
+
+								</option>
+
+								<option value="09" >
+
+
+
+
+
+											쌍촌역
+
+
+								</option>
+
+								<option value="08" >
+
+
+
+
+
+											운천역
+
+
+								</option>
+
+								<option value="07" >
+
+
+
+
+
+											상무역
+
+
+								</option>
+
+								<option value="06" >
+
+
+
+
+
+											김대중컨벤션센터(마륵)역
+
+
+								</option>
+
+								<option value="05" >
+
+
+
+
+
+											공항역
+
+
+								</option>
+
+								<option value="04" >
+
+
+
+
+
+											송정공원역
+
+
+								</option>
+
+								<option value="03" >
+
+
+
+
+
+											광주송정역
+
+
+								</option>
+
+								<option value="02" >
+
+
+
+
+
+											도산역
+
+
+								</option>
+
+								<option value="01" >
+
+
+
+
+
+											평동역
+
+
+								</option>
+
+						</select>
+					</div>
+					<button type="button" class="btn-search subwayLineSearch">
+
+
+
+
+							노선검색
+
+					</button>
+				</form>
+			</div>
+            <style>
+                .custom-select {
+                    font-family: "Font Awesome 6 Free", Arial, sans-serif;
+                    font-weight: 400;
+                    margin-bottom: 20px;
+                }
+
+                .custom-select:focus {
+                    outline: none;
+                    border-color: #888;
+                }
+
+                .custom-select option:first-child {
+                    color: #888; /* placeholder 색 */
+                }
+            </style>
+			<script>
+				// $("#fromStationid").select2({});
+				// $("#toStationid").select2({});
+                //
+				// $(document).on('select2:open', () => {
+				// 	document.querySelector('.select2-search__field').focus();
+				// });
+				// // on first focus (bubbles up to document), open the menu
+				// $(document).on('focus', '.select2-selection.select2-selection--single', function (e) {
+				// 	$(this).closest(".select2-container").siblings('select:enabled').select2('open').find('.select2-search__field').trigger('focus');
+				// });
+
+				// // steal focus during close - only capture once and stop propogation
+				// $('select.select2').on('select2:closing', function (e) {
+				// 	$(e.target).data("select2").$selection.one('focus focusin', function (e) {
+				// 		e.stopPropagation();
+				// 	});
+				// });
+				// $('#fromStationid').next('span').addClass("select1");
+				// $('#toStationid').next('span').addClass("select2");
+
+				// $('.select1').on('click', function () {
+				// 	var selectDrop = $('.select2-container').last().find(".select2-search--dropdown").parent().parent();
+				// 	var _this = $(this);
+				// 	selectDrop.addClass('fromStationid');
+				// 	$('.fromStationid').appendTo(_this);
+				// 	$(".select2-results__option").attr('tabindex', '0');
+				// 	$(".select2-search__field").keydown(function (key) {
+				// 		if (key.keyCode == 38 || key.keyCode == 40) {
+				// 			test2 = $('.select2-results__option.option').attr('id');
+				// 			console.log(test2);
+				// 			$(this).attr('aria-activedescendant', test2);
+				// 		}
+				// 	});
+				// });
+				// $('.select2').on('click', function () {
+				// 	var selectDrop = $('.select2-container').last().find(".select2-search--dropdown").parent().parent();
+				// 	var _this = $(this);
+				// 	selectDrop.addClass('toStationid');
+				// 	$('.toStationid').appendTo(_this);
+				// 	$(".select2-results__option").attr('tabindex', '0');
+				// 	$(".select2-search__field").keydown(function (key) {
+				// 		if (key.keyCode == 38 || key.keyCode == 40) {
+				// 			test2 = $('.select2-results__option.option').attr('id');
+				// 			console.log(test2);
+				// 			$(this).attr('aria-activedescendant', test2);
+				// 		}
+				// 	});
+				// });
+				// $('.select1').keydown(function (key) {
+				// 	if (key.keyCode == 13) {
+				// 		$(this).trigger('click');
+				// 		$(".select2-results__option").attr('tabindex', '0');
+				// 	}
+				// });
+				// $('.select2').keydown(function (key) {
+				// 	if (key.keyCode == 13) {
+				// 		$(this).trigger('click');
+				// 		$(".select2-results__option").attr('tabindex', '0');
+				// 	}
+				// });
+			</script>
+
+			<div class="operation-info">
+				<h3>
+
+
+
+
+						1호선 운행정보
+
+				</h3>
+				<span>
+
+
+
+
+						<strong>
+								6
+							</strong>대 운행중
+
+				</span>
+				<button type="button" class="btn-reset resetSubwayBtn">새로고침</button>
+				<button type="button" class="btn-detail detailSubwayBtn">
+
+
+
+
+						자세히보기 +
+
+				</button>
+				<!-- <h3>경로 상세보기</h3> -->
+			</div>
+
+			<div class="line-info tab-container">
+
+
+
+						<button class="active" type="button" data-tab="tabBox1" id="subwayLineTabBtn1"
+							title="선택됨">
+
+
+
+
+								평동방면
+
+						</button>
+						<div class="tabBox1 line-list" tabindex="0">
+							<ul>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												평동
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												도산
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												광주송정
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												송정공원
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+
+
+									<li class="on">
+
+
+
+
+
+												공항
+
+
+
+											<span>
+												1229
+
+
+
+
+													열차
+
+											</span>
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												김대중컨벤션센터(마륵)
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												상무
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												운천
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												쌍촌
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												화정
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+
+
+									<li class="on">
+
+
+
+
+
+												농성
+
+
+
+											<span>
+												1231
+
+
+
+
+													열차
+
+											</span>
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												돌고개
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												양동시장
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												금남로5가
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												금남로4가
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												문화전당(구도청)
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												남광주
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												학동·증심사입구
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+
+
+									<li class="on">
+
+
+
+
+
+												소태
+
+
+
+											<span>
+												1233
+
+
+
+
+													열차
+
+											</span>
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												녹동
+
+
+
+									</li>
+
+							</ul>
+						</div>
+						<button type="button" data-tab="tabBox2" id="subwayLineTabBtn2">
+
+
+
+
+								소태(녹동)방면
+
+						</button>
+						<div class="tabBox2 line-list hide" tabindex="0">
+							<ul>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												녹동
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												소태
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												학동·증심사입구
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												남광주
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												문화전당(구도청)
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												금남로4가
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												금남로5가
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+
+
+									<li class="on">
+
+
+
+
+
+												양동시장
+
+
+
+											<span>
+												1230
+
+
+
+
+													열차
+
+											</span>
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												돌고개
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												농성
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												화정
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												쌍촌
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												운천
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												상무
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+
+
+									<li class="on">
+
+
+
+
+
+												김대중컨벤션센터(마륵)
+
+
+
+											<span>
+												1232
+
+
+
+
+													열차
+
+											</span>
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												공항
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												송정공원
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												광주송정
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+									<li >
+
+
+
+
+
+												도산
+
+
+
+									</li>
+
+
+
+
+
+
+
+
+
+
+
+									<li class="on">
+
+
+
+
+
+												평동
+
+
+
+											<span>
+												1234
+
+
+
+
+													열차
+
+											</span>
+
+
+									</li>
+
+							</ul>
+						</div>
+
+
+			</div>
+
+			<!-- ** 경로 상세보기 **
+<div class="route-detail">
+	<div class="route-list">
+		<strong class="depart">송정공원역</strong>
+		<div class="route">
+			<ul>
+				<li>
+					<p>소요시간 ( Lead time )</p>
+					<span>: 13.5분(minute)</span>
+				</li>
+				<li>
+					<p>총거리 ( Total distance )</p>
+					<span>: 8.4km</span>
+				</li>
+			</ul>
+			<p class="station-count">지하철역 6번 이동</p>
+		</div>
+		<strong class="arrive">화정역</strong>
+	</div>
+</div>
+// 경로 상세보기 // -->
+
+		</div>
+		<div class="map-area">
+			<div class="map-type">
+				<button type="button" title="선택됨" class="active viewSimpleBtn">
+
+
+
+
+						심플<span>하게보기</span>
+
+				</button>
+				<button type="button" class="viewMapBtn">
+
+
+
+
+						지도<span>로 보기</span>
+
+				</button>
+			</div>
+			<aside>
+				<ul>
+					<li class="icon-1">
+						<button type="button" class="btn-icon">
+
+
+
+
+								공연공간
+
+
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+					<li class="icon-2">
+						<button type="button" class="btn-icon">
+
+
+
+
+								엘리베이터
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+					<li class="icon-3">
+						<button type="button" class="btn-icon">
+
+
+
+
+								에스컬레이터
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+					<li class="icon-4">
+						<button type="button" class="btn-icon">
+
+
+
+
+								휠체어리프트
+
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+					<li class="icon-5">
+						<button type="button" class="btn-icon">
+
+
+
+
+								가족수유실
+
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+					<li class="icon-6">
+						<button type="button" class="btn-icon">
+
+
+
+
+								환승주차장
+
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+					<li class="icon-7">
+						<button type="button" class="btn-icon">
+
+
+
+
+								자전거보관소
+
+						</button>
+						<button type="button" class="btn-close">
+
+
+
+
+								닫기
+
+						</button>
+					</li>
+				</ul>
+			</aside>
+
+			<div class="destination">
+				<span>
+
+
+
+
+						평동행
+
+				</span>
+				<span>
+
+
+
+
+						소태행
+
+				</span>
+				<span>
+
+
+
+
+						녹동행
+
+				</span>
+			</div>
+			<div class="line-box pc">
+				<div class="inner">
+					<ul>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="01">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+												<div class="st">
+													<span class="icon" style="left:50%">소태행</span>
+													<span class="time">
+														22:
+														48
+
+
+
+
+															예정
+
+													</span>
+												</div>
+
+									</div>
+									<p>
+
+
+
+
+
+												평동
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+													<i class="icon-6"
+															style="display:none;">환승주차장</i>
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="02">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												도산
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="03">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												광주송정
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="04">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												송정공원
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="05">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+											<div class="pd">
+												<span class="icon" style="left:92%">평동행</span>
+												<span class="time">
+													22:
+													48
+
+
+
+
+														예정
+
+												</span>
+											</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												공항
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+									<li class="diagonal diagonalX right">
+
+
+
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="06">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+												<div class="nd">
+													<span class="icon" style="left:28%">녹동행</span>
+													<span class="time">
+														22:
+														47
+
+
+
+
+															예정
+
+													</span>
+												</div>
+
+
+									</div>
+									<p>
+
+
+
+
+
+												김대중컨벤션센터(마륵)
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+									<li class="curve right">
+
+
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="07">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												상무
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+													<i class="icon-6"
+															style="display:none;">환승주차장</i>
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+									<li class="diagonal diagonalY right">
+
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="08">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												운천
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+
+
+													<i class="icon-5"
+															style="display:none;">가족수유실</i>
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="09">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												쌍촌
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="10">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												화정
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="11">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+											<div class="pd">
+												<span class="icon" style="left:-39%">평동행</span>
+												<span class="time">
+													22:
+													49
+
+
+
+
+														예정
+
+												</span>
+											</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												농성
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="12">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												돌고개
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+									<li class="diagonal diagonalY left">
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="13">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+												<div class="st">
+													<span class="icon" style="left:83%">소태행</span>
+													<span class="time">
+														22:
+														47
+
+
+
+
+															예정
+
+													</span>
+												</div>
+
+									</div>
+									<p>
+
+
+
+
+
+												양동시장
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+													<i class="icon-4"
+															style="display:none;">휠체어리프트</i>
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+									<li class="curve left end">
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="14">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												금남로5가
+
+
+										<span class="icon">
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+									<li class="diagonal diagonalX left">
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="15">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												금남로4가
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+													<i class="icon-5"
+															style="display:none;">가족수유실</i>
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="16">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												문화전당(구도청)
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="17">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												남광주
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="18">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												학동·증심사입구
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="19">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+											<div class="pd">
+												<span class="icon" style="left:50%">평동행</span>
+												<span class="time">
+													22:
+													48
+
+
+
+
+														예정
+
+												</span>
+											</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												소태
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+													<i class="icon-6"
+															style="display:none;">환승주차장</i>
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="20">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												녹동
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+					</ul>
+				</div>
+			</div>
+
+			<div class="line-box mobile">
+				<div class="inner">
+					<ul>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="01">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+												<div class="st">
+													<span class="icon" style="top:0%">소태행</span>
+													<span class="time">
+														22:
+														48
+
+
+
+
+															예정
+
+													</span>
+												</div>
+
+									</div>
+									<p>
+
+
+
+
+
+												평동
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+													<i class="icon-6"
+															style="display:none;">환승주차장</i>
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="02">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												도산
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="03">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												광주송정
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="04">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												송정공원
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="05">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+											<div class="pd">
+												<span class="icon" style="top:42%">평동행</span>
+												<span class="time">
+													22:
+													48
+
+
+
+
+														예정
+
+												</span>
+											</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												공항
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+									<li class="diagonal diagonalX right">
+
+
+
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="06">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+												<div class="nd">
+													<span class="icon" style="top:-22%">녹동행</span>
+													<span class="time">
+														22:
+														47
+
+
+
+
+															예정
+
+													</span>
+												</div>
+
+
+									</div>
+									<p>
+
+
+
+
+
+												김대중컨벤션센터(마륵)
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+									<li class="curve right">
+
+
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="07">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												상무
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+													<i class="icon-6"
+															style="display:none;">환승주차장</i>
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+									<li class="diagonal diagonalY right">
+
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="08">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												운천
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+
+
+													<i class="icon-5"
+															style="display:none;">가족수유실</i>
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="09">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												쌍촌
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="10">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												화정
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="11">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+											<div class="pd">
+												<span class="icon" style="top:89%">평동행</span>
+												<span class="time">
+													22:
+													49
+
+
+
+
+														예정
+
+												</span>
+											</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												농성
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="12">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												돌고개
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+									<li class="diagonal diagonalY left">
+
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="13">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+												<div class="st">
+													<span class="icon" style="top:-33%">소태행</span>
+													<span class="time">
+														22:
+														47
+
+
+
+
+															예정
+
+													</span>
+												</div>
+
+									</div>
+									<p>
+
+
+
+
+
+												양동시장
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+													<i class="icon-4"
+															style="display:none;">휠체어리프트</i>
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+									<li class="curve left end">
+
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="14">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												금남로5가
+
+
+										<span class="icon">
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+									<li class="diagonal diagonalX left">
+
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="15">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												금남로4가
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+													<i class="icon-5"
+															style="display:none;">가족수유실</i>
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="16">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												문화전당(구도청)
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="17">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												남광주
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-1"
+															style="display:none;">공연공간</i>
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="18">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												학동·증심사입구
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="19">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+											<div class="pd">
+												<span class="icon" style="top:0%">평동행</span>
+												<span class="time">
+													22:
+													48
+
+
+
+
+														예정
+
+												</span>
+											</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												소태
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+													<i class="icon-2"
+															style="display:none;">엘레베이터</i>
+													<i class="icon-3"
+															style="display:none;">에스컬레이터</i>
+
+
+													<i class="icon-6"
+															style="display:none;">환승주차장</i>
+													<i class="icon-7"
+															style="display:none;">자전거보관소</i>
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+
+
+
+
+
+
+
+
+									<li>
+
+
+							<a href="/cyber/subway/layerA" class="viewInfo" data-subwayid="20">
+
+
+
+
+
+
+
+
+
+
+
+
+									<div class="to">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+									</div>
+									<p>
+
+
+
+
+
+												녹동
+
+
+										<span class="icon">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+										</span>
+									</p>
+							</a>
+
+
+
+
+
+
+
+
+
+							<div class="layerA station-info "></div>
+							</li>
+
+					</ul>
+				</div>
+			</div>
+
+
+
+
+		</div>
+	</div>
+
+	<script>
+		// 포커스 존재시 지하철 멈춤, 아웃시 실행 --------------- start
+		$(document).ready(function () {
+
+			var subwayid = "";
+			$(".viewInfo").each(function () {
+				if ($(this).data("subwayid") == subwayid) {
+
+					$(this).click();
+
+					$.ajax({
+						type: "GET",
+						url: "/cyber/subway/layerC/3",
+						data: {
+							"subwayid": subwayid
+						},
+						datatype: "html",
+						success: function (html) {
+							$(".layerC").html(html).show();
+							//$(".layerC").show();
+
+							$(document).on("click", ".layer-popup .btn-close", function () {
+								// 열차시각표에서 넘어왔을때 처리
+								loadSubwayMoving(true);
+								$(this).parent().parent().hide();
+								_focus.focus();
+							});
+
+						}
+					});
+				}
+			});
+
+			if( subwayid == "" ) {
+				loadSubwayMoving(true);
+			}
+		});
+		// 포커스 존재시 지하철 멈춤, 아웃시 실행 --------------- end
+	</script>
+
+<style>
+    /* 1) 평동행: 금남로5가에서는 위(↑) */
+    .line-box.pc a.viewInfo[data-subwayid="13"] .to .pd span.icon{
+        transform: translateX(-50%) scaleX(-1) rotate(90deg) !important;
+        transform-origin: 50% 50% !important;
+    }
+
+    /* 2) 녹동/소태행: 상무역에서는 아래(↓) */
+    .line-box.pc a.viewInfo[data-subwayid="08"] .to .nd .icon,
+    .line-box.pc a.viewInfo[data-subwayid="08"] .to .st .icon{
+        transform: translateX(-50%) rotate(270deg) !important;
+        transform-origin: center;
+    }
+</style>
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- 버스 환승정보 -->
+<div class="layerB layer-popup">
+</div>
+
+<!-- 역정보 / 내부시설 / 열차시간표 -->
+<div class="layerC layer-popup">
+</div>
+</div>
+
+
+<script>
+	$(document).ready(function(){
+		(function($) {
+			//for csrf
+			var token = '221c27cb-130b-4ca8-8668-da1ccb4d0b68';
+			var header = 'X-XSRF-TOKEN';
+			$.ajaxSetup({
+				beforeSend: function(xhr) {
+					xhr.setRequestHeader("AJAX", true);
+					//for csrf
+					xhr.setRequestHeader(header, token);
+				},
+				error: function(xhr, status, err) {
+					if (xhr.status == 401) {
+						toastr.error("인증에 실패 했습니다.");
+
+					} else if (xhr.status == 403) {
+						autoLogoutUser();
+						//toastr.error("세션이 만료가 되었습니다.");
+					}
+				}
+			});
+		})(jQuery);
+	});
+</script>
+</body>
+</html>
