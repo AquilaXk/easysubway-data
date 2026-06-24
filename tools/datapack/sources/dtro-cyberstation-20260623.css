@@ -28,7 +28,7 @@ html[lang="en"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.k
 html[lang="ja"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/jpn/cyberstation/images/sp_com.png);}
 html[lang="zh"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/chn/cyberstation/images/sp_com.png);}
 
-html[lang="en"] #cyberstation_wrap *, 
+html[lang="en"] #cyberstation_wrap *,
 html[lang="ja"] #cyberstation_wrap *,
 html[lang="zh"] #cyberstation_wrap *{letter-spacing:0!important;}
 
@@ -330,7 +330,7 @@ html[lang="en"] .sm_layer_container .ly_box .schedule_box .lst_station_schedule 
 	.sm_layer_container .ly_box .info_box .btn_info:after,
 	.sm_area .pin_box .pin span,
 	.sm_area .pin_box .pin .close_pin{background:url(../images/sp_com_m.png) repeat 0 0/400px 400px;}
-		
+
 	html[lang="en"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/eng/cyberstation/images/sp_com_m.png);}
 	html[lang="ja"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/jpn/cyberstation/images/sp_com_m.png);}
 	html[lang="zh"] .sm_area .pin_box .pin span{background-image:url(/cmsh/dtro.or.kr/chn/cyberstation/images/sp_com_m.png);}

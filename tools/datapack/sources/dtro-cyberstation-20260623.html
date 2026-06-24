@@ -16,18 +16,18 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=3, minimum-scale=1">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	
-	
-		
-		
+
+
+
+
 			<meta name="robots" content="index,follow">
 			<meta property="og:type" content="website" id="mtype">
 			<meta property="og:title" content="" id="mtitle">
 			<meta property="og:description" content=" | 대구교통공사" id="mdescription">
 			<meta property="og:image" content="https://dtro.or.kr/cmsh/dtro.or.kr/images/common/logo_header.png">
 			<meta property="og:url" content="http://www.dtro.or.kr/index.do?menu_id=&menu_link==" id="murls">
-		
-	
+
+
 	<meta name="description" content="대구교통공사">
 	<meta name="keywords" content="대구교통공사">
 	<title>대구교통공사 사이버스테이션</title>
@@ -42,10 +42,10 @@
 	<script src="/cmsh/dtro.or.kr/js/jquery.rwdImageMaps.min.js"></script>
 	<script src="/cmsh/dtro.or.kr/cyberstation/js/common.js?ver="></script>
 	<!-- 메뉴 CSS -->
-	
+
 	<!-- // 메뉴 CSS -->
 	<!-- 메뉴 JS -->
-	
+
 	<!-- // 메뉴 JS -->
 
 	<script type="text/javascript">
@@ -99,7 +99,7 @@
 					/* 클릭한 역의 ID값과 부모 class 명을 가져온다.(부모 클래스 명 === 몇호선인지, ID === 현재 찍은 역을 알기위한 값 ) */
 					cyberStation[i].addEventListener('click', function ()
 															  {
-															  	if(this.getAttribute('isTran') != 'Y') {
+																if(this.getAttribute('isTran') != 'Y') {
 																	var thisLine = this.getAttribute('parent_line');
 																	var thisStation = this.id;
 																	fn_station_info(thisStation, thisLine);
@@ -117,15 +117,15 @@
 				data     :  { 'stt_cd'  : stt_id ,'stt_num' : stt_num},
 				dataType : 'json',
 				success: function (result) {
-					
+
 					//역정보목록
 					var data = result.resultList;
 					var updata = result.upScheduleList;
 					var downdata = result.downScheduleList;
-					
+
 					if(data)
 					{
-						
+
 						/* 하행첫차 */
 						if(updata[0] != null ) {
 							document.querySelector('#first_desc').innerHTML = updata[0].schedule_hour+':'+  (updata[0].schedule_time).substr(0, 2);
@@ -149,7 +149,7 @@
 						}else {
 							document.querySelector('#last_desc').innerHTML = '-';
 						}*/
-						
+
 						/* 하행 첫차 역 */
 						document.querySelector('#fd_stt_nm').innerHTML = data[0].stt_nm;
 						/* 하행 막차 역 */
@@ -182,15 +182,15 @@
 						}else {
 							document.querySelector('#last_asc').innerHTML = '-';
 						}*/
-						
-						
-						
-						
-						
-						
-						
-						
-						
+
+
+
+
+
+
+
+
+
 						/* 호선 */
 						document.querySelector('#stt_num').innerHTML   = data[2].stt_num;
 						/* 호선 class 변경 */
@@ -326,7 +326,7 @@
 				alert("출발역과 도착역을 모두 선택해주세요");
 			}
 		}
-		
+
 		/* 환승역 호선 호출 */
 		function fn_sel_transfer(stt_id) {
 
@@ -569,7 +569,7 @@
 									</tr>
 								</thead>
 								<tbody>
-								
+
 								</tbody>
 							</table>
 						</div>
@@ -720,7 +720,7 @@
 							<li data-info-type="무료자전거대여" class="s232">대구은행역 무료자전거대여</li>
 							<li data-info-type="무료자전거대여" class="s233">범어역 무료자전거대여</li>
 							<li data-info-type="무료자전거대여" class="s235">만촌역 무료자전거대여</li>
-							<li data-info-type="무료자전거대여" class="s237">연호역 무료자전거대여</li>							
+							<li data-info-type="무료자전거대여" class="s237">연호역 무료자전거대여</li>
 							<li data-info-type="무료자전거대여" class="s240">신매역 무료자전거대여</li>
 							<li data-info-type="무료자전거대여" class="s241">사월역 무료자전거대여</li>
 							<li data-info-type="무료자전거대여" class="s242">정평역 무료자전거대여</li>
@@ -761,7 +761,7 @@
 							<li data-info-type="모유수유실" class="s147">대구한의대병원역 모유수유실</li>
 							<li data-info-type="모유수유실" class="s148">부호역 모유수유실</li>
 							<li data-info-type="모유수유실" class="s149">하양역 모유수유실</li>
-							
+
 
 
 							<li data-info-type="공항" class="s137">아양교 공항</li>
@@ -886,15 +886,15 @@
 								<div class="title_box"><span class="line line02" id="stt_num"></span><span id="stt_nm"></span></div>
 								<div class="schedule_box">
 									<ul class="lst_station_schedule left">
-										
+
 										<li><span class="schedule_name" id="fd_stt_nm"></span><span class="schedule_duration" id="first_desc"></span></li>
-										
+
 										<li><span class="schedule_name" id="ld_stt_nm"></span><span class="schedule_duration" id="last_desc"></span></li>
 									</ul>
 									<ul class="lst_station_schedule right">
-										
+
 										<li><span class="schedule_name" id="fa_stt_nm"></span><span class="schedule_duration" id="first_asc"></span></li>
-										
+
 										<li><span class="schedule_name" id="la_stt_nm"></span><span class="schedule_duration" id="last_asc"></span></li>
 									</ul>
 								</div>
@@ -931,7 +931,7 @@
      <span class="hidden">
             설치역: 반월당
      </span></li>
-    <li class="i03"><a href="#" data-info-type="무료자전거대여"><span>무료자전거<br>대여</span></a> 
+    <li class="i03"><a href="#" data-info-type="무료자전거대여"><span>무료자전거<br>대여</span></a>
      <span class="hidden">
             설치역: 대곡, 진천, 월배, 월촌, 서부정류장, 현충로, 영대병원, 명덕, 칠성시장, 신천, 동대구역, 동구청, 아양교, 동촌, 해안, 율하, 신기, 반야월, 각산, 문양, 대실, 강창, 계명대, 성서산업단지, 이곡, 용산, 감삼, 두류, 경대병원, 대구은행, 범어, 만촌, 연호, 고산, 신매, 사월, 정평, 임당, 남산
      </span></li>
@@ -945,27 +945,27 @@
      </span></li>
     <li class="i06"><a href="#" data-info-type="모유수유실"><span>모유수유실</span></a></a>
      <span class="hidden">
-            설치역: 설화명곡, 화원, 반월당, 동대구역, 대구한의대병원, 부호, 하양, 두류, 정평, 임당, 영남대 
+            설치역: 설화명곡, 화원, 반월당, 동대구역, 대구한의대병원, 부호, 하양, 두류, 정평, 임당, 영남대
      </span></li>
     <li class="i07"><a href="#" data-info-type="공항"><span>공항</span></a></a>
      <span class="hidden">
-            설치역: 아양교 
+            설치역: 아양교
      </span></li>
     <li class="i08"><a href="#" data-info-type="기차역"><span>기차역</span></a></a>
      <span class="hidden">
-            설치역: 대구역, 동대구역 
+            설치역: 대구역, 동대구역
      </span></li>
     <li class="i09"><a href="#" data-info-type="버스터미널"><span>버스터미널</span></a></a>
      <span class="hidden">
-            설치역: 서부정류장, 동대구역, 만평, 
+            설치역: 서부정류장, 동대구역, 만평,
      </span></li>
     <li class="i10"><a href="#" data-info-type="엘리베이터"><span>엘리베이터</span></a></a>
      <span class="hidden">
-            설치역: 설화명곡, 화원, 대곡, 진천, 월배, 상인, 월촌, 송현, 서부정류장, 대명, 안지랑, 현충로, 영대병원, 교대, 명덕, 반월당, 중앙로, 대구역, 칠성시장, 신천, 동대구역, 동구청, 아양교, 동촌, 해안, 방촌, 용계, 율하, 신기, 반야월, 각산, 안심, 대구한의대병원, 부호, 하양, 문양, 다사, 대실, 강창, 계명대, 성서산업단지, 이곡, 용산, 죽전, 감삼, 두류, 내당, 반고개, 경대병원, 대구은행, 범어, 수성구청, 만촌, 담티, 연호, 수성알파시티, 고산, 신매, 사월, 정평, 임당, 영남대, 용지, 범물, 지산, 수성못, 황금, 어린이세상, 수성구민운동장, 수성시장, 대봉교, 건들바위, 남산, 서문시장, 달성공원, 복구청, 원대, 팔달시장, 만평, 공단, 팔달, 매천시장, 태전, 구암, 칠곡운암, 동천, 팔거, 학정, 칠곡경대병원 
+            설치역: 설화명곡, 화원, 대곡, 진천, 월배, 상인, 월촌, 송현, 서부정류장, 대명, 안지랑, 현충로, 영대병원, 교대, 명덕, 반월당, 중앙로, 대구역, 칠성시장, 신천, 동대구역, 동구청, 아양교, 동촌, 해안, 방촌, 용계, 율하, 신기, 반야월, 각산, 안심, 대구한의대병원, 부호, 하양, 문양, 다사, 대실, 강창, 계명대, 성서산업단지, 이곡, 용산, 죽전, 감삼, 두류, 내당, 반고개, 경대병원, 대구은행, 범어, 수성구청, 만촌, 담티, 연호, 수성알파시티, 고산, 신매, 사월, 정평, 임당, 영남대, 용지, 범물, 지산, 수성못, 황금, 어린이세상, 수성구민운동장, 수성시장, 대봉교, 건들바위, 남산, 서문시장, 달성공원, 복구청, 원대, 팔달시장, 만평, 공단, 팔달, 매천시장, 태전, 구암, 칠곡운암, 동천, 팔거, 학정, 칠곡경대병원
      </span></li>
     <li class="i11"><a href="#" data-info-type="DRT"><span>DRT</span></a></a>
      <span class="hidden">
-            설치역: 동대구역, 아양교, 율하, 안심, 연호, 수성알파시티, 용지, 범물, 수성못, 
+            설치역: 동대구역, 아양교, 율하, 안심, 연호, 수성알파시티, 용지, 범물, 수성못,
      </span></li>
 </ul>
 

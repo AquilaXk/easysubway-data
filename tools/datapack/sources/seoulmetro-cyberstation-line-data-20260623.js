@@ -2,7 +2,7 @@
 var lines = {
 	"1-GA": {
 		"attr": {
-			"data-label" : "GTX-A", 
+			"data-label" : "GTX-A",
 			"data-indicator-text": "GTX-A",
 			"data-indicator-text-en": "GTX-A",
 			"data-lineWidth": "3",
@@ -45,12 +45,12 @@ var lines = {
 			"data-coords": "231,176"
 		}, {
 			"data-coords": "230,177",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"data-coords": "190,177"
 		}, {
 			"data-coords": "189,176",
-			"data-dir": "auto"							
+			"data-dir": "auto"
 		}, {
 			"station-cd": "0010",
 			"data-uid":"1863",
@@ -62,12 +62,12 @@ var lines = {
 			"data-markerinfo": "h-",
 			"data-marker": "interchange",
 			"data-dir": "",
-			"data-labelStyle": ""			
+			"data-labelStyle": ""
 		}, {
 			"data-coords": "189,171"
 		}, {
 			"data-coords": "188,170",
-			"data-dir": "auto"					
+			"data-dir": "auto"
 		}, {
 			"station-cd": "0011",
 			"data-uid":"0011",
@@ -98,7 +98,7 @@ var lines = {
 			"data-labelPos": "N",
 			"data-markerinfo": "",
 			"data-dir": "",
-			"data-labelStyle": ""			
+			"data-labelStyle": ""
 		}, {
 			"station-cd": "9001",
 			"data-uid":"9001",
@@ -112,7 +112,7 @@ var lines = {
 			"data-coords": "43,28"
 		}, {
 			"data-coords": "46,29",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "9002",
 			"data-uid":"1953",
@@ -128,12 +128,12 @@ var lines = {
 			"data-coords": "52,36"
 		}, {
 			"data-coords": "55,37",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"data-coords": "84,37"
 		}, {
 			"data-coords": "86,36",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "9004",
 			"data-uid":"0311",
@@ -149,12 +149,12 @@ var lines = {
 			"data-coords": "87,39"
 		}, {
 			"data-coords": "88,41",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"data-coords": "125,78"
 		}, {
 			"data-coords": "127,79",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "9005",
 			"data-uid":"0150",
@@ -170,7 +170,7 @@ var lines = {
 	},
 	"1-GA-1": {
 		"attr": {
-			"data-label" : "GTX-A", 
+			"data-label" : "GTX-A",
 			"data-indicator-text": "GTX-A",
 			"data-indicator-text-en": "GTX-A",
 			"data-lineWidth": "1",
@@ -186,7 +186,7 @@ var lines = {
 			"data-marker": "interchange",
 			"data-markerPointDir": "132",
 			"data-dir": "",
-			"data-labelStyle": ""			
+			"data-labelStyle": ""
 		}, {
 			"data-coords": "257,155"
 		}, {
@@ -209,12 +209,12 @@ var lines = {
 			"data-coords": "231,176"
 		}, {
 			"data-coords": "230,177",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"data-coords": "190,177"
 		}, {
 			"data-coords": "189,176",
-			"data-dir": "auto"							
+			"data-dir": "auto"
 		}, {
 			"station-cd": "0010",
 			"data-coords": "189,174",
@@ -224,12 +224,12 @@ var lines = {
 			"data-markerinfo": "h+",
 			"data-marker": "interchange",
 			"data-dir": "",
-			"data-labelStyle": ""			
+			"data-labelStyle": ""
 		}, {
 			"data-coords": "189,171"
 		}, {
 			"data-coords": "188,170",
-			"data-dir": "auto"					
+			"data-dir": "auto"
 		}, {
 			"station-cd": "0011",
 			"data-coords": "160,170",
@@ -261,7 +261,7 @@ var lines = {
 			"data-labelPos": "N",
 			"data-markerinfo": "",
 			"data-dir": "",
-			"data-labelStyle": ""			
+			"data-labelStyle": ""
 		}, {
 			"station-cd": "9001",
 			"data-coords": "27,28",
@@ -273,7 +273,7 @@ var lines = {
 			"data-coords": "43,28"
 		}, {
 			"data-coords": "46,29",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "9002",
 			"data-coords": "51,35",
@@ -287,12 +287,12 @@ var lines = {
 			"data-coords": "52,36"
 		}, {
 			"data-coords": "55,37",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"data-coords": "84,37"
 		}, {
 			"data-coords": "86,36",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "9004",
 			"data-coords": "87,35",
@@ -306,12 +306,12 @@ var lines = {
 			"data-coords": "87,39"
 		}, {
 			"data-coords": "88,41",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"data-coords": "125,78"
 		}, {
 			"data-coords": "127,79",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "9005",
 			"data-coords": "131,79",
@@ -361,7 +361,7 @@ var lines = {
 			"data-labelPos": "WS",
 			"sub-nm": "",
 			"sub-nm-display": "",
-			"station-nm": "청산"		
+			"station-nm": "청산"
 		}, {
 			"data-coords": "125,12"
 		}, {
@@ -454,7 +454,7 @@ var lines = {
 			"data-labelPos": "NE",
 			"data-markerinfo": "v",
 			"data-marker": "interchange"
-				
+
 		}, {
 			"station-cd": "1904",
 			"data-uid":"1904",
@@ -825,7 +825,7 @@ var lines = {
 			"data-markerPointDir": "12",
 			"data-markerinfo": "v",
 			"data-labelPos": "SE"
-			
+
 		}, {
 			"data-coords": "53,133"
 		}, {
@@ -1333,7 +1333,7 @@ var lines = {
 			"data-color": "#10a643"
 		},
 		"stations": [{
-		
+
 			"station-cd": "0200",
 			"data-uid":"0200",
 			"data-coords": "58,92",
@@ -1905,7 +1905,7 @@ var lines = {
 	},
 	"4-3": {
 		"attr": {
-			"data-label" : "3호선", 
+			"data-label" : "3호선",
 			"data-indicator-text": "3",
 			"data-indicator-text-en": "3",
 			"data-color": "#de6d00"
@@ -2446,7 +2446,7 @@ var lines = {
 	},
 	"5-4": {
 		"attr": {
-			"data-label" : "4호선", 
+			"data-label" : "4호선",
 			"data-indicator-text": "4",
 			"data-indicator-text-en": "4",
 			"data-color": "#0099d1"
@@ -3138,7 +3138,7 @@ var lines = {
 			"data-markerinfo": "v-",
 			"data-marker": "interchange",
 			"data-markerPointDir": "53421"
-			
+
 		}, {
 			"station-cd": "2514",
 			"data-uid":"2514",
@@ -3649,7 +3649,7 @@ var lines = {
 		}, {
 			"data-coords": "291,103",
 			"data-nodeType": "indicator"
-			
+
 		}, {
 			"station-cd": "2549",
 			"data-uid":"2549",
@@ -3729,10 +3729,10 @@ var lines = {
 			"data-nodeType": "indicator"
 		}]
 	},
-	
+
 	"7-6": {
 		"attr": {
-			"data-label" : "6호선", 
+			"data-label" : "6호선",
 			"data-indicator-text": "6",
 			"data-indicator-text-en": "6",
 			"data-color": "#d08d1a"
@@ -4171,7 +4171,7 @@ var lines = {
 	},
 	"8-7": {
 		"attr": {
-			"data-label" : "7호선", 
+			"data-label" : "7호선",
 			"data-indicator-text": "7",
 			"data-indicator-text-en": "7",
 			"data-color": "#657931"
@@ -4861,14 +4861,14 @@ var lines = {
 	},
 	"9-8": {
 		"attr": {
-			"data-label" : "8호선", 
+			"data-label" : "8호선",
 			"data-indicator-text": "8",
 			"data-indicator-text-en": "8",
 			"data-color": "#e74e6d"
 		},
 		"stations": [{
 			"data-coords": "265,45",
-			"data-nodeType": "indicator"			
+			"data-nodeType": "indicator"
 		}, {
 			"station-cd": "2805",
 			"data-uid":"1313",
@@ -4880,7 +4880,7 @@ var lines = {
 			"data-markerinfo": "v-",
 			"data-marker": "interchange",
 			"data-dir": "",
-			"data-labelStyle": ""		
+			"data-labelStyle": ""
 	   }, {
 			"station-cd": "2806",
 			"data-uid":"2806",
@@ -4892,7 +4892,7 @@ var lines = {
 			"data-markerinfo": "h-",
 			"data-marker": "",
 			"data-dir": "",
-			"data-labelStyle": ""						
+			"data-labelStyle": ""
 	   }, {
 			"station-cd": "2807",
 			"data-uid":"2807",
@@ -4904,7 +4904,7 @@ var lines = {
 			"data-markerinfo": "h-",
 			"data-marker": "",
 			"data-dir": "",
-			"data-labelStyle": ""							
+			"data-labelStyle": ""
 		}, {
 			"station-cd": "2808",
 			"data-uid":"1205",
@@ -4916,7 +4916,7 @@ var lines = {
 			"data-markerinfo": "h-",
 			"data-marker": "interchange",
 			"data-dir": "",
-			"data-labelStyle": ""					
+			"data-labelStyle": ""
 		}, {
 			"station-cd": "2809",
 			"data-uid":"2809",
@@ -4933,12 +4933,12 @@ var lines = {
 			"data-coords": "260,64"
 		},{
 			"data-coords": "261,65",
-			"data-dir": "auto"						
+			"data-dir": "auto"
 		},{
-			"data-coords": "270,65"			
+			"data-coords": "270,65"
 		},{
 			"data-coords": "271,66",
-			"data-dir": "auto"			
+			"data-dir": "auto"
 		}, {
 			"station-cd": "2810",
 			"data-uid":"2810",
@@ -4950,7 +4950,7 @@ var lines = {
 			"data-markerinfo": "",
 			"data-marker": "",
 			"data-dir": "",
-			"data-labelStyle": ""			
+			"data-labelStyle": ""
 		}, {
 			"station-cd": "2811",
 			"data-uid":"2811",
@@ -5187,7 +5187,7 @@ var lines = {
 	},
 	"10-9": {
 		"attr": {
-			"data-label" : "9호선", 
+			"data-label" : "9호선",
 			"data-indicator-text": "9",
 			"data-indicator-text-en": "9",
 			"data-color": "#b58600"
@@ -5243,7 +5243,7 @@ var lines = {
 		},{
 			"data-coords": "50,70",
 			"data-dir": "auto"
-		}, { 
+		}, {
 			"station-cd": "4104",
 			"data-uid":"4104",
 			"data-coords": "51,71",
@@ -5637,11 +5637,11 @@ var lines = {
 			"data-markerinfo": ""
 		}, {
 			"data-coords": "293,118"
-			
+
 		}, {
 			"data-coords": "294,117",
 			"data-dir": "auto"
-			
+
 		}, {
 			"station-cd": "4138",
 			"data-uid":"4138",
@@ -5654,7 +5654,7 @@ var lines = {
 			"data-markerinfo": ""
 		}, {
 			"data-coords": "294,111"
-			
+
 		},{
 			"data-coords": "294,109",
 			"data-nodeType": "indicator"
@@ -5662,7 +5662,7 @@ var lines = {
 	},
 	"KP": {
 		"attr": {
-			"data-label" : "김포골드라인", 
+			"data-label" : "김포골드라인",
 			"data-indicator-text": "김포",
 			"data-indicator-text-en": "Gimpo",
 			"data-color": "#a18f57"
@@ -5932,7 +5932,7 @@ var lines = {
 	},
 	"I": {
 		"attr": {
-			"data-label" : "인천1호선", 
+			"data-label" : "인천1호선",
 			"data-indicator-text": "인천1",
 			"data-indicator-text-en": "Incheon1",
 			"data-color": "#6496df"
@@ -6297,7 +6297,7 @@ var lines = {
 	},
 	"I2": {
 		"attr": {
-			"data-label" : "인천2호선", 
+			"data-label" : "인천2호선",
 			"data-indicator-text": "인천2",
 			"data-indicator-text-en": "Incheon2",
 			"data-color": "#cf843c"
@@ -6851,7 +6851,7 @@ var lines = {
 	},
 	"K": {
 		"attr": {
-			"data-label" : "경의·중앙선", 
+			"data-label" : "경의·중앙선",
 			"data-indicator-text": "경의·중앙",
 			"data-indicator-text-en": "Gyeongui-Joungang",
 			"data-color": "#5f9c82"
@@ -7553,7 +7553,7 @@ var lines = {
 	},
 	"A": {
 		"attr": {
-			"data-label" : "공항철도", 
+			"data-label" : "공항철도",
 			"data-indicator-text": "공항",
 			"data-indicator-text-en": "Airport",
 			"data-color": "#038fa0"
@@ -7755,7 +7755,7 @@ var lines = {
 	},
 	"B": {
 		"attr": {
-			"data-label" : "수인분당선", 
+			"data-label" : "수인분당선",
 			"data-indicator-text": "수인분당",
 			"data-indicator-text-en": "SuinBundang ",
 			"data-color": "#a69500"
@@ -8494,7 +8494,7 @@ var lines = {
 	},
 	"S": {
 		"attr": {
-			"data-label" : "신분당선", 
+			"data-label" : "신분당선",
 			"data-indicator-text": "신분당",
 			"data-indicator-text-en": "Sinbundang",
 			"data-color": "#cd2234"
@@ -8697,7 +8697,7 @@ var lines = {
 	},
 	"KK": {
 		"attr": {
-			"data-label" : "경강선", 
+			"data-label" : "경강선",
 			"data-indicator-text": "경강",
 			"data-indicator-text-en": "Gyeonggang",
 			"data-color": "#004ea7"
@@ -8713,7 +8713,7 @@ var lines = {
 			"data-markerinfo": "h",
 			"data-marker": "interchange"
 		}, {
-			"data-coords": "210,159"			
+			"data-coords": "210,159"
 		}, {
 			"station-cd": "1512",
 			"data-uid":"1512",
@@ -8725,7 +8725,7 @@ var lines = {
 			"data-markerinfo": "h",
 			"data-marker": "interchange",
 		}, {
-			"data-coords": "242,159"					
+			"data-coords": "242,159"
 		}, {
 			"station-cd": "1502",
 			"data-uid":"1860",
@@ -8845,7 +8845,7 @@ var lines = {
 	},
 	"E": {
 		"attr": {
-			"data-label" : "용인경전철", 
+			"data-label" : "용인경전철",
 			"data-indicator-text": "용인경전철",
 			"data-indicator-text-en": "Everline",
 			"data-color": "#36a805"
@@ -9013,7 +9013,7 @@ var lines = {
 	},
 	"W": {
 		"attr": {
-			"data-label" : "우이신설경전철", 
+			"data-label" : "우이신설경전철",
 			"data-indicator-text": "우이신설경전철",
 			"data-indicator-text-en": "Wooe-Sinseul Lrt",
 			"data-color": "#878787",
@@ -9179,7 +9179,7 @@ var lines = {
 		}]
 	},
 	"SH": {
-		
+
 		"stations": [ {
 			"station-cd": "108C",
 			"data-uid":"1275",
@@ -9246,16 +9246,16 @@ var lines = {
 			"data-markerinfo": "v",
 			"data-marker": "interchange"
 		},{
-			"data-coords": "56,63"			
+			"data-coords": "56,63"
 		},{
 			"data-coords": "55,64",
-			"data-dir": "S"			
+			"data-dir": "S"
 		},{
-			"data-coords": "45.5,64"			
+			"data-coords": "45.5,64"
 		},{
 			"data-coords": "44.5,65",
 			"data-dir": "W"
-			
+
 		},{
 			"data-coords": "44.5,70.5"
 		},{
@@ -9280,7 +9280,7 @@ var lines = {
 			"data-coords": "36,94"
 		},{
 			"data-coords": "37,95",
-			"data-dir": "S"		
+			"data-dir": "S"
 		},{
 			"station-cd": "1981",
 			"data-uid":"1981",
@@ -9288,18 +9288,18 @@ var lines = {
 			"sub-nm": "",
 			"sub-nm-display": "",
 			"station-nm": "원종"
-			
+
 		},{
 			"data-coords": "57,95"
 		},{
 			"data-coords": "62,103",
-			"data-dir": "E"	
+			"data-dir": "E"
 		},{
 			"data-coords": "62,108"
 		},{
 			"data-coords": "61,109",
-			"data-dir": "N"	
-			
+			"data-dir": "N"
+
 		},{
 			"station-cd": "1982",
 			"data-uid":"3754",
@@ -9308,7 +9308,7 @@ var lines = {
 			"sub-nm-display": "",
 			"station-nm": "부천종합운동장",
 			"data-marker": "interchange"
-			
+
 		},{
 			"data-coords": "52,112",
 			"data-dir": "W"
@@ -9475,15 +9475,15 @@ var lines = {
 			"data-nodeLength" : 18
 		}],
 	"attr": {
-			"data-label" : "서해", 
+			"data-label" : "서해",
 			"data-indicator-text": "서해",
 			"data-indicator-text-en": "Seo-Hae",
 			"data-color": "#40a607"
 		}
 	},
-		
+
 	"SL": {
-		
+
 		"stations": [{
 			"station-cd": "4401",
 			"data-uid":"4116",
@@ -9614,15 +9614,15 @@ var lines = {
 			"data-nodeLength" : 18
 		}],
 		"attr": {
-			"data-label" : "신림", 
+			"data-label" : "신림",
 			"data-indicator-text": "신림",
 			"data-indicator-text-en": "Sin-Lim",
 			"data-color": "#0781fa"
 		}
 	},
-	
+
 	"RV": {
-		
+
 		"stations": [{
 			"data-coords": "78,70",
 			"data-nodeType": "indicator",
@@ -9753,19 +9753,19 @@ var lines = {
 			"sub-nm-display": "",
 			"data-markerinfo": "h-"
 		}
-		
+
 		],
 		"attr": {
-			"data-label" : "한강버스", 
+			"data-label" : "한강버스",
 			"data-indicator-text": "한강버스",
 			"data-indicator-text-en": "Sin-Lim",
 			"data-lineWidth": "2",
 			"data-color": "#878787"
 		}
 	},
-	
+
 	"RV-1": {
-		
+
 		"stations": [{
 			"data-coords": "58,78",
 		},{
@@ -9970,18 +9970,18 @@ var lines = {
 		}, {
 			"data-coords": "248,111"
 		}
-		
+
 		, {
 			"data-coords": "248,136"
 		}, {
 			"data-coords": "248,111"
 		}
-		
-		
-		
+
+
+
 		],
 		"attr": {
-			"data-label" : "한강버스", 
+			"data-label" : "한강버스",
 			"data-indicator-text": "한강버스",
 			"data-indicator-text-en": "Sin-Lim",
 			"data-lineWidth": "1",
