@@ -170,5 +170,30 @@ CREATE INDEX idx_stations_normalized_name ON stations(normalized_name);
 CREATE INDEX idx_station_lines_line_sequence ON station_lines(line_id, line_sequence);
 CREATE INDEX idx_realtime_provider_stations_internal ON realtime_provider_station_mappings(station_id, line_id);
 CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
+
+CREATE TABLE route_map_positions (
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  region TEXT NOT NULL DEFAULT '',
+  x INTEGER NOT NULL CHECK (x >= 0),
+  y INTEGER NOT NULL CHECK (y >= 0),
+  label_dx INTEGER NOT NULL DEFAULT 0,
+  label_dy INTEGER NOT NULL DEFAULT 0,
+  up_path TEXT NOT NULL DEFAULT '',
+  down_path TEXT NOT NULL DEFAULT '',
+  source_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  license TEXT NOT NULL,
+  license_status TEXT NOT NULL,
+  commercial_use_allowed INTEGER NOT NULL DEFAULT 0 CHECK (commercial_use_allowed IN (0, 1)),
+  attribution_required INTEGER NOT NULL DEFAULT 1 CHECK (attribution_required IN (0, 1)),
+  reviewed_at INTEGER,
+  updated_at INTEGER,
+  PRIMARY KEY (station_id, line_id, region),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
+);
+
 CREATE INDEX idx_facilities_station ON facilities(station_id);
+CREATE INDEX idx_route_map_positions_region_line ON route_map_positions(region, line_id);
 CREATE INDEX idx_internal_route_edges_from ON internal_route_edges(from_node_id);

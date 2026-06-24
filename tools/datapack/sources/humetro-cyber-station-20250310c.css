@@ -1,0 +1,947 @@
+@charset "utf-8";
+
+body {font-family:'Malgun Gothic','맑은 고딕','돋움',Dotum,Verdana,Arial,helvetica,clean,sans-serif}
+
+/* z-index 관리 */
+.cyber-top-wrap {z-index:12}
+.line-1, .line-2, .line-3, .line-4, .line-8, .line-9 {position:absolute}
+.line-bg {position:absolute;display:none;z-index:3}
+.conven1, .conven2, .conven3, .conven4, .conven5, .conven6, .conven7, .conven8, .conven9 {position:absolute;display:none;z-index:10}
+
+/* 레이아웃 */
+#cyberstation-wrap {display:block;width:100%;min-width:1280px;background:#f5f8f9;overflow:hidden}
+.cyber-top-wrap {position:relative;background:#fff;height:87px}
+.cyber-logo-wrap {float:left;width:12%;height:87px;line-height:81px;padding-left:21px;border-right:1px solid #d4d4d4;}
+.cyber-logo-wrap span {font-size:15px;}
+.cyber-title-wrap {float:left;height:91px;line-height:87px;padding:0 19px 0 20px}
+
+.cyber-search {position:relative;float:left;display:block;width:74%;height:87px;padding-left:10px;background:#fff}
+.cyber-search form {line-height:91px}
+.cyber-kinds-wrap {margin-right:24px}
+.cyber-kinds-wrap label {font-size:14px;color:#222}
+/*
+.cyber-kinds-wrap input[type=radio]:not(old) {width:16px;margin:0;padding:0;opacity:0}
+.cyber-kinds-wrap input[type=radio]:not(old) + label {display:inline-block;margin-left:-16px;padding-left:23px;line-height:16px;background:url('/homepage/default/img/cyber-station/cyber-radio-img.png') no-repeat 0 0}
+.cyber-kinds-wrap input[type=radio]:not(old):checked + label {background-position:0 -26px;}
+*/
+
+#s-line, #e-line {width:89px;height:31px;background:#f7f7f7;border:1px solid #cecece}
+#s-line-label, #e-line-label {margin-right:4px;font-size:14px;font-weight:800;color:#222}
+
+.cyber-search-btn {width:100px;line-height:35px;color:#fff;background:#2670b9 url('/homepage/default/img/cyber-station/search-btn-icon.png') no-repeat 11px 10px;border:1px solid #005e90;padding-left:13px;margin:10px 0 10px 5px;cursor:pointer}
+.station-arrow {display:inline-block;width:14px;height:14px;margin:0px 5px -2px;background:url('/homepage/default/img/cyber-station/station-arrow.png') no-repeat}
+.cyber-re-btn {display:inline-block;width:76px;line-height:35px;color:#586871;font-weight:800;text-align:center;background:url('/homepage/default/img/cyber-station/refresh-icon.png') no-repeat 9px 10px;padding-left:22px;border-top:1px solid #dcdee0;border-left:1px solid #dcdee0;border-right:1px solid #bdbfc0;border-bottom:1px solid #bdbfc0;}
+.cyber-print-btn-wrap {float:right;line-height:91px;margin-right:20px}
+.cyber-print-btn {display:inline-block;width:74px;line-height:35px;text-align:center;border:1px solid #dcdee0;padding-left:12px;margin:0 -5px 0 0;background:#fbfbfb url('/homepage/default/img/cyber-station/print-icon.png') no-repeat 10px 11px}
+.cyber-close-btn {display:inline-block;width:74px;line-height:35px;text-align:center;border:1px solid #dcdee0;padding-left:12px;background:#fbfbfb url('/homepage/default/img/cyber-station/top-close-icon.png') no-repeat 13px 12px}
+
+.auto1 {position:absolute;top:62px;left:247px;background:#fff;z-index:15}
+.autoul1 {min-width:109px;border:1px solid #cecece}
+.autoul1 li {}
+.autoul1 li a {display:block;line-height:25px}
+.autoul1 li a:hover {background:#f6f6f6}
+
+.auto2 {position:absolute;top:62px;left:428px;background:#fff;z-index:15}
+.autoul2 {min-width:109px;border:1px solid #cecece}
+.autoul2 li {}
+.autoul2 li a {display:block;line-height:25px}
+.autoul2 li a:hover {background:#f6f6f6}
+
+.cyber-top-wrap-line {position:absolute;top:81px;width:100%;height:11px;margin:0 auto;background:url(/homepage/default/img/cyber-station/cyber-top-wrap-line.png) center center;z-index:11}
+
+.map-img-wrap {position:relative;width:100%;max-width:1680px;height:835px;margin:0 auto}
+.cyber-map {position:relative;width:100%;height:835px;border-bottom:1px solid #c0c0c0;background:#f5f8f9 url(/homepage/default/img/cyber-station/cyber-map-bg.png) no-repeat center center;overflow:hidden}
+.map-img {position:absolute;top:-91px;left:-150px;width:1680px;height:980px;cursor:default !important;}
+.line-bg {position:absolute;top:0;left:-50%;display:none;width:3000px;height:2000px;background:#fff}
+
+.start-station, .end-station {position:absolute}
+.start-station {top:0;left:0}
+.end-station {top:0;left:150px}
+
+.map-down-box {position:absolute;bottom:30px;right:30px;width:140px;z-index:10}
+.map-down-box dt {width:138px;line-height:46px;font-size:14px;color:#333;text-align:center;background:#eff1f2;border:1px solid #e0e0e0}
+.map-down-box .map-down-btn {display:block;line-height:34px;font-size:12px;color:#333;padding-left:27px;background:#fff url(/homepage/default/img/cyber-station/map-down-icon.png) no-repeat right 12px;border:1px solid #e0e0e0;;border-top:none}
+
+.map-color-wrap {background:#fff;border:1px solid #e0e0e0;margin-top:9px;padding:9px 0;}
+.map-color-wrap li {line-height:25px;font-size:12px;color:#333;padding-left:53px;background:#fff url(/homepage/default/img/cyber-station/map-color-bg.png) no-repeat 23px 8px;}
+.map-color-wrap li.map-color-1 {background-position:23px 8px;}
+.map-color-wrap li.map-color-2 {background-position:23px -17px;}
+.map-color-wrap li.map-color-3 {background-position:23px -41px;}
+.map-color-wrap li.map-color-4 {background-position:23px -67px;}
+.map-color-wrap li.map-color-5 {background-position:23px -115px;}
+.map-color-wrap li.map-color-8 {background-position:23px -90px;}
+.map-color-wrap li.map-color-6 {background-position:23px -141px;}
+
+.cyber-btn-wrap {width:100%;height:53px;background:#323537;border-top:1px solid #000}
+.cyber-btn-1 {float:left;color:#fff;margin-left:50px}
+.cyber-btn-2 {float:right;color:#fff;margin-right:50px}
+.cyber-btn-1 li {float:left;line-height:53px;}
+.cyber-btn-2 li {float:left}
+.cyber-btn-wrap .cyber-btn-title {font-weight:800;line-height:53px;padding-right:14px;background:url(/homepage/default/img/cyber-station/cyber-btn-title-bg.png) no-repeat right center}
+.cyber-btn-1 li button {color:#fff;padding-left:36px;background:url(/homepage/default/img/cyber-station/cyber-btn-1-bg.png) no-repeat;border:none;cursor:pointer}
+.cyber-btn-1 li.cyber-btn-1-1 button {background-position:20px 3px}
+.cyber-btn-1 li.cyber-btn-1-2 button {background-position:20px -21px}
+.cyber-btn-1 li.cyber-btn-1-3 button {background-position:20px -46px}
+.cyber-btn-1 li.cyber-btn-1-4 button {background-position:20px -70px}
+.cyber-btn-1 li.cyber-btn-1-8 button {background:url(/homepage/default/img/cyber-station/cyber-btn-8-bg.png) no-repeat;border:none;cursor:pointer;background-position:20px 5px}
+.cyber-btn-1 li.cyber-btn-1-5 button {background-position:20px -95px}
+
+.cyber-btn-2 li .button {display:block;position:relative;width:43px;height:43px;margin-left:8px;margin-top:5px;background:url(/homepage/default/img/cyber-station/cyber-btn-2-bg.png) no-repeat;border:none;cursor:pointer}
+.cyber-btn-2 li .button .text-cloud {display:none;position:absolute;top:-21px;left:50%;height:27px;line-height:23px;padding:0 6px;color:#fff;background:url(/homepage/default/img/cyber-station/text-cloud.png) no-repeat center center;z-index:5}
+.cyber-btn-2 li.cyber-btn-2-9 .button .text-cloud {background:url(/homepage/default/img/cyber-station/text-cloud-etc.png) no-repeat right top}
+.cyber-btn-2 li .button .text-cloud img {margin:0 0 1px 9px}
+.cyber-btn-2 li .button .text-cloud.tc-5 {width:90px;margin-left:-51px}
+.cyber-btn-2 li .button .text-cloud.tc-6 {width:105px;margin-left:-58px}
+.cyber-btn-2 li .button .text-cloud.tc-7 {width:120px;margin-left:-66px}
+.cyber-btn-2 li .button .text-cloud.tc-8 {width:140px;margin-left:-76px}
+.cyber-btn-2 li .button .text-cloud.tc-etc {width:186px;margin-left:-167px}
+
+.cyber-btn-2 .button.on .text-cloud {display:block}
+
+.cyber-btn-2 li.cyber-btn-2-1 .button {background-position:0 0;margin-left:14px}
+.cyber-btn-2 li.cyber-btn-2-2 .button {background-position:-59px 0}
+.cyber-btn-2 li.cyber-btn-2-3 .button {background-position:-117px 0}
+.cyber-btn-2 li.cyber-btn-2-4 .button {background-position:-176px 0}
+.cyber-btn-2 li.cyber-btn-2-5 .button {background-position:-235px 0}
+.cyber-btn-2 li.cyber-btn-2-6 .button {background-position:-293px 0}
+.cyber-btn-2 li.cyber-btn-2-7 .button {background-position:-352px 0}
+.cyber-btn-2 li.cyber-btn-2-8 .button {background-position:-410px 0}
+.cyber-btn-2 li.cyber-btn-2-9 .button {background-position:-469px 0}
+.cyber-btn-2 li.cyber-btn-2-1 .button.on, .cyber-btn-2 li.cyber-btn-2-1:hover .button {background-position:0 -54px}
+.cyber-btn-2 li.cyber-btn-2-2 .button.on, .cyber-btn-2 li.cyber-btn-2-2:hover .button {background-position:-59px -54px}
+.cyber-btn-2 li.cyber-btn-2-3 .button.on, .cyber-btn-2 li.cyber-btn-2-3:hover .button {background-position:-117px -54px}
+.cyber-btn-2 li.cyber-btn-2-4 .button.on, .cyber-btn-2 li.cyber-btn-2-4:hover .button {background-position:-176px -54px}
+.cyber-btn-2 li.cyber-btn-2-5 .button.on, .cyber-btn-2 li.cyber-btn-2-5:hover .button {background-position:-235px -54px}
+.cyber-btn-2 li.cyber-btn-2-6 .button.on, .cyber-btn-2 li.cyber-btn-2-6:hover .button {background-position:-293px -54px}
+.cyber-btn-2 li.cyber-btn-2-7 .button.on, .cyber-btn-2 li.cyber-btn-2-7:hover .button {background-position:-352px -54px}
+.cyber-btn-2 li.cyber-btn-2-8 .button.on, .cyber-btn-2 li.cyber-btn-2-8:hover .button {background-position:-410px -54px}
+.cyber-btn-2 li.cyber-btn-2-9 .button.on, .cyber-btn-2 li.cyber-btn-2-9:hover .button {background-position:-469px -54px}
+
+/* 노선검색 결과화면 */
+.cyber-result-wrap {position:absolute;top:91px;min-width:1600px;width:100%;height:135px;background:#fff;border-bottom:1px solid #bbb;z-index:10}
+.cyber-result-wrap .result-1, .cyber-result-wrap .result-2, .cyber-result-wrap .result-3 {float:left}
+.cyber-result-wrap .result-1 {padding:0 20px;background:url(/homepage/default/img/cyber-station/info-parti.png) no-repeat right 19px}
+.cyber-result-wrap .result-2 {min-width:293px;padding-left:20px;background:url(/homepage/default/img/cyber-station/info-parti.png) no-repeat right 19px}
+.cyber-result-wrap .result-3 {min-width:350px;padding:0 20px;}
+.cyber-result-wrap h4 {font-size:15px;font-weight:800;color:#222;padding-left:16px;margin:20px 0 25px 0;background:url(/homepage/default/img/cyber-station/h4-dot.png) no-repeat left center}
+.line-1-ball {display:inline-block;width:18px;height:18px;margin-bottom:-4px;background:url(/homepage/default/img/cyber-station/line-1-ball.png) no-repeat}
+.line-2-ball {display:inline-block;width:18px;height:18px;margin-bottom:-4px;background:url(/homepage/default/img/cyber-station/line-2-ball.png) no-repeat}
+.line-3-ball {display:inline-block;width:18px;height:18px;margin-bottom:-4px;background:url(/homepage/default/img/cyber-station/line-3-ball.png) no-repeat}
+.line-4-ball {display:inline-block;width:18px;height:18px;margin-bottom:-4px;background:url(/homepage/default/img/cyber-station/line-4-ball.png) no-repeat}
+.line-8-ball {display:inline-block;width:56px;height:23px;margin-bottom:-4px;background:url(/homepage/default/img/cyber-station/line-8-ball.png) no-repeat}
+.line-9-ball {display:inline-block;width:51px;height:18px;margin-bottom:-4px;background:url(/homepage/default/img/cyber-station/line-9-ball.png) no-repeat}
+.result-1-a {display:inline-block;width:44px;height:27px;line-height:27px;color:#5c5c5c;font-size:12px;font-weight:800;text-align:center;background:url(/homepage/default/img/cyber-station/sta-info.png) no-repeat}
+.result-1-sta {margin:0 6px 0 7px;font-size:14px;font-weight:700;color:#000}
+.result-1-arr {margin:0 3px 0 4px;}
+
+.result-2 .card-fare, .result-2 .cash-fare {float:left;width:50%}
+.result-2 .card-fare {background:url(/homepage/default/img/cyber-station/card-icon.png) no-repeat left bottom}
+.result-2 .cash-fare {background:url(/homepage/default/img/cyber-station/cash-icon.png) no-repeat left bottom}
+.result-2 dl {padding-left:47px}
+.result-2 dt {font-size:13px;color:#2f2f2f;line-height:4px}
+.result-2 dd {font-size:13px;color:#2f2f2f}
+.result-2 dd b {font-size:24px;font-weight:800;color:#ef5c0e}
+
+.result-3 {position:relative;}
+.result-3 li {position:relative;float:left;width:86px}
+.result-3 li.trans-wrap {width:50px}
+.result-3 .line-img {width:100%;height:21px;background:url(/homepage/default/img/cyber-station/result-lines-new.png) no-repeat}
+.line-1-wrap .line-img {background-position:center 3px}
+.line-2-wrap .line-img {background-position:center -57px}
+.line-3-wrap .line-img {background-position:center -27px}
+.line-4-wrap .line-img {background-position:center -86px}
+.line-8-wrap .line-img {background-position:center -135px}
+.line-9-wrap .line-img {background-position:center -116px}
+.trans-wrap .line-img {background-position:center -154px}
+.time-laps {position:absolute;top:-11px;left:50%;margin-left:-50px;width:100px;font-size:12px;color:#4e4e4e;text-align:center}
+.start-sta {position:absolute;top:26px;left:-34px;width:80px;font-size:13px;color:#000;text-align:center;line-height:13px}
+.end-sta {position:absolute;top:26px;right:-34px;width:80px;font-size:13px;color:#000;text-align:center;line-height:13px}
+.arr-time {position:absolute;top:-15px;left:-43px;width:100px;font-size:13px;color:#000;text-align:center;line-height:13px;}
+.dep-time {position:absolute;top:-15px;right:-43px;width:100px;font-size:13px;color:#000;text-align:center;line-height:13px;}
+.trans-time {position:absolute;top:25px;left:-25px;width:100px;font-size:13px;color:#000;text-align:center;line-height:13px;}
+
+.finallap {position:absolute;top:21px;left:105px;color:#222}
+.finallap b {color:#da3300;font-weight:normal}
+
+
+.result-togg {position:absolute;bottom:-31px;left:50%;margin-left:-7px;width:69px;height:30px;background:#2670b9;z-index:10; font-size:16px; line-height:30px; color:#fff; text-align:center; border-radius:0 0 10px 10px}
+.result-togg.open {background-position:-69px 0}
+
+.black-bg {display:none;position:absolute;top:0;left:-50%;width:3000px;height:2000px;background:url(/homepage/default/img/cyber-station/black-bg.png);z-index:5}
+
+/* 노선검색 정보 팝업 */
+.pop-result {position:absolute;top:330px;left:200px;margin-left:-194px;padding:20px;background:#fff;border:1px solid #8d8d8d;z-index:10}
+.pop-result-1 {text-align:center}
+.pop-result .result-1-arr {display:block;margin:3px auto 7px;}
+.pop-result-dl {width:260px;margin:16px auto;padding:27px 0px;border:1px solid #000;border-width:1px 0px;overflow:hidden}
+.pop-result-dl dt {float:left;width:20%;font-weight:900;color:#000;background:url(/img/common/blt04.gif) no-repeat 15px 9px;padding:0 0 0 26px;margin-bottom:10px}
+.pop-result-dl dd {float:right;width:63%;color:#000;margin-bottom:10px}
+.pop-close-wrap {text-align:center}
+.pop-close-wrap a {display:inline-block;color:#000;width:98px;line-height:38px;border:1px solid #c8c8c8}
+.pop-close-wrap #cs-pop-reset {background:#f4f7f9}
+.pop-close-wrap #cs-pop-close {background:#fff}
+.pop-close-wrap a:hover {text-decoration:underline}
+
+.start-pop {position:absolute;top:0;left:0px;width:82px;height:41px;margin:-39px 0px 0 8px;padding-left:43px;background:url(/homepage/default/img/cyber-station/start-pop-bg.png) no-repeat left center;z-index:10}
+.start-pop .info-sta-box {float:left;line-height:39px;color:#fff;background:#0083c9;padding-left:5px;border-top:1px solid #005f92;border-bottom:1px solid #005f92}
+.start-pop .info-sta-box a {margin:0 5px 0 22px !important;width:20px;height:21px;background:none !important;display:inline-block !important;}
+.start-pop .end-bg {float:left;width:4px;height:41px;background:url(/homepage/default/img/cyber-station/start-pop-end.png) no-repeat left center}
+.choice .start-pop .info-sta-box a {width:20px !important;height:21px !important;}
+
+
+.end-pop {position:absolute;top:0;left:0;width:82px;height:41px;margin:-39px 0px 0 8px;padding-left:43px;background:url(/homepage/default/img/cyber-station/end-pop-bg.png) no-repeat left center;z-index:10}
+.end-pop .info-sta-box {float:left;line-height:39px;color:#fff;background:#0083c9;padding-left:5px;border-top:1px solid #005f92;border-bottom:1px solid #005f92}
+.end-pop .info-sta-box a {margin:0 5px 0 22px !important;width:20px;height:21px;background:none !important;display:inline-block !important;}
+.end-pop .end-bg {float:left;width:4px;height:41px;background:url(/homepage/default/img/cyber-station/start-pop-end.png) no-repeat left center}
+.choice .end-pop .info-sta-box a {width:20px !important;height:21px !important;}
+
+
+.trans-pop {position:absolute;top:0;left:30px;width:82px;height:41px;margin:33px 0px 0px -55px;padding-left:43px;background:url(/homepage/default/img/cyber-station/trans-pop-bg.png) no-repeat left center; z-index:10}
+.trans-pop .info-sta-box {float:left;line-height:39px;color:#4b5961;background:#fff;padding-left:5px;border-top:1px solid #005f92;border-bottom:1px solid #005f92}
+.trans-pop .info-sta-box a {margin:0 5px 0 22px !important;width:20px;height:21px;background:none !important;display:inline-block !important;}
+.trans-pop .end-bg {float:left;width:4px;height:41px;background:url(/homepage/default/img/cyber-station/trans-pop-end.png) no-repeat left center}
+.choice .trans-pop .info-sta-box a {width:20px !important;height:21px !important;}
+
+.text3 .start-pop, .text3 .trans-pop, .text3 .end-pop {width:95px}
+.text4 .start-pop, .text4 .trans-pop, .text4 .end-pop {width:108px}
+.text5 .start-pop, .text5 .trans-pop, .text5 .end-pop {width:121px}
+.text6 .start-pop, .text6 .trans-pop, .text6 .end-pop {width:134px}
+.text7 .start-pop, .text7 .trans-pop, .text7 .end-pop {width:152px}
+.text8 .start-pop, .text8 .trans-pop, .text8 .end-pop {width:160px}
+.text9 .start-pop, .text9 .trans-pop, .text9 .end-pop {width:173px}
+.text10 .start-pop, .text10 .trans-pop, .text10 .end-pop {width:186px}
+.text11 .start-pop, .text11 .trans-pop, .text11 .end-pop {width:199px}
+
+.popuppo a img {margin-top:-4px}
+
+/* 노선도 */
+
+/* 기본 스타일 */
+.w-1, .w-1-s, .h-1, .w-2, .h-2, .w-3, .w-4, .h-4, .h-8, .w-8, .w-9, .h-9 {position:absolute;z-index:1}
+.w-1 {height:8px;background:url(/homepage/default/img/cyber-station/1-w.png) repeat-x;}
+.w-1-s {height:8px;background:url(/homepage/default/img/cyber-station/1-w-s.png) repeat-x;}
+.h-1 {width:8px;background:url(/homepage/default/img/cyber-station/1-h.png) repeat-y;}
+.w-2 {height:8px;background:url(/homepage/default/img/cyber-station/2-w.png) repeat-x;}
+.h-2 {width:8px;background:url(/homepage/default/img/cyber-station/2-h.png) repeat-y;}
+.w-3 {height:8px;background:url(/homepage/default/img/cyber-station/3-w.png) repeat-x;}
+.w-4 {height:8px;background:url(/homepage/default/img/cyber-station/4-w.png) repeat-x;}
+.h-4 {width:8px;background:url(/homepage/default/img/cyber-station/4-h.png) repeat-y;}
+.w-8 {height:8px;background:url(/homepage/default/img/cyber-station/8-w.png) repeat-x;}
+.h-8 {width:8px;background:url(/homepage/default/img/cyber-station/8-h.png) repeat-y;}
+.w-9 {height:8px;background:url(/homepage/default/img/cyber-station/9-w.png) repeat-x;}
+.h-9 {width:8px;background:url(/homepage/default/img/cyber-station/9-h.png) repeat-y;}
+
+.s-1, .s-2, .s-3, .s-4, .s-8, .s-9 {width:11px;height:10px;z-index:2}
+.trans {width:25px;height:26px;}
+.trans .sta-title {font-weight:900}
+.s-1 a, .s-2 a, .s-3 a, .s-4 a, .s-8 a, .s-9 a {display:block;width:100%;height:100%;}
+.s-1 a {background:url(/homepage/default/img/cyber-station/1-sta.png) no-repeat}
+.s-2 a {background:url(/homepage/default/img/cyber-station/2-sta.png) no-repeat}
+.s-3 a {background:url(/homepage/default/img/cyber-station/3-sta.png) no-repeat}
+.s-4 a {background:url(/homepage/default/img/cyber-station/4-sta.png) no-repeat}
+.s-8 a {background:url(/homepage/default/img/cyber-station/8-sta.png) no-repeat}
+.s-9 a {background:url(/homepage/default/img/cyber-station/9-sta.png) no-repeat}
+.tr-1-2 a {background:url(/homepage/default/img/cyber-station/1-2-trans.png) no-repeat}
+.tr-1-3 a {background:url(/homepage/default/img/cyber-station/1-3-trans.png) no-repeat}
+.tr-1-8-rotate a {background:url(/homepage/default/img/cyber-station/1-8-trans-r.png) no-repeat}
+.tr-1-8 a {background:url(/homepage/default/img/cyber-station/1-8-trans.png) no-repeat}
+.tr-2-8 a {background:url(/homepage/default/img/cyber-station/2-8-trans.png) no-repeat}
+.tr-8-3 a {background:url(/homepage/default/img/cyber-station/3-8-trans.png) no-repeat}
+.tr-1-4 a {background:url(/homepage/default/img/cyber-station/1-4-trans.png) no-repeat}
+.tr-2-3 a {background:url(/homepage/default/img/cyber-station/2-3-trans.png) no-repeat}
+.tr-2-9 a {background:url(/homepage/default/img/cyber-station/2-9-trans.png) no-repeat}
+.tr-3-4 a {background:url(/homepage/default/img/cyber-station/3-4-trans.png) no-repeat}
+.tr-3-9 a {background:url(/homepage/default/img/cyber-station/3-9-trans.png) no-repeat}
+
+.s-1.choice a {width:25px;height:26px;margin:-7px 0 0 -7px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.s-2.choice a {width:25px;height:26px;margin:-7px 0 0 -7px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.s-3.choice a {width:25px;height:26px;margin:-7px 0 0 -7px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.s-4.choice a {width:25px;height:26px;margin:-7px 0 0 -7px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.s-8.choice a {width:25px;height:26px;margin:-7px 0 0 -7px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.s-9.choice a {width:25px;height:26px;margin:-7px 0 0 -6px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.trans.choice a {width:25px;height:26px;margin:1px 0 0 -4px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+
+.sta-title {position:absolute;font-size:12px;font-weight:700;color:#666}
+.sta-title_bexco {position:absolute;font-size:12px;font-weight:700;color:#666}
+.spot {display:none;position:absolute;top:-6px;left:-7px;width:25px;height:26px;background:url(/homepage/default/img/cyber-station/spot.png) no-repeat}
+.trans .spot {top:2px;left:-4px;}
+
+.line-1 .s-1, .line-1 .h-1 {position:absolute}
+.line-2 .s-2, .line-2 .h-2 {position:absolute}
+.line-3 .s-3, .line-3 .h-3 {position:absolute}
+.line-4 .s-4, .line-4 .h-4 {position:absolute}
+.line-8 .s-8, .line-8 .h-8 {position:absolute}
+.line-9 .s-9, .line-9 .h-9 {position:absolute}
+
+.line-1-start, .line-1-end, .line-2-start, .line-2-end, .line-3-start, .line-3-end, .line-4-start, .line-4-end, .line-9-start, .line-9-end {position:absolute;width:20px;height:20px;background:url(/homepage/default/img/cyber-station/line-num.png) no-repeat}
+.line-8-start, .line-8-end {position:absolute;width:20px;height:20px;background:url(/homepage/default/img/cyber-station/line-8-ball.png) no-repeat}
+.line-1-start {top:139px;left:844px;background-position:0 0}
+.line-1-end {top:675px;left:300px;background-position:0 0}
+.line-2-start {top:390px;left:1379px;background-position:-30px 0}
+.line-2-end {top:139px;left:573px;background-position:-30px 0}
+.line-3-start {top:529px;left:1095px;background-position:-60px 0}
+.line-3-end {top:453px;left:466px;background-position:-60px 0}
+.line-4-start {top:436px;left:805px;background-position:-90px 0}
+.line-4-end {top:139px;left:1116px;background-position:-90px 0}
+.line-8-start {top:580px;left:770px;width:56px;height:23px}
+.line-8-end {top:138px;left:1362px;width:56px;height:23px}
+.line-9-start {top:590px;left:513px;width:55px;background-position:-120px 0}
+.line-9-end {top:138px;left:297px;width:55px;background-position:-120px 0}
+
+.start-st, .end-st {z-index:9 !important;}
+
+/* 1호선 */
+.line-1 .sta-title {width:50px;text-align:right}
+.s95 {top:700px;left:305px;}
+.s95 .sta-title {top:0px;left:-105px;width:100px}
+.s96 {top:730px;left:305px;}
+.s96 .sta-title {top:0px;left:-55px;}
+.s97 {top:760px;left:305px;}
+.s97 .sta-title {top:0px;left:-55px;}
+.s98 {top:790px;left:305px;}
+.s98 .sta-title {top:0px;left:-55px;}
+.s99 {top:823px;left:306px;}
+.s99 .sta-title {top:0px;left:-55px;}
+.s100 {top:848px;left:321px;}
+.s100 .sta-title {top:0px;left:-55px;}
+.s101 {top:867px;left:361px;}
+.s101 .sta-title {top:-20px;left:-32px;font-weight:900}
+.s102 {top:867px;left:408px;}
+.s102 .sta-title {top:-20px;left:-34px;}
+.s103 {top:867px;left:455px;}
+.s103 .sta-title {top:-20px;left:-34px;}
+.s104 {top:867px;left:502px;}
+.s104 .sta-title {top:-20px;left:-34px;}
+.s105 {top:867px;left:549px;}
+.s105 .sta-title {top:-20px;left:-34px;}
+.s106 {top:867px;left:596px;}
+.s106 .sta-title {top:-20px;left:-36px;}
+.s107 {top:867px;left:645px;}
+.s107 .sta-title {top:-20px;left:-28px;}
+.s108 {top:867px;left:692px;}
+.s108 .sta-title {top:-20px;left:-28px;}
+.s109 {top:867px;left:739px;}
+.s109 .sta-title {top:-20px;left:-36px;}
+.s110 {top:866px;left:785px;}
+.s110 .sta-title {top:-20px;left:-30px;}
+.s111 {top:848px;left:825px;}
+.s111 .sta-title {top:-14px;left:-47px;}
+.s112 {top:820px;left:843px;}
+.s112 .sta-title {top:-7px;left:-54px;}
+.s113 {top:792px;left:849px;}
+.s113 .sta-title {top:-5px;left:-55px;}
+.s114 {top:769px;left:849px;}
+.s114 .sta-title {top:-6px;left:-55px;}
+.s115 {top:745px;left:849px;}
+.s115 .sta-title {top:-4px;left:-55px;}
+.s116 {top:722px;left:849px;}
+.s116 .sta-title {top:-5px;left:-55px;}
+.s117 {top:698px;left:849px;}
+.s117 .sta-title {top:-5px;left:-55px;}
+.s118 {top:675px;left:849px;}
+.s118 .sta-title {top:-5px;left:-55px;}
+.s119 {top:639px;left:847px;}
+.s119 .sta-title {top:-7px;left:-10px;}
+.s120 {top:600px;left:849px;}
+.s120 .sta-title {top:-7px;left:15px;text-align:left}
+.s121 {top:565px;left:849px;}
+.s121 .sta-title {top:-4px;left:15px;text-align:left}
+.s122 {top:519px;left:849px;}
+.s122 .sta-title {top:-4px;left:15px;text-align:left}
+.s123 {top:473px;left:847px;}
+.s123 .sta-title {top:17px;left:-11px;}
+.s124 {top:435px;left:847px;}
+.s124 .sta-title {top:17px;left:15px;text-align:left}
+.s125 {top:394px;left:847px;}
+.s125 .sta-title {top:18px;left:-12px;}
+.s126 {top:377px;left:849px;}
+.s126 .sta-title {top:-4px;left:-55px;}
+.s127 {top:350px;left:849px;}
+.s127 .sta-title {top:-4px;left:-55px;}
+.s128 {top:324px;left:849px;}
+.s128 .sta-title {top:-6px;left:-55px;}
+.s129 {top:297px;left:849px;}
+.s129 .sta-title {top:-4px;left:-55px;}
+.s130 {top:270px;left:849px;}
+.s130 .sta-title {top:-4px;left:-55px;}
+.s131 {top:243px;left:849px;}
+.s131 .sta-title {top:-4px;left:-55px;}
+.s132 {top:217px;left:849px;}
+.s132 .sta-title {top:-4px;left:-55px;}
+.s133 {top:190px;left:849px;}
+.s133 .sta-title {top:-5px;left:-55px;}
+.s134 {top:163px;left:849px;}
+.s134 .sta-title {top:0px;left:-55px;font-weight:900}
+
+
+.l95-96 {top:708px;left:306px;height:30px}
+.l96-97 {top:738px;left:306px;height:30px}
+.l97-98 {top:768px;left:306px;height:30px}
+.l98-99 {top:798px;left:306px;height:30px}
+.l99-100 {background:url(/homepage/default/img/cyber-station/99-100.png) no-repeat;top:825px;left:304px;width:61px;height:28px}
+.l100-101 {background:url(/homepage/default/img/cyber-station/100-101.png) no-repeat;top:853px;left:316px;width:50px;height:22px}
+.l101-102 {top:869px;left:367px;width:48px}
+.l102-103 {top:869px;left:413px;width:48px}
+.l103-104 {top:869px;left:460px;width:48px}
+.l104-105 {top:869px;left:506px;width:48px}
+.l105-106 {top:869px;left:554px;width:48px}
+.l106-107 {top:869px;left:600px;width:51px}
+.l107-108 {top:869px;left:649px;width:49px}
+.l108-109 {top:869px;left:696px;width:49px}
+.l109-110 {background:url(/homepage/default/img/cyber-station/109-110.png) no-repeat;top:854px;left:744px;width:46px;height:22px}
+.l110-111 {background:url(/homepage/default/img/cyber-station/110-111.png) no-repeat;top:853px;left:790px;width:50px;height:22px}
+.l111-112 {background:url(/homepage/default/img/cyber-station/111-112.png) no-repeat;top:825px;left:790px;width:61px;height:28px}
+.l112-113 {background:url(/homepage/default/img/cyber-station/112-113.png) no-repeat;top:798px;left:840px;width:17px;height:28px}
+.l113-114 {top:774px;left:850px;height:24px}
+.l114-115 {top:750px;left:850px;height:24px}
+.l115-116 {top:727px;left:850px;height:24px}
+.l116-117 {top:703px;left:850px;height:24px}
+.l117-118 {top:680px;left:850px;height:24px}
+.l118-119 {top:656px;left:850px;height:24px}
+.l119-120 {top:610px;left:850px;height:40px}
+.l120-121 {top:570px;left:850px;height:40px}
+.l121-122 {top:524px;left:850px;height:46px}
+.l122-123 {top:488px;left:850px;height:36px}
+.l123-124 {top:446px;left:850px;height:36px}
+.l124-125 {top:410px;left:850px;height:36px}
+.l125-126 {top:382px;left:850px;height:23px}
+.l126-127 {top:355px;left:850px;height:27px}
+.l127-128 {top:329px;left:850px;height:27px}
+.l128-129 {top:302px;left:850px;height:27px}
+.l129-130 {top:275px;left:850px;height:27px}
+.l130-131 {top:248px;left:850px;height:27px}
+.l131-132 {top:222px;left:850px;height:27px}
+.l132-133 {top:195px;left:850px;height:27px}
+.l133-134 {top:168px;left:850px;height:27px}
+
+/* 2호선 */
+.s201 {top:412px;left:1383px;}
+.s202 {top:451px;left:1355px;}
+.s203 {top:451px;left:1307px;}
+.s204 {top:451px;left:1262px;}
+.s205 {top:438px;left:1210px;}
+.s206 {top:451px;left:1166px;}
+.s207 {top:465px;left:1135px;}
+.s208 {top:526px;left:1119px;}
+.s209 {top:579px;left:1122px;}
+.s210 {top:639px;left:1122px;}
+.s211 {top:691px;left:1122px;}
+.s212 {top:749px;left:1118px;}
+.s213 {top:789px;left:1082px;}
+.s214 {top:790px;left:1023px;}
+.s215 {top:787px;left:964px;}
+.s216 {top:755px;left:923px;}
+.s217 {top:704px;left:914px;}
+.s218 {top:660px;left:894px;}
+.s219 {top:639px;left:847px;}
+.s220 {top:647px;left:814px;}
+.s221 {top:647px;left:774px;}
+.s222 {top:647px;left:734px;}
+.s223 {top:647px;left:694px;}
+.s224 {top:647px;left:654px;}
+.s225 {top:642px;left:616px;}
+.s226 {top:620px;left:590px;}
+.s227 {top:586px;left:574px;}
+.s228 {top:562px;left:578px;}
+.s229 {top:531px;left:578px;}
+.s230 {top:500px;left:578px;}
+.s231 {top:469px;left:578px;}
+.s232 {top:438px;left:578px;}
+.s233 {top:393px;left:574px;}
+.s234 {top:376px;left:578px;}
+.s235 {top:352px;left:578px;}
+.s236 {top:328px;left:578px;}
+.s237 {top:305px;left:578px;}
+.s238 {top:281px;left:578px;}
+.s239 {top:258px;left:578px;}
+.s240 {top:234px;left:578px;}
+.s241 {top:211px;left:578px;}
+.s242 {top:187px;left:578px;}
+.s243 {top:164px;left:578px;}
+
+.line-2 .sta-title {width:40px;text-align:left}
+.s201 .sta-title {top:-6px;left:-25px;width:26px;font-weight:900}
+.s202 .sta-title {top:-18px;left:-10px}
+.s203 .sta-title {top:10px;left:-12px}
+.s204 .sta-title {top:10px;left:-7px}
+.s205 .sta-title {top:28px;left:-30px;width:70px;line-height:10px;text-align:center;}
+.s206 .sta-title {top:10px;left:-8px;width:30px;line-height:14px}
+.s207 .sta-title {top:-11px;left:-17px}
+.s208 .sta-title {top:5px;left:21px}
+.s209 .sta-title {top:-5px;left:-27px;width:25px}
+.s210 .sta-title {top:-5px;left:-38px}
+.s211 .sta-title {top:-3px;left:-27px;width:25px}
+.s212 .sta-title {top:-21px;left:-44px;width:45px;line-height:14px}
+.s213 .sta-title {top:-20px;left:-8px}
+.s214 .sta-title {top:-22px;left:-6px}
+.s215 .sta-title {top:-19px;left:-9px}
+.s216 .sta-title {top:-13px;left:13px}
+.s217 .sta-title {top:-10px;left:15px;width:80px;line-height:14px}
+.s218 .sta-title {top:-12px;left:12px}
+.s219 .sta-title {top:-7px;left:16px}
+.s220 .sta-title {top:-20px;left:-7px}
+.s221 .sta-title {top:-20px;left:-7px}
+.s222 .sta-title {top:-20px;left:-12px}
+.s223 .sta-title {top:-20px;left:-6px}
+.s224 .sta-title {top:-20px;left:-4px}
+.s225 .sta-title {top:-15px;left:3px}
+.s226 .sta-title {top:-9px;left:10px}
+.s227 .sta-title {top:5px;left:19px}
+.s228 .sta-title {top:-4px;left:15px}
+.s229 .sta-title {top:-4px;left:15px}
+.s230 .sta-title {top:-4px;left:15px}
+.s231 .sta-title {top:-4px;left:15px}
+.s232 .sta-title {top:-4px;left:15px}
+.s233 .sta-title {top:17px;left:19px}
+.s234 .sta-title {top:-4px;left:15px}
+.s235 .sta-title {top:-4px;left:15px}
+.s236 .sta-title {top:-4px;left:15px}
+.s237 .sta-title {top:-4px;left:15px}
+.s238 .sta-title {top:-4px;left:15px}
+.s239 .sta-title {top:-4px;left:15px}
+.s240 .sta-title {top:-4px;left:15px}
+.s241 .sta-title {top:-4px;left:15px;width:100px}
+.s242 .sta-title {top:-4px;left:15px}
+.s243 .sta-title {top:-6px;left:16px;font-weight:900}
+
+.l201-202 {top:416px;left:1359px;width:32px;height:45px;background:url(/homepage/default/img/cyber-station/201-202.png) no-repeat;}
+.l202-203 {top:451px;left:1312px;width:48px;height:9px;background:url(/homepage/default/img/cyber-station/202-203.png) no-repeat;}
+.l203-204 {top:452px;left:1267px;width:45px}
+.l204-205 {top:452px;left:1220px;width:47px}
+.l205-206 {top:452px;left:1174px;width:46px}
+.l206-207 {top:451px;left:1141px;width:43px;height:40px;background:url(/homepage/default/img/cyber-station/206-207.png) no-repeat;}
+.l207-208 {top:471px;left:1124px;width:24px;height:60px;background:url(/homepage/default/img/cyber-station/207-208.png) no-repeat;}
+.l208-209 {top:526px;left:1123px;height:60px}
+.l209-210 {top:584px;left:1123px;height:60px}
+.l210-211 {top:644px;left:1123px;height:52px}
+.l211-212 {top:699px;left:1118px;width:13px;height:58px;background:url(/homepage/default/img/cyber-station/211-212.png) no-repeat;}
+.l212-213 {top:755px;left:1088px;width:40px;height:44px;background:url(/homepage/default/img/cyber-station/212-213.png) no-repeat;}
+.l213-214 {top:789px;left:1027px;width:59px;height:10px;background:url(/homepage/default/img/cyber-station/213-214.png) no-repeat;}
+.l214-215 {top:788px;left:969px;width:58px;height:11px;background:url(/homepage/default/img/cyber-station/214-215.png) no-repeat;}
+.l215-216 {top:760px;left:924px;width:45px;height:38px;background:url(/homepage/default/img/cyber-station/215-216.png) no-repeat;}
+.l216-217 {top:711px;left:914px;width:19px;height:49px;background:url(/homepage/default/img/cyber-station/216-217.png) no-repeat;}
+.l217-218 {top:662px;left:897px;width:25px;height:48px;background:url(/homepage/default/img/cyber-station/217-218.png) no-repeat;}
+.l218-219 {top:649px;left:854px;width:49px;height:18px;background:url(/homepage/default/img/cyber-station/218-219.png) no-repeat;}
+.l219-220 {top:648px;left:820px;width:34px}
+.l220-221 {top:648px;left:778px;width:41px}
+.l221-222 {top:648px;left:738px;width:41px}
+.l222-223 {top:648px;left:698px;width:41px}
+.l223-224 {top:648px;left:658px;width:41px}
+.l224-225 {top:644px;left:621px;width:38px;height:12px;background:url(/homepage/default/img/cyber-station/224-225.png) no-repeat;}
+.l225-226 {top:624px;left:593px;width:29px;height:30px;background:url(/homepage/default/img/cyber-station/225-226.png) no-repeat;}
+.l226-227 {top:597px;left:577px;width:19px;height:29px;background:url(/homepage/default/img/cyber-station/226-227.png) no-repeat;}
+.l227-228 {top:566px;left:579px;height:34px}
+.l228-229 {top:535px;left:579px;height:32px}
+.l229-230 {top:504px;left:579px;height:32px}
+.l230-231 {top:473px;left:579px;height:32px}
+.l231-232 {top:442px;left:579px;height:32px}
+.l232-233 {top:406px;left:579px;height:37px}
+.l233-234 {top:380px;left:579px;height:27px}
+.l234-235 {top:357px;left:579px;height:24px}
+.l235-236 {top:333px;left:579px;height:24px}
+.l236-237 {top:309px;left:579px;height:24px}
+.l237-238 {top:286px;left:579px;height:24px}
+.l238-239 {top:262px;left:579px;height:24px}
+.l239-240 {top:239px;left:579px;height:24px}
+.l240-241 {top:216px;left:579px;height:24px}
+.l241-242 {top:192px;left:579px;height:24px}
+.l242-243 {top:168px;left:579px;height:24px}
+
+/* 3호선 */
+.s301 {top:526px;left:1119px;}
+.s302 {top:481px;left:1074px;}
+.s303 {top:481px;left:987px;}
+.s304 {top:481px;left:910px;}
+.s305 {top:473px;left:847px;}
+.s306 {top:474px;left:827px;}
+.s307 {top:476px;left:806px;}
+.s308 {top:465px;left:794px;}
+.s309 {top:435px;left:785px;}
+.s310 {top:403px;left:744px;}
+.s311 {top:403px;left:690px;}
+.s312 {top:403px;left:633px;}
+.s313 {top:393px;left:574px;}
+.s314 {top:403px;left:539px;}
+.s315 {top:403px;left:497px;}
+.s316 {top:424px;left:464px;}
+.s317 {top:447px;left:446px;}
+
+.line-3 .sta-title {width:25px;text-align:left}
+.s301 .sta-title {top:5px;left:21px;font-weight:900}
+.s302 .sta-title {top:12px;left:-5px}
+.s303 .sta-title {top:12px;left:-5px}
+.s304 .sta-title {top:12px;left:-10px;width:40px}
+.s305 .sta-title {top:18px;left:15px}
+.s306 .sta-title {top:25px;left:-26px}
+.s307 .sta-title {top:10px;left:-51px;width:60px}
+.s308 .sta-title {top:-3px;left:-28px}
+.s309 .sta-title {top:4px;left:-26px}
+.s310 .sta-title {top:11px;left:-6px}
+.s311 .sta-title {top:11px;left:-12px;width:40px}
+.s312 .sta-title {top:11px;left:-6px}
+.s313 .sta-title {top:17px;left:19px}
+.s314 .sta-title {top:11px;left:-6px}
+.s315 .sta-title {top:-20px;left:-18px;width:60px}
+.s316 .sta-title {top:4px;left:10px;width:60px}
+.s317 .sta-title {top:3px;left:-25px;font-weight:900}
+
+.l301-302 {top:481px;left:1079px;width:49px;height:59px;background:url(/homepage/default/img/cyber-station/301-302.png) no-repeat;}
+.l302-303 {top:481px;left:991px;width:88px;}
+.l303-304 {top:481px;left:915px;width:77px;}
+.l304-305 {top:481px;left:855px;width:60px;}
+.l305-306 {top:481px;left:832px;width:23px;}
+.l306-307 {top:477px;left:811px;width:21px;height:13px;background:url(/homepage/default/img/cyber-station/306-307.png) no-repeat;}
+.l307-308 {top:467px;left:794px;width:18px;height:19px;background:url(/homepage/default/img/cyber-station/307-308.png) no-repeat;}
+.l308-309 {top:448px;left:789px;width:13px;height:22px;background:url(/homepage/default/img/cyber-station/308-309.png) no-repeat;}
+.l309-310 {top:403px;left:749px;width:48px;height:44px;background:url(/homepage/default/img/cyber-station/309-310.png) no-repeat;}
+.l310-311 {top:403px;left:696px;width:54px;}
+.l311-312 {top:403px;left:638px;width:57px;}
+.l312-313 {top:403px;left:581px;width:57px;}
+.l313-314 {top:403px;left:543px;width:39px;}
+.l314-315 {top:403px;left:502px;width:42px;}
+.l315-316 {top:403px;left:467px;width:36px;height:28px;background:url(/homepage/default/img/cyber-station/315-316.png) no-repeat;}
+.l316-317 {top:427px;left:447px;width:24px;height:35px;background:url(/homepage/default/img/cyber-station/316-317.png) no-repeat;}
+
+/* 4호선 */
+.s401 {top:435px;left:785px;}
+.s402 {top:394px;left:847px;}
+.s403 {top:402px;left:904px;}
+.s404 {top:402px;left:943px;}
+.s405 {top:402px;left:979px;}
+.s406 {top:402px;left:1017px;}
+.s407 {top:402px;left:1055px;}
+.s408 {top:385px;left:1102px;}
+.s409 {top:353px;left:1119px;}
+.s410 {top:317px;left:1121px;}
+.s411 {top:279px;left:1121px;}
+.s412 {top:241px;left:1121px;}
+.s413 {top:201px;left:1121px;}
+.s414 {top:167px;left:1121px;}
+
+.line-4 .sta-title {width:25px;text-align:left}
+.s401 .sta-title {top:4px;left:-26px;font-weight:900}
+.s402 .sta-title {top:18px;left:14px}
+.s403 .sta-title {top:12px;left:-6px}
+.s404 .sta-title {top:12px;left:-6px}
+.s405 .sta-title {top:12px;left:-12px;width:40px}
+.s406 .sta-title {top:12px;left:-6px}
+.s407 .sta-title {top:12px;left:-6px}
+.s408 .sta-title {top:10px;left:10px}
+.s409 .sta-title {top:-7px;left:17px;width:100px}
+.s410 .sta-title {top:-3px;left:15px}
+.s411 .sta-title {top:-3px;left:15px;width:40px}
+.s412 .sta-title {top:-3px;left:15px;width:60px}
+.s413 .sta-title {top:-3px;left:15px}
+.s414 .sta-title {top:-3px;left:15px;font-weight:900}
+
+.l401-402 {top:403px;left:792px;width:63px;height:45px;background:url(/homepage/default/img/cyber-station/401-402.png) no-repeat;}
+.l402-403 {top:403px;left:854px;width:55px}
+.l403-404 {top:403px;left:909px;width:40px}
+.l404-405 {top:403px;left:948px;width:36px}
+.l405-406 {top:403px;left:984px;width:38px}
+.l406-407 {top:403px;left:1022px;width:38px}
+.l407-408 {top:386px;left:1060px;width:48px;height:25px;background:url(/homepage/default/img/cyber-station/407-408.png) no-repeat;}
+.l408-409 {top:359px;left:1105px;width:23px;height:35px;background:url(/homepage/default/img/cyber-station/408-409.png) no-repeat;}
+.l409-410 {top:322px;left:1119px;width:11px;height:36px;background:url(/homepage/default/img/cyber-station/409-410.png) no-repeat;}
+.l410-411 {top:284px;left:1122px;height:39px}
+.l411-412 {top:245px;left:1122px;height:39px}
+.l412-413 {top:206px;left:1122px;height:40px}
+.l413-414 {top:172px;left:1122px;height:35px}
+
+
+/* 동해선-8 */
+/*역표시*/
+.s801 {top:600px;left:820px;}
+.s802 {top:540px;left:827px;}
+.s803 {top:474px;left:827px;}
+.s804 {top:435px;left:847px;}
+.s805 {top:440px;left:900px;}
+.s806 {top:440px;left:953px;}
+.s807 {top:440px;left:1020px;}
+.s808 {top:440px;left:1076px;}
+.s809 {top:440px;left:1166px;}
+.s810 {top:438px;left:1210px;}
+
+.s811 {top:405px;left:1247px;}
+.s812 {top:380px;left:1247px;}
+.s813 {top:355px;left:1247px;}
+.s814 {top:330px;left:1247px;}
+.s815 {top:305px;left:1247px;}
+.s816 {top:280px;left:1247px;}
+.s817 {top:255px;left:1247px;}
+.s818 {top:230px;left:1247px;}
+.s819 {top:205px;left:1247px;}
+
+.s820 {top:168px;left:1275px;}
+.s821 {top:168px;left:1310px;}
+.s822 {top:168px;left:1349px;}
+.s823 {top:168px;left:1385px;}
+
+
+
+
+/*역명*/
+.line-8 .sta-title {width:25px;text-align:left}
+.s801 .sta-title {top:5px;right:30px;}
+.s802 .sta-title {top:1px;left:-60px; width:80px}
+.s803 .sta-title {top:25px;left:-20px}
+.s804 .sta-title {top:17px;left:15px;}
+.s805 .sta-title {top:12px;left:-5px;width:40px}
+.s806 .sta-title {top:12px;left:-6px}
+.s807 .sta-title {top:12px;left:-18px;width:120px;}
+.s808 .sta-title {top:12px;left:-6px}
+.s809 .sta-title {top:-14px;left:-5px}
+.s810 .sta-title {top:-7px;left:17px;width:100px}
+.s811 .sta-title {top:-3px;left:15px;width:50px}
+.s812 .sta-title {top:-3px;left:15px;width:40px}
+.s813 .sta-title {top:-3px;left:15px;width:50px}
+.s814 .sta-title {top:-3px;left:15px;width:40px}
+.s815 .sta-title {top:-3px;left:15px;width:40px}
+.s816 .sta-title {top:-3px;left:15px;width:40px} 
+.s817 .sta-title {top:-3px;left:15px;width:40px}
+.s818 .sta-title {top:-3px;left:15px;width:40px}
+.s819 .sta-title {top:-3px;left:15px;width:40px}
+.s820 .sta-title,
+.s821 .sta-title,
+.s823 .sta-title {top:12px;left:-6px;width:40px}
+.s822 .sta-title {top:12px;left:-12px;width:40px}
+
+
+/*라인*/
+.l801-802 {top:542px;left:829px;height:68px;}
+.l802-803 {top:481px;left:829px;height:62px}
+.l803-804 {top:441px;left:830px;width:30px;height:47px;background:url(/homepage/default/img/cyber-station/803-804.png) no-repeat; background-size:110% 90%;}
+.l804-805 {top:441px;left:853px;width:55px}
+.l805-806 {top:441px;left:905px;width:55px}
+.l806-807 {top:441px;left:956px;width:75px}
+.l807-808 {top:441px;left:1030px;width:55px}
+.l808-809 {top:441px;left:1079px;width:92px;}
+.l809-810 {top:441px;left:1174px;width:48px;}
+.l810-811 {top:411px;left:1219px;width:37px;height:38px;background:url(/homepage/default/img/cyber-station/810-811.png) no-repeat;}
+.l811-812 {top:382px;left:1249px;height:25px}
+.l812-813 {top:358px;left:1249px;height:25px}
+.l813-814 {top:333px;left:1249px;height:25px}
+.l814-815 {top:308px;left:1249px;height:25px}
+.l815-816 {top:283px;left:1249px;height:25px}
+.l816-817 {top:258px;left:1249px;height:25px}
+.l817-818 {top:233px;left:1249px;height:25px}
+.l818-819 {top:208px;left:1249px;height:25px}
+
+.l819-820 {top:169px;left:1249px;width:30px;height:43px;background:url(/homepage/default/img/cyber-station/803-804.png) no-repeat; background-size:120% 90%;}
+.l820-821 {top:169px;left:1281px;width:35px;}
+.l821-822 {top:169px;left:1315px;width:38px;}
+.l822-823 {top:169px;left:1351px;width:40px;}
+
+/* 김해경전철 */
+.s901 {top:586px;left:574px;}
+.s902 {top:639px;left:546px;}
+.s903 {top:644px;left:489px;}
+.s904 {top:614px;left:456px;}
+.s905 {top:550px;left:448px;}
+.s906 {top:489px;left:448px;}
+.s907 {top:447px;left:446px;}
+.s908 {top:429px;left:438px;}
+.s909 {top:412px;left:418px;}
+.s910 {top:403px;left:391px;}
+.s911 {top:400px;left:358px;}
+.s912 {top:386px;left:337px;}
+.s913 {top:366px;left:324px;}
+.s914 {top:340px;left:319px;}
+.s915 {top:314px;left:319px;}
+.s916 {top:289px;left:319px;}
+.s917 {top:263px;left:319px;}
+.s918 {top:238px;left:319px;}
+.s919 {top:213px;left:319px;}
+.s920 {top:187px;left:319px;}
+.s921 {top:163px;left:319px;}
+
+.line-9 .sta-title {width:25px;text-align:left}
+.s901 .sta-title {top:5px;left:19px;width:60px;font-weight:900}
+.s902 .sta-title {top:7px;left:10px;width:48px;line-height:14px}
+.s903 .sta-title {top:12px;left:-46px;width:48px;line-height:14px;text-align:right}
+.s904 .sta-title {top:-2px;left:-27px}
+.s905 .sta-title {top:-3px;left:-27px}
+.s906 .sta-title {top:-3px;left:-27px}
+.s907 .sta-title {top:3px;left:-25px}
+.s908 .sta-title {top:-2px;left:-26px}
+.s909 .sta-title {top:-16px;left:6px}
+.s910 .sta-title {top:-19px;left:-4px}
+.s911 .sta-title {top:-16px;left:-2px}
+.s912 .sta-title {top:-2px;left:-52px;width:50px}
+.s913 .sta-title {top:-4px;left:15px;width:60px}
+.s914 .sta-title {top:-3px;left:17px;width:60px}
+.s915 .sta-title {top:-4px;left:17px}
+.s916 .sta-title {top:-4px;left:17px}
+.s917 .sta-title {top:-2px;left:17px;width:60px}
+.s918 .sta-title {top:-4px;left:17px;width:60px}
+.s919 .sta-title {top:-4px;left:17px;width:60px}
+.s920 .sta-title {top:-4px;left:17px;width:60px}
+.s921 .sta-title {top:-4px;left:17px;font-weight:900;width:60px}
+
+.l901-902 {top:599px;left:552px;width:34px;height:50px;background:url(/homepage/default/img/cyber-station/901-902.png) no-repeat;}
+.l902-903 {top:639px;left:495px;width:57px;height:19px;background:url(/homepage/default/img/cyber-station/902-903.png) no-repeat;}
+.l903-904 {top:616px;left:458px;width:38px;height:37px;background:url(/homepage/default/img/cyber-station/903-904.png) no-repeat;}
+.l904-905 {top:556px;left:450px;width:17px;height:65px;background:url(/homepage/default/img/cyber-station/904-905.png) no-repeat;}
+.l905-906 {top:494px;left:450px;height:59px}
+.l906-907 {top:459px;left:450px;height:37px}
+.l907-908 {top:432px;left:441px;width:16px;height:28px;background:url(/homepage/default/img/cyber-station/907-908.png) no-repeat;}
+.l908-909 {top:414px;left:424px;width:25px;height:26px;background:url(/homepage/default/img/cyber-station/908-909.png) no-repeat;}
+.l909-910 {top:405px;left:399px;width:25px;height:18px;background:url(/homepage/default/img/cyber-station/909-910.png) no-repeat;}
+.l910-911 {top:400px;left:364px;width:34px;height:14px;background:url(/homepage/default/img/cyber-station/910-911.png) no-repeat;}
+.l911-912 {top:391px;left:341px;width:25px;height:19px;background:url(/homepage/default/img/cyber-station/911-912.png) no-repeat;}
+.l912-913 {top:370px;left:324px;width:21px;height:23px;background:url(/homepage/default/img/cyber-station/912-913.png) no-repeat;}
+.l913-914 {top:345px;left:321px;width:14px;height:28px;background:url(/homepage/default/img/cyber-station/913-914.png) no-repeat;}
+.l914-915 {top:319px;left:321px;height:27px}
+.l915-916 {top:293px;left:321px;height:27px}
+.l916-917 {top:268px;left:321px;height:27px}
+.l917-918 {top:242px;left:321px;height:27px}
+.l918-919 {top:217px;left:321px;height:27px}
+.l919-920 {top:192px;left:321px;height:27px}
+.l920-921 {top:167px;left:321px;height:27px}
+
+
+.trans-icon {display:inline-block; width:41px; height:22px; background:url(/homepage/default/img/cyber-station/result-lines-new.png) no-repeat; background-position:center -154px; vertical-align:bottom}
+.trans-arr {line-height:24px; margin:12px 0; height:24px}
+
+.line-name {position:relative; top:-10px; left:22px; font-weight:bold}
+
+.result-3 .mo {display:none}
+
+/*모바일 사이버스테이션*/
+.c-m-only {display:none}
+@media all and (max-width:479px){
+	.c-m-only {display:inline-block}
+	#cyberstation-wrap {min-width:320px}
+	.cyber-top-wrap {height:250px}
+	.cyber-logo-wrap {width:100%;height:80px;float:none;text-align:center;padding:0 0 0 0;border:none;background:url(/homepage/default/img/cyber-station/mtop-bg.png) repeat-x center bottom}
+	.cyber-title-wrap {display:none}
+	.hu-home-link {position: absolute;top:26px;left:50%;width:140px;height:34px;margin-left:-141px}
+	.cyber-search {width:100%;float:none;padding:0}
+	.cyber-top-wrap-line {top:242px;background:url(/homepage/default/img/cyber-station/cyber-top-wrap-line-m.png) center center}
+	.cyber-result-wrap {top:250px; height:auto; min-width:100%; overflow-x:hidden}
+	.cyber-result-wrap .result-1 {float:none; background:#fff}
+	.cyber-result-wrap .result-1 .result-1-wrap {display:block; text-align:center}
+	.cyber-result-wrap .result-2 {float:none; height:100px;  min-width:100%;  background:#fff}
+	.cyber-result-wrap .result-3 {float:none; min-width:100%}
+	.cyber-result-wrap .result-1-arr {display:block; text-align:center}
+	.cyber-result-wrap .result-1-arr img {transform:rotate(90deg)}
+	.cyber-result-wrap .result-3 ul {position:relative; height:auto}
+	.cyber-result-wrap .result-3 li {float:none; width:calc(100% - 70px); padding-bottom:45px; position:relative; margin-left:45px}
+	.cyber-result-wrap .result-3 ul:before {content:""; display:block; position:absolute; height:calc(100% - 110px); min-height:auto; border-left:3.5px dashed #99a8b6; top:35px; left:20px}
+	.cyber-result-wrap .result-3 .finallap {top:0}
+	.cyber-result-wrap .result-3 .line-name {left:0; width:100%; text-align:center; display:block}
+	.cyber-result-wrap .result-3 .start-sta {top:2px; left:0; width:calc(50% - 50px); text-align:right}
+	.cyber-result-wrap .result-3 .end-sta {top:2px; right:0; width:calc(50% - 50px); ; text-align:left}
+	.cyber-kinds-wrap, .cyber-input-wrap, .cyber-tbtn-wrap {display:block;margin:14px 0 0;text-align:center}
+	.cyber-result-wrap .result-3 li.trans-wrap{padding-bottom:0; margin:0;}
+	.cyber-result-wrap .result-3 li.trans-wrap .line-img {position:absolute; top:0; left:0; width:41px}
+	.trans-time,.result-togg {display:none}
+	.result-3 .mo {display:block}
+	.result-3 .mo .start-mo {position:absolute; top:0; left:0; display:inline-block; padding:2px 5px; background:#c1defa; font-size:14px; font-weight:bold}
+	.cyber-print-btn-wrap {display:none}
+	.cyber-map {height:380px;border-bottom:3px solid #323537;background:#fff url(/homepage/default/img/cyber-station/cyber-map-bg.png) no-repeat center center;background-size:70%}
+	.map-img-wrap, .cyber-btn-wrap, .map-down-box {display:none}
+	.pop-result {display:none; position:relative !important;top:0 !important;left:0 !important;padding:0;margin:0;border:none; }
+	.pop-result-1 {padding-top:20px}
+	.pop-result-2 {margin-top:20px}
+	.pop-result-dl {width:96%;margin:0 2%;padding:30px 0;border-top:1px solid #000;border-bottom:1px solid #ccc}
+	#cs-pop-close {margin-top:15px}
+	
+	.sero-notice {position:absolute;top:0;width:100%;height:63px;background:#676a73;text-align:center}
+	.sero-notice span {display:inline-block;height:51px;color:#fdfffe;padding:12px 0 0 56px;background:url(/homepage/default/img/cyber-station/sero-notice.jpg) no-repeat 0 3px}
+	
+	.map-view-btn-bg {position:absolute;bottom:20px;left:50%;margin-left:-45%;width:90%;height:100px;line-height:100px;text-align:center;background:url(/homepage/default/img/cyber-station/map-view-bg.png) no-repeat center center;border:1px solid #dce2e5}
+
+}
+
+@media all and (max-width:360px){
+	.station-arrow {margin:0px 0 -2px}
+}
+
+
+/* ie8 */
+
+.ie8 .auto1 {position:absolute;top:65px;left:227px;background:#fff;z-index:15}
+.ie8 .autoul1 {min-width:109px;border:1px solid #cecece}
+.ie8 .autoul1 li {}
+.ie8 .autoul1 li a {display:block;line-height:25px}
+.ie8 .autoul1 li a:hover {background:#f6f6f6}
+
+.ie8 .auto2 {position:absolute;top:62px;left:407px;background:#fff;z-index:15}
+.ie8 .autoul2 {min-width:109px;border:1px solid #cecece}
+.ie8 .autoul2 li {}
+.ie8 .autoul2 li a {display:block;line-height:25px}
+.ie8 .autoul2 li a:hover {background:#f6f6f6}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

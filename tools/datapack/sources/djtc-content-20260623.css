@@ -1,0 +1,2379 @@
+/* 통합검색 */
+.totalSearchForm{position:relative;overflow:hidden;width:100%;text-align:center}
+.totalSearchForm p{position:relative;overflow:hidden;border:1px solid #dbdbdb;padding:15px 0;background:#f6f6f6}
+.totalSearchForm select{height:30px;padding:1px 3px;border:1px solid #d2d2d2}
+.totalSearchForm input[type='text']{width:30%;height:26px;margin-left:10px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+.totalSearchForm input[type='submit']{cursor:pointer;border:none;width:80px;height:30px;background:#5e626e;color:#fff;line-height:30px}
+
+.totalSearch{position:relative;overflow:hidden;width:100%}
+.searchList{position:relative;overflow:hidden;width:100%;margin:30px 0;padding-bottom:30px;border-bottom:1px solid #d9d9d9}
+.searchList > p{margin-bottom:10px;font-family:'NanumGothicBold';font-size:16px;color:#f60;line-height:22px}
+.searchList ul li{margin-top:5px;padding-left:10px;background:url('../images/content/location_bullet.png') left 10px no-repeat}
+.searchList ul li a{font-family:'NanumGothic';font-size:15px;line-height:18px}
+.searchList ul li > a:hover{color:#f60;text-decoration:underline}
+.searchList ul li > a.icon_home{width:15px;height:15px;padding-left:15px;background:url('../images/content/icon_home.png') left center no-repeat;font-family:'NanumGothic'}
+.searchList ul li > em{display:inline-block;width:5px;height:9px;margin:0 5px 0 10px;background:url('../images/content/location_arrow.png') center center no-repeat;vertical-align:middle}
+.searchList ul li > em:first-child{margin:0 5px 0 0}
+.searchList ul li > span{margin-left:15px}
+.searchList ul li > span a.btn_shortcut{display:inline-block;height:20px;padding:0 10px;border:1px solid #d9d9d9;background:#fff;font-family:'NanumGothic';font-size:13px;text-align:center;line-height:22px}
+.searchList ul li > span a:hover.btn_shortcut{text-decoration:underline}
+.searchList ul li > span a.btn_shortcut u{display:inline-block;width:6px;height:9px;margin-left:8px;background:url('../images/content/icon_totalsearchArrow.png') no-repeat;vertical-align:middle}
+
+
+#gallery-overlay {background-color:#000;}
+#gallery-container {font: 16px/22px verdana, arial, sans-serif; margin:0 auto;}
+#gallery {background:#fff url(../img/gallery/loading.gif) center 100px no-repeat; color:#999; display:none; height:200px;margin:0 auto; position:relative; width:300px; box-shadow:0 0 64px #000; -moz-box-shadow:0 0 64px #000; -webkit-box-shadow:0 0 64px #000;}
+#gallery-image-container {display:none; height:100%;}
+#gallery-loading {padding:8px;}
+#gallery-controls {display:none; height:100%; left:0; position:absolute; top:0; width:100%;}
+#gallery-controls div {float:left; height:100%; width:50%;}
+#gallery-controls a {background:#fff; color:#000; font-size:12px; outline-style:none; position:absolute; text-decoration:none; top:40px;}
+#gallery-previous-link {left:0; padding:6px 10px 6px 6px; border-radius:0 6px 6px 0; -moz-border-radius-bottomright:6px; -webkit-border-bottom-right-radius:6px; -moz-border-radius-topright:6px; -webkit-border-top-right-radius:6px;}
+#gallery-next-link {padding:6px 6px 6px 10px; right:0; border-radius:6px 0 0 6px; -moz-border-radius-bottomleft:6px; -webkit-border-bottom-left-radius:6px; -moz-border-radius-topleft:6px; -webkit-border-top-left-radius:6px;}
+#gallery-meta-container {background:#fff; color:#999; display:none; margin:0 auto; overflow:auto;}
+#gallery-image {padding:8px;}
+#gallery-meta {display:none; height:44px; padding:0px 8px;}
+#gallery-meta div {float:left;}
+#gallery-info {text-align:left; width:80%;}
+#gallery-close {line-height:30px; text-align:right; width:20%;}
+#gallery-close a {color:#999; font-size:24px; font-weight:bold; outline-style:none; text-decoration:none;}
+#gallery-close a:hover {color:#bbb;}
+#gallery-title a, #gallery-title a:link, #gallery-title a:visited {color:#666; font-size:14px; font-weight:bold; line-height:14px;}
+#gallery-title a:visited:hover {color:#999}
+#gallery-pages {color:#999; display:block; font-size:10px; line-height:14px;}
+
+/* flickr styles */
+.flickr_badge_image {float:left; padding:2px;}
+#flickr_www {font-size:12px;}
+#flickr_link {clear:both;}
+
+.processStep{position:relative;overflow:hidden;width:100%}
+.processStep ul li{float:left;width:17.5%;text-align:center}
+.processStep ul li.processStep_arrow{width:3%;height:100px;background:url('../images/content/processStep_arrow.png') center center no-repeat;vertical-align:middle}
+.processStep ul li dl{height:75px;padding-top:25px;background:url('../images/content/processStep_01bg.png') center top no-repeat;font-family:'NanumGothicBold'}
+.processStep ul li dl.circle02{background:url('../images/content/processStep_02bg.png') center top no-repeat}
+.processStep ul li dl dt{font-size:20px;color:#d7d7df}
+.processStep ul li dl dd{font-size:16px;color:#fff}
+.processStep ul li > p{margin-top:5px;color:#6b6b6b;line-height:20px}
+.icon_tel{display:inline-block;width:11px;height:16px;margin-left:10px;background:url('../images/content/icon_tel.png') left center no-repeat;vertical-align:middle}
+
+.publicInfoTitle{position:relative;overflow:hidden;width:90%;min-height:253px;padding:5%;background:url('../images/content/publicInfoTitle.png') center top no-repeat;background-size:100%}
+.publicInfoTitle p{margin-bottom:20px;font-family:'NanumGothicBold';font-size:25px;color:#5e626e}
+.publicInfoTitle ul li{font-size:16px;color:#5e626e}
+.publicInfoIcons{position:relative;overflow:hidden;width:100%;margin-top:60px}
+.publicInfoIcons ul li{float:left;width:20%;text-align:center}
+.publicInfoIcons ul li a{display:inline-block;font-family:'NanumGothicBold';font-size:15px;color:#5e626e;letter-spacing:-0.03em}
+.publicInfoIcons ul li a.publicInfo_icon01{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon01.png') center top no-repeat}
+.publicInfoIcons ul li a.publicInfo_icon02{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon02.png') center top no-repeat}
+.publicInfoIcons ul li a.publicInfo_icon03{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon03.png') center top no-repeat}
+.publicInfoIcons ul li a.publicInfo_icon04{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon04.png') center top no-repeat}
+.publicInfoIcons ul li a.publicInfo_icon05{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon05.png') center top no-repeat}
+
+.contentSearchForm{position:relative;overflow:hidden;width:100%;text-align:center}
+.contentSearchForm p{position:relative;overflow:hidden;border:1px solid #dbdbdb;padding:15px 0;background:#f6f6f6}
+.contentSearchForm p label.searchText{margin-right:20px;font-size:16px;color:#676767;letter-spacing:-0.03em}
+.contentSearchForm select{height:30px;padding:1px 3px;border:1px solid #d2d2d2}
+.contentSearchForm span{margin-left:10px}
+.contentSearchForm input[type='text']{width:40%;height:26px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+.contentSearchForm input[type='submit']{cursor:pointer;border:none;width:80px;height:30px;background:#5e626e;color:#fff;line-height:30px}
+
+
+/* web ?ъ씠踰꾩뒪?뚯씠?? */
+.webCyberStation{display:block}
+.routesSearchForm{position:relative;overflow:hidden;padding:20px;border:1px solid #dbdbdb}
+.routesSearchForm ul{overflow:hidden}
+.routesSearchForm ul li{float:left;margin-left:10px;font-size:15px;color:#555}
+.routesSearchForm ul li:first-child{margin-left:0}
+.routesSearchForm ul li.L{padding-right:30px;border-right:1px solid #dbdbdb}
+.routesSearchForm ul li dl{display:inline-block;padding-left:33px;background:url('../images/content/icon_subway.gif') left center no-repeat;vertical-align:middle;line-height:20px}
+.routesSearchForm ul li dl dt{font-family:'NanumGothicBold';font-size:16px;color:#f60}
+.routesSearchForm ul li select{width:160px;height:40px;padding:1px 3px;border:1px solid #dbdbdb;background:#f9f9f9}
+.routesSearchForm ul li em{display:inline-block;margin:0 10px;width:23px;height:12px;background:url('../images/content/routes_arrow.gif') left center no-repeat;vertical-align:middle}
+.routesSearchForm ul li.R a{display:inline-block;font-family:'NanumGothicBold';font-size:15px;line-height:20px}
+.routesSearchForm ul li.R a.btn_routes{display:inline-block;width:100px;height:40px;padding:10px 0 10px 30px;background:url('../images/content/icon_zoom.gif') 10px center no-repeat #ff7c2c;color:#fff}
+.routesSearchForm ul li.R a.btn_initialization{display:inline-block;width:100px;height:40px;padding:9px 0 9px 38px;border:1px solid #dbdbdb;background:url('../images/content/icon_initialization.gif') 20px center no-repeat;color:#444}
+
+.detailRoutes{position:relative;overflow:hidden;width:100%}
+.detailRoutes > p{margin:15px 0;padding-left:10px;background:url('../images/sub/bullet04.png') left 4px no-repeat;color:#555;line-height:20px}
+.routeMap{position:relative;overflow:hidden;width:100%;height:420px;background:url('../images/content/reutes.png') left top no-repeat #f5f5f5}
+.routeMap .routeLayer{z-index:1;position:absolute;left:0;top:0;width:100%;height:420px;background:url('../images/content/reutes_layer.png') left top no-repeat}
+.routeMap > a{cursor:pointer;z-index:3;position:absolute}
+.routrack22{left:40px;top:45px}
+.routrack21{left:66px;top:72px}
+.routrack20{left:93px;top:100px}
+.routrack19{left:123px;top:130px}
+.routrack18{left:170px;top:147px}
+.routrack17{left:215px;top:147px}
+.routrack16{left:260px;top:147px}
+.routrack15{left:307px;top:147px}
+.routrack14{left:355px;top:147px}
+.routrack13{left:397px;top:167px}
+.routrack12{left:425px;top:195px}
+.routrack11{left:455px;top:225px}
+.routrack10{left:483px;top:252px}
+.routrack09{left:510px;top:280px}
+.routrack08{left:555px;top:294px}
+.routrack07{left:603px;top:294px}
+.routrack06{left:650px;top:294px}
+.routrack05{left:698px;top:294px}
+.routrack04{left:745px;top:294px}
+.routrack03{left:790px;top:294px}
+.routrack02{left:835px;top:294px}
+.routrack01{left:880px;top:294px}
+
+.routeMap span{z-index:3;position:absolute}
+.amenities22{left:65px;top:30px}
+.amenities21{left:90px;top:55px}
+.amenities20{left:120px;top:85px}
+.amenities19{left:145px;top:110px}
+.amenities18{left:175px;top:125px}
+.amenities17{left:219px;top:125px}
+.amenities16{left:255px;top:125px}
+.amenities15{left:307px;top:125px}
+.amenities14{left:357px;top:125px}
+.amenities13{left:422px;top:153px}
+.amenities12{left:450px;top:180px}
+.amenities11{left:480px;top:215px}
+.amenities10{left:505px;top:235px}
+.amenities09{left:520px;top:255px}
+.amenities08{left:555px;top:270px}
+.amenities07{left:605px;top:270px}
+.amenities06{left:653px;top:270px}
+.amenities05{left:702px;top:270px}
+.amenities04{left:750px;top:270px}
+.amenities03{left:793px;top:270px}
+.amenities02{left:830px;top:270px}
+.amenities01{left:880px;top:270px}
+
+.icon_facilities01{display:block;width:20px;height:18px;background:url('../images/content/icon_facilities01.png') no-repeat;vertical-align:middle}
+.icon_facilities02{display:block;width:30px;height:18px;background:url('../images/content/icon_facilities02.png') no-repeat;vertical-align:middle}
+.icon_facilities03{display:block;width:15px;height:18px;background:url('../images/content/icon_facilities03.png') no-repeat;vertical-align:middle}
+.icon_facilities04{display:block;width:13px;height:18px;background:url('../images/content/icon_facilities04.png') no-repeat;vertical-align:middle}
+.icon_facilities05{display:block;width:10px;height:18px;background:url('../images/content/icon_facilities05.png') no-repeat;vertical-align:middle}
+.icon_facilities06{display:block;width:14px;height:18px;background:url('../images/content/icon_facilities06.png') no-repeat;vertical-align:middle}
+.icon_facilities07{display:block;width:17px;height:18px;background:url('../images/content/icon_facilities07.png') no-repeat;vertical-align:middle}
+.icon_facilities08{display:block;width:18px;height:18px;background:url('../images/content/icon_facilities08.png') no-repeat;vertical-align:middle}
+
+
+/* add 2016. 04. 28 */
+.infoShort{display:none;z-index:3;position:absolute}
+.infoShort > p{position:absolute;left:0;top:8px;width:11px;height:9px;background:url('../images/content/icon_infoShortArrow.png') left center no-repeat}
+.infoShort.left-side > p{left:auto;right:0;background:url('../images/content/icon_infoShortArrow.png') right center no-repeat}
+.infoShort > a.btn_layerClose2{position:absolute;right:-7px;top:-7px;width:15px;height:15px;background:url('../images/content/btn_layerClose2.png') right center no-repeat} 
+.infoShort.left-side > a.btn_layerClose2{right:auto;left:-7px}
+.infoShort ul{margin-left:11px;background:#464646}
+.infoShort.left-side ul{margin-left:0;margin-right:11px}
+.infoShort ul li{width:54px;border-bottom:1px solid #333;text-align:center}
+.infoShort ul li:first-child{border-left:none}
+.infoShort ul li a{display:block;font-size:13px;color:#fff}
+.infoShort ul li a em.icon_startSta{display:inline-block;width:9px;height:15px;background:url('../images/content/icon_startSta.png') no-repeat;vertical-align:middle}
+.infoShort ul li a em.icon_arrivalSta{display:inline-block;width:9px;height:15px;background:url('../images/content/icon_arrivalSta.png') no-repeat;vertical-align:middle}
+.infoShort ul li a em.icon_detailInfo{display:inline-block;width:7px;height:15px;background:url('../images/content/icon_detailInfo.png') no-repeat;vertical-align:middle}
+
+
+.routesControl{position:relative;overflow:hidden;width:100%;border-top:2px solid #575757;border-bottom:1px solid #d9d9d9;background:url('../images/content/obliqueline.gif') repeat}
+.routesControl ul{overflow:hidden}
+.routesControl ul li{float:left;width:14.185%;min-height:127px;border-left:1px solid #d9d9d9;border-right:1px solid #d9d9d9;text-align:center; margin-left:-1px}
+.routesControl ul li:nth-child(8n+1){border-left:none; margin-left:0}
+.routesControl ul li:nth-child(7n){border-right:none; }
+.routesControl ul li a.routesBtn01{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn01.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn01, .routesControl ul li a.on.routesBtn01{display:block;padding-top:90px;background:url('../images/content/routesBtn01on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn02{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn02.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn02, .routesControl ul li a.on.routesBtn02{display:block;padding-top:90px;background:url('../images/content/routesBtn02on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn03{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn03.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn03, .routesControl ul li a.on.routesBtn03{display:block;padding-top:90px;background:url('../images/content/routesBtn03on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn04{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn04.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn04, .routesControl ul li a.on.routesBtn04{display:block;padding-top:90px;background:url('../images/content/routesBtn04on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn05{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn05.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn05, .routesControl ul li a.on.routesBtn05{display:block;padding-top:90px;background:url('../images/content/routesBtn05on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn06{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn06.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn06, .routesControl ul li a.on.routesBtn06{display:block;padding-top:90px;background:url('../images/content/routesBtn06on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn07{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn07.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn07, .routesControl ul li a.on.routesBtn07{display:block;padding-top:90px;background:url('../images/content/routesBtn07on.png') center 20px no-repeat}
+.routesControl ul li a.routesBtn08{cursor:pointer;display:block;padding-top:90px;background:url('../images/content/routesBtn08.png') center 20px no-repeat}
+.routesControl ul li a:hover.routesBtn08, .routesControl ul li a.on.routesBtn08{display:block;padding-top:90px;background:url('../images/content/routesBtn08on.png') center 20px no-repeat}
+
+.subModuleLayer{z-index:11;display:none;overflow-y:auto;position:fixed;_position:absolute;left:0;top:0;width:100%;height:100%}
+.subModuleLayer.open{display:block}
+.subModuleLayer .bg{position:absolute;left:0;top:0;width:100%;height:100%;background:url("../images/common/mask.png") repeat}
+.subrt_layer{margin:0 auto;position:absolute;left:50%;top:7%;width:910px;margin-left:-455px;background:#fff}
+.subrt_layer > p{height:65px;padding:15px;background:#ff7c2c;text-align:center}
+.subrt_layer > p a.close{position:absolute;right:18px;top:18px;display:inline-block;width:27px;height:27px;background:url('../images/content/btn_x.png') right center no-repeat}
+.subrt_layer > p span{display:inline-block;width:200px;height:35px;border-radius:35px;background:#3b3e47;font-size:18px;color:#fff;text-align:center;line-height:35px;letter-spacing:-0.05em}
+.subrt_layer > p em{display:inline-block;margin:0 15px;width:43px;height:14px;background:url('../images/common/rt_layer_arrow.png') no-repeat;vertical-align:middle}
+
+.subdetailForm{clear:both;position:relative;overflow:hidden;width:96%;padding:2%}
+.subtakeHour{float:left;width:49%}
+.subtakeHour > p{font-size:13px;color:#8d90a1;letter-spacing:-0.03em}
+.subtakeHour > p span{display:block;font-family:'NanumGothicBold';font-size:15px;color:#333;line-height:18px}
+.subtakeHour ul{overflow:hidden;margin-top:5px;border-top:2px solid #464c5a}
+.subtakeHour ul li{position:relative;overflow:hidden;padding:8px;border-bottom:1px solid #bcbcbc;letter-spacing:-0.05em}
+.subtakeHour ul li span.subject{float:left;width:60px;margin-right:10px;padding-right:10px;background:url('../images/common/rt_line.gif') right center no-repeat;font-family:'NanumGothicBold';font-size:15px;color:#333}
+.subtakeHour ul li p{float:right}
+.subtakeHour ul li p select{height:30px;padding:1px 3px;border:1px solid #d2d2d2;vertical-align:middle}
+.subtakeHour ul li input[type='text']{float:right;width:120px;height:26px;padding:1px 3px;border:1px solid #d2d2d2}
+.subtakeHour ul li strong{font-family:'NanumGothicBold';color:#ff7b2c}
+
+.subinfoTab{float:right;width:49%}
+.subinfoTab ul.subCybertabs{float:left;width:100%;height:35px;border-bottom:2px solid #484b5a}
+.subinfoTab ul.subCybertabs li{float:left;position:relative;overflow:hidden;height:35px;margin-bottom:-2px;background:#a3a7b3;line-height:35px}
+.subinfoTab ul.subCybertabs li a{display:block;padding:0 20px;color:#fff;outline:none}
+.subinfoTab ul.subCybertabs li a:hover{background:#484b5a;color:#fff}
+.subinfoTab ul.subCybertabs li.active, .subinfoTab ul.subCybertabs li.active a{border-bottom:2px solid #484b5a;background:#484b5a;color:#fff}
+.subinfoTab .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+
+.subdetailRunInfo{clear:both;position:relative;overflow:hidden;width:100%}
+.subdetailRunInfo > ul{overflow:hidden}
+.subdetailRunInfo > ul > li{overflow:hidden;padding:8px;border-bottom:1px solid #bcbcbc;letter-spacing:-0.05em}
+.subdetailRunInfo > ul > li span.subject{float:left;width:110px;margin-right:10px;padding-right:10px;background:url('../images/common/rt_line.gif') right center no-repeat;font-family:'NanumGothicBold';font-size:15px;color:#333}
+.subdetailRunInfo > ul > li span.L{float:left}
+.subdetailRunInfo > ul > li > ul{float:left}
+.subdetailRunInfo > ul > li > ul li{margin-bottom:5px;line-height:20px}
+.subdetailRunInfo > ul > li > a{color:#f60}
+.subdetailRunInfo > ul > li > a:hover{text-decoration:underline}
+
+.subtransferInfo{position:relative;overflow-y:auto;width:100%;height:300px}
+.subtransferInfo dl{overflow:hidden}
+.subtransferInfo dl dt{padding:10px;border-top:1px solid #d2d2d2;border-bottom:1px solid #d2d2d2;background:#f7f7f7;font-family:'NanumGothicBold';color:#333}
+.subtransferInfo dl dt span{display:inline-block;width:15px;height:15px;margin-right:5px;background:url('../images/common/transferInfo_circle.png') left center no-repeat;font-size:11px;color:#a77415;text-align:center;line-height:17px;vertical-align:middle}
+.subtransferInfo dl dd{padding:10px}
+.subtransferInfo dl dd > p{overflow:hidden;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid #d2d2d2}
+.subtransferInfo dl dd > p span{float:left; width:100%}
+.subtransferInfo dl dd > p .btn_streetView{display:block;float:right;width:50px;height:25px;border:1px solid #d2d2d2;text-align:center;line-height:25px}
+.subtransferInfo dl dd > p .btn_stationview{display:block;float:right;width:50px;height:25px;border:1px solid #d2d2d2;text-align:center;line-height:25px}
+.subtransferInfo dl dd > ul{overflow:hidden;width:100%}
+.subtransferInfo dl dd > ul li p{color:#3358b6}
+.subtransferInfo dl dd > ul li .mainline{margin-right:5px;padding:3px;background:#3358b6;font-size:11px;color:#fff}
+.subtransferInfo dl dd > ul li .outskirts{margin-right:5px;padding:3px;background:#93cf1e;font-size:11px;color:#fff}
+.subtransferInfo dl dd > ul li .express{margin-right:5px;padding:3px;background:#d9141b;font-size:11px;color:#fff}
+
+.subModule_stationLayer{z-index:10;display:none;overflow-y:auto;position:fixed;_position:absolute;left:0;top:0;width:100%;height:100%}
+.subModule_stationLayer.open{display:block}
+.subModule_stationLayer .bg{position:absolute;left:0;top:0;width:100%;min-height:2200px;background:url("../images/common/mask.png") repeat}
+.subStation_layer{position:absolute;left:50%;top:7%;width:910px;margin-left:-455px;background:#fff}
+.subStation_layer > p a.close{position:absolute;right:0;top:-40px;display:inline-block;width:40px;height:40px;background:url('../images/content/btn_x.png') center center no-repeat #000}
+.btnStationControl{height:52px;background:#151515;text-align:center}
+.btnStationControl ul li{float:left;line-height:52px}
+.btnStationControl ul li.L .btn_prevSta{display:inline-block;width:57px;height:52px;background:url('../images/content/btn_prevSta.png') no-repeat}
+.btnStationControl ul li.L .disablebtn_prevSta{display:inline-block;width:57px;height:52px;background:url('../images/content/disableBtn_prevSta.png') no-repeat}
+.btnStationControl ul li.C{width:766px;height:52px;margin:0 15px;font-size:16px;font-family:'NanumBarunGothic';color:#fff;text-align:center}
+.btnStationControl ul li.C span.L{float:left;width:14%}
+.btnStationControl ul li.C span.disable{color:#000}
+.btnStationControl ul li.C span.C{width:72%}
+.btnStationControl ul li.C span.R{float:right;width:14%}
+.btnStationControl ul li.C span strong{font-family:'NanumGothicBold';font-size:20px;font-style:normal}
+.btnStationControl ul li.R{float:right}
+.btnStationControl ul li.R .btn_nextSta{display:inline-block;width:57px;height:52px;background:url('../images/content/btn_nextSta.png') no-repeat}
+.btnStationControl ul li.R .disablebtn_nextSta{display:inline-block;width:57px;height:52px;background:url('../images/content/disableBtn_nextSta.png') no-repeat}
+
+.detail_subStation_layer{position:relative;overflow:hidden;margin:40px}
+.detail_subStation_layer > div{float:left;width:48.5%;margin-left:3%}
+.detail_subStation_layer > div:first-child{margin-left:0}
+.subStationHour{position:reltive;overflow:hidden;width:100%}
+.subStationHour > p{padding:5px 10px;border-top:2px solid #484b5a;font-family:'NanumGothicBold';font-size:17px;color:#656565}
+.subStationHour ul{overflow:hidden;padding:10px 0;border-top:1px solid #dcdcdc;border-bottom:1px solid #dcdcdc}
+.subStationHour ul li{float:left;width:44.5%;padding:0 2.5%;font-size:15px}
+.subStationHour ul li:first-child{border-right:1px solid #dcdcdc}
+.subStationHour ul li p{width:100%}
+.subStationHour ul li p em{float:right;font-family:'NanumGothicBold';font-style:normal;color:#f06f1c}
+
+.subBasicInfo{position:relative;overflow:hidden;width:100%}
+.subBasicInfo > p{padding:5px 10px;border-top:2px solid #484b5a;border-bottom:1px solid #dcdcdc;font-family:'NanumGothicBold';font-size:17px;color:#656565}
+.subBasicInfo > p a{cursor:pointer;position:absolute;right:0;;display:inline-block;padding:0 10px;border:1px solid #dcdcdc;font-family:'NanumGothic';font-size:14px;color:#666;line-height:20px}
+.subBasicInfo ul{overflow:hidden}
+.subBasicInfo > ul > li{overflow:hidden;padding:10px;border-bottom:1px solid #dcdcdc}
+.subBasicInfo > ul > li p{float:left;width:80px;padding-left:7px;background:url('../images/sub/bullet05.png') left 10px no-repeat}
+.subBasicInfo > ul > li ul li strong{font-family:'NanumGothicBold';font-style:normal;color:#f06f1c}
+.subBasicInfo > ul > li ul li span{float:left;width:50%}
+.subBasicInfo > ul > li ul li span em{font-style:normal;color:#999}
+.subBasicInfo > ul > li ul li > dl dd.icon_bicycle{display:inline-block;height:33px;margin-right:20px;padding-left:40px;background:url('../images/content/icon_bicycle.png') no-repeat;;line-height:33px;vertical-align:middle}
+.subBasicInfo > ul > li ul li > dl dd.icon_elevator{display:inline-block;height:33px;padding-left:40px;background:url('../images/content/icon_elevator.png') no-repeat;;line-height:33px;vertical-align:middle}
+
+/* ??젙蹂? ?댁감?쒓컖?? ?섏듅?뺣낫, 二쇰??뚯떇?? SNS */
+.cyberstation_tabForm{position:relative;overflow:hidden;width:100%}
+.cyberstation_tabForm ul.cyberStation_tabs{position:relative;overflow:hidden;width:100%;height:50px}
+.cyberstation_tabForm ul.cyberStation_tabs li{float:left;position:relative;overflow:hidden;width:33.33%}
+.cyberstation_tabForm ul.cyberStation_tabs li a em{display:inline-block;position:absolute;right:10px;top:20px;width:13px;height:7px;background:url('../images/content/tab_toggle.png') right center no-repeat;vertical-align:middle}
+.cyberstation_tabForm ul.cyberStation_tabs li a{display:block;height:50px;padding:0 10px;font-size:15px;color:#fff;line-height:50px}
+.cyberstation_tabForm ul.cyberStation_tabs li a.cstab01{background:#22b99a}
+.cyberstation_tabForm ul.cyberStation_tabs li a.cstab02{background:#64697f}
+.cyberstation_tabForm ul.cyberStation_tabs li a.cstab03{background:#fbb168}
+.cyberstation_tabForm ul.cyberStation_tabs li a.cstab04{background:#e27795}
+.cyberstation_tabForm ul.cyberStation_tabs li a.cstab05{background:#4d67a0}
+.cyberstation_tabForm ul.cyberStation_tabs li a:hover{color:#fff}
+.cyberstation_tabForm ul.cyberStation_tabs li.active, .cyberstation_tabForm ul.cyberStation_tabs li.active a{color:#fff}
+.cyberstation_tabForm .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+
+/* ??젙蹂?*/
+.white, .white a, .white li, .white li strong.focus{color:#fff !important}
+.cstab01Info{position:relative;overflow:hidden;padding:20px;background:#22b99a}
+.cstab01Info h3{clear:both;display:block;position:relative;overflow:hidden;margin:20px 0 10px;padding-left:25px;background:url('../images/content/station_bullet.png') left center no-repeat;font-family:'NanumGothicBold';font-size:18px;color:#fff}
+.cstab01Info h3:first-child{margin-top:0}
+.cstab01Info ul{overflow:hidden}
+.cstab01Info ul li.L{float:left;width:48%}
+.cstab01Info ul li.L p{margin-top:5px;text-align:center}
+.cstab01Info ul li.L p a.btn_streetView{display:block;;height:42px;background:url('../images/content/btn_streetViewbg.png') repeat-x;font-family:'NanumGothicBold';color:#fff;line-height:42px}
+.cstab01Info ul li.L p a.btn_streetView em{display:inline-block;width:23px;height:33px;margin-right:10px;background:url('../images/content/icon_streetView.png') center center no-repeat;vertical-align:middle}
+.cstab01Info ul li.L p a.btn_stationview{display:block;;height:42px;background:url('../images/content/btn_stationviewbg.png') repeat-x;font-family:'NanumGothicBold';color:#fff;line-height:42px}
+.cstab01Info ul li.L p a.btn_stationview em{display:inline-block;width:23px;height:33px;margin-right:10px;background:url('../images/content/icon_stationview.png') center center no-repeat;vertical-align:middle}
+
+.cstab01Info ul li.L img{width:100%}
+.cstab01Info ul li.R{float:right;width:50%}
+.cstab01Info ul.station_history{position:relative;overflow:hidden;width:100%}
+.cstab01Info ul.station_history li{float:left;width:31%;margin-left:3%}
+.cstab01Info ul.station_history li:first-child{margin-left:0}
+.cstab01Info ul.station_history li img{width:280px;height:183px}
+.cyberStarionChart{position:relative;overflow:hidden;width:100%}
+.cyberStarionChart table{width:100%;border-top:2px solid #484b5a;border-collapse:collapse;word-break:break-all}
+.cyberStarionChart table tr th, .cyberStarionChart table tr td{padding:8px;border:1px solid #3ed6b7;color:#fff}
+.cyberStarionChart table tr th{background:#21b092;font-family:'NanumGothicBold';font-weight:normal}
+
+
+/* ?댁감?쒓컖??*/
+.cstab02Info{position:relative;overflow:hidden;padding:20px;background:#64697f}
+.hourTrain_tabForm{position:relative;overflow:hidden;width:100%}
+.hourTrain_tabForm ul.hour_tabs{position:relative;overflow:hidden;width:100%;height:43px;margin-bottom:20px}
+.hourTrain_tabForm ul.hour_tabs li{float:left;position:relative;overflow:hidden;width:120px;margin-right:5px}
+.hourTrain_tabForm ul.hour_tabs li a{display:block;height:43px;padding-left:20px;background:url('../images/content/hourtabbg.png') right top repeat-x;font-size:15px;color:#fff;line-height:43px}
+.hourTrain_tabForm ul.hour_tabs li a:hover{border-left:none;background:url('../images/content/hourtabbg_on.png') right top repeat-x;color:#fff}
+.hourTrain_tabForm ul.hour_tabs li.active, .hourTrain_tabForm ul.hour_tabs li.active a{border-left:none;background:url('../images/content/hourtabbg_on.png') right top repeat;color:#fff}
+.hourTrain_tabForm .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+.cshourChart{position:relative;overflow:hidden;width:100%}
+.cshourChart table{width:100%;border-top:2px solid #e8e9eb;border-collapse:collapse;word-break:break-all}
+.cshourChart table tr th, .cshourChart table tr td{padding:5px 10px;border:1px solid #b2b4c0;color:#fff;text-align:center}
+.cshourChart table tr th{background:#75778c;font-family:'NanumGothicBold';font-weight:normal}
+.cshourChart table tr td span{margin:0 3px}
+
+/* trafficCard */
+.trafficCard{position:relative;overflow:hidden;width:100%}
+.trafficCard dl{float:left;margin-right:50px}
+.trafficCard dl dd{margin-top:10px;text-align:center}
+.trafficCard dl dd p{font-family:'NanumGothicBold';font-size:16px;color:#0072bb}
+
+/* ?섏듅?뺣낫 */
+.cstab03Info{position:relative;overflow:hidden}
+.exitAPI{padding:10px 3%;background:#fbb168}
+.exitAPI > div{height:300px;background:#fff}
+.subtransferInfo2{position:relative;overflow-y:auto;width:94%;height:400px;padding:3%}
+.subtransferInfo2 dl{overflow:hidden;margin-bottom:20px}
+.subtransferInfo2 dl dt{position:relative;overflow:hidden;padding:10px;border-top:1px solid #d2d2d2;border-bottom:1px solid #d2d2d2;background:#f7f7f7;font-family:'NanumGothicBold';color:#333}
+.subtransferInfo2 dl dt > p{float:left;width:20%}
+.subtransferInfo2 dl dt > p span{display:inline-block;width:15px;height:15px;margin-right:5px;background:url('../images/common/transferInfo_circle.png') left center no-repeat;font-size:11px;color:#a77415;text-align:center;line-height:17px;vertical-align:middle}
+.subtransferInfo2 dl dt em{float:right;width:80%;font-style:normal}
+.subtransferInfo2 dl dd > p{overflow:hidden;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid #d2d2d2}
+.subtransferInfo2 dl dd > p span{float:left;width:100%}
+.subtransferInfo2 dl dd > p .btn_streetView{display:block;float:right;width:50px;height:25px;border:1px solid #d2d2d2;text-align:center;line-height:25px}
+.subtransferInfo2 dl dd > p .btn_stationview{display:block;float:right;width:50px;height:25px;border:1px solid #d2d2d2;text-align:center;line-height:25px}
+.subtransferInfo2 dl dd > ul{overflow:hidden;width:100%;margin-top:10px;padding-bottom:10px;border-bottom:1px solid #d2d2d2}
+.subtransferInfo2 dl dd > ul li.L{float:left;width:20%}
+.subtransferInfo2 dl dd > ul li.L p{font-family:'NanumGothicBold';color:#000}
+.subtransferInfo2 dl dd > ul li.R{float:right;width:80%}
+.subtransferInfo2 dl dd > ul li.R .mainline{margin-right:5px;padding:3px;background:#3358b6;font-size:11px;color:#fff}
+.subtransferInfo2 dl dd > ul li.R .outskirts{margin-right:5px;padding:3px;background:#93cf1e;font-size:11px;color:#fff}
+.subtransferInfo2 dl dd > ul li.R .express{margin-right:5px;padding:3px;background:#d9141b;font-size:11px;color:#fff}
+.tel-link{display:inline-block;padding-left:12px;background:url('../images/content/icon_tel.png') left center no-repeat;vertical-align:middle}
+
+
+
+/* 怨좉컼?섏냼由?*/
+.soundCustomer{position:relative;overflow:hidden;padding:20px 20px 20px 250px;border:5px solid #ecedf3;background:url('../images/content/icon_soundCustomer.png') 40px center no-repeat}
+.soundCustomer dl{overflow:hidden;margin-top:20px}
+.soundCustomer dl:first-child{margin-top:0}
+.soundCustomer dl dt{margin-bottom:5px;font-family:'NanumGothicBold';color:#737687;line-height:20px}
+.soundCustomer dl dd{padding-left:10px;background:url('../images/content/soundCustomer_bullet.png') left 8px no-repeat;color:#8d90a1;line-height:22px}
+
+a.btn_down{display:inline-block;min-width:100px;height:18px;margin-left:10px;padding:3px 0;background:#8d90a1;font-size:13px;color:#fff;text-align:center;line-height:22px;vertical-align:middle;box-sizing: content-box}
+a.btn_down:hover{background:#f60}
+a.btn_down em{display:inline-block;width:13px;height:10px;margin-left:10px;background:url('../images/content/icon_filedown.png') center top no-repeat}
+
+a.btn_link{display:inline-block;min-width:100px;height:14px;margin-left:10px;padding:3px 0;background:#8d90a1;font-size:13px;color:#fff;text-align:center;line-height:16px;vertical-align:middle}
+a.btn_link:hover{background:#f60}
+a.btn_link em{display:inline-block;width:13px;height:10px;margin-left:10px;background:url('../images/content/icon_filedown.png') center top no-repeat}
+
+
+
+/* recruitStep */
+.recruitStep{position:relative;overflow:hidden;width:84%;margin:0 8%}
+.recruitStep ul li{float:left}
+.recruitStep ul li.step01{width:114px;padding:45px 0;background:url('../images/content/recruitStep01bg.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+.recruitStep ul li.step02{width:114px;padding:45px 0;background:url('../images/content/recruitStep02bg.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+.recruitStep ul li.step03{width:114px;padding:35px 0;background:url('../images/content/recruitStep03bg.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+.recruitStep ul li.step04{width:114px;padding:45px 0;background:url('../images/content/recruitStep04bg.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+.recruitStep ul li.step05{width:114px;padding:45px 0;background:url('../images/content/recruitStep05bg.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+.recruitStep ul li em{display:inline-block;width:27px;height:46px;margin:35px 10px;background:url('../images/content/icon_recruitStepArrow.png') left center no-repeat}
+
+/* ?꾩떆泥좊룄 ?먰떚耳?*/
+.mannersForm{position:relative;overflow:hidden;width:100%;margin-top:30px}
+.mannersForm .manners{clear:both;position:relative;overflow:hidden;width:100%;margin-bottom:15px}
+.mannersForm > .manners p{float:left}
+.mannersForm > .manners p.manners01{display:block;width:176px;height:176px;background:url('../images/content/manners01.png') center center no-repeat}
+.mannersForm > .manners p.manners02{display:block;width:176px;height:176px;background:url('../images/content/manners02.png') center center no-repeat}
+.mannersForm > .manners p.manners03{display:block;width:176px;height:176px;background:url('../images/content/manners03.png') center center no-repeat}
+.mannersForm > .manners p.manners04{display:block;width:176px;height:176px;background:url('../images/content/manners04.png') center center no-repeat}
+.mannersForm > .manners p.manners05{display:block;width:176px;height:176px;background:url('../images/content/manners05.png') center center no-repeat}
+.mannersForm > .manners p.manners06{display:block;width:176px;height:176px;background:url('../images/content/manners06.png') center center no-repeat}
+.mannersForm > .manners p.manners07{display:block;width:176px;height:176px;background:url('../images/content/manners07.png') center center no-repeat}
+.mannersForm > .manners ul{float:left;overflow:hidden;margin-left:15px;padding-top:50px}
+.mannersForm > .manners ul li{float:left;font-size:15px;letter-spacing:-0.03em}
+.mannersForm > .manners ul li strong{float:left;margin-right:5px;font-family:'NanumGothicBold';font-size:50px;color:#4c505c;line-height:51px}
+.mannersForm > .manners ul li > p{clear:both;display:block;width:100%}
+.mannersForm > .manners ul li > p span{font-family:'NanumGothicBold';font-size:17px;color:#838196;line-height:30px}
+
+/* ?꾩떆泥좊룄寃ы븰 */
+.tourPhoto{position:relative;overflow:hidden;width:100%}
+.tourPhoto ul li{float:left;width:32%;margin-left:2%}
+.tourPhoto ul li:first-child{margin-left:0}
+.tourPhoto ul li img{width:100%}
+
+/* ?먯뒪而щ젅?댄꽣 鍮꾩긽????쿂?붾졊 */
+.emergency{position:relative;overflow:hidden;width:100%}
+.emergency > p{float:left;width:20%;margin-left:3%}
+.emergency > p span.emergency01{float:left;width:78px;height:78px;background:url('../images/content/emergency01.png') no-repeat}
+.emergency > p span.emergency02{float:left;width:78px;height:78px;margin-left:5px;background:url('../images/content/emergency02.png') no-repeat}
+.emergency > p span.liftEmergency01{float:left;width:78px;height:78px;background:url('../images/content/liftEmergency01.png') no-repeat}
+.emergency > p span.liftEmergency02{float:left;width:78px;height:78px;margin-left:5px;background:url('../images/content/liftEmergency02.png') no-repeat}
+.emergency > div{float:left;width:77%}
+.youtube{position:relative;overflow:hidden;width:100%}
+.youtube ul li{float:left}
+.youtube ul li.L{width:59%}
+.youtube ul li.L img{width:100%}
+.youtube ul li.R{float:right;width:39%;border:1px solid;border-color:#fff #dadade #dadade #dadade;background:#fff}
+.youtube ul li.R p{position:relative;padding:10px;border-top:3px solid #ff8d20;border-bottom:1px solid #dadada;font-family:'NanumGothicBold';font-size:15px;font-style:normal}
+.youtube ul li.R .caption{position:relative;overflow-y:auto;height:230px;padding:10px}
+
+/* ?섎━踰좎씠???덉젅 */
+.liftManners{position:relative;overflow:hidden;width:100%;margin-top:20px}
+.liftManners ul li{float:left;width:19%;margin:0 3%}
+.liftManners ul li > img{width:100%}
+.liftManners ul li p{margin:10px;line-height:20px}
+
+
+/* 鍮꾩긽?쒗뻾?숈슂??*/
+.safetyaction{position:relative;overflow:hidden;width:100%}
+.safetyaction ul{overflow:hidden}
+.safetyaction ul li.L{float:left;width:45%}
+.safetyaction ul li.L img{width:100%}
+.safetyaction ul li.R{float:right;width:50%}
+.reportTrick{position:relative;overflow:hidden;padding:20px;border:1px solid #d9d9d9;text-align:center}
+.reportTrick div{margin:0 160px}
+.reportTrick div > img{width:100%}
+.reportTrick p{margin-top:20px;text-align:right}
+.reportTrick p span{margin-left:15px;font-family:'NanumGothicBold';font-size:15px;color:#333;line-height:40px}
+.reportTrick p span:first-child{margin-left:0}
+.reportTrick p span.interphone{display:inline-block;padding-left:25px;background:url('../images/content/icon_interphone.jpg') left center no-repeat;vertical-align:middle}
+.reportTrick p span.extinguisher{display:inline-block;padding-left:33px;background:url('../images/content/icon_extinguisher.jpg') left center no-repeat;vertical-align:middle}
+.reportTrick_kind{margin:0 auto;position:relative;overflow:hidden;width:80%;margin:10px 10% 0}
+.reportTrick_kind li{float:left;width:20%;text-align:center}
+.reportTrick_kind li img{border-radius:8px;padding:5px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+.reportTrick_kind li p{margin-top:5px;line-height:18px}
+.extinguisher_manual{position:relative;overflow:hidden;margin-top:10px}
+.extinguisher_manual li{float:left;width:22%;margin:0 1.45%}
+.extinguisher_manual li img{width:100%}
+.extinguisher_manual li p{min-height:40px;background:#858b99;text-align:center;color:#fff;line-height:40px;letter-spacing:-0.05em}
+.evacuation_trick{position:relative;overflow:hidden;width:100%;margin-top:10px}
+.evacuation_trick ul li{float:left;width:23.5%;margin-left:2%}
+.evacuation_trick ul li:first-child{margin-left:0}
+.evacuation_trick ul li img{width:100%}
+.evacuation_trick ul li p{min-height:60px;padding:10px 8px 10px;background:#3e3e58;color:#fff;line-height:20px;text-align:left}
+.gate{position:relative;overflow:hidden;width:100%}
+.gate li{float:left;width:23.5%;margin-left:1.8%}
+.gate li:first-child{margin-left:0}
+.gate li img{width:100%}
+.gate li p{min-height:40px;padding:10px 20px;background:#f9f9f9;color:#6b6b6b;line-height:20px;text-align:left}
+.gate li p span{font-family:'NanumGothicBold';color:#f50}
+.caution{position:relative;overflow:hidden;margin-top:30px;padding:10px 40px;border:1px solid #ff7c2c;text-align:center}
+.caution p{font-size:15px;letter-spacing:-0.03em}
+.caution p em{display:inline-block;width:23px;height:20px;margin-right:5px;background:url('../images/content/icon_caution.png') no-repeat;vertical-align:middle}
+.caution p strong{font-family:'NanumGothicBold';color:#f50}
+.caution p span{color:#f50}
+.platformOpen{position:relative;overflow:hidden;width:100%}
+.platformOpen > li{float:left;width:49%;margin-left:1.5%}
+.platformOpen > li:first-child{margin-left:0}
+.platformOpen > li p{padding:5px;background:#3e3e58;font-size:15px;color:#fff;text-align:center}
+.platformOpen > li p span{color:#ff7c2c}
+.platformOpen > li div{margin-top:10px}
+.platformOpen > li div dl{float:left;width:49%}
+.platformOpen > li div dl:first-child{margin-left:0}
+.platformOpen > li div dl.R{float:right}
+.platformOpen > li div dl dt img{width:100%}
+.platformOpen > li div dl dd{min-height:20px;padding:5px;background:#f9f9f9;font-family:'NanumGothicBold';text-align:center;line-height:20px;letter-spacing:-0.03em}
+.platformOpen > li div dl dd span{color:#f50}
+.platformOpen > li div .cautionType02{position:relative;overflow:hidden;padding-left:30px;background:url('../images/content/icon_caution2.png') left center no-repeat;vertical-align:middle}
+.platformOpen > li div .cautionType02 > ul{overflow:hidden;margin:20px}
+.platformOpen > li div .cautionType02 ul li{color:#6b6b6b}
+.platformOpen > li div .cautionType02 ul li span{color:#ff7c2c}
+.terror{position:relative;overflow:hidden;width:100%}
+.terror li{float:left;width:18.2%;margin-left:2%;margin-top:5px}
+.terror li:first-child{margin-left:0}
+.terror li img{width:96%;padding:5px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+.terror li p{margin-top:5px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+.fireStation{position:relative;overflow:hidden;width:100%}
+.fireStation li{float:left;width:35%;margin:5px 0 0 5%}
+.fireStation li:first-child{margin-left:0}
+.fireStation li img{width:96%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+.fireStation li p{margin-top:5px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+
+
+
+
+
+
+
+/* ?댁감 ???덉쟾 ?λ퉬 ?꾩튂 */
+.blockUI{position:relative;width:100%}
+.blockUI > p img.web{display:block;width:100%}
+.blockUI > p img.mob{display:none}
+.blockUI div.mob{display:none}
+.blockUI ul.web li a{z-index:1;position:absolute;width:auto;height:29px;padding:0 20px 0 10px;background:url('../images/content/safetyequipment_arrow.png') right top no-repeat;font-size:15px;color:#fff;line-height:29px;letter-spacing:-0.05em}
+.blockUI ul.web li a.popupOpen1{left:105px;top:120px}
+.blockUI ul.web li a.popupOpen2{right:60px;top:50px}
+.blockUI ul.web li a.popupOpen3{left:430px;bottom:130px}
+.blockUI ul.web li a.popupOpen4{left:415px;top:135px}
+
+.modal{display:none;position:fixed;overflow:hidden;width:167px;height:301px;padding:15px;background:#f60;text-align:center}
+.modal p{position:relative;overflow:hidden;margin-bottom:20px}
+.modal p span{float:left;font-family:'NanumGothicBold';font-size:16px;color:#fff;letter-spacing:-0.05em}
+.modal p a.btn_close{position:absolute;right:0;top:3px;width:20px;height:20px;background:url('../images/content/btn_modalClose.png') no-repeat;vertical-align:middle}
+.blockMsg {border:0 !important; background:none !important;}
+.popup1, .popup2, .popup3, .popup4{left:50%;top:50%;margin-left:-98px;margin-top:-165px}
+
+
+
+.safetyequipment{margin:0 auto;position:relative;overflow:hidden;width:100%}
+.safetyequipment > ul > li{float:left;width:15%;margin:0 5%}
+.safetyequipment ul li em{z-index:1;float:left;position:relative;left:-13px;top:21px;width:34px;height:32px;background:url('../images/content/equipment_circle.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;font-style:normal;text-align:center;line-height:32px}
+.safetyequipment ul li ul{float:left;position:relative}
+.safetyequipment ul li ul li{display:block;width:100%;text-align:center}
+.safetyequipment ul li ul li img{border-radius:8px;padding:8px;border:1px solid #d9d9d9;background:#fff;box-shadow:3px 3px 3px #eee}
+.safetyequipment ul li ul li span{display:block;margin-top:10px;font-size:15px;line-height:20px;letter-spacing:-0.05em;word-break:break-all}
+
+.roomsystem{position:relative;overflow:hidden;width:100%;text-align:center}
+.roomsystem ul{overflow:hidden}
+.roomsystem > ul > li{float:left;width:19%;margin-left:8%;text-align:left}
+.roomsystem > ul > li:first-child{margin-left:0}
+.roomsystem > ul > li img{border-radius:8px;padding:8px;border:1px solid #d9d9d9;background:#fff;box-shadow:3px 3px 3px #eee}
+.roomsystem > ul > li div p{margin:10px 0 5px;font-family:'NanumGothicBold';font-size:16px}
+.roomsystem > ul > li div ul.bullet03 li{line-height:20px;letter-spacing:-0.05em}
+
+/* 주요시설물 */
+.webZoom, .webZoom2{display:block}
+.mobZoom, .mobZoom2{display:none}
+.civilTitle{position:relative;overflow:hidden;min-height:198px;margin-top:10px;padding:30px 0 0 220px;background:url('../images/content/civil_bg.jpg') center center no-repeat;background-size:cover}
+.civilTitle li{padding-left:12px;background:url('../images/content/civil_bullet.png') left 9px no-repeat;font-size:17px;color:#eae2de;line-height:25px}
+.civilTitle li span{float:left;width:135px;font-family:'NanumGothicBold'}
+.civilTitle li em{margin-left:10px}
+.civilTitle li > u{text-decoration:none}
+
+
+/* 공기질 관리 */
+.ventilation{position:relative;overflow:hidden;width:100%}
+.ventilation ul li{float:left;width:17%;margin-left:3%;padding-bottom:10px}
+.ventilation ul li:first-child{margin-left:0}
+.ventilation ul li p{margin-top:20px;text-align:center;line-height:20px}
+.ventilation ul li img{width:97%;border-radius:3px;padding:4px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+.ventilation ul li dl{overflow:hidden;display:inline-block;width:151px;height:87px;margin-top:5px;padding:40px 0 0 15px;background:url('../images/content/processStep_arrow3.png') left top no-repeat;color:#fff;vertical-align:middle}
+.ventilation ul li dl dt{font-size:20px;font-weight:normal}
+.ventilation ul li dl dd  > p{margin-top:10px ;text-align:justify}
+
+.cautionBox{margin:0 auto;width:418px;height:43px;border:1px solid #dadada;font-family:'NanumGothicBold';line-height:43px;text-align:center}
+
+.airGroup{position:relative;overflow:hidden;width:100%;margin-top:50px}
+.airGroup ul li{float:left;width:15%;margin-left:5%;text-align:center}
+.airGroup ul li:first-child{margin-left:0}
+.airGroup ul li dl{height:107px;padding:25px 20px 0;background:url('../images/content/aircircle.png') center top no-repeat}
+.airGroup ul li dl dt{font-family:'NanumGothicBold';font-size:16px;color:#f60}
+.airGroup ul li dl dd{font-size:14px;color:#757575;line-height:20px}
+.airGroup ul li > p{display:block;padding-top:30px;background:url('../images/content/airline01.png') center top repeat-y}
+.airGroup ul li > p span{display:block;height:36px;padding:0;background:url('../images/content/airbox.png') center top no-repeat;color:#fff;line-height:36px}
+
+.environment_management{margin:0 auto;position:relative;overflow:hidden;width:80%}
+.environment_management > p{margin-bottom:30px;padding:30px 0;background:url('../images/content/leaf.png') right center no-repeat;font-family:'NanumGothicBold';font-size:22px;color:#333;text-align:center}
+.environment_management > p span{font-size:25px;color:#ff6a00}
+.environment_management > div{float:left;width:50%}
+.strategy p{width:272px;padding:20px 0;background:url('../images/content/environment_title01.png') no-repeat;font-size:20px;color:#fff;text-align:center}
+.strategy p em{display:block;height:28px;padding-top:40px;background:url('../images/content/environment_arrow.png') center bottom no-repeat}
+.strategy ul li{height:29px;margin-bottom:20px;padding:55px 35px;background:url('../images/content/environment_contentbg.png') no-repeat}
+.strategy ul li strong{font-family:'NanumGothicBold';font-size:18px;color:#868b99}
+.practice p{width:272px;padding:20px 0;background:url('../images/content/environment_title02.png') no-repeat;font-size:20px;color:#fff;text-align:center}
+.practice p em{display:block;height:28px;padding-top:40px;background:url('../images/content/environment_arrow.png') center bottom no-repeat}
+.practice > ul{height:69px;margin-bottom:20px;padding:35px 25px;background:url('../images/content/environment_contentbg.png') no-repeat}
+
+.management_policy{position:relative;overflow:hidden;width:100%}
+.management_policy > dl{margin:0 auto;width:386px;min-height:228px;padding-top:130px;background:url('../images/content/environment_policy.png') no-repeat;text-align:center}
+.management_policy > dl dt{font-size:25px;color:#fff;line-height:30px}
+.management_policy > dl dt p{font-family:'NanumGothicBold'}
+.management_policy > dl dd{height:1px;margin-top:20px;padding-top:10px;background:url('../images/content/management_policy_line.gif') center top no-repeat;font-size:18px;color:#fff;line-height:20px}
+.management_policy ul{overflow:hidden}
+.management_policy ul li{display:block;margin-top:40px;text-align:center}
+.management_policy ul li p{margin-bottom:20px;padding-bottom:10px;background:url('../images/content/management_policy_line2.gif') center bottom no-repeat;font-family:'NanumGothicBold';font-size:22px;color:#3e3e58}
+.management_policy ul li > dl dt{font-family:'NanumGothicBold';font-size:16px;color:#666}
+
+
+
+.management_policy .sign{text-align:center;font-size:16px}
+.management_policy .sign strong{margin-left:10px;font-family:'NanumMyeongjo';font-size:30px;font-weight:normal;line-height:36px}
+
+
+
+
+.ecolife{position:relative;overflow:hidden;width:92%;margin:0 4%}
+.ecolife li{float:left;width:35%;margin:5px 0 0 5%}
+.ecolife li:first-child{margin-left:0}
+.ecolife li img{width:96%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+.ecolife li p{margin-top:5px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+.greenlife{position:relative;overflow:hidden;width:100%}
+.greenlife > li{float:left}
+.greenlife li.L{width:15%}
+.greenlife li.R{float:right;width:83%}
+.greenlife li.greenlife01{display:block;width:120px;height:120px;background:url('../images/content/greenlife01.png') center top no-repeat}
+.greenlife li.greenlife02{display:block;width:120px;height:120px;background:url('../images/content/greenlife02.png') center top no-repeat}
+.greenlife li.greenlife03{display:block;width:120px;height:120px;background:url('../images/content/greenlife03.png') center top no-repeat}
+.greenlife li.greenlife04{display:block;width:120px;height:120px;background:url('../images/content/greenlife04.png') center top no-repeat}
+.greenlife li.greenlife05{display:block;width:120px;height:120px;background:url('../images/content/greenlife05.png') center top no-repeat}
+.greenlife li.greenlife06{display:block;width:120px;height:120px;background:url('../images/content/greenlife06.png') center top no-repeat}
+.greenlife li.greenlife07{display:block;width:120px;height:120px;background:url('../images/content/greenlife07.png') center top no-repeat}
+.greenlife li.greenlife08{display:block;width:120px;height:120px;background:url('../images/content/greenlife08.png') center top no-repeat}
+.greenlife li.R p{font-family:'NanumGothicBold'}
+.greenlife li.R p span{color:#ff8601}
+
+/* 臾명솕?됱궗 */
+.cultureEvent{position:relative;overflow:hidden;width:100%}
+.cultureEvent > li{float:left;width:30%;margin-left:4%}
+.cultureEvent > li:first-child{margin-left:0}
+.cultureEvent li img{width:96%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+.cultureEvent li p{margin:10px 0 5px;font-family:'NanumGothicBold';font-size:16px}
+.cultureEvent li ul.bullet03{line-height:20px;letter-spacing:-0.05em}
+
+.dancerange{position:relative;overflow:hidden;width:100%}
+.dancerange p{margin:10px 0 5px;font-family:'NanumGothicBold';font-size:16px}
+.dancerange .bullet03{line-height:20px;letter-spacing:-0.05em}
+.dance > li{float:left;width:30%;margin-left:4%;padding-bottom:10px}
+.dance > li:first-child{margin-left:0}
+.dance li img{width:96%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+
+.eventCalendarSelect{position:relative;overflow:hidden;width:100%;text-align:center}
+.eventCalendarSelect > p{margin-bottom:20px;font-family:'NanumGothicBold';font-size:25px;color:#000;text-align:center}
+.eventCalendarSelect a.btn_yearPrev{display:inline-block;width:30px;height:30px;background:url('../images/board/btn_yearPrev.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a.btn_monthPrev{display:inline-block;width:30px;height:30px;background:url('../images/board/btn_monthPrev.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a:hover.btn_yearPrev{background:url('../images/board/btn_yearPrev_on.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a:hover.btn_monthPrev{background:url('../images/board/btn_monthPrev_on.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a.btn_yearNext{display:inline-block;width:30px;height:30px;background:url('../images/board/btn_yearNext.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a.btn_monthNext{display:inline-block;width:30px;height:30px;background:url('../images/board/btn_monthNext.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a:hover.btn_yearNext{background:url('../images/board/btn_yearNext_on.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect a:hover.btn_monthNext{background:url('../images/board/btn_monthNext_on.png') no-repeat;vertical-align:middle}
+.eventCalendarSelect p > span{margin:0 20px}
+.eventSearchForm{position:relative;overflow:hidden;width:100%;text-align:center}
+.eventSearchForm p{position:relative;overflow:hidden;border:1px solid #dbdbdb;padding:15px 0;background:#f6f6f6}
+.eventSearchForm p label.searchText{margin-right:20px;font-size:16px;color:#676767;letter-spacing:-0.03em}
+.eventSearchForm select{height:30px;padding:1px 3px;border:1px solid #d2d2d2}
+.eventSearchForm span{margin-left:10px}
+.eventSearchForm input[type='text']{width:40%;height:26px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+.eventSearchForm input[type='submit']{cursor:pointer;border:none;width:80px;height:30px;background:#5e626e;color:#fff;line-height:30px}
+
+
+
+
+
+
+.respirator{position:relative;overflow:hidden;width:100%}
+.respirator li{float:left;width:12.667%;margin:0 2%;line-height:20px}
+.respirator li img{width:93%;border-radius:8px;padding:5px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+.respirator li p{margin-top:5px;word-break:break-all;letter-spacing:-0.03em}
+.respirator li p span{display:block;font-family:'NanumGothicBold';color:#74c334}
+
+.cstab04Info{position:relative;overflow:hidden;padding:20px;background:#e27795}
+.API{height:300px;background:#fff}
+.cstab05Info{position:relative;overflow:hidden;padding:20px;background:#4d67a0}
+
+.mob_subStation_layer{display:none}
+
+
+
+
+
+/**************************************************/
+/******************** ??젙蹂?**********************/
+/**************************************************/
+
+#stationSelect_list{position:relative;overflow-y:auto;height:300px;border:1px solid #d9d9d9;background:#fff}
+#stationSelect_list li{width:100%;margin:0;border-bottom:1px solid #d9d9d9}
+#stationSelect_list li a{display:block;padding:3%;font-family:'NanumGothicBold';font-size:20px;color:#000;line-height:36px}
+#stationSelect_list li a:hover{background:#fafafa;color:#f60}
+#stationSelect{z-index:1;margin:0 auto;position:relative;overflow:hidden;width:310px}
+#stationSelect > a{display:block;width:310px;height:72px;font-family:'NanumGothicBold';font-size:30px;color:#000;line-height:72px}
+#stationSelect > a span{display:inline-block;position:absolute;right:12px;top:28px;width:20px;height:13px;background:url('../images/content/btn_stationSelect.png') right center no-repeat;vertical-align:middle}
+
+.stationInfoForm{position:relative;width:100%}
+.StationControls{margin:0 auto;position:relative;width:714px;height:72px;background:url('../images/content/stationInfo_bg.png') center top no-repeat;text-align:center}
+.StationControls > ul li{float:left;margin:23px 0;text-align:left;letter-spacing:-0.05em}
+.StationControls > ul li span{font-size:17px;color:#fff}
+.StationControls > ul li.L{width:21%;padding-left:2%}
+.StationControls > ul li.L span a{float:left;display:inline-block;width:10px;height:15px;padding-left:10px;margin-top:5px;background:url('../images/content/btn_prevStaInfo.png') left top no-repeat;vertical-align:middle}
+.StationControls > ul li.R{float:right;width:21%;padding-right:2%;text-align:right}
+.StationControls > ul li.R span a{float:right;display:inline-block;width:10px;height:15px;padding-right:10px;margin-top:5px;background:url('../images/content/btn_nextStaInfo.png') right top no-repeat;vertical-align:middle}
+.StationControls > ul li.C{margin:0 auto;width:54%;height:72px;background:url('../images/content/stationInfo_title.png') center top no-repeat;vertical-align:middle;text-align:center;line-height:72px}
+
+.station_language{clear:both;position:relative;overflow:hidden;width:100%;text-align:center}
+.station_language span{font-family:'NanumBarunGothic';font-size:13px;color:#8d90a1}
+.station_language em{display:inline-block;width:2px;height:16px;margin:0 10px;background:url('../images/content/stationInfo_line.gif') left center no-repeat;vertical-align:middle}
+
+.stationInfo_tabForm{clear:both;position:relative;overflow:hidden;width:100%}
+.stationInfo_tabForm ul.stationInfo_tabs{position:relative;overflow:hidden;width:100%;height:40px}
+.stationInfo_tabForm ul.stationInfo_tabs li{float:left;position:relative;overflow:hidden;width:19.8%;border-left:1px solid #3e3e58;background:#5b5b6b;text-align:center}
+.stationInfo_tabForm ul.stationInfo_tabs li:first-child{border-left:none}
+.stationInfo_tabForm ul.stationInfo_tabs li a{display:block;height:40px;font-family:'NanumGothicBold';font-size:15px;color:#fff;line-height:40px}
+.stationInfo_tabForm ul.stationInfo_tabs li a:hover{background:#28283d;color:#fff}
+.stationInfo_tabForm ul.stationInfo_tabs li.active, .stationInfo_tabForm ul.stationInfo_tabs li.active a{background:#28283d;color:#fff}
+.stationInfo_tabForm .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+
+.stationInfo_tab03Info, .stationInfo_tab04Info, .stationInfo_tab05Info, .stationInfo_tab06Info{position:relative;overflow:hidden;width:100%;margin-top:35px}
+
+/* ??젙蹂?*/
+.stationInfo_tab01Info{position:relative;overflow:hidden}
+.stationInfo_tab01Info h3{clear:both;display:block;position:relative;overflow:hidden;margin:20px 0 10px;padding-left:25px;background:url('../images/content/stationInfo_bullet.png') left center no-repeat;font-family:'NanumGothicBold';font-size:18px;color:#474958}
+.stationInfo_tab01Info h3:first-child{margin-top:0}
+.stationInfo_tab01Info ul{overflow:hidden}
+.stationInfo_tab01Info ul li.L{float:left;width:38%}
+.stationInfo_tab01Info ul li.L p{margin-top:5px;text-align:center}
+.stationInfo_tab01Info ul li.L p a.btn_streetView{display:block;;height:42px;background:url('../images/content/btn_streetViewbg.png') repeat-x;font-family:'NanumGothicBold';color:#fff;line-height:42px}
+.stationInfo_tab01Info ul li.L p a.btn_streetView em{display:inline-block;width:23px;height:33px;margin-right:10px;background:url('../images/content/icon_streetView.png') center center no-repeat;vertical-align:middle}
+.stationInfo_tab01Info ul li.L p a.btn_stationview{display:block;;height:42px;background:url('../images/content/btn_stationviewbg.png') repeat-x;font-family:'NanumGothicBold';color:#fff;line-height:42px}
+.stationInfo_tab01Info ul li.L p a.btn_stationview em{display:inline-block;width:23px;height:33px;margin-right:10px;background:url('../images/content/icon_stationview.png') center center no-repeat;vertical-align:middle}
+
+.stationInfo_tab01Info ul li.L img{width:100%}
+.stationInfo_tab01Info ul li.R{float:right;width:60%}
+.stationInfo_tab01Info ul.station_history{position:relative;overflow:hidden;width:100%}
+.stationInfo_tab01Info ul.station_history li{float:left;width:31%;margin-left:3%}
+.stationInfo_tab01Info ul.station_history li:first-child{margin-left:0}
+.stationInfo_tab01Info ul.station_history li img{width:280px;height:183px}
+.stationInfoChart{position:relative;overflow:hidden;width:100%}
+.stationInfoChart table{width:100%;border-top:2px solid #484b5a;border-collapse:collapse;word-break:break-all}
+.stationInfoChart table tr th, .stationInfoChart table tr td{padding:8px;border-bottom:1px solid #dcdcdc;color:#666}
+.stationInfoChart table tr th{border-right:1px solid #dcdcdc;background:#fdfdfd;font-family:'NanumGothicBold';font-weight:normal}
+.stationInfoChart dl dd.icon_bicycle{display:inline-block;height:33px;margin-right:20px;padding-left:40px;background:url('../images/content/icon_bicycle.png') no-repeat;;line-height:33px;vertical-align:middle}
+.stationInfoChart dl dd.icon_elevator{display:inline-block;height:33px;padding-left:40px;background:url('../images/content/icon_elevator.png') no-repeat;;line-height:33px;vertical-align:middle}
+
+/*??궗 ?대?吏?媛ㅻ윭由?*/
+.sliderwrap{position:relative;overflow:hidden;width:100%}
+.bigPicwrap{display:block;overflow:hidden;width:100%}
+.bigPicwrap:after{clear:both}
+.bigPicwrap > #bigPic{display:block;overflow:hidden;width:100%}
+.bigPicwrap > #bigPic{clear:both}
+.bigPicwrap > #bigPic > li{float:left;display:block;display:none;width:100%;height:100%}
+.bigPicwrap > #bigPic > li > img{width:100%;height:100%}
+.sliderwrap > ul#thumbs{overflow:hidden;width:100%;margin-top:20px}
+.sliderwrap > ul#thumbs > li{float:left;width:23.5%;margin-left:2%}
+.sliderwrap > ul#thumbs > li:first-child{margin-left:0}
+.sliderwrap > ul#thumbs > li > img{cursor:pointer;opacity:0.5;width:100%;border:2px solid #fff;text-align:center}
+.sliderwrap > ul#thumbs > li.active > img{opacity:1;border:2px solid #3478c1}
+.sliderwrap > ul#thumbs > li > img:hover, .bigPicwrap > ul#thumbs > li > img:focus{opacity:1;border:2px solid #3478c1}
+
+/* ?댁감?쒓컖??*/
+.stationInfo_tab02Info{position:relative;overflow:hidden;margin-top:35px}
+.stationInfo_hourTrain_tabForm{position:relative;overflow:hidden;width:100%}
+.stationInfo_hourTrain_tabForm ul.stationInfo_hour_tabs{position:relative;overflow:hidden;width:100%;height:43px;margin-bottom:20px}
+.stationInfo_hourTrain_tabForm ul.stationInfo_hour_tabs li{float:left;position:relative;overflow:hidden;width:120px;margin-right:5px}
+.stationInfo_hourTrain_tabForm ul.stationInfo_hour_tabs li a{display:block;height:43px;padding-left:20px;background:url('../images/content/hourtabbg.png') right top repeat-x;font-size:15px;color:#fff;line-height:43px}
+.stationInfo_hourTrain_tabForm ul.stationInfo_hour_tabs li a:hover{border-left:none;background:url('../images/content/hourtabbg_on.png') right top repeat-x;color:#fff}
+.stationInfo_hourTrain_tabForm ul.stationInfo_hour_tabs li.active, .stationInfo_hourTrain_tabForm ul.stationInfo_hour_tabs li.active a{border-left:none;background:url('../images/content/hourtabbg_on.png') right top repeat;color:#fff}
+.stationInfo_hourTrain_tabForm .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+.stationInfo_hourChart{position:relative;overflow:hidden;width:100%}
+.stationInfo_hourChart table{width:100%;border-top:2px solid #464646;border-collapse:collapse;word-break:break-all}
+.stationInfo_hourChart table tr th, .stationInfo_hourChart table tr td{padding:5px 10px;border:1px solid #d9d9d9;color:#666;text-align:center}
+.stationInfo_hourChart table tr th{background:#f7f7f7;font-family:'NanumGothicBold';font-weight:normal}
+.stationInfo_hourChart table tr td span{margin:0 3px}
+
+
+/* ?섏듅?뺣낫 */
+.stationInfo_tab04Info h3{clear:both;display:block;position:relative;overflow:hidden;margin:20px 0 10px;padding-left:25px;background:url('../images/content/stationInfo_bullet.png') left center no-repeat;font-family:'NanumGothicBold';font-size:18px;color:#474958}
+.stationInfo_tab04Info h3:first-child{margin-top:0}
+
+
+.transferParkingChart{position:relative;overflow:hidden;width:100%}
+.transferParkingChart ul{overflow:hidden;margin-top:20px}
+.transferParkingChart ul:first-child{margin-top:0}
+.transferParkingChart ul li{float:left;width:32%;margin-left:1.5%;text-align:center}
+.transferParkingChart ul li:first-child{margin-left:0}
+.transferParkingChart ul li img{width:100%}
+.processStep01{display:inline-block;min-width:65px;height:24px;background:#8d90a1;color:#fff;text-align:center;line-height:24px}
+.processStep02{display:inline-block;min-width:65px;height:24px;background:#5f6bb3;color:#fff;text-align:center;line-height:24px}
+.processStep03{display:inline-block;min-width:65px;height:24px;background:#FF4848;color:#fff;text-align:center;line-height:24px}
+.processStep04{display:inline-block;min-width:65px;height:24px;background:#B2CCFF;color:#fff;text-align:center;line-height:24px}
+
+
+/* ?숉뻾?쒕퉬??*/
+.companion{position:relative;overflow:hidden;height:401px;margin:30px 0;padding-left:445px;background:url('../images/content/companion.png') 30px top no-repeat}
+.companion em{display:none}
+.companion div{margin-bottom:20px}
+.companion div p{display:block;height:36px;padding:0 15px;background:url('../images/content/companion_titlebg.png') no-repeat;vertical-align:middle;line-height:36px}
+.companion div p strong{padding-left:15px;background:url('../images/content/companion_bullet.png') left 5px no-repeat;font-family:'NanumGothicBold';font-size:15px;color:#fff;letter-spacing:-0.05em}
+.companion div ul{position:relative;top:-7px;min-height:63px;padding:15px 0 15px 40px;background:url('../images/content/character_companion.png') no-repeat}
+.companion div ul li{font-size:15px;color:#6b6b6b;line-height:22px;letter-spacing:-0.03em}
+.guideStep{position:relative;overflow:hidden;width:100%;margin-top:15px}
+.guideStep > li{overflow:hidden;width:100%;margin-bottom:25px}
+.guideStep > li p{float:left;width:26px;height:26px;margin-right:10px;background:url('../images/content/guideStep_bullet.png') no-repeat;font-family:'NanumGothicBold';font-size:15px;color:#fff;line-height:26px;text-align:center}
+.guideStep > li ul{float:left;font-size:14px;color:#6b6b6b}
+.guideStep > li ul li span{display:block;font-family:'NanumGothicBold'}
+
+.companionForm{position:relative;overflow:hidden;width:100%;border-top:2px solid #464646}
+.companionForm ul li{float:left;width:50%;border-bottom:1px solid #d9d9d9}
+.companionForm ul li dl{overflow:hidden;min-height:45px;line-height:45px}
+.companionForm ul li dl dt{float:left;width:25%;padding:0 2.5%;background:#f7f7f7;color:#464646}
+.companionForm ul li dl dd{float:left;width:65%;padding:0 2.5%}
+.companionForm ul li dl dd input[type='text']{width:80%;height:26px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+.companionForm ul li dl dd input.num{width:40px;height:26px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+.companionForm ul li dl dd select{height:30px;padding:1px 3px;border:1px solid #d2d2d2}
+
+.agreeBox{position:relative;overflow:hidden;padding:15px;border:1px solid #d9d9d9}
+.agreeBox > div{overflow-y:auto;height:350px;line-height:20px}
+.agreeBox > div h2{font-family:'NanumGothic';font-size:14px;font-style:normal;font-weight:normal}
+.agreeBox > div h3{clear:both;display:block;position:relative;overflow:hidden;margin:20px 0 10px;padding-left:25px;background:url('../images/content/stationInfo_bullet.png') left top no-repeat;font-family:'NanumGothicBold';color:#474958}
+.agreeBox > div strong{font-family:'NanumGothicBold';color:#474958}
+.btn_request{cursor:pointer;display:block;margin:0 auto;width:210px;height:45px;border:none;background:#f60;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center;line-height:45px}
+.agreeBox strong{font-family:'NanumGothicBold'; font-size:17px; font-style:normal}
+
+/* 怨듭궗?뚭컻 */
+.greetingForm{position:relative;overflow:hidden;width:100%}
+.greetingForm > p{float:left;width:30%;height:410px;margin-right:4.5%;background:url('../images/content/greeting_bg.png') no-repeat}
+.greetingForm > p img{position:relative;left:40px;top:90px}
+.greeting{float:right;width:65%}
+.greeting dl{overflow:hidden}
+.greeting dl dt{margin-bottom:30px;font-size:23px;line-height:30px}
+.greeting dl dt span{display:block}
+.greeting dl dt em{font-family:'NanumGothicBold';color:#ff7e00;font-style:normal}
+.greeting dl dd p{margin-bottom:15px;font-family:'NanumGothicBold';font-size:16px}
+.greeting dl dd ul li{margin-bottom:15px}
+.greeting .sign{text-align:right;font-size:16px}
+.greeting .sign strong{margin-left:10px;font-family:'NanumMyeongjo';font-size:30px;font-weight:normal;line-height:36px}
+
+.establishment{
+position:relative;overflow:hidden;width:100%;min-height:710px;background:url('../images/content/establishment.png') center bottom no-repeat;background-size:cover
+filter: progid:DXImageTransform.Microsoft.AlphaImageLoader(src='../images/content/establishment.png',sizingMethod='scale');
+-ms-filter: progid:DXImageTransform.Microsoft.AlphaImageLoader(src='../images/content/establishment.png', sizingMethod='scale');
+}
+.establishment ul{overflow:hidden}
+.establishment ul li{margin-bottom:10px;font-size:16px;font-weight:normal}
+.establishment ul li span{font-size:23px;line-height:30px}
+.establishment ul li u{font-size:23px;color:#ff7e00;line-height:30px;text-decoration:none}
+
+.history{position:relative;overflow:hidden;width:100%}
+.history ul{overflow:hidden}
+.history ul:first-child li.L{border-top:1px solid #ff7e00}
+.history ul:first-child li.R{border-top:1px solid #dddde3}
+.history ul li{float:left;padding:15px 0;border-bottom:1px solid #dddde3}
+.history ul li.L{width:20%;border-bottom:1px solid #ff7e00;font-family:'NanumGothicBold';font-size:30px;color:#ff7e00;text-align:right;line-height:30px}
+
+.history ul li.h2006, .history ul li.h2005{min-height:30px}
+.history ul li.h2013, .history ul li.h2007{min-height:60px}
+.history ul li.h2015{min-height:180px}
+.history ul li.h2009, .history ul li.h2008{min-height:90px}
+.history ul li.h2011{min-height:120px}
+.history ul li.h2017{min-height:240px}
+.history ul li.h2018{min-height:300px}
+.history ul li.h2014, .history ul li.h2012, .history ul li.h2010{min-height:150px}
+
+.history ul li.h08{min-height:240px}
+.history ul li.h07{min-height:210px}
+.history ul li.h06{min-height:180px}
+.history ul li.h05{min-height:150px}
+.history ul li.h04{min-height:120px}
+.history ul li.h03{min-height:90px}
+.history ul li.h02{min-height:60px}
+.history ul li.h01{min-height:30px}
+
+
+.history ul li.R{float:right;width:77%;font-size:16px}
+.history ul li.R dl{overflow:hidden;padding:0 3%;line-height:30px}
+.history ul li.R dl dt{float:left;width:10%;font-family:'NanumGothicBold'}
+.history ul li.R dl dd{float:right;width:87%}
+
+.managementTarget{position:relative;overflow:hidden;width:100%}
+.managementTarget h2{padding-bottom:30px;background:url('../images/content/managementTarget_line.png') center bottom no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#4a4a4a;text-align:center}
+.managementTarget > p{margin-top:30px;height:53px;background:url('../images/content/managementTarget_title.png') center top no-repeat;font-family:'NanumGothic';font-size:25px;color:#fff;text-align:center;line-height:53px;letter-spacing:-0.05em}
+.managementTarget > ul > li{width:100%;padding-top:55px;background:url('../images/content/managementTarget_arrow.png') center 10px no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#353b49;text-align:center;}
+.managementTarget > ul > li ul{overflow:hidden;width:100%;margin-top:15px;background:url('../images/content/managementTarget_point.png') center center no-repeat}
+.managementTarget > ul > li ul li{float:left;width:33.333%;font-family:'NanumGothic';font-size:23px;color:#fff;text-align:center;line-height:148px}
+.managementTarget > ul > li ul li.target01{position:relative;left:85px;height:148px;background:url('../images/content/managementTarget_circle01.png') center center no-repeat}
+.managementTarget > ul > li ul li.target02{height:148px;background:url('../images/content/managementTarget_circle02.png') center center no-repeat}
+.managementTarget > ul > li ul li.target03{position:relative;right:85px;height:148px;background:url('../images/content/managementTarget_circle03.png') center center no-repeat}
+
+.promoteStrategy{position:relative;overflow:hidden;width:100%}
+.promoteStrategy h2{padding-bottom:30px;background:url('../images/content/managementTarget_line.png') center bottom no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#4a4a4a;text-align:center}
+.promoteStrategy > ul{overflow:hidden;margin-top:30px}
+.promoteStrategy > ul > li{float:left;width:24%;margin-left:1%}
+.promoteStrategy > ul > li:first-child{margin-left:0}
+.promoteStrategy > ul > li.promote p{min-height:21px;margin-bottom:10px;padding:12px 0;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+.promoteStrategy > ul > li.promote01 p{background:#9e9eab}
+.promoteStrategy > ul > li.promote02 p{background:#78788a}
+.promoteStrategy > ul > li.promote03 p{background:#5b5b71}
+.promoteStrategy > ul > li.promote04 p{background:#3e3e58}
+.promoteStrategy > ul > li > ul.bullet02{overflow:hidden;min-height:100px;margin-left:0;padding:20px;border:1px solid #ccc}
+.promoteStrategy > p{width:100%;margin-top:10px;background:url('../images/content/promoteStrategy_arrow.png') center top no-repeat}
+.promoteStrategy > p > span{display:block;height:54px;padding-top:130px;background:url('../images/content/promoteStrategy_title.png') center 130px no-repeat;font-size:20px;color:#3e3e58;line-height:54px;text-align:center}
+
+.advertisement{position:relative;overflow:hidden;width:100%;margin-bottom:30px;padding-bottom:30px;border-bottom:1px dashed #d9d9d9}
+.advertisement ul{overflow:hidden;margin-top:20px}
+.advertisement ul:first-child{margin-top:0}
+.advertisement li{float:left;width:30%;margin-left:4%}
+.advertisement li:first-child{margin-left:0}
+.advertisement li img{width:96%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+.advertisement li p{margin-top:5px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+
+/* 광고매체 */
+.adMediumForm{position:relative;overflow:hidden;width:100%}
+.adMediumForm > p img{width:100%}
+.adMediumForm ul li{position:absolute}
+.adMediumForm ul li span{z-index:1;display:inline-block;width:24px;height:24px;background:url('../images/content/ad_circle.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;font-style:normal;text-align:center;line-height:24px}
+.adMediumForm ul li span.adMedium1-1{position:absolute;left:180px;top:170px}
+.adMediumForm ul li span.adMedium1-2{position:absolute;left:300px;top:100px}
+.adMediumForm ul li span.adMedium1-3{position:absolute;left:680px;top:210px}
+.adMediumForm ul li span.adMedium1-4{position:absolute;left:685px;top:80px}
+.adMediumForm ul li span.adMedium1-5{position:absolute;left:380px;top:80px}
+.adMediumForm ul li span.adMedium1-6{position:absolute;left:450px;top:430px}
+.adMediumForm > p img.web{display:block;width:100%}
+.adMediumForm > p img.mob{display:none}
+
+
+.webzineAd{position:relative;overflow:hidden;width:100%;padding-top:25px;border-top:2px solid #5e626e}
+.webzineAd > ul{overflow:hidden;margin-bottom:30px;padding-bottom:30px;border-bottom:1px solid #ced0d3}
+.webzineAd > ul li{float:left;overflow:hidden}
+.webzineAd > ul li.L{position:relative;width:25%}
+.webzineAd > ul li.L a em{position:absolute;left:180px;bottom:0;width:30px;height:30px;background:url('../images/content/icon_adZoom.gif') no-repeat}
+.webzineAd > ul li.L img{width:210px;height:140px}
+.webzineAd > ul li.R{float:right;width:70%}
+.webzineAd > ul li.R dl dt{margin-bottom:10px;font-family:'NanumGothicBold';font-size:17px;color:#555}
+.webzineAd > ul li.R dl dt span{display:inline-block;width:24px;height:24px;background:url('../images/content/ad_circle.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;font-style:normal;text-align:center;line-height:24px}
+.webzineAd > ul li.R dl dd{padding-left:10px;background:url('../images/sub/bullet03.png') left 12px no-repeat}
+.webzineAd > ul li.R ul{overflow:hidden}
+.webzineAd > ul li.R ul li p{margin-top:10px;font-family:'NanumGothicBold';font-size:15px;color:#555}
+.webzineAd > ul li.R ul li span{display:block;padding-left:10px;background:url('../images/sub/bullet03.png') left 12px no-repeat}
+
+#lightbox{z-index:5;position:fixed;left:0;top:0;width:100%;height:100%;background:url('../images/content/mask.png') repeat}
+#lightbox #content{position:relative;left:50%;top:50%;width:600px;height:400px;margin-left:-300px;margin-top:-200px;text-align:center}
+#lightbox > p.btn_adClose{cursor:pointer;position:absolute;right:0;top:0;width:59px;height:59px;padding:7px;background:url('../images/content/btn_adClose.png') center center no-repeat #f60;vertical-align:middle}
+#lightbox img{max-width:100%}
+
+
+
+/* ?쒖꽕?댄뻾?꾪솴 */
+.amenities{margin:0 auto;position:relative;overflow:hidden;width:auto;padding:0 10%}
+.amenities li{float:left;width:47%;margin:5px 0 0 6%}
+.amenities li:first-child{margin-left:0}
+.amenities li img{width:96%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+.amenities li p{margin-top:5px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+.amenitiesForm{position:relative;overflow:hidden;width:100%}
+.amenitiesForm > ul{margin:0 auto;position:relative;overflow:hidden;width:260px;margin-top:15px}
+.amenitiesForm > ul li{font-size:15px;color:#757575;line-height:25px}
+.amenitiesForm > ul li .amenities_arrow{display:inline-block;width:56px;height:25px;margin-right:10px;background:url('../images/content/amenities_arrow.png') center center no-repeat;vertical-align:middle}
+.amenitiesForm > ul li .amenities_arrow2{display:inline-block;width:56px;height:25px;margin-right:10px;background:url('../images/content/amenities_arrow2.png') center center no-repeat;vertical-align:middle}
+.amenitiesBox{margin:0 auto;position:relative;overflow:hidden;width:578px;min-height:480px;background:url('../images/content/amenities_diagram.png') no-repeat}
+.amenitiesBox > p{position:absolute;left:220px;top:45px;font-size:16px;color:#757575}
+.amenitiesBox dl{width:118px;height:88px;padding-top:30px;background:url('../images/content/amenities_circle2.png') center center no-repeat;font-family:'NanumGothic';font-size:16px;color:#8d90a1;text-align:center}
+.amenitiesBox dt{font-family:'NanumGothicBold'}
+.amenitiesBox ul{position:absolute;left:215px;top:165px;width:150px;height:100px;padding-top:50px;background:url('../images/content/amenities_circle.png') center center no-repeat;color:#fff;text-align:center}
+.amenitiesBox ul li{font-family:'NanumGothic';font-size:16px}
+.amenitiesBox ul li p{font-family:'NanumGothicBold';font-size:25px;line-height:30px}
+.amenitiesBox .amenities01{position:absolute;left:90px;top:0}
+.amenitiesBox .amenities02{position:absolute;left:370px;top:0}
+.amenitiesBox .amenities03{position:absolute;left:0;top:180px}
+.amenitiesBox .amenities04{position:absolute;left:460px;top:180px}
+.amenitiesBox .amenities05{position:absolute;left:90px;top:360px}
+.amenitiesBox .amenities06{position:absolute;left:370px;top:360px}
+
+/* 조직도 */
+.organization_chart{position:relative;overflow:hidden;width:100%}
+.organization_chart > h2{display:block;margin:0 auto;width:205px;height:45px;background:url('../images/content/organization_boss.png') center top no-repeat;text-align:center}
+.organization_chart > h2 a{display:block;font-family:'NanumGothicBold';font-size:17px;color:#fff;line-height:45px}
+.organization_chart > h2 em{display:block;height:140px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+.organization_chart > div{position:relative;overflow:hidden;margin:0 0 0 50%}
+.organization_chart > div > p a{float:left;position:relative;top:30px;width:120px;height:45px;background:#5f6bb3;font-size:17px;color:#fff;font-weight:normal;line-height:45px;text-align:center}
+.organization_chart > div > u{float:left;position:relative;top:30px;width:46px;height:45px;background:url('../images/content/organization_hline.gif') left center no-repeat}
+.organization_chart > div > em{float:left;position:relative;top:28px;width:18px;height:50px;background:url('../images/content/organization_vline3.gif') left center no-repeat}
+.organization_chart > div > dl{float:left;position:relative;top:5px}
+.organization_chart > div > dl dt a{display:block;width:105px;height:43px;margin:0 0 5px 18px;border:1px solid #ccc;font-size:15px;text-align:center;line-height:43px}
+.organization_chart > div > dl dd{float:left;width:18px;height:45px;background:url('../images/content/organization_hline.gif') left center no-repeat}
+.organization_chart > p{margin:0 auto;position: absolute;top: 184px;left: 19%; overflow:hidden;width:52.1%;height:1px;border-top:1px solid #ccc}
+.organization_chart > ul{clear:both;display:block;position:relative;overflow:hidden;width:100%}
+.organization_chart > ul > li{float:right;width: 58%}
+.organization_chart > ul > li:first-child{float:left; width: 38%}
+.organization_chart > ul > li > a{display:block;height:45px;background:url('../images/content/organization_bigdome.png') center top no-repeat;font-size:17px;color:#fff;text-align:center;line-height:45px}
+.organization_chart > ul > li > em{clear:both;display:block;height:40px;margin-top:40px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+.organization_chart > ul > li > ul li > em{clear:both;display:block;height:35px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+.organization_chart > ul > li > ul > li > p{margin:0 auto;position:relative;overflow:hidden;width: 80.4%;height:1px;border-top:1px solid #ccc}
+.organization_chart > ul > li > ul li dl{float:left;width: 18%;margin:-1px 1% 0;padding-top:25px;background:url('../images/content/organization_vline2.gif') center top no-repeat}
+.organization_chart > ul > li > ul li dl > dt a{display:block;height:45px;background:#8d90a1;font-size:17px;color:#fff;text-align:center;line-height:45px;letter-spacing:-0.05em}
+.organization_chart > ul > li > ul li dl > dd a{display:block;height:45px;margin-top:5px;border:1px solid #ccc;font-size:15px;text-align:center;line-height:45px;letter-spacing:-0.05em}
+.organization_chart > ul > li > ul li dl > dd:first-child a{margin-top:0}
+.organization_chart > ul > li:first-child > ul li:first-child > p {width: 67%;}
+.organization_chart > ul > li:first-child dl {width: 31.33%;}
+
+/* 안전관리체계 */
+.organization_safetyChart{position:relative;overflow:hidden;width:100%}
+.organization_safetyChart h2{display:block;margin:0 auto;width:205px;height:45px;background:url('../images/content/organization_boss.png') center top no-repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;line-height:45px;text-align:center}
+.organization_safetyChart > h2 em{display:block;height:105px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+.organization_safetyChart > div{position:relative;overflow:hidden;margin:30px 0 0 50%}
+.organization_safetyChart > div h3{float:left;position:relative;width:205px;height:45px;background:#5f6bb3;font-size:17px;color:#fff;font-weight:normal;line-height:45px;text-align:center}
+.organization_safetyChart > div u{float:left;position:relative;width:125px;height:45px;background:url('../images/content/organization_hline.gif') left center repeat-x}
+.organization_safetyChart > p{margin:0 auto;width:50%;height:1px;margin-top:30px;background:url('../images/content/organization_hline.gif') left center repeat-x}
+.organization_safetyChart > ul > li{float:right;width:50%;text-align:center}
+.organization_safetyChart > ul > li:first-child{float:left}
+.organization_safetyChart > ul > li > p{height:30px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+.organization_safetyChart > ul > li dl{margin:0 auto;position:relative;overflow:hidden;width:45%}
+.organization_safetyChart > ul > li dl dt{height:45px;background:url('../images/content/organization_bigdome2.png') center top repeat-x;font-size:17px;color:#fff;text-align:center;line-height:45px}
+.organization_safetyChart > ul > li dl dd{height:43px;margin-top:5px;border:1px solid #ccc;background:#fff;line-height:43px}
+
+/* CI */
+.symbol{position:relative;overflow:hidden;border:1px solid #e5e5e5;background:url('../images/content/symbol_mosaic.gif') repeat}
+.symbol > ul{overflow:hidden;padding:40px}
+.symbol > ul li{float:left}
+.symbol > ul li.L{width:32%}
+.symbol > ul li.R{width:68%}
+.symbol > ul li.R dl dd{float:left;width:49.9%;font-size:15px}
+.symbol > ul li.R dl dt{margin-bottom:47px}
+.symbol > ul li.R dl dd ul.blueColor li.L{float:left;width:37%;height:45px;background:#0c2d83;font-family:'NanumGothicBold';color:#fff;text-align:center;line-height:45px}
+.symbol > ul li.R dl dd ul.blueColor li.R{float:left;width:60%;margin-left:3%;color:#5f6bb3;letter-spacing:-0.05em}
+.symbol > ul li.R dl dd ul.greenColor li.L{float:left;width:37%;height:45px;background:#00804e;font-family:'NanumGothicBold';color:#fff;text-align:center;line-height:45px}
+.symbol > ul li.R dl dd ul.greenColor li.R{float:left;width:60%;margin-left:3%;color:#00804e;letter-spacing:-0.05em}
+.symbolic_meaning{position:relative;overflow:hidden;width:100%}
+.symbolic_meaning ul li{float:left}
+.symbolic_meaning ul li.L{width:25%}
+.symbolic_meaning ul li.L img{padding:25px 35px;border:1px solid #dadada;text-align:center}
+.symbolic_meaning ul li.R{float:left;width:74.5%}
+.symbolic_meaning ul li.R p{margin:10px 0;font-family:'NanumGothicBold';font-size:17px;color:#5e5e5e}
+.symbolic_meaning ul li.R ul{overflow:hidden}
+.symbolic_meaning ul li.R ul li{margin-bottom:10px}
+.logoType{position:relative;overflow:hidden;width:100%}
+.logoType ul li{float:left}
+.logoType ul li.L{width:65%}
+.logoType ul li.L dl{overflow:hidden;margin-bottom:10px}
+.logoType ul li.R{float:right;width:34%}
+.logoType ul li.R dl{margin-top:50px}
+.logoType ul li.R dl dt{margin-bottom:10px;font-family:'NanumGothicBold';font-size:17px;color:#5e5e5e}
+.signature{position:relative;overflow:hidden;width:100%}
+.signature ul{overflow:hidden}
+.signature ul li{float:left}
+.signature ul li.L{width:65%}
+.signature ul li.R{float:right;width:34%}
+/* BI */
+.BIsymbol{position:relative;overflow:hidden;border:1px solid #e5e5e5;background:url('../images/content/symbol_mosaic.gif') repeat}
+.BIsymbol > ul{overflow:hidden;padding:15px}
+.BIsymbol > ul li{float:left}
+.BIsymbol > ul li.L{width:40%;text-align:center}
+.BIsymbol > ul li.R{width:60%;font-size:15px}
+.BIsymbol > ul li.R dl{overflow:hidden;margin-top:10px}
+.BIsymbol > ul li.R dl:first-child{margin-top:0}
+.BIsymbol > ul li.R dl dt{float:left;width:65%}
+.BIsymbol > ul li.R dl dt span{float:left;width:55px;height:25px;margin-right:10px}
+.BIsymbol > ul li.R dl dt .blackColor{background:#000}
+.BIsymbol > ul li.R dl dt .greenColor{background:#80ce3d}
+.BIsymbol > ul li.R dl dt .redColor{background:#f60}
+.BIsymbol > ul li.R dl dt .blueColor{background:#007cc8}
+.BIsymbol > ul li.R dl dt .lightblueColor{background:#00a6da}
+.BIsymbol > ul li.R dl dt .yellowColor{background:#ffd920}
+.BIsymbol > ul li.R dl dd{float:left;width:34.5%}
+/* character */
+.character{position:relative;overflow:hidden;width:100%}
+.character ul{overflow:hidden}
+.character ul li{float:left}
+.character ul li.L{width:45%}
+.character ul li.R{float:right;width:50%}
+.character ul li.R dl{margin:30px 0 10px}
+.character ul li.R dl dt{margin-bottom:10px;font-family:'NanumGothicBold';font-size:17px;color:#5e5e5e}
+.character_applied{position:relative;overflow:hidden;width:100%}
+.character_applied h3{margin-bottom:10px;font-family:'NanumGothicBold';font-size:17px;color:#5e5e5e}
+.character_applied p{text-align:right}
+
+a.btn_AIdown{display:inline-block;min-width:180px;height:34px;background:#8d90a1;font-size:14px;color:#fff;text-align:center;line-height:34px}
+a.btn_AIdown:hover{background:#f60}
+a.btn_AIdown em{display:inline-block;width:19px;height:15px;margin-left:10px;background:url('../images/content/icon_AIdown.png') center center no-repeat;vertical-align:middle}
+
+/* ??쟾?꾩떆泥좊룄 25??*/
+.djet25{position:relative;overflow:hidden;width:100%;margin-top:20px}
+.djet25 ul{overflow:hidden;margin-top:20px}
+.djet25 ul:first-child{margin-top:0}
+.djet25 li{float:left;width:30.333%;margin:0 1.5%;text-align:center}
+.djet25 li img{width:100%}
+.djet25 li p{margin-top:5px;line-height:20px}
+.djet25 li p span{display:block}
+
+/* ethical_management */
+.ethical_management{margin:0 auto;position:relative;overflow:hidden;width:439px;height:432px;background:url('../images/content/ethical_managementbg.png') center center no-repeat;text-align:center}
+.ethical_management ul{overflow:hidden}
+.ethical_management p.title{position:relative;width:439px;margin-top:220px;text-align:center}
+.ethical_management p.title strong{font-family:'NanumGothicBold';font-size:25px;color:#353b49}
+.ethical_management ul li.ethical_management01{position:absolute;left:130px;top:0;width:173px;background:url('../images/content/ethical_management01.png') no-repeat}
+.ethical_management ul li.ethical_management02{position:absolute;left:0;bottom:0;width:173px;background:url('../images/content/ethical_management02.png') no-repeat}
+.ethical_management ul li.ethical_management03{position:absolute;right:0;bottom:0;width:173px;background:url('../images/content/ethical_management03.png') no-repeat}
+.ethical_management ul li p{font-family:'NanumGothicBold';padding:70px 0;font-size:17px;text-align:center;line-height:22px;letter-spacing:-0.05em}
+
+/* 異붿쭊?꾨왂 */
+.promote_strategy{position:relative;overflow:hidden;width:100%}
+.promote_strategy ul{float:left}
+.promote_strategy ul.L{width:25%}
+.promote_strategy ul.L li{width:100%;margin-top:20px;font-family:'NanumGothicBold';background:url('../images/content/promote_line.gif') right center repeat-x;font-size:25px;text-align:center}
+.promote_strategy ul.L li p.promote01{width:121px;height:31px;padding:45px 0;background:url('../images/content/promote01.png') no-repeat}
+.promote_strategy ul.L li p.promote02{width:121px;height:31px;padding:45px 0;background:url('../images/content/promote02.png') no-repeat}
+.promote_strategy ul.L li p.promote03{width:121px;height:51px;padding:35px 0;background:url('../images/content/promote03.png') no-repeat}
+.promote_strategy ul.L li p.promote04{width:121px;height:51px;padding:35px 0;background:url('../images/content/promote04.png') no-repeat}
+.promote_strategy ul.R{float:right;width:75%}
+.promote_strategy ul.R li.web{display:block}
+.promote_strategy ul.R li.mob{display:none}
+.promote_strategy ul.R li .promote_point01{float:left;width:12px;height:61px;background:url('../images/content/promote_bullet01.png') left center no-repeat}
+.promote_strategy ul.R li .promote_point02{float:left;width:12px;height:61px;background:url('../images/content/promote_bullet02.png') left center no-repeat}
+.promote_strategy ul.R li .promote_point03{position:absolute;left:227px;top:357px;width:12px;height:11px;background:url('../images/content/promote_bullet03.png') left center no-repeat}
+.promote_strategy ul.R li .promote_point04{position:absolute;left:227px;top:498px;width:12px;height:11px;background:url('../images/content/promote_bullet04.png') left center no-repeat}
+.promote_strategy ul.R li p{font-family:'NanumGothicBold';font-size:25px;color:#2e2e2e;text-align:center}
+.promote_strategy ul.R li p span{color:#f60}
+.promote_strategy ul.R li.progress_arrow{height:133px;background:url('../images/content/progress_arrow.png') center bottom no-repeat}
+.promote_strategy ul.R li .promote_content01{margin:50px 0 0 5px;padding:17px 0;background:url('../images/content/promote_contentbg.png') no-repeat}
+.promote_strategy ul.R li .promote_content02{margin:-50px 0 0 5px;padding:17px 0;background:url('../images/content/promote_contentbg.png') no-repeat}
+.promote_strategy ul.R li div{float:left;margin-top:70px}
+.promote_strategy ul.R li dl{float:left;width:30%;margin-right:3%}
+.promote_strategy ul.R li dl:first-child{margin-left:5px}
+.promote_strategy ul.R li dl dt.progress_direction01{height:23px;padding:25px;background:url('../images/content/progress_direction01.png') no-repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+.promote_strategy ul.R li dl dt.progress_direction02{height:23px;padding:25px;background:url('../images/content/progress_direction02.png') no-repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+.promote_strategy ul.R li dl dt.progress_direction03{height:23px;padding:25px;background:url('../images/content/progress_direction03.png') no-repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+.promote_strategy ul.R li dl dd{overflow:hidden;min-height:130px;padding:10px 0;background:url('../images/content/progress_directionbg.png') left bottom no-repeat}
+.promote_strategy ul.R li dl dd strong{font-family:'NanumgothicBold';font-size:15px;color:#757486}
+
+/* 異붿쭊?ㅼ쟻 */
+.actualProgress{position:relative;overflow:hidden;width:100%}
+.actualProgress ul{overflow:hidden}
+.actualProgress ul:first-child li.L{border-top:1px solid #ff7e00}
+.actualProgress ul:first-child li.R{border-top:1px solid #dddde3}
+.actualProgress ul li{float:left;padding:15px 0;border-bottom:1px solid #dddde3}
+.actualProgress ul li.L{width:20%;border-bottom:1px solid #ff7e00;font-size:25px;color:#ff7e00;text-align:right;line-height:25px}
+
+
+.actualProgress ul li.h2014, .actualProgress ul li.h2012{min-height:30px}
+.actualProgress ul li.h2013, .actualProgress ul li.h2005{min-height:60px}
+.actualProgress ul li.h2011, .actualProgress ul li.h2009, .actualProgress ul li.h2008{min-height:90px}
+.actualProgress ul li.h2016{min-height:120px}
+
+.actualProgress ul li.h01{min-height:30px}
+.actualProgress ul li.h02{min-height:60px}
+.actualProgress ul li.h03{min-height:90px}
+.actualProgress ul li.h04{min-height:120px}
+.actualProgress ul li.h05{min-height:150px}
+.actualProgress ul li.h06{min-height:180px}
+.actualProgress ul li.h07{min-height:210px}
+.actualProgress ul li.h08{min-height:240px}
+
+ 
+
+
+
+.actualProgress ul li > p{position:relative;top:5px}
+.actualProgress ul li.R{float:right;width:77%;font-size:15px}
+.actualProgress ul li.R dl{overflow:hidden;padding:0 3%;line-height:30px}
+.actualProgress ul li.R dl dt{float:left;width:10%;font-family:'NanumGothicBold';font-size:16px}
+.actualProgress ul li.R dl dd{float:right;width:87%}
+
+.actualProgress_chart{position:relative;overflow:hidden;width:100%}
+.actualProgress_chart dl{float:left;width:24.2%;margin-left:1%}
+.actualProgress_chart dl:first-child{margin-left:0}
+.actualProgress_chart dl dt{height:25px;margin-bottom:15px;padding:15px 0;font-size:20px;color:#fff;font-weight:normal;text-align:center;letter-spacing:-0.1em}
+.actualProgress_chart dl dt.step01{background:url('../images/content/actualProgress_chart01.png') center center no-repeat}
+.actualProgress_chart dl dt.step02{background:url('../images/content/actualProgress_chart02.png') center center no-repeat}
+.actualProgress_chart dl dt.step03{background:url('../images/content/actualProgress_chart03.png') center center no-repeat}
+.actualProgress_chart dl dt.step04{background:url('../images/content/actualProgress_chart04.png') center center no-repeat}
+.actualProgress_chart dl dd{height:170px;padding:10px 10px 10px 0;border:1px solid #ccc}
+.actualProgress_chart dl dd ul li{margin-bottom:5px}
+
+
+.actualProgress_human_chart{position:relative;overflow:hidden;width:100%}
+.actualProgress_human_chart dl{float:left;width:24.2%;margin-left:1%}
+.actualProgress_human_chart dl:first-child{margin-left:0}
+.actualProgress_human_chart dl dt{height:45px;margin-bottom:15px;padding:15px 0;font-size:20px;color:#fff;font-weight:normal;text-align:center;letter-spacing:-0.1em}
+.actualProgress_human_chart dl dt.step01{background:url('../images/content/actualProgress_chart01.png') center center no-repeat}
+.actualProgress_human_chart dl dt.step02{background:url('../images/content/actualProgress_chart02.png') center center no-repeat}
+.actualProgress_human_chart dl dt.step03{background:url('../images/content/actualProgress_chart03.png') center center no-repeat}
+.actualProgress_human_chart dl dt.step04{background:url('../images/content/actualProgress_chart04.png') center center no-repeat}
+.actualProgress_human_chart dl dd{height:170px;padding:10px 10px 10px 0;border:1px solid #ccc}
+.actualProgress_human_chart dl dd ul li{margin-bottom:5px}
+
+
+
+.actualProgress_human_aid {position:relative;overflow:hidden;width:100%}
+.actualProgress_human_aid dl{float:left;width:24.2%;margin-left:1%}
+.actualProgress_human_aid dl:first-child{margin-left:0}
+.actualProgress_human_aid dl dt{height:45px;margin-bottom:10px;padding:10px;font-size:16px;color:#fff;font-weight:normal;text-align:center;letter-spacing:-0.05em}
+.actualProgress_human_aid dl dt.step01{padding:20px 0 0 0;background:url('../images/content/actualProgress_chart01.png') center center no-repeat}
+.actualProgress_human_aid dl dt.step02{padding:20px 0 0 0;background:url('../images/content/actualProgress_chart02.png') center center no-repeat}
+.actualProgress_human_aid dl dt.step03{background:url('../images/content/actualProgress_chart03.png') center center no-repeat}
+.actualProgress_human_aid dl dt.step04{padding:20px 0 0 0;background:url('../images/content/actualProgress_chart04.png') center center no-repeat}
+
+.actualProgress_human_aid dl dd{height:170px;padding:10px 10px 10px 0;border:1px solid #ccc}
+.actualProgress_human_aid dl dd ul li{margin-bottom:5px}
+
+
+
+
+/* 윤리경영 > 윤리규범 > 윤리헌장 */
+.ethicsCharte{position:relative;overflow:hidden;margin-top:20px;background:#fafafa}
+.ethicsCharte ul{overflow:hidden;margin:0 30px}
+.ethicsCharte ul li{overflow:hidden;margin-top:30px}
+.ethicsCharte ul li p{margin-top:20px;font-size:18px;color:#575757;line-height:30px;letter-spacing:-0.03em}
+.ethicsCharte ul li em{float:left;width:6%;font-size:16px;color:#f60;font-style:normal}
+.ethicsCharte ul li span{float:left;width:94%;font-size:15px}
+.ethicsCharte p.panoramic{min-height:410px;background:url('../images/content/djet_panoramic.jpg') right bottom no-repeat}
+.ethicsCharte ul li div {display:block;margin-top:40px;text-align:center;font-size:22px}
+
+/* ?ы쉶怨듯뿄?쒕룞 */
+.contribution{position:relative;overflow:hidden;width:100%;margin-top:40px}
+.contribution > p{position:absolute;left:90px;width:121px;height:21px;padding:50px 0;background:url('../images/content/promote01.png') center center no-repeat;font-family:'NanumGothicBold';font-size:20px;text-align:center;letter-spacing:-0.05em}
+.contribution > ul{clear:both;margin:0 auto;overflow:hidden;margin-left:90px;text-align:center}
+.contribution > ul li.contribution01{display:block;height:21px;margin-top:30px;padding:20px 0;background:url('../images/content/promote_contentbg.png') center center no-repeat;font-size:20px;color:#2e2e2e;vertical-align:middle}
+.contribution > ul li.contribution01 span{color:#f60}
+.contribution > ul li.contribution_arrow{height:142px;background:url('../images/content/contribution_arrow.png') center bottom no-repeat}
+.contribution > ul li.contribution_arrow p{padding-top:70px;font-size:20px;color:#353535}
+.contribution > ul li.contribution_arrow p em.ldquo{display:inline-block;position:relative;top:-7px;width:22px;height:15px;background:url('../images/content/icon_ldquo.png') no-repeat}
+.contribution > ul li.contribution_arrow p em.rdquo{display:inline-block;position:relative;top:-7px;width:22px;height:15px;background:url('../images/content/icon_rdquo.png') no-repeat}
+.contribution > ul li.contribution02 p{height:25px;padding:18px;background:url('../images/content/contribution02bg.png') center top no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#fff}
+a.btn_blog{display:inline-block;min-height:52px;margin-top:10px;padding:30px 0 30px 125px;background:url('../images/content/icon_blog.png') no-repeat;font-family:'NanumGothicbold';font-size:16px}
+a:hover.btn_blog{text-decoration:underline}
+a.btn_blog em{display:block;color:#55b24d;font-style:normal}
+
+/* 李얠븘?ㅼ떆?붽만 */
+.visit{position:relative;overflow:hidden;height:450px;margin:10px 0;background:#fcfcfc}
+.visit_arrow{margin:0 5px;font-size:18px;color:#f60}
+
+/* RSS */
+.RSSstep{position:relative;overflow:hidden;width:100%;margin-top:10px}
+.RSSstep dl{float:left;width:24.2%;margin-left:1%}
+.RSSstep dl:first-child{margin-left:0}
+.RSSstep dl dt{margin-bottom:5px;padding:15px 0;font-size:20px;color:#fff;font-weight:normal;text-align:center;letter-spacing:-0.1em}
+.RSSstep dl dt.step01{background:url('../images/content/actualProgress_mobchart01.png') repeat}
+.RSSstep dl dt.step02{background:url('../images/content/actualProgress_mobchart02.png') repeat}
+.RSSstep dl dt.step03{background:url('../images/content/actualProgress_mobchart03.png') repeat}
+.RSSstep dl dt.step04{background:url('../images/content/actualProgress_mobchart04.png') repeat}
+.RSSstep dl dd{min-height:50px;padding:10px;border:1px solid #ccc}
+.RSSdown{position:relative;overflow:hidden;width:100%;margin-top:15px}
+.RSSdown ul{overflow:hidden}
+.RSSdown ul li{float:left;margin-left:10px;text-align:center}
+.RSSdown ul li:first-child{margin-left:0}
+.RSSdown ul li p{margin-bottom:5px}
+
+/* 媛쒖씤?뺣낫泥섎━諛⑹묠 */
+.btn_privacyAgreement{display:inline-block;height:24px;padding:0 10px;background:#5e626e;color:#fff;text-align:center;line-height:24px}
+.btn_privacyAgreement em{display:inline-block;width:6px;height:9px;margin-left:8px;background:url('../images/content/icon_privacyarrow.png') no-repeat}
+.personalPolicy{position:relative;overflow:hidden;width:100%;margin-top:30px}
+.personalPolicy ul{float:right;overflow:hidden;padding:10px}
+.personalPolicy ul li{padding-left:8px;background:url('../images/sub/bullet06.png') left 7px no-repeat;font-size:13px;line-height:20px}
+.personalPolicy ul li a:hover{color:#959ab6;text-decoration:underline}
+.policy_organizationChart{position:relative;overflow:hidden;width:100%}
+.policy_organizationChart dl{overflow:hidden;width:220px;font-size:15px;text-align:center}
+.policy_organizationChart dl dt{padding:8px;background:#838196;font-family:'NanumGothicBold';font-size:17px;color:#fff;letter-spacing:-0.05em}
+.policy_organizationChart dl dd{margin-top:5px;padding:8px;border:1px solid #d9d9d9}
+.policy_organizationChart > p{display:block;height:53px;background:url('../images/content/policyChart_vline.gif') 100px top no-repeat}
+.policy_organizationChart > div{position:absolute;left:100px;top:113px}
+.policy_organizationChart > div em{float:left;width:180px;height:1px;background:url('../images/content/policyChart_hline.gif') left top no-repeat}
+.policy_organizationChart > div dl{float:left;position:relative;top:-17px}
+.policy_organizationChart > div dt{background:#474765}
+.policyStep{position:relative;overflow:hidden;width:100%;margin:20px 0}
+.policyStep dl, .policyStep > p, .policyStep ul{float:left;width:30%;margin-left:3%;padding:0;font-size:15px;text-align:center}
+.policyStep dl{margin-left:0}
+.policyStep dl dt{padding:8px;background:#474765;font-family:'NanumGothicBold';font-size:17px;color:#fff;letter-spacing:-0.05em}
+.policyStep dl dd{margin-top:5px;padding:8px;border:1px solid #d9d9d9}
+.policyStep ul li{padding:30px 8px;border:1px solid #d9d9d9;background:none !important}
+.policyStep ul li > p{font-family:'NanumGothicBold';font-size:17px;color:#ff5601}
+.policyStep > p span{display:block;margin:10px 0}
+.policyStep > p span.flowR{height:9px;padding-bottom:25px;background:url('../images/content/icon_flowRight.png') center bottom no-repeat;text-align:center}
+.policyStep > p span.flowL{height:9px;padding-top:10px;background:url('../images/content/icon_flowLeft.png') center top no-repeat;text-align:center}
+
+.policyProgress_chart{position:relative;overflow:hidden;width:100%}
+.policyProgress_chart dl{float:left;width:24.2%;margin-left:1%}
+.policyProgress_chart dl:first-child{margin-left:0}
+.policyProgress_chart dl dt{height:25px;margin-bottom:10px;padding:15px 0;font-size:20px;color:#fff;font-weight:normal;text-align:center;letter-spacing:-0.1em}
+.policyProgress_chart dl dt.step01{background:url('../images/content/actualProgress_chart01.png') center center no-repeat;background-size:100%;box-sizing: content-box}
+.policyProgress_chart dl dt.step02{background:url('../images/content/actualProgress_chart02.png') center center no-repeat;background-size:100%;box-sizing: content-box}
+.policyProgress_chart dl dt.step03{background:url('../images/content/actualProgress_chart03.png') center center no-repeat;background-size:100%;box-sizing: content-box}
+.policyProgress_chart dl dt.step04{background:url('../images/content/actualProgress_chart04.png') center center no-repeat;background-size:100%;box-sizing: content-box}
+.policyProgress_chart dl dd{min-height:100px;padding:10px 10px 10px 0;border:1px solid #ccc}
+.policyProgress_chart dl dd ul{min-height:60px}
+.policyProgress_chart dl dd > p{padding:5px 0;border-top:1px dashed #d9d9d9;font-family:'NanumGothicBold';font-size:15px;color:#ff5601;text-align:center;line-height:20px}
+.policyProgress_chart dl dd > p.one{padding:15px 0}
+.period{position:relative;overflow:hidden;margin-bottom:20px;border-left:1px solid #d9d9d9;border-right:1px solid #d9d9d9}
+.period p{display:block;padding:15px 0;background:url('../images/content/period_arrow.png') right center no-repeat}
+.period p.sevenDays{width:49.5%;border-right:1px solid #d9d9d9;text-align:center}
+.period p.months{width:100%;text-align:center}
+.period p span{padding:0 10px;background-color:#fff}
+
+/* 석면조사결과 */
+.asbestosForm{position:relative;width:100%}
+.asbestosForm ul{overflow:hidden;margin:45px}
+.asbestosForm ul li{float:left;width:48%}
+.asbestosForm ul li.L p{float:right;margin-top:10px}
+.asbestosForm ul li.R{float:right}
+.asbestosForm ul li.R p{margin:46px 0;font-size:17px;color:#666;text-align:center;letter-spacing:-0.03em}
+
+.webZoom3 div{text-align:right}
+.webZoom3 div a span.btn_zoom{float:right;margin-top:10px;padding:5px 10px;background:#444f61;font-size:14px;color:#fff;text-align:center}
+.webZoom3 div a span.btn_zoom em{display:inline-block;width:25px;height:24px;margin-right:5px;background:url('../images/content/icon_zoom1.png') no-repeat;vertical-align:middle}
+#DVbig4img > p{margin:0 auto;position:relative;width:702px}
+#DVbig4img > p span{display:block;width:702px;padding:10px;background:#444f61;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+#DVbig4img > p span em{display:inline-block;float:right;width:20px;height:20px;background:url('../images/main/btn_close.png') left center no-repeat;vertical-align:middle}
+
+.asbestosTitle{display:block;position:relative;overflow:hidden;width:100%;font-size:14px;color:#666;line-height:20px}
+.asbestosTitle p{margin-bottom:5px;font-size:20px;color:#f60;line-height:24px;letter-spacing:-0.05em}
+
+/* 2023-06-20 */
+.stationInfo_tabForm ul.i-col-3.stationInfo_tabs li {width: 33.33%; border: none;}
+
+
+
+
+
+@media only screen and (max-width:1199px){
+
+	.webCyberStation, .subModuleLayer{display:none}
+	.mob_subStation_layer{display:block}
+
+	.detail_subStation_layer{position:relative;overflow:hidden;width:96%;margin:2%}
+	.mob_btnStationControl{height:52px;background:#151515;text-align:center}
+	.mob_btnStationControl ul li{float:left;line-height:52px}
+	.mob_btnStationControl ul li.L .btn_prevSta{display:inline-block;position:absolute;left:0;top:0;width:57px;height:52px;background:url('../images/content/btn_prevSta.png') no-repeat}
+	.mob_btnStationControl ul li.L .disablebtn_prevSta{display:inline-block;position:absolute;left:0;top:0;width:57px;height:52px;background:url('../images/content/disableBtn_prevSta.png') no-repeat}
+	.mob_btnStationControl ul li.C{width:80%;margin:0 10%;font-size:16px;font-family:'NanumBarunGothic';color:#fff;text-align:center}
+	.mob_btnStationControl ul li.C span.L{float:left;width:25%;text-align:left}
+	.mob_btnStationControl ul li.C span.C{width:50%}
+	.mob_btnStationControl ul li.C span.disable{color:#000}
+	.mob_btnStationControl ul li.C span.R{float:right;width:25%;text-align:right}
+	.mob_btnStationControl ul li.C span strong{font-family:'NanumGothicBold';font-size:27px;font-style:normal}
+	.mob_btnStationControl ul li.R{float:right}
+	.mob_btnStationControl ul li.R .btn_nextSta{display:inline-block;position:absolute;right:0;top:0;width:57px;height:52px;background:url('../images/content/btn_nextSta.png') no-repeat}
+	.mob_btnStationControl ul li.R .disablebtn_nextSta{display:inline-block;position:absolute;right:0;top:0;width:57px;height:52px;background:url('../images/content/disableBtn_nextSta.png') no-repeat}
+	
+	.ventilation ul li dl{overflow:hidden;display:inline-block;width:151px;height:87px;margin-left:10px;margin-top:20px;padding:40px 0 0 15px;background:url('../images/content/processStep_arrow3.png') right center no-repeat;color:#fff;vertical-align:middle}
+	
+	/* ??젙蹂? ?댁감?쒓컖?? ?섏듅?뺣낫, 二쇰??뚯떇?? SNS */
+	.mob_cyberstation_tabForm{position:relative;overflow:hidden;width:100%}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs{position:relative;overflow:hidden;width:100%;height:50px}
+	/*.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li{float:left;position:relative;overflow:hidden;width:25%}*/
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li{float:left;position:relative;overflow:hidden;width:33.3%}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a em{display:inline-block;position:absolute;right:10px;top:20px;width:13px;height:7px;background:url('../images/content/tab_toggle.png') right center no-repeat;vertical-align:middle}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a{display:block;height:50px;padding:0 10px;font-size:15px;color:#fff;line-height:50px}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a.cstab01{background:#22b99a}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a.cstab02{background:#64697f}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a.cstab03{background:#fbb168}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a.cstab04{background:#e27795}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a.cstab05{background:#4d67a0}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a:hover{color:#fff}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li.active, .mob_cyberstation_tabForm ul.mob_cyberStation_tabs li.active a{color:#fff}
+	.mob_cyberstation_tabForm .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+
+	/* ?댁감?쒓컖??*/
+	.mob_hourTrain_tabForm{position:relative;overflow:hidden;width:100%}
+	.mob_hourTrain_tabForm ul.mob_hour_tabs{position:relative;overflow:hidden;width:100%;height:43px;margin-bottom:20px}
+	.mob_hourTrain_tabForm ul.mob_hour_tabs li{float:left;position:relative;overflow:hidden;width:120px;margin-right:5px}
+	.mob_hourTrain_tabForm ul.mob_hour_tabs li a{display:block;height:43px;padding-left:20px;background:url('../images/content/hourtabbg.png') right top repeat-x;font-size:15px;color:#fff;line-height:43px}
+	.mob_hourTrain_tabForm ul.mob_hour_tabs li a:hover{border-left:none;background:url('../images/content/hourtabbg_on.png') right top repeat-x;color:#fff}
+	.mob_hourTrain_tabForm ul.mob_hour_tabs li.active, .mob_hourTrain_tabForm ul.mob_hour_tabs li.active a{border-left:none;background:url('../images/content/hourtabbg_on.png') right top repeat;color:#fff}
+	.mob_hourTrain_tabForm .tab_container{clear:both;margin:0 auto;position:relative;width:100%}
+
+	.transferParkingChart ul li img{width:100%}
+
+
+	/* ?댁감 ???덉쟾 ?λ퉬 ?꾩튂 */
+	.blockUI ul.web{display:none}
+	.blockUI > p img.web{display:none}
+	.blockUI > p img.mob{display:block;width:100%}
+	.blockUI div.mob{display:block;position:relative;overflow:hidden;padding:20px;border:1px solid #d9d9d9}
+	.blockUI div.mob p{font-family:'NanumGothicBold';font-size:18px;color:#000;letter-spacing:-0.05em}
+	.blockUI div.mob li{margin:5px 0}
+	.blockUI div.mob li span{font-family:'NanumGothicBold';font-size:16px;color:#f60}
+	.popup1, .popup2, .popup3, .popup4{position:fixed;left:50%;top:50%;margin-left:-98px;margin-top:-165px}
+
+	.safetyequipment ul{margin-top:30px}
+	.safetyequipment ul li em{z-index:1;float:left;position:relative;left:20px;top:21px;width:34px;height:32px;background:url('../images/content/equipment_circle.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;font-style:normal;text-align:center;line-height:32px}
+
+	.character_applied img{width:100%}
+
+	/* 異붿쭊?꾨왂 */
+	.promote_strategy ul.R li .promote_point01, .promote_strategy ul.R li .promote_point02, .promote_strategy ul.R li .promote_point03, .promote_strategy ul.R li .promote_point04{display:none}
+	.promote_strategy ul.R li .promote_content01{margin:50px 0 0 0;padding:17px 0;border-radius:35px;background:#f7f4f2}
+	.promote_strategy ul.R li .promote_content02{margin:-50px 0 0 0;padding:17px 0;border-radius:35px;background:#f7f4f2}
+	.promote_strategy ul.R li div{float:none;width:100%;margin-top:70px}
+	.promote_strategy ul.R li dl{float:left;width:30.333%;margin:0 1.5%}
+	.promote_strategy ul.R li dl:first-child{margin-left:0}
+	.promote_strategy ul.R li dl dt{border-radius:25px 25px 0 0}
+	.promote_strategy ul.R li dl dt.progress_direction01{height:23px;padding:25px 0;background:url('../images/content/progress_mobdirection01.png') repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promote_strategy ul.R li dl dt.progress_direction02{height:23px;padding:25px 0;background:url('../images/content/progress_mobdirection02.png') repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promote_strategy ul.R li dl dt.progress_direction03{height:23px;padding:25px 0;background:url('../images/content/progress_mobdirection03.png') repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promote_strategy ul.R li dl dd{overflow:hidden;min-height:300px;padding:10px 0;border-radius:0 0 25px 25px;background:#f7f4f2}
+
+	/* 異붿쭊?ㅼ쟻 */
+	.actualProgress_chart dl dt.step01{background:url('../images/content/actualProgress_mobchart01.png') repeat}
+	.actualProgress_chart dl dt.step02{background:url('../images/content/actualProgress_mobchart02.png') repeat}
+	.actualProgress_chart dl dt.step03{background:url('../images/content/actualProgress_mobchart03.png') repeat}
+	.actualProgress_chart dl dt.step04{background:url('../images/content/actualProgress_mobchart04.png') repeat}
+	.actualProgress_chart dl dd{height:auto;min-height:170px;padding:10px 10px 10px 0;border:1px solid #ccc}
+
+	/* ?ы쉶怨듯뿄?쒕룞 */
+	.contribution > ul li.contribution01{display:block;height:21px;margin-top:30px;padding:20px 0;border-radius:35px;background:#f7f4f2;font-size:20px;color:#2e2e2e;vertical-align:middle}
+
+	/* 광고매체 */
+	.adMediumForm ul.web{display:none}
+	.adMediumForm > p img.web{display:none}
+	.adMediumForm > p img.mob{display:block;width:100%}
+	
+	/* 석면조사결과 */
+	.asbestosForm ul{overflow:hidden;margin:40px 0}
+	.asbestosForm ul li.L > img{width:100%}
+	.asbestosForm ul li.R p{margin:0 0 20px;font-size:17px;color:#666;text-align:center;letter-spacing:-0.03em}
+
+	.webZoom3 div{text-align:right}
+	.webZoom3 div a span.btn_zoom{float:right;margin-top:10px;padding:5px 10px;background:#444f61;font-size:14px;color:#fff;text-align:center}
+	.webZoom3 div a span.btn_zoom em{display:inline-block;width:25px;height:24px;margin-right:5px;background:url('../images/content/icon_zoom1.png') no-repeat;vertical-align:middle}
+	#DVbig4img > p{position:relative;width:100%}
+	#DVbig4img > p span{display:block;width:702px;padding:10px;background:#444f61;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+	#DVbig4img > p span em{display:inline-block;float:right;width:20px;height:20px;background:url('../images/main/btn_close.png') left center no-repeat;vertical-align:middle}
+
+	.asbestosTitle{display:block;position:relative;overflow:hidden;width:100%;font-size:14px;color:#666;line-height:20px}
+	.asbestosTitle p{margin-bottom:5px;font-size:20px;color:#f60;letter-spacing:-0.05em}
+	
+}
+
+
+
+
+
+
+
+
+
+@media only screen and (max-width:1024px){
+
+	.routesSearchForm ul li.L{padding-right:15px;border-right:1px solid #dbdbdb}
+	.routesSearchForm ul li dl{display:inline-block;padding-left:0;background:none}
+	.routesSearchForm ul li select{width:auto;height:40px;padding:1px 3px;border:1px solid #dbdbdb;background:#f9f9f9}
+	.routesSearchForm ul li.R a.btn_routes{display:inline-block;width:63px;height:20px;padding:10px 0 10px 22px;background:url('../images/content/icon_zoom.gif') 5px center no-repeat #ff7c2c;font-family:'NanumGothicBold';font-size:15px;color:#fff;line-height:20px}
+	.routesSearchForm ul li.R a.btn_initialization{display:inline-block;width:55px;height:20px;padding:9px 0 9px 30px;border:1px solid #dbdbdb;background:url('../images/content/icon_initialization.gif') 13px center no-repeat;font-family:'NanumGothicBold';font-size:15px;color:#444;line-height:20px}
+	.cstab01Info ul.station_history li img{width:100%;height:auto}
+
+	.subtransferInfo2 dl dd > ul li.L{float:left;width:30%}
+	.subtransferInfo2 dl dd > ul li.R{float:right;width:70%}
+
+	/* recruitStep */
+	.recruitStep{position:relative;overflow:hidden;width:96%;margin:0 2%}
+	.recruitStep ul li.step01{width:100px;height:30px;padding:35px 0;background-size:cover}
+	.recruitStep ul li.step02{width:100px;height:30px;padding:35px 0;background-size:cover}
+	.recruitStep ul li.step03{width:100px;height:50px;padding:25px 0;background-size:cover}
+	.recruitStep ul li.step04{width:100px;height:30px;padding:35px 0;background-size:cover}
+	.recruitStep ul li.step05{width:100px;height:30px;padding:35px 0;background-size:cover}
+	.recruitStep ul li em{display:inline-block;width:20px;height:35px;margin:30px 10px;background:url('../images/content/icon_recruitStepArrow.png') left center no-repeat;background-size:cover}
+
+	/* ?먯뒪而щ젅?댄꽣 鍮꾩긽????쿂?붾졊 */
+	.emergency > p{float:left;width:27%;margin-left:3%}
+	.emergency > div{float:left;width:70%}
+
+	.extinguisher_manual{position:relative;overflow:hidden;margin-top:10px}
+	.extinguisher_manual li{float:left;width:22%;margin:0 1.45%}
+	.extinguisher_manual li img{width:100%}
+	.extinguisher_manual li p{min-height:40px;padding:10px;background:#858b99;text-align:center;color:#fff;line-height:20px;letter-spacing:-0.05em}
+	.evacuation_trick ul li p{min-height:80px;padding:10px 8px 10px;background:#3e3e58;color:#fff;line-height:20px;text-align:left}
+
+	.airGroup ul li{float:left;width:19%;margin-left:1%;text-align:center}
+
+	.safetyequipment ul li em{z-index:1;float:left;position:relative;left:-13px;top:21px;width:34px;height:32px;background:url('../images/content/equipment_circle.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;font-style:normal;text-align:center;line-height:32px}
+	.safetyequipment ul li ul{float:left;position:relative;margin-top:0}
+
+
+	/* 怨듭궗?뚭컻 */
+	.greetingForm > p{float:none;width:auto;height:410px;margin-right:0;background:url('../images/content/greeting_bg.png') center center no-repeat}
+	.greetingForm > p img{position:relative;left:50%;top:90px;margin-left:-139px}
+	.greeting{float:none;width:100%;margin-top:20px}
+	.greeting dl dt span{display:inline}
+
+	.history ul:first-child li.L{border-top:none}
+	.history ul:first-child li.R{border-top:none}
+	.history ul li{float:none;display:block;width:100%;padding:15px 0;border-bottom:none}
+	.history ul li.L{width:94%;min-height:30px;padding:8px 3%;border-radius:10px;border-bottom:none;background:#ff7e00;font-family:'NanumGothicBold';font-size:24px;color:#fff;text-align:left}
+	.history ul li.R{float:none;width:100%;font-size:16px}
+	.history ul li.R dl{overflow:hidden;padding:5px 3%;border-bottom:1px dotted #dddde3;line-height:30px}
+	.history ul li.R dl dt{float:left;width:10%;font-family:'NanumGothicBold'}
+	.history ul li.R dl dd{float:right;width:87%}
+
+	/* 異붿쭊?ㅼ쟻 */
+	.actualProgress ul:first-child li.L{border-top:none}
+	.actualProgress ul:first-child li.R{border-top:none}
+	.actualProgress ul li{float:none;display:block;width:100%;padding:15px 0;border-bottom:none}
+	.actualProgress ul li.L{width:94%;min-height:30px;padding:10px 3%;border-radius:10px;border-bottom:none;background:#ff7e00;font-family:'NanumGothicBold';font-size:30px;color:#fff;text-align:left;line-height:30px}
+	.actualProgress ul li.R{float:none;width:100%;font-size:16px}
+	.actualProgress ul li.R dl{overflow:hidden;padding:5px 3%;border-bottom:1px dotted #dddde3;line-height:30px}
+	.actualProgress ul li.R dl dt{float:left;width:10%;font-family:'NanumGothicBold'}
+	.actualProgress ul li.R dl dd{float:right;width:87%}
+
+	.airGroup ul li dl{height:107px;padding:25px 30px 0;background:url('../images/content/aircircle.png') center top no-repeat}
+
+
+}
+
+
+
+
+
+
+
+
+
+@media only screen and (max-width:980px){
+	
+	/* 주요시설물 */
+	.webZoom img{width:100%}
+	.civilTitle{position:relative;overflow:hidden;min-height:168px;margin-top:10px;padding:30px;background:url('../images/content/civil_bg.jpg') center center no-repeat;background-size:cover}
+	.ventilation ul li:nth-child(even){margin:0 3% 0 1%}
+	.ventilation ul li dl{overflow:hidden;display:inline-block;width:100%;height:50px;margin-top:15%;padding:20px 10px;background:url('../images/content/processStep_arrow4.png') right top no-repeat;color:#fff;vertical-align:middle}
+	.ventilation ul li dl dt{font-size:18px;font-weight:normal}
+	
+	.managementTarget > p{margin-top:30px;height:53px;background:url('../images/content/managementTarget_title.png') center top no-repeat;font-family:'NanumGothic';font-size:25px;color:#fff;text-align:center;line-height:53px;letter-spacing:-0.05em}
+	.managementTarget > ul > li{width:100%;padding-top:55px;background:url('../images/content/managementTarget_arrow.png') center 10px no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#353b49;text-align:center;}
+	.managementTarget > ul > li ul{overflow:hidden;width:100%;margin-top:15px;background:none}
+	.managementTarget > ul > li ul li{float:left;width:21.333%;margin:0 3%;padding:3%;border-radius:15px;font-family:'NanumGothic';font-size:23px;color:#fff;text-align:center;line-height:30px}
+	.managementTarget > ul > li ul li.target01{left:auto;height:auto;background:url('../images/content/managementTarget_circlemob01.png') repeat}
+	.managementTarget > ul > li ul li.target02{height:auto;background:url('../images/content/managementTarget_circlemob02.png') repeat}
+	.managementTarget > ul > li ul li.target03{right:auto;height:auto;background:url('../images/content/managementTarget_circlemob03.png') repeat}
+
+	.managementTarget > p{margin-top:30px;height:53px;background:url('../images/content/managementTarget_title.png') center top no-repeat;font-family:'NanumGothic';font-size:25px;color:#fff;text-align:center;line-height:53px;letter-spacing:-0.05em}
+	.managementTarget > ul > li{width:100%;padding-top:55px;background:url('../images/content/managementTarget_arrow.png') center 10px no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#353b49;text-align:center;}
+	.managementTarget > ul > li ul{overflow:hidden;width:100%;margin-top:15px;background:none}
+	.managementTarget > ul > li ul li{float:left;width:21.333%;margin:0 3%;padding:3%;border-radius:15px;font-family:'NanumGothic';font-size:23px;color:#fff;text-align:center;line-height:30px}
+	.managementTarget > ul > li ul li.target01{left:auto;height:auto;background:url('../images/content/managementTarget_circlemob01.png') repeat}
+	.managementTarget > ul > li ul li.target02{height:auto;background:url('../images/content/managementTarget_circlemob02.png') repeat}
+	.managementTarget > ul > li ul li.target03{right:auto;height:auto;background:url('../images/content/managementTarget_circlemob03.png') repeat}
+
+	/* CI */
+	.symbol > ul li{float:none}
+	.symbol > ul li.L{width:100%;margin-bottom:40px;text-align:center}
+	.symbol > ul li.R{width:100%}
+	.logoType ul li{float:none}
+	.logoType ul li.L{width:100%}
+	.logoType ul li.R{float:none;width:100%}
+	.signature ul li{float:none}
+	.signature ul li.L{width:100%;margin-bottom:10px}
+	.signature ul li.R{float:none;width:100%}
+
+	/* BI */
+	.BIsymbol > ul li{float:none}
+	.BIsymbol > ul li.L{width:100%;margin-bottom:50px;text-align:center}
+	.BIsymbol > ul li.R{width:100%;font-size:15px}
+	.BIsymbol > ul li.R dl{overflow:hidden;margin-top:10px}
+
+	/* character */
+	.character ul li{float:left}
+	.character ul li.L{width:45%}
+	.character ul li.L img{width:100%}
+	.character ul li.R{float:right;width:50%}
+	.character ul li.R dl{margin:0}
+	.character ul li.R dl dt{margin-bottom:10px;font-family:'NanumGothicBold';font-size:17px;color:#5e5e5e}
+
+	/* ?ы쉶怨듯뿄?쒕룞 */
+	.contribution > p{margin:0 auto;position:static;width:121px;height:21px;padding:50px 0;background:url('../images/content/promote01.png') center center no-repeat;font-family:'NanumGothicBold';font-size:20px;text-align:center;letter-spacing:-0.05em}
+	.contribution > ul{clear:both;margin:0 auto;overflow:hidden;margin-left:0;text-align:center}
+	
+	/* 광고매체 */
+	.webzineAd > ul li.L a em{right:auto;bottom:auto;left:0;top:0}
+
+}
+
+
+
+
+
+
+
+
+
+
+@media only screen and (max-width:768px){
+	
+	/* 안전관리체계 */
+	.organization_safetyChart > div{position:relative;overflow:hidden;margin:30px 0 0 0}
+	.organization_safetyChart > div h3{float:none;margin:0 auto;position:relative;width:205px;height:45px;background:#5f6bb3;font-size:17px;color:#fff;font-weight:normal;line-height:45px;text-align:center}
+	.organization_safetyChart > div u{float:none;margin:0 auto;position:relative;width:1px;height:45px;background:none}
+	.organization_safetyChart > ul > li dl{margin:0 auto;position:relative;overflow:hidden;width:80%}
+	
+	/* 주요시설물 */
+	.webZoom{display:none}
+	.mobZoom{display:block}
+	.mobZoom div a span.btn_zoom{float:right;margin-bottom:20px;padding:5px 10px;background:#444f61;font-size:14px;color:#fff;text-align:center}
+	.mobZoom div a span.btn_zoom em{display:inline-block;width:25px;height:24px;margin-right:5px;background:url('../images/content/icon_zoom1.png') no-repeat;vertical-align:middle}
+	#DVbigimg > p, #DVbig2img > p{position:relative;width:100%}
+	#DVbigimg > p span, #DVbig2img > p span{display:block;width:890px;padding:10px;background:#444f61;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+	#DVbigimg > p span em, #DVbig2img > p span em{display:inline-block;float:right;width:20px;height:20px;background:url('../images/main/btn_close.png') left center no-repeat;vertical-align:middle}
+
+	.publicInfoTitle{position:relative;overflow:hidden;width:90%;min-height:200px;padding:5%;background:url('../images/content/publicInfoTitle.png') center top no-repeat #f7f5f3;background-size:cover}
+	.routesSearchForm ul li.L{display:none}
+
+	.detail_subStation_layer > div{float:none;width:100%;margin-left:0;margin-top:40px}
+	.detail_subStation_layer > div:first-child{margin-top:0}
+
+	#stationSelect_list li a{display:block;padding:3%;font-family:'NanumGothicBold';font-size:17px;color:#000;line-height:30px}
+	#stationSelect_list li a:hover{background:#fafafa;color:#f60}
+	#stationSelect{z-index:1;margin:0 auto;position:relative;overflow:hidden;width:95%}
+	#stationSelect > a{display:block;width:100%;height:75px;font-family:'NanumGothicBold';font-size:24px;color:#000;line-height:auto}
+	#stationSelect > a span{display:inline-block;position:absolute;right:7px;top:28px;width:20px;height:13px;background:url('../images/content/btn_stationSelect.png') right center no-repeat;vertical-align:middle}
+	.StationControls{margin:0 auto;position:relative;width:100%;height:72px;background:url('../images/content/stationInfo_bg2.png') center center repeat-x;text-align:center}
+	.StationControls > ul li{float:left;margin:19px 0;text-align:left;line-height:34px}
+	.StationControls > ul li span{font-size:17px;color:#fff}
+	.StationControls > ul li.L{width:29%;padding-left:2%}
+	.StationControls > ul li.L span a{float:left;display:inline-block;width:10px;height:15px;padding-left:10px;margin-top:8px;background:url('../images/content/btn_prevStaInfo.png') left top no-repeat;vertical-align:middle}
+	.StationControls > ul li.R{float:right;width:29%;padding-right:2%;text-align:right}
+	.StationControls > ul li.R span a{float:right;display:inline-block;width:10px;height:15px;padding-right:10px;margin-top:8px;background:url('../images/content/btn_nextStaInfo.png') right top no-repeat;vertical-align:middle}
+	.StationControls > ul li.C{margin:0 auto;width:36%;margin:0;height:72px;border-radius:72px;border:3px solid #84879a;background:#fff;vertical-align:middle;text-align:center;line-height:72px}
+
+	.subtransferInfo2 dl dd > ul li.L{float:left;width:40%}
+	.subtransferInfo2 dl dd > ul li.R{float:right;width:60%}
+
+	.transferParkingChart ul{display:inline}
+	.transferParkingChart ul li{float:left;width:47.2%;margin:1%;text-align:center}
+	.transferParkingChart ul li:first-child{margin:1%}
+
+	.companion{display:block;position:relative;overflow:hidden;height:auto;margin:30px 0 0;padding-left:0;background:none}
+	.companion em{display:block;position:relative;overflow:hidden;height:401px;margin:0;padding-left:0;background:url('../images/content/companion.png') center top no-repeat}
+	.companionForm ul li{float:left;width:100%;border-bottom:1px solid #d9d9d9}
+	.companionForm ul li dl dt{float:left;width:28%;padding:0 1%;background:#f7f7f7;color:#464646}
+	.companionForm ul li dl dd{float:left;width:68%;padding:0 1%}
+
+	/* recruitStep */
+	.recruitStep ul li.step01{width:80px;height:30px;padding:25px 0;background-size:cover;font-size:14px}
+	.recruitStep ul li.step02{width:80px;height:30px;padding:25px 0;background-size:cover;font-size:14px}
+	.recruitStep ul li.step03{width:80px;height:40px;padding:20px 0;background-size:cover;font-size:14px;line-height:20px}
+	.recruitStep ul li.step04{width:80px;height:30px;padding:25px 0;background-size:cover;font-size:14px}
+	.recruitStep ul li.step05{width:80px;height:30px;padding:25px 0;background-size:cover;font-size:14px}
+	.recruitStep ul li em{display:inline-block;width:15px;height:26px;margin:30px 10px;background:url('../images/content/icon_recruitStepArrow.png') left center no-repeat;background-size:cover}
+
+
+	/* ?꾩떆泥좊룄 ?먰떚耳?*/
+	.mannersForm > .manners{margin-bottom:30px}
+	.mannersForm > .manners p{float:none;width:100%}
+	.mannersForm > .manners p.manners01,
+	.mannersForm > .manners p.manners02,
+	.mannersForm > .manners p.manners03,
+	.mannersForm > .manners p.manners04,
+	.mannersForm > .manners p.manners05,
+	.mannersForm > .manners p.manners06,
+	.mannersForm > .manners p.manners07{display:block;margin:0 auto}
+	.mannersForm > .manners ul{float:none;overflow:hidden;margin-left:0;padding-top:10px}
+	.mannersForm > .manners ul li{float:none;font-size:15px;text-align:center;letter-spacing:-0.03em}
+	.mannersForm > .manners ul li strong{float:none;margin-right:5px;font-family:'NanumGothicBold';font-size:50px;color:#4c505c;line-height:51px;text-align:center}
+	.mannersForm > .manners ul li > p{clear:both;display:block;width:100%;line-height:20px}
+	.mannersForm > .manners ul li > p span{display:block;margin-bottom:10px;font-family:'NanumGothicBold';font-size:17px;color:#838196;line-height:20px}
+
+	/* ?섎━踰좎씠???덉젅 */
+	.liftManners{position:relative;overflow:hidden;width:100%;margin-top:20px}
+	.liftManners ul li{float:left;width:46%;min-height:190px;margin:2%}
+	.liftManners ul li > img{width:auto}
+	.liftManners ul li p{margin:10px;line-height:20px}
+
+	.reportTrick div{margin:0 50px}
+	.reportTrick div > img{width:100%}
+	.reportTrick_kind{margin:0 auto;position:relative;overflow:hidden;width:100%;margin:10px 0 0}
+
+	.platformOpen > li div .cautionType02{clear:both;display:block;position:relative;overflow:hidden;padding-left:45px;background:url('../images/content/icon_caution2.png') left center no-repeat;vertical-align:middle}
+	.platformOpen > li div .cautionType02 > ul{overflow:hidden;margin:20px 0}
+
+	.gate li p{min-height:60px;padding:10px 20px;background:#f9f9f9;color:#6b6b6b;line-height:20px;text-align:left}
+
+	.terror li{float:left;width:31%;margin:5px 1% 1%}
+	.terror li:first-child{margin:5px 1% 1%}
+	.fireStation li{float:left;width:43.5%;margin:5px 0 0 10%}
+	.ecolife li{float:left;width:43.5%;margin:5px 0 0 10%}
+
+	/* ?덉쟾?섍꼍 */
+	.ventilation ul li:nth-child(even){margin:0 3% 0 1%}
+	.ventilation ul li dl{overflow:hidden;display:inline-block;width:100%;height:50px;margin-top:5%;padding:20px 10%;background:url('../images/content/processStep_arrow4.png') right top no-repeat;color:#fff;vertical-align:middle}
+	.ventilation ul li dl dt{font-size:16px;font-weight:normal}
+	.ventilation ul li dl dd{font-size:13px;line-height:18px;letter-spacing:-0.03em}
+	.cautionBox{margin:0 auto;width:418px;height:43px;border:1px solid #dadada;font-family:'NanumGothicBold';line-height:43px;text-align:center}
+
+	.airGroup ul li{float:left;width:26%;margin:0 2% 20px;text-align:center}
+	.airGroup ul li:first-child{margin:0 2.5%}
+	.airGroup ul li dl{height:107px;padding:25px 30px 0;background:url('../images/content/aircircle.png') center top no-repeat}
+	.airGroup ul li dl dt{font-family:'NanumGothicBold';font-size:16px;color:#f60}
+	.airGroup ul li dl dd{font-size:14px;color:#757575;line-height:20px}
+
+	.environment_management{margin:0 auto;position:relative;overflow:hidden;width:100%}
+	.greenlife li.L{width:22%}
+	.greenlife li.R{float:right;width:75%}
+
+	/* 臾명솕?됱궗 */
+	.cultureEvent > li{float:none;position:relative;overflow:hidden;width:100%;margin-left:0;margin-bottom:15px;padding-bottom:15px;border-bottom:1px solid #d9d9d9}
+	.cultureEvent li img{float:left;width:30%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.cultureEvent li div{position:relative;overflow:hidden;float:right;width:65%}
+	.dance li img{width:94%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+
+	.roomsystem > ul > li{float:none;position:relative;overflow:hidden;width:100%;margin-left:0;margin-bottom:15px;padding-bottom:15px;border-bottom:1px solid #d9d9d9}
+	.roomsystem > ul > li img{float:left;width:20%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.roomsystem > ul > li div{position:relative;overflow:hidden;float:right;width:73%}
+
+	
+	/* 조직도 */
+	.organization_chart{position:relative;overflow:hidden;width:100%}
+	.organization_chart > h2{display:block;margin:0 auto;width:205px;height:45px;background:url('../images/content/organization_boss.png') center top no-repeat;text-align:center}
+	.organization_chart > h2 a{display:block;font-family:'NanumGothicBold';font-size:17px;color:#fff;line-height:45px}
+	.organization_chart > h2 em{display:block;height:230px;background:url('../images/content/organization_vline.gif') center top repeat-y}
+	.organization_chart > div{position:relative;overflow:hidden;margin:0;text-align:center}
+	.organization_chart > div > p a{float:none;display:inline-block;position:static;width:120px;height:45px;margin-top:30px;padding:0;background:#5f6bb3;font-size:15px;color:#fff;font-weight:normal;line-height:45px;text-align:center}
+	.organization_chart > div > u{float:none;position:relative;top:30px;width:46px;height:45px;background:url('../images/content/organization_vline2.gif') left center no-repeat}
+	.organization_chart > div > em{float:none;display:block;margin:0 auto;position:relative;top:0;width:50%;height:1px;margin-top:30px;border-top:1px solid #ccc;background:none}
+	.organization_chart > div > dl{float:none;position:static;margin:-2px auto 0;position:static}
+	.organization_chart > div > dl dt{float:left;display:inline-block;width:50%;padding-top:31px;background:url('../images/content/organization_vline2.gif') center top no-repeat}
+	.organization_chart > div > dl dt a{float:none;display:inline-block;width:105px;height:43px;margin:0 0 5px 0;border:1px solid #ccc;font-size:14px;text-align:center;line-height:43px}
+	.organization_chart > div > dl dd{display:none}
+	.organization_chart > p{display:none}
+	.organization_chart > ul{clear:both;display:block;position:relative;overflow:hidden;width:100%}
+	.organization_chart > ul > li{float:none;width:100%}
+	.organization_chart > ul > li:first-child{float:none;width:100%}
+	.organization_chart > ul > li > a{display:block;height:45px;background:url('../images/content/organization_bigdome.png') center top no-repeat;font-size:15px;color:#fff;text-align:center;line-height:45px}
+	.organization_chart > ul > li > em{clear:both;display:block;height:40px;margin-top:40px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+	.organization_chart > ul > li > ul li > em{clear:both;display:block;height:35px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+	.organization_chart > ul > li > ul > li > p{margin:0 auto;position:relative;overflow:hidden;width:75%;height:1px;border-top:1px solid #ccc}
+	.organization_chart > ul > li > ul li dl{float:left;width: 19%;margin:-1px 0.5% 0;padding-top:25px;background:url('../images/content/organization_vline2.gif') center top no-repeat}
+	.organization_chart > ul > li > ul li dl > dt a{display:block;height:45px;background:#8d90a1;font-size:15px;color:#fff;text-align:center;line-height:45px;letter-spacing:-0.05em}
+	.organization_chart > ul > li > ul li dl > dd a{display:block;height:45px;margin-top:5px;border:1px solid #ccc;font-size:14px;text-align:center;line-height:45px;letter-spacing:-0.08em}
+	.organization_chart > ul > li > ul li dl > dd:first-child a{margin-top:0}
+	.organization_chart > ul > li:first-child > ul li:first-child > p {width: 62%;}
+	.organization_chart > ul > li > ul > li > p {width: 80%;}
+	/* CI */
+	.symbolic_meaning ul li{float:none}
+	.symbolic_meaning ul li.L{width:100%}
+	.symbolic_meaning ul li.R{float:none;width:100%}
+	.symbolic_meaning ul li.R ul li{margin-bottom:10px}
+
+
+	/* 異붿쭊?꾨왂 */
+	.promote_strategy ul{float:none}
+	.promote_strategy ul.L{display:none}
+	.promote_strategy ul.R{float:none;width:100%}
+	.promote_strategy ul.R li.web{display:none}
+	.promote_strategy ul.R li.mob{display:block}
+	.promote_strategy ul.R li .promote01{margin-top:20px;border-radius:35px;padding:15px 0;background:url('../images/content/managementTarget_circlemob03.png') repeat;color:#fff}
+	.promote_strategy ul.R li .promote02{margin-top:70px;border-radius:35px;padding:15px 0;background:url('../images/content/managementTarget_circlemob02.png') repeat;color:#fff}
+	.promote_strategy ul.R li .promote03{margin-top:70px;border-radius:35px;padding:15px 0;background:url('../images/content/managementTarget_circlemob01.png') repeat;color:#fff}
+	.promote_strategy ul.R li.progress_arrow{display:none}
+	.promote_strategy ul.R li .promote_content01{margin:3%;padding:0;border-radius:0;background:none}
+	.promote_strategy ul.R li .promote_content02{margin:3%;padding:0;border-radius:0;background:none}
+	.promote_strategy ul.R li div{float:none;width:100%;margin-top:25px}
+	.promote_strategy ul.R li dl{float:left;width:30.333%;margin:0 1.5%}
+	.promote_strategy ul.R li dl:first-child{margin:0 1.5%}
+
+	/* 異붿쭊?ㅼ쟻 */
+	.actualProgress_chart dl dt{height:auto;margin-bottom:15px;padding:15px 0;font-size:20px;color:#fff;font-weight:normal;text-align:center;letter-spacing:-0.1em}
+	.actualProgress_chart dl dt span{display:block}
+
+	/* ?ㅻ━洹쒕쾾 */
+	.ethicsCharte ul li em{float:left;width:10%;font-size:16px;color:#f60;font-style:normal}
+	.ethicsCharte ul li span{float:left;width:90%;font-size:15px}
+	.ethicsCharte p.panoramic{min-height:300px;background:url('../images/content/djet_panoramic.jpg') right bottom no-repeat;background-size:100%}
+
+	/* 媛쒖씤?뺣낫泥섎━諛⑹묠 */
+	.policyProgress_chart dl dt.step01{background:url('../images/content/actualProgress_mobchart01.png') repeat;background-size:100%}
+	.policyProgress_chart dl dt.step02{background:url('../images/content/actualProgress_mobchart02.png') repeat;background-size:100%}
+	.policyProgress_chart dl dt.step03{background:url('../images/content/actualProgress_mobchart03.png') repeat;background-size:100%}
+	.policyProgress_chart dl dt.step04{background:url('../images/content/actualProgress_mobchart04.png') repeat;background-size:100%}
+	
+	/* 광고매체 */
+	.webzineAd > ul li.L{position:relative;width:30%}
+	.webzineAd > ul li.L img{width:100%;height:auto}
+	.webzineAd > ul li.R{float:right;width:65%}
+	.webzineAd > ul li.R ul li span{display:block;padding-left:10px;background:url('../images/sub/bullet03.png') left 12px no-repeat}
+
+	#lightbox #content{position:fixed;left:0;top:20%;width:100%;height:auto;margin-left:0;margin-top:0;text-align:center}
+	#lightbox > p.btn_adClose{cursor:pointer;position:absolute;right:0;top:0;width:28px;height:28px;padding:7px;background:url('../images/content/btn_adClose2.png') center center no-repeat #f60;vertical-align:middle}
+
+	.organization_chart > ul > li:first-child > ul li:first-child > p {width: 67%;}
+	.organization_chart > ul > li:first-child dl {
+		width: 32.33%;
+	}
+	.organization_chart > ul > li:first-child > em { background: none;}
+	.organization_chart > ul > li > em {height: 0; margin-top: 0; padding-top: 40px; }
+}
+
+@media only screen and (max-width:640px){
+
+	.StationControls{margin:0 auto;position:relative;width:100%;height:auto;padding:10px 0;border-radius:15px;background:#8d90a1;text-align:center}
+	.StationControls > ul li{float:none;display:block;width:100%;margin:0;text-align:center;line-height:auto}
+	.StationControls > ul li span{font-size:17px;color:#fff}
+	.StationControls > ul li.L{display:block;width:100%;padding-left:0;text-align:center}
+	.StationControls > ul li.L span a{float:none;display:block;margin:0 auto;width:31px;height:31px;padding-left:0;margin-top:0;background:url('../images/content/btn_mob_prevStaInfo.png') center top no-repeat;vertical-align:middle}
+	.StationControls > ul li.C{display:block;margin:0 auto;width:80%;margin:0 10%;height:72px;border-radius:72px;border:3px solid #84879a;background:#fff;vertical-align:middle;text-align:center;line-height:72px}
+	.StationControls > ul li.R{float:none;display:block;width:100%;padding-right:0;text-align:center}
+	.StationControls > ul li.R span a{float:none;display:block;margin:0 auto;width:31px;height:31px;padding-right:0;margin-top:0;background:url('../images/content/btn_mob_nextStaInfo.png') center bottom no-repeat;vertical-align:middle}
+	
+	.eventSearchForm span{clear:both;display:block;width:100%;margin-left:0;margin-top:10px}
+
+	.mob_btnStationControl{height:auto;margin:2% 2% 0;border-radius:15px;background:#151515}
+	.mob_btnStationControl ul{overflow:hidden;padding:15px 0}
+	.mob_btnStationControl ul li{float:none;display:block;width:100%;line-height:120%;text-align:center}
+	.mob_btnStationControl ul li.L .btn_prevSta{display:inline-block;position:static;width:35px;height:35px;background:url('../images/content/btn_mob_prevSta.png') no-repeat}
+	.mob_btnStationControl ul li.L .disablebtn_prevSta{display:inline-block;position:static;width:35px;height:35px;background:url('../images/content/disableBtn_mob_prevSta.png') no-repeat}
+	.mob_btnStationControl ul li.C{width:100%;margin:0;font-size:16px;font-family:'NanumBarunGothic';color:#fff;text-align:center}
+	.mob_btnStationControl ul li.C span.L{display:block;position:static;width:100%;margin:10px 0;text-align:center}
+	.mob_btnStationControl ul li.C span.C{display:block;position:static;width:100%}
+	.mob_btnStationControl ul li.C span.R{display:block;position:static;width:100%;margin:10px 0;text-align:center}
+	.mob_btnStationControl ul li.C span strong{font-family:'NanumGothicBold';font-size:27px;font-style:normal;color:#f2f052}
+	.mob_btnStationControl ul li.R{float:right}
+	.mob_btnStationControl ul li.R .btn_nextSta{display:inline-block;position:static;width:35px;height:35px;background:url('../images/content/btn_mob_nextSta.png') no-repeat}
+	.mob_btnStationControl ul li.R .disablebtn_nextSta{display:inline-block;position:static;width:35px;height:35px;background:url('../images/content/disableBtn_mob_nextSta.png') no-repeat}
+
+	.processStep ul li{float:none;margin:0 auto;width:80%;margin-top:20px;text-align:center}
+	.processStep ul li:first-child{margin-top:0}
+	.processStep ul li.processStep_arrow{width:100%;height:13px;margin:15px 0;background:url('../images/content/processStep_arrow2.png') center center no-repeat;vertical-align:middle}
+	.processStep ul li dl{height:auto;padding:15px 0;border-radius:100px;background:#848599;font-family:'NanumGothicBold'}
+	.processStep ul li dl.circle02{background:#a9aabc}
+	.processStep ul li dl dt{font-size:20px;color:#d7d7df}
+	.processStep ul li dl dd{font-size:16px;color:#fff}
+	.processStep ul li > p{margin-top:5px;color:#6b6b6b;line-height:20px}
+
+	.publicInfoTitle p{margin-bottom:20px;font-family:'NanumGothicBold';font-size:22px;color:#5e626e}
+	.publicInfoTitle ul li{font-size:14px;color:#5e626e}
+	.publicInfoIcons{position:relative;overflow:hidden;width:100%;margin-top:60px}
+	.publicInfoIcons ul li{float:left;width:33.333%;margin-bottom:15px;text-align:center}
+	.publicInfoIcons ul li a{display:inline-block;font-family:'NanumGothicBold';font-size:14px;color:#5e626e;letter-spacing:-0.05em}
+	.publicInfoIcons ul li a.publicInfo_icon01{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon01.png') center top no-repeat}
+	.publicInfoIcons ul li a.publicInfo_icon02{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon02.png') center top no-repeat}
+	.publicInfoIcons ul li a.publicInfo_icon03{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon03.png') center top no-repeat}
+	.publicInfoIcons ul li a.publicInfo_icon04{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon04.png') center top no-repeat}
+	.publicInfoIcons ul li a.publicInfo_icon05{padding-top:120px;width:125px;background:url('../images/content/publicInfo_icon05.png') center top no-repeat}
+
+	.routesSearchForm ul li{display:block;width:100%;text-align:center}
+	.routesSearchForm ul li.R{margin-top:15px;padding-top:15px;border-top:1px dotted #dbdbdb}
+	.routesSearchForm ul li.R a{text-align:left}
+	.routesSearchForm ul li.R a.btn_routes{display:inline-block;width:70px;height:20px;padding:10px 0 10px 30px;background:url('../images/content/icon_zoom.gif') 10px center no-repeat #ff7c2c;color:#fff}
+	.routesSearchForm ul li.R a.btn_initialization{display:inline-block;width:62px;height:20px;padding:9px 0 9px 38px;border:1px solid #dbdbdb;background:url('../images/content/icon_initialization.gif') 20px center no-repeat;color:#444}
+
+	.contentSearchForm input[type='text']{width:35%;height:26px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+
+	.guideStep > li p{float:left;width:26px;height:26px;margin-right:10px;background:url('../images/content/guideStep_bullet.png') no-repeat;font-family:'NanumGothicBold';font-size:15px;color:#fff;line-height:26px;text-align:center}
+	.guideStep > li ul{float:left;width:87%;font-size:14px;color:#6b6b6b}
+
+	/* recruitStep */
+	.recruitStep{position:relative;overflow:hidden;width:100%;margin:0}
+	.recruitStep ul li{float:none;width:100%;margin-bottom:0;text-align:center}
+	.recruitStep ul li.step01{width:auto;padding:15px 0;border-radius:20px;background:url('../images/content/mob_recruitStep01bg.png') repeat;font-size:16px;color:#fff;text-align:center}
+	.recruitStep ul li.step02{width:auto;padding:15px 0;border-radius:20px;background:url('../images/content/mob_recruitStep02bg.png') repeat;font-size:14px;color:#fff;text-align:center}
+	.recruitStep ul li.step03{width:auto;padding:10px 0;border-radius:20px;background:url('../images/content/mob_recruitStep03bg.png') repeat;font-size:14px;color:#fff;text-align:center}
+	.recruitStep ul li.step04{width:auto;padding:15px 0;border-radius:20px;background:url('../images/content/mob_recruitStep04bg.png') repeat;font-size:14px;color:#fff;text-align:center}
+	.recruitStep ul li.step05{width:auto;padding:15px 0;border-radius:20px;background:url('../images/content/mob_recruitStep05bg.png') repeat;font-size:14px;color:#fff;text-align:center}
+	.recruitStep ul li em{display:inline-block;position:relative;overflow:hidden;width:19px;height:11px;margin:10px 0;background:url('../images/content/icon_mob_recruitStepArrow.png') center center no-repeat;vertical-align:middle}
+
+	.emergency > p{float:left;width:30%;margin-left:3%}
+	.emergency > div{float:left;width:67%}
+	.youtube ul li{float:none;display:block}
+	.youtube ul li.L{width:100%}
+	.youtube ul li.R{float:none;width:99%;border:1px solid;border-color:#fff #dadade #dadade #dadade;background:#fff}
+	.youtube ul li.R p{position:relative;padding:10px;border-top:3px solid #ff8d20;border-bottom:1px solid #dadada;font-family:'NanumGothicBold';font-size:15px;font-style:normal}
+	.youtube ul li.R .caption{position:relative;overflow-y:auto;height:150px;padding:10px}
+
+	.liftManners ul li{float:left;width:46%;min-height:220px;margin:2%}
+
+	.safetyaction ul li.L{float:none;width:100%;margin-bottom:20px}
+	.safetyaction ul li.R{float:none;width:100%}
+	.reportTrick_kind li{float:left;width:29.333%;margin:0 2% 15px;text-align:center}
+	.reportTrick_kind li img{width:90%;border-radius:8px;padding:5px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+
+	.extinguisher_manual{position:relative;overflow:hidden;margin-top:10px}
+	.extinguisher_manual li{float:left;width:22%;margin:0 1.45%}
+	.extinguisher_manual li img{width:100%}
+	.extinguisher_manual li p{min-height:40px;padding:10px;background:#858b99;text-align:center;color:#fff;line-height:20px;letter-spacing:-0.05em}
+	.evacuation_trick ul li p{min-height:100px;padding:10px 8px 10px;background:#3e3e58;color:#fff;line-height:20px;text-align:left}
+
+	/* ?덉쟾?섍꼍 */
+	.ventilation ul li{float:none;width:96%;padding-bottom:10px;margin:30px 2%;text-align:center}
+	.ventilation ul li:first-child{margin:30px 2%}
+	.ventilation ul li:nth-child(even){margin:0}
+	.ventilation ul li img{width:50%;margin:0 23%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.ventilation ul li dl{margin:0 auto;overflow:hidden;display:inline-block;width:auto;min-width:100px;height:33px;margin:0;padding:0 0 55px 0;background:url('../images/content/processStep_arrow5.png') center bottom no-repeat;color:#757575;text-align:center;vertical-align:middle}
+	.ventilation ul li dl dt{margin-bottom:5px;font-size:20px;font-weight:normal}
+	.cautionBox{margin:0 auto;width:90%;height:auto;padding:2%;border:1px solid #dadada;font-family:'NanumGothicBold';line-height:20px;text-align:center}
+	
+	.environment_management > p{margin-bottom:30px;padding:30px 0;background:url('../images/content/leaf.png') right center no-repeat;font-family:'NanumGothicBold';font-size:22px;color:#333;text-align:center}
+	.environment_management > p span{font-size:25px;color:#ff6a00}
+	.environment_management > div{float:left;width:45%;margin:0 2.5%}
+	.strategy p{width:100%;margin-bottom:20px;padding:20px 0;border-radius:20px;background:url('../images/content/environment_bg01.png') repeat;font-size:20px;color:#fff;text-align:center}
+	.strategy p em{display:block;height:28px;padding-top:20px;background:url('../images/content/environment_arrow.png') center bottom no-repeat}
+	.strategy ul li{min-height:140px;margin-bottom:20px;padding:5% 3%;border-radius:20px;border:5px solid #ecedf3;background:none;letter-spacing:-0.03em}
+	.practice p{width:100%;margin-bottom:20px;padding:20px 0;border-radius:20px;background:url('../images/content/environment_bg02.png') repeat;font-size:20px;color:#fff;text-align:center}
+	.practice p em{display:block;height:28px;padding-top:20px;background:url('../images/content/environment_arrow.png') center bottom no-repeat}
+	.practice > ul{min-height:140px;margin-bottom:20px;padding:5% 3%;border-radius:20px;border:5px solid #ecedf3;background:none}
+	.practice > ul li{letter-spacing:-0.03em}
+
+	.dance li img{width:92%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+
+	.safetyequipment > ul > li{float:left;width:19%;margin:0 3%}
+	.safetyequipment ul li ul li img{width:90%;border-radius:8px;padding:8px;border:1px solid #d9d9d9;background:#fff;box-shadow:3px 3px 3px #eee}
+	
+	/* 주요시설물 */
+	.civilTitle{position:relative;overflow:hidden;min-height:auto;margin-top:10px;padding:5%;border:5px solid #ecedf3;background:none !important}
+	.civilTitle li{margin-bottom:5px;padding-left:12px;background:url('../images/sub/bullet02.png') left 9px no-repeat;font-size:17px;color:#666;line-height:25px}
+	.civilTitle li span{display:block;float:none;width:100%;font-family:'NanumGothicBold'}
+	.civilTitle li em{margin-left:0}
+	.civilTitle li > u{display:none}
+	
+	.airGroup ul li dl{height:107px;padding:25px 20px 0;background:url('../images/content/aircircle.png') center top no-repeat}
+	
+
+	/* 怨듭궗?뚭컻 */
+	.managementTarget > p{margin-top:30px;height:53px;border-radius:30px;background:#353b49;font-family:'NanumGothic';font-size:25px;color:#fff;text-align:center;line-height:53px;letter-spacing:-0.05em}
+	.managementTarget > ul > li{width:100%;padding-top:55px;background:url('../images/content/managementTarget_arrow.png') center 10px no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#353b49;text-align:center;}
+	.managementTarget > ul > li ul{overflow:hidden;width:100%;margin-top:15px;background:none}
+	.managementTarget > ul > li ul li{float:left;width:21.333%;margin:0 3%;padding:3%;border-radius:15px;font-family:'NanumGothic';font-size:23px;color:#fff;text-align:center;line-height:30px}
+	.managementTarget > ul > li ul li.target01{left:auto;height:auto;background:url('../images/content/managementTarget_circlemob01.png') repeat}
+	.managementTarget > ul > li ul li.target02{height:auto;background:url('../images/content/managementTarget_circlemob02.png') repeat}
+	.managementTarget > ul > li ul li.target03{right:auto;height:auto;background:url('../images/content/managementTarget_circlemob03.png') repeat}
+
+	.promoteStrategy > ul > li{float:left;width:48%;margin:0 1% 30px}
+	.promoteStrategy > ul > li:first-child{margin:0 1% 30px}
+	.promoteStrategy > ul > li.promote p{min-height:21px;margin-bottom:10px;padding:12px 0;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promoteStrategy > ul > li.promote01 p{background:#9e9eab}
+	.promoteStrategy > ul > li.promote02 p{background:#78788a}
+	.promoteStrategy > ul > li.promote03 p{background:#5b5b71}
+	.promoteStrategy > ul > li.promote04 p{background:#3e3e58}
+	.promoteStrategy > ul > li > ul.bullet02{overflow:hidden;min-height:105px;margin-left:0;padding:20px;border:1px solid #ccc}
+	.promoteStrategy > p{width:100%;margin-top:10px;background:url('../images/content/promoteStrategy_arrow.png') center top no-repeat}
+	.promoteStrategy > p > span{display:block;height:auto;margin-bottom:10px;padding-top:130px;background:none;font-size:20px;color:#3e3e58;line-height:24px;text-align:center}
+	.advertisement li img{width:96%;border-radius:3px;padding:5px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+
+	/* ?쒖꽕?댄뻾?꾪솴 */
+	.amenitiesForm{position:relative;overflow:hidden;width:100%}
+	.amenitiesForm > ul{margin:0 auto;position:relative;overflow:hidden;width:260px;margin-top:15px}
+	.amenitiesForm > ul li{font-size:15px;color:#757575;line-height:25px}
+	.amenitiesForm > ul li .amenities_arrow{display:inline-block;width:56px;height:25px;margin-right:10px;background:url('../images/content/amenities_arrow.png') center center no-repeat;vertical-align:middle}
+	.amenitiesForm > ul li .amenities_arrow2{display:inline-block;width:56px;height:25px;margin-right:10px;background:url('../images/content/amenities_arrow2.png') center center no-repeat;vertical-align:middle}
+	.amenitiesBox{margin:0 auto;position:relative;overflow:hidden;width:auto;min-height:auto;background:none}
+	.amenitiesBox > p{position:static;left:0;top:0;margin-bottom:10px;font-size:16px;color:#757575;text-align:center}
+	.amenitiesBox dl{float:left;position:relative;overflow:hidden;width:29.5%;height:auto;margin:10px 1.5%;padding:10px 0;border-radius:20px;border:1px solid #dddde3;background:#fff;font-family:'NanumGothic';font-size:16px;color:#8d90a1;text-align:center}
+	.amenitiesBox > div > p{margin:0 auto;position:relative;overflow:hidden;width:100%;height:56px;background:url('../images/content/amenities_mobarrow.png') center center no-repeat}
+	.amenitiesBox ul{margin:0 auto;position:static;overflow:hidden;width:98%;height:auto;margin:10px 0;padding:10px 0;border-radius:20px;background:url('../images/content/managementTarget_circlemob01.png') repeat;color:#fff;text-align:center}
+	.amenitiesBox .amenities01{position:static}
+	.amenitiesBox .amenities02{position:static}
+	.amenitiesBox .amenities03{position:static}
+	.amenitiesBox .amenities04{position:static}
+	.amenitiesBox .amenities05{position:static}
+	.amenitiesBox .amenities06{position:static}
+	/* CI */
+	.symbol > ul li.L{width:100%;margin-bottom:40px;text-align:center}
+	.symbol > ul li.R{width:100%}
+	.symbol > ul li.R dl dd{clear:both;float:none;width:100%;font-size:15px}
+	.symbol > ul li.R dl dt{margin-bottom:47px}
+	.symbol > ul li.R dl dt img{width:100%}
+	.symbol > ul li.R dl dd ul.blueColor li.L{float:left;width:37%;height:45px;background:#0c2d83;font-family:'NanumGothicBold';color:#fff;text-align:center;line-height:45px}
+	.symbol > ul li.R dl dd ul.blueColor li.R{float:left;width:60%;margin-left:3%;color:#5f6bb3;letter-spacing:-0.05em}
+	.symbol > ul li.R dl dd ul.greenColor li.L{float:left;width:37%;height:45px;background:#00804e;font-family:'NanumGothicBold';color:#fff;text-align:center;line-height:45px}
+	.symbol > ul li.R dl dd ul.greenColor li.R{float:left;width:60%;margin-left:3%;color:#00804e;letter-spacing:-0.05em}
+	.logoType ul li.L dl dd img{width:100%}
+	.signature ul li.L img{width:100%}
+
+	.organization_chart > ul > li > ul li dl > dd a {
+		display: flex;
+		display: -webkit-flex;
+		height: auto; 
+		min-height: 45px;
+		padding: 0 10px;
+		line-height: 1.5;
+
+		flex-direction: row; 
+		align-items: center;
+		justify-content: center;
+		}
+
+	/* character */
+	.character ul li{float:none}
+	.character ul li.L{width:100%}
+	.character ul li.R{float:none;width:100%;margin-top:20px}
+
+	/* ??쟾?꾩떆泥좊룄 25??*/
+	.djet25 ul{display:inline}
+	.djet25 li{float:left;width:46%;margin:0 2% 10px;text-align:center}
+	.djet25 li p{overflow:hidden;width:100%;margin-top:5px;white-space:nowrap;text-overflow:ellipsis}
+	.djet25 li p span{display:inline}
+
+	/* 異붿쭊?ㅼ쟻 */
+	.actualProgress_chart dl{float:left;width:48%;margin:0 1% 30px}
+	.actualProgress_chart dl:first-child{margin:0 1% 30px}
+
+	/* RSS */
+	.RSSstep{position:relative;overflow:hidden;width:100%;margin-top:10px}
+	.RSSstep dl{float:left;width:48%;margin:1%}
+	.RSSstep dl:first-child{margin:1%}
+
+	/* 媛쒖씤?뺣낫泥섎━諛⑹묠 */
+	.policyProgress_chart{position:relative;overflow:hidden;width:100%}
+	.policyProgress_chart dl{float:left;width:49%;margin:0 0 10px 2%}
+	.policyProgress_chart dl:first-child{margin:0 0 10px 0}
+	.policyProgress_chart dl:nth-child(odd){margin:0 0 10px 0}
+}
+
+@media only screen and (max-width:568px){
+
+	.publicInfoTitle{position:relative;overflow:hidden;width:90%;min-height:auto;padding:5%;background:#f7f5f3;background-size:cover}
+	.publicInfoTitle ul li{display:inline;font-size:14px;color:#5e626e;line-height:20px}
+	.contentSearchForm p label.searchText{clear:both;width:100%;margin-right:0;font-size:16px;color:#676767;letter-spacing:-0.03em}
+
+
+	/*.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li{float:left;position:relative;overflow:hidden;width:25%;text-align:center}*/
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li{float:left;position:relative;overflow:hidden;width:33.3%;text-align:center}
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a em{display:none}
+
+	.cstab01Info ul li.L{float:none;width:100%;margin-bottom:15px}
+	.cstab01Info ul li.R{float:none;width:100%}
+	.cstab01Info ul.station_history li{float:none;width:100%;margin-left:0;margin-bottom:10px}
+
+	.subtransferInfo2 dl dd > ul li.L{float:left;width:45%}
+	.subtransferInfo2 dl dd > ul li.R{float:right;width:55%}
+
+	#stationSelect_list li a{display:block;padding:3%;font-family:'NanumGothicBold';font-size:15px;color:#000;line-height:24px}
+	#stationSelect_list li a:hover{background:#fafafa;color:#f60}
+	#stationSelect > a span{display:inline-block;position:absolute;right:2px;top:28px;width:20px;height:13px;background:url('../images/content/btn_stationSelect.png') right center no-repeat;vertical-align:middle}
+	
+	.stationInfo_tab01Info ul li.L{float:none;width:100%;margin-bottom:15px}
+	.stationInfo_tab01Info ul li.R{float:none;width:100%}
+
+	.soundCustomer{position:relative;overflow:hidden;padding:20px;border:5px solid #ecedf3;background:none}
+	.soundCustomer dl{overflow:hidden;margin-top:20px}
+	.soundCustomer dl:first-child{margin-top:0}
+	.soundCustomer dl dt{margin-bottom:5px;font-family:'NanumGothicBold';color:#737687;line-height:20px}
+	.soundCustomer dl dd{padding-left:10px;background:url('../images/content/soundCustomer_bullet.png') left 8px no-repeat;color:#8d90a1;line-height:22px}
+
+	.emergency > p{clear:both;display:block;float:none;position:relative;overflow:hidden;width:97%;margin:10px 0 10px 3%}
+	.emergency > p span.emergency01{float:left;width:78px;height:78px;background:url('../images/content/emergency01.png') no-repeat}
+	.emergency > p span.emergency02{float:left;width:78px;height:78px;margin-left:5px;background:url('../images/content/emergency02.png') no-repeat}
+	.emergency > div{clear:both;display:block;float:none;width:100%}
+
+	.evacuation_trick ul li{float:left;width:48%;margin:1%}
+	.evacuation_trick ul li:first-child{margin:1%}
+	.evacuation_trick ul li img{width:100%}
+	.evacuation_trick ul li p{min-height:60px;padding:10px 8px 10px;background:#3e3e58;color:#fff;line-height:20px;text-align:left}
+
+	.respirator li{float:left;width:29.333%;min-height:250px;margin:0 2% 10px;line-height:20px}
+	.gate li p{min-height:80px;padding:10px;background:#f9f9f9;color:#6b6b6b;line-height:20px;text-align:left}
+
+	.platformOpen > li div dl dt{min-height:60px;padding:5px;background:#f9f9f9;font-family:'NanumGothicBold';text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+	.airGroup ul li{float:none;width:96%;margin:0 2%;text-align:center}
+	.airGroup ul li:first-child{margin:0 2%}
+	.airGroup ul li dl{height:auto;padding:10px;border-radius:40px;border:1px solid #d9d9d9;background:#fff}
+	.airGroup ul li > p{display:block;margin-bottom:40px;padding-top:30px;background:url('../images/content/airline01.png') center top repeat-y}
+	.airGroup ul li > p span{display:block;padding:5px 0;border-radius:35px;background:#f60;color:#fff;line-height:35px}
+
+
+	.environment_management > div{float:none;width:100%;margin:0}
+	.strategy p{width:100%;margin-bottom:20px;padding:20px 0;border-radius:20px;background:url('../images/content/environment_bg01.png') repeat;font-size:20px;color:#fff;text-align:center}
+	.strategy p em{display:block;height:28px;padding-top:20px;background:url('../images/content/environment_arrow.png') center bottom no-repeat}
+	.strategy ul li{min-height:auto;margin-bottom:20px;padding:5% 3%;border-radius:20px;border:5px solid #ecedf3;background:none;text-align:center;letter-spacing:-0.03em}
+	.practice p{width:100%;margin-bottom:20px;padding:20px 0;border-radius:20px;background:url('../images/content/environment_bg02.png') repeat;font-size:20px;color:#fff;text-align:center}
+	.practice p em{display:block;height:28px;padding-top:20px;background:url('../images/content/environment_arrow.png') center bottom no-repeat}
+	.practice > ul{min-height:auto;margin-bottom:20px;padding:5% 3%;border-radius:20px;border:5px solid #ecedf3;background:none}
+	.practice > ul li{letter-spacing:-0.03em}
+	.greenlife li.L{width:27%}
+	.greenlife li.R{float:right;width:70%}
+
+	/* BI */
+	.BIsymbol > ul li.R dl{float:left;width:48%;margin:0 1%}
+	.BIsymbol > ul li.R dl dt{float:none;width:100%}
+	.BIsymbol > ul li.R dl dt span{clear:both;float:none;display:block;width:55px;height:25px;margin-right:10px;margin:30px 0 10px}
+	.BIsymbol > ul li.R dl dd{float:none;width:100%}
+
+	/* 異붿쭊?꾨왂 */
+	.promote_strategy ul.R li .promote01{margin-top:10px;border-radius:35px;padding:15px 0;background:url('../images/content/managementTarget_circlemob03.png') repeat;color:#fff}
+	.promote_strategy ul.R li .promote02{margin-top:50px;border-radius:35px;padding:15px 0;background:url('../images/content/managementTarget_circlemob02.png') repeat;color:#fff}
+	.promote_strategy ul.R li .promote03{margin-top:50px;border-radius:35px;padding:15px 0;background:url('../images/content/managementTarget_circlemob01.png') repeat;color:#fff}
+	.promote_strategy ul.R li.progress_arrow{display:none}
+	.promote_strategy ul.R li .promote_content01{margin:3%;padding:0;border-radius:0;background:none}
+	.promote_strategy ul.R li .promote_content02{margin:3%;padding:0;border-radius:0;background:none}
+	.promote_strategy ul.R li div{float:none;width:100%;margin-top:25px}
+	.promote_strategy ul.R li dl{float:none;width:100%;margin:3% 0}
+	.promote_strategy ul.R li dl:first-child{margin:3% 0}
+	.promote_strategy ul.R li dl dt.progress_direction01{height:23px;padding:20px 0;background:url('../images/content/progress_mobdirection01.png') repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promote_strategy ul.R li dl dt.progress_direction02{height:23px;padding:20px 0;background:url('../images/content/progress_mobdirection02.png') repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promote_strategy ul.R li dl dt.progress_direction03{height:23px;padding:20px 0;background:url('../images/content/progress_mobdirection03.png') repeat;font-family:'NanumGothicBold';font-size:17px;color:#fff;text-align:center}
+	.promote_strategy ul.R li dl dd{overflow:hidden;min-height:auto;padding:20px 0;border-radius:0 0 25px 25px;background:#f7f4f2}
+
+	/* ?ㅻ━洹쒕쾾 */
+	.ethicsCharte p.panoramic{min-height:auto;background:none;background-size:auto}
+
+	/* ?ы쉶怨듯뿄?쒕룞 */
+	.contribution > ul li.contribution01{display:block;height:auto;margin-top:30px;padding:10px;border-radius:50px;background:#f7f4f2;font-size:20px;color:#2e2e2e;vertical-align:middle}
+	.contribution > ul li.contribution01 span{display:block;color:#f60}
+	.contribution > ul li.contribution02 p{height:auto;padding:10px;border-radius:25px;background:url('../images/content/managementTarget_circlemob03.png') repeat;font-family:'NanumGothicBold';font-size:25px;color:#fff}
+
+	/* 媛쒖씤?뺣낫泥섎━諛⑹묠 */
+	.policy_organizationChart > p{display:block;height:30px;background:url('../images/content/policyChart_vline.gif') 100px top no-repeat}
+	.policy_organizationChart > div{position:static}
+	.policy_organizationChart > div em{float:none;display:block;height:30px;background:url('../images/content/policyChart_vline.gif') 100px top no-repeat}
+	.policy_organizationChart > div dl{float:none;position:static}
+
+	.policyStep dl, .policyStep > p, .policyStep ul{float:none;display:block;width:100%;margin-left:0;padding:0;font-size:15px;text-align:center}
+	.policyStep dl{margin-left:0}
+	.policyStep dl dt{padding:8px;background:#474765;font-family:'NanumGothicBold';font-size:17px;color:#fff;letter-spacing:-0.05em}
+	.policyStep dl dd{margin-top:5px;padding:8px;border:1px solid #d9d9d9}
+	.policyStep ul li{padding:8px;border:1px solid #d9d9d9;background:none !important}
+	.policyStep ul li > p{font-family:'NanumGothicBold';font-size:17px;color:#ff5601}
+	.policyStep > p{clear:both;position:relative;overflow:hidden;width:100%}
+	.policyStep > p span{display:inline-block;padding:10px 0;line-height:20px}
+	.policyStep > p span.flowR{float:left;width:47%;min-height:30px;padding-right:3%;padding-bottom:0;background:url('../images/content/icon_flowDown.png') right center no-repeat;text-align:right}
+	.policyStep > p span.flowL{float:left;width:47%;min-height:30px;padding-left:3%;padding-top:0;background:url('../images/content/icon_flowUp.png') left center no-repeat;text-align:left}
+
+}
+@media only screen and (max-width:480px){
+	
+	.mob_img2{width:100%}
+	.webZoom2{display:none}
+	.mobZoom2{display:block}
+	.mobZoom2 div a span.btn_zoom{float:right;margin-bottom:20px;padding:5px 10px;background:#444f61;font-size:14px;color:#fff;text-align:center}
+	.mobZoom2 div a span.btn_zoom em{display:inline-block;width:25px;height:24px;margin-right:5px;background:url('../images/content/icon_zoom1.png') no-repeat;vertical-align:middle}
+	#DVbig3img > p{position:relative;width:100%}
+	#DVbig3img > p span{display:block;width:426px;padding:10px;background:#444f61;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
+	#DVbig3img > p span em{display:inline-block;float:right;width:20px;height:20px;background:url('../images/main/btn_close.png') left center no-repeat;vertical-align:middle}
+	
+	/* 안전관리체계 */
+	.organization_safetyChart h2{display:block;margin:0 auto;width:60%;height:45px;background:url('../images/content/organization_boss2.png') center top repeat-x;font-family:'NanumGothicBold';font-size:17px;color:#fff;line-height:45px;text-align:center}
+	.organization_safetyChart > div{position:relative;overflow:hidden;margin:30px 0 0 0}
+	.organization_safetyChart > div h3{float:none;margin:0 auto;position:relative;width:60%;height:45px;background:#5f6bb3;font-size:17px;color:#fff;font-weight:normal;line-height:45px;text-align:center}
+	.organization_safetyChart > div u{float:none;margin:0 auto;position:relative;width:1px;height:45px;background:none}
+	.organization_safetyChart > ul > li dl{margin:0 auto;position:relative;overflow:hidden;width:60%}
+	.organization_safetyChart > p{display:none}
+	.organization_safetyChart > ul > li{float:none;width:100%;margin-top:30px;text-align:center}
+	.organization_safetyChart > ul > li:first-child{float:none;margin-top:0}
+	.organization_safetyChart > ul > li > p{height:30px;background:url('../images/content/organization_vline.gif') center top no-repeat}
+	.organization_safetyChart > ul > li dl{margin:0 auto;position:relative;overflow:hidden;width:60%}
+	.organization_safetyChart > ul > li dl dt{height:45px;background:url('../images/content/organization_bigdome2.png') center top repeat;font-size:17px;color:#fff;text-align:center;line-height:45px}
+	.organization_safetyChart > ul > li dl dd{height:43px;margin-top:5px;border:1px solid #ccc;background:#fff;line-height:43px}
+	
+	.ventilation ul li img{width:76%;margin:0 10%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	
+	.publicInfoIcons ul li{float:left;width:50%;margin-bottom:15px;text-align:center}
+
+	.routesSearchForm ul li span{display:block;width:100%}
+	.routesSearchForm ul li em{display:inline-block;margin:10px 0;width:12px;height:23px;background:url('../images/content/routes_verticalarrow.gif') left center no-repeat;vertical-align:middle}
+
+	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs li a{display:block;height:50px;padding:0 5px;font-size:14px;color:#fff;line-height:50px;letter-spacing:-0.05em}
+
+	.contentSearchForm input[type='text']{width:50%;height:26px;padding:1px 3px;border:1px solid #d2d2d2;line-height:26px}
+	.contentSearchForm span{display:block;margin-top:10px}
+
+	.subtransferInfo2 dl dd > ul li.L{float:none;width:100%}
+	.subtransferInfo2 dl dd > ul li.R{float:none;width:100%}
+	.subtransferInfo2 dl dt > p{float:none;width:100%}
+	.subtransferInfo2 dl dt > p span{display:inline-block;width:15px;height:15px;margin-right:5px;background:url('../images/common/transferInfo_circle.png') left center no-repeat;font-size:11px;color:#a77415;text-align:center;line-height:17px;vertical-align:middle}
+	.subtransferInfo2 dl dt em{float:none;width:100%;font-style:normal}
+
+	#stationSelect_list li a{display:block;padding:3%;font-family:'NanumGothicBold';font-size:18px;color:#000;line-height:24px}
+	#stationSelect_list li a:hover{background:#fafafa;color:#f60}
+	#stationSelect > a span{display:inline-block;position:absolute;left:45%;top:7px;width:20px;height:13px;background:url('../images/content/btn_stationSelect.png') right center no-repeat;vertical-align:middle}
+	
+	.station_language em{display:inline-block;width:2px;height:16px;margin:0 3px;background:url('../images/content/stationInfo_line.gif') left center no-repeat;vertical-align:middle;letter-spacing:-0.05em}
+
+	.stationInfo_tabForm{clear:both;position:relative;overflow:hidden;width:100%}
+	.stationInfo_tabForm ul.stationInfo_tabs{position:relative;overflow:hidden;width:100%;height:auto}
+	.stationInfo_tabForm ul.stationInfo_tabs li{float:left;position:relative;width:32.7% !important;margin:0 0 1px 1px;border-left:0;background:#5b5b6b;text-align:center}
+
+	.stationInfo_tabForm ul.stationInfo_tabs li a{display:block;height:auto;font-family:'NanumGothicBold';font-size:15px;color:#fff;line-height:auto}
+
+	.trafficCard dt img{width:100%}
+
+	.tourPhoto{position:relative;overflow:hidden;width:100%}
+	.tourPhoto ul li{float:none;width:100%;margin-left:0;margin-bottom:10px}
+
+	.extinguisher_manual li{float:left;width:45%;margin:0 2.5% 10px}
+	.gate li{float:left;width:45%;margin:0 2.5% 10px}
+	.gate li:first-child{margin:0 2.5% 10px}
+	.gate li p{min-height:60px;padding:10px 10px;background:#f9f9f9;color:#6b6b6b;line-height:20px;text-align:left}
+
+	.platformOpen > li{float:none;width:100%;margin-left:0}
+	.platformOpen > li:first-child{margin-left:0}
+	.platformOpen > li p{position:relative;overflow:hidden;width:100%;padding:5px 0;background:#3e3e58;font-size:15px;color:#fff;text-align:center}
+	.platformOpen > li p span{color:#ff7c2c}
+	.platformOpen > li div{margin-top:10px}
+	.platformOpen > li div dl{float:left;width:49%;margin-bottom:10px}
+	.platformOpen > li div dl:first-child{margin-left:0}
+	.platformOpen > li div dl.R{float:right}
+	.platformOpen > li div dl dd{min-height:20px;padding:5px;background:#f9f9f9;font-family:'NanumGothicBold';text-align:center;line-height:20px;letter-spacing:-0.03em}
+	.platformOpen > li div dl dt img{width:100%}
+
+	.terror li{float:left;width:46%;margin:5px 2% 1%}
+	.terror li:first-child{margin:5px 2% 1%}
+	.fireStation li{float:left;width:100%;margin:5px 0 0}
+	.fireStation li:first-child{margin-left:0}
+	.fireStation li img{width:92%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.fireStation li p{margin:5px 0 10px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+	.ecolife li{float:left;width:100%;margin:5px 0 0}
+	.ecolife li:first-child{margin-left:0}
+	.ecolife li img{width:92%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.ecolife li p{margin:5px 0 10px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+	.greenlife li.L{float:none;width:100%}
+	.greenlife li.R{float:none;width:94%;margin:0 3% 30px}
+	.greenlife li.R p{margin-bottom:10px;text-align:center}
+
+	.cultureEvent > li{float:none;position:relative;overflow:hidden;width:100%;margin-left:0;margin-bottom:30px;padding-bottom:0;border-bottom:none}
+	.cultureEvent li img{float:none;width:92%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.cultureEvent li div{position:relative;overflow:hidden;float:none;width:100%}
+
+	.dance > li{float:none;width:100%;margin-left:0;margin-bottom:20px}
+	.dance > li:first-child{margin-left:0}
+	.dance li img{width:92%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+
+	.safetyequipment > ul > li{float:left;width:50%;margin:0}
+	.safetyequipment ul li em{z-index:1;display:block;float:none;position:relative;left:6px;top:35px;width:34px;height:32px;background:url('../images/content/equipment_circle.png') no-repeat;font-family:'NanumGothicBold';font-size:16px;color:#fff;font-style:normal;text-align:center;line-height:32px}
+	.safetyequipment ul li ul{float:left;position:relative}
+	.safetyequipment ul li ul li img{width:auto;border-radius:8px;padding:8px;border:1px solid #d9d9d9;background:#fff;box-shadow:3px 3px 3px #eee}
+
+
+	/* 怨듭궗?뚭컻 */
+	.establishment{position:relative;overflow:hidden;width:100%;min-height:510px;background:url('../images/content/establishment.png') center bottom no-repeat;background-size:100%}
+	.history ul li.R{float:none;width:100%;font-size:16px}
+	.history ul li.R dl{overflow:hidden;padding:5px 3%;border-bottom:1px dotted #dddde3;line-height:30px}
+	.history ul li.R dl dt{float:none;width:100%;font-family:'NanumGothicBold';font-size:18px;color:#2563b1}
+	.history ul li.R dl dd{float:none;width:100%;line-height:24px}
+
+	.advertisement ul{overflow:hidden;margin-top:0}
+	.advertisement li{float:none;width:100%;margin-left:0;margin-bottom:15px}
+	.advertisement li img{width:92%;border-radius:3px;padding:5px;border:1px solid #d9d9d9;box-shadow:2px 2px 2px #eee}
+
+	.amenities{margin:0 auto;position:relative;overflow:hidden;width:100%;padding:0}
+	.amenities li{float:none;width:100%;margin:5px 0 0}
+	.amenities li:first-child{margin-left:0}
+	.amenities li img{width:92%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.amenities li p{margin:5px 0 10px;text-align:center;line-height:20px;letter-spacing:-0.03em}
+
+	/* BI */
+	.BIsymbol > ul li.R dl{float:none;width:100%;margin:0}
+
+	/* ethical_management */
+	.ethical_management{margin:0 auto;position:relative;overflow:hidden;width:auto;height:auto;background:none;text-align:center}
+	.ethical_management ul{overflow:hidden}
+	.ethical_management p.title{position:static;width:auto;margin-top:20px;padding:3%;border-radius:50px;border:1px solid #d9d9d9;background:url('../images/content/ethical_management.jpg') repeat;text-align:center}
+	.ethical_management p.title strong{font-family:'NanumGothicBold';font-size:25px;color:#353b49}
+	.ethical_management ul li{margin-top:10px}
+	.ethical_management ul li.ethical_management01{position:static;width:100%;border-radius:50px;background:url('../images/content/managementTarget_circlemob03.png') repeat}
+	.ethical_management ul li.ethical_management02{position:static;width:100%;border-radius:50px;background:url('../images/content/managementTarget_circlemob02.png') repeat}
+	.ethical_management ul li.ethical_management03{position:static;width:100%;border-radius:50px;background:url('../images/content/managementTarget_circlemob01.png') repeat}
+	.ethical_management ul li p{font-family:'NanumGothicBold';padding:10px 0;font-size:17px;color:#fff;text-align:center;line-height:22px;letter-spacing:-0.05em}
+
+	/* 異붿쭊?ㅼ쟻 */
+	.actualProgress ul li.R{float:none;width:100%;font-size:16px}
+	.actualProgress ul li.R dl{overflow:hidden;padding:5px 3%;border-bottom:1px dotted #dddde3;line-height:30px}
+	.actualProgress ul li.R dl dt{float:none;width:100%;font-family:'NanumGothicBold';font-size:18px;color:#2563b1}
+	.actualProgress ul li.R dl dd{float:none;width:100%;line-height:24px}
+
+	/* ?ㅻ━洹쒕쾾 */
+	.ethicsCharte ul li em{float:none;display:block;width:100%;font-size:16px;color:#f60;font-style:normal}
+	.ethicsCharte ul li span{float:none;display:block;width:100%;font-size:15px}
+
+	/* 媛쒖씤?뺣낫泥섎━諛⑹묠 */
+	.policyProgress_chart dl{float:none;width:100%;margin:0;margin-bottom:30px !important}
+	.policyProgress_chart dl:first-child{margin:0}
+	.policyProgress_chart dl:nth-child(odd){margin:0}
+	.period p span{padding:0;background-color:#fff}
+	
+	/* 광고매체 */
+	.webzineAd > ul li.L{position:relative;width:100%}
+	.webzineAd > ul li.L a em{left:auto;top:auto;right:0;bottom:0}
+	.webzineAd > ul li.R{float:none;width:100%}
+	.webzineAd > ul li.R ul li span{display:block;padding-left:10px;background:url('../images/sub/bullet03.png') left 12px no-repeat}
+	.webzineAd > ul li.R dl dt{margin:10px 0;font-family:'NanumGothicBold';font-size:17px;color:#555}
+	
+	/* 석면조사결과 */
+	.asbestosForm{position:relative;width:100%}
+	.asbestosForm ul{overflow:hidden;margin:0;margin-top:30px}
+	.asbestosForm ul li{float:none;width:100%}
+	.asbestosForm ul li.L img{width:100%}
+	.asbestosForm ul li.L p{float:right;margin-top:10px}
+	.asbestosForm ul li.R{float:none;position:relative;width:100%}
+	.asbestosForm ul li.R p{display:block;width:100%;margin:60px 0 10px;font-size:17px;color:#666;text-align:center;letter-spacing:-0.03em}
+
+}
+
+
+/* 역정보 - vr, 교통약자 이동경로 관련 버튼 추가*/
+.btn-type01 {padding: 8px 20px; background-color: #ff6600; color: #fff;}
+
+
+
+
+
+
+@media only screen and (max-width:400px){
+
+	.subStationHour ul li{float:none;width:95%;padding:0 2.5%;font-size:15px}
+	.subStationHour ul li:first-child{border-right:none;margin-bottom:5px;padding-bottom:5px;border-bottom:1px dotted #dcdcdc}
+
+
+	.transferParkingChart ul li{float:left;width:97.2%;margin:20px 1% 0;text-align:center}
+	.transferParkingChart ul li:first-child{margin:0 1%}
+	.transferParkingChart ul li img{width:100%;height:auto}
+	.companion em{display:block;position:relative;overflow:hidden;height:300px;margin-bottom:20px;padding-left:0;background:url('../images/content/companion.png') center top no-repeat;background-size:90%}
+	.liftManners ul li{float:left;width:46%;min-height:240px;margin:2%}
+	.liftManners ul li img{width:100%}
+	.reportTrick div{margin:0}
+	.respirator li{float:left;width:46%;min-height:220px;margin:0 2% 10px;line-height:20px}
+
+	.management_policy{position:relative;overflow:hidden;width:100%}
+	.management_policy > dl{margin:0 auto;width:auto;min-height:228px;padding-top:130px;background:url('../images/content/environment_policy.png') 50% 50% no-repeat;text-align:center;background-size:100%}
+	.management_policy > dl dt{font-size:20px;color:#fff;line-height:30px}
+	.management_policy > dl dd{height:1px;margin-top:20px;padding-top:20px;background:url('../images/content/management_policy_line.gif') center top no-repeat;font-size:15px;color:#fff;line-height:20px}
+
+	/* ??쟾?꾩떆泥좊룄 25??*/
+	.djet25 ul{display:inline}
+	.djet25 li{float:none;width:100%;margin:0 0 10px;text-align:center}
+	.djet25 li p{overflow:hidden;width:100%;margin-top:5px;white-space:nowrap;text-overflow:ellipsis}
+	.djet25 li p span{display:block}
+
+	/* RSS */
+	.RSSstep dl{float:none;width:100%;margin:0 0 15px}
+	.RSSstep dl:first-child{margin:0 0 15px}
+	.RSSdown ul li{float:none;display:block;margin-left:0;margin-top:20px;text-align:center}
+	.RSSdown ul li:first-child{margin-left:0;margin-top:0}
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+@media only screen and (max-width:360px){
+	.environment_management > p{margin-bottom:10px;padding:10px 0;background:url('../images/content/leaf.png') right center no-repeat;font-family:'NanumGothicBold';font-size:22px;color:#333;text-align:center}
+	.environment_management > p span{display:block;width:100%;margin-top:10px;font-size:25px;color:#ff6a00}
+
+	.eventCalendarSelect > p{margin-bottom:20px;font-family:'NanumGothicBold';font-size:22px;color:#000;text-align:center}
+	.eventCalendarSelect p > span{margin:0 3px}
+
+	.roomsystem > ul > li{float:none;position:relative;overflow:hidden;width:100%;margin-left:0;margin-bottom:30px;padding-bottom:0;border-bottom:none}
+	.roomsystem > ul > li img{float:none;width:92%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
+	.roomsystem > ul > li div{position:relative;overflow:hidden;float:none;width:100%}
+
+	/* CI */
+	.symbol > ul li.R dl dd ul.blueColor li.L{float:none;width:100%;height:45px;margin-bottom:10px;background:#0c2d83;font-family:'NanumGothicBold';color:#fff;text-align:center;line-height:45px}
+	.symbol > ul li.R dl dd ul.blueColor li.R{float:none;width:100%;margin-left:0;margin-bottom:20px;color:#5f6bb3;letter-spacing:-0.05em}
+	.symbol > ul li.R dl dd ul.greenColor li.L{float:none;width:100%;height:45px;margin-bottom:10px;background:#00804e;font-family:'NanumGothicBold';color:#fff;text-align:center;line-height:45px}
+	.symbol > ul li.R dl dd ul.greenColor li.R{float:none;width:100%;margin-left:0;margin-bottom:20px;color:#00804e;letter-spacing:-0.05em}
+	.logoType ul li.L dl dd img{width:100%}
+	.signature ul li.L img{width:100%}
+
+	/* 異붿쭊?ㅼ쟻 */
+	.actualProgress_chart dl{float:none;width:100%;margin:0 0 30px 0}
+	.actualProgress_chart dl:first-child{margin:0 0 30px 0}
+	.actualProgress_chart dl dd{min-height:auto}
+
+
+}
+
+
