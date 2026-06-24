@@ -159,7 +159,7 @@
 .infoShort{display:none;z-index:3;position:absolute}
 .infoShort > p{position:absolute;left:0;top:8px;width:11px;height:9px;background:url('../images/content/icon_infoShortArrow.png') left center no-repeat}
 .infoShort.left-side > p{left:auto;right:0;background:url('../images/content/icon_infoShortArrow.png') right center no-repeat}
-.infoShort > a.btn_layerClose2{position:absolute;right:-7px;top:-7px;width:15px;height:15px;background:url('../images/content/btn_layerClose2.png') right center no-repeat} 
+.infoShort > a.btn_layerClose2{position:absolute;right:-7px;top:-7px;width:15px;height:15px;background:url('../images/content/btn_layerClose2.png') right center no-repeat}
 .infoShort.left-side > a.btn_layerClose2{right:auto;left:-7px}
 .infoShort ul{margin-left:11px;background:#464646}
 .infoShort.left-side ul{margin-left:0;margin-right:11px}
@@ -1162,7 +1162,7 @@ a.btn_AIdown em{display:inline-block;width:19px;height:15px;margin-left:10px;bac
 .actualProgress ul li.h07{min-height:210px}
 .actualProgress ul li.h08{min-height:240px}
 
- 
+
 
 
 
@@ -1346,9 +1346,9 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.mob_btnStationControl ul li.R{float:right}
 	.mob_btnStationControl ul li.R .btn_nextSta{display:inline-block;position:absolute;right:0;top:0;width:57px;height:52px;background:url('../images/content/btn_nextSta.png') no-repeat}
 	.mob_btnStationControl ul li.R .disablebtn_nextSta{display:inline-block;position:absolute;right:0;top:0;width:57px;height:52px;background:url('../images/content/disableBtn_nextSta.png') no-repeat}
-	
+
 	.ventilation ul li dl{overflow:hidden;display:inline-block;width:151px;height:87px;margin-left:10px;margin-top:20px;padding:40px 0 0 15px;background:url('../images/content/processStep_arrow3.png') right center no-repeat;color:#fff;vertical-align:middle}
-	
+
 	/* ??젙蹂? ?댁감?쒓컖?? ?섏듅?뺣낫, 二쇰??뚯떇?? SNS */
 	.mob_cyberstation_tabForm{position:relative;overflow:hidden;width:100%}
 	.mob_cyberstation_tabForm ul.mob_cyberStation_tabs{position:relative;overflow:hidden;width:100%;height:50px}
@@ -1419,7 +1419,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.adMediumForm ul.web{display:none}
 	.adMediumForm > p img.web{display:none}
 	.adMediumForm > p img.mob{display:block;width:100%}
-	
+
 	/* 석면조사결과 */
 	.asbestosForm ul{overflow:hidden;margin:40px 0}
 	.asbestosForm ul li.L > img{width:100%}
@@ -1434,7 +1434,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 
 	.asbestosTitle{display:block;position:relative;overflow:hidden;width:100%;font-size:14px;color:#666;line-height:20px}
 	.asbestosTitle p{margin-bottom:5px;font-size:20px;color:#f60;letter-spacing:-0.05em}
-	
+
 }
 
 
@@ -1521,14 +1521,14 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 
 
 @media only screen and (max-width:980px){
-	
+
 	/* 주요시설물 */
 	.webZoom img{width:100%}
 	.civilTitle{position:relative;overflow:hidden;min-height:168px;margin-top:10px;padding:30px;background:url('../images/content/civil_bg.jpg') center center no-repeat;background-size:cover}
 	.ventilation ul li:nth-child(even){margin:0 3% 0 1%}
 	.ventilation ul li dl{overflow:hidden;display:inline-block;width:100%;height:50px;margin-top:15%;padding:20px 10px;background:url('../images/content/processStep_arrow4.png') right top no-repeat;color:#fff;vertical-align:middle}
 	.ventilation ul li dl dt{font-size:18px;font-weight:normal}
-	
+
 	.managementTarget > p{margin-top:30px;height:53px;background:url('../images/content/managementTarget_title.png') center top no-repeat;font-family:'NanumGothic';font-size:25px;color:#fff;text-align:center;line-height:53px;letter-spacing:-0.05em}
 	.managementTarget > ul > li{width:100%;padding-top:55px;background:url('../images/content/managementTarget_arrow.png') center 10px no-repeat;font-family:'NanumGothicBold';font-size:25px;color:#353b49;text-align:center;}
 	.managementTarget > ul > li ul{overflow:hidden;width:100%;margin-top:15px;background:none}
@@ -1573,7 +1573,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	/* ?ы쉶怨듯뿄?쒕룞 */
 	.contribution > p{margin:0 auto;position:static;width:121px;height:21px;padding:50px 0;background:url('../images/content/promote01.png') center center no-repeat;font-family:'NanumGothicBold';font-size:20px;text-align:center;letter-spacing:-0.05em}
 	.contribution > ul{clear:both;margin:0 auto;overflow:hidden;margin-left:0;text-align:center}
-	
+
 	/* 광고매체 */
 	.webzineAd > ul li.L a em{right:auto;bottom:auto;left:0;top:0}
 
@@ -1589,13 +1589,13 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 
 
 @media only screen and (max-width:768px){
-	
+
 	/* 안전관리체계 */
 	.organization_safetyChart > div{position:relative;overflow:hidden;margin:30px 0 0 0}
 	.organization_safetyChart > div h3{float:none;margin:0 auto;position:relative;width:205px;height:45px;background:#5f6bb3;font-size:17px;color:#fff;font-weight:normal;line-height:45px;text-align:center}
 	.organization_safetyChart > div u{float:none;margin:0 auto;position:relative;width:1px;height:45px;background:none}
 	.organization_safetyChart > ul > li dl{margin:0 auto;position:relative;overflow:hidden;width:80%}
-	
+
 	/* 주요시설물 */
 	.webZoom{display:none}
 	.mobZoom{display:block}
@@ -1710,7 +1710,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.roomsystem > ul > li img{float:left;width:20%;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
 	.roomsystem > ul > li div{position:relative;overflow:hidden;float:right;width:73%}
 
-	
+
 	/* 조직도 */
 	.organization_chart{position:relative;overflow:hidden;width:100%}
 	.organization_chart > h2{display:block;margin:0 auto;width:205px;height:45px;background:url('../images/content/organization_boss.png') center top no-repeat;text-align:center}
@@ -1775,7 +1775,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.policyProgress_chart dl dt.step02{background:url('../images/content/actualProgress_mobchart02.png') repeat;background-size:100%}
 	.policyProgress_chart dl dt.step03{background:url('../images/content/actualProgress_mobchart03.png') repeat;background-size:100%}
 	.policyProgress_chart dl dt.step04{background:url('../images/content/actualProgress_mobchart04.png') repeat;background-size:100%}
-	
+
 	/* 광고매체 */
 	.webzineAd > ul li.L{position:relative;width:30%}
 	.webzineAd > ul li.L img{width:100%;height:auto}
@@ -1803,7 +1803,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.StationControls > ul li.C{display:block;margin:0 auto;width:80%;margin:0 10%;height:72px;border-radius:72px;border:3px solid #84879a;background:#fff;vertical-align:middle;text-align:center;line-height:72px}
 	.StationControls > ul li.R{float:none;display:block;width:100%;padding-right:0;text-align:center}
 	.StationControls > ul li.R span a{float:none;display:block;margin:0 auto;width:31px;height:31px;padding-right:0;margin-top:0;background:url('../images/content/btn_mob_nextStaInfo.png') center bottom no-repeat;vertical-align:middle}
-	
+
 	.eventSearchForm span{clear:both;display:block;width:100%;margin-left:0;margin-top:10px}
 
 	.mob_btnStationControl{height:auto;margin:2% 2% 0;border-radius:15px;background:#151515}
@@ -1890,7 +1890,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.ventilation ul li dl{margin:0 auto;overflow:hidden;display:inline-block;width:auto;min-width:100px;height:33px;margin:0;padding:0 0 55px 0;background:url('../images/content/processStep_arrow5.png') center bottom no-repeat;color:#757575;text-align:center;vertical-align:middle}
 	.ventilation ul li dl dt{margin-bottom:5px;font-size:20px;font-weight:normal}
 	.cautionBox{margin:0 auto;width:90%;height:auto;padding:2%;border:1px solid #dadada;font-family:'NanumGothicBold';line-height:20px;text-align:center}
-	
+
 	.environment_management > p{margin-bottom:30px;padding:30px 0;background:url('../images/content/leaf.png') right center no-repeat;font-family:'NanumGothicBold';font-size:22px;color:#333;text-align:center}
 	.environment_management > p span{font-size:25px;color:#ff6a00}
 	.environment_management > div{float:left;width:45%;margin:0 2.5%}
@@ -1906,16 +1906,16 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 
 	.safetyequipment > ul > li{float:left;width:19%;margin:0 3%}
 	.safetyequipment ul li ul li img{width:90%;border-radius:8px;padding:8px;border:1px solid #d9d9d9;background:#fff;box-shadow:3px 3px 3px #eee}
-	
+
 	/* 주요시설물 */
 	.civilTitle{position:relative;overflow:hidden;min-height:auto;margin-top:10px;padding:5%;border:5px solid #ecedf3;background:none !important}
 	.civilTitle li{margin-bottom:5px;padding-left:12px;background:url('../images/sub/bullet02.png') left 9px no-repeat;font-size:17px;color:#666;line-height:25px}
 	.civilTitle li span{display:block;float:none;width:100%;font-family:'NanumGothicBold'}
 	.civilTitle li em{margin-left:0}
 	.civilTitle li > u{display:none}
-	
+
 	.airGroup ul li dl{height:107px;padding:25px 20px 0;background:url('../images/content/aircircle.png') center top no-repeat}
-	
+
 
 	/* 怨듭궗?뚭컻 */
 	.managementTarget > p{margin-top:30px;height:53px;border-radius:30px;background:#353b49;font-family:'NanumGothic';font-size:25px;color:#fff;text-align:center;line-height:53px;letter-spacing:-0.05em}
@@ -1971,12 +1971,12 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.organization_chart > ul > li > ul li dl > dd a {
 		display: flex;
 		display: -webkit-flex;
-		height: auto; 
+		height: auto;
 		min-height: 45px;
 		padding: 0 10px;
 		line-height: 1.5;
 
-		flex-direction: row; 
+		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 		}
@@ -2029,7 +2029,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	#stationSelect_list li a{display:block;padding:3%;font-family:'NanumGothicBold';font-size:15px;color:#000;line-height:24px}
 	#stationSelect_list li a:hover{background:#fafafa;color:#f60}
 	#stationSelect > a span{display:inline-block;position:absolute;right:2px;top:28px;width:20px;height:13px;background:url('../images/content/btn_stationSelect.png') right center no-repeat;vertical-align:middle}
-	
+
 	.stationInfo_tab01Info ul li.L{float:none;width:100%;margin-bottom:15px}
 	.stationInfo_tab01Info ul li.R{float:none;width:100%}
 
@@ -2120,7 +2120,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 
 }
 @media only screen and (max-width:480px){
-	
+
 	.mob_img2{width:100%}
 	.webZoom2{display:none}
 	.mobZoom2{display:block}
@@ -2129,7 +2129,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	#DVbig3img > p{position:relative;width:100%}
 	#DVbig3img > p span{display:block;width:426px;padding:10px;background:#444f61;font-family:'NanumGothicBold';font-size:16px;color:#fff;text-align:center}
 	#DVbig3img > p span em{display:inline-block;float:right;width:20px;height:20px;background:url('../images/main/btn_close.png') left center no-repeat;vertical-align:middle}
-	
+
 	/* 안전관리체계 */
 	.organization_safetyChart h2{display:block;margin:0 auto;width:60%;height:45px;background:url('../images/content/organization_boss2.png') center top repeat-x;font-family:'NanumGothicBold';font-size:17px;color:#fff;line-height:45px;text-align:center}
 	.organization_safetyChart > div{position:relative;overflow:hidden;margin:30px 0 0 0}
@@ -2143,9 +2143,9 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.organization_safetyChart > ul > li dl{margin:0 auto;position:relative;overflow:hidden;width:60%}
 	.organization_safetyChart > ul > li dl dt{height:45px;background:url('../images/content/organization_bigdome2.png') center top repeat;font-size:17px;color:#fff;text-align:center;line-height:45px}
 	.organization_safetyChart > ul > li dl dd{height:43px;margin-top:5px;border:1px solid #ccc;background:#fff;line-height:43px}
-	
+
 	.ventilation ul li img{width:76%;margin:0 10%;border-radius:3px;padding:8px;border:1px solid #d9d9d9;box-shadow:3px 3px 3px #eee}
-	
+
 	.publicInfoIcons ul li{float:left;width:50%;margin-bottom:15px;text-align:center}
 
 	.routesSearchForm ul li span{display:block;width:100%}
@@ -2165,7 +2165,7 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	#stationSelect_list li a{display:block;padding:3%;font-family:'NanumGothicBold';font-size:18px;color:#000;line-height:24px}
 	#stationSelect_list li a:hover{background:#fafafa;color:#f60}
 	#stationSelect > a span{display:inline-block;position:absolute;left:45%;top:7px;width:20px;height:13px;background:url('../images/content/btn_stationSelect.png') right center no-repeat;vertical-align:middle}
-	
+
 	.station_language em{display:inline-block;width:2px;height:16px;margin:0 3px;background:url('../images/content/stationInfo_line.gif') left center no-repeat;vertical-align:middle;letter-spacing:-0.05em}
 
 	.stationInfo_tabForm{clear:both;position:relative;overflow:hidden;width:100%}
@@ -2271,14 +2271,14 @@ a.btn_blog em{display:block;color:#55b24d;font-style:normal}
 	.policyProgress_chart dl:first-child{margin:0}
 	.policyProgress_chart dl:nth-child(odd){margin:0}
 	.period p span{padding:0;background-color:#fff}
-	
+
 	/* 광고매체 */
 	.webzineAd > ul li.L{position:relative;width:100%}
 	.webzineAd > ul li.L a em{left:auto;top:auto;right:0;bottom:0}
 	.webzineAd > ul li.R{float:none;width:100%}
 	.webzineAd > ul li.R ul li span{display:block;padding-left:10px;background:url('../images/sub/bullet03.png') left 12px no-repeat}
 	.webzineAd > ul li.R dl dt{margin:10px 0;font-family:'NanumGothicBold';font-size:17px;color:#555}
-	
+
 	/* 석면조사결과 */
 	.asbestosForm{position:relative;width:100%}
 	.asbestosForm ul{overflow:hidden;margin:0;margin-top:30px}
