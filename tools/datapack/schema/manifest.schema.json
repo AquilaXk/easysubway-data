@@ -5,7 +5,66 @@
   "type": "object",
   "required": ["ttlSeconds", "packs"],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "manifestVersion": { "const": 2 } },
+        "required": ["manifestVersion"]
+      },
+      "then": {
+        "required": [
+          "manifestVersion",
+          "channel",
+          "releaseSequence",
+          "publishedAt",
+          "expiresAt",
+          "keyId",
+          "signature"
+        ]
+      }
+    }
+  ],
   "properties": {
+    "manifestVersion": {
+      "enum": [1, 2]
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "releaseSequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "keyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "sha256-manifest-v2",
+            "rsa-sha256-manifest-v2"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
     "ttlSeconds": {
       "type": "integer",
       "minimum": 1
@@ -61,7 +120,9 @@
               "algorithm": {
                 "enum": [
                   "sha256-pack-manifest-v1",
-                  "rsa-sha256-pack-manifest-v1"
+                  "rsa-sha256-pack-manifest-v1",
+                  "sha256-pack-manifest-v2",
+                  "rsa-sha256-pack-manifest-v2"
                 ]
               },
               "value": {

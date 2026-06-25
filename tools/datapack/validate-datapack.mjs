@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash, createVerify } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
@@ -19,14 +20,14 @@ async function main() {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-validate-"));
   try {
     for (const pack of manifest.packs) {
-      await validatePack(root, temporaryDir, pack);
+      await validatePack(root, temporaryDir, pack, manifest.manifestVersion ?? 1);
     }
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
   }
 }
 
-async function validatePack(root, temporaryDir, pack) {
+async function validatePack(root, temporaryDir, pack, manifestVersion) {
   const compressedPath = localPackPathForUrl(root, pack);
   const compressedBytes = await readFile(compressedPath);
   if (compressedBytes.length !== pack.sizeBytes) {
@@ -42,7 +43,7 @@ async function validatePack(root, temporaryDir, pack) {
   if (sqliteSha !== pack.sqliteSha256) {
     throw new Error(`${pack.id}@${pack.version} sqlite checksum mismatch: ${sqliteSha}`);
   }
-  const signature = packSignature(pack);
+  const signature = packSignature(pack, manifestVersion);
   if (
     pack.signature.algorithm !== signature.algorithm ||
     pack.signature.value !== signature.value
@@ -646,8 +647,16 @@ function hasTable(database, tableName) {
 }
 
 function validateManifest(manifest) {
+  validateManifestJsonSchema(manifest);
   if (!manifest || typeof manifest !== "object") {
     throw new Error("manifest must be an object");
+  }
+  const manifestVersion = manifest.manifestVersion ?? 1;
+  if (manifestVersion !== 1 && manifestVersion !== 2) {
+    throw new Error("manifestVersion must be 1 or 2");
+  }
+  if (manifestVersion === 2) {
+    validateManifestV2Envelope(manifest);
   }
   if (!Number.isInteger(manifest.ttlSeconds) || manifest.ttlSeconds <= 0) {
     throw new Error("manifest ttlSeconds must be a positive integer");
@@ -688,7 +697,7 @@ function validateManifest(manifest) {
     if (!Number.isInteger(pack.sizeBytes) || pack.sizeBytes <= 0) {
       throw new Error(`${pack.id}@${pack.version} sizeBytes must be a positive integer`);
     }
-    validateSignature(pack.signature, `${pack.id}@${pack.version}`);
+    validateSignature(pack.signature, `${pack.id}@${pack.version}`, manifestVersion, artifactKind);
     validateSourceInventory(pack.sourceInventory, artifactKind, `${pack.id}@${pack.version}`);
     validateRegionalQualityMetrics(pack.regionalQualityMetrics, `${pack.id}@${pack.version}`);
     validateRepresentativeRouteRegressionManifest(pack.representativeRouteRegressions, `${pack.id}@${pack.version}`);
@@ -704,6 +713,83 @@ function validateManifest(manifest) {
       validateTableName(tableName);
     }
     validateMinimumTableRows(pack, artifactKind, `${pack.id}@${pack.version}`);
+  }
+  if (manifestVersion === 2) {
+    validateManifestSignature(manifest);
+  }
+}
+
+function validateManifestJsonSchema(manifest) {
+  const schema = JSON.parse(readFileSync(new URL("./schema/manifest.schema.json", import.meta.url), "utf8"));
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error("manifest must match manifest.schema.json");
+  }
+  for (const key of schema.required ?? []) {
+    if (!(key in manifest)) {
+      throw new Error(`manifest.schema.json required field missing: ${key}`);
+    }
+  }
+  const allowedProperties = new Set(Object.keys(schema.properties ?? {}));
+  for (const key of Object.keys(manifest)) {
+    if (!allowedProperties.has(key)) {
+      throw new Error(`manifest.schema.json additional field is unsupported: ${key}`);
+    }
+  }
+  const manifestVersion = manifest.manifestVersion ?? 1;
+  if (manifestVersion === 2) {
+    const versionRule = schema.allOf?.find((rule) => rule?.then?.required?.includes("signature"));
+    for (const key of versionRule?.then?.required ?? []) {
+      if (!(key in manifest)) {
+        throw new Error(`manifest.schema.json v2 required field missing: ${key}`);
+      }
+    }
+  }
+}
+
+function validateManifestV2Envelope(manifest) {
+  requiredChannel(manifest.channel, "manifest.channel");
+  requiredPositiveInteger(manifest.releaseSequence, "manifest.releaseSequence");
+  const publishedAt = requiredDate(manifest.publishedAt, "manifest.publishedAt");
+  const expiresAt = requiredDate(manifest.expiresAt, "manifest.expiresAt");
+  if (expiresAt <= publishedAt) {
+    throw new Error("manifest.expiresAt must be after manifest.publishedAt");
+  }
+  requiredString(manifest.keyId, "manifest.keyId");
+  if (!manifest.signature || typeof manifest.signature !== "object") {
+    throw new Error("manifest.signature must be an object");
+  }
+  const algorithm = requiredString(manifest.signature.algorithm, "manifest.signature.algorithm");
+  if (algorithm !== "sha256-manifest-v2" && algorithm !== "rsa-sha256-manifest-v2") {
+    throw new Error("manifest.signature algorithm is unsupported");
+  }
+  const value = requiredString(manifest.signature.value, "manifest.signature.value");
+  if (algorithm === "sha256-manifest-v2") {
+    requiredSha256(value, "manifest.signature.value");
+  } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("manifest.signature.value must be a base64url string");
+  }
+}
+
+function validateManifestSignature(manifest) {
+  const canonical = canonicalJson(withoutSignature(manifest));
+  const hasProductionPack = manifest.packs.some((pack) => pack.artifactKind === "production");
+  if (hasProductionPack) {
+    if (manifest.keyId !== signingKeyId()) {
+      throw new Error("manifest.keyId is unknown");
+    }
+    if (
+      manifest.signature.algorithm !== "rsa-sha256-manifest-v2" ||
+      !verifyRsaSha256Signature(signingPublicKey(), canonical, manifest.signature.value)
+    ) {
+      throw new Error("manifest signature mismatch");
+    }
+    return;
+  }
+  if (
+    manifest.signature.algorithm !== "sha256-manifest-v2" ||
+    manifest.signature.value !== sha256(Buffer.from(canonical))
+  ) {
+    throw new Error("manifest signature mismatch");
   }
 }
 
@@ -773,16 +859,19 @@ function stagedPackPath(pack) {
   return `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
 }
 
-function validateSignature(signature, label) {
+function validateSignature(signature, label, manifestVersion, artifactKind) {
   if (!signature || typeof signature !== "object") {
     throw new Error(`${label} signature must be an object`);
   }
   const algorithm = requiredString(signature.algorithm, "signature.algorithm");
-  if (algorithm !== "sha256-pack-manifest-v1" && algorithm !== "rsa-sha256-pack-manifest-v1") {
+  const expectedAlgorithm = artifactKind === "production"
+    ? (manifestVersion === 2 ? "rsa-sha256-pack-manifest-v2" : "rsa-sha256-pack-manifest-v1")
+    : (manifestVersion === 2 ? "sha256-pack-manifest-v2" : "sha256-pack-manifest-v1");
+  if (algorithm !== expectedAlgorithm) {
     throw new Error(`${label} signature algorithm is unsupported`);
   }
   const value = requiredString(signature.value, "signature.value");
-  if (algorithm === "sha256-pack-manifest-v1") {
+  if (algorithm.startsWith("sha256-")) {
     requiredSha256(value, "signature.value");
   } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
     throw new Error("signature.value must be a base64url string");
@@ -919,11 +1008,11 @@ function requiredRepresentativeRoutePatterns() {
   return new Set(["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]);
 }
 
-function packSignature(pack) {
+function packSignature(pack, manifestVersion) {
   if (pack.artifactKind === "production") {
     const canonical = productionSignaturePayload(pack);
     const signature = {
-      algorithm: "rsa-sha256-pack-manifest-v1",
+      algorithm: manifestVersion === 2 ? "rsa-sha256-pack-manifest-v2" : "rsa-sha256-pack-manifest-v1",
       value: pack.signature.value,
     };
     if (!verifyRsaSha256Signature(signingPublicKey(), canonical, pack.signature.value)) {
@@ -935,9 +1024,32 @@ function packSignature(pack) {
     return signature;
   }
   return {
-    algorithm: "sha256-pack-manifest-v1",
+    algorithm: manifestVersion === 2 ? "sha256-pack-manifest-v2" : "sha256-pack-manifest-v1",
     value: sha256(Buffer.from(fixtureSignaturePayload(pack))),
   };
+}
+
+function withoutSignature(value) {
+  const copy = { ...value };
+  delete copy.signature;
+  return copy;
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalValue(value));
+}
+
+function canonicalValue(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(canonicalValue);
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+  }
+  throw new Error("manifest canonical value is unsupported");
 }
 
 function fixtureSignaturePayload(pack) {
@@ -1004,6 +1116,10 @@ function signingPublicKey() {
   return key;
 }
 
+function signingKeyId() {
+  return process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1";
+}
+
 function verifyRsaSha256Signature(publicKey, value, signature) {
   return createVerify("RSA-SHA256").update(value).verify(publicKey, Buffer.from(signature, "base64url"));
 }
@@ -1056,11 +1172,38 @@ function requiredString(value, label) {
   return value.trim();
 }
 
+function requiredChannel(value, label) {
+  const channel = requiredString(value, label);
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(channel)) {
+    throw new Error(`${label} must match ^[A-Za-z][A-Za-z0-9_-]*$`);
+  }
+  return channel;
+}
+
 function requiredStringArray(value, label) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`${label} must be a non-empty string array`);
   }
   return value.map((entry) => requiredString(entry, `${label}[]`));
+}
+
+function requiredPositiveInteger(value, label) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return value;
+}
+
+function requiredDate(value, label) {
+  const rawValue = requiredString(value, label);
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(rawValue)) {
+    throw new Error(`${label} must include timezone offset`);
+  }
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${label} must be an ISO date-time`);
+  }
+  return parsed;
 }
 
 function requiredSha256(value, label) {

@@ -271,6 +271,213 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   }
 });
 
+test("데이터팩 생성기와 검증기는 v2 manifest envelope signature를 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-v2-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture-v2.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const fixture = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
+  fixture.manifest = {
+    ...fixture.manifest,
+    manifestVersion: 2,
+    channel: "production",
+    releaseSequence: 7,
+    publishedAt: "2026-06-25T00:00:00.000Z",
+    expiresAt: "2026-06-26T00:00:00.000Z",
+    keyId: "fixture-key",
+  };
+  delete fixture.manifest.activePack;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  assert.equal(manifest.manifestVersion, 2);
+  assert.equal(manifest.releaseSequence, 7);
+  assert.equal("activePack" in manifest, false);
+  assert.equal(manifest.signature.algorithm, "sha256-manifest-v2");
+  assert.equal(manifest.packs[0].signature.algorithm, "sha256-pack-manifest-v2");
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      manifestPath,
+      "--root",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  manifest.ttlSeconds = 7200;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /manifest signature mismatch/,
+  );
+});
+
+test("데이터팩 생성기는 잘못된 manifestVersion fixture를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-invalid-version-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture-invalid-version.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const fixture = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
+  fixture.manifest = {
+    ...fixture.manifest,
+    manifestVersion: "2",
+  };
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        fixturePath,
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /manifest\.manifestVersion must be 1 or 2/,
+  );
+});
+
+test("데이터팩 검증기는 v2 manifest channel pattern을 앱 parser와 동일하게 강제한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-v2-channel-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture-v2-channel.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const fixture = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
+  fixture.manifest = {
+    ...fixture.manifest,
+    manifestVersion: 2,
+    channel: "prod/eu",
+    releaseSequence: 8,
+    publishedAt: "2026-06-25T00:00:00.000Z",
+    expiresAt: "2026-06-26T00:00:00.000Z",
+    keyId: "fixture-key",
+  };
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /manifest.channel must match/,
+  );
+});
+
+test("데이터팩 도구는 v2 manifest timestamp timezone 계약을 앱 parser와 동일하게 강제한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-v2-timestamp-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture-v2-timestamp.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const fixture = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
+  fixture.manifest = {
+    ...fixture.manifest,
+    manifestVersion: 2,
+    channel: "production",
+    releaseSequence: 9,
+    publishedAt: "2026-06-25T00:00:00",
+    expiresAt: "2026-06-26T00:00:00.000Z",
+    keyId: "fixture-key",
+  };
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        fixturePath,
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /manifest.publishedAt must include timezone offset/,
+  );
+
+  fixture.manifest.publishedAt = "2026-06-25T00:00:00.000Z";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.publishedAt = "2026-06-25T00:00:00";
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /manifest.publishedAt must include timezone offset/,
+  );
+});
+
 test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를 마지막 단계로 고정한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-publish-plan-${Date.now()}`);
   const stageDir = path.join(tmpdir(), `easysubway-datapack-publish-stage-${Date.now()}`);
