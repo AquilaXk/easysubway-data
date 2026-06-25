@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -98,6 +98,9 @@ CREATE TABLE network_edges (
   stair_access_state TEXT NOT NULL DEFAULT 'UNKNOWN',
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   reliability_score INTEGER NOT NULL DEFAULT 100,
+  source_id TEXT NOT NULL DEFAULT '',
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   facility_id TEXT,
   last_verified_at INTEGER
 );

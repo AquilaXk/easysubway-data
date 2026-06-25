@@ -142,7 +142,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 2);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 3);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
@@ -1196,7 +1196,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 2);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 3);
     assert.deepEqual(
       {
         ...database
@@ -1776,6 +1776,136 @@ test("데이터팩 생성기는 production sourceInventory coverageScope 누락�
   );
 });
 
+test("데이터팩 검증기는 production verified edge coverage report를 출력한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-report-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  const report = JSON.parse(stdout.trim().split("\n").at(-1));
+  assert.equal(report.type, "datapack_verified_edge_coverage");
+  assert.equal(report.entry.ratio, 1);
+  assert.equal(report.exit.ratio, 1);
+  assert.equal(report.transfer.ratio, 1);
+  assert.equal(report.generatedConnectorGapCount, 0);
+});
+
+test("데이터팩 검증기는 production coverage에서 service pattern endpoint를 canonical station-line으로 계산한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-service-pattern-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  const pack = fixture.packs[0];
+  const entry = pack.networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
+  const exit = pack.networkEdges.find((edge) => edge.id === "exit-sangnoksu-seoul-4");
+  const transfer = pack.networkEdges.find((edge) => edge.id === "edge-sadang-line4-line2-transfer");
+  entry.toNodeId = "station-sangnoksu:seoul-4:LOCAL";
+  entry.servicePattern = "LOCAL";
+  exit.fromNodeId = "station-sangnoksu:seoul-4:LOCAL";
+  exit.servicePattern = "LOCAL";
+  transfer.fromNodeId = "station-sadang:seoul-4:LOCAL";
+  transfer.toNodeId = "station-sadang:seoul-2:LOCAL";
+  transfer.servicePattern = "LOCAL";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  const report = JSON.parse(stdout.trim().split("\n").at(-1));
+  assert.equal(report.entry.missingCount, 0);
+  assert.equal(report.exit.missingCount, 0);
+  assert.equal(report.transfer.missingCount, 0);
+});
+
+test("데이터팩 검증기는 출처 없는 production positive edge를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-provenance-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  delete fixture.packs[0].networkEdges[0].sourceId;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /network_edges\.edge-sangnoksu-sadang-seoul-4\.source_id must be a non-empty string/,
+  );
+});
+
 test("데이터팩 생성기는 production pack의 최소 row 기준 누락을 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-minimum-rows-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -1976,22 +2106,8 @@ test("데이터팩 검증기는 production HTTPS URL과 staged artifact path 불
   await mkdir(outputDir, { recursive: true });
 
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
-  fixture.packs[0].artifactKind = "production";
+  markFixturePackProduction(fixture);
   fixture.packs[0].url = "https://CDN.easysubway.example/easysubway-datapacks/catalog/capital-v1.sqlite.gz";
-  fixture.packs[0].sourceInventory = [
-    {
-      id: "capital-official-stations",
-      owner: "수도권 운영기관",
-      url: "https://example.invalid/capital/stations",
-      license: "공공데이터 이용허락",
-      licenseStatus: "redistributable",
-      redistributionAllowed: true,
-      updateFrequency: "daily",
-      updatedAt: "2026-06-19T00:00:00.000Z",
-      fields: ["stations"],
-      coverageScope: productionSourceCoverageScope(),
-    },
-  ];
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
   await execFileAsync(
@@ -4343,6 +4459,9 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     stairAccessState: "STEP_FREE",
     accessibilityStatus: "AVAILABLE",
     reliabilityScore: 90,
+    sourceId: "seoulmetro-station-line-info",
+    provenanceKind: "OFFICIAL_SOURCE",
+    verificationStatus: "VERIFIED",
     lastVerifiedAt: "2026-06-21T00:00:00.000Z",
   });
   assert.deepEqual(pack.facilities[0], {
@@ -4627,7 +4746,7 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
     lines: 1,
     stations: 2,
     station_lines: 2,
-    network_edges: 2,
+    network_edges: 6,
     facilities: 1,
   });
 
@@ -5865,9 +5984,35 @@ function productionSourceIngestInput() {
   input.minimumProductionCoverage = {
     stations: 2,
     stationLines: 2,
-    routeEdges: 2,
+    routeEdges: 6,
     facilities: 1,
   };
+  input.routeEdges.push(
+    productionSourceAccessRouteEdge({
+      id: "edge-entry-sangnoksu-seoul-4",
+      sourceStationCode: "448",
+      edgeType: "ENTRY",
+      stationToLine: true,
+    }),
+    productionSourceAccessRouteEdge({
+      id: "edge-exit-sangnoksu-seoul-4",
+      sourceStationCode: "448",
+      edgeType: "EXIT",
+      stationToLine: false,
+    }),
+    productionSourceAccessRouteEdge({
+      id: "edge-entry-sadang-seoul-4",
+      sourceStationCode: "433",
+      edgeType: "ENTRY",
+      stationToLine: true,
+    }),
+    productionSourceAccessRouteEdge({
+      id: "edge-exit-sadang-seoul-4",
+      sourceStationCode: "433",
+      edgeType: "EXIT",
+      stationToLine: false,
+    }),
+  );
   input.coverageEvidence = [
     {
       regionId: "capital",
@@ -5885,6 +6030,35 @@ function productionSourceIngestInput() {
     },
   ];
   return input;
+}
+
+function productionSourceAccessRouteEdge({ id, sourceStationCode, edgeType, stationToLine }) {
+  const stationEndpoint = {
+    sourceId: "seoulmetro-station-line-info",
+    sourceStationCode,
+    lineId: "seoul-4",
+    nodeKind: "STATION",
+  };
+  const stationLineEndpoint = {
+    sourceId: "seoulmetro-station-line-info",
+    sourceStationCode,
+    lineId: "seoul-4",
+  };
+  return {
+    id,
+    sourceId: "seoulmetro-station-line-info",
+    from: stationToLine ? stationEndpoint : stationLineEndpoint,
+    to: stationToLine ? stationLineEndpoint : stationEndpoint,
+    durationSeconds: stationToLine ? 90 : 60,
+    distanceMeters: 0,
+    edgeType,
+    servicePattern: "",
+    includesStairs: false,
+    stairAccessState: "STEP_FREE",
+    accessibilityStatus: "AVAILABLE",
+    reliabilityScore: 90,
+    lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+  };
 }
 
 function completeCoverageInventory(targets) {
@@ -5930,9 +6104,10 @@ function completeCoverageInventory(targets) {
 }
 
 function markFixturePackProduction(fixture) {
-  fixture.packs[0].artifactKind = "production";
-  fixture.packs[0].url = "https://datapack.example.com/easysubway/catalog/capital-v1.sqlite.gz";
-  fixture.packs[0].sourceInventory = [
+  const pack = fixture.packs[0];
+  pack.artifactKind = "production";
+  pack.url = "https://datapack.example.com/easysubway/catalog/capital-v1.sqlite.gz";
+  pack.sourceInventory = [
     {
       id: "capital-official-stations",
       owner: "수도권 운영기관",
@@ -5946,12 +6121,68 @@ function markFixturePackProduction(fixture) {
       coverageScope: productionSourceCoverageScope(),
     },
   ];
-  fixture.packs[0].minimumTableRows = {
-    ...fixture.packs[0].minimumTableRows,
+  for (const edge of pack.networkEdges) {
+    edge.sourceId = "capital-official-stations";
+    edge.provenanceKind = "OFFICIAL_SOURCE";
+    edge.verificationStatus = "VERIFIED";
+    edge.lastVerifiedAt = edge.lastVerifiedAt ?? "2026-06-19T00:00:00Z";
+  }
+  addMissingProductionAccessEdges(pack);
+  pack.minimumTableRows = {
+    ...pack.minimumTableRows,
     stations: 6,
     station_lines: 9,
-    network_edges: 19,
+    network_edges: pack.networkEdges.length,
     facilities: 3,
+  };
+}
+
+function addMissingProductionAccessEdges(pack) {
+  const edgePairs = new Set(pack.networkEdges.map((edge) => `${edge.fromNodeId}->${edge.toNodeId}`));
+  for (const stationLine of pack.stationLines) {
+    const nodeId = `${stationLine.stationId}:${stationLine.lineId}`;
+    const entryPair = `${stationLine.stationId}->${nodeId}`;
+    if (!edgePairs.has(entryPair)) {
+      pack.networkEdges.push(productionAccessEdge({
+        id: `entry-${stationLine.stationId}-${stationLine.lineId}`,
+        fromNodeId: stationLine.stationId,
+        toNodeId: nodeId,
+        edgeType: "ENTRY",
+        durationSeconds: 90,
+      }));
+      edgePairs.add(entryPair);
+    }
+    const exitPair = `${nodeId}->${stationLine.stationId}`;
+    if (!edgePairs.has(exitPair)) {
+      pack.networkEdges.push(productionAccessEdge({
+        id: `exit-${stationLine.stationId}-${stationLine.lineId}`,
+        fromNodeId: nodeId,
+        toNodeId: stationLine.stationId,
+        edgeType: "EXIT",
+        durationSeconds: 60,
+      }));
+      edgePairs.add(exitPair);
+    }
+  }
+}
+
+function productionAccessEdge({ id, fromNodeId, toNodeId, edgeType, durationSeconds }) {
+  return {
+    id,
+    fromNodeId,
+    toNodeId,
+    durationSeconds,
+    distanceMeters: 0,
+    edgeType,
+    servicePattern: "",
+    includesStairs: false,
+    stairAccessState: "STEP_FREE",
+    accessibilityStatus: "AVAILABLE",
+    reliabilityScore: 90,
+    sourceId: "capital-official-stations",
+    provenanceKind: "OFFICIAL_SOURCE",
+    verificationStatus: "VERIFIED",
+    lastVerifiedAt: "2026-06-19T00:00:00Z",
   };
 }
 

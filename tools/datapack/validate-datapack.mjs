@@ -104,6 +104,7 @@ function validateSqlite(sqlitePath, pack) {
     }
 
     validateNetworkEdgeReferences(database, pack);
+    validateProductionNetworkEdgeProvenance(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
     validateRepresentativeRouteRegressions(database, pack);
 
@@ -636,6 +637,193 @@ function validateNetworkEdgeFacilityReferences(database, pack) {
       `${pack.id}@${pack.version} network_edges facility_id references missing facility: ${missingReference.edge_id} -> ${missingReference.facility_id}`,
     );
   }
+}
+
+function validateProductionNetworkEdgeProvenance(database, pack) {
+  if (pack.artifactKind !== "production" || !hasTable(database, "network_edges")) {
+    return;
+  }
+  const requiredColumns = [
+    "source_id",
+    "provenance_kind",
+    "verification_status",
+    "last_verified_at",
+  ];
+  const columns = new Set(database.prepare("PRAGMA table_info(network_edges)").all().map((row) => row.name));
+  for (const column of requiredColumns) {
+    if (!columns.has(column)) {
+      throw new Error(`${pack.id}@${pack.version} network_edges provenance column missing: ${column}`);
+    }
+  }
+
+  const sourceUpdatedAtById = new Map(
+    pack.sourceInventory.map((source) => [
+      source.id,
+      timestampSeconds(requiredString(source.updatedAt, "sourceInventory.updatedAt")),
+    ]),
+  );
+  const edgeRows = database
+    .prepare(`
+      SELECT id, from_node_id, to_node_id, edge_type, stair_access_state,
+             accessibility_status, reliability_score, source_id,
+             provenance_kind, verification_status, last_verified_at
+      FROM network_edges
+      ORDER BY id
+    `)
+    .all();
+  const coverage = productionVerifiedCoverage(database, edgeRows);
+
+  for (const edge of edgeRows) {
+    if (!isPositiveAccessibilityEdge(edge)) {
+      continue;
+    }
+    validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack);
+  }
+
+  const report = {
+    type: "datapack_verified_edge_coverage",
+    pack: `${pack.id}@${pack.version}`,
+    entry: coverage.entry,
+    exit: coverage.exit,
+    transfer: coverage.transfer,
+    generatedConnectorGapCount:
+      coverage.entry.missingCount +
+      coverage.exit.missingCount +
+      coverage.transfer.missingCount,
+  };
+  console.log(JSON.stringify(report));
+
+  for (const [kind, item] of Object.entries(coverage)) {
+    if (item.missingCount > 0) {
+      throw new Error(
+        `${pack.id}@${pack.version} verified ${kind.toUpperCase()} coverage gap: ${item.missingCount}/${item.denominator}`,
+      );
+    }
+  }
+}
+
+function validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack) {
+  const sourceId = requiredString(edge.source_id, `network_edges.${edge.id}.source_id`);
+  const sourceUpdatedAt = sourceUpdatedAtById.get(sourceId);
+  if (sourceUpdatedAt === undefined) {
+    throw new Error(`${pack.id}@${pack.version} network_edges positive edge source_id is not in sourceInventory: ${edge.id}`);
+  }
+  const provenanceKind = requiredString(edge.provenance_kind, `network_edges.${edge.id}.provenance_kind`);
+  if (!["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(provenanceKind)) {
+    throw new Error(`${pack.id}@${pack.version} network_edges positive edge provenance_kind is not allowed: ${edge.id}`);
+  }
+  const verificationStatus = requiredString(edge.verification_status, `network_edges.${edge.id}.verification_status`);
+  if (verificationStatus !== "VERIFIED") {
+    throw new Error(`${pack.id}@${pack.version} network_edges positive edge verification_status must be VERIFIED: ${edge.id}`);
+  }
+  if (!Number.isInteger(edge.last_verified_at) || edge.last_verified_at <= 0) {
+    throw new Error(`${pack.id}@${pack.version} network_edges positive edge verifiedAt is required: ${edge.id}`);
+  }
+  if (edge.last_verified_at < sourceUpdatedAt) {
+    throw new Error(`${pack.id}@${pack.version} network_edges positive edge verifiedAt is older than source evidence: ${edge.id}`);
+  }
+  if (!Number.isInteger(edge.reliability_score) || edge.reliability_score < 80) {
+    throw new Error(`${pack.id}@${pack.version} network_edges positive edge reliability_score is below 80: ${edge.id}`);
+  }
+}
+
+function productionVerifiedCoverage(database, edgeRows) {
+  const stationLineRows = database
+    .prepare("SELECT station_id, line_id FROM station_lines ORDER BY station_id, line_id")
+    .all();
+  const requiredEntryPairs = new Set();
+  const requiredExitPairs = new Set();
+  const requiredTransferPairs = new Set();
+  const lineNodesByStation = new Map();
+  for (const row of stationLineRows) {
+    const nodeId = stationLineNodeId(row.station_id, row.line_id);
+    requiredEntryPairs.add(edgePairKey(row.station_id, nodeId));
+    requiredExitPairs.add(edgePairKey(nodeId, row.station_id));
+    const stationNodes = lineNodesByStation.get(row.station_id) ?? [];
+    stationNodes.push(nodeId);
+    lineNodesByStation.set(row.station_id, stationNodes);
+  }
+  for (const stationNodes of lineNodesByStation.values()) {
+    for (const fromNode of stationNodes) {
+      for (const toNode of stationNodes) {
+        if (fromNode !== toNode) {
+          requiredTransferPairs.add(edgePairKey(fromNode, toNode));
+        }
+      }
+    }
+  }
+
+  const verifiedEntryPairs = new Set();
+  const verifiedExitPairs = new Set();
+  const verifiedTransferPairs = new Set();
+  for (const edge of edgeRows) {
+    if (!isVerifiedPositiveAccessibilityEdge(edge)) {
+      continue;
+    }
+    const edgeType = normalizedEdgeType(edge.edge_type);
+    const fromNodeId = coverageNodeId(edge.from_node_id);
+    const toNodeId = coverageNodeId(edge.to_node_id);
+    if (edgeType === "ENTRY") {
+      verifiedEntryPairs.add(edgePairKey(fromNodeId, toNodeId));
+    } else if (edgeType === "EXIT") {
+      verifiedExitPairs.add(edgePairKey(fromNodeId, toNodeId));
+    } else if (edgeType === "TRANSFER") {
+      verifiedTransferPairs.add(edgePairKey(fromNodeId, toNodeId));
+      verifiedTransferPairs.add(edgePairKey(toNodeId, fromNodeId));
+    }
+  }
+
+  return {
+    entry: coverageItem(requiredEntryPairs, verifiedEntryPairs),
+    exit: coverageItem(requiredExitPairs, verifiedExitPairs),
+    transfer: coverageItem(requiredTransferPairs, verifiedTransferPairs),
+  };
+}
+
+function coverageItem(requiredPairs, verifiedPairs) {
+  const missing = [...requiredPairs].filter((pair) => !verifiedPairs.has(pair));
+  return {
+    denominator: requiredPairs.size,
+    verified: requiredPairs.size - missing.length,
+    missingCount: missing.length,
+    ratio: requiredPairs.size === 0 ? 1 : Number(((requiredPairs.size - missing.length) / requiredPairs.size).toFixed(4)),
+  };
+}
+
+function isPositiveAccessibilityEdge(edge) {
+  return (
+    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
+    String(edge.accessibility_status ?? "").toUpperCase() === "AVAILABLE"
+  );
+}
+
+function isVerifiedPositiveAccessibilityEdge(edge) {
+  return (
+    isPositiveAccessibilityEdge(edge) &&
+    edge.source_id &&
+    edge.provenance_kind &&
+    edge.verification_status === "VERIFIED" &&
+    Number.isInteger(edge.last_verified_at) &&
+    edge.last_verified_at > 0 &&
+    Number.isInteger(edge.reliability_score) &&
+    edge.reliability_score >= 80
+  );
+}
+
+function edgePairKey(fromNodeId, toNodeId) {
+  return `${fromNodeId}->${toNodeId}`;
+}
+
+function coverageNodeId(nodeId) {
+  return stationLineNodeFromRouteNodeId(nodeId) ?? nodeId;
+}
+
+function timestampSeconds(value) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`invalid timestamp: ${value}`);
+  }
+  return Math.floor(parsed / 1000);
 }
 
 function hasTable(database, tableName) {

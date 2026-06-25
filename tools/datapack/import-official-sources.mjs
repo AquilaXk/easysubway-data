@@ -447,8 +447,11 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey) {
       stairAccessState: row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN"),
       accessibilityStatus: row.accessibilityStatus ?? "UNKNOWN",
       reliabilityScore: row.reliabilityScore ?? 100,
+      sourceId: row.sourceId,
+      provenanceKind: row.provenanceKind ?? "OFFICIAL_SOURCE",
+      verificationStatus: row.verificationStatus ?? "VERIFIED",
       facilityId: row.facilityId ?? undefined,
-      lastVerifiedAt: requiredString(row.lastVerifiedAt, "routeEdges.lastVerifiedAt"),
+      lastVerifiedAt: requiredString(row.verifiedAt ?? row.lastVerifiedAt, "routeEdges.lastVerifiedAt"),
     };
   });
 }
@@ -487,6 +490,12 @@ function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey) {
 
 function nodeIdForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey) {
   const mapping = mappingForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey);
+  if (endpoint.nodeKind === "STATION") {
+    return mapping.stationId;
+  }
+  if (endpoint.nodeKind && endpoint.nodeKind !== "STATION_LINE") {
+    throw new Error(`endpoint.nodeKind is invalid: ${endpoint.nodeKind}`);
+  }
   const suffix = endpoint.nodeSuffix ? `:${requiredString(endpoint.nodeSuffix, "endpoint.nodeSuffix")}` : "";
   return `${mapping.stationId}:${mapping.lineId}${suffix}`;
 }
