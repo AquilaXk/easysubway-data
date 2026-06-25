@@ -20,6 +20,7 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
 
   const manifestPacks = [];
+  const provenancePacks = [];
   for (const pack of fixture.packs) {
     const artifactKind = pack.artifactKind ?? "fixture";
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
@@ -45,7 +46,7 @@ async function main() {
       pack.representativeRouteRegressions,
     );
 
-    manifestPacks.push({
+    const manifestPack = {
       id: pack.id,
       version: pack.version,
       artifactKind,
@@ -79,7 +80,12 @@ async function main() {
       }),
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
-    });
+    };
+    manifestPacks.push(manifestPack);
+    provenancePacks.push(packFieldProvenance(pack, {
+      artifactKind,
+      sqliteSha256,
+    }));
   }
 
   const manifest = {
@@ -106,7 +112,102 @@ async function main() {
     manifest.signature = manifestSignature(manifest, manifestPacks);
   }
 
-  await writeFile(path.join(outputDir, "current.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  await writeFile(path.join(outputDir, "current.json"), manifestJson);
+  await writeFile(
+    path.join(outputDir, "current.provenance.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "datapack-field-provenance",
+      manifestSha256: sha256(Buffer.from(manifestJson)),
+      packs: provenancePacks,
+    }, null, 2)}\n`,
+  );
+}
+
+function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
+  const sourceUpdatedAt = new Map((pack.sourceInventory ?? []).map((source) => [source.id, source.updatedAt]));
+  const defaultSourceId = pack.sourceInventory?.length === 1 ? pack.sourceInventory[0].id : "";
+  const records = [];
+  const addRecord = (row, entityType, entityId, field) => {
+    const sourceId = row.sourceId ?? defaultSourceId;
+    if (!sourceId) {
+      return;
+    }
+    records.push({
+      entityType,
+      entityId,
+      field,
+      sourceId,
+      derivationKind: derivationKind(row, artifactKind),
+      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
+    });
+  };
+
+  for (const station of pack.stations ?? []) {
+    addRecord(station, "station", station.id, "station_name");
+  }
+  for (const stationLine of pack.stationLines ?? []) {
+    const entityId = `${stationLine.stationId}:${stationLine.lineId}`;
+    addRecord(stationLine, "station_line", entityId, "line");
+    addRecord(stationLine, "station_line", entityId, "station_code");
+  }
+  for (const edge of pack.networkEdges ?? []) {
+    addRecord(edge, "network_edge", edge.id, "network_edges");
+    addRecord(edge, "network_edge", edge.id, "duration_seconds");
+    addRecord(edge, "network_edge", edge.id, "distance_meters");
+  }
+  for (const facility of pack.facilities ?? []) {
+    const field = facilityField(facility.type);
+    if (field) {
+      addRecord(facility, "facility", facility.id, field);
+    }
+    addRecord(facility, "facility", facility.id, "status");
+    if (facility.verifiedAt || facility.lastVerifiedAt) {
+      addRecord(facility, "facility", facility.id, "verified_at");
+    }
+  }
+  for (const mapping of pack.realtimeProviderStationMappings ?? []) {
+    if (mapping.supportsArrivals === true) {
+      addRecord(mapping, "realtime_provider_station_mapping", `${mapping.providerId}:${mapping.providerStationId}`, "realtime_arrival_reference");
+    }
+  }
+
+  return {
+    id: pack.id,
+    version: pack.version,
+    artifactKind,
+    sqliteSha256,
+    records: records.sort((left, right) =>
+      `${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`.localeCompare(
+        `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`,
+      ),
+    ),
+  };
+}
+
+function derivationKind(row, artifactKind) {
+  if (["OFFICIAL", "FIELD_VERIFIED", "MANUAL_OVERRIDE", "GENERATED", "FIXTURE"].includes(row.derivationKind)) {
+    return row.derivationKind;
+  }
+  if (artifactKind === "fixture") {
+    return "FIXTURE";
+  }
+  if (row.provenanceKind === "OFFICIAL_SOURCE") {
+    return "OFFICIAL";
+  }
+  if (row.provenanceKind === "OPERATOR_CONFIRMED" || row.provenanceKind === "FIELD_SURVEY") {
+    return "FIELD_VERIFIED";
+  }
+  return "GENERATED";
+}
+
+function facilityField(type) {
+  return {
+    ELEVATOR: "elevator",
+    ESCALATOR: "escalator",
+    WHEELCHAIR_LIFT: "wheelchair_lift",
+  }[type];
 }
 
 function outputPathForPack(outputDir, packUrl, pack) {

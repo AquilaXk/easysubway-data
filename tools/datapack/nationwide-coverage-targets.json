@@ -11,7 +11,10 @@
         "line",
         "station_name",
         "station_code"
-      ]
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
     },
     {
       "id": "route_graph_topology",
@@ -20,7 +23,10 @@
         "network_edges",
         "duration_seconds",
         "distance_meters"
-      ]
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
     },
     {
       "id": "accessibility_facilities",
@@ -31,14 +37,20 @@
         "wheelchair_lift",
         "status",
         "verified_at"
-      ]
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
     },
     {
       "id": "realtime_arrivals",
       "displayName": "실시간 도착/열차 참조",
       "requiredFields": [
         "realtime_arrival_reference"
-      ]
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
     },
     {
       "id": "demand_reference",
@@ -46,7 +58,10 @@
       "requiredFields": [
         "hourly_boarding_count",
         "hourly_alighting_count"
-      ]
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
     }
   ],
   "regions": [

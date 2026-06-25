@@ -377,6 +377,8 @@ function normalizedStations(stationRows) {
       longitude: row.longitude ?? null,
       dataQualityLevel: row.dataQualityLevel ?? "LEVEL_2",
       dataSourceType: row.dataSourceType ?? "OFFICIAL_FILE",
+      sourceId: row.sourceId,
+      derivationKind: "OFFICIAL",
       lastVerifiedAt: requiredString(row.lastVerifiedAt, "stationLineRows.lastVerifiedAt"),
     };
     const existing = stations.get(station.id);
@@ -397,6 +399,9 @@ function normalizedStationLines(stationRows) {
       stationCode: requiredString(row.stationCode ?? row.sourceStationCode, "stationLineRows.stationCode"),
       lineSequence: requiredInteger(row.lineSequence, "stationLineRows.lineSequence"),
       platformInfo: row.platformInfo ?? "",
+      sourceId: row.sourceId,
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: requiredString(row.lastVerifiedAt, "stationLineRows.lastVerifiedAt"),
     };
     const key = `${stationLine.stationId}:${stationLine.lineId}`;
     const existing = stationLines.get(key);
@@ -457,17 +462,24 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey) {
 }
 
 function facilityRows(rows, allowedSourceIds, mappingBySourceKey) {
-  return rows.map((row) => ({
-    id: requiredString(row.id, "facilityRows.id"),
-    stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
-    exitId: row.exitId ?? null,
-    type: requiredString(row.type, "facilityRows.type"),
-    name: requiredString(row.name, "facilityRows.name"),
-    status: row.status ?? "NORMAL",
-    floorFrom: row.floorFrom ?? "",
-    floorTo: row.floorTo ?? "",
-    description: row.description ?? "",
-  }));
+  return rows.map((row) => {
+    const sourceId = row.sourceId ?? row.station?.sourceId;
+    requiredKnownSource(sourceId, allowedSourceIds, "facilityRows.sourceId");
+    return {
+      id: requiredString(row.id, "facilityRows.id"),
+      stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
+      exitId: row.exitId ?? null,
+      type: requiredString(row.type, "facilityRows.type"),
+      name: requiredString(row.name, "facilityRows.name"),
+      status: row.status ?? "NORMAL",
+      floorFrom: row.floorFrom ?? "",
+      floorTo: row.floorTo ?? "",
+      description: row.description ?? "",
+      sourceId,
+      derivationKind: "OFFICIAL",
+      lastVerifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
+    };
+  });
 }
 
 function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey) {

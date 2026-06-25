@@ -6,8 +6,9 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const targets = JSON.parse(await readFile(requireArg(args, "targets"), "utf8"));
   const inventory = JSON.parse(await readFile(requireArg(args, "inventory"), "utf8"));
+  const provenance = args.provenance ? JSON.parse(await readFile(args.provenance, "utf8")) : null;
   const outputPath = requireArg(args, "output");
-  const report = buildCoverageGapReport(targets, inventory);
+  const report = buildCoverageGapReport(targets, inventory, provenance);
 
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -17,24 +18,38 @@ async function main() {
   }
 }
 
-function buildCoverageGapReport(targets, inventory) {
+function buildCoverageGapReport(targets, inventory, provenance = null) {
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
   const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
+  const provenanceIndex = provenance ? provenanceFieldIndex(provenance) : null;
   const requirements = [];
 
   for (const region of targets.regions) {
     for (const operatorId of region.operatorIds) {
       for (const domain of targets.requiredSourceDomains) {
-        const sourceIds = coveringSourceIds(sources, region.id, operatorId, domain.id);
+        const fieldCoverage = domain.requiredFields.map((field) =>
+          coveredField(sources, provenanceIndex, region.id, operatorId, domain.id, field),
+        );
+        const coveredFields = fieldCoverage.filter((entry) => entry.status === "covered").length;
+        const denominator = fieldCoverage.length;
+        const threshold = domain.blockingThreshold?.minimumOfficialFieldCoverageRatio ?? 1;
+        const coverageRatio = denominator === 0 ? 0 : Number((coveredFields / denominator).toFixed(4));
+        const sourceIds = [...new Set(fieldCoverage.flatMap((entry) => entry.sourceIds))].sort();
         requirements.push({
           regionId: region.id,
           regionName: region.displayName,
           operatorId,
           sourceDomain: domain.id,
-          status: sourceIds.length > 0 ? "covered" : "missing",
+          status: coverageRatio >= threshold ? "covered" : "missing",
+          denominator,
+          coveredFields,
+          coverageRatio,
+          blockingThreshold: threshold,
           sourceIds,
+          missingFields: fieldCoverage.filter((entry) => entry.status === "missing").map((entry) => entry.field),
+          fieldCoverage,
         });
       }
     }
@@ -48,6 +63,7 @@ function buildCoverageGapReport(targets, inventory) {
     artifactKind: "nationwide-coverage-gap-report",
     targetVersion: targets.targetVersion,
     inventoryRetrievedAt: inventory.retrievedAt,
+    candidate: provenanceIndex?.candidate ?? null,
     summary: {
       totalRequirements,
       coveredRequirements,
@@ -67,16 +83,23 @@ function coverageTargetIndex(targets) {
   };
 }
 
-function coveringSourceIds(sources, regionId, operatorId, sourceDomain) {
-  return sources
+function coveredField(sources, provenanceIndex, regionId, operatorId, sourceDomain, field) {
+  const sourceIds = sources
     .filter(
       (source) =>
         source.regionIds.includes(regionId) &&
         source.operatorIds.includes(operatorId) &&
-        source.sourceDomains.includes(sourceDomain),
+        source.sourceDomains.includes(sourceDomain) &&
+        source.fields.includes(field) &&
+        (!provenanceIndex || provenanceIndex.officialFieldsBySource.get(source.id)?.has(field)),
     )
     .map((source) => source.id)
     .sort();
+  return {
+    field,
+    status: sourceIds.length > 0 ? "covered" : "missing",
+    sourceIds,
+  };
 }
 
 function validateTargets(targets) {
@@ -102,6 +125,10 @@ function validateTargets(targets) {
     domainIds.add(id);
     requiredString(domain.displayName, `${id}.displayName`);
     requiredStringArray(domain.requiredFields, `${id}.requiredFields`);
+    const threshold = domain.blockingThreshold?.minimumOfficialFieldCoverageRatio ?? 1;
+    if (typeof threshold !== "number" || threshold <= 0 || threshold > 1) {
+      throw new Error(`${id}.blockingThreshold.minimumOfficialFieldCoverageRatio must be between 0 and 1`);
+    }
   }
   if (!Array.isArray(targets.regions) || targets.regions.length === 0) {
     throw new Error("regions must be a non-empty array");
@@ -140,6 +167,7 @@ function normalizeSource(source, targetIndex) {
   const regionIds = requiredStringArray(coverage.regionIds, `${id}.coverageScope.regionIds`);
   const operatorIds = requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`);
   const sourceDomains = requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`);
+  const fields = requiredStringArray(source.fieldsProvided ?? source.fields, `${id}.fieldsProvided`);
   validateKnownValues(regionIds, targetIndex.regionIds, `${id}.coverageScope.regionIds`, "region");
   validateKnownValues(operatorIds, targetIndex.operatorIds, `${id}.coverageScope.operatorIds`, "operator");
   validateKnownValues(sourceDomains, targetIndex.sourceDomains, `${id}.coverageScope.sourceDomains`, "source domain");
@@ -148,7 +176,69 @@ function normalizeSource(source, targetIndex) {
     regionIds,
     operatorIds,
     sourceDomains,
+    fields,
   };
+}
+
+function provenanceFieldIndex(provenance) {
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    throw new Error("field provenance must be an object");
+  }
+  if (provenance.schemaVersion !== 1) {
+    throw new Error("field provenance schemaVersion must be 1");
+  }
+  if (provenance.artifactKind !== "datapack-field-provenance") {
+    throw new Error("field provenance artifactKind must be datapack-field-provenance");
+  }
+  requiredString(provenance.manifestSha256, "field provenance manifestSha256");
+  if (!Array.isArray(provenance.packs) || provenance.packs.length === 0) {
+    throw new Error("field provenance packs must be a non-empty array");
+  }
+
+  const officialFieldsBySource = new Map();
+  const packs = [];
+  for (const pack of provenance.packs) {
+    const id = requiredString(pack.id, "field provenance pack.id");
+    const version = requiredString(pack.version, "field provenance pack.version");
+    const sqliteSha256 = requiredString(pack.sqliteSha256, "field provenance pack.sqliteSha256");
+    const artifactKind = requiredString(pack.artifactKind, "field provenance pack.artifactKind");
+    packs.push({ id, version, artifactKind, sqliteSha256 });
+    if (!Array.isArray(pack.records)) {
+      throw new Error(`${id}@${version} field provenance records must be an array`);
+    }
+    for (const record of pack.records) {
+      validateProvenanceRecord(record, `${id}@${version}`);
+      if (!["OFFICIAL", "FIELD_VERIFIED"].includes(record.derivationKind)) {
+        continue;
+      }
+      const fields = officialFieldsBySource.get(record.sourceId) ?? new Set();
+      fields.add(record.field);
+      officialFieldsBySource.set(record.sourceId, fields);
+    }
+  }
+
+  return {
+    officialFieldsBySource,
+    candidate: {
+      manifestSha256: provenance.manifestSha256,
+      packs,
+    },
+  };
+}
+
+function validateProvenanceRecord(record, label) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    throw new Error(`${label} field provenance record must be an object`);
+  }
+  requiredString(record.entityType, `${label}.entityType`);
+  requiredString(record.entityId, `${label}.entityId`);
+  requiredString(record.field, `${label}.field`);
+  requiredString(record.sourceId, `${label}.sourceId`);
+  requiredString(record.verifiedAt, `${label}.verifiedAt`);
+  const derivationKind = requiredString(record.derivationKind, `${label}.derivationKind`);
+  if (!["OFFICIAL", "FIELD_VERIFIED", "MANUAL_OVERRIDE", "GENERATED", "FIXTURE"].includes(derivationKind)) {
+    throw new Error(`${label}.derivationKind is invalid: ${derivationKind}`);
+  }
 }
 
 function validateKnownValues(values, knownValues, label, valueLabel) {

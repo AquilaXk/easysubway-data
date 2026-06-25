@@ -88,6 +88,22 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-19T00:00:00.000Z");
   assert.equal(pack.regionalQualityMetrics.stationCount, 6);
   assert.equal(pack.regionalQualityMetrics.facilityCoverageRatio, 0.1667);
+
+  const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
+  assert.equal(provenance.artifactKind, "datapack-field-provenance");
+  assert.match(provenance.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.equal(provenance.packs[0].id, "capital");
+  assert.equal(provenance.packs[0].version, "1");
+  assert.equal(provenance.packs[0].sqliteSha256, pack.sqliteSha256);
+  assert.ok(
+    provenance.packs[0].records.some(
+      (record) =>
+        record.entityType === "network_edge" &&
+        record.field === "network_edges" &&
+        record.sourceId === "fixture-capital-catalog" &&
+        record.derivationKind === "FIXTURE",
+    ),
+  );
   assert.equal(pack.regionalQualityMetrics.edgeCount, 19);
   assert.equal(pack.regionalQualityMetrics.unknownAccessibilityRatio, 0);
   assert.deepEqual(
@@ -4283,8 +4299,8 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   assert.equal(report.summary.totalRequirements, 35);
-  assert.equal(report.summary.coveredRequirements, 16);
-  assert.equal(report.summary.missingRequirements, 19);
+  assert.equal(report.summary.coveredRequirements, 3);
+  assert.equal(report.summary.missingRequirements, 32);
 
   const busanStationMembership = report.requirements.find(
     (entry) =>
@@ -4295,9 +4311,9 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
   assert.deepEqual(busanStationMembership?.sourceIds, [
     "busan-transportation-urban-rail-station-info",
     "kric-metropolitan-rail-station-info",
-    "molit-tago-subway-info",
     "molit-urban-rail-full-route",
   ]);
+  assert.deepEqual(busanStationMembership?.missingFields, ["line", "station_code"]);
 
   const capitalAccessibilityFacilities = report.requirements.find(
     (entry) =>
@@ -4305,17 +4321,13 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
       entry.operatorId === "seoul-metro" &&
       entry.sourceDomain === "accessibility_facilities",
   );
-  assert.deepEqual(capitalAccessibilityFacilities?.sourceIds, [
-    "kric-braille-displays",
-    "kric-disabled-toilet",
-    "kric-elevator-car-number",
-    "kric-platform-train-distance",
-    "kric-safety-platform",
-    "kric-station-elevator",
-    "kric-station-elevator-movement",
-    "kric-station-escalator",
-    "kric-wheelchair-lift-location",
-    "kric-wheelchair-lift-movement",
+  assert.deepEqual(capitalAccessibilityFacilities?.sourceIds, []);
+  assert.deepEqual(capitalAccessibilityFacilities?.missingFields, [
+    "elevator",
+    "escalator",
+    "wheelchair_lift",
+    "status",
+    "verified_at",
   ]);
 });
 
@@ -4378,6 +4390,83 @@ test("전국 coverage gap report는 target coverage가 모두 충족되면 성�
   assert.equal(report.summary.coverageComplete, true);
   assert.equal(report.summary.missingRequirements, 0);
   assert.equal(report.summary.coverageRatio, 1);
+});
+
+test("전국 coverage gap report는 candidate field provenance와 manifest hash를 evidence로 결합한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-complete-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(provenancePath, `${JSON.stringify(completeCoverageProvenance(inventory), null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      inventoryPath,
+      "--provenance",
+      provenancePath,
+      "--output",
+      reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, true);
+  assert.equal(report.candidate.manifestSha256, "a".repeat(64));
+  assert.deepEqual(report.candidate.packs.map(({ id, version, sqliteSha256 }) => ({ id, version, sqliteSha256 })), [
+    { id: "nationwide", version: "1", sqliteSha256: "b".repeat(64) },
+  ]);
+  assert.ok(report.requirements.every((entry) => entry.fieldCoverage.every((field) => field.status === "covered")));
+});
+
+test("전국 coverage gap report는 generated fixture manual provenance를 official coverage에서 제외한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-generated-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const provenance = completeCoverageProvenance(inventory);
+  provenance.packs[0].records.find((record) => record.field === "line").derivationKind = "GENERATED";
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory",
+        inventoryPath,
+        "--provenance",
+        provenancePath,
+        "--output",
+        reportPath,
+      ],
+      { cwd: root },
+    ),
+    /nationwide coverage gaps remain/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, false);
+  assert.ok(report.requirements.some((entry) => entry.missingFields.includes("line")));
 });
 
 test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pack을 만든다", async () => {
@@ -4474,6 +4563,8 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     floorFrom: "B2",
     floorTo: "1F",
     description: "상록수역 승강장과 지상을 연결합니다.",
+    sourceId: "seoulmetro-station-line-info",
+    derivationKind: "OFFICIAL",
   });
 });
 
@@ -6100,6 +6191,32 @@ function completeCoverageInventory(targets) {
         })),
       ),
     ),
+  };
+}
+
+function completeCoverageProvenance(inventory) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: "a".repeat(64),
+    packs: [
+      {
+        id: "nationwide",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records: inventory.sources.flatMap((source) =>
+          source.fieldsProvided.map((field) => ({
+            entityType: "source-field",
+            entityId: `${source.id}:${field}`,
+            field,
+            sourceId: source.id,
+            derivationKind: "OFFICIAL",
+            verifiedAt: "2026-06-22T00:00:00.000Z",
+          })),
+        ),
+      },
+    ],
   };
 }
 
