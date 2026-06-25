@@ -44,6 +44,7 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
             echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
+            echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
           } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Apply admin review overrides
@@ -75,6 +76,18 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
             --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
+
+      - name: Data Pack Release / Write coverage gap evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
+          node tools/datapack/report-coverage-gaps.mjs \
+            --targets tools/datapack/nationwide-coverage-targets.json \
+            --inventory tools/datapack/source-inventory.json \
+            --provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json" \
+            --output "${EASYSUBWAY_COVERAGE_GAP_REPORT}" \
+            --allow-gaps
+          test -s "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
 
       - name: Data Pack Release / Stage pack files
         run: |

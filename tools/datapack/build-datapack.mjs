@@ -20,6 +20,7 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
 
   const manifestPacks = [];
+  const provenancePacks = [];
   for (const pack of fixture.packs) {
     const artifactKind = pack.artifactKind ?? "fixture";
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
@@ -45,7 +46,7 @@ async function main() {
       pack.representativeRouteRegressions,
     );
 
-    manifestPacks.push({
+    const manifestPack = {
       id: pack.id,
       version: pack.version,
       artifactKind,
@@ -79,7 +80,12 @@ async function main() {
       }),
       requiredTables: pack.requiredTables,
       minimumTableRows: pack.minimumTableRows ?? {},
-    });
+    };
+    manifestPacks.push(manifestPack);
+    provenancePacks.push(packFieldProvenance(pack, {
+      artifactKind,
+      sqliteSha256,
+    }));
   }
 
   const manifest = {
@@ -106,7 +112,173 @@ async function main() {
     manifest.signature = manifestSignature(manifest, manifestPacks);
   }
 
-  await writeFile(path.join(outputDir, "current.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  await writeFile(path.join(outputDir, "current.json"), manifestJson);
+  await writeFile(
+    path.join(outputDir, "current.provenance.json"),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "datapack-field-provenance",
+      manifestSha256: sha256(Buffer.from(manifestJson)),
+      packs: provenancePacks,
+    }, null, 2)}\n`,
+  );
+}
+
+function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
+  const sourceUpdatedAt = new Map((pack.sourceInventory ?? []).map((source) => [source.id, source.updatedAt]));
+  const sourceFields = new Map((pack.sourceInventory ?? []).map((source) => [source.id, new Set(source.fields ?? [])]));
+  const sourceScopes = sourceCoverageScopeMap(pack.sourceInventory ?? []);
+  const defaultSourceId = pack.sourceInventory?.length === 1 ? pack.sourceInventory[0].id : "";
+  const lineOperatorIds = new Map((pack.lines ?? []).map((line) => [line.id, line.operatorId]).filter(([, operatorId]) => operatorId));
+  const stationLineOperatorIds = new Map();
+  const stationOperatorIds = new Map();
+  for (const stationLine of pack.stationLines ?? []) {
+    const operatorId = lineOperatorIds.get(stationLine.lineId);
+    if (!operatorId) {
+      continue;
+    }
+    stationLineOperatorIds.set(`${stationLine.stationId}:${stationLine.lineId}`, operatorId);
+    const operators = stationOperatorIds.get(stationLine.stationId) ?? new Set();
+    operators.add(operatorId);
+    stationOperatorIds.set(stationLine.stationId, operators);
+  }
+  const records = [];
+  const addRecord = (row, entityType, entityId, field, operatorIds = []) => {
+    const sourceId = row.sourceId ?? defaultSourceId;
+    if (!sourceId) {
+      return;
+    }
+    const coverageScope = recordCoverageScope(sourceScopes.get(sourceId), operatorIds);
+    const recordDerivationKind =
+      entityType === "facility" && field === "status" && !sourceFields.get(sourceId)?.has("status")
+        ? "GENERATED"
+        : derivationKind(row, artifactKind);
+    records.push({
+      entityType,
+      entityId,
+      field,
+      sourceId,
+      ...(coverageScope ? { coverageScope } : {}),
+      derivationKind: recordDerivationKind,
+      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
+    });
+  };
+
+  for (const station of pack.stations ?? []) {
+    addRecord(station, "station", station.id, "station_name", [...(stationOperatorIds.get(station.id) ?? [])]);
+  }
+  for (const stationLine of pack.stationLines ?? []) {
+    const entityId = `${stationLine.stationId}:${stationLine.lineId}`;
+    const operatorIds = [lineOperatorIds.get(stationLine.lineId)].filter(Boolean);
+    addRecord(stationLine, "station_line", entityId, "line", operatorIds);
+    addRecord(stationLine, "station_line", entityId, "station_code", operatorIds);
+  }
+  for (const edge of pack.networkEdges ?? []) {
+    const operatorIds = operatorIdsForNodes([edge.fromNodeId, edge.toNodeId], stationLineOperatorIds);
+    addRecord(edge, "network_edge", edge.id, "network_edges", operatorIds);
+    addRecord(edge, "network_edge", edge.id, "duration_seconds", operatorIds);
+    addRecord(edge, "network_edge", edge.id, "distance_meters", operatorIds);
+  }
+  for (const facility of pack.facilities ?? []) {
+    const operatorIds = [...(stationOperatorIds.get(facility.stationId) ?? [])];
+    const field = facilityField(facility.type);
+    if (field) {
+      addRecord(facility, "facility", facility.id, field, operatorIds);
+    }
+    addRecord(facility, "facility", facility.id, "status", operatorIds);
+    if (facility.verifiedAt || facility.lastVerifiedAt) {
+      addRecord(facility, "facility", facility.id, "verified_at", operatorIds);
+    }
+  }
+  for (const mapping of pack.realtimeProviderStationMappings ?? []) {
+    if (mapping.supportsArrivals === true) {
+      const operatorIds = [lineOperatorIds.get(mapping.lineId)].filter(Boolean);
+      addRecord(
+        mapping,
+        "realtime_provider_station_mapping",
+        `${mapping.providerId}:${mapping.providerStationId}`,
+        "realtime_arrival_reference",
+        operatorIds,
+      );
+    }
+  }
+
+  return {
+    id: pack.id,
+    version: pack.version,
+    artifactKind,
+    sqliteSha256,
+    records: records.sort((left, right) =>
+      `${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`.localeCompare(
+        `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`,
+      ),
+    ),
+  };
+}
+
+function sourceCoverageScopeMap(sourceInventory) {
+  const scopes = new Map();
+  for (const source of sourceInventory) {
+    if (!source.coverageScope || typeof source.coverageScope !== "object" || Array.isArray(source.coverageScope)) {
+      continue;
+    }
+    scopes.set(source.id, {
+      regionIds: Array.isArray(source.coverageScope.regionIds) ? [...source.coverageScope.regionIds] : [],
+      operatorIds: Array.isArray(source.coverageScope.operatorIds) ? [...source.coverageScope.operatorIds] : [],
+      sourceDomains: Array.isArray(source.coverageScope.sourceDomains) ? [...source.coverageScope.sourceDomains] : [],
+    });
+  }
+  return scopes;
+}
+
+function recordCoverageScope(sourceScope, operatorIds) {
+  if (!sourceScope) {
+    return null;
+  }
+  const scopedOperatorIds = sourceScope.operatorIds.filter((operatorId) => operatorIds.includes(operatorId));
+  return {
+    regionIds: sourceScope.regionIds,
+    operatorIds: scopedOperatorIds.length > 0 ? scopedOperatorIds : sourceScope.operatorIds,
+    sourceDomains: sourceScope.sourceDomains,
+  };
+}
+
+function operatorIdsForNodes(nodeIds, stationLineOperatorIds) {
+  return [
+    ...new Set(
+      nodeIds.map((nodeId) => stationLineOperatorIds.get(canonicalStationLineNodeId(nodeId))).filter(Boolean),
+    ),
+  ].sort();
+}
+
+function canonicalStationLineNodeId(nodeId) {
+  const parts = String(nodeId).split(":");
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : nodeId;
+}
+
+function derivationKind(row, artifactKind) {
+  if (["OFFICIAL", "FIELD_VERIFIED", "MANUAL_OVERRIDE", "GENERATED", "FIXTURE"].includes(row.derivationKind)) {
+    return row.derivationKind;
+  }
+  if (artifactKind === "fixture") {
+    return "FIXTURE";
+  }
+  if (row.provenanceKind === "OFFICIAL_SOURCE") {
+    return "OFFICIAL";
+  }
+  if (row.provenanceKind === "OPERATOR_CONFIRMED" || row.provenanceKind === "FIELD_SURVEY") {
+    return "FIELD_VERIFIED";
+  }
+  return "GENERATED";
+}
+
+function facilityField(type) {
+  return {
+    ELEVATOR: "elevator",
+    ESCALATOR: "escalator",
+    WHEELCHAIR_LIFT: "wheelchair_lift",
+  }[type];
 }
 
 function outputPathForPack(outputDir, packUrl, pack) {
