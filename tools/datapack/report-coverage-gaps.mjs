@@ -91,7 +91,7 @@ function coveredField(sources, provenanceIndex, regionId, operatorId, sourceDoma
         source.operatorIds.includes(operatorId) &&
         source.sourceDomains.includes(sourceDomain) &&
         source.fields.includes(field) &&
-        (!provenanceIndex || provenanceIndex.officialFieldsBySource.get(source.id)?.has(field)),
+        (!provenanceIndex || provenanceIndex.officialFieldScopes.has(coverageKey(source.id, regionId, operatorId, sourceDomain, field))),
     )
     .map((source) => source.id)
     .sort();
@@ -195,7 +195,7 @@ function provenanceFieldIndex(provenance) {
     throw new Error("field provenance packs must be a non-empty array");
   }
 
-  const officialFieldsBySource = new Map();
+  const officialFieldScopes = new Set();
   const packs = [];
   for (const pack of provenance.packs) {
     const id = requiredString(pack.id, "field provenance pack.id");
@@ -207,18 +207,22 @@ function provenanceFieldIndex(provenance) {
       throw new Error(`${id}@${version} field provenance records must be an array`);
     }
     for (const record of pack.records) {
-      validateProvenanceRecord(record, `${id}@${version}`);
+      const normalizedRecord = validateProvenanceRecord(record, `${id}@${version}`);
       if (!["OFFICIAL", "FIELD_VERIFIED"].includes(record.derivationKind)) {
         continue;
       }
-      const fields = officialFieldsBySource.get(record.sourceId) ?? new Set();
-      fields.add(record.field);
-      officialFieldsBySource.set(record.sourceId, fields);
+      for (const regionId of normalizedRecord.coverageScope.regionIds) {
+        for (const operatorId of normalizedRecord.coverageScope.operatorIds) {
+          for (const sourceDomain of normalizedRecord.coverageScope.sourceDomains) {
+            officialFieldScopes.add(coverageKey(record.sourceId, regionId, operatorId, sourceDomain, record.field));
+          }
+        }
+      }
     }
   }
 
   return {
-    officialFieldsBySource,
+    officialFieldScopes,
     candidate: {
       manifestSha256: provenance.manifestSha256,
       packs,
@@ -239,6 +243,24 @@ function validateProvenanceRecord(record, label) {
   if (!["OFFICIAL", "FIELD_VERIFIED", "MANUAL_OVERRIDE", "GENERATED", "FIXTURE"].includes(derivationKind)) {
     throw new Error(`${label}.derivationKind is invalid: ${derivationKind}`);
   }
+  if (!["OFFICIAL", "FIELD_VERIFIED"].includes(derivationKind)) {
+    return { derivationKind };
+  }
+  if (!record.coverageScope || typeof record.coverageScope !== "object" || Array.isArray(record.coverageScope)) {
+    throw new Error(`${label}.coverageScope must be an object for official field provenance`);
+  }
+  return {
+    derivationKind,
+    coverageScope: {
+      regionIds: requiredStringArray(record.coverageScope.regionIds, `${label}.coverageScope.regionIds`),
+      operatorIds: requiredStringArray(record.coverageScope.operatorIds, `${label}.coverageScope.operatorIds`),
+      sourceDomains: requiredStringArray(record.coverageScope.sourceDomains, `${label}.coverageScope.sourceDomains`),
+    },
+  };
+}
+
+function coverageKey(sourceId, regionId, operatorId, sourceDomain, field) {
+  return `${sourceId}:${regionId}:${operatorId}:${sourceDomain}:${field}`;
 }
 
 function validateKnownValues(values, knownValues, label, valueLabel) {

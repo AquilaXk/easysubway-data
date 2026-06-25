@@ -4430,6 +4430,96 @@ test("전국 coverage gap report는 candidate field provenance와 manifest hash�
   assert.ok(report.requirements.every((entry) => entry.fieldCoverage.every((field) => field.status === "covered")));
 });
 
+test("전국 coverage gap report는 multi-region source의 provenance scope를 requirement별로 제한한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-scope-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const stationMembership = targets.requiredSourceDomains.find((domain) => domain.id === "station_line_membership");
+  const multiRegionSource = {
+    id: "multi-region-station-source",
+    coverageScope: {
+      regionIds: ["capital", "busan"],
+      operatorIds: ["seoul-metro", "busan-transportation"],
+      sourceDomains: ["station_line_membership"],
+    },
+    fieldsProvided: stationMembership.requiredFields,
+  };
+  const inventory = {
+    schemaVersion: 1,
+    retrievedAt: "2026-06-22",
+    sources: [multiRegionSource],
+  };
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: "a".repeat(64),
+    packs: [
+      {
+        id: "nationwide",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records: stationMembership.requiredFields.map((field) => ({
+          entityType: "station_line",
+          entityId: `capital-seoul-metro:${field}`,
+          field,
+          sourceId: multiRegionSource.id,
+          coverageScope: {
+            regionIds: ["capital"],
+            operatorIds: ["seoul-metro"],
+            sourceDomains: ["station_line_membership"],
+          },
+          derivationKind: "OFFICIAL",
+          verifiedAt: "2026-06-22T00:00:00.000Z",
+        })),
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      inventoryPath,
+      "--provenance",
+      provenancePath,
+      "--output",
+      reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const capitalRequirement = report.requirements.find(
+    (entry) =>
+      entry.regionId === "capital" &&
+      entry.operatorId === "seoul-metro" &&
+      entry.sourceDomain === "station_line_membership",
+  );
+  const busanRequirement = report.requirements.find(
+    (entry) =>
+      entry.regionId === "busan" &&
+      entry.operatorId === "busan-transportation" &&
+      entry.sourceDomain === "station_line_membership",
+  );
+  assert.equal(capitalRequirement.status, "covered");
+  assert.deepEqual(capitalRequirement.missingFields, []);
+  assert.equal(busanRequirement.status, "missing");
+  assert.deepEqual(busanRequirement.sourceIds, []);
+  assert.deepEqual(busanRequirement.missingFields, stationMembership.requiredFields);
+});
+
 test("전국 coverage gap report는 generated fixture manual provenance를 official coverage에서 제외한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-generated-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");
@@ -6211,6 +6301,7 @@ function completeCoverageProvenance(inventory) {
             entityId: `${source.id}:${field}`,
             field,
             sourceId: source.id,
+            coverageScope: source.coverageScope,
             derivationKind: "OFFICIAL",
             verifiedAt: "2026-06-22T00:00:00.000Z",
           })),
