@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <style>
+    .hidden { display: none; }
+  </style>
+  <g id="station-labels" class="labels" transform="translate(10 5)">
+    <text id="alpha" x="20" y="30" font-size="12" data-route-map-classification="station_label">알파역</text>
+    <text id="rotated" x="60" y="40" font-size="10" transform="rotate(30 60 40)">회전역</text>
+    <text id="line-label" x="20" y="80" font-size="9">1호선</text>
+    <text id="notice" x="100" y="100" font-size="8">Not to scale</text>
+    <text id="hidden" class="hidden" x="5" y="100">숨김역</text>
+  </g>
+  <g id="transparent-layer" opacity="0">
+    <text x="20" y="20">투명역</text>
+  </g>
+  <g id="hidden-layer" visibility="hidden">
+    <text x="20" y="40">비가시역</text>
+  </g>
+  <g id="display-none-layer" display="none">
+    <text x="20" y="60">레이어숨김역</text>
+  </g>
+  <defs>
+    <text id="template" x="0" y="0">템플릿역</text>
+  </defs>
+</svg>
