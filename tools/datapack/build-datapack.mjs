@@ -245,7 +245,16 @@ function recordCoverageScope(sourceScope, operatorIds) {
 }
 
 function operatorIdsForNodes(nodeIds, stationLineOperatorIds) {
-  return [...new Set(nodeIds.map((nodeId) => stationLineOperatorIds.get(nodeId)).filter(Boolean))].sort();
+  return [
+    ...new Set(
+      nodeIds.map((nodeId) => stationLineOperatorIds.get(canonicalStationLineNodeId(nodeId))).filter(Boolean),
+    ),
+  ].sort();
+}
+
+function canonicalStationLineNodeId(nodeId) {
+  const parts = String(nodeId).split(":");
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : nodeId;
 }
 
 function derivationKind(row, artifactKind) {

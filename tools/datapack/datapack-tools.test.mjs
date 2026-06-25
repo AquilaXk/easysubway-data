@@ -4748,6 +4748,62 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
   assert.equal(facilityStatusRecord.derivationKind, "GENERATED");
 });
 
+test("데이터팩 생성기는 service pattern route node의 edge provenance scope를 canonical station-line operator로 제한한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-provenance-service-pattern-scope-${Date.now()}`);
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(sourceIngestInput(), null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const fixture = JSON.parse(await readFile(outputPath, "utf8"));
+  const pack = fixture.packs[0];
+  pack.sourceInventory.find((source) => source.id === "seoulmetro-station-line-info").coverageScope.operatorIds = [
+    "seoul-metro",
+    "korail",
+  ];
+  pack.networkEdges[0].fromNodeId = "station-sangnoksu:seoul-4:EXPRESS";
+  pack.networkEdges[0].toNodeId = "station-sadang:seoul-4:EXPRESS";
+  await writeFile(outputPath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  const packOutputDir = path.join(outputDir, "pack");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      outputPath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
+  const edgeRecord = provenance.packs[0].records.find(
+    (record) =>
+      record.entityType === "network_edge" &&
+      record.entityId === "edge-sangnoksu-sadang-seoul-4" &&
+      record.field === "network_edges",
+  );
+  assert.ok(edgeRecord);
+  assert.deepEqual(edgeRecord.coverageScope.operatorIds, ["seoul-metro"]);
+});
+
 test("공식 source ingest adapter는 전국 마스터 source를 canonical 역·노선 row로 병합한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-nationwide-master-${Date.now()}`);
   const inputPath = path.join(outputDir, "official-source-input.json");
