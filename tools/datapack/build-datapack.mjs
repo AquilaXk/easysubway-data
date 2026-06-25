@@ -127,6 +127,7 @@ async function main() {
 
 function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
   const sourceUpdatedAt = new Map((pack.sourceInventory ?? []).map((source) => [source.id, source.updatedAt]));
+  const sourceFields = new Map((pack.sourceInventory ?? []).map((source) => [source.id, new Set(source.fields ?? [])]));
   const sourceScopes = sourceCoverageScopeMap(pack.sourceInventory ?? []);
   const defaultSourceId = pack.sourceInventory?.length === 1 ? pack.sourceInventory[0].id : "";
   const lineOperatorIds = new Map((pack.lines ?? []).map((line) => [line.id, line.operatorId]).filter(([, operatorId]) => operatorId));
@@ -149,13 +150,17 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
       return;
     }
     const coverageScope = recordCoverageScope(sourceScopes.get(sourceId), operatorIds);
+    const recordDerivationKind =
+      entityType === "facility" && field === "status" && !sourceFields.get(sourceId)?.has("status")
+        ? "GENERATED"
+        : derivationKind(row, artifactKind);
     records.push({
       entityType,
       entityId,
       field,
       sourceId,
       ...(coverageScope ? { coverageScope } : {}),
-      derivationKind: derivationKind(row, artifactKind),
+      derivationKind: recordDerivationKind,
       verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
     });
   };

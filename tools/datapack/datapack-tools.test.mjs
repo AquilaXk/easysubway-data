@@ -4691,6 +4691,11 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
 
   const generated = JSON.parse(await readFile(outputPath, "utf8"));
   const pack = generated.packs[0];
+  const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
+  const facilityStatusRecord = provenance.packs[0].records.find(
+    (record) => record.entityType === "facility" && record.field === "status",
+  );
+  assert.ok(facilityStatusRecord);
   const seoulMetroSource = pack.sourceInventory.find((source) => source.id === "seoulmetro-station-line-info");
   assert.equal(pack.artifactKind, "fixture");
   assert.equal(pack.sourceInventory.length, 2);
@@ -4740,6 +4745,7 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     sourceId: "seoulmetro-station-line-info",
     derivationKind: "OFFICIAL",
   });
+  assert.equal(facilityStatusRecord.derivationKind, "GENERATED");
 });
 
 test("공식 source ingest adapter는 전국 마스터 source를 canonical 역·노선 row로 병합한다", async () => {
