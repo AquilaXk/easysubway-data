@@ -4520,6 +4520,90 @@ test("전국 coverage gap report는 multi-region source의 provenance scope를 r
   assert.deepEqual(busanRequirement.missingFields, stationMembership.requiredFields);
 });
 
+test("전국 coverage gap report는 provenance 모드에서 source-native field명을 target field gate로 쓰지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-normalized-field-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = {
+    schemaVersion: 1,
+    retrievedAt: "2026-06-22",
+    sources: [
+      {
+        id: "kric-station-elevator",
+        coverageScope: {
+          regionIds: ["capital"],
+          operatorIds: ["seoul-metro"],
+          sourceDomains: ["accessibility_facilities"],
+        },
+        fieldsProvided: ["station_code", "station_name", "location", "floor_from", "floor_to"],
+      },
+    ],
+  };
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: "a".repeat(64),
+    packs: [
+      {
+        id: "capital",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records: [
+          {
+            entityType: "facility",
+            entityId: "facility-sangnoksu-elevator-kric-1",
+            field: "elevator",
+            sourceId: "kric-station-elevator",
+            coverageScope: {
+              regionIds: ["capital"],
+              operatorIds: ["seoul-metro"],
+              sourceDomains: ["accessibility_facilities"],
+            },
+            derivationKind: "OFFICIAL",
+            verifiedAt: "2026-06-22T00:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      inventoryPath,
+      "--provenance",
+      provenancePath,
+      "--output",
+      reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const accessibilityRequirement = report.requirements.find(
+    (entry) =>
+      entry.regionId === "capital" &&
+      entry.operatorId === "seoul-metro" &&
+      entry.sourceDomain === "accessibility_facilities",
+  );
+  const elevatorCoverage = accessibilityRequirement.fieldCoverage.find((entry) => entry.field === "elevator");
+  assert.equal(elevatorCoverage.status, "covered");
+  assert.deepEqual(elevatorCoverage.sourceIds, ["kric-station-elevator"]);
+  assert.ok(accessibilityRequirement.missingFields.includes("status"));
+});
+
 test("전국 coverage gap report는 generated fixture manual provenance를 official coverage에서 제외한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-provenance-generated-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");

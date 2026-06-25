@@ -90,8 +90,9 @@ function coveredField(sources, provenanceIndex, regionId, operatorId, sourceDoma
         source.regionIds.includes(regionId) &&
         source.operatorIds.includes(operatorId) &&
         source.sourceDomains.includes(sourceDomain) &&
-        source.fields.includes(field) &&
-        (!provenanceIndex || provenanceIndex.officialFieldScopes.has(coverageKey(source.id, regionId, operatorId, sourceDomain, field))),
+        (provenanceIndex
+          ? provenanceIndex.officialFieldScopes.has(coverageKey(source.id, regionId, operatorId, sourceDomain, field))
+          : source.fields.includes(field)),
     )
     .map((source) => source.id)
     .sort();
