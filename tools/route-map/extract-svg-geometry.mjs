@@ -260,12 +260,16 @@ function cdpCall(socket, id, method, params = {}) {
 
 async function runBrowserExtraction({ browser, svg, tempDir }) {
   const port = await freePort();
+  const sandboxArgs = process.env.ROUTE_MAP_CHROME_NO_SANDBOX === "1"
+    ? ["--no-sandbox"]
+    : [];
   const child = spawn(browser, [
     "--headless=new",
     "--disable-gpu",
     "--disable-dev-shm-usage",
     "--no-first-run",
     "--no-default-browser-check",
+    ...sandboxArgs,
     `--user-data-dir=${path.join(tempDir, "profile")}`,
     `--remote-debugging-port=${port}`,
     "about:blank",

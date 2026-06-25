@@ -641,6 +641,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "y",
           "label_dx",
           "label_dy",
+          "label_polygon",
           "up_path",
           "down_path",
           "source_id",
@@ -662,6 +663,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           requiredNonNegativeInteger(row.y, "routeMapPositions.y"),
           row.labelDx ?? 0,
           row.labelDy ?? 0,
+          canonicalLabelPolygon(row.labelPolygon, "routeMapPositions.labelPolygon"),
           row.upPath ?? "",
           row.downPath ?? "",
           requiredString(row.sourceId, "routeMapPositions.sourceId"),
@@ -1088,6 +1090,35 @@ function requiredNonNegativeInteger(value, label) {
     throw new Error(`${label} must be a non-negative integer`);
   }
   return integer;
+}
+
+function canonicalLabelPolygon(value, label) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  if (!Array.isArray(value) || value.length < 3) {
+    throw new Error(`${label} must be a polygon with at least three points`);
+  }
+  const polygon = value.map((point, index) => {
+    if (!point || typeof point !== "object" || Array.isArray(point)) {
+      throw new Error(`${label}[${index}] must be an object point`);
+    }
+    return {
+      x: requiredNonNegativeFiniteNumber(point.x, `${label}[${index}].x`),
+      y: requiredNonNegativeFiniteNumber(point.y, `${label}[${index}].y`),
+    };
+  });
+  return JSON.stringify(polygon);
+}
+
+function requiredNonNegativeFiniteNumber(value, label) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number`);
+  }
+  if (value < 0) {
+    throw new Error(`${label} must be a non-negative number`);
+  }
+  return Math.round(value * 1000) / 1000;
 }
 
 function schemaVersionNumber(value, label) {

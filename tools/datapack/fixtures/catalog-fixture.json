@@ -541,6 +541,12 @@
           "region": "수도권",
           "x": 156,
           "y": 250,
+          "labelPolygon": [
+            { "x": 166, "y": 226 },
+            { "x": 214, "y": 226 },
+            { "x": 214, "y": 246 },
+            { "x": 166, "y": 246 }
+          ],
           "sourceId": "fixture-route-map-source-capital-review",
           "sourceName": "fixture route map source",
           "sourceUrl": "https://easysubway.local/fixtures/route-map",
