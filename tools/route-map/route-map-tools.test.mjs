@@ -382,6 +382,59 @@ test("route map position audit reports broken production geometry rows", async (
   }
 });
 
+test("route map position audit reports overlapping label polygons as medium", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "overlap-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    sadangLine2.labelPolygon = [
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 140, y: 120 },
+      { x: 100, y: 120 },
+    ];
+    gangnamLine2.labelPolygon = [
+      { x: 130, y: 110 },
+      { x: 170, y: 110 },
+      { x: 170, y: 130 },
+      { x: 130, y: 130 },
+    ];
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.equal(output.summary.findingsBySeverity.MEDIUM, 1);
+    assert.equal(output.findings[0].code, "OVERLAPPING_ROUTE_MAP_LABEL_POLYGON");
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("MOLIT nationwide fixture builder emits route map source hashes", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-source-sha-"));
   try {
