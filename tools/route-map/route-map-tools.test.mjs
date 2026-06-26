@@ -753,6 +753,186 @@ test("route map position audit reports overlapping label polygons as medium", as
   }
 });
 
+test("route map position audit reports ambiguous label polygon hit simulation as medium", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "ambiguous-hit-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    sadangLine2.labelPolygon = [
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 140, y: 120 },
+      { x: 100, y: 120 },
+    ];
+    gangnamLine2.labelPolygon = [
+      { x: 110, y: 105 },
+      { x: 130, y: 105 },
+      { x: 130, y: 115 },
+      { x: 110, y: 115 },
+    ];
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.ok(
+      output.findings.some(
+        (finding) =>
+          finding.code === "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT" &&
+          finding.severity === "MEDIUM" &&
+          finding.stationId === "station-sadang",
+      ),
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit compares fallback label center for hit simulation", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "fallback-label-hit-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    sadangLine2.labelPolygon = [
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 140, y: 120 },
+      { x: 100, y: 120 },
+    ];
+    delete gangnamLine2.labelPolygon;
+    gangnamLine2.x = 200;
+    gangnamLine2.y = 200;
+    gangnamLine2.labelDx = -80;
+    gangnamLine2.labelDy = -90;
+    gangnamLine2.sourceId = "fixture-cyberstation";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.ok(
+      output.findings.some(
+        (finding) =>
+          finding.code === "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT" &&
+          finding.severity === "MEDIUM" &&
+          finding.stationId === "station-sadang" &&
+          finding.message.includes("station-gangnam:seoul-2"),
+      ),
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit compares generated fallback label center", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "generated-fallback-hit-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    sadangLine2.labelPolygon = [
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 140, y: 120 },
+      { x: 100, y: 120 },
+    ];
+    delete gangnamLine2.labelPolygon;
+    gangnamLine2.x = 112;
+    gangnamLine2.y = 107;
+    gangnamLine2.labelDx = 0;
+    gangnamLine2.labelDy = 0;
+    gangnamLine2.upPath = "";
+    gangnamLine2.downPath = "";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.ok(
+      output.findings.some(
+        (finding) =>
+          finding.code === "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT" &&
+          finding.severity === "MEDIUM" &&
+          finding.stationId === "station-sadang" &&
+          finding.message.includes("station-gangnam:seoul-2"),
+      ),
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports source label mismatch as high", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
