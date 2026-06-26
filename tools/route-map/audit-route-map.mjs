@@ -66,6 +66,17 @@ function stationLineKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
 }
 
+function stationLineRegionKeyFor(row, region) {
+  return `${normalizedText(region)}\u0000${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
+}
+
+function coverageKeyForStationLine(row, stationsById) {
+  const region = normalizedText(
+    stationsById.get(normalizedText(row.stationId))?.region,
+  );
+  return region ? stationLineRegionKeyFor(row, region) : stationLineKeyFor(row);
+}
+
 function routeMapPositionKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}\u0000${row.region ?? ""}`;
 }
@@ -160,6 +171,96 @@ function labelPolygonError(value) {
   return "";
 }
 
+function hasValidLabelPolygon(value) {
+  return (
+    Array.isArray(value) &&
+    value.length >= 3 &&
+    labelPolygonError(value) === ""
+  );
+}
+
+function coverageRatio(coveredCount, totalCount) {
+  return totalCount === 0
+    ? 1
+    : Number((coveredCount / totalCount).toFixed(4));
+}
+
+function regionCoverageSummaries(stationsById, stationLines, positions) {
+  const stationLineKeysByRegion = new Map();
+  const positionKeysByRegion = new Map();
+  const positionCountsByRegion = new Map();
+  const labelPolygonKeysByRegion = new Map();
+  const labelPolygonCountsByRegion = new Map();
+  for (const stationLine of stationLines) {
+    const region = normalizedText(
+      stationsById.get(normalizedText(stationLine.stationId))?.region,
+    );
+    if (!region) {
+      continue;
+    }
+    const keys = stationLineKeysByRegion.get(region) ?? new Set();
+    keys.add(stationLineKeyFor(stationLine));
+    stationLineKeysByRegion.set(region, keys);
+  }
+
+  for (const position of positions) {
+    const region = normalizedText(position.region);
+    const lineId = normalizedText(position.lineId);
+    if (!region || !lineId) {
+      continue;
+    }
+    positionCountsByRegion.set(
+      region,
+      (positionCountsByRegion.get(region) ?? 0) + 1,
+    );
+
+    const keys = positionKeysByRegion.get(region) ?? new Set();
+    keys.add(stationLineKeyFor(position));
+    positionKeysByRegion.set(region, keys);
+
+    if (hasValidLabelPolygon(position.labelPolygon)) {
+      labelPolygonCountsByRegion.set(
+        region,
+        (labelPolygonCountsByRegion.get(region) ?? 0) + 1,
+      );
+      const labelPolygonKeys = labelPolygonKeysByRegion.get(region) ?? new Set();
+      labelPolygonKeys.add(stationLineKeyFor(position));
+      labelPolygonKeysByRegion.set(region, labelPolygonKeys);
+    }
+  }
+
+  return [
+    ...new Set([
+      ...stationLineKeysByRegion.keys(),
+      ...positionCountsByRegion.keys(),
+    ]),
+  ]
+    .map((region) => {
+      const stationLineKeys = [...(stationLineKeysByRegion.get(region) ?? [])];
+      const positionKeys = positionKeysByRegion.get(region) ?? new Set();
+      const labelPolygonKeys = labelPolygonKeysByRegion.get(region) ?? new Set();
+      const coveredCount = stationLineKeys.filter((key) =>
+        positionKeys.has(key),
+      ).length;
+      const labelPolygonCoveredCount = stationLineKeys.filter((key) =>
+        labelPolygonKeys.has(key),
+      ).length;
+      return {
+        region,
+        stationLineCount: stationLineKeys.length,
+        routeMapPositionCount: positionCountsByRegion.get(region) ?? 0,
+        coveredStationLineCount: coveredCount,
+        coverageRatio: coverageRatio(coveredCount, stationLineKeys.length),
+        labelPolygonCount: labelPolygonCountsByRegion.get(region) ?? 0,
+        labelPolygonCoverageRatio: coverageRatio(
+          labelPolygonCoveredCount,
+          stationLineKeys.length,
+        ),
+      };
+    })
+    .sort((a, b) => a.region.localeCompare(b.region));
+}
+
 function reviewedAmbiguityEntries(raw) {
   if (Array.isArray(raw)) {
     return raw;
@@ -232,8 +333,14 @@ function auditPack(pack, reviewedAmbiguities) {
     ? pack.routeMapPositions
     : [];
   const stationLineKeys = new Set(stationLines.map(stationLineKeyFor));
+  const stationLineCoverageKeys = new Set(
+    stationLines.map((stationLine) =>
+      coverageKeyForStationLine(stationLine, stationsById),
+    ),
+  );
   const positionKeys = new Set();
-  const positionedStationLineKeys = new Set();
+  const positionedStationLineCoverageKeys = new Set();
+  const labelPolygonCoverageKeys = new Set();
   const coordinateGroups = new Map();
   const labelPolygons = [];
 
@@ -252,7 +359,10 @@ function auditPack(pack, reviewedAmbiguities) {
       });
     }
     positionKeys.add(key);
-    positionedStationLineKeys.add(stationLineKey);
+    positionedStationLineCoverageKeys.add(stationLineKey);
+    positionedStationLineCoverageKeys.add(
+      stationLineRegionKeyFor(position, position.region),
+    );
 
     if (!isNonNegativeInteger(position.x) || !isNonNegativeInteger(position.y)) {
       addFinding(findings, {
@@ -278,6 +388,10 @@ function auditPack(pack, reviewedAmbiguities) {
         message: polygonError,
       });
     } else if (Array.isArray(position.labelPolygon) && position.labelPolygon.length >= 3) {
+      labelPolygonCoverageKeys.add(stationLineKey);
+      labelPolygonCoverageKeys.add(
+        stationLineRegionKeyFor(position, position.region),
+      );
       labelPolygons.push({
         position,
         bounds: polygonBounds(position.labelPolygon),
@@ -396,7 +510,11 @@ function auditPack(pack, reviewedAmbiguities) {
   }
 
   for (const membership of stationLines) {
-    if (positionedStationLineKeys.has(stationLineKeyFor(membership))) {
+    if (
+      positionedStationLineCoverageKeys.has(
+        coverageKeyForStationLine(membership, stationsById),
+      )
+    ) {
       continue;
     }
     addFinding(findings, {
@@ -408,6 +526,42 @@ function auditPack(pack, reviewedAmbiguities) {
       stationId: membership.stationId,
       message:
         "stationLines membership has no matching routeMapPositions coordinate.",
+    });
+  }
+
+  const missingLabelPolygonByRegion = new Map();
+  for (const membership of stationLines) {
+    const coverageKey = coverageKeyForStationLine(membership, stationsById);
+    if (!positionedStationLineCoverageKeys.has(coverageKey)) {
+      continue;
+    }
+    if (labelPolygonCoverageKeys.has(coverageKey)) {
+      continue;
+    }
+    const region = normalizedText(
+      stationsById.get(normalizedText(membership.stationId))?.region,
+    );
+    const summary = missingLabelPolygonByRegion.get(region) ?? {
+      count: 0,
+      lineIds: new Set(),
+    };
+    summary.count += 1;
+    summary.lineIds.add(normalizedText(membership.lineId));
+    missingLabelPolygonByRegion.set(region, summary);
+  }
+
+  for (const [region, summary] of missingLabelPolygonByRegion.entries()) {
+    if (summary.count === 0) {
+      continue;
+    }
+    addFinding(findings, {
+      severity: "INFO",
+      code: "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      packId: pack.id,
+      region,
+      lineId: "",
+      stationId: "",
+      message: `${summary.count} station-line routeMapPositions across ${summary.lineIds.size} lines do not include labelPolygon metadata.`,
     });
   }
 
@@ -464,19 +618,25 @@ function auditPack(pack, reviewedAmbiguities) {
     summary: {
       stationLineCount: stationLines.length,
       routeMapPositionCount: positions.length,
-      coveredStationLineCount: [...stationLineKeys].filter((key) =>
-        positionedStationLineKeys.has(key),
+      coveredStationLineCount: [...stationLineCoverageKeys].filter((key) =>
+        positionedStationLineCoverageKeys.has(key),
       ).length,
-      coverageRatio:
-        stationLines.length === 0
-          ? 1
-          : Number(
-              (
-                [...stationLineKeys].filter((key) =>
-                  positionedStationLineKeys.has(key),
-                ).length / stationLines.length
-              ).toFixed(4),
-            ),
+      coverageRatio: coverageRatio(
+        [...stationLineCoverageKeys].filter((key) =>
+          positionedStationLineCoverageKeys.has(key),
+        ).length,
+        stationLines.length,
+      ),
+      labelPolygonCount: positions.filter((position) =>
+        hasValidLabelPolygon(position.labelPolygon),
+      ).length,
+      labelPolygonCoverageRatio: coverageRatio(
+        [...stationLineCoverageKeys].filter((key) =>
+          labelPolygonCoverageKeys.has(key),
+        ).length,
+        stationLines.length,
+      ),
+      regions: regionCoverageSummaries(stationsById, stationLines, positions),
       findingsBySeverity: findingCounts,
     },
     findings: findings.sort((a, b) => {
