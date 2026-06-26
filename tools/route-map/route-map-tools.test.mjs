@@ -408,6 +408,8 @@ test("SVG label polygon join reports duplicate source labels as ambiguous", asyn
   try {
     const geometryPath = path.join(tmp, "geometry.json");
     const outputPath = path.join(tmp, "joined-fixture.json");
+    const reviewedMatchesPath = path.join(tmp, "reviewed-matches.json");
+    const reviewedOutputPath = path.join(tmp, "reviewed-joined-fixture.json");
     await writeFile(
       geometryPath,
       JSON.stringify({
@@ -470,6 +472,51 @@ test("SVG label polygon join reports duplicate source labels as ambiguous", asyn
     assert.deepEqual(report.ambiguous[0].polygonIndexes, [0, 1]);
     assert.deepEqual(report.ambiguous[0].stationIds, ["station-jeongja"]);
     assert.equal(jeongja.labelPolygon, undefined);
+
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-jeongja",
+            lineId: "shinbundang",
+            sourceElementKey: "a".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const reviewed = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--geometry",
+        geometryPath,
+        "--output",
+        reviewedOutputPath,
+        "--reviewed-matches",
+        reviewedMatchesPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const reviewedReport = JSON.parse(reviewed.stdout);
+    const reviewedJoined = JSON.parse(await readFile(reviewedOutputPath, "utf8"));
+    const reviewedJeongja = reviewedJoined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-jeongja",
+    );
+    assert.equal(reviewedReport.summary.reviewedMatched, 1);
+    assert.equal(reviewedReport.summary.matched, 0);
+    assert.equal(reviewedReport.summary.ambiguous, 0);
+    assert.equal(reviewedReport.summary.unmatched, 1);
+    assert.equal(reviewedReport.summary.missingRouteMapPositions, 7);
+    assert.deepEqual(reviewedJeongja.labelPolygon, [
+      { x: 10, y: 10 },
+      { x: 20, y: 10 },
+      { x: 20, y: 20 },
+    ]);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

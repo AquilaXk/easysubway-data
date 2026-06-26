@@ -124,12 +124,15 @@ function targetKey(region, stationId, lineId) {
   return `${normalizedText(region)}\u0000${normalizedText(stationId)}\u0000${normalizedText(lineId)}`;
 }
 
-function routePositionsByLabel(pack) {
+function routePositionsByLabel(pack, ignoredTargetKeys = new Set()) {
   const stationNames = stationNameById(pack);
   const byLabel = new Map();
   for (const position of Array.isArray(pack.routeMapPositions)
     ? pack.routeMapPositions
     : []) {
+    if (ignoredTargetKeys.has(targetKey(position.region, position.stationId, position.lineId))) {
+      continue;
+    }
     const key = positionKey(
       position.region,
       stationNames.get(normalizedText(position.stationId)) ?? position.sourceLabel,
@@ -230,6 +233,7 @@ function applyReviewedMatches(pack, geometry, reviewedMatches) {
   const positionsByTarget = routePositionsByTarget(pack);
   const reviewedMatched = [];
   const reviewedSourceElementKeys = new Set();
+  const reviewedTargetKeys = new Set();
   const reviewedPairs = new Set();
 
   for (const match of reviewedMatches) {
@@ -253,6 +257,7 @@ function applyReviewedMatches(pack, geometry, reviewedMatches) {
     }
     applyLabelPolygon(position, label, geometry);
     reviewedSourceElementKeys.add(match.sourceElementKey);
+    reviewedTargetKeys.add(targetKey(match.region, match.stationId, match.lineId));
     reviewedMatched.push({
       stationId: position.stationId ?? "",
       lineId: position.lineId ?? "",
@@ -266,16 +271,16 @@ function applyReviewedMatches(pack, geometry, reviewedMatches) {
     });
   }
 
-  return { reviewedMatched, reviewedSourceElementKeys };
+  return { reviewedMatched, reviewedSourceElementKeys, reviewedTargetKeys };
 }
 
 function joinPack(pack, geometry, reviewedMatches) {
-  const byLabel = routePositionsByLabel(pack);
-  const { reviewedMatched, reviewedSourceElementKeys } = applyReviewedMatches(
+  const { reviewedMatched, reviewedSourceElementKeys, reviewedTargetKeys } = applyReviewedMatches(
     pack,
     geometry,
     reviewedMatches,
   );
+  const byLabel = routePositionsByLabel(pack, reviewedTargetKeys);
   const matched = [];
   const unmatched = [];
   const ambiguous = [];
