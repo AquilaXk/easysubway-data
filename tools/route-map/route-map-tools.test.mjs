@@ -119,6 +119,43 @@ test("route map position audit allows same station-line in another region", asyn
   }
 });
 
+test("route map position audit reports missing source snapshot hash", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "missing-source-sha-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    delete fixture.packs[0].routeMapPositions[0].sourceSha256;
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.HIGH, 1);
+        assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_SOURCE_SHA");
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit downgrades reviewed duplicate coordinates", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
@@ -173,6 +210,8 @@ test("route map position audit downgrades reviewed duplicate coordinates", async
             stationIds: ["station-gangnam", "station-sadang"],
             reason: "fixture 검수에서 같은 source 좌표가 의도된 경우로 확인",
             reviewedAt: "2026-06-26T00:00:00.000Z",
+            reviewedBy: "QA",
+            reviewSource: "fixture-review-note",
           },
         ],
       }),
@@ -197,6 +236,74 @@ test("route map position audit downgrades reviewed duplicate coordinates", async
     assert.equal(output.summary.findingsBySeverity.HIGH, 0);
     assert.equal(output.summary.findingsBySeverity.INFO, 1);
     assert.equal(output.findings[0].code, "REVIEWED_AMBIGUITY");
+    assert.match(output.findings[0].message, /QA/);
+    assert.match(output.findings[0].message, /fixture-review-note/);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit rejects reviewed ambiguity without provenance", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "duplicate-coordinate-fixture.json");
+    const reviewedPath = path.join(tmp, "reviewed-ambiguities.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    gangnamLine2.x = sadangLine2.x;
+    gangnamLine2.y = sadangLine2.y;
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+    await writeFile(
+      reviewedPath,
+      JSON.stringify({
+        reviewedAmbiguities: [
+          {
+            region: "수도권",
+            lineId: "seoul-2",
+            x: sadangLine2.x,
+            y: sadangLine2.y,
+            stationIds: ["station-gangnam", "station-sadang"],
+            reason: "fixture 검수에서 같은 source 좌표가 의도된 경우로 확인",
+            reviewedAt: "2026-06-26T00:00:00.000Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--reviewed-ambiguities",
+          reviewedPath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        assert.match(
+          error.stderr,
+          /must include reason, reviewedAt, reviewedBy, and reviewSource/,
+        );
+        return true;
+      },
+    );
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
@@ -263,6 +370,82 @@ test("route map position audit reports broken production geometry rows", async (
         return true;
       },
     );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("MOLIT nationwide fixture builder emits route map source hashes", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-source-sha-"));
+  try {
+    const fixturePath = path.join(tmp, "generated-production-fixture.json");
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-molit-nationwide-fixture.mjs",
+        "--csv",
+        "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+        "--svg-csv",
+        "tools/datapack/sources/molit-rail-station-svg-route-20250811.csv",
+        "--seoulmetro-js",
+        "tools/datapack/sources/seoulmetro-cyberstation-line-data-20260623.js",
+        "--humetro-html",
+        "tools/datapack/sources/humetro-cyberstation-map-20260623.html",
+        "--humetro-css",
+        "tools/datapack/sources/humetro-cyber-station-20250310c.css",
+        "--grtc-html",
+        "tools/datapack/sources/grtc-cyber-simple-20260623.html",
+        "--dtro-html",
+        "tools/datapack/sources/dtro-cyberstation-20260623.html",
+        "--djtc-html",
+        "tools/datapack/sources/djtc-cyberstation-20260623.html",
+        "--djtc-css",
+        "tools/datapack/sources/djtc-content-20260623.css",
+        "--output",
+        fixturePath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+
+    const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    const pack = fixture.packs[0];
+    const routePosition = pack.routeMapPositions.find(
+      (row) => row.sourceId === "seoulmetro-cyberstation",
+    );
+    const source = pack.sourceInventory.find(
+      (row) => row.id === "seoulmetro-cyberstation",
+    );
+    const expectedSha = createHash("sha256")
+      .update(
+        await readFile(
+          path.join(root, "tools/datapack/sources/seoulmetro-cyberstation-line-data-20260623.js"),
+        ),
+      )
+      .digest("hex");
+
+    assert.match(routePosition.sourceSha256, /^[a-f0-9]{64}$/);
+    assert.equal(routePosition.sourceSha256, expectedSha);
+    assert.equal(source.sourceSha256, expectedSha);
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--reviewed-ambiguities",
+        "tools/route-map/fixtures/reviewed-ambiguities.json",
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const audit = JSON.parse(stdout);
+
+    assert.equal(audit.packs[0].summary.coverageRatio, 1);
+    assert.equal(audit.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(audit.summary.findingsBySeverity.HIGH, 0);
+    assert.equal(audit.summary.findingsBySeverity.INFO, 2);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
