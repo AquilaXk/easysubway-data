@@ -57,6 +57,8 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     const fixturePath = path.join(tmp, "catalog-fixture.json");
     const outputPath = path.join(tmp, "joined-fixture.json");
     const reportPath = path.join(tmp, "join-report.json");
+    const failedOutputPath = path.join(tmp, "failed-joined-fixture.json");
+    const failedReportPath = path.join(tmp, "failed-join-report.json");
     const fixture = JSON.parse(
       await readFile(
         path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
@@ -179,6 +181,49 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     assert.deepEqual(report.ambiguous[0].stationIds, ["station-sadang"]);
     assert.deepEqual(report.ambiguous[0].lineIds, ["seoul-2", "seoul-4"]);
     assert.equal(report.unmatched[0].sourceText, "없는역");
+
+    let failedStdout = "";
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            failedOutputPath,
+            "--report",
+            failedReportPath,
+            "--fail-on",
+            "AMBIGUOUS,UNMATCHED,MISSING_ROUTE_MAP_POSITIONS",
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      (error) => {
+        failedStdout = error.stdout;
+        assert.match(error.stderr, /ambiguous=1/);
+        assert.match(error.stderr, /unmatched=1/);
+        assert.match(error.stderr, /missingRouteMapPositions=7/);
+        return true;
+      },
+    );
+    const failedReport = JSON.parse(failedStdout);
+    const failedReportFile = JSON.parse(await readFile(failedReportPath, "utf8"));
+    const failedJoined = JSON.parse(await readFile(failedOutputPath, "utf8"));
+    assert.deepEqual(failedReport, failedReportFile);
+    assert.equal(failedReport.summary.matched, 1);
+    assert.equal(failedReport.summary.ambiguous, 1);
+    assert.equal(failedReport.summary.unmatched, 1);
+    assert.equal(failedReport.summary.missingRouteMapPositions, 7);
+    assert.equal(
+      failedJoined.packs[0].routeMapPositions.find(
+        (row) => row.stationId === "station-jeongja",
+      ).labelPolygonSourceSvgSha256,
+      "b".repeat(64),
+    );
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

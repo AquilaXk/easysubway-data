@@ -3,14 +3,20 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 function usage() {
-  return `Usage: node tools/route-map/join-svg-label-polygons.mjs --fixture <catalog-fixture.json> --geometry <svg-geometry.json> --output <joined-fixture.json> [--report report.json]
+  return `Usage: node tools/route-map/join-svg-label-polygons.mjs --fixture <catalog-fixture.json> --geometry <svg-geometry.json> --output <joined-fixture.json> [--report report.json] [--fail-on AMBIGUOUS,UNMATCHED,MISSING_ROUTE_MAP_POSITIONS]
 
 Joins extracted SVG station label polygons into routeMapPositions when a
 region/name match maps to exactly one station-line position.`;
 }
 
 function parseArgs(argv) {
-  const options = { fixture: "", geometry: "", output: "", report: "" };
+  const options = {
+    fixture: "",
+    geometry: "",
+    output: "",
+    report: "",
+    failOn: new Set(),
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
@@ -25,6 +31,9 @@ function parseArgs(argv) {
         break;
       case "--report":
         options.report = argv[++index] ?? "";
+        break;
+      case "--fail-on":
+        options.failOn = parseFailOn(argv[++index] ?? "");
         break;
       case "--help":
       case "-h":
@@ -41,9 +50,30 @@ function parseArgs(argv) {
   return options;
 }
 
+function parseFailOn(value) {
+  const keysByInput = new Map([
+    ["AMBIGUOUS", "ambiguous"],
+    ["UNMATCHED", "unmatched"],
+    ["MISSING_ROUTE_MAP_POSITIONS", "missingRouteMapPositions"],
+  ]);
+  const tokens = value.split(",").map((token) => token.trim()).filter(Boolean);
+  if (tokens.length === 0) {
+    throw new Error("--fail-on requires at least one condition");
+  }
+  const failOn = new Set();
+  for (const token of tokens) {
+    const key = keysByInput.get(token.toUpperCase());
+    if (!key) {
+      throw new Error(`Unknown --fail-on condition: ${token}`);
+    }
+    failOn.add(key);
+  }
+  return failOn;
+}
+
 function rejectPathCollisions(options) {
   const paths = Object.entries(options)
-    .filter(([, value]) => value)
+    .filter(([, value]) => typeof value === "string" && value)
     .map(([name, value]) => [name, path.resolve(value)]);
   for (let leftIndex = 0; leftIndex < paths.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < paths.length; rightIndex += 1) {
@@ -226,6 +256,16 @@ function buildReport(fixturePath, geometryPath, geometry, packReports) {
   };
 }
 
+function failureMessage(report, failOn) {
+  const failed = [...failOn]
+    .filter((key) => (report.summary[key] ?? 0) > 0)
+    .map((key) => `${key}=${report.summary[key]}`);
+  if (failed.length === 0) {
+    return "";
+  }
+  return `SVG label polygon join failed: ${failed.join(", ")}`;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const fixture = JSON.parse(await readFile(options.fixture, "utf8"));
@@ -239,6 +279,11 @@ async function main() {
     await writeFile(options.report, `${JSON.stringify(report, null, 2)}\n`);
   }
   process.stdout.write(`${JSON.stringify(report)}\n`);
+  const message = failureMessage(report, options.failOn);
+  if (message) {
+    console.error(message);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {
