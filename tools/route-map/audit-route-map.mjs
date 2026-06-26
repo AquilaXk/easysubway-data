@@ -169,12 +169,17 @@ function coverageRatio(coveredCount, totalCount) {
 function regionCoverageSummaries(stationLines, positions) {
   const lineIdsByRegion = new Map();
   const positionKeysByRegion = new Map();
+  const positionCountsByRegion = new Map();
   for (const position of positions) {
     const region = normalizedText(position.region);
     const lineId = normalizedText(position.lineId);
     if (!region || !lineId) {
       continue;
     }
+    positionCountsByRegion.set(
+      region,
+      (positionCountsByRegion.get(region) ?? 0) + 1,
+    );
     const lineIds = lineIdsByRegion.get(region) ?? new Set();
     lineIds.add(lineId);
     lineIdsByRegion.set(region, lineIds);
@@ -196,7 +201,7 @@ function regionCoverageSummaries(stationLines, positions) {
       return {
         region,
         stationLineCount: stationLineKeys.length,
-        routeMapPositionCount: positionKeys.size,
+        routeMapPositionCount: positionCountsByRegion.get(region) ?? 0,
         coveredStationLineCount: coveredCount,
         coverageRatio: coverageRatio(coveredCount, stationLineKeys.length),
       };

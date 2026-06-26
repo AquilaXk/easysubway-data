@@ -175,6 +175,53 @@ test("route map position audit reports region coverage gaps", async () => {
   }
 });
 
+test("route map position audit keeps duplicate rows in region counts", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "duplicate-region-count-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions.push({
+      ...fixture.packs[0].routeMapPositions[0],
+    });
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.findings[0].code, "DUPLICATE_ROUTE_MAP_POSITION");
+        assert.equal(output.packs[0].summary.routeMapPositionCount, 10);
+        assert.equal(
+          output.packs[0].summary.regions[0].routeMapPositionCount,
+          10,
+        );
+        assert.equal(
+          output.packs[0].summary.regions[0].coveredStationLineCount,
+          9,
+        );
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports missing source snapshot hash", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
