@@ -175,6 +175,53 @@ test("route map position audit reports region coverage gaps", async () => {
   }
 });
 
+test("route map position audit reports whole-line region coverage gaps", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "region-line-gap-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions = fixture.packs[0].routeMapPositions.filter(
+      (row) => row.lineId !== "seoul-2-branch",
+    );
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 2);
+        assert.deepEqual(output.packs[0].summary.regions, [
+          {
+            region: "수도권",
+            stationLineCount: 9,
+            routeMapPositionCount: 7,
+            coveredStationLineCount: 7,
+            coverageRatio: 0.7778,
+          },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit keeps duplicate rows in region counts", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {

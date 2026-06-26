@@ -166,10 +166,22 @@ function coverageRatio(coveredCount, totalCount) {
     : Number((coveredCount / totalCount).toFixed(4));
 }
 
-function regionCoverageSummaries(stationLines, positions) {
-  const lineIdsByRegion = new Map();
+function regionCoverageSummaries(stationsById, stationLines, positions) {
+  const stationLineKeysByRegion = new Map();
   const positionKeysByRegion = new Map();
   const positionCountsByRegion = new Map();
+  for (const stationLine of stationLines) {
+    const region = normalizedText(
+      stationsById.get(normalizedText(stationLine.stationId))?.region,
+    );
+    if (!region) {
+      continue;
+    }
+    const keys = stationLineKeysByRegion.get(region) ?? new Set();
+    keys.add(stationLineKeyFor(stationLine));
+    stationLineKeysByRegion.set(region, keys);
+  }
+
   for (const position of positions) {
     const region = normalizedText(position.region);
     const lineId = normalizedText(position.lineId);
@@ -180,20 +192,20 @@ function regionCoverageSummaries(stationLines, positions) {
       region,
       (positionCountsByRegion.get(region) ?? 0) + 1,
     );
-    const lineIds = lineIdsByRegion.get(region) ?? new Set();
-    lineIds.add(lineId);
-    lineIdsByRegion.set(region, lineIds);
 
     const keys = positionKeysByRegion.get(region) ?? new Set();
     keys.add(stationLineKeyFor(position));
     positionKeysByRegion.set(region, keys);
   }
 
-  return [...lineIdsByRegion.entries()]
-    .map(([region, lineIds]) => {
-      const stationLineKeys = stationLines
-        .filter((row) => lineIds.has(normalizedText(row.lineId)))
-        .map(stationLineKeyFor);
+  return [
+    ...new Set([
+      ...stationLineKeysByRegion.keys(),
+      ...positionCountsByRegion.keys(),
+    ]),
+  ]
+    .map((region) => {
+      const stationLineKeys = [...(stationLineKeysByRegion.get(region) ?? [])];
       const positionKeys = positionKeysByRegion.get(region) ?? new Set();
       const coveredCount = stationLineKeys.filter((key) =>
         positionKeys.has(key),
@@ -521,7 +533,7 @@ function auditPack(pack, reviewedAmbiguities) {
           .length,
         stationLines.length,
       ),
-      regions: regionCoverageSummaries(stationLines, positions),
+      regions: regionCoverageSummaries(stationsById, stationLines, positions),
       findingsBySeverity: findingCounts,
     },
     findings: findings.sort((a, b) => {
