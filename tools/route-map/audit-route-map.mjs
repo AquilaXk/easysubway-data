@@ -230,12 +230,10 @@ function hitScore(point, position) {
   if (hasValidLabelPolygon(position.labelPolygon)) {
     return Math.min(nodeScore, distanceSquaredToPolygon(point, position.labelPolygon));
   }
-  if (!usesOfficialRouteMapSource(position)) {
-    return nodeScore;
-  }
+  const labelOffset = fallbackLabelOffset(position);
   const labelCenter = {
-    x: position.x + (position.labelDx ?? 0),
-    y: position.y + (position.labelDy ?? 0),
+    x: position.x + labelOffset.x,
+    y: position.y + labelOffset.y,
   };
   return Math.min(nodeScore, distanceSquared(point, labelCenter));
 }
@@ -246,6 +244,148 @@ function usesOfficialRouteMapSource(position) {
     sourceId.endsWith("-cyberstation") ||
     sourceId === "qa-wikimedia-seoul-svg-coordinate"
   );
+}
+
+function fallbackLabelOffset(position) {
+  if (usesOfficialRouteMapSource(position)) {
+    return {
+      x: position.labelDx ?? 0,
+      y: position.labelDy ?? 0,
+    };
+  }
+  const pathData = normalizedText(position.downPath) !== ""
+    ? position.downPath
+    : position.upPath;
+  if (normalizedText(pathData) === "") {
+    return { x: 8, y: 3 };
+  }
+  const bounds = pathBounds(pathData);
+  if (bounds == null) {
+    return { x: 8, y: 3 };
+  }
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  if (width > height * 1.2) {
+    return { x: 0, y: 12 };
+  }
+  if (height > width * 1.2) {
+    return { x: 9, y: 3 };
+  }
+  return { x: 8, y: -8 };
+}
+
+function pathBounds(pathData) {
+  const tokens = [...String(pathData).matchAll(/[A-Za-z]|-?\d+(?:\.\d+)?/g)]
+    .map((match) => match[0]);
+  let index = 0;
+  let command = "";
+  let current = { x: 0, y: 0 };
+  let lastControl = { x: 0, y: 0 };
+  const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const includePoint = (point) => {
+    bounds.minX = Math.min(bounds.minX, point.x);
+    bounds.minY = Math.min(bounds.minY, point.y);
+    bounds.maxX = Math.max(bounds.maxX, point.x);
+    bounds.maxY = Math.max(bounds.maxY, point.y);
+  };
+  const number = () => Number.parseFloat(tokens[index++]);
+  const point = () => ({ x: number(), y: number() });
+  const relativePoint = () => {
+    const value = point();
+    return { x: current.x + value.x, y: current.y + value.y };
+  };
+  while (index < tokens.length) {
+    if (/^[A-Za-z]$/.test(tokens[index])) {
+      command = tokens[index++];
+    }
+    switch (command) {
+      case "M":
+      case "L":
+        current = point();
+        includePoint(current);
+        break;
+      case "m":
+      case "l":
+        current = relativePoint();
+        includePoint(current);
+        break;
+      case "H":
+        current = { x: number(), y: current.y };
+        includePoint(current);
+        break;
+      case "h":
+        current = { x: current.x + number(), y: current.y };
+        includePoint(current);
+        break;
+      case "V":
+        current = { x: current.x, y: number() };
+        includePoint(current);
+        break;
+      case "v":
+        current = { x: current.x, y: current.y + number() };
+        includePoint(current);
+        break;
+      case "C": {
+        const c1 = point();
+        const c2 = point();
+        current = point();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "c": {
+        const c1 = relativePoint();
+        const c2 = relativePoint();
+        current = relativePoint();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "S": {
+        const c1 = { x: current.x * 2 - lastControl.x, y: current.y * 2 - lastControl.y };
+        const c2 = point();
+        current = point();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "s": {
+        const c1 = { x: current.x * 2 - lastControl.x, y: current.y * 2 - lastControl.y };
+        const c2 = relativePoint();
+        current = relativePoint();
+        lastControl = c2;
+        includePoint(c1);
+        includePoint(c2);
+        includePoint(current);
+        break;
+      }
+      case "Q": {
+        const c = point();
+        current = point();
+        lastControl = c;
+        includePoint(c);
+        includePoint(current);
+        break;
+      }
+      case "q": {
+        const c = relativePoint();
+        current = relativePoint();
+        lastControl = c;
+        includePoint(c);
+        includePoint(current);
+        break;
+      }
+      default:
+        return bounds.minX === Infinity ? null : bounds;
+    }
+  }
+  return bounds.minX === Infinity ? null : bounds;
 }
 
 function labelPolygonError(value) {
