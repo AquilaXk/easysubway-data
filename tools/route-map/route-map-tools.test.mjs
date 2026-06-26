@@ -246,6 +246,31 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     assert.equal(unreviewedSadang.labelPolygon, undefined);
     assert.equal(reviewedReport.reviewedMatched[0].reviewedBy, "QA");
 
+    const multiPackFixturePath = path.join(tmp, "multi-pack-catalog-fixture.json");
+    const multiPackFixture = JSON.parse(JSON.stringify(fixture));
+    multiPackFixture.packs.push({
+      ...JSON.parse(JSON.stringify(fixture.packs[0])),
+      id: "empty-capital",
+      routeMapPositions: [],
+    });
+    await writeFile(multiPackFixturePath, JSON.stringify(multiPackFixture), "utf8");
+    const multiPackReviewed = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        multiPackFixturePath,
+        "--geometry",
+        geometryPath,
+        "--output",
+        path.join(tmp, "multi-pack-reviewed-joined-fixture.json"),
+        "--reviewed-matches",
+        reviewedMatchesPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    assert.equal(JSON.parse(multiPackReviewed.stdout).summary.reviewedMatched, 1);
+
     await writeFile(
       reviewedMatchesPath,
       JSON.stringify({
@@ -312,6 +337,43 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
         ),
       /station-line row not found/,
     );
+    for (const [malformedMatches, message] of [
+      [[], /must be a JSON object/],
+      [{}, /matches must be an array/],
+      [
+        {
+          matches: [
+            {
+              region: "수도권",
+              stationId: "station-sadang",
+              lineId: "seoul-2",
+            },
+          ],
+        },
+        /missing sourceElementKey/,
+      ],
+    ]) {
+      await writeFile(reviewedMatchesPath, JSON.stringify(malformedMatches), "utf8");
+      await assert.rejects(
+        () =>
+          execFileAsync(
+            process.execPath,
+            [
+              "tools/route-map/join-svg-label-polygons.mjs",
+              "--fixture",
+              fixturePath,
+              "--geometry",
+              geometryPath,
+              "--output",
+              reviewedOutputPath,
+              "--reviewed-matches",
+              reviewedMatchesPath,
+            ],
+            { cwd: root, maxBuffer: 1024 * 1024 },
+          ),
+        message,
+      );
+    }
     await writeFile(
       reviewedMatchesPath,
       JSON.stringify({
@@ -583,7 +645,7 @@ test("SVG label polygon join reports duplicate source labels as ambiguous", asyn
     const reviewedReport = JSON.parse(reviewed.stdout);
     const reviewedJoined = JSON.parse(await readFile(reviewedOutputPath, "utf8"));
     const reviewedJeongja = reviewedJoined.packs[0].routeMapPositions.find(
-      (row) => row.stationId === "station-jeongja",
+      (row) => row.stationId === "station-jeongja" && row.lineId === "shinbundang",
     );
     assert.equal(reviewedReport.summary.reviewedMatched, 1);
     assert.equal(reviewedReport.summary.matched, 0);

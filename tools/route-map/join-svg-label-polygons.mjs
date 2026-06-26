@@ -187,6 +187,16 @@ function routePositionsByTarget(pack) {
   return byTarget;
 }
 
+function routePositionsByTargetInFixture(fixture) {
+  const byTarget = new Map();
+  for (const pack of Array.isArray(fixture.packs) ? fixture.packs : []) {
+    for (const [key, position] of routePositionsByTarget(pack)) {
+      byTarget.set(key, position);
+    }
+  }
+  return byTarget;
+}
+
 function stationLabelsBySourceElementKey(geometry) {
   const bySourceElementKey = new Map();
   for (const label of stationLabels(geometry)) {
@@ -228,6 +238,34 @@ function parseReviewedMatches(raw) {
   });
 }
 
+function validateReviewedMatches(fixture, geometry, reviewedMatches) {
+  const labelsBySourceElementKey = stationLabelsBySourceElementKey(geometry);
+  const positionsByTarget = routePositionsByTargetInFixture(fixture);
+  const reviewedSourceElementKeys = new Set();
+  const reviewedTargetKeys = new Set();
+
+  for (const match of reviewedMatches) {
+    if (normalizedText(match.region) !== normalizedText(geometry.region)) {
+      continue;
+    }
+    const positionKey = targetKey(match.region, match.stationId, match.lineId);
+    if (reviewedSourceElementKeys.has(match.sourceElementKey)) {
+      throw new Error(`duplicate reviewed match sourceElementKey: ${match.sourceElementKey}`);
+    }
+    if (reviewedTargetKeys.has(positionKey)) {
+      throw new Error(`duplicate reviewed match target: ${match.region} ${match.stationId}/${match.lineId}`);
+    }
+    reviewedSourceElementKeys.add(match.sourceElementKey);
+    reviewedTargetKeys.add(positionKey);
+    if (!labelsBySourceElementKey.has(match.sourceElementKey)) {
+      throw new Error(`reviewed match sourceElementKey not found: ${match.sourceElementKey}`);
+    }
+    if (!positionsByTarget.has(positionKey)) {
+      throw new Error(`reviewed match station-line row not found: ${match.region} ${match.stationId}/${match.lineId}`);
+    }
+  }
+}
+
 function applyReviewedMatches(pack, geometry, reviewedMatches) {
   const labelsBySourceElementKey = stationLabelsBySourceElementKey(geometry);
   const positionsByTarget = routePositionsByTarget(pack);
@@ -246,13 +284,13 @@ function applyReviewedMatches(pack, geometry, reviewedMatches) {
     if (reviewedTargetKeys.has(positionKey)) {
       throw new Error(`duplicate reviewed match target: ${match.region} ${match.stationId}/${match.lineId}`);
     }
+    const position = positionsByTarget.get(positionKey);
+    if (!position) {
+      continue;
+    }
     const label = labelsBySourceElementKey.get(match.sourceElementKey);
     if (!label) {
       throw new Error(`reviewed match sourceElementKey not found: ${match.sourceElementKey}`);
-    }
-    const position = positionsByTarget.get(positionKey);
-    if (!position) {
-      throw new Error(`reviewed match station-line row not found: ${match.region} ${match.stationId}/${match.lineId}`);
     }
     applyLabelPolygon(position, label, geometry);
     reviewedSourceElementKeys.add(match.sourceElementKey);
@@ -400,6 +438,7 @@ async function main() {
     ? parseReviewedMatches(JSON.parse(await readFile(options.reviewedMatches, "utf8")))
     : [];
   const packs = Array.isArray(fixture.packs) ? fixture.packs : [];
+  validateReviewedMatches(fixture, geometry, reviewedMatches);
   const packReports = packs.map((pack) =>
     joinPack(pack, geometry, reviewedMatches),
   );
