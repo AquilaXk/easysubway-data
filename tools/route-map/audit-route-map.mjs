@@ -12,7 +12,7 @@ const severityRank = new Map([
 ]);
 
 function usage() {
-  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--reviewed-ambiguities reviewed.json] [--fail-on BLOCKER,HIGH] [--pretty]
+  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--reviewed-ambiguities reviewed.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
 
 Audits routeMapPositions against stationLines so production route-map coordinate
 coverage can be checked before rebuilding datapacks.`;
@@ -22,6 +22,7 @@ function parseArgs(argv) {
   const options = {
     fixture: null,
     reviewedAmbiguities: null,
+    requireLabelPolygons: false,
     failOn: [],
     pretty: false,
   };
@@ -33,6 +34,9 @@ function parseArgs(argv) {
         break;
       case "--reviewed-ambiguities":
         options.reviewedAmbiguities = argv[++index];
+        break;
+      case "--require-label-polygons":
+        options.requireLabelPolygons = true;
         break;
       case "--fail-on":
         options.failOn = (argv[++index] ?? "")
@@ -558,7 +562,7 @@ function parseReviewedAmbiguities(raw) {
   return reviewed;
 }
 
-function auditPack(pack, reviewedAmbiguities) {
+function auditPack(pack, reviewedAmbiguities, options = {}) {
   const findings = [];
   const stationsById = new Map(
     (Array.isArray(pack.stations) ? pack.stations : []).map((station) => [
@@ -819,7 +823,7 @@ function auditPack(pack, reviewedAmbiguities) {
       continue;
     }
     addFinding(findings, {
-      severity: "INFO",
+      severity: options.requireLabelPolygons ? "HIGH" : "INFO",
       code: "MISSING_ROUTE_MAP_LABEL_POLYGON",
       packId: pack.id,
       region,
@@ -916,10 +920,10 @@ function auditPack(pack, reviewedAmbiguities) {
   };
 }
 
-function auditFixture(fixturePath, fixture, reviewedAmbiguities) {
+function auditFixture(fixturePath, fixture, reviewedAmbiguities, options = {}) {
   const packs = Array.isArray(fixture.packs) ? fixture.packs : [];
   const auditedPacks = packs.map((pack) =>
-    auditPack(pack, reviewedAmbiguities),
+    auditPack(pack, reviewedAmbiguities, options),
   );
   const findings = auditedPacks.flatMap((pack) => pack.findings);
   const findingCounts = {};
@@ -951,7 +955,9 @@ async function main() {
         JSON.parse(await readFile(options.reviewedAmbiguities, "utf8")),
       )
     : new Map();
-  const report = auditFixture(options.fixture, fixture, reviewedAmbiguities);
+  const report = auditFixture(options.fixture, fixture, reviewedAmbiguities, {
+    requireLabelPolygons: options.requireLabelPolygons,
+  });
   console.log(JSON.stringify(report, null, options.pretty ? 2 : 0));
 
   const failed = options.failOn.some(

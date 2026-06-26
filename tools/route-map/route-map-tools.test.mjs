@@ -89,6 +89,35 @@ test("route map position audit passes clean catalog fixture", async () => {
   ]);
 });
 
+test("route map position audit can require label polygons", async () => {
+  await assert.rejects(
+    () =>
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          "tools/datapack/fixtures/catalog-fixture.json",
+          "--require-label-polygons",
+          "--fail-on",
+          "HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+    (error) => {
+      const output = JSON.parse(error.stdout);
+      assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+      assert.equal(output.summary.findingsBySeverity.HIGH, 1);
+      assert.equal(output.summary.findingsBySeverity.INFO, 0);
+      assert.equal(output.packs[0].summary.labelPolygonCount, 1);
+      assert.equal(output.packs[0].summary.labelPolygonCoverageRatio, 0.1111);
+      assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_LABEL_POLYGON");
+      assert.equal(output.findings[0].severity, "HIGH");
+      return true;
+    },
+  );
+});
+
 test("route map position audit reports label polygon coverage", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
