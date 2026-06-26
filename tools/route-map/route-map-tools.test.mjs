@@ -803,6 +803,7 @@ test("route map position audit reports ambiguous label polygon hit simulation as
       output.findings.some(
         (finding) =>
           finding.code === "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT" &&
+          finding.severity === "MEDIUM" &&
           finding.stationId === "station-sadang",
       ),
     );
@@ -860,6 +861,7 @@ test("route map position audit compares fallback label center for hit simulation
       output.findings.some(
         (finding) =>
           finding.code === "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT" &&
+          finding.severity === "MEDIUM" &&
           finding.stationId === "station-sadang" &&
           finding.message.includes("station-gangnam:seoul-2"),
       ),
