@@ -96,6 +96,45 @@ function addFinding(findings, finding) {
   });
 }
 
+function isNonNegativeInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isNonNegativeFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function polygonArea(points) {
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(area / 2);
+}
+
+function labelPolygonError(value) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  if (!Array.isArray(value) || value.length < 3) {
+    return "labelPolygon must be a polygon with at least three points.";
+  }
+  for (const [index, point] of value.entries()) {
+    if (!point || typeof point !== "object" || Array.isArray(point)) {
+      return `labelPolygon[${index}] must be an object point.`;
+    }
+    if (!isNonNegativeFiniteNumber(point.x) || !isNonNegativeFiniteNumber(point.y)) {
+      return `labelPolygon[${index}] must contain finite non-negative x/y.`;
+    }
+  }
+  if (polygonArea(value) <= 0) {
+    return "labelPolygon area must be greater than 0.";
+  }
+  return "";
+}
+
 function reviewedAmbiguityEntries(raw) {
   if (Array.isArray(raw)) {
     return raw;
@@ -182,6 +221,31 @@ function auditPack(pack, reviewedAmbiguities) {
     }
     positionKeys.add(key);
     positionedStationLineKeys.add(stationLineKey);
+
+    if (!isNonNegativeInteger(position.x) || !isNonNegativeInteger(position.y)) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "INVALID_ROUTE_MAP_COORDINATE",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: "routeMapPositions x/y must be finite non-negative integers.",
+      });
+    }
+
+    const polygonError = labelPolygonError(position.labelPolygon);
+    if (polygonError) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "INVALID_ROUTE_MAP_LABEL_POLYGON",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message: polygonError,
+      });
+    }
 
     if (!stationLineKeys.has(stationLineKey)) {
       addFinding(findings, {
