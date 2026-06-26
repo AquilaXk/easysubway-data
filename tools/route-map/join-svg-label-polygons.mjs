@@ -187,14 +187,19 @@ function routePositionsByTarget(pack) {
   return byTarget;
 }
 
-function routePositionsByTargetInFixture(fixture) {
-  const byTarget = new Map();
+function routePositionTargetsInFixture(fixture) {
+  const targets = new Map();
   for (const pack of Array.isArray(fixture.packs) ? fixture.packs : []) {
+    const stationNames = stationNameById(pack);
     for (const [key, position] of routePositionsByTarget(pack)) {
-      byTarget.set(key, position);
+      targets.set(key, {
+        position,
+        labelKey: stationNames.get(normalizedText(position.stationId)) ??
+          stationLabelKey(position.sourceLabel),
+      });
     }
   }
-  return byTarget;
+  return targets;
 }
 
 function stationLabelsBySourceElementKey(geometry) {
@@ -240,7 +245,7 @@ function parseReviewedMatches(raw) {
 
 function validateReviewedMatches(fixture, geometry, reviewedMatches) {
   const labelsBySourceElementKey = stationLabelsBySourceElementKey(geometry);
-  const positionsByTarget = routePositionsByTargetInFixture(fixture);
+  const targetsByTarget = routePositionTargetsInFixture(fixture);
   const reviewedSourceElementKeys = new Set();
   const reviewedTargetKeys = new Set();
 
@@ -257,11 +262,17 @@ function validateReviewedMatches(fixture, geometry, reviewedMatches) {
     }
     reviewedSourceElementKeys.add(match.sourceElementKey);
     reviewedTargetKeys.add(positionKey);
-    if (!labelsBySourceElementKey.has(match.sourceElementKey)) {
+    const label = labelsBySourceElementKey.get(match.sourceElementKey);
+    if (!label) {
       throw new Error(`reviewed match sourceElementKey not found: ${match.sourceElementKey}`);
     }
-    if (!positionsByTarget.has(positionKey)) {
+    const target = targetsByTarget.get(positionKey);
+    if (!target) {
       throw new Error(`reviewed match station-line row not found: ${match.region} ${match.stationId}/${match.lineId}`);
+    }
+    const labelKey = labelName(label);
+    if (labelKey !== target.labelKey) {
+      throw new Error(`reviewed match label mismatch: ${labelKey} != ${target.labelKey}`);
     }
   }
 }

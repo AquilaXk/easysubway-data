@@ -337,6 +337,39 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
         ),
       /station-line row not found/,
     );
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "e".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            reviewedOutputPath,
+            "--reviewed-matches",
+            reviewedMatchesPath,
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      /label mismatch/,
+    );
     for (const [malformedMatches, message] of [
       [[], /must be a JSON object/],
       [{}, /matches must be an array/],
