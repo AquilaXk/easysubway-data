@@ -234,30 +234,29 @@ function applyReviewedMatches(pack, geometry, reviewedMatches) {
   const reviewedMatched = [];
   const reviewedSourceElementKeys = new Set();
   const reviewedTargetKeys = new Set();
-  const reviewedPairs = new Set();
 
   for (const match of reviewedMatches) {
     if (normalizedText(match.region) !== normalizedText(geometry.region)) {
       continue;
     }
-    const pairKey = `${match.sourceElementKey}\u0000${targetKey(match.region, match.stationId, match.lineId)}`;
-    if (reviewedPairs.has(pairKey)) {
-      throw new Error(`duplicate reviewed match for ${match.sourceElementKey} ${match.stationId}/${match.lineId}`);
+    const positionKey = targetKey(match.region, match.stationId, match.lineId);
+    if (reviewedSourceElementKeys.has(match.sourceElementKey)) {
+      throw new Error(`duplicate reviewed match sourceElementKey: ${match.sourceElementKey}`);
     }
-    reviewedPairs.add(pairKey);
+    if (reviewedTargetKeys.has(positionKey)) {
+      throw new Error(`duplicate reviewed match target: ${match.region} ${match.stationId}/${match.lineId}`);
+    }
     const label = labelsBySourceElementKey.get(match.sourceElementKey);
     if (!label) {
       throw new Error(`reviewed match sourceElementKey not found: ${match.sourceElementKey}`);
     }
-    const position = positionsByTarget.get(
-      targetKey(match.region, match.stationId, match.lineId),
-    );
+    const position = positionsByTarget.get(positionKey);
     if (!position) {
       throw new Error(`reviewed match station-line row not found: ${match.region} ${match.stationId}/${match.lineId}`);
     }
     applyLabelPolygon(position, label, geometry);
     reviewedSourceElementKeys.add(match.sourceElementKey);
-    reviewedTargetKeys.add(targetKey(match.region, match.stationId, match.lineId));
+    reviewedTargetKeys.add(positionKey);
     reviewedMatched.push({
       stationId: position.stationId ?? "",
       lineId: position.lineId ?? "",
