@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - tools/datapack/**
+      - tools/route-map/**
       - apps/mobile/lib/core/datapack/**
       - apps/mobile/lib/core/database/catalog/**
       - .github/workflows/datapack-release.yml
@@ -44,6 +45,7 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
             echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
+            echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
           } >> "${GITHUB_ENV}"
 
@@ -54,6 +56,17 @@ jobs:
             --fixture tools/datapack/fixtures/catalog-fixture.json \
             --overrides tools/datapack/fixtures/admin-review-overrides.json \
             --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
+
+      - name: Data Pack Release / Audit route map coordinate coverage
+        run: |
+          set -euo pipefail
+          mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
+          node tools/route-map/audit-route-map.mjs \
+            --fixture "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}" \
+            --reviewed-ambiguities tools/route-map/fixtures/reviewed-ambiguities.json \
+            --fail-on BLOCKER,HIGH \
+            --pretty > "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
+          test -s "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
 
       - name: Data Pack Release / Build data packs
         run: |
