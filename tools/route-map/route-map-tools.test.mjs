@@ -50,6 +50,255 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
   assert.notEqual(rotated.polygon[0].x, rotated.polygon[3].x);
 });
 
+test("SVG label polygon join applies only unambiguous station labels", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-join-"));
+  try {
+    const geometryPath = path.join(tmp, "geometry.json");
+    const fixturePath = path.join(tmp, "catalog-fixture.json");
+    const outputPath = path.join(tmp, "joined-fixture.json");
+    const reportPath = path.join(tmp, "join-report.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].stations.find(
+      (station) => station.id === "station-jeongja",
+    ).nameKo = "정자(신분당선)";
+    fixture.packs[0].routeMapPositions.push({
+      stationId: "station-jeongja",
+      lineId: "shinbundang",
+      region: "부산",
+      x: 620,
+      y: 310,
+    });
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+    const jeongjaPolygon = [
+      { x: 610, y: 286 },
+      { x: 662, y: 286 },
+      { x: 662, y: 306 },
+      { x: 610, y: 306 },
+    ];
+    await writeFile(
+      geometryPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        region: "수도권",
+        sourceSvgSha256: "b".repeat(64),
+        extractorVersion: "route-map-svg-geometry-v1",
+        labels: [
+          {
+            sourceText: "정 자역",
+            normalizedText: "정 자",
+            classification: "STATION_LABEL",
+            polygon: jeongjaPolygon,
+            polygonIndex: 0,
+            sourceElementKey: "c".repeat(64),
+          },
+          {
+            sourceText: "사당역",
+            normalizedText: "사당",
+            classification: "STATION_LABEL",
+            polygon: [
+              { x: 410, y: 186 },
+              { x: 462, y: 186 },
+              { x: 462, y: 206 },
+              { x: 410, y: 206 },
+            ],
+            polygonIndex: 1,
+            sourceElementKey: "d".repeat(64),
+          },
+          {
+            sourceText: "없는역",
+            normalizedText: "없는",
+            classification: "STATION_LABEL",
+            polygon: [
+              { x: 1, y: 1 },
+              { x: 2, y: 1 },
+              { x: 2, y: 2 },
+              { x: 1, y: 2 },
+            ],
+            polygonIndex: 2,
+            sourceElementKey: "e".repeat(64),
+          },
+          {
+            sourceText: "2호선",
+            normalizedText: "2호선",
+            classification: "LINE_LABEL",
+            polygon: [
+              { x: 1, y: 1 },
+              { x: 2, y: 1 },
+              { x: 2, y: 2 },
+              { x: 1, y: 2 },
+            ],
+            polygonIndex: 3,
+            sourceElementKey: "f".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        fixturePath,
+        "--geometry",
+        geometryPath,
+        "--output",
+        outputPath,
+        "--report",
+        reportPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const report = JSON.parse(stdout);
+    const reportFile = JSON.parse(await readFile(reportPath, "utf8"));
+    const joined = JSON.parse(await readFile(outputPath, "utf8"));
+    const jeongja = joined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-jeongja",
+    );
+    const sadangRows = joined.packs[0].routeMapPositions.filter(
+      (row) => row.stationId === "station-sadang",
+    );
+
+    assert.deepEqual(report, reportFile);
+    assert.equal(report.summary.matched, 1);
+    assert.equal(report.summary.ambiguous, 1);
+    assert.equal(report.summary.unmatched, 1);
+    assert.equal(report.summary.missingRouteMapPositions, 7);
+    assert.ok(report.missingRouteMapPositions.every((row) => row.region === "수도권"));
+    assert.deepEqual(jeongja.labelPolygon, jeongjaPolygon);
+    assert.equal(jeongja.labelPolygonSourceSvgSha256, "b".repeat(64));
+    assert.equal(jeongja.labelPolygonSourceElementKey, "c".repeat(64));
+    assert.equal(jeongja.labelPolygonIndex, 0);
+    assert.ok(sadangRows.every((row) => row.labelPolygon == null));
+    assert.deepEqual(report.ambiguous[0].stationIds, ["station-sadang"]);
+    assert.deepEqual(report.ambiguous[0].lineIds, ["seoul-2", "seoul-4"]);
+    assert.equal(report.unmatched[0].sourceText, "없는역");
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("SVG label polygon join rejects input and output path collisions", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-join-path-"));
+  try {
+    const fixturePath = path.join(root, "tools/datapack/fixtures/catalog-fixture.json");
+    const geometryPath = path.join(tmp, "geometry.json");
+    const outputPath = path.join(tmp, "joined-fixture.json");
+    await writeFile(
+      geometryPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        region: "수도권",
+        labels: [],
+      }),
+      "utf8",
+    );
+
+    for (const args of [
+      ["--output", geometryPath],
+      ["--output", outputPath, "--report", fixturePath],
+      ["--output", outputPath, "--report", outputPath],
+    ]) {
+      await assert.rejects(
+        () =>
+          execFileAsync(
+            process.execPath,
+            [
+              "tools/route-map/join-svg-label-polygons.mjs",
+              "--fixture",
+              fixturePath,
+              "--geometry",
+              geometryPath,
+              ...args,
+            ],
+            { cwd: root, maxBuffer: 1024 * 1024 },
+          ),
+        /must not use the same path/,
+      );
+    }
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("SVG label polygon join reports duplicate source labels as ambiguous", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-join-duplicate-"));
+  try {
+    const geometryPath = path.join(tmp, "geometry.json");
+    const outputPath = path.join(tmp, "joined-fixture.json");
+    await writeFile(
+      geometryPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        region: "수도권",
+        labels: [
+          {
+            sourceText: "정자역",
+            normalizedText: "정자",
+            classification: "STATION_LABEL",
+            polygon: [
+              { x: 10, y: 10 },
+              { x: 20, y: 10 },
+              { x: 20, y: 20 },
+            ],
+            polygonIndex: 0,
+            sourceElementKey: "a".repeat(64),
+          },
+          {
+            sourceText: "정자역",
+            normalizedText: "정자",
+            classification: "STATION_LABEL",
+            polygon: [
+              { x: 30, y: 30 },
+              { x: 40, y: 30 },
+              { x: 40, y: 40 },
+            ],
+            polygonIndex: 1,
+            sourceElementKey: "b".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--geometry",
+        geometryPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const report = JSON.parse(stdout);
+    const joined = JSON.parse(await readFile(outputPath, "utf8"));
+    const jeongja = joined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-jeongja",
+    );
+
+    assert.equal(report.summary.matched, 0);
+    assert.equal(report.summary.ambiguous, 1);
+    assert.equal(report.summary.unmatched, 0);
+    assert.equal(report.summary.missingRouteMapPositions, 8);
+    assert.equal(report.ambiguous[0].duplicateLabelCount, 2);
+    assert.deepEqual(report.ambiguous[0].polygonIndexes, [0, 1]);
+    assert.deepEqual(report.ambiguous[0].stationIds, ["station-jeongja"]);
+    assert.equal(jeongja.labelPolygon, undefined);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit passes clean catalog fixture", async () => {
   const { stdout } = await execFileAsync(
     process.execPath,
