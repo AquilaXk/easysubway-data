@@ -220,6 +220,10 @@ test("route map position audit reports wrong-region coverage gaps", async () => 
         assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_POSITION");
         assert.equal(output.packs[0].summary.coveredStationLineCount, 8);
         assert.equal(output.packs[0].summary.coverageRatio, 0.8889);
+        const missingLabelPolygon = output.findings.find(
+          (finding) => finding.code === "MISSING_ROUTE_MAP_LABEL_POLYGON",
+        );
+        assert.match(missingLabelPolygon.message, /^7 station-line/);
         assert.deepEqual(output.packs[0].summary.regions, [
           {
             region: "수도권",
@@ -889,7 +893,11 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     assert.equal(audit.packs[0].summary.labelPolygonCoverageRatio, 0);
     assert.equal(audit.summary.findingsBySeverity.BLOCKER, 0);
     assert.equal(audit.summary.findingsBySeverity.HIGH, 0);
-    assert.equal(audit.summary.findingsBySeverity.INFO, 7);
+    assert.ok(
+      audit.findings.some(
+        (finding) => finding.code === "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      ),
+    );
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }

@@ -532,6 +532,9 @@ function auditPack(pack, reviewedAmbiguities) {
   const missingLabelPolygonByRegion = new Map();
   for (const membership of stationLines) {
     const coverageKey = coverageKeyForStationLine(membership, stationsById);
+    if (!positionedStationLineCoverageKeys.has(coverageKey)) {
+      continue;
+    }
     if (labelPolygonCoverageKeys.has(coverageKey)) {
       continue;
     }
