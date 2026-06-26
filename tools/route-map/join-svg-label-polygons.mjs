@@ -3,10 +3,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 function usage() {
-  return `Usage: node tools/route-map/join-svg-label-polygons.mjs --fixture <catalog-fixture.json> --geometry <svg-geometry.json> --output <joined-fixture.json> [--report report.json] [--fail-on AMBIGUOUS,UNMATCHED,MISSING_ROUTE_MAP_POSITIONS]
+  return `Usage: node tools/route-map/join-svg-label-polygons.mjs --fixture <catalog-fixture.json> --geometry <svg-geometry.json> --output <joined-fixture.json> [--report report.json] [--reviewed-matches reviewed.json] [--fail-on AMBIGUOUS,UNMATCHED,MISSING_ROUTE_MAP_POSITIONS]
 
 Joins extracted SVG station label polygons into routeMapPositions when a
-region/name match maps to exactly one station-line position.`;
+region/name match maps to exactly one station-line position. Reviewed matches
+can resolve transfer-station ambiguity by sourceElementKey.`;
 }
 
 function parseArgs(argv) {
@@ -15,6 +16,7 @@ function parseArgs(argv) {
     geometry: "",
     output: "",
     report: "",
+    reviewedMatches: "",
     failOn: new Set(),
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -31,6 +33,9 @@ function parseArgs(argv) {
         break;
       case "--report":
         options.report = argv[++index] ?? "";
+        break;
+      case "--reviewed-matches":
+        options.reviewedMatches = argv[++index] ?? "";
         break;
       case "--fail-on":
         options.failOn = parseFailOn(argv[++index] ?? "");
@@ -115,6 +120,10 @@ function positionKey(region, stationName) {
   return `${normalizedText(region)}\u0000${stationLabelKey(stationName)}`;
 }
 
+function targetKey(region, stationId, lineId) {
+  return `${normalizedText(region)}\u0000${normalizedText(stationId)}\u0000${normalizedText(lineId)}`;
+}
+
 function routePositionsByLabel(pack) {
   const stationNames = stationNameById(pack);
   const byLabel = new Map();
@@ -130,9 +139,11 @@ function routePositionsByLabel(pack) {
   return byLabel;
 }
 
-function stationLabels(geometry) {
+function stationLabels(geometry, ignoredSourceElementKeys = new Set()) {
   return (Array.isArray(geometry.labels) ? geometry.labels : []).filter(
-    (label) => normalizedText(label.classification) === "STATION_LABEL",
+    (label) =>
+      normalizedText(label.classification) === "STATION_LABEL" &&
+      !ignoredSourceElementKeys.has(normalizedText(label.sourceElementKey)),
   );
 }
 
@@ -140,9 +151,9 @@ function labelName(label) {
   return stationLabelKey(label.normalizedText || label.sourceText);
 }
 
-function stationLabelsByKey(geometry) {
+function stationLabelsByKey(geometry, ignoredSourceElementKeys) {
   const byKey = new Map();
-  for (const label of stationLabels(geometry)) {
+  for (const label of stationLabels(geometry, ignoredSourceElementKeys)) {
     const key = positionKey(geometry.region, labelName(label));
     byKey.set(key, [...(byKey.get(key) ?? []), label]);
   }
@@ -153,13 +164,123 @@ function sortedUnique(values) {
   return [...new Set(values.map(normalizedText).filter(Boolean))].sort();
 }
 
-function joinPack(pack, geometry) {
+function applyLabelPolygon(position, label, geometry) {
+  position.labelPolygon = label.polygon;
+  position.labelPolygonSourceSvgSha256 = geometry.sourceSvgSha256 ?? "";
+  position.labelPolygonSourceElementKey = label.sourceElementKey ?? "";
+  position.labelPolygonIndex = label.polygonIndex ?? 0;
+}
+
+function routePositionsByTarget(pack) {
+  const byTarget = new Map();
+  for (const position of Array.isArray(pack.routeMapPositions)
+    ? pack.routeMapPositions
+    : []) {
+    byTarget.set(
+      targetKey(position.region, position.stationId, position.lineId),
+      position,
+    );
+  }
+  return byTarget;
+}
+
+function stationLabelsBySourceElementKey(geometry) {
+  const bySourceElementKey = new Map();
+  for (const label of stationLabels(geometry)) {
+    const sourceElementKey = normalizedText(label.sourceElementKey);
+    if (sourceElementKey) {
+      bySourceElementKey.set(sourceElementKey, label);
+    }
+  }
+  return bySourceElementKey;
+}
+
+function parseReviewedMatches(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("--reviewed-matches must be a JSON object");
+  }
+  if (!Array.isArray(raw.matches)) {
+    throw new Error("--reviewed-matches matches must be an array");
+  }
+  const rows = raw.matches;
+  return rows.map((row, index) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new Error(`reviewed match ${index} must be an object`);
+    }
+    const match = {
+      region: normalizedText(row.region),
+      stationId: normalizedText(row.stationId),
+      lineId: normalizedText(row.lineId),
+      sourceElementKey: normalizedText(row.sourceElementKey),
+      reviewedAt: normalizedText(row.reviewedAt),
+      reviewedBy: normalizedText(row.reviewedBy),
+      reason: normalizedText(row.reason),
+    };
+    for (const field of ["region", "stationId", "lineId", "sourceElementKey"]) {
+      if (!match[field]) {
+        throw new Error(`reviewed match ${index} missing ${field}`);
+      }
+    }
+    return match;
+  });
+}
+
+function applyReviewedMatches(pack, geometry, reviewedMatches) {
+  const labelsBySourceElementKey = stationLabelsBySourceElementKey(geometry);
+  const positionsByTarget = routePositionsByTarget(pack);
+  const reviewedMatched = [];
+  const reviewedSourceElementKeys = new Set();
+  const reviewedPairs = new Set();
+
+  for (const match of reviewedMatches) {
+    if (normalizedText(match.region) !== normalizedText(geometry.region)) {
+      continue;
+    }
+    const pairKey = `${match.sourceElementKey}\u0000${targetKey(match.region, match.stationId, match.lineId)}`;
+    if (reviewedPairs.has(pairKey)) {
+      throw new Error(`duplicate reviewed match for ${match.sourceElementKey} ${match.stationId}/${match.lineId}`);
+    }
+    reviewedPairs.add(pairKey);
+    const label = labelsBySourceElementKey.get(match.sourceElementKey);
+    if (!label) {
+      throw new Error(`reviewed match sourceElementKey not found: ${match.sourceElementKey}`);
+    }
+    const position = positionsByTarget.get(
+      targetKey(match.region, match.stationId, match.lineId),
+    );
+    if (!position) {
+      throw new Error(`reviewed match station-line row not found: ${match.region} ${match.stationId}/${match.lineId}`);
+    }
+    applyLabelPolygon(position, label, geometry);
+    reviewedSourceElementKeys.add(match.sourceElementKey);
+    reviewedMatched.push({
+      stationId: position.stationId ?? "",
+      lineId: position.lineId ?? "",
+      region: position.region ?? "",
+      sourceText: label.sourceText ?? "",
+      polygonIndex: label.polygonIndex ?? null,
+      sourceElementKey: label.sourceElementKey ?? "",
+      reviewedAt: match.reviewedAt,
+      reviewedBy: match.reviewedBy,
+      reason: match.reason,
+    });
+  }
+
+  return { reviewedMatched, reviewedSourceElementKeys };
+}
+
+function joinPack(pack, geometry, reviewedMatches) {
   const byLabel = routePositionsByLabel(pack);
+  const { reviewedMatched, reviewedSourceElementKeys } = applyReviewedMatches(
+    pack,
+    geometry,
+    reviewedMatches,
+  );
   const matched = [];
   const unmatched = [];
   const ambiguous = [];
 
-  for (const [labelKey, labels] of stationLabelsByKey(geometry)) {
+  for (const [labelKey, labels] of stationLabelsByKey(geometry, reviewedSourceElementKeys)) {
     const [label] = labels;
     const candidates = byLabel.get(labelKey) ?? [];
     if (labels.length > 1) {
@@ -195,10 +316,7 @@ function joinPack(pack, geometry) {
       continue;
     }
     const [position] = candidates;
-    position.labelPolygon = label.polygon;
-    position.labelPolygonSourceSvgSha256 = geometry.sourceSvgSha256 ?? "";
-    position.labelPolygonSourceElementKey = label.sourceElementKey ?? "";
-    position.labelPolygonIndex = label.polygonIndex ?? 0;
+    applyLabelPolygon(position, label, geometry);
     matched.push({
       stationId: position.stationId ?? "",
       lineId: position.lineId ?? "",
@@ -218,6 +336,7 @@ function joinPack(pack, geometry) {
     );
 
   return {
+    reviewedMatched,
     matched,
     unmatched,
     ambiguous,
@@ -230,6 +349,7 @@ function joinPack(pack, geometry) {
 }
 
 function buildReport(fixturePath, geometryPath, geometry, packReports) {
+  const reviewedMatched = packReports.flatMap((report) => report.reviewedMatched);
   const matched = packReports.flatMap((report) => report.matched);
   const unmatched = packReports.flatMap((report) => report.unmatched);
   const ambiguous = packReports.flatMap((report) => report.ambiguous);
@@ -244,11 +364,13 @@ function buildReport(fixturePath, geometryPath, geometry, packReports) {
     region: geometry.region ?? "",
     sourceSvgSha256: geometry.sourceSvgSha256 ?? "",
     summary: {
+      reviewedMatched: reviewedMatched.length,
       matched: matched.length,
       unmatched: unmatched.length,
       ambiguous: ambiguous.length,
       missingRouteMapPositions: missingRouteMapPositions.length,
     },
+    reviewedMatched,
     matched,
     unmatched,
     ambiguous,
@@ -270,8 +392,13 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const fixture = JSON.parse(await readFile(options.fixture, "utf8"));
   const geometry = JSON.parse(await readFile(options.geometry, "utf8"));
+  const reviewedMatches = options.reviewedMatches
+    ? parseReviewedMatches(JSON.parse(await readFile(options.reviewedMatches, "utf8")))
+    : [];
   const packs = Array.isArray(fixture.packs) ? fixture.packs : [];
-  const packReports = packs.map((pack) => joinPack(pack, geometry));
+  const packReports = packs.map((pack) =>
+    joinPack(pack, geometry, reviewedMatches),
+  );
   const report = buildReport(options.fixture, options.geometry, geometry, packReports);
 
   await writeFile(options.output, `${JSON.stringify(fixture, null, 2)}\n`);
