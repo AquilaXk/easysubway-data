@@ -435,6 +435,53 @@ test("route map position audit reports overlapping label polygons as medium", as
   }
 });
 
+test("route map position audit reports source label mismatch as high", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "source-label-mismatch-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sangnoksuLine4 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sangnoksu" && row.lineId === "seoul-4",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    sangnoksuLine4.sourceLabel = "상록수역";
+    gangnamLine2.sourceLabel = "사당";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+        assert.equal(output.summary.findingsBySeverity.HIGH, 1);
+        assert.equal(output.findings[0].code, "ROUTE_MAP_SOURCE_LABEL_MISMATCH");
+        assert.equal(output.findings[0].stationId, "station-gangnam");
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("MOLIT nationwide fixture builder emits route map source hashes", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-source-sha-"));
   try {
@@ -472,6 +519,21 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     const routePosition = pack.routeMapPositions.find(
       (row) => row.sourceId === "seoulmetro-cyberstation",
     );
+    const routeStation = pack.stations.find(
+      (row) => row.id === routePosition.stationId,
+    );
+    const svgRoutePosition = pack.routeMapPositions.find(
+      (row) => row.sourceId === "molit-rail-station-svg-route",
+    );
+    const svgRouteStation = pack.stations.find(
+      (row) => row.id === svgRoutePosition.stationId,
+    );
+    const interpolatedRoutePosition = pack.routeMapPositions.find(
+      (row) => row.sourceId === "molit-urban-rail-full-route",
+    );
+    const interpolatedRouteStation = pack.stations.find(
+      (row) => row.id === interpolatedRoutePosition.stationId,
+    );
     const source = pack.sourceInventory.find(
       (row) => row.id === "seoulmetro-cyberstation",
     );
@@ -485,6 +547,12 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
 
     assert.match(routePosition.sourceSha256, /^[a-f0-9]{64}$/);
     assert.equal(routePosition.sourceSha256, expectedSha);
+    assert.equal(routePosition.sourceLabel, routeStation.nameKo);
+    assert.equal(svgRoutePosition.sourceLabel, svgRouteStation.nameKo);
+    assert.equal(
+      interpolatedRoutePosition.sourceLabel,
+      interpolatedRouteStation.nameKo,
+    );
     assert.equal(source.sourceSha256, expectedSha);
 
     const { stdout } = await execFileAsync(
