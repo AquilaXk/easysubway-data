@@ -59,6 +59,9 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     const reportPath = path.join(tmp, "join-report.json");
     const failedOutputPath = path.join(tmp, "failed-joined-fixture.json");
     const failedReportPath = path.join(tmp, "failed-join-report.json");
+    const reviewedMatchesPath = path.join(tmp, "reviewed-matches.json");
+    const reviewedOutputPath = path.join(tmp, "reviewed-joined-fixture.json");
+    const reviewedReportPath = path.join(tmp, "reviewed-join-report.json");
     const fixture = JSON.parse(
       await readFile(
         path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
@@ -182,6 +185,307 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     assert.deepEqual(report.ambiguous[0].lineIds, ["seoul-2", "seoul-4"]);
     assert.equal(report.unmatched[0].sourceText, "없는역");
 
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        artifactKind: "route-map-label-polygon-reviewed-matches",
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "d".repeat(64),
+            reviewedAt: "2026-06-26T00:00:00.000Z",
+            reviewedBy: "QA",
+            reason: "fixture transfer station label reviewed for seoul-2 row",
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const reviewed = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        fixturePath,
+        "--geometry",
+        geometryPath,
+        "--output",
+        reviewedOutputPath,
+        "--report",
+        reviewedReportPath,
+        "--reviewed-matches",
+        reviewedMatchesPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const reviewedReport = JSON.parse(reviewed.stdout);
+    const reviewedReportFile = JSON.parse(await readFile(reviewedReportPath, "utf8"));
+    const reviewedJoined = JSON.parse(await readFile(reviewedOutputPath, "utf8"));
+    const reviewedSadang = reviewedJoined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const unreviewedSadang = reviewedJoined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-4",
+    );
+    assert.deepEqual(reviewedReport, reviewedReportFile);
+    assert.equal(reviewedReport.summary.reviewedMatched, 1);
+    assert.equal(reviewedReport.summary.matched, 1);
+    assert.equal(reviewedReport.summary.ambiguous, 0);
+    assert.equal(reviewedReport.summary.unmatched, 1);
+    assert.equal(reviewedReport.summary.missingRouteMapPositions, 6);
+    assert.deepEqual(reviewedSadang.labelPolygon, [
+      { x: 410, y: 186 },
+      { x: 462, y: 186 },
+      { x: 462, y: 206 },
+      { x: 410, y: 206 },
+    ]);
+    assert.equal(reviewedSadang.labelPolygonSourceElementKey, "d".repeat(64));
+    assert.equal(unreviewedSadang.labelPolygon, undefined);
+    assert.equal(reviewedReport.reviewedMatched[0].reviewedBy, "QA");
+
+    const multiPackFixturePath = path.join(tmp, "multi-pack-catalog-fixture.json");
+    const multiPackFixture = JSON.parse(JSON.stringify(fixture));
+    multiPackFixture.packs.push({
+      ...JSON.parse(JSON.stringify(fixture.packs[0])),
+      id: "empty-capital",
+      routeMapPositions: [],
+    });
+    await writeFile(multiPackFixturePath, JSON.stringify(multiPackFixture), "utf8");
+    const multiPackReviewed = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        multiPackFixturePath,
+        "--geometry",
+        geometryPath,
+        "--output",
+        path.join(tmp, "multi-pack-reviewed-joined-fixture.json"),
+        "--reviewed-matches",
+        reviewedMatchesPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    assert.equal(JSON.parse(multiPackReviewed.stdout).summary.reviewedMatched, 1);
+
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "z".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            reviewedOutputPath,
+            "--reviewed-matches",
+            reviewedMatchesPath,
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      /sourceElementKey not found/,
+    );
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-missing",
+            lineId: "seoul-2",
+            sourceElementKey: "d".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            reviewedOutputPath,
+            "--reviewed-matches",
+            reviewedMatchesPath,
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      /station-line row not found/,
+    );
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "e".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            reviewedOutputPath,
+            "--reviewed-matches",
+            reviewedMatchesPath,
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      /label mismatch/,
+    );
+    for (const [malformedMatches, message] of [
+      [[], /must be a JSON object/],
+      [{}, /matches must be an array/],
+      [
+        {
+          matches: [
+            {
+              region: "수도권",
+              stationId: "station-sadang",
+              lineId: "seoul-2",
+            },
+          ],
+        },
+        /missing sourceElementKey/,
+      ],
+    ]) {
+      await writeFile(reviewedMatchesPath, JSON.stringify(malformedMatches), "utf8");
+      await assert.rejects(
+        () =>
+          execFileAsync(
+            process.execPath,
+            [
+              "tools/route-map/join-svg-label-polygons.mjs",
+              "--fixture",
+              fixturePath,
+              "--geometry",
+              geometryPath,
+              "--output",
+              reviewedOutputPath,
+              "--reviewed-matches",
+              reviewedMatchesPath,
+            ],
+            { cwd: root, maxBuffer: 1024 * 1024 },
+          ),
+        message,
+      );
+    }
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "d".repeat(64),
+          },
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-4",
+            sourceElementKey: "d".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            reviewedOutputPath,
+            "--reviewed-matches",
+            reviewedMatchesPath,
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      /duplicate reviewed match sourceElementKey/,
+    );
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "d".repeat(64),
+          },
+          {
+            region: "수도권",
+            stationId: "station-sadang",
+            lineId: "seoul-2",
+            sourceElementKey: "e".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await assert.rejects(
+      () =>
+        execFileAsync(
+          process.execPath,
+          [
+            "tools/route-map/join-svg-label-polygons.mjs",
+            "--fixture",
+            fixturePath,
+            "--geometry",
+            geometryPath,
+            "--output",
+            reviewedOutputPath,
+            "--reviewed-matches",
+            reviewedMatchesPath,
+          ],
+          { cwd: root, maxBuffer: 1024 * 1024 },
+        ),
+      /duplicate reviewed match target/,
+    );
+
     let failedStdout = "";
     await assert.rejects(
       () =>
@@ -277,6 +581,8 @@ test("SVG label polygon join reports duplicate source labels as ambiguous", asyn
   try {
     const geometryPath = path.join(tmp, "geometry.json");
     const outputPath = path.join(tmp, "joined-fixture.json");
+    const reviewedMatchesPath = path.join(tmp, "reviewed-matches.json");
+    const reviewedOutputPath = path.join(tmp, "reviewed-joined-fixture.json");
     await writeFile(
       geometryPath,
       JSON.stringify({
@@ -339,6 +645,51 @@ test("SVG label polygon join reports duplicate source labels as ambiguous", asyn
     assert.deepEqual(report.ambiguous[0].polygonIndexes, [0, 1]);
     assert.deepEqual(report.ambiguous[0].stationIds, ["station-jeongja"]);
     assert.equal(jeongja.labelPolygon, undefined);
+
+    await writeFile(
+      reviewedMatchesPath,
+      JSON.stringify({
+        matches: [
+          {
+            region: "수도권",
+            stationId: "station-jeongja",
+            lineId: "shinbundang",
+            sourceElementKey: "a".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const reviewed = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--geometry",
+        geometryPath,
+        "--output",
+        reviewedOutputPath,
+        "--reviewed-matches",
+        reviewedMatchesPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const reviewedReport = JSON.parse(reviewed.stdout);
+    const reviewedJoined = JSON.parse(await readFile(reviewedOutputPath, "utf8"));
+    const reviewedJeongja = reviewedJoined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-jeongja" && row.lineId === "shinbundang",
+    );
+    assert.equal(reviewedReport.summary.reviewedMatched, 1);
+    assert.equal(reviewedReport.summary.matched, 0);
+    assert.equal(reviewedReport.summary.ambiguous, 0);
+    assert.equal(reviewedReport.summary.unmatched, 1);
+    assert.equal(reviewedReport.summary.missingRouteMapPositions, 7);
+    assert.deepEqual(reviewedJeongja.labelPolygon, [
+      { x: 10, y: 10 },
+      { x: 20, y: 10 },
+      { x: 20, y: 20 },
+    ]);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
