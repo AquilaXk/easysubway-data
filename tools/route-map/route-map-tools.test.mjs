@@ -72,6 +72,15 @@ test("route map position audit passes clean catalog fixture", async () => {
   assert.equal(output.packs[0].summary.stationLineCount, 9);
   assert.equal(output.packs[0].summary.routeMapPositionCount, 9);
   assert.equal(output.packs[0].summary.coverageRatio, 1);
+  assert.deepEqual(output.packs[0].summary.regions, [
+    {
+      region: "수도권",
+      stationLineCount: 9,
+      routeMapPositionCount: 9,
+      coveredStationLineCount: 9,
+      coverageRatio: 1,
+    },
+  ]);
 });
 
 test("route map position audit allows same station-line in another region", async () => {
@@ -114,6 +123,241 @@ test("route map position audit allows same station-line in another region", asyn
     assert.equal(output.packs[0].summary.stationLineCount, 9);
     assert.equal(output.packs[0].summary.routeMapPositionCount, 10);
     assert.equal(output.packs[0].summary.coverageRatio, 1);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit reports wrong-region coverage gaps", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "wrong-region-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const routePosition = fixture.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    routePosition.region = "전국";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 1);
+        assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_POSITION");
+        assert.equal(output.packs[0].summary.coveredStationLineCount, 8);
+        assert.equal(output.packs[0].summary.coverageRatio, 0.8889);
+        assert.deepEqual(output.packs[0].summary.regions, [
+          {
+            region: "수도권",
+            stationLineCount: 9,
+            routeMapPositionCount: 8,
+            coveredStationLineCount: 8,
+            coverageRatio: 0.8889,
+          },
+          {
+            region: "전국",
+            stationLineCount: 0,
+            routeMapPositionCount: 1,
+            coveredStationLineCount: 0,
+            coverageRatio: 1,
+          },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit falls back for regionless stations", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "regionless-station-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    delete fixture.packs[0].stations[0].region;
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.packs[0].summary.coveredStationLineCount, 9);
+    assert.equal(output.packs[0].summary.coverageRatio, 1);
+    assert.equal(output.packs[0].summary.regions[0].stationLineCount, 8);
+    assert.equal(output.packs[0].summary.regions[0].routeMapPositionCount, 9);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit reports region coverage gaps", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "region-gap-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions = fixture.packs[0].routeMapPositions.filter(
+      (row) => !(row.stationId === "station-sadang" && row.lineId === "seoul-2"),
+    );
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 1);
+        assert.deepEqual(output.packs[0].summary.regions, [
+          {
+            region: "수도권",
+            stationLineCount: 9,
+            routeMapPositionCount: 8,
+            coveredStationLineCount: 8,
+            coverageRatio: 0.8889,
+          },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit reports whole-line region coverage gaps", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "region-line-gap-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions = fixture.packs[0].routeMapPositions.filter(
+      (row) => row.lineId !== "seoul-2-branch",
+    );
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 2);
+        assert.deepEqual(output.packs[0].summary.regions, [
+          {
+            region: "수도권",
+            stationLineCount: 9,
+            routeMapPositionCount: 7,
+            coveredStationLineCount: 7,
+            coverageRatio: 0.7778,
+          },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit keeps duplicate rows in region counts", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "duplicate-region-count-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions.push({
+      ...fixture.packs[0].routeMapPositions[0],
+    });
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.findings[0].code, "DUPLICATE_ROUTE_MAP_POSITION");
+        assert.equal(output.packs[0].summary.routeMapPositionCount, 10);
+        assert.equal(
+          output.packs[0].summary.regions[0].routeMapPositionCount,
+          10,
+        );
+        assert.equal(
+          output.packs[0].summary.regions[0].coveredStationLineCount,
+          9,
+        );
+        return true;
+      },
+    );
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
