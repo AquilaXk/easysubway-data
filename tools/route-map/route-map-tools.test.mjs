@@ -74,6 +74,51 @@ test("route map position audit passes clean catalog fixture", async () => {
   assert.equal(output.packs[0].summary.coverageRatio, 1);
 });
 
+test("route map position audit allows same station-line in another region", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "multi-region-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sangnoksu = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sangnoksu",
+    );
+    pack.routeMapPositions.push({
+      ...sangnoksu,
+      region: "전국",
+      x: sangnoksu.x + 1000,
+      y: sangnoksu.y + 1000,
+    });
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.equal(output.packs[0].summary.stationLineCount, 9);
+    assert.equal(output.packs[0].summary.routeMapPositionCount, 10);
+    assert.equal(output.packs[0].summary.coverageRatio, 1);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports broken production geometry rows", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {

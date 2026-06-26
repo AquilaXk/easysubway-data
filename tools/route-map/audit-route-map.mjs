@@ -58,8 +58,12 @@ function parseArgs(argv) {
   return options;
 }
 
-function keyFor(row) {
+function stationLineKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
+}
+
+function routeMapPositionKeyFor(row) {
+  return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}\u0000${row.region ?? ""}`;
 }
 
 function normalizedText(value) {
@@ -84,12 +88,14 @@ function auditPack(pack) {
   const positions = Array.isArray(pack.routeMapPositions)
     ? pack.routeMapPositions
     : [];
-  const stationLineKeys = new Set(stationLines.map(keyFor));
+  const stationLineKeys = new Set(stationLines.map(stationLineKeyFor));
   const positionKeys = new Set();
+  const positionedStationLineKeys = new Set();
   const coordinateGroups = new Map();
 
   for (const position of positions) {
-    const key = keyFor(position);
+    const key = routeMapPositionKeyFor(position);
+    const stationLineKey = stationLineKeyFor(position);
     if (positionKeys.has(key)) {
       addFinding(findings, {
         severity: "BLOCKER",
@@ -102,8 +108,9 @@ function auditPack(pack) {
       });
     }
     positionKeys.add(key);
+    positionedStationLineKeys.add(stationLineKey);
 
-    if (!stationLineKeys.has(key)) {
+    if (!stationLineKeys.has(stationLineKey)) {
       addFinding(findings, {
         severity: "BLOCKER",
         code: "ROUTE_MAP_POSITION_WITHOUT_STATION_LINE",
@@ -160,7 +167,7 @@ function auditPack(pack) {
   }
 
   for (const membership of stationLines) {
-    if (positionKeys.has(keyFor(membership))) {
+    if (positionedStationLineKeys.has(stationLineKeyFor(membership))) {
       continue;
     }
     addFinding(findings, {
@@ -208,15 +215,16 @@ function auditPack(pack) {
       stationLineCount: stationLines.length,
       routeMapPositionCount: positions.length,
       coveredStationLineCount: [...stationLineKeys].filter((key) =>
-        positionKeys.has(key),
+        positionedStationLineKeys.has(key),
       ).length,
       coverageRatio:
         stationLines.length === 0
           ? 1
           : Number(
               (
-                [...stationLineKeys].filter((key) => positionKeys.has(key))
-                  .length / stationLines.length
+                [...stationLineKeys].filter((key) =>
+                  positionedStationLineKeys.has(key),
+                ).length / stationLines.length
               ).toFixed(4),
             ),
       findingsBySeverity: findingCounts,
