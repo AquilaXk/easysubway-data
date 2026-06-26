@@ -12,7 +12,7 @@ const severityRank = new Map([
 ]);
 
 function usage() {
-  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--fail-on BLOCKER,HIGH] [--pretty]
+  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--reviewed-ambiguities reviewed.json] [--fail-on BLOCKER,HIGH] [--pretty]
 
 Audits routeMapPositions against stationLines so production route-map coordinate
 coverage can be checked before rebuilding datapacks.`;
@@ -21,6 +21,7 @@ coverage can be checked before rebuilding datapacks.`;
 function parseArgs(argv) {
   const options = {
     fixture: null,
+    reviewedAmbiguities: null,
     failOn: [],
     pretty: false,
   };
@@ -29,6 +30,9 @@ function parseArgs(argv) {
     switch (arg) {
       case "--fixture":
         options.fixture = argv[++index];
+        break;
+      case "--reviewed-ambiguities":
+        options.reviewedAmbiguities = argv[++index];
         break;
       case "--fail-on":
         options.failOn = (argv[++index] ?? "")
@@ -66,6 +70,16 @@ function routeMapPositionKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}\u0000${row.region ?? ""}`;
 }
 
+function duplicateCoordinateKeyFor({ region, lineId, x, y, stationIds }) {
+  return [
+    normalizedText(region),
+    normalizedText(lineId),
+    Number(x),
+    Number(y),
+    ...stationIds.map(normalizedText).sort(),
+  ].join("\u0000");
+}
+
 function normalizedText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -82,7 +96,62 @@ function addFinding(findings, finding) {
   });
 }
 
-function auditPack(pack) {
+function reviewedAmbiguityEntries(raw) {
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (Array.isArray(raw?.reviewedAmbiguities)) {
+    return raw.reviewedAmbiguities;
+  }
+  throw new Error(
+    "reviewed ambiguities must be an array or contain reviewedAmbiguities array",
+  );
+}
+
+function parseReviewedAmbiguities(raw) {
+  const reviewed = new Map();
+  for (const [index, entry] of reviewedAmbiguityEntries(raw).entries()) {
+    const region = normalizedText(entry?.region);
+    const lineId = normalizedText(entry?.lineId);
+    const reason = normalizedText(entry?.reason);
+    const reviewedAt = normalizedText(entry?.reviewedAt);
+    const stationIds = Array.isArray(entry?.stationIds)
+      ? entry.stationIds.map(normalizedText).filter(Boolean)
+      : [];
+    const x = Number(entry?.x);
+    const y = Number(entry?.y);
+    if (!region || !lineId || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error(
+        `reviewedAmbiguities[${index}] must include region, lineId, x, and y`,
+      );
+    }
+    if (stationIds.length < 2) {
+      throw new Error(
+        `reviewedAmbiguities[${index}].stationIds must include at least two station ids`,
+      );
+    }
+    if (!reason || !reviewedAt) {
+      throw new Error(
+        `reviewedAmbiguities[${index}] must include reason and reviewedAt`,
+      );
+    }
+    reviewed.set(
+      duplicateCoordinateKeyFor({ region, lineId, x, y, stationIds }),
+      {
+        region,
+        lineId,
+        x,
+        y,
+        stationIds: stationIds.sort(),
+        reason,
+        reviewedAt,
+      },
+    );
+  }
+  return reviewed;
+}
+
+function auditPack(pack, reviewedAmbiguities) {
   const findings = [];
   const stationLines = Array.isArray(pack.stationLines) ? pack.stationLines : [];
   const positions = Array.isArray(pack.routeMapPositions)
@@ -188,13 +257,34 @@ function auditPack(pack) {
       continue;
     }
     const first = group[0];
+    const stationIds = [...uniqueStationIds].sort();
+    const ambiguityKey = duplicateCoordinateKeyFor({
+      region: first.region,
+      lineId: first.lineId,
+      x: first.x,
+      y: first.y,
+      stationIds,
+    });
+    const reviewed = reviewedAmbiguities.get(ambiguityKey);
+    if (reviewed != null) {
+      addFinding(findings, {
+        severity: "INFO",
+        code: "REVIEWED_AMBIGUITY",
+        packId: pack.id,
+        region: first.region,
+        lineId: first.lineId,
+        stationId: stationIds.join(","),
+        message: `Reviewed duplicate source coordinate: ${reviewed.reason} (${reviewed.reviewedAt}).`,
+      });
+      continue;
+    }
     addFinding(findings, {
       severity: "HIGH",
       code: "DUPLICATE_SOURCE_COORDINATE",
       packId: pack.id,
       region: first.region,
       lineId: first.lineId,
-      stationId: group.map((row) => row.stationId).join(","),
+      stationId: stationIds.join(","),
       message:
         "Multiple stations share the same region/line/source coordinate and need explicit review.",
     });
@@ -242,9 +332,11 @@ function auditPack(pack) {
   };
 }
 
-function auditFixture(fixturePath, fixture) {
+function auditFixture(fixturePath, fixture, reviewedAmbiguities) {
   const packs = Array.isArray(fixture.packs) ? fixture.packs : [];
-  const auditedPacks = packs.map(auditPack);
+  const auditedPacks = packs.map((pack) =>
+    auditPack(pack, reviewedAmbiguities),
+  );
   const findings = auditedPacks.flatMap((pack) => pack.findings);
   const findingCounts = {};
   for (const severity of severityRank.keys()) {
@@ -270,7 +362,12 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const fixtureText = await readFile(options.fixture, "utf8");
   const fixture = JSON.parse(fixtureText);
-  const report = auditFixture(options.fixture, fixture);
+  const reviewedAmbiguities = options.reviewedAmbiguities
+    ? parseReviewedAmbiguities(
+        JSON.parse(await readFile(options.reviewedAmbiguities, "utf8")),
+      )
+    : new Map();
+  const report = auditFixture(options.fixture, fixture, reviewedAmbiguities);
   console.log(JSON.stringify(report, null, options.pretty ? 2 : 0));
 
   const failed = options.failOn.some(

@@ -119,6 +119,89 @@ test("route map position audit allows same station-line in another region", asyn
   }
 });
 
+test("route map position audit downgrades reviewed duplicate coordinates", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "duplicate-coordinate-fixture.json");
+    const reviewedPath = path.join(tmp, "reviewed-ambiguities.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    gangnamLine2.x = sadangLine2.x;
+    gangnamLine2.y = sadangLine2.y;
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.HIGH, 1);
+        assert.equal(output.findings[0].code, "DUPLICATE_SOURCE_COORDINATE");
+        return true;
+      },
+    );
+
+    await writeFile(
+      reviewedPath,
+      JSON.stringify({
+        reviewedAmbiguities: [
+          {
+            region: "수도권",
+            lineId: "seoul-2",
+            x: sadangLine2.x,
+            y: sadangLine2.y,
+            stationIds: ["station-gangnam", "station-sadang"],
+            reason: "fixture 검수에서 같은 source 좌표가 의도된 경우로 확인",
+            reviewedAt: "2026-06-26T00:00:00.000Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--reviewed-ambiguities",
+        reviewedPath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.equal(output.summary.findingsBySeverity.INFO, 1);
+    assert.equal(output.findings[0].code, "REVIEWED_AMBIGUITY");
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports broken production geometry rows", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
