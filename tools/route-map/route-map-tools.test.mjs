@@ -69,9 +69,13 @@ test("route map position audit passes clean catalog fixture", async () => {
   assert.equal(output.summary.packCount, 1);
   assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
   assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+  assert.equal(output.summary.findingsBySeverity.INFO, 1);
   assert.equal(output.packs[0].summary.stationLineCount, 9);
   assert.equal(output.packs[0].summary.routeMapPositionCount, 9);
   assert.equal(output.packs[0].summary.coverageRatio, 1);
+  assert.equal(output.packs[0].summary.labelPolygonCount, 1);
+  assert.equal(output.packs[0].summary.labelPolygonCoverageRatio, 0.1111);
+  assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_LABEL_POLYGON");
   assert.deepEqual(output.packs[0].summary.regions, [
     {
       region: "수도권",
@@ -79,8 +83,62 @@ test("route map position audit passes clean catalog fixture", async () => {
       routeMapPositionCount: 9,
       coveredStationLineCount: 9,
       coverageRatio: 1,
+      labelPolygonCount: 1,
+      labelPolygonCoverageRatio: 0.1111,
     },
   ]);
+});
+
+test("route map position audit reports label polygon coverage", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "label-polygon-coverage-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions[1].labelPolygon = [
+      { x: 10, y: 10 },
+      { x: 50, y: 10 },
+      { x: 50, y: 30 },
+      { x: 10, y: 30 },
+    ];
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.equal(output.summary.findingsBySeverity.INFO, 1);
+    assert.equal(output.packs[0].summary.labelPolygonCount, 2);
+    assert.equal(output.packs[0].summary.labelPolygonCoverageRatio, 0.2222);
+    assert.equal(output.packs[0].summary.regions[0].labelPolygonCount, 2);
+    assert.equal(
+      output.packs[0].summary.regions[0].labelPolygonCoverageRatio,
+      0.2222,
+    );
+    assert.equal(
+      output.findings.find(
+        (finding) => finding.code === "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      ).region,
+      "수도권",
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
 });
 
 test("route map position audit allows same station-line in another region", async () => {
@@ -162,6 +220,10 @@ test("route map position audit reports wrong-region coverage gaps", async () => 
         assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_POSITION");
         assert.equal(output.packs[0].summary.coveredStationLineCount, 8);
         assert.equal(output.packs[0].summary.coverageRatio, 0.8889);
+        const missingLabelPolygon = output.findings.find(
+          (finding) => finding.code === "MISSING_ROUTE_MAP_LABEL_POLYGON",
+        );
+        assert.match(missingLabelPolygon.message, /^7 station-line/);
         assert.deepEqual(output.packs[0].summary.regions, [
           {
             region: "수도권",
@@ -169,6 +231,8 @@ test("route map position audit reports wrong-region coverage gaps", async () => 
             routeMapPositionCount: 8,
             coveredStationLineCount: 8,
             coverageRatio: 0.8889,
+            labelPolygonCount: 1,
+            labelPolygonCoverageRatio: 0.1111,
           },
           {
             region: "전국",
@@ -176,6 +240,8 @@ test("route map position audit reports wrong-region coverage gaps", async () => 
             routeMapPositionCount: 1,
             coveredStationLineCount: 0,
             coverageRatio: 1,
+            labelPolygonCount: 0,
+            labelPolygonCoverageRatio: 1,
           },
         ]);
         return true;
@@ -259,6 +325,8 @@ test("route map position audit reports region coverage gaps", async () => {
             routeMapPositionCount: 8,
             coveredStationLineCount: 8,
             coverageRatio: 0.8889,
+            labelPolygonCount: 1,
+            labelPolygonCoverageRatio: 0.1111,
           },
         ]);
         return true;
@@ -306,6 +374,8 @@ test("route map position audit reports whole-line region coverage gaps", async (
             routeMapPositionCount: 7,
             coveredStationLineCount: 7,
             coverageRatio: 0.7778,
+            labelPolygonCount: 1,
+            labelPolygonCoverageRatio: 0.1111,
           },
         ]);
         return true;
@@ -478,10 +548,13 @@ test("route map position audit downgrades reviewed duplicate coordinates", async
     const output = JSON.parse(stdout);
 
     assert.equal(output.summary.findingsBySeverity.HIGH, 0);
-    assert.equal(output.summary.findingsBySeverity.INFO, 1);
-    assert.equal(output.findings[0].code, "REVIEWED_AMBIGUITY");
-    assert.match(output.findings[0].message, /QA/);
-    assert.match(output.findings[0].message, /fixture-review-note/);
+    assert.equal(output.summary.findingsBySeverity.INFO, 2);
+    const reviewedFinding = output.findings.find(
+      (finding) => finding.code === "REVIEWED_AMBIGUITY",
+    );
+    assert.ok(reviewedFinding);
+    assert.match(reviewedFinding.message, /QA/);
+    assert.match(reviewedFinding.message, /fixture-review-note/);
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
@@ -612,6 +685,7 @@ test("route map position audit reports broken production geometry rows", async (
             "DUPLICATE_SOURCE_COORDINATE",
             "INVALID_ROUTE_MAP_COORDINATE",
             "INVALID_ROUTE_MAP_LABEL_POLYGON",
+            "MISSING_ROUTE_MAP_LABEL_POLYGON",
             "MISSING_ROUTE_MAP_POSITION",
             "MISSING_ROUTE_MAP_REVIEW",
             "MISSING_ROUTE_MAP_SOURCE",
@@ -815,9 +889,15 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     const audit = JSON.parse(stdout);
 
     assert.equal(audit.packs[0].summary.coverageRatio, 1);
+    assert.equal(audit.packs[0].summary.labelPolygonCount, 0);
+    assert.equal(audit.packs[0].summary.labelPolygonCoverageRatio, 0);
     assert.equal(audit.summary.findingsBySeverity.BLOCKER, 0);
     assert.equal(audit.summary.findingsBySeverity.HIGH, 0);
-    assert.equal(audit.summary.findingsBySeverity.INFO, 2);
+    assert.ok(
+      audit.findings.some(
+        (finding) => finding.code === "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      ),
+    );
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
