@@ -227,9 +227,14 @@ function distanceSquaredToPolygon(point, polygon) {
 
 function hitScore(point, position) {
   const nodeScore = distanceSquared(point, position);
-  return hasValidLabelPolygon(position.labelPolygon)
-    ? Math.min(nodeScore, distanceSquaredToPolygon(point, position.labelPolygon))
-    : nodeScore;
+  if (hasValidLabelPolygon(position.labelPolygon)) {
+    return Math.min(nodeScore, distanceSquaredToPolygon(point, position.labelPolygon));
+  }
+  const labelCenter = {
+    x: position.x + (position.labelDx ?? 0),
+    y: position.y + (position.labelDy ?? 0),
+  };
+  return Math.min(nodeScore, distanceSquared(point, labelCenter));
 }
 
 function labelPolygonError(value) {
