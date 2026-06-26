@@ -230,11 +230,22 @@ function hitScore(point, position) {
   if (hasValidLabelPolygon(position.labelPolygon)) {
     return Math.min(nodeScore, distanceSquaredToPolygon(point, position.labelPolygon));
   }
+  if (!usesOfficialRouteMapSource(position)) {
+    return nodeScore;
+  }
   const labelCenter = {
     x: position.x + (position.labelDx ?? 0),
     y: position.y + (position.labelDy ?? 0),
   };
   return Math.min(nodeScore, distanceSquared(point, labelCenter));
+}
+
+function usesOfficialRouteMapSource(position) {
+  const sourceId = normalizedText(position.sourceId);
+  return (
+    sourceId.endsWith("-cyberstation") ||
+    sourceId === "qa-wikimedia-seoul-svg-coordinate"
+  );
 }
 
 function labelPolygonError(value) {

@@ -840,6 +840,7 @@ test("route map position audit compares fallback label center for hit simulation
     gangnamLine2.y = 200;
     gangnamLine2.labelDx = -80;
     gangnamLine2.labelDy = -90;
+    gangnamLine2.sourceId = "fixture-cyberstation";
     await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
 
     const { stdout } = await execFileAsync(
