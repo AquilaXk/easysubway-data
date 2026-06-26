@@ -37,10 +37,23 @@ function parseArgs(argv) {
   for (const name of ["fixture", "geometry", "output"]) {
     if (!options[name]) throw new Error(`--${name} is required`);
   }
-  if (path.resolve(options.fixture) === path.resolve(options.output)) {
-    throw new Error("--output must not overwrite --fixture");
-  }
+  rejectPathCollisions(options);
   return options;
+}
+
+function rejectPathCollisions(options) {
+  const paths = Object.entries(options)
+    .filter(([, value]) => value)
+    .map(([name, value]) => [name, path.resolve(value)]);
+  for (let leftIndex = 0; leftIndex < paths.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < paths.length; rightIndex += 1) {
+      const [leftName, leftPath] = paths[leftIndex];
+      const [rightName, rightPath] = paths[rightIndex];
+      if (leftPath === rightPath) {
+        throw new Error(`--${leftName} and --${rightName} must not use the same path`);
+      }
+    }
+  }
 }
 
 function normalizedText(value) {
@@ -48,7 +61,11 @@ function normalizedText(value) {
 }
 
 function stationLabelKey(value) {
-  return normalizedText(value).replace(/역$/, "");
+  return normalizedText(value)
+    .replace(/\([^)]*\)/gu, "")
+    .replace(/\[[^\]]*\]/gu, "")
+    .replace(/[·ㆍ･.\s]/gu, "")
+    .replace(/역$/u, "");
 }
 
 function hasPolygon(value) {

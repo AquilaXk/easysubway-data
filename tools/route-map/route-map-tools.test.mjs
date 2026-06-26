@@ -54,8 +54,19 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-join-"));
   try {
     const geometryPath = path.join(tmp, "geometry.json");
+    const fixturePath = path.join(tmp, "catalog-fixture.json");
     const outputPath = path.join(tmp, "joined-fixture.json");
     const reportPath = path.join(tmp, "join-report.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].stations.find(
+      (station) => station.id === "station-jeongja",
+    ).nameKo = "정자(신분당선)";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
     const jeongjaPolygon = [
       { x: 610, y: 286 },
       { x: 662, y: 286 },
@@ -71,8 +82,8 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
         extractorVersion: "route-map-svg-geometry-v1",
         labels: [
           {
-            sourceText: "정자역",
-            normalizedText: "정자",
+            sourceText: "정 자역",
+            normalizedText: "정 자",
             classification: "STATION_LABEL",
             polygon: jeongjaPolygon,
             polygonIndex: 0,
@@ -127,7 +138,7 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
       [
         "tools/route-map/join-svg-label-polygons.mjs",
         "--fixture",
-        "tools/datapack/fixtures/catalog-fixture.json",
+        fixturePath,
         "--geometry",
         geometryPath,
         "--output",
@@ -160,6 +171,49 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     assert.deepEqual(report.ambiguous[0].stationIds, ["station-sadang"]);
     assert.deepEqual(report.ambiguous[0].lineIds, ["seoul-2", "seoul-4"]);
     assert.equal(report.unmatched[0].sourceText, "없는역");
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("SVG label polygon join rejects input and output path collisions", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-join-path-"));
+  try {
+    const fixturePath = path.join(root, "tools/datapack/fixtures/catalog-fixture.json");
+    const geometryPath = path.join(tmp, "geometry.json");
+    const outputPath = path.join(tmp, "joined-fixture.json");
+    await writeFile(
+      geometryPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        region: "수도권",
+        labels: [],
+      }),
+      "utf8",
+    );
+
+    for (const args of [
+      ["--output", geometryPath],
+      ["--output", outputPath, "--report", fixturePath],
+      ["--output", outputPath, "--report", outputPath],
+    ]) {
+      await assert.rejects(
+        () =>
+          execFileAsync(
+            process.execPath,
+            [
+              "tools/route-map/join-svg-label-polygons.mjs",
+              "--fixture",
+              fixturePath,
+              "--geometry",
+              geometryPath,
+              ...args,
+            ],
+            { cwd: root, maxBuffer: 1024 * 1024 },
+          ),
+        /must not use the same path/,
+      );
+    }
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
