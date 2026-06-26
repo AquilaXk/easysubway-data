@@ -87,8 +87,9 @@ function normalizedText(value) {
 function normalizedStationLabel(value) {
   return normalizedText(value)
     .normalize("NFKC")
-    .replace(/\s+/gu, " ")
-    .replace(/\s*([()])\s*/gu, "$1")
+    .replace(/\([^)]*\)/gu, "")
+    .replace(/\[[^\]]*\]/gu, "")
+    .replace(/[·ㆍ･.\s]/gu, "")
     .replace(/역$/u, "");
 }
 

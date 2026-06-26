@@ -522,6 +522,18 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     const routeStation = pack.stations.find(
       (row) => row.id === routePosition.stationId,
     );
+    const svgRoutePosition = pack.routeMapPositions.find(
+      (row) => row.sourceId === "molit-rail-station-svg-route",
+    );
+    const svgRouteStation = pack.stations.find(
+      (row) => row.id === svgRoutePosition.stationId,
+    );
+    const interpolatedRoutePosition = pack.routeMapPositions.find(
+      (row) => row.sourceId === "molit-urban-rail-full-route",
+    );
+    const interpolatedRouteStation = pack.stations.find(
+      (row) => row.id === interpolatedRoutePosition.stationId,
+    );
     const source = pack.sourceInventory.find(
       (row) => row.id === "seoulmetro-cyberstation",
     );
@@ -536,6 +548,11 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
     assert.match(routePosition.sourceSha256, /^[a-f0-9]{64}$/);
     assert.equal(routePosition.sourceSha256, expectedSha);
     assert.equal(routePosition.sourceLabel, routeStation.nameKo);
+    assert.equal(svgRoutePosition.sourceLabel, svgRouteStation.nameKo);
+    assert.equal(
+      interpolatedRoutePosition.sourceLabel,
+      interpolatedRouteStation.nameKo,
+    );
     assert.equal(source.sourceSha256, expectedSha);
 
     const { stdout } = await execFileAsync(
