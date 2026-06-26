@@ -227,6 +227,78 @@ test("SVG label polygon join rejects input and output path collisions", async ()
   }
 });
 
+test("SVG label polygon join reports duplicate source labels as ambiguous", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-join-duplicate-"));
+  try {
+    const geometryPath = path.join(tmp, "geometry.json");
+    const outputPath = path.join(tmp, "joined-fixture.json");
+    await writeFile(
+      geometryPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        region: "수도권",
+        labels: [
+          {
+            sourceText: "정자역",
+            normalizedText: "정자",
+            classification: "STATION_LABEL",
+            polygon: [
+              { x: 10, y: 10 },
+              { x: 20, y: 10 },
+              { x: 20, y: 20 },
+            ],
+            polygonIndex: 0,
+            sourceElementKey: "a".repeat(64),
+          },
+          {
+            sourceText: "정자역",
+            normalizedText: "정자",
+            classification: "STATION_LABEL",
+            polygon: [
+              { x: 30, y: 30 },
+              { x: 40, y: 30 },
+              { x: 40, y: 40 },
+            ],
+            polygonIndex: 1,
+            sourceElementKey: "b".repeat(64),
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/join-svg-label-polygons.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--geometry",
+        geometryPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const report = JSON.parse(stdout);
+    const joined = JSON.parse(await readFile(outputPath, "utf8"));
+    const jeongja = joined.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-jeongja",
+    );
+
+    assert.equal(report.summary.matched, 0);
+    assert.equal(report.summary.ambiguous, 1);
+    assert.equal(report.summary.unmatched, 0);
+    assert.equal(report.summary.missingRouteMapPositions, 8);
+    assert.equal(report.ambiguous[0].duplicateLabelCount, 2);
+    assert.deepEqual(report.ambiguous[0].polygonIndexes, [0, 1]);
+    assert.deepEqual(report.ambiguous[0].stationIds, ["station-jeongja"]);
+    assert.equal(jeongja.labelPolygon, undefined);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit passes clean catalog fixture", async () => {
   const { stdout } = await execFileAsync(
     process.execPath,

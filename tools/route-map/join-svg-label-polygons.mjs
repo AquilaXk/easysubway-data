@@ -110,6 +110,15 @@ function labelName(label) {
   return stationLabelKey(label.normalizedText || label.sourceText);
 }
 
+function stationLabelsByKey(geometry) {
+  const byKey = new Map();
+  for (const label of stationLabels(geometry)) {
+    const key = positionKey(geometry.region, labelName(label));
+    byKey.set(key, [...(byKey.get(key) ?? []), label]);
+  }
+  return byKey;
+}
+
 function sortedUnique(values) {
   return [...new Set(values.map(normalizedText).filter(Boolean))].sort();
 }
@@ -120,8 +129,21 @@ function joinPack(pack, geometry) {
   const unmatched = [];
   const ambiguous = [];
 
-  for (const label of stationLabels(geometry)) {
-    const candidates = byLabel.get(positionKey(geometry.region, labelName(label))) ?? [];
+  for (const [labelKey, labels] of stationLabelsByKey(geometry)) {
+    const [label] = labels;
+    const candidates = byLabel.get(labelKey) ?? [];
+    if (labels.length > 1) {
+      ambiguous.push({
+        sourceText: sortedUnique(labels.map((row) => row.sourceText)).join(" / "),
+        normalizedText: labelName(label),
+        stationIds: sortedUnique(candidates.map((row) => row.stationId)),
+        lineIds: sortedUnique(candidates.map((row) => row.lineId)),
+        polygonIndexes: labels.map((row) => row.polygonIndex ?? null),
+        sourceElementKeys: sortedUnique(labels.map((row) => row.sourceElementKey)),
+        duplicateLabelCount: labels.length,
+      });
+      continue;
+    }
     if (candidates.length === 0) {
       unmatched.push({
         sourceText: label.sourceText ?? "",
