@@ -146,8 +146,90 @@ function polygonBounds(points) {
   );
 }
 
+function polygonCenter(points) {
+  const bounds = polygonBounds(points);
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
+}
+
 function boundsOverlap(a, b) {
   return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
+}
+
+function distanceSquared(a, b) {
+  return ((a.x - b.x) ** 2) + ((a.y - b.y) ** 2);
+}
+
+function distanceSquaredToSegment(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) {
+    return distanceSquared(point, start);
+  }
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) /
+        lengthSquared,
+    ),
+  );
+  return distanceSquared(point, {
+    x: start.x + dx * t,
+    y: start.y + dy * t,
+  });
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (
+    let index = 0, previous = polygon.length - 1;
+    index < polygon.length;
+    previous = index, index += 1
+  ) {
+    const current = polygon[index];
+    const previousPoint = polygon[previous];
+    const crossesY = (current.y > point.y) !== (previousPoint.y > point.y);
+    if (!crossesY) {
+      continue;
+    }
+    const intersectionX =
+      ((previousPoint.x - current.x) * (point.y - current.y)) /
+        (previousPoint.y - current.y) +
+      current.x;
+    if (point.x < intersectionX) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function distanceSquaredToPolygon(point, polygon) {
+  if (pointInPolygon(point, polygon)) {
+    return 0;
+  }
+  let best = Infinity;
+  for (let index = 0; index < polygon.length; index += 1) {
+    best = Math.min(
+      best,
+      distanceSquaredToSegment(
+        point,
+        polygon[index],
+        polygon[(index + 1) % polygon.length],
+      ),
+    );
+  }
+  return best;
+}
+
+function hitScore(point, position) {
+  const nodeScore = distanceSquared(point, position);
+  return hasValidLabelPolygon(position.labelPolygon)
+    ? Math.min(nodeScore, distanceSquaredToPolygon(point, position.labelPolygon))
+    : nodeScore;
 }
 
 function labelPolygonError(value) {
@@ -507,6 +589,32 @@ function auditPack(pack, reviewedAmbiguities) {
         message: "routeMapPositions labelPolygon bounding boxes overlap.",
       });
     }
+  }
+
+  for (const labelPolygon of labelPolygons) {
+    const tapPoint = polygonCenter(labelPolygon.position.labelPolygon);
+    const ownScore = hitScore(tapPoint, labelPolygon.position);
+    const ambiguous = positions
+      .filter((position) =>
+        position !== labelPolygon.position &&
+        normalizedText(position.region) ===
+          normalizedText(labelPolygon.position.region) &&
+        hitScore(tapPoint, position) <= ownScore,
+      )
+      .map((position) => `${position.stationId}:${position.lineId}`)
+      .sort();
+    if (ambiguous.length === 0) {
+      continue;
+    }
+    addFinding(findings, {
+      severity: "MEDIUM",
+      code: "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT",
+      packId: pack.id,
+      region: labelPolygon.position.region,
+      lineId: labelPolygon.position.lineId,
+      stationId: labelPolygon.position.stationId,
+      message: `labelPolygon center tap is ambiguous with ${ambiguous.join(", ")}.`,
+    });
   }
 
   for (const membership of stationLines) {

@@ -753,6 +753,64 @@ test("route map position audit reports overlapping label polygons as medium", as
   }
 });
 
+test("route map position audit reports ambiguous label polygon hit simulation as medium", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "ambiguous-hit-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    sadangLine2.labelPolygon = [
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 140, y: 120 },
+      { x: 100, y: 120 },
+    ];
+    gangnamLine2.labelPolygon = [
+      { x: 110, y: 105 },
+      { x: 130, y: 105 },
+      { x: 130, y: 115 },
+      { x: 110, y: 115 },
+    ];
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.ok(
+      output.findings.some(
+        (finding) =>
+          finding.code === "AMBIGUOUS_ROUTE_MAP_LABEL_POLYGON_HIT" &&
+          finding.stationId === "station-sadang",
+      ),
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports source label mismatch as high", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
