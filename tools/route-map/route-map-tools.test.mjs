@@ -186,6 +186,42 @@ test("route map position audit reports wrong-region coverage gaps", async () => 
   }
 });
 
+test("route map position audit falls back for regionless stations", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "regionless-station-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    delete fixture.packs[0].stations[0].region;
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.packs[0].summary.coveredStationLineCount, 9);
+    assert.equal(output.packs[0].summary.coverageRatio, 1);
+    assert.equal(output.packs[0].summary.regions[0].stationLineCount, 8);
+    assert.equal(output.packs[0].summary.regions[0].routeMapPositionCount, 9);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports region coverage gaps", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {

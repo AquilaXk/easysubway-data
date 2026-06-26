@@ -70,6 +70,13 @@ function stationLineRegionKeyFor(row, region) {
   return `${normalizedText(region)}\u0000${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
 }
 
+function coverageKeyForStationLine(row, stationsById) {
+  const region = normalizedText(
+    stationsById.get(normalizedText(row.stationId))?.region,
+  );
+  return region ? stationLineRegionKeyFor(row, region) : stationLineKeyFor(row);
+}
+
 function routeMapPositionKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}\u0000${row.region ?? ""}`;
 }
@@ -297,16 +304,13 @@ function auditPack(pack, reviewedAmbiguities) {
     ? pack.routeMapPositions
     : [];
   const stationLineKeys = new Set(stationLines.map(stationLineKeyFor));
-  const stationLineRegionKeys = new Set(
+  const stationLineCoverageKeys = new Set(
     stationLines.map((stationLine) =>
-      stationLineRegionKeyFor(
-        stationLine,
-        stationsById.get(normalizedText(stationLine.stationId))?.region,
-      ),
+      coverageKeyForStationLine(stationLine, stationsById),
     ),
   );
   const positionKeys = new Set();
-  const positionedStationLineRegionKeys = new Set();
+  const positionedStationLineCoverageKeys = new Set();
   const coordinateGroups = new Map();
   const labelPolygons = [];
 
@@ -325,7 +329,8 @@ function auditPack(pack, reviewedAmbiguities) {
       });
     }
     positionKeys.add(key);
-    positionedStationLineRegionKeys.add(
+    positionedStationLineCoverageKeys.add(stationLineKey);
+    positionedStationLineCoverageKeys.add(
       stationLineRegionKeyFor(position, position.region),
     );
 
@@ -471,10 +476,9 @@ function auditPack(pack, reviewedAmbiguities) {
   }
 
   for (const membership of stationLines) {
-    const station = stationsById.get(normalizedText(membership.stationId));
     if (
-      positionedStationLineRegionKeys.has(
-        stationLineRegionKeyFor(membership, station?.region),
+      positionedStationLineCoverageKeys.has(
+        coverageKeyForStationLine(membership, stationsById),
       )
     ) {
       continue;
@@ -544,12 +548,12 @@ function auditPack(pack, reviewedAmbiguities) {
     summary: {
       stationLineCount: stationLines.length,
       routeMapPositionCount: positions.length,
-      coveredStationLineCount: [...stationLineRegionKeys].filter((key) =>
-        positionedStationLineRegionKeys.has(key),
+      coveredStationLineCount: [...stationLineCoverageKeys].filter((key) =>
+        positionedStationLineCoverageKeys.has(key),
       ).length,
       coverageRatio: coverageRatio(
-        [...stationLineRegionKeys].filter((key) =>
-          positionedStationLineRegionKeys.has(key),
+        [...stationLineCoverageKeys].filter((key) =>
+          positionedStationLineCoverageKeys.has(key),
         ).length,
         stationLines.length,
       ),
