@@ -160,6 +160,50 @@ function labelPolygonError(value) {
   return "";
 }
 
+function coverageRatio(coveredCount, totalCount) {
+  return totalCount === 0
+    ? 1
+    : Number((coveredCount / totalCount).toFixed(4));
+}
+
+function regionCoverageSummaries(stationLines, positions) {
+  const lineIdsByRegion = new Map();
+  const positionKeysByRegion = new Map();
+  for (const position of positions) {
+    const region = normalizedText(position.region);
+    const lineId = normalizedText(position.lineId);
+    if (!region || !lineId) {
+      continue;
+    }
+    const lineIds = lineIdsByRegion.get(region) ?? new Set();
+    lineIds.add(lineId);
+    lineIdsByRegion.set(region, lineIds);
+
+    const keys = positionKeysByRegion.get(region) ?? new Set();
+    keys.add(stationLineKeyFor(position));
+    positionKeysByRegion.set(region, keys);
+  }
+
+  return [...lineIdsByRegion.entries()]
+    .map(([region, lineIds]) => {
+      const stationLineKeys = stationLines
+        .filter((row) => lineIds.has(normalizedText(row.lineId)))
+        .map(stationLineKeyFor);
+      const positionKeys = positionKeysByRegion.get(region) ?? new Set();
+      const coveredCount = stationLineKeys.filter((key) =>
+        positionKeys.has(key),
+      ).length;
+      return {
+        region,
+        stationLineCount: stationLineKeys.length,
+        routeMapPositionCount: positionKeys.size,
+        coveredStationLineCount: coveredCount,
+        coverageRatio: coverageRatio(coveredCount, stationLineKeys.length),
+      };
+    })
+    .sort((a, b) => a.region.localeCompare(b.region));
+}
+
 function reviewedAmbiguityEntries(raw) {
   if (Array.isArray(raw)) {
     return raw;
@@ -467,16 +511,12 @@ function auditPack(pack, reviewedAmbiguities) {
       coveredStationLineCount: [...stationLineKeys].filter((key) =>
         positionedStationLineKeys.has(key),
       ).length,
-      coverageRatio:
-        stationLines.length === 0
-          ? 1
-          : Number(
-              (
-                [...stationLineKeys].filter((key) =>
-                  positionedStationLineKeys.has(key),
-                ).length / stationLines.length
-              ).toFixed(4),
-            ),
+      coverageRatio: coverageRatio(
+        [...stationLineKeys].filter((key) => positionedStationLineKeys.has(key))
+          .length,
+        stationLines.length,
+      ),
+      regions: regionCoverageSummaries(stationLines, positions),
       findingsBySeverity: findingCounts,
     },
     findings: findings.sort((a, b) => {

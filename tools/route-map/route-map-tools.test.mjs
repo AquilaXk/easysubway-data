@@ -72,6 +72,15 @@ test("route map position audit passes clean catalog fixture", async () => {
   assert.equal(output.packs[0].summary.stationLineCount, 9);
   assert.equal(output.packs[0].summary.routeMapPositionCount, 9);
   assert.equal(output.packs[0].summary.coverageRatio, 1);
+  assert.deepEqual(output.packs[0].summary.regions, [
+    {
+      region: "수도권",
+      stationLineCount: 9,
+      routeMapPositionCount: 9,
+      coveredStationLineCount: 9,
+      coverageRatio: 1,
+    },
+  ]);
 });
 
 test("route map position audit allows same station-line in another region", async () => {
@@ -114,6 +123,53 @@ test("route map position audit allows same station-line in another region", asyn
     assert.equal(output.packs[0].summary.stationLineCount, 9);
     assert.equal(output.packs[0].summary.routeMapPositionCount, 10);
     assert.equal(output.packs[0].summary.coverageRatio, 1);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit reports region coverage gaps", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "region-gap-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    fixture.packs[0].routeMapPositions = fixture.packs[0].routeMapPositions.filter(
+      (row) => !(row.stationId === "station-sadang" && row.lineId === "seoul-2"),
+    );
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 1);
+        assert.deepEqual(output.packs[0].summary.regions, [
+          {
+            region: "수도권",
+            stationLineCount: 9,
+            routeMapPositionCount: 8,
+            coveredStationLineCount: 8,
+            coverageRatio: 0.8889,
+          },
+        ]);
+        return true;
+      },
+    );
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
