@@ -84,6 +84,14 @@ function normalizedText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizedStationLabel(value) {
+  return normalizedText(value)
+    .normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .replace(/\s*([()])\s*/gu, "$1")
+    .replace(/역$/u, "");
+}
+
 function addFinding(findings, finding) {
   findings.push({
     severity: finding.severity,
@@ -212,6 +220,12 @@ function parseReviewedAmbiguities(raw) {
 
 function auditPack(pack, reviewedAmbiguities) {
   const findings = [];
+  const stationsById = new Map(
+    (Array.isArray(pack.stations) ? pack.stations : []).map((station) => [
+      normalizedText(station.id),
+      station,
+    ]),
+  );
   const stationLines = Array.isArray(pack.stationLines) ? pack.stationLines : [];
   const positions = Array.isArray(pack.routeMapPositions)
     ? pack.routeMapPositions
@@ -325,6 +339,26 @@ function auditPack(pack, reviewedAmbiguities) {
         stationId: position.stationId,
         message: "routeMapPositions row has no reviewedAt timestamp.",
       });
+    }
+
+    const sourceLabel = normalizedText(position.sourceLabel);
+    if (sourceLabel !== "") {
+      const stationName = stationsById.get(normalizedText(position.stationId))?.nameKo;
+      if (
+        normalizedStationLabel(sourceLabel) !==
+        normalizedStationLabel(stationName)
+      ) {
+        addFinding(findings, {
+          severity: "HIGH",
+          code: "ROUTE_MAP_SOURCE_LABEL_MISMATCH",
+          packId: pack.id,
+          region: position.region,
+          lineId: position.lineId,
+          stationId: position.stationId,
+          message:
+            "routeMapPositions sourceLabel does not match the station name.",
+        });
+      }
     }
 
     const coordinateKey = [
