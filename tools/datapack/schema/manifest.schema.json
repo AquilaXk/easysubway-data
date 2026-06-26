@@ -109,6 +109,7 @@
           "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
           "version": { "type": "string", "pattern": "^[0-9]+$" },
           "artifactKind": { "enum": ["fixture", "production"] },
+          "payloadKind": { "enum": ["sqlite_catalog"] },
           "url": { "type": "string", "minLength": 1 },
           "sha256": { "$ref": "#/$defs/sha256" },
           "sqliteSha256": { "$ref": "#/$defs/sha256" },
@@ -186,6 +187,10 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/packIdentity" }
           }
         }
       }
