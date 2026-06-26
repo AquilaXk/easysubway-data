@@ -66,6 +66,13 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     fixture.packs[0].stations.find(
       (station) => station.id === "station-jeongja",
     ).nameKo = "정자(신분당선)";
+    fixture.packs[0].routeMapPositions.push({
+      stationId: "station-jeongja",
+      lineId: "shinbundang",
+      region: "부산",
+      x: 620,
+      y: 310,
+    });
     await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
     const jeongjaPolygon = [
       { x: 610, y: 286 },
@@ -163,6 +170,7 @@ test("SVG label polygon join applies only unambiguous station labels", async () 
     assert.equal(report.summary.ambiguous, 1);
     assert.equal(report.summary.unmatched, 1);
     assert.equal(report.summary.missingRouteMapPositions, 7);
+    assert.ok(report.missingRouteMapPositions.every((row) => row.region === "수도권"));
     assert.deepEqual(jeongja.labelPolygon, jeongjaPolygon);
     assert.equal(jeongja.labelPolygonSourceSvgSha256, "b".repeat(64));
     assert.equal(jeongja.labelPolygonSourceElementKey, "c".repeat(64));

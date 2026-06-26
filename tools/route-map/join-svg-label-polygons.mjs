@@ -159,7 +159,11 @@ function joinPack(pack, geometry) {
 
   const missingRouteMapPositions = (Array.isArray(pack.routeMapPositions)
     ? pack.routeMapPositions
-    : []).filter((position) => !hasPolygon(position.labelPolygon));
+    : []).filter(
+      (position) =>
+        normalizedText(position.region) === normalizedText(geometry.region) &&
+        !hasPolygon(position.labelPolygon),
+    );
 
   return {
     matched,
