@@ -1,0 +1,32 @@
+{
+  "reviewedAmbiguities": [
+    {
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "x": 295,
+      "y": 735,
+      "stationIds": [
+        "station-423d71b94cdc",
+        "station-be0bc5f41d9b"
+      ],
+      "reason": "인천2호선 인천시청/석천사거리 source 좌표가 공식 사이버스테이션 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리",
+      "reviewedAt": "2026-06-26T00:00:00.000Z",
+      "reviewedBy": "QA",
+      "reviewSource": "https://github.com/AquilaXk/easysubway/issues/836"
+    },
+    {
+      "region": "수도권",
+      "lineId": "line-cbe75f5287a1",
+      "x": 156,
+      "y": 791,
+      "stationIds": [
+        "station-04529af2869a",
+        "station-bdd848e7e432"
+      ],
+      "reason": "수도권 자기부상 워터파크/용유 source 좌표가 공식 SVG선지도 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리",
+      "reviewedAt": "2026-06-26T00:00:00.000Z",
+      "reviewedBy": "QA",
+      "reviewSource": "https://github.com/AquilaXk/easysubway/issues/891"
+    }
+  ]
+}

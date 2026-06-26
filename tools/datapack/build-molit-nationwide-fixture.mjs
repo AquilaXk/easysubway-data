@@ -79,25 +79,43 @@ async function main() {
   const djtcHtmlPath = args["djtc-html"];
   const djtcCssPath = args["djtc-css"];
   const outputPath = requireArg(args, "output");
-  const csv = new TextDecoder("euc-kr").decode(await readFile(csvPath));
-  const svgCsv = new TextDecoder("euc-kr").decode(await readFile(svgCsvPath));
-  const seoulMetroJs = seoulMetroPath ? await readFile(seoulMetroPath, "utf8") : "";
+  const csvBytes = await readFile(csvPath);
+  const svgCsvBytes = await readFile(svgCsvPath);
+  const seoulMetroBytes = seoulMetroPath ? await readFile(seoulMetroPath) : Buffer.alloc(0);
+  const humetroHtmlBytes = humetroHtmlPath ? await readFile(humetroHtmlPath) : Buffer.alloc(0);
+  const humetroCssBytes = humetroCssPath ? await readFile(humetroCssPath) : Buffer.alloc(0);
+  const grtcHtmlBytes = grtcHtmlPath ? await readFile(grtcHtmlPath) : Buffer.alloc(0);
+  const dtroHtmlBytes = dtroHtmlPath ? await readFile(dtroHtmlPath) : Buffer.alloc(0);
+  const djtcHtmlBytes = djtcHtmlPath ? await readFile(djtcHtmlPath) : Buffer.alloc(0);
+  const djtcCssBytes = djtcCssPath ? await readFile(djtcCssPath) : Buffer.alloc(0);
+  const csv = new TextDecoder("euc-kr").decode(csvBytes);
+  const svgCsv = new TextDecoder("euc-kr").decode(svgCsvBytes);
+  const seoulMetroJs = seoulMetroBytes.toString("utf8");
   const officialSources = {
     seoulMetroJs,
-    humetroHtml: humetroHtmlPath ? await readFile(humetroHtmlPath, "utf8") : "",
-    humetroCss: humetroCssPath ? await readFile(humetroCssPath, "utf8") : "",
-    grtcHtml: grtcHtmlPath ? await readFile(grtcHtmlPath, "utf8") : "",
-    dtroHtml: dtroHtmlPath ? await readFile(dtroHtmlPath, "utf8") : "",
-    djtcHtml: djtcHtmlPath ? await readFile(djtcHtmlPath, "utf8") : "",
-    djtcCss: djtcCssPath ? await readFile(djtcCssPath, "utf8") : "",
+    humetroHtml: humetroHtmlBytes.toString("utf8"),
+    humetroCss: humetroCssBytes.toString("utf8"),
+    grtcHtml: grtcHtmlBytes.toString("utf8"),
+    dtroHtml: dtroHtmlBytes.toString("utf8"),
+    djtcHtml: djtcHtmlBytes.toString("utf8"),
+    djtcCss: djtcCssBytes.toString("utf8"),
   };
+  const sourceShaById = new Map([
+    [sourceId, sha256(csvBytes)],
+    ["molit-rail-station-svg-route", sha256(svgCsvBytes)],
+    [seoulMetroSourceId, sha256(seoulMetroBytes)],
+    [humetroSourceId, sha256(Buffer.concat([humetroHtmlBytes, humetroCssBytes]))],
+    [grtcSourceId, sha256(grtcHtmlBytes)],
+    [dtroSourceId, sha256(dtroHtmlBytes)],
+    [djtcSourceId, sha256(Buffer.concat([djtcHtmlBytes, djtcCssBytes]))],
+  ]);
   const rows = parseCsv(csv).map(rowFromCsv).filter(Boolean);
   const svgRows = parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean);
-  const fixture = buildFixture(rows, svgRows, officialSources);
+  const fixture = buildFixture(rows, svgRows, officialSources, sourceShaById);
   await writeFile(outputPath, `${JSON.stringify(fixture, null, 2)}\n`);
 }
 
-function buildFixture(rows, svgRows, officialSources) {
+function buildFixture(rows, svgRows, officialSources, sourceShaById) {
   const operators = new Map();
   const lines = new Map();
   const stations = new Map();
@@ -165,10 +183,10 @@ function buildFixture(rows, svgRows, officialSources) {
   const routeMapPositions = [];
   for (const [region, regionLineIds] of regionalLineOrder.entries()) {
     for (const lineId of regionLineIds) {
-      routeMapPositions.push(...positionsForLine(byLine.get(lineId), region, svgByKey, officialByKey));
+      routeMapPositions.push(...positionsForLine(byLine.get(lineId), region, svgByKey, officialByKey, sourceShaById));
     }
   }
-  fillMissingRouteMapPositions(routeMapPositions, byLine);
+  fillMissingRouteMapPositions(routeMapPositions, byLine, sourceShaById);
 
   const networkEdges = [];
   for (const [lineId, rawLineRows] of byLine.entries()) {
@@ -194,7 +212,7 @@ function buildFixture(rows, svgRows, officialSources) {
         artifactKind: "fixture",
         schemaVersion: "1",
         url: "catalog/capital-v1.sqlite.gz",
-        sourceInventory: sourceInventoryEntries(),
+        sourceInventory: sourceInventoryEntries(sourceShaById),
         requiredTables: [
           "catalog_metadata",
           "operators",
@@ -236,7 +254,7 @@ function buildFixture(rows, svgRows, officialSources) {
   };
 }
 
-function positionsForLine(lineRows, region, svgByKey, officialByKey) {
+function positionsForLine(lineRows, region, svgByKey, officialByKey, sourceShaById) {
   const officialLineExists = lineRows.some((row) => officialByKey.has(svgKey(row.regionCode, row.lineName, row.stationName)));
   return [...lineRows]
     .sort((a, b) => a.sequence - b.sequence)
@@ -257,6 +275,7 @@ function positionsForLine(lineRows, region, svgByKey, officialByKey) {
           sourceId: official.sourceId,
           sourceName: official.sourceName,
           sourceUrl: official.sourceUrl,
+          sourceSha256: sourceShaById.get(official.sourceId) ?? "",
           license: "공식 웹 공개 노선도 기준",
           licenseStatus: "review-required",
           commercialUseAllowed: false,
@@ -289,6 +308,7 @@ function positionsForLine(lineRows, region, svgByKey, officialByKey) {
         sourceId: "molit-rail-station-svg-route",
         sourceName: "국토교통부 철도 역사 SVG선지도",
         sourceUrl: "https://www.data.go.kr/data/15130544/fileData.do",
+        sourceSha256: sourceShaById.get("molit-rail-station-svg-route") ?? "",
         license: "공공데이터포털 이용허락범위 제한 없음",
         licenseStatus: "redistributable",
         commercialUseAllowed: true,
@@ -300,7 +320,7 @@ function positionsForLine(lineRows, region, svgByKey, officialByKey) {
     .filter(Boolean);
 }
 
-function fillMissingRouteMapPositions(routeMapPositions, byLine) {
+function fillMissingRouteMapPositions(routeMapPositions, byLine, sourceShaById) {
   const positionsByNode = new Map(routeMapPositions.map((row) => [`${row.stationId}:${row.lineId}`, row]));
   for (const [lineId, rawRows] of byLine.entries()) {
     const lineRows = [...rawRows].sort((a, b) => a.sequence - b.sequence);
@@ -330,6 +350,7 @@ function fillMissingRouteMapPositions(routeMapPositions, byLine) {
         sourceId,
         sourceName: "국토교통부 도시철도 전체노선정보",
         sourceUrl,
+        sourceSha256: sourceShaById.get(sourceId) ?? "",
         license: "공공데이터포털 이용허락범위 제한 없음",
         licenseStatus: "redistributable",
         commercialUseAllowed: true,
@@ -1023,7 +1044,7 @@ function regionLabel(regionName) {
   return regionName.endsWith("권") ? regionName : `${regionName}권`;
 }
 
-function sourceInventoryEntries() {
+function sourceInventoryEntries(sourceShaById) {
   const common = {
     owner: "국토교통부",
     license: "공공데이터포털 이용허락범위 제한 없음",
@@ -1037,18 +1058,21 @@ function sourceInventoryEntries() {
       ...common,
       id: sourceId,
       url: sourceUrl,
+      sourceSha256: sourceShaById.get(sourceId) ?? "",
       fields: ["region", "operator_name", "line_name", "station_sequence", "station_name"],
     },
     {
       ...common,
       id: "molit-rail-station-svg-route",
       url: "https://www.data.go.kr/data/15130544/fileData.do",
+      sourceSha256: sourceShaById.get("molit-rail-station-svg-route") ?? "",
       fields: ["svg_file_name", "line_name", "station_name", "up_path", "down_path", "svg_order"],
     },
     {
       id: seoulMetroSourceId,
       owner: "서울교통공사",
       url: "http://www.seoulmetro.co.kr/kr/cyberStation.do",
+      sourceSha256: sourceShaById.get(seoulMetroSourceId) ?? "",
       license: "공식 웹 공개 노선도 기준",
       licenseStatus: "review-required",
       redistributionAllowed: false,
@@ -1060,6 +1084,7 @@ function sourceInventoryEntries() {
       id: humetroSourceId,
       owner: "부산교통공사",
       url: "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+      sourceSha256: sourceShaById.get(humetroSourceId) ?? "",
       license: "공식 웹 공개 노선도 기준",
       licenseStatus: "review-required",
       redistributionAllowed: false,
@@ -1071,6 +1096,7 @@ function sourceInventoryEntries() {
       id: grtcSourceId,
       owner: "광주교통공사",
       url: "https://www.grtc.co.kr/cyber/simple",
+      sourceSha256: sourceShaById.get(grtcSourceId) ?? "",
       license: "공식 웹 공개 노선도 기준",
       licenseStatus: "review-required",
       redistributionAllowed: false,
@@ -1082,6 +1108,7 @@ function sourceInventoryEntries() {
       id: dtroSourceId,
       owner: "대구교통공사",
       url: "https://www.dtro.or.kr/front/dtro/cyberstation/station/cyberstation.do",
+      sourceSha256: sourceShaById.get(dtroSourceId) ?? "",
       license: "공식 웹 공개 노선도 기준",
       licenseStatus: "review-required",
       redistributionAllowed: false,
@@ -1093,6 +1120,7 @@ function sourceInventoryEntries() {
       id: djtcSourceId,
       owner: "대전교통공사",
       url: "https://www.djtc.kr/kor/cyberStation.do?menuIdx=28",
+      sourceSha256: sourceShaById.get(djtcSourceId) ?? "",
       license: "공식 웹 공개 노선도 기준",
       licenseStatus: "review-required",
       redistributionAllowed: false,
@@ -1101,6 +1129,10 @@ function sourceInventoryEntries() {
       fields: ["station_name", "station_coordinate", "route_path"],
     },
   ];
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function hash(value) {

@@ -115,6 +115,8 @@ function parseReviewedAmbiguities(raw) {
     const lineId = normalizedText(entry?.lineId);
     const reason = normalizedText(entry?.reason);
     const reviewedAt = normalizedText(entry?.reviewedAt);
+    const reviewedBy = normalizedText(entry?.reviewedBy);
+    const reviewSource = normalizedText(entry?.reviewSource);
     const stationIds = Array.isArray(entry?.stationIds)
       ? entry.stationIds.map(normalizedText).filter(Boolean)
       : [];
@@ -130,9 +132,9 @@ function parseReviewedAmbiguities(raw) {
         `reviewedAmbiguities[${index}].stationIds must include at least two station ids`,
       );
     }
-    if (!reason || !reviewedAt) {
+    if (!reason || !reviewedAt || !reviewedBy || !reviewSource) {
       throw new Error(
-        `reviewedAmbiguities[${index}] must include reason and reviewedAt`,
+        `reviewedAmbiguities[${index}] must include reason, reviewedAt, reviewedBy, and reviewSource`,
       );
     }
     reviewed.set(
@@ -145,6 +147,8 @@ function parseReviewedAmbiguities(raw) {
         stationIds: stationIds.sort(),
         reason,
         reviewedAt,
+        reviewedBy,
+        reviewSource,
       },
     );
   }
@@ -212,6 +216,19 @@ function auditPack(pack, reviewedAmbiguities) {
       });
     }
 
+    if (!/^[a-f0-9]{64}$/.test(normalizedText(position.sourceSha256))) {
+      addFinding(findings, {
+        severity: "HIGH",
+        code: "MISSING_ROUTE_MAP_SOURCE_SHA",
+        packId: pack.id,
+        region: position.region,
+        lineId: position.lineId,
+        stationId: position.stationId,
+        message:
+          "routeMapPositions row must include a sourceSha256 for the coordinate source snapshot.",
+      });
+    }
+
     if (normalizedText(position.reviewedAt) === "") {
       addFinding(findings, {
         severity: "HIGH",
@@ -274,7 +291,7 @@ function auditPack(pack, reviewedAmbiguities) {
         region: first.region,
         lineId: first.lineId,
         stationId: stationIds.join(","),
-        message: `Reviewed duplicate source coordinate: ${reviewed.reason} (${reviewed.reviewedAt}).`,
+        message: `Reviewed duplicate source coordinate: ${reviewed.reason} (${reviewed.reviewedAt}, ${reviewed.reviewedBy}, ${reviewed.reviewSource}).`,
       });
       continue;
     }
