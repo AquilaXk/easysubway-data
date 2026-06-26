@@ -66,6 +66,10 @@ function stationLineKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
 }
 
+function stationLineRegionKeyFor(row, region) {
+  return `${normalizedText(region)}\u0000${row.stationId ?? ""}\u0000${row.lineId ?? ""}`;
+}
+
 function routeMapPositionKeyFor(row) {
   return `${row.stationId ?? ""}\u0000${row.lineId ?? ""}\u0000${row.region ?? ""}`;
 }
@@ -293,8 +297,16 @@ function auditPack(pack, reviewedAmbiguities) {
     ? pack.routeMapPositions
     : [];
   const stationLineKeys = new Set(stationLines.map(stationLineKeyFor));
+  const stationLineRegionKeys = new Set(
+    stationLines.map((stationLine) =>
+      stationLineRegionKeyFor(
+        stationLine,
+        stationsById.get(normalizedText(stationLine.stationId))?.region,
+      ),
+    ),
+  );
   const positionKeys = new Set();
-  const positionedStationLineKeys = new Set();
+  const positionedStationLineRegionKeys = new Set();
   const coordinateGroups = new Map();
   const labelPolygons = [];
 
@@ -313,7 +325,9 @@ function auditPack(pack, reviewedAmbiguities) {
       });
     }
     positionKeys.add(key);
-    positionedStationLineKeys.add(stationLineKey);
+    positionedStationLineRegionKeys.add(
+      stationLineRegionKeyFor(position, position.region),
+    );
 
     if (!isNonNegativeInteger(position.x) || !isNonNegativeInteger(position.y)) {
       addFinding(findings, {
@@ -457,7 +471,12 @@ function auditPack(pack, reviewedAmbiguities) {
   }
 
   for (const membership of stationLines) {
-    if (positionedStationLineKeys.has(stationLineKeyFor(membership))) {
+    const station = stationsById.get(normalizedText(membership.stationId));
+    if (
+      positionedStationLineRegionKeys.has(
+        stationLineRegionKeyFor(membership, station?.region),
+      )
+    ) {
       continue;
     }
     addFinding(findings, {
@@ -525,12 +544,13 @@ function auditPack(pack, reviewedAmbiguities) {
     summary: {
       stationLineCount: stationLines.length,
       routeMapPositionCount: positions.length,
-      coveredStationLineCount: [...stationLineKeys].filter((key) =>
-        positionedStationLineKeys.has(key),
+      coveredStationLineCount: [...stationLineRegionKeys].filter((key) =>
+        positionedStationLineRegionKeys.has(key),
       ).length,
       coverageRatio: coverageRatio(
-        [...stationLineKeys].filter((key) => positionedStationLineKeys.has(key))
-          .length,
+        [...stationLineRegionKeys].filter((key) =>
+          positionedStationLineRegionKeys.has(key),
+        ).length,
         stationLines.length,
       ),
       regions: regionCoverageSummaries(stationsById, stationLines, positions),

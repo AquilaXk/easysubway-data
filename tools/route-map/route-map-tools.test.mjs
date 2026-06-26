@@ -128,6 +128,64 @@ test("route map position audit allows same station-line in another region", asyn
   }
 });
 
+test("route map position audit reports wrong-region coverage gaps", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "wrong-region-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const routePosition = fixture.packs[0].routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    routePosition.region = "전국";
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 1);
+        assert.equal(output.findings[0].code, "MISSING_ROUTE_MAP_POSITION");
+        assert.equal(output.packs[0].summary.coveredStationLineCount, 8);
+        assert.equal(output.packs[0].summary.coverageRatio, 0.8889);
+        assert.deepEqual(output.packs[0].summary.regions, [
+          {
+            region: "수도권",
+            stationLineCount: 9,
+            routeMapPositionCount: 8,
+            coveredStationLineCount: 8,
+            coverageRatio: 0.8889,
+          },
+          {
+            region: "전국",
+            stationLineCount: 0,
+            routeMapPositionCount: 1,
+            coveredStationLineCount: 0,
+            coverageRatio: 1,
+          },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit reports region coverage gaps", async () => {
   const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
   try {
