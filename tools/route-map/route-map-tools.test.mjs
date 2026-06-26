@@ -336,9 +336,14 @@ test("route map position audit reports broken production geometry rows", async (
     const jeongja = pack.routeMapPositions.find(
       (row) => row.stationId === "station-jeongja",
     );
+    jeongja.x = -1;
     jeongja.sourceId = "";
     jeongja.sourceUrl = "";
     delete jeongja.reviewedAt;
+    gangnamLine2.labelPolygon = [
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ];
     await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
 
     await assert.rejects(
@@ -355,12 +360,14 @@ test("route map position audit reports broken production geometry rows", async (
       ),
       (error) => {
         const output = JSON.parse(error.stdout);
-        assert.equal(output.summary.findingsBySeverity.BLOCKER, 2);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 4);
         assert.equal(output.summary.findingsBySeverity.HIGH, 3);
         assert.deepEqual(
           output.findings.map((finding) => finding.code).sort(),
           [
             "DUPLICATE_SOURCE_COORDINATE",
+            "INVALID_ROUTE_MAP_COORDINATE",
+            "INVALID_ROUTE_MAP_LABEL_POLYGON",
             "MISSING_ROUTE_MAP_POSITION",
             "MISSING_ROUTE_MAP_REVIEW",
             "MISSING_ROUTE_MAP_SOURCE",
