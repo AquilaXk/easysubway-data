@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -47,4 +48,139 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
   const rotated = output.labels.find((label) => label.sourceText === "회전역");
   assert.notEqual(rotated.polygon[0].y, rotated.polygon[1].y);
   assert.notEqual(rotated.polygon[0].x, rotated.polygon[3].x);
+});
+
+test("route map position audit passes clean catalog fixture", async () => {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/route-map/audit-route-map.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--fail-on",
+      "BLOCKER,HIGH",
+    ],
+    { cwd: root, maxBuffer: 1024 * 1024 },
+  );
+  const output = JSON.parse(stdout);
+
+  assert.equal(output.schemaVersion, 1);
+  assert.equal(output.artifactKind, "route-map-position-audit");
+  assert.equal(output.summary.packCount, 1);
+  assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+  assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+  assert.equal(output.packs[0].summary.stationLineCount, 9);
+  assert.equal(output.packs[0].summary.routeMapPositionCount, 9);
+  assert.equal(output.packs[0].summary.coverageRatio, 1);
+});
+
+test("route map position audit allows same station-line in another region", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "multi-region-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const sangnoksu = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sangnoksu",
+    );
+    pack.routeMapPositions.push({
+      ...sangnoksu,
+      region: "전국",
+      x: sangnoksu.x + 1000,
+      y: sangnoksu.y + 1000,
+    });
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.summary.findingsBySeverity.HIGH, 0);
+    assert.equal(output.packs[0].summary.stationLineCount, 9);
+    assert.equal(output.packs[0].summary.routeMapPositionCount, 10);
+    assert.equal(output.packs[0].summary.coverageRatio, 1);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("route map position audit reports broken production geometry rows", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-audit-"));
+  try {
+    const fixturePath = path.join(tmp, "broken-catalog-fixture.json");
+    const fixture = JSON.parse(
+      await readFile(
+        path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+        "utf8",
+      ),
+    );
+    const pack = fixture.packs[0];
+    const removedPosition = pack.routeMapPositions.shift();
+    pack.routeMapPositions.push({
+      ...removedPosition,
+      stationId: "station-ghost",
+    });
+    const sadangLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-sadang" && row.lineId === "seoul-2",
+    );
+    const gangnamLine2 = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-gangnam" && row.lineId === "seoul-2",
+    );
+    gangnamLine2.x = sadangLine2.x;
+    gangnamLine2.y = sadangLine2.y;
+    const jeongja = pack.routeMapPositions.find(
+      (row) => row.stationId === "station-jeongja",
+    );
+    jeongja.sourceId = "";
+    jeongja.sourceUrl = "";
+    delete jeongja.reviewedAt;
+    await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/route-map/audit-route-map.mjs",
+          "--fixture",
+          fixturePath,
+          "--fail-on",
+          "BLOCKER,HIGH",
+        ],
+        { cwd: root, maxBuffer: 1024 * 1024 },
+      ),
+      (error) => {
+        const output = JSON.parse(error.stdout);
+        assert.equal(output.summary.findingsBySeverity.BLOCKER, 2);
+        assert.equal(output.summary.findingsBySeverity.HIGH, 3);
+        assert.deepEqual(
+          output.findings.map((finding) => finding.code).sort(),
+          [
+            "DUPLICATE_SOURCE_COORDINATE",
+            "MISSING_ROUTE_MAP_POSITION",
+            "MISSING_ROUTE_MAP_REVIEW",
+            "MISSING_ROUTE_MAP_SOURCE",
+            "ROUTE_MAP_POSITION_WITHOUT_STATION_LINE",
+          ],
+        );
+        return true;
+      },
+    );
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
 });
