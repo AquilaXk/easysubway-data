@@ -236,6 +236,28 @@ async function waitForTarget(port) {
   throw new Error("Timed out waiting for Chrome DevTools target.");
 }
 
+function waitForExit(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    child.once("exit", resolve);
+  });
+}
+
+async function stopBrowser(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = waitForExit(child);
+  child.kill("SIGTERM");
+  const timeoutId = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }, 5000);
+  timeoutId.unref?.();
+  try {
+    await exited;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function openWebSocket(url) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url);
@@ -301,7 +323,7 @@ async function runBrowserExtraction({ browser, svg, tempDir }) {
   } catch (error) {
     throw new Error([error.message, stderr.trim() && `stderr: ${stderr.trim()}`].filter(Boolean).join("\n"));
   } finally {
-    child.kill("SIGTERM");
+    await stopBrowser(child);
   }
 }
 
