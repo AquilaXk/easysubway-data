@@ -1011,7 +1011,7 @@ test("데이터팩 object storage publisher는 pack 검증 실패 시 manifest�
   }
 });
 
-test("데이터팩 remote publish env exporter는 필요한 object storage 값만 GitHub env로 내보낸다", async () => {
+test("데이터팩 remote publish env exporter는 object storage와 signing 값을 GitHub env로 내보낸다", async () => {
   const dir = path.join(tmpdir(), `easysubway-datapack-publish-env-${Date.now()}`);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
@@ -1027,7 +1027,9 @@ test("데이터팩 remote publish env exporter는 필요한 object storage 값�
       "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=secret-key",
       "EASYSUBWAY_OBJECT_STORAGE_REGION=ap-northeast-2",
       "EASYSUBWAY_DATAPACK_BUCKET=easysubway-datapacks",
-      "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM=private-key-must-not-export",
+      "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM=private-key\\nline",
+      "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM=public-key\\nline",
+      "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID=production-v1",
       "EASYSUBWAY_ADMIN_PASSWORD=admin-password-must-not-export",
       "",
     ].join("\n"),
@@ -1050,13 +1052,17 @@ test("데이터팩 remote publish env exporter는 필요한 object storage 값�
   const exported = await readFile(githubEnvFile, "utf8");
   assert.match(stdout, /^::add-mask::access-key$/m);
   assert.match(stdout, /^::add-mask::secret-key$/m);
+  assert.match(stdout, /^::add-mask::private-key\\nline$/m);
+  assert.match(stdout, /^::add-mask::private-key%0Aline$/m);
   assert.match(exported, /^EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_ENDPOINT=https:\/\/object-storage\.example\.com$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY=access-key$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=secret-key$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_REGION=ap-northeast-2$/m);
   assert.match(exported, /^EASYSUBWAY_DATAPACK_BUCKET=easysubway-datapacks$/m);
-  assert.doesNotMatch(exported, /DATAPACK_SIGNING_PRIVATE_KEY_PEM/);
+  assert.match(exported, /EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM<<EASYSUBWAY_EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM_EOF\nprivate-key\nline\nEASYSUBWAY_EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM_EOF/);
+  assert.match(exported, /EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM<<EASYSUBWAY_EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM_EOF\npublic-key\nline\nEASYSUBWAY_EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM_EOF/);
+  assert.match(exported, /^EASYSUBWAY_DATAPACK_SIGNING_KEY_ID=production-v1$/m);
   assert.doesNotMatch(exported, /ADMIN_PASSWORD/);
 });
 
@@ -1074,6 +1080,9 @@ test("데이터팩 remote publish env exporter는 PAR URL을 secret publish targ
       "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL=https://objectstorage.example.com/p/token/n/ns/b/bucket/o/",
       "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY=access-key-must-not-export",
       "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=secret-key-must-not-export",
+      "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM=private-key-pem",
+      "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM=public-key-pem",
+      "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID=production-v1",
       "",
     ].join("\n"),
   );
@@ -1101,6 +1110,9 @@ test("데이터팩 remote publish env exporter는 PAR URL을 secret publish targ
   );
   assert.doesNotMatch(exported, /ACCESS_KEY/);
   assert.doesNotMatch(exported, /SECRET_KEY/);
+  assert.match(exported, /^EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM=private-key-pem$/m);
+  assert.match(exported, /^EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM=public-key-pem$/m);
+  assert.match(exported, /^EASYSUBWAY_DATAPACK_SIGNING_KEY_ID=production-v1$/m);
 });
 
 test("데이터팩 remote publish env exporter는 opt-in이 없으면 원격 publish를 비활성화한다", async () => {
@@ -4378,9 +4390,9 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
   );
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.equal(report.summary.totalRequirements, 35);
-  assert.equal(report.summary.coveredRequirements, 3);
-  assert.equal(report.summary.missingRequirements, 32);
+  assert.equal(report.summary.totalRequirements, 42);
+  assert.equal(report.summary.coveredRequirements, 4);
+  assert.equal(report.summary.missingRequirements, 38);
 
   const busanStationMembership = report.requirements.find(
     (entry) =>
@@ -5207,6 +5219,39 @@ test("수도권 pilot production source input은 production manifest v2 pack으�
     ],
     { cwd: root },
   );
+  const importedFixture = JSON.parse(await readFile(importedFixturePath, "utf8"));
+  assert.ok(importedFixture.packs[0].requiredTables.includes("route_map_positions"));
+  assert.equal(importedFixture.packs[0].minimumTableRows.route_map_positions, 2);
+
+  const missingRouteMapInputPath = path.join(outputDir, "capital-pilot-production-missing-route-map.json");
+  await writeFile(
+    missingRouteMapInputPath,
+    `${JSON.stringify(
+      {
+        ...input,
+        routeMapPositions: [],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        missingRouteMapInputPath,
+        "--output",
+        path.join(outputDir, "missing-route-map.json"),
+      ],
+      { cwd: root },
+    ),
+    /routeMapPositions must include at least one row/,
+  );
+
   await execFileAsync(
     process.execPath,
     [
@@ -5241,6 +5286,46 @@ test("수도권 pilot production source input은 production manifest v2 pack으�
   assert.equal(manifest.signature.algorithm, "rsa-sha256-manifest-v2");
   assert.equal(manifest.packs[0].artifactKind, "production");
   assert.equal(manifest.packs[0].signature.algorithm, "rsa-sha256-pack-manifest-v2");
+
+  const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
+  const routeMapRecords = provenance.packs[0].records.filter(
+    (record) => record.sourceId === "seoulmetro-cyberstation-route-map",
+  );
+  assert.equal(
+    routeMapRecords.filter((record) => record.field === "route_map_position").length,
+    2,
+  );
+  assert.equal(
+    routeMapRecords.filter((record) => record.field === "route_map_label_polygon").length,
+    2,
+  );
+
+  const coverageGapReportPath = path.join(outputDir, "coverage-gap-report.json");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--provenance",
+      path.join(packOutputDir, "current.provenance.json"),
+      "--output",
+      coverageGapReportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+  const coverageGapReport = JSON.parse(await readFile(coverageGapReportPath, "utf8"));
+  const capitalRouteMapCoverage = coverageGapReport.requirements.find(
+    (entry) =>
+      entry.regionId === "capital" &&
+      entry.operatorId === "seoul-metro" &&
+      entry.sourceDomain === "route_map_positions",
+  );
+  assert.equal(capitalRouteMapCoverage.status, "covered");
+  assert.equal(capitalRouteMapCoverage.coveredFields, 2);
 });
 
 test("승인된 관리자 검수 결과는 다음 data pack fixture 시설 상태에 반영된다", async () => {

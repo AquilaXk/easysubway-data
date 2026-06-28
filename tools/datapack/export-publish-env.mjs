@@ -8,10 +8,16 @@ const exportedNames = [
   "EASYSUBWAY_OBJECT_STORAGE_REGION",
   "EASYSUBWAY_DATAPACK_BUCKET",
 ];
+const signingExportedNames = [
+  "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM",
+  "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM",
+  "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID",
+];
 const maskedExportedNames = new Set([
   "EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY",
   "EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY",
   "EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL",
+  "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM",
 ]);
 
 async function main() {
@@ -42,6 +48,9 @@ async function main() {
         requireNonEmpty(env[name], name);
       }
     }
+    for (const name of signingExportedNames) {
+      requireNonEmpty(env[name], name);
+    }
   } catch (error) {
     if (!allowInvalidDisabled) {
       throw error;
@@ -56,6 +65,7 @@ async function main() {
     ...(env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL
       ? [`EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL=${env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}`]
       : exportedNames.map((name) => `${name}=${env[name]}`)),
+    ...signingExportedNames.map((name) => githubEnvEntry(name, env[name])),
   ];
   registerGithubMasks(env);
   await appendFile(githubEnv, `${lines.join("\n")}\n`);
@@ -67,8 +77,25 @@ function registerGithubMasks(env) {
     const value = env[name];
     if (value) {
       process.stdout.write(`::add-mask::${escapeGithubCommandValue(value)}\n`);
+      const normalized = normalizeEnvValue(name, value);
+      if (normalized !== value) {
+        process.stdout.write(`::add-mask::${escapeGithubCommandValue(normalized)}\n`);
+      }
     }
   }
+}
+
+function githubEnvEntry(name, value) {
+  const normalized = normalizeEnvValue(name, value);
+  if (!normalized.includes("\n")) {
+    return `${name}=${normalized}`;
+  }
+  const delimiter = `EASYSUBWAY_${name}_EOF`;
+  return `${name}<<${delimiter}\n${normalized}\n${delimiter}`;
+}
+
+function normalizeEnvValue(name, value) {
+  return name.endsWith("_PEM") ? String(value).replaceAll("\\n", "\n") : String(value);
 }
 
 function escapeGithubCommandValue(value) {

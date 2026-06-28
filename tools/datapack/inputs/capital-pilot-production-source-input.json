@@ -20,7 +20,8 @@
   },
   "sourceIds": [
     "seoulmetro-station-line-info",
-    "seoul-realtime-arrival-station-info"
+    "seoul-realtime-arrival-station-info",
+    "seoulmetro-cyberstation-route-map"
   ],
   "minimumProductionCoverage": {
     "stations": 2,
@@ -42,6 +43,13 @@
       "sourceDomain": "realtime_arrivals",
       "sourceIds": ["seoul-realtime-arrival-station-info"],
       "evidence": "서울시 실시간 도착정보 역정보 source inventory coverageScope"
+    },
+    {
+      "regionId": "capital",
+      "operatorId": "seoul-metro",
+      "sourceDomain": "route_map_positions",
+      "sourceIds": ["seoulmetro-cyberstation-route-map"],
+      "evidence": "서울교통공사 사이버스테이션 노선도 source inventory coverageScope"
     }
   ],
   "retiredStationIds": [
@@ -283,6 +291,60 @@
       "accessibilityStatus": "AVAILABLE",
       "reliabilityScore": 90,
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+    }
+  ],
+  "routeMapPositions": [
+    {
+      "sourceId": "seoulmetro-cyberstation-route-map",
+      "station": {
+        "sourceId": "seoulmetro-station-line-info",
+        "sourceStationCode": "448",
+        "lineId": "seoul-4"
+      },
+      "region": "수도권",
+      "x": 156,
+      "y": 250,
+      "labelPolygon": [
+        { "x": 166, "y": 226 },
+        { "x": 214, "y": 226 },
+        { "x": 214, "y": 246 },
+        { "x": 166, "y": 246 }
+      ],
+      "sourceName": "서울교통공사 사이버스테이션 노선도",
+      "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "license": "공공누리 1유형",
+      "licenseStatus": "redistributable",
+      "commercialUseAllowed": true,
+      "attributionRequired": true,
+      "sourceLabel": "상록수",
+      "reviewedAt": "2026-06-28T00:00:00.000Z"
+    },
+    {
+      "sourceId": "seoulmetro-cyberstation-route-map",
+      "station": {
+        "sourceId": "seoulmetro-station-line-info",
+        "sourceStationCode": "433",
+        "lineId": "seoul-4"
+      },
+      "region": "수도권",
+      "x": 420,
+      "y": 250,
+      "labelPolygon": [
+        { "x": 430, "y": 226 },
+        { "x": 478, "y": 226 },
+        { "x": 478, "y": 246 },
+        { "x": 430, "y": 246 }
+      ],
+      "sourceName": "서울교통공사 사이버스테이션 노선도",
+      "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "license": "공공누리 1유형",
+      "licenseStatus": "redistributable",
+      "commercialUseAllowed": true,
+      "attributionRequired": true,
+      "sourceLabel": "사당",
+      "reviewedAt": "2026-06-28T00:00:00.000Z"
     }
   ],
   "facilityRows": [

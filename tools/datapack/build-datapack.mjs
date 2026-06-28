@@ -163,7 +163,7 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
       sourceId,
       ...(coverageScope ? { coverageScope } : {}),
       derivationKind: recordDerivationKind,
-      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
+      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.reviewedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
     });
   };
 
@@ -181,6 +181,14 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     addRecord(edge, "network_edge", edge.id, "network_edges", operatorIds);
     addRecord(edge, "network_edge", edge.id, "duration_seconds", operatorIds);
     addRecord(edge, "network_edge", edge.id, "distance_meters", operatorIds);
+  }
+  for (const position of pack.routeMapPositions ?? []) {
+    const entityId = `${position.stationId}:${position.lineId}:${position.region ?? ""}`;
+    const operatorIds = [lineOperatorIds.get(position.lineId)].filter(Boolean);
+    addRecord(position, "route_map_position", entityId, "route_map_position", operatorIds);
+    if (Array.isArray(position.labelPolygon) && position.labelPolygon.length > 0) {
+      addRecord(position, "route_map_position", entityId, "route_map_label_polygon", operatorIds);
+    }
   }
   for (const facility of pack.facilities ?? []) {
     const operatorIds = [...(stationOperatorIds.get(facility.stationId) ?? [])];

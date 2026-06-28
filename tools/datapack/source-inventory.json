@@ -85,6 +85,47 @@
       ]
     },
     {
+      "id": "seoulmetro-cyberstation-route-map",
+      "displayName": "서울교통공사 사이버스테이션 노선도",
+      "owner": "서울교통공사",
+      "provider": "서울교통공사",
+      "providerDepartment": "정보운영센터",
+      "sourceSystem": "서울교통공사 사이버스테이션",
+      "datasetUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "datasetKind": "official-route-map-web",
+      "coverage": "서울교통공사 사이버스테이션 수도권 노선도 좌표 검수 기준",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "irregular-on-change",
+      "observedDataUpdatedAt": "2026-06-28",
+      "retrievedAt": "2026-06-28",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do"
+      },
+      "fieldsProvided": [
+        "station_name",
+        "line",
+        "route_map_position",
+        "route_map_label_polygon"
+      ]
+    },
+    {
       "id": "seoul-subway-hourly-boarding",
       "displayName": "서울시 지하철 호선별 역별 시간대별 승하차 인원 정보",
       "owner": "서울특별시",

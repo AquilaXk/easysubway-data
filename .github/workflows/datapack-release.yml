@@ -44,25 +44,67 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_OUTPUT=${{ runner.temp }}/easysubway-datapacks"
             echo "EASYSUBWAY_DATAPACK_STAGE=${{ runner.temp }}/easysubway-datapack-stage"
             echo "EASYSUBWAY_DATAPACK_PUBLISH_PLAN=${{ runner.temp }}/easysubway-datapack-stage/publish-plan.json"
+            echo "EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE=${{ runner.temp }}/easysubway-production-source-fixture.json"
             echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
+            echo "EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-production-source-fixture.json"
             echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
           } >> "${GITHUB_ENV}"
 
-      - name: Data Pack Release / Apply admin review overrides
+      - name: Data Pack Release / Restore GitHub Actions dotenv secret
+        env:
+          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
+            echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          env_file="${RUNNER_TEMP}/easysubway-deploy.env"
+          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${env_file}"
+          chmod 600 "${env_file}"
+          echo "EASYSUBWAY_ENV_FILE=${env_file}" >> "${GITHUB_ENV}"
+
+      - name: Data Pack Release / Validate remote object storage publish env
+        id: remote-publish-env
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          node tools/datapack/export-publish-env.mjs \
+            --env-file "${EASYSUBWAY_ENV_FILE}" \
+            --github-env "${GITHUB_ENV}" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Data Pack Release / Prepare release fixture
         run: |
           set -euo pipefail
           node tools/datapack/apply-admin-review-overrides.mjs \
             --fixture tools/datapack/fixtures/catalog-fixture.json \
             --overrides tools/datapack/fixtures/admin-review-overrides.json \
             --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
+          build_fixture="${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
+          if [[ "${{ steps.remote-publish-env.outputs.enabled }}" == "true" ]]; then
+            node tools/datapack/import-official-sources.mjs \
+              --inventory tools/datapack/source-inventory.json \
+              --input tools/datapack/inputs/capital-pilot-production-source-input.json \
+              --output "${EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE}"
+            node tools/datapack/apply-admin-review-overrides.mjs \
+              --fixture "${EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE}" \
+              --overrides tools/datapack/fixtures/admin-review-overrides.json \
+              --output "${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
+            build_fixture="${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
+          fi
+          echo "EASYSUBWAY_DATAPACK_BUILD_FIXTURE=${build_fixture}" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Audit route map coordinate coverage
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
           node tools/route-map/audit-route-map.mjs \
-            --fixture "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}" \
+            --fixture "${EASYSUBWAY_DATAPACK_BUILD_FIXTURE}" \
             --reviewed-ambiguities tools/route-map/fixtures/reviewed-ambiguities.json \
             --fail-on BLOCKER,HIGH \
             --pretty > "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
@@ -72,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/datapack/build-datapack.mjs \
-            --fixture "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}" \
+            --fixture "${EASYSUBWAY_DATAPACK_BUILD_FIXTURE}" \
             --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
 
       - name: Data Pack Release / Validate source inventory
@@ -143,34 +185,6 @@ jobs:
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --dry-run
-
-      - name: Data Pack Release / Restore GitHub Actions dotenv secret
-        env:
-          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
-            echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=disabled" >> "${GITHUB_ENV}"
-            exit 0
-          fi
-          env_file="${RUNNER_TEMP}/easysubway-deploy.env"
-          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${env_file}"
-          chmod 600 "${env_file}"
-          echo "EASYSUBWAY_ENV_FILE=${env_file}" >> "${GITHUB_ENV}"
-
-      - name: Data Pack Release / Validate remote object storage publish env
-        id: remote-publish-env
-        run: |
-          set -euo pipefail
-          if [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]]; then
-            echo "enabled=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          node tools/datapack/export-publish-env.mjs \
-            --env-file "${EASYSUBWAY_ENV_FILE}" \
-            --github-env "${GITHUB_ENV}" \
-            --github-output "${GITHUB_OUTPUT}" \
-            --allow-invalid-disabled
 
       - name: Data Pack Release / Publish staged data packs to object storage
         if: ${{ steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}

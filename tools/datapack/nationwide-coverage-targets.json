@@ -53,6 +53,17 @@
       }
     },
     {
+      "id": "route_map_positions",
+      "displayName": "공식 노선도 좌표",
+      "requiredFields": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
+    },
+    {
       "id": "demand_reference",
       "displayName": "승하차 수요 참고 지표",
       "requiredFields": [
