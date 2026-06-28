@@ -5182,6 +5182,67 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
   );
 });
 
+test("수도권 pilot production source input은 production manifest v2 pack으로 생성·검증된다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
+  const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
+  const importedFixturePath = path.join(outputDir, "capital-pilot-production.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const input = JSON.parse(await readFile(path.join(root, inputPath), "utf8"));
+  assert.equal(input.manifest.releaseSequence, undefined);
+  assert.equal(input.manifest.publishedAt, undefined);
+  assert.equal(input.manifest.expiresAt, undefined);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      importedFixturePath,
+    ],
+    { cwd: root },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      importedFixturePath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+      "--require-production",
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifest = JSON.parse(await readFile(path.join(packOutputDir, "current.json"), "utf8"));
+  assert.equal(manifest.manifestVersion, 2);
+  assert.equal(manifest.channel, "production");
+  assert.equal(manifest.keyId, "production-v1");
+  assert.deepEqual(manifest.activePack, { id: "capital", version: "1" });
+  assert.equal(Number.isInteger(manifest.releaseSequence), true);
+  assert.ok(Date.parse(manifest.expiresAt) > Date.parse(manifest.publishedAt));
+  assert.equal(manifest.signature.algorithm, "rsa-sha256-manifest-v2");
+  assert.equal(manifest.packs[0].artifactKind, "production");
+  assert.equal(manifest.packs[0].signature.algorithm, "rsa-sha256-pack-manifest-v2");
+});
+
 test("승인된 관리자 검수 결과는 다음 data pack fixture 시설 상태에 반영된다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-admin-review-overrides-${Date.now()}`);
   const inputPath = path.join(outputDir, "catalog-fixture.json");

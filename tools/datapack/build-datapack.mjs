@@ -93,9 +93,11 @@ async function main() {
       ? {
           manifestVersion: 2,
           channel: requiredString(fixture.manifest.channel, "manifest.channel"),
-          releaseSequence: requiredPositiveInteger(fixture.manifest.releaseSequence, "manifest.releaseSequence"),
-          publishedAt: requiredUtcDateString(fixture.manifest.publishedAt, "manifest.publishedAt"),
-          expiresAt: requiredUtcDateString(fixture.manifest.expiresAt, "manifest.expiresAt"),
+          releaseSequence: optionalPositiveInteger(fixture.manifest.releaseSequence, "manifest.releaseSequence")
+            ?? defaultReleaseSequence(),
+          publishedAt: optionalUtcDateString(fixture.manifest.publishedAt, "manifest.publishedAt") ?? buildPublishedAt(),
+          expiresAt: optionalUtcDateString(fixture.manifest.expiresAt, "manifest.expiresAt")
+            ?? buildExpiresAt(fixture.manifest.publishedAt),
           keyId: requiredString(fixture.manifest.keyId, "manifest.keyId"),
         }
       : {}),
@@ -1056,6 +1058,28 @@ function requiredUtcDateString(value, label) {
     throw new Error(`${label} must be an ISO date-time`);
   }
   return rawValue;
+}
+
+function optionalUtcDateString(value, label) {
+  return value === undefined ? null : requiredUtcDateString(value, label);
+}
+
+function optionalPositiveInteger(value, label) {
+  return value === undefined ? null : requiredPositiveInteger(value, label);
+}
+
+function buildPublishedAt() {
+  return new Date().toISOString();
+}
+
+function buildExpiresAt(rawPublishedAt) {
+  const publishedAt = new Date(rawPublishedAt ?? buildPublishedAt());
+  return new Date(publishedAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function defaultReleaseSequence() {
+  const runNumber = Number(process.env.GITHUB_RUN_NUMBER);
+  return Number.isInteger(runNumber) && runNumber > 0 ? runNumber : 1;
 }
 
 function requiredStringArray(value, label) {
