@@ -14,8 +14,9 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const manifestPath = path.resolve(requireArg(args, "manifest"));
   const root = path.resolve(requireArg(args, "root"));
+  const requireProduction = args["require-production"] === true;
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  validateManifest(manifest);
+  validateManifest(manifest, { requireProduction });
 
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-validate-"));
   try {
@@ -834,7 +835,7 @@ function hasTable(database, tableName) {
   );
 }
 
-function validateManifest(manifest) {
+function validateManifest(manifest, { requireProduction = false } = {}) {
   validateManifestJsonSchema(manifest);
   if (!manifest || typeof manifest !== "object") {
     throw new Error("manifest must be an object");
@@ -873,6 +874,9 @@ function validateManifest(manifest) {
     const artifactKind = requiredString(pack.artifactKind, "pack.artifactKind");
     if (artifactKind !== "fixture" && artifactKind !== "production") {
       throw new Error(`${pack.id}@${pack.version} artifactKind must be fixture or production`);
+    }
+    if (requireProduction && artifactKind !== "production") {
+      throw new Error(`${pack.id}@${pack.version} remote publish requires production artifactKind`);
     }
     if (artifactKind === "production" && !isAbsoluteHttpsWithHost(pack.url)) {
       throw new Error(`${pack.id}@${pack.version} production pack url must be an absolute HTTPS URL`);
@@ -1335,13 +1339,18 @@ function validateTableName(value) {
 
 function parseArgs(argv) {
   const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
+  for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
+    if (key === "--require-production") {
+      args["require-production"] = true;
+      continue;
+    }
     const value = argv[index + 1];
     if (!key?.startsWith("--") || value === undefined) {
       throw new Error(`invalid argument: ${key ?? ""}`);
     }
     args[key.slice(2)] = value;
+    index += 1;
   }
   return args;
 }
