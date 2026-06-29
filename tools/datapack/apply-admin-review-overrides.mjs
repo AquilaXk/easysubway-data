@@ -3,6 +3,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const requiredArtifactKind = "datapack-manual-override-ledger";
+const requiredLedgerSource = "manual_overrides";
+const legacyOverrideMarkers = new Set(["transit_master_overrides", "transit-master-overrides"]);
 const allowedFacilityStatuses = new Set(["NORMAL", "BROKEN", "UNDER_CONSTRUCTION", "CLOSED", "UNKNOWN"]);
 const availableFacilityStatuses = new Set(["NORMAL"]);
 
@@ -22,7 +25,7 @@ function applyAdminReviewOverrides(fixture, overrides) {
   if (overrides.schemaVersion !== 1) {
     throw new Error("admin review overrides schemaVersion must be 1");
   }
-  const source = requiredString(overrides.source, "source");
+  const source = requireManualOverrideLedger(overrides);
   const exportedAt = requiredString(overrides.exportedAt, "exportedAt");
   const updates = requiredArray(overrides.facilityStatusUpdates, "facilityStatusUpdates");
   const packs = requiredArray(fixture.packs, "fixture.packs");
@@ -69,10 +72,28 @@ function applyAdminReviewOverrides(fixture, overrides) {
     pack.metadata = {
       ...(pack.metadata ?? {}),
       adminReviewOverrideSource: source,
+      adminReviewOverrideLedgerSource: requiredLedgerSource,
       adminReviewOverrideCount: String(appliedCount),
       adminReviewOverrideExportedAt: exportedAt,
     };
   }
+}
+
+function requireManualOverrideLedger(overrides) {
+  const artifactKind = requiredString(overrides.artifactKind, "artifactKind");
+  const ledgerSource = requiredString(overrides.ledgerSource, "ledgerSource");
+  const source = requiredString(overrides.source, "source");
+  const markers = [artifactKind, ledgerSource, source].map((value) => value.toLowerCase());
+  if (markers.some((value) => legacyOverrideMarkers.has(value))) {
+    throw new Error("transit_master_overrides cannot be used for production datapack overrides; use a manual_overrides ledger export");
+  }
+  if (artifactKind !== requiredArtifactKind) {
+    throw new Error(`admin review overrides artifactKind must be ${requiredArtifactKind}`);
+  }
+  if (ledgerSource !== requiredLedgerSource) {
+    throw new Error(`admin review overrides ledgerSource must be ${requiredLedgerSource}`);
+  }
+  return source;
 }
 
 function applyFacilityStatusOverride(facility, status, reviewedAt, exportedAt) {

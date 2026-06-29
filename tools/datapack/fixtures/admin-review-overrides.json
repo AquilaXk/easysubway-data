@@ -1,5 +1,7 @@
 {
+  "artifactKind": "datapack-manual-override-ledger",
   "schemaVersion": 1,
+  "ledgerSource": "manual_overrides",
   "source": "facility-report-admin-review",
   "exportedAt": "2026-06-21T00:00:00.000Z",
   "facilityStatusUpdates": []
