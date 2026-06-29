@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "nationwide-datapack-coverage-targets",
+  "targetVersion": "2026-06-29",
+  "coverageGoal": "Android v1 capital pilot production closure coverage",
+  "knownRegionIds": [
+    "busan",
+    "daegu",
+    "gwangju",
+    "daejeon"
+  ],
+  "knownOperatorIds": [
+    "korail",
+    "incheon-transit",
+    "busan-transportation",
+    "daegu-transportation",
+    "gwangju-metropolitan-rapid-transit",
+    "daejeon-transportation"
+  ],
+  "knownSourceDomains": [
+    "route_graph_topology",
+    "realtime_arrivals",
+    "route_map_positions",
+    "demand_reference"
+  ],
+  "requiredSourceDomains": [
+    {
+      "id": "station_line_membership",
+      "displayName": "수도권 pilot 역/노선 소속",
+      "requiredFields": [
+        "line",
+        "station_name",
+        "station_code"
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
+    },
+    {
+      "id": "accessibility_facilities",
+      "displayName": "수도권 pilot 접근성 시설 근거",
+      "requiredFields": [
+        "elevator",
+        "escalator",
+        "wheelchair_lift",
+        "verified_at"
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
+    }
+  ],
+  "regions": [
+    {
+      "id": "capital",
+      "displayName": "수도권 pilot",
+      "operatorIds": [
+        "seoul-metro"
+      ]
+    }
+  ]
+}

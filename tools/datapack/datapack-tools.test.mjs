@@ -5422,6 +5422,27 @@ test("수도권 pilot production source input은 production manifest v2 pack으�
     { cwd: root, env: productionEnv },
   );
 
+  const coverageReportPath = path.join(outputDir, "capital-pilot-coverage-summary.json");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/capital-pilot-coverage-targets.json",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--provenance",
+      path.join(packOutputDir, "current.provenance.json"),
+      "--output",
+      coverageReportPath,
+    ],
+    { cwd: root },
+  );
+  const coverageReport = JSON.parse(await readFile(coverageReportPath, "utf8"));
+  assert.equal(coverageReport.summary.coverageComplete, true);
+  assert.equal(coverageReport.summary.missingRequirements, 0);
+  assert.equal(coverageReport.summary.coverageRatio, 1);
+
   const manifest = JSON.parse(await readFile(path.join(packOutputDir, "current.json"), "utf8"));
   assert.equal(manifest.manifestVersion, 2);
   assert.equal(manifest.channel, "production");

@@ -77,9 +77,18 @@ function buildCoverageGapReport(targets, inventory, provenance = null) {
 
 function coverageTargetIndex(targets) {
   return {
-    regionIds: new Set(targets.regions.map((region) => region.id)),
-    operatorIds: new Set(targets.regions.flatMap((region) => region.operatorIds)),
-    sourceDomains: new Set(targets.requiredSourceDomains.map((domain) => domain.id)),
+    regionIds: new Set([
+      ...targets.regions.map((region) => region.id),
+      ...optionalStringArray(targets.knownRegionIds, "knownRegionIds"),
+    ]),
+    operatorIds: new Set([
+      ...targets.regions.flatMap((region) => region.operatorIds),
+      ...optionalStringArray(targets.knownOperatorIds, "knownOperatorIds"),
+    ]),
+    sourceDomains: new Set([
+      ...targets.requiredSourceDomains.map((domain) => domain.id),
+      ...optionalStringArray(targets.knownSourceDomains, "knownSourceDomains"),
+    ]),
   };
 }
 
@@ -117,6 +126,9 @@ function validateTargets(targets) {
   if (!Array.isArray(targets.requiredSourceDomains) || targets.requiredSourceDomains.length === 0) {
     throw new Error("requiredSourceDomains must be a non-empty array");
   }
+  optionalStringArray(targets.knownRegionIds, "knownRegionIds");
+  optionalStringArray(targets.knownOperatorIds, "knownOperatorIds");
+  optionalStringArray(targets.knownSourceDomains, "knownSourceDomains");
   const domainIds = new Set();
   for (const domain of targets.requiredSourceDomains) {
     const id = requiredString(domain.id, "requiredSourceDomains.id");
@@ -282,6 +294,16 @@ function requiredString(value, label) {
 function requiredStringArray(value, label) {
   if (!Array.isArray(value) || value.length === 0 || value.some((entry) => typeof entry !== "string" || entry.trim() === "")) {
     throw new Error(`${label} must be a non-empty string array`);
+  }
+  return value;
+}
+
+function optionalStringArray(value, label) {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.trim() === "")) {
+    throw new Error(`${label} must be a string array`);
   }
   return value;
 }
