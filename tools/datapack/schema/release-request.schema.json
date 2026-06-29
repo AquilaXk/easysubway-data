@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-release-request.schema.json",
+  "title": "EasySubway data pack release request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "candidateId",
+    "scopeId",
+    "buildSpecSha256",
+    "sourceSnapshotSetHash",
+    "approvedLedgerHash",
+    "requestedBy",
+    "approvalId",
+    "targetChannel"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "datapack-release-request" },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "scopeId": { "type": "string", "minLength": 1 },
+    "buildSpecSha256": { "$ref": "#/$defs/sha256" },
+    "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
+    "approvedLedgerHash": { "$ref": "#/$defs/sha256" },
+    "requestedBy": { "type": "string", "minLength": 1 },
+    "approvalId": { "type": "string", "minLength": 1 },
+    "targetChannel": { "enum": ["dev", "staging", "production"] }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

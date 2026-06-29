@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-release-callback.schema.json",
+  "title": "EasySubway data pack release callback",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "releaseRequestId",
+    "workflowRunUrl",
+    "manifestSha256",
+    "sqliteSha256",
+    "gzipSha256",
+    "evidenceBundleSha256",
+    "validatorStatus",
+    "routeRegressionStatus",
+    "publishStatus",
+    "callbackVerifier"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "datapack-release-callback" },
+    "releaseRequestId": { "type": "string", "minLength": 1 },
+    "workflowRunUrl": { "type": "string", "minLength": 1 },
+    "manifestSha256": { "$ref": "#/$defs/sha256" },
+    "sqliteSha256": { "$ref": "#/$defs/sha256" },
+    "gzipSha256": { "$ref": "#/$defs/sha256" },
+    "evidenceBundleSha256": { "$ref": "#/$defs/sha256" },
+    "validatorStatus": { "$ref": "#/$defs/gateStatus" },
+    "routeRegressionStatus": { "$ref": "#/$defs/gateStatus" },
+    "publishStatus": { "$ref": "#/$defs/gateStatus" },
+    "callbackVerifier": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["payload-signature", "shared-verifier"] },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gateStatus": {
+      "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL"]
+    }
+  }
+}
