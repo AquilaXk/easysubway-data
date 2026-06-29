@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-release-evidence-bundle.schema.json",
+  "title": "EasySubway data pack release evidence bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "candidateId",
+    "scopeId",
+    "builderGitSha",
+    "buildSpecSha256",
+    "sourceSnapshotSetHash",
+    "approvedAliasLedgerHash",
+    "facilityEvidenceLedgerHash",
+    "routeEvidenceLedgerHash",
+    "approvedOverrideSetHash",
+    "normalizedSourceInventorySha256",
+    "sqliteSha256",
+    "gzipSha256",
+    "manifestSha256",
+    "coverageSummarySha256",
+    "routeRegressionSha256",
+    "validatorStatus",
+    "routeRegressionStatus",
+    "manifestSignatureStatus",
+    "androidEvidenceStatus",
+    "createdAt",
+    "workflowRunUrl"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "datapack-release-evidence-bundle" },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "scopeId": { "type": "string", "minLength": 1 },
+    "builderGitSha": { "type": "string", "pattern": "^[a-f0-9]{7,40}$" },
+    "buildSpecSha256": { "$ref": "#/$defs/sha256" },
+    "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
+    "approvedAliasLedgerHash": { "$ref": "#/$defs/sha256" },
+    "facilityEvidenceLedgerHash": { "$ref": "#/$defs/sha256" },
+    "routeEvidenceLedgerHash": { "$ref": "#/$defs/sha256" },
+    "approvedOverrideSetHash": { "$ref": "#/$defs/sha256" },
+    "normalizedSourceInventorySha256": { "$ref": "#/$defs/sha256" },
+    "sqliteSha256": { "$ref": "#/$defs/sha256" },
+    "gzipSha256": { "$ref": "#/$defs/sha256" },
+    "manifestSha256": { "$ref": "#/$defs/sha256" },
+    "coverageSummarySha256": { "$ref": "#/$defs/sha256" },
+    "routeRegressionSha256": { "$ref": "#/$defs/sha256" },
+    "validatorStatus": { "$ref": "#/$defs/gateStatus" },
+    "routeRegressionStatus": { "$ref": "#/$defs/gateStatus" },
+    "manifestSignatureStatus": { "$ref": "#/$defs/gateStatus" },
+    "androidEvidenceStatus": { "$ref": "#/$defs/gateStatus" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "workflowRunUrl": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gateStatus": {
+      "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL"]
+    }
+  }
+}
