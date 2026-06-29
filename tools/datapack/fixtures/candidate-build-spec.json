@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-candidate-build-spec",
+  "candidateId": "capital-pilot-candidate-fixture",
+  "productionScopeId": "capital_pilot_android_v1",
+  "fixturePath": "tools/datapack/fixtures/catalog-fixture.json",
+  "sourceSnapshotIds": [
+    "snapshot-molit-urban-rail-full-route-fixture",
+    "snapshot-seoulmetro-station-line-info-fixture"
+  ],
+  "sourceSnapshotSetHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approvedAliasLedgerHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "facilityEvidenceLedgerHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "routeEvidenceLedgerHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "approvedOverrideSetHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "sourceInventorySha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "builderGitSha": "0123456789abcdef0123456789abcdef01234567",
+  "builderVersion": "build-datapack.mjs@1"
+}

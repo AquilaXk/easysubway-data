@@ -1,6 +1,6 @@
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
@@ -296,6 +296,240 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     );
   } finally {
     database.close();
+  }
+});
+
+test("데이터팩 생성기는 buildSpec 요청으로 candidate provenance를 남긴다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--build-spec",
+      "tools/datapack/fixtures/candidate-build-spec.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+  const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
+  assert.equal(manifest.packs[0].id, "capital");
+  assert.equal(provenance.candidateBuild.candidateId, "capital-pilot-candidate-fixture");
+  assert.equal(provenance.candidateBuild.productionScopeId, "capital_pilot_android_v1");
+  assert.equal(provenance.candidateBuild.artifactKind, "datapack-candidate-build-spec");
+  assert.match(provenance.candidateBuild.buildSpecSha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(provenance.candidateBuild.sourceSnapshotIds, [
+    "snapshot-molit-urban-rail-full-route-fixture",
+    "snapshot-seoulmetro-station-line-info-fixture",
+  ]);
+  assert.equal(
+    provenance.candidateBuild.approvedAliasLedgerHash,
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  );
+});
+
+test("데이터팩 생성기는 temp buildSpec이 생성 fixture를 참조할 수 있다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-temp-output-${Date.now()}`);
+  const buildSpecDir = path.join(tmpdir(), `easysubway-datapack-build-spec-temp-${process.pid}-${Date.now()}`);
+  const fixturePath = path.join(buildSpecDir, "catalog-fixture.json");
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+
+  try {
+    await copyFile("tools/datapack/fixtures/catalog-fixture.json", fixturePath);
+    const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+    buildSpec.fixturePath = fixturePath;
+    await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec",
+        buildSpecPath,
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+
+    const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
+    assert.equal(provenance.candidateBuild.candidateId, "capital-pilot-candidate-fixture");
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
+  }
+});
+
+test("데이터팩 생성기는 buildSpec hash provenance를 lowercase hex로 정규화한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-normalized-output-${Date.now()}`);
+  const buildSpecDir = path.join(root, "tmp", `easysubway-datapack-build-spec-normalized-${process.pid}-${Date.now()}`);
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.normalized.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  buildSpec.artifactKind = " datapack-candidate-build-spec ";
+  buildSpec.sourceSnapshotSetHash = ` ${"A".repeat(64)} `;
+  buildSpec.approvedAliasLedgerHash = ` ${"B".repeat(64)} `;
+  buildSpec.facilityEvidenceLedgerHash = ` ${"C".repeat(64)} `;
+  buildSpec.routeEvidenceLedgerHash = ` ${"D".repeat(64)} `;
+  buildSpec.approvedOverrideSetHash = ` ${"E".repeat(64)} `;
+  buildSpec.sourceInventorySha256 = ` ${"F".repeat(64)} `;
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec",
+        buildSpecPath,
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+
+    const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
+    assert.equal(provenance.candidateBuild.artifactKind, "datapack-candidate-build-spec");
+    assert.equal(provenance.candidateBuild.sourceSnapshotSetHash, "a".repeat(64));
+    assert.equal(provenance.candidateBuild.approvedAliasLedgerHash, "b".repeat(64));
+    assert.equal(provenance.candidateBuild.facilityEvidenceLedgerHash, "c".repeat(64));
+    assert.equal(provenance.candidateBuild.routeEvidenceLedgerHash, "d".repeat(64));
+    assert.equal(provenance.candidateBuild.approvedOverrideSetHash, "e".repeat(64));
+    assert.equal(provenance.candidateBuild.sourceInventorySha256, "f".repeat(64));
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
+  }
+});
+
+test("데이터팩 생성기는 buildSpec과 fixture 동시 입력을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-conflict-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--build-spec",
+        "tools/datapack/fixtures/candidate-build-spec.json",
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /exactly one of --fixture or --build-spec is required/,
+  );
+});
+
+test("데이터팩 생성기는 invalid buildSpec hash를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-invalid-${Date.now()}`);
+  const buildSpecDir = path.join(root, "tmp", `easysubway-datapack-build-spec-invalid-${process.pid}-${Date.now()}`);
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.invalid.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  buildSpec.approvedAliasLedgerHash = "not-a-sha";
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--build-spec",
+          buildSpecPath,
+          "--output",
+          outputDir,
+        ],
+        { cwd: root, env: productionEnv },
+      ),
+      /buildSpec.approvedAliasLedgerHash must be a sha256 hex string/,
+    );
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
+  }
+});
+
+test("데이터팩 생성기는 repo와 temp 밖 buildSpec fixturePath를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-path-${Date.now()}`);
+  const buildSpecDir = path.join(root, "tmp", `easysubway-datapack-build-spec-path-${process.pid}-${Date.now()}`);
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.invalid-path.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  buildSpec.fixturePath = path.resolve(path.parse(root).root, "etc", "hosts");
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--build-spec",
+          buildSpecPath,
+          "--output",
+          outputDir,
+        ],
+        { cwd: root, env: productionEnv },
+      ),
+      /buildSpec.fixturePath must stay inside repository or temp directory/,
+    );
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
+  }
+});
+
+test("데이터팩 생성기는 repo 내부 symlink가 temp 밖 fixture를 가리키면 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-symlink-${Date.now()}`);
+  const buildSpecDir = path.join(root, "tmp", `easysubway-datapack-build-spec-symlink-${process.pid}-${Date.now()}`);
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.symlink.json");
+  const symlinkPath = path.join(buildSpecDir, "catalog-fixture.symlink.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  buildSpec.fixturePath = symlinkPath;
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+  await symlink(path.resolve(path.parse(root).root, "etc", "hosts"), symlinkPath);
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--build-spec",
+          buildSpecPath,
+          "--output",
+          outputDir,
+        ],
+        { cwd: root, env: productionEnv },
+      ),
+      /buildSpec.fixturePath must stay inside repository or temp directory/,
+    );
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
   }
 });
 

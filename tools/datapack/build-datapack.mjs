@@ -1,19 +1,28 @@
 #!/usr/bin/env node
 import { createHash, createSign } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const productionMinimumTableRowNames = ["stations", "station_lines", "network_edges", "facilities"];
+const candidateBuildSpecArtifactKind = "datapack-candidate-build-spec";
+const candidateBuildSpecHashFields = [
+  "sourceSnapshotSetHash",
+  "approvedAliasLedgerHash",
+  "facilityEvidenceLedgerHash",
+  "routeEvidenceLedgerHash",
+  "approvedOverrideSetHash",
+  "sourceInventorySha256",
+];
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const fixturePath = path.resolve(root, requireArg(args, "fixture"));
   const outputDir = path.resolve(root, requireArg(args, "output"));
-  const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  const { fixture, candidateBuild } = await loadBuildInput(args);
   const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
 
   validateFixture(fixture);
@@ -122,9 +131,112 @@ async function main() {
       schemaVersion: 1,
       artifactKind: "datapack-field-provenance",
       manifestSha256: sha256(Buffer.from(manifestJson)),
+      ...(candidateBuild ? { candidateBuild } : {}),
       packs: provenancePacks,
     }, null, 2)}\n`,
   );
+}
+
+async function loadBuildInput(args) {
+  const fixtureArg = args.fixture;
+  const buildSpecArg = args["build-spec"];
+  if ((fixtureArg == null) === (buildSpecArg == null)) {
+    throw new Error("exactly one of --fixture or --build-spec is required");
+  }
+  if (fixtureArg != null) {
+    return {
+      fixture: JSON.parse(await readFile(path.resolve(root, fixtureArg), "utf8")),
+      candidateBuild: null,
+    };
+  }
+
+  const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec");
+  const buildSpecBytes = await readFile(buildSpecPath);
+  const buildSpec = JSON.parse(buildSpecBytes);
+  await validateCandidateBuildSpec(buildSpec);
+  return {
+    fixture: JSON.parse(await readFile(await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath"), "utf8")),
+    candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes)),
+  };
+}
+
+async function validateCandidateBuildSpec(buildSpec) {
+  if (!buildSpec || typeof buildSpec !== "object" || Array.isArray(buildSpec)) {
+    throw new Error("buildSpec must be an object");
+  }
+  if (buildSpec.schemaVersion !== 1) {
+    throw new Error("buildSpec.schemaVersion must be 1");
+  }
+  if (requiredString(buildSpec.artifactKind, "buildSpec.artifactKind") !== candidateBuildSpecArtifactKind) {
+    throw new Error(`buildSpec.artifactKind must be ${candidateBuildSpecArtifactKind}`);
+  }
+  requiredString(buildSpec.candidateId, "buildSpec.candidateId");
+  requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId");
+  await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath");
+  requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
+  for (const field of candidateBuildSpecHashFields) {
+    sha256HexString(buildSpec[field], `buildSpec.${field}`);
+  }
+  const builderGitSha = requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha");
+  if (!/^[a-f0-9]{7,40}$/i.test(builderGitSha)) {
+    throw new Error("buildSpec.builderGitSha must be a git sha");
+  }
+  requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
+}
+
+function candidateBuildProvenance(buildSpec, buildSpecSha256) {
+  const normalizedHashes = Object.fromEntries(candidateBuildSpecHashFields.map((field) => [
+    field,
+    sha256HexString(buildSpec[field], `buildSpec.${field}`),
+  ]));
+  return {
+    schemaVersion: buildSpec.schemaVersion,
+    artifactKind: requiredString(buildSpec.artifactKind, "buildSpec.artifactKind"),
+    candidateId: requiredString(buildSpec.candidateId, "buildSpec.candidateId"),
+    productionScopeId: requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId"),
+    buildSpecSha256,
+    sourceSnapshotIds: requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds"),
+    sourceSnapshotSetHash: normalizedHashes.sourceSnapshotSetHash,
+    approvedAliasLedgerHash: normalizedHashes.approvedAliasLedgerHash,
+    facilityEvidenceLedgerHash: normalizedHashes.facilityEvidenceLedgerHash,
+    routeEvidenceLedgerHash: normalizedHashes.routeEvidenceLedgerHash,
+    approvedOverrideSetHash: normalizedHashes.approvedOverrideSetHash,
+    sourceInventorySha256: normalizedHashes.sourceInventorySha256,
+    builderGitSha: requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha"),
+    builderVersion: requiredString(buildSpec.builderVersion, "buildSpec.builderVersion"),
+  };
+}
+
+async function resolveBuildInputPath(value, label) {
+  const resolved = path.resolve(root, requiredString(value, label));
+  const canonicalPath = await realpath(resolved);
+  if (!(await isWithinAllowedBuildInputRoot(canonicalPath))) {
+    throw new Error(`${label} must stay inside repository or temp directory`);
+  }
+  return canonicalPath;
+}
+
+async function isWithinAllowedBuildInputRoot(resolvedPath) {
+  const allowedRoots = await allowedBuildInputRoots();
+  return allowedRoots.some((allowedRoot) => {
+    const relative = path.relative(allowedRoot, resolvedPath);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
+}
+
+async function allowedBuildInputRoots() {
+  const candidateRoots = [root, tmpdir(), process.env.RUNNER_TEMP]
+    .filter((value) => typeof value === "string" && value.trim() !== "")
+    .map((value) => path.resolve(value));
+  const canonicalRoots = [];
+  for (const candidateRoot of candidateRoots) {
+    try {
+      canonicalRoots.push(await realpath(candidateRoot));
+    } catch {
+      // Optional CI temp roots may be absent in local runs.
+    }
+  }
+  return canonicalRoots;
 }
 
 function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
@@ -1140,6 +1252,14 @@ function requiredString(value, label) {
     throw new Error(`${label} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function sha256HexString(value, label) {
+  const text = requiredString(value, label);
+  if (!/^[a-f0-9]{64}$/i.test(text)) {
+    throw new Error(`${label} must be a sha256 hex string`);
+  }
+  return text.toLowerCase();
 }
 
 function requiredUtcDateString(value, label) {
