@@ -331,6 +331,7 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     version: pack.version,
     artifactKind,
     sqliteSha256,
+    normalizedSourceInventorySha256: sha256(Buffer.from(JSON.stringify(pack.sourceInventory ?? []))),
     records: records.sort((left, right) =>
       `${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`.localeCompare(
         `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`,
