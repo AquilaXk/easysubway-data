@@ -23,6 +23,7 @@ function applyAdminReviewOverrides(fixture, overrides) {
     throw new Error("admin review overrides schemaVersion must be 1");
   }
   const source = requiredString(overrides.source, "source");
+  const exportedAt = requiredString(overrides.exportedAt, "exportedAt");
   const updates = requiredArray(overrides.facilityStatusUpdates, "facilityStatusUpdates");
   const packs = requiredArray(fixture.packs, "fixture.packs");
   const latestUpdates = latestFacilityUpdates(updates);
@@ -30,13 +31,13 @@ function applyAdminReviewOverrides(fixture, overrides) {
   const affectedInternalRouteTypesByPack = new Map();
   let appliedCount = 0;
 
-  for (const { facilityId, status } of latestUpdates.values()) {
+  for (const { facilityId, status, reviewedAt } of latestUpdates.values()) {
     const matchedFacilities = [];
     for (const pack of packs) {
       const facilities = requiredArray(pack.facilities, "pack.facilities");
       for (const facility of facilities) {
         if (facility.id === facilityId) {
-          facility.status = status;
+          applyFacilityStatusOverride(facility, status, reviewedAt, exportedAt);
           applyNetworkRouteAccessibilityOverride(pack, facility, status);
           markAffectedStation(affectedStationIdsByPack, pack, facility);
           markAffectedInternalRouteType(affectedInternalRouteTypesByPack, pack, facility);
@@ -69,9 +70,28 @@ function applyAdminReviewOverrides(fixture, overrides) {
       ...(pack.metadata ?? {}),
       adminReviewOverrideSource: source,
       adminReviewOverrideCount: String(appliedCount),
-      adminReviewOverrideExportedAt: requiredString(overrides.exportedAt, "exportedAt"),
+      adminReviewOverrideExportedAt: exportedAt,
     };
   }
+}
+
+function applyFacilityStatusOverride(facility, status, reviewedAt, exportedAt) {
+  facility.status = status;
+  facility.statusMeaning = "REALTIME_OPERATION";
+  facility.operationalStatus = operationalStatusForAdminStatus(status);
+  facility.verifiedAt = new Date(reviewedAt).toISOString();
+  facility.retrievedAt = exportedAt;
+  facility.confidence = Math.max(Number.isInteger(facility.confidence) ? facility.confidence : 0, 90);
+}
+
+function operationalStatusForAdminStatus(status) {
+  if (status === "NORMAL") {
+    return "AVAILABLE";
+  }
+  if (status === "UNKNOWN") {
+    return "UNKNOWN";
+  }
+  return "UNAVAILABLE";
 }
 
 function latestFacilityUpdates(updates) {

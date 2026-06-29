@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 4;
+PRAGMA user_version = 6;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -102,7 +102,8 @@ CREATE TABLE network_edges (
   provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
   verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   facility_id TEXT,
-  last_verified_at INTEGER
+  last_verified_at INTEGER,
+  evidence_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE station_exits (
@@ -119,10 +120,20 @@ CREATE TABLE facilities (
   exit_id TEXT,
   type TEXT NOT NULL,
   name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'NORMAL',
+  status TEXT NOT NULL DEFAULT 'UNKNOWN',
   floor_from TEXT NOT NULL DEFAULT '',
   floor_to TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT '',
+  source_id TEXT NOT NULL DEFAULT '',
+  provider_facility_ref TEXT NOT NULL DEFAULT '',
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verified_at INTEGER NOT NULL DEFAULT 0,
+  retrieved_at INTEGER NOT NULL DEFAULT 0,
+  evidence_hash TEXT NOT NULL DEFAULT '',
+  status_meaning TEXT NOT NULL DEFAULT '',
+  operational_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  installation_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  confidence INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (station_id) REFERENCES stations(id),
   FOREIGN KEY (exit_id) REFERENCES station_exits(id)
 );
@@ -156,6 +167,12 @@ CREATE TABLE internal_route_edges (
   width_level INTEGER NOT NULL DEFAULT 2,
   reliability_score INTEGER NOT NULL DEFAULT 100,
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  source_id TEXT NOT NULL DEFAULT '',
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  facility_id TEXT,
+  last_verified_at INTEGER NOT NULL DEFAULT 0,
+  evidence_hash TEXT NOT NULL DEFAULT '',
   instruction TEXT NOT NULL DEFAULT '',
   FOREIGN KEY (from_node_id) REFERENCES internal_route_nodes(id),
   FOREIGN KEY (to_node_id) REFERENCES internal_route_nodes(id)

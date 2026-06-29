@@ -19,37 +19,47 @@
     }
   },
   "sourceIds": [
+    "molit-urban-rail-full-route",
     "seoulmetro-station-line-info",
-    "seoul-realtime-arrival-station-info",
-    "seoulmetro-cyberstation-route-map"
+    "kric-station-elevator",
+    "kric-station-elevator-movement",
+    "kric-station-escalator",
+    "kric-wheelchair-lift-location",
+    "kric-wheelchair-lift-movement"
   ],
+  "supportedV1Scope": {
+    "scopeId": "capital_pilot_android_v1",
+    "includedRegionIds": ["capital"],
+    "includedOperatorIds": ["seoul-metro"],
+    "facilityCoverageDenominator": "includedStationIds x requiredFacilityTypes",
+    "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]
+  },
   "minimumProductionCoverage": {
     "stations": 2,
     "stationLines": 2,
     "routeEdges": 6,
-    "facilities": 1
+    "facilities": 6
   },
   "coverageEvidence": [
     {
       "regionId": "capital",
       "operatorId": "seoul-metro",
       "sourceDomain": "station_line_membership",
-      "sourceIds": ["seoulmetro-station-line-info"],
-      "evidence": "서울교통공사 노선별 지하철역 정보 source inventory coverageScope"
+      "sourceIds": ["molit-urban-rail-full-route", "seoulmetro-station-line-info"],
+      "evidence": "국토교통부 도시철도 전체노선정보와 서울교통공사 노선별 지하철역 정보 source inventory coverageScope"
     },
     {
       "regionId": "capital",
       "operatorId": "seoul-metro",
-      "sourceDomain": "realtime_arrivals",
-      "sourceIds": ["seoul-realtime-arrival-station-info"],
-      "evidence": "서울시 실시간 도착정보 역정보 source inventory coverageScope"
-    },
-    {
-      "regionId": "capital",
-      "operatorId": "seoul-metro",
-      "sourceDomain": "route_map_positions",
-      "sourceIds": ["seoulmetro-cyberstation-route-map"],
-      "evidence": "서울교통공사 사이버스테이션 노선도 source inventory coverageScope"
+      "sourceDomain": "accessibility_facilities",
+      "sourceIds": [
+        "kric-station-elevator",
+        "kric-station-elevator-movement",
+        "kric-station-escalator",
+        "kric-wheelchair-lift-location",
+        "kric-wheelchair-lift-movement"
+      ],
+      "evidence": "국가철도공단 접근성 시설 위치와 이동동선 source inventory coverageScope"
     }
   ],
   "retiredStationIds": [
@@ -77,15 +87,23 @@
   ],
   "stationMappings": [
     {
-      "sourceId": "seoulmetro-station-line-info",
-      "sourceStationCode": "448",
+      "sourceId": "molit-urban-rail-full-route",
+      "sourceStationCode": "MOLIT-SEOUL-4-448",
       "lineId": "seoul-4",
       "stationId": "station-sangnoksu",
       "stationLineId": "station-sangnoksu:seoul-4",
       "mappingStatus": "active"
     },
     {
-      "sourceId": "seoul-realtime-arrival-station-info",
+      "sourceId": "molit-urban-rail-full-route",
+      "sourceStationCode": "MOLIT-SEOUL-4-433",
+      "lineId": "seoul-4",
+      "stationId": "station-sadang",
+      "stationLineId": "station-sadang:seoul-4",
+      "mappingStatus": "active"
+    },
+    {
+      "sourceId": "seoulmetro-station-line-info",
       "sourceStationCode": "448",
       "lineId": "seoul-4",
       "stationId": "station-sangnoksu",
@@ -104,8 +122,8 @@
   ],
   "stationLineRows": [
     {
-      "sourceId": "seoulmetro-station-line-info",
-      "sourceStationCode": "448",
+      "sourceId": "molit-urban-rail-full-route",
+      "sourceStationCode": "MOLIT-SEOUL-4-448",
       "lineId": "seoul-4",
       "stationNameKo": "상록수",
       "stationNameEn": "Sangnoksu",
@@ -119,7 +137,22 @@
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
     {
-      "sourceId": "seoul-realtime-arrival-station-info",
+      "sourceId": "molit-urban-rail-full-route",
+      "sourceStationCode": "MOLIT-SEOUL-4-433",
+      "lineId": "seoul-4",
+      "stationNameKo": "사당",
+      "stationNameEn": "Sadang",
+      "normalizedName": "사당",
+      "region": "수도권",
+      "latitude": 37.4766,
+      "longitude": 126.9816,
+      "stationCode": "433",
+      "lineSequence": 33,
+      "platformInfo": "당고개 방면 / 오이도 방면",
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+    },
+    {
+      "sourceId": "seoulmetro-station-line-info",
       "sourceStationCode": "448",
       "lineId": "seoul-4",
       "stationNameKo": "상록수",
@@ -216,7 +249,7 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "AVAILABLE",
+      "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
@@ -240,7 +273,7 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "AVAILABLE",
+      "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
@@ -264,7 +297,7 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "AVAILABLE",
+      "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
@@ -288,79 +321,180 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "AVAILABLE",
+      "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     }
   ],
-  "routeMapPositions": [
-    {
-      "sourceId": "seoulmetro-cyberstation-route-map",
-      "station": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "448",
-        "lineId": "seoul-4"
-      },
-      "region": "수도권",
-      "x": 156,
-      "y": 250,
-      "labelPolygon": [
-        { "x": 166, "y": 226 },
-        { "x": 214, "y": 226 },
-        { "x": 214, "y": 246 },
-        { "x": 166, "y": 246 }
-      ],
-      "sourceName": "서울교통공사 사이버스테이션 노선도",
-      "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
-      "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "license": "공공누리 1유형",
-      "licenseStatus": "redistributable",
-      "commercialUseAllowed": true,
-      "attributionRequired": true,
-      "sourceLabel": "상록수",
-      "reviewedAt": "2026-06-28T00:00:00.000Z"
-    },
-    {
-      "sourceId": "seoulmetro-cyberstation-route-map",
-      "station": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "433",
-        "lineId": "seoul-4"
-      },
-      "region": "수도권",
-      "x": 420,
-      "y": 250,
-      "labelPolygon": [
-        { "x": 430, "y": 226 },
-        { "x": 478, "y": 226 },
-        { "x": 478, "y": 246 },
-        { "x": 430, "y": 246 }
-      ],
-      "sourceName": "서울교통공사 사이버스테이션 노선도",
-      "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
-      "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "license": "공공누리 1유형",
-      "licenseStatus": "redistributable",
-      "commercialUseAllowed": true,
-      "attributionRequired": true,
-      "sourceLabel": "사당",
-      "reviewedAt": "2026-06-28T00:00:00.000Z"
-    }
-  ],
+  "routeMapPositions": [],
   "facilityRows": [
     {
-      "id": "facility-sangnoksu-elevator-1",
+      "sourceId": "kric-station-elevator",
+      "id": "facility-sangnoksu-elevator-kric-1",
       "station": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "448",
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-448",
         "lineId": "seoul-4"
       },
       "type": "ELEVATOR",
-      "name": "상록수역 1번 승강기",
-      "status": "NORMAL",
+      "name": "상록수역 엘리베이터 설치 정보",
+      "status": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "providerFacilityRef": "kric-elevator-sangnoksu-1",
       "floorFrom": "B2",
       "floorTo": "1F",
-      "description": "상록수역 승강장과 지상을 연결합니다."
+      "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+      "verifiedAt": "2026-06-22T00:00:00.000Z",
+      "retrievedAt": "2026-06-22T00:00:00.000Z",
+      "evidenceHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "confidence": 80
+    },
+    {
+      "sourceId": "kric-station-escalator",
+      "id": "facility-sangnoksu-escalator-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-448",
+        "lineId": "seoul-4"
+      },
+      "type": "ESCALATOR",
+      "name": "상록수역 에스컬레이터 설치 정보",
+      "status": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "providerFacilityRef": "kric-escalator-sangnoksu-1",
+      "floorFrom": "B1",
+      "floorTo": "1F",
+      "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+      "verifiedAt": "2026-06-22T00:00:00.000Z",
+      "retrievedAt": "2026-06-22T00:00:00.000Z",
+      "evidenceHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "confidence": 80
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-location",
+      "id": "facility-sangnoksu-wheelchair-lift-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-448",
+        "lineId": "seoul-4"
+      },
+      "type": "WHEELCHAIR_LIFT",
+      "name": "상록수역 휠체어리프트 설치 정보",
+      "status": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "providerFacilityRef": "kric-wheelchair-lift-sangnoksu-1",
+      "floorFrom": "B1",
+      "floorTo": "B2",
+      "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+      "verifiedAt": "2026-06-22T00:00:00.000Z",
+      "retrievedAt": "2026-06-22T00:00:00.000Z",
+      "evidenceHash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "confidence": 80
+    },
+    {
+      "sourceId": "kric-station-elevator",
+      "id": "facility-sadang-elevator-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-433",
+        "lineId": "seoul-4"
+      },
+      "type": "ELEVATOR",
+      "name": "사당역 엘리베이터 설치 정보",
+      "status": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "providerFacilityRef": "kric-elevator-sadang-1",
+      "floorFrom": "B2",
+      "floorTo": "1F",
+      "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+      "verifiedAt": "2026-06-22T00:00:00.000Z",
+      "retrievedAt": "2026-06-22T00:00:00.000Z",
+      "evidenceHash": "4444444444444444444444444444444444444444444444444444444444444444",
+      "confidence": 80
+    },
+    {
+      "sourceId": "kric-station-escalator",
+      "id": "facility-sadang-escalator-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-433",
+        "lineId": "seoul-4"
+      },
+      "type": "ESCALATOR",
+      "name": "사당역 에스컬레이터 설치 정보",
+      "status": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "providerFacilityRef": "kric-escalator-sadang-1",
+      "floorFrom": "B1",
+      "floorTo": "1F",
+      "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+      "verifiedAt": "2026-06-22T00:00:00.000Z",
+      "retrievedAt": "2026-06-22T00:00:00.000Z",
+      "evidenceHash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "confidence": 80
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-location",
+      "id": "facility-sadang-wheelchair-lift-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-433",
+        "lineId": "seoul-4"
+      },
+      "type": "WHEELCHAIR_LIFT",
+      "name": "사당역 휠체어리프트 설치 정보",
+      "status": "UNKNOWN",
+      "statusMeaning": "STATIC_LOCATION",
+      "operationalStatus": "UNKNOWN",
+      "installationStatus": "INSTALLED",
+      "providerFacilityRef": "kric-wheelchair-lift-sadang-1",
+      "floorFrom": "B1",
+      "floorTo": "B2",
+      "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+      "verifiedAt": "2026-06-22T00:00:00.000Z",
+      "retrievedAt": "2026-06-22T00:00:00.000Z",
+      "evidenceHash": "6666666666666666666666666666666666666666666666666666666666666666",
+      "confidence": 80
+    }
+  ],
+  "movementPathCandidates": [
+    {
+      "sourceId": "kric-station-elevator-movement",
+      "id": "movement-sangnoksu-elevator-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-448",
+        "lineId": "seoul-4"
+      },
+      "facilityType": "ELEVATOR",
+      "fromLabel": "출입구",
+      "toLabel": "승강장",
+      "movementOrder": 1,
+      "instruction": "KRIC 엘리베이터 이동동선 후보이며 검수 전 route edge로 승격하지 않습니다."
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-movement",
+      "id": "movement-sangnoksu-wheelchair-lift-kric-1",
+      "station": {
+        "sourceId": "molit-urban-rail-full-route",
+        "sourceStationCode": "MOLIT-SEOUL-4-448",
+        "lineId": "seoul-4"
+      },
+      "facilityType": "WHEELCHAIR_LIFT",
+      "fromLabel": "대합실",
+      "toLabel": "승강장",
+      "movementOrder": 2,
+      "instruction": "KRIC 휠체어리프트 이동동선 후보이며 검수 전 route edge로 승격하지 않습니다."
     }
   ],
   "representativeRouteRegressions": [

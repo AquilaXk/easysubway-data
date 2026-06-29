@@ -35,6 +35,8 @@ function buildFixture(inventory, input) {
   const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey);
   const movementCandidates = movementPathCandidates(input.movementPathCandidates ?? [], allowedSourceIds, mappingBySourceKey);
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
+  validateSelectedSourceRows(input, sourceIds);
+  validateSupportedFacilityCoverage(input, stationRows, facilities);
   const requiresRouteMapPositions = sourceDomainEnabled(selectedSources, "route_map_positions");
   if (requiresRouteMapPositions && routeMapPositions.length === 0) {
     throw new Error("routeMapPositions must include at least one row when route_map_positions source coverage is selected");
@@ -116,7 +118,7 @@ function productionCoverageEvidenceSummary(input, selectedSources, allowedSource
     throw new Error("coverageEvidence must be a non-empty array for production pack");
   }
 
-  const sourceCoverage = sourceCoverageIndex(selectedSources);
+  const sourceCoverage = sourceCoverageIndex(selectedSources, input.supportedV1Scope);
   const evidenceByKey = new Map();
   for (const entry of input.coverageEvidence) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -159,31 +161,88 @@ function productionCoverageEvidenceSummary(input, selectedSources, allowedSource
   );
 }
 
-function sourceCoverageIndex(selectedSources) {
+function sourceCoverageIndex(selectedSources, supportedV1Scope = {}) {
   const bySourceId = new Map();
   const requiredKeys = new Set();
+  const supportedRegionIds = new Set(supportedV1Scope.includedRegionIds ?? []);
+  const supportedOperatorIds = new Set(supportedV1Scope.includedOperatorIds ?? []);
   for (const source of selectedSources) {
     const sourceId = requiredString(source.id, "source.id");
-    const coverage = source.coverageScope;
-    if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
-      throw new Error(`${sourceId}.coverageScope must be an object`);
-    }
-    const keys = new Set();
-    for (const regionId of requiredStringArray(coverage.regionIds, `${sourceId}.coverageScope.regionIds`)) {
-      for (const operatorId of requiredStringArray(coverage.operatorIds, `${sourceId}.coverageScope.operatorIds`)) {
-        for (const sourceDomain of requiredStringArray(coverage.sourceDomains, `${sourceId}.coverageScope.sourceDomains`)) {
-          const key = coverageKey(regionId, operatorId, sourceDomain);
-          keys.add(key);
-          requiredKeys.add(key);
-        }
-      }
-    }
+    const keys = coverageKeysForSource(source, supportedRegionIds, supportedOperatorIds);
+    for (const key of keys) requiredKeys.add(key);
     bySourceId.set(sourceId, keys);
   }
   return {
     bySourceId,
-    requiredKeys: [...requiredKeys].sort(),
+    requiredKeys: [...requiredKeys].sort((left, right) => left.localeCompare(right)),
   };
+}
+
+function coverageKeysForSource(source, supportedRegionIds, supportedOperatorIds) {
+  const sourceId = requiredString(source.id, "source.id");
+  const coverage = source.coverageScope;
+  if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
+    throw new Error(`${sourceId}.coverageScope must be an object`);
+  }
+  const keys = new Set();
+  for (const regionId of requiredStringArray(coverage.regionIds, `${sourceId}.coverageScope.regionIds`)) {
+    if (supportedRegionIds.size > 0 && !supportedRegionIds.has(regionId)) continue;
+    addOperatorCoverageKeys(sourceId, coverage, regionId, supportedOperatorIds, keys);
+  }
+  return keys;
+}
+
+function addOperatorCoverageKeys(sourceId, coverage, regionId, supportedOperatorIds, keys) {
+  for (const operatorId of requiredStringArray(coverage.operatorIds, `${sourceId}.coverageScope.operatorIds`)) {
+    if (supportedOperatorIds.size > 0 && !supportedOperatorIds.has(operatorId)) continue;
+    for (const sourceDomain of requiredStringArray(coverage.sourceDomains, `${sourceId}.coverageScope.sourceDomains`)) {
+      keys.add(coverageKey(regionId, operatorId, sourceDomain));
+    }
+  }
+}
+
+function validateSelectedSourceRows(input, sourceIds) {
+  if ((input.pack.artifactKind ?? "fixture") !== "production") {
+    return;
+  }
+  const counts = new Map(sourceIds.map((sourceId) => [sourceId, 0]));
+  const add = (sourceId) => {
+    if (counts.has(sourceId)) {
+      counts.set(sourceId, counts.get(sourceId) + 1);
+    }
+  };
+  for (const row of input.stationLineRows ?? []) add(row.sourceId);
+  for (const row of input.routeEdges ?? []) add(row.sourceId);
+  for (const row of input.facilityRows ?? []) add(row.sourceId ?? row.station?.sourceId);
+  for (const row of input.movementPathCandidates ?? []) add(row.sourceId);
+  for (const row of input.routeMapPositions ?? []) add(row.sourceId);
+  for (const sourceId of sourceIds) {
+    if ((counts.get(sourceId) ?? 0) === 0) {
+      throw new Error(`selected production source has no row provenance: ${sourceId}`);
+    }
+  }
+}
+
+function validateSupportedFacilityCoverage(input, stationRows, facilities) {
+  if ((input.pack.artifactKind ?? "fixture") !== "production") {
+    return;
+  }
+  const requiredFacilityTypes = input.supportedV1Scope?.requiredFacilityTypes;
+  if (!Array.isArray(requiredFacilityTypes) || requiredFacilityTypes.length === 0) {
+    throw new Error("supportedV1Scope.requiredFacilityTypes must be a non-empty array for production pack");
+  }
+  const stationIds = new Set(stationRows.map(({ mapping }) => mapping.stationId));
+  const facilityKeys = new Set(
+    facilities.map((facility) => `${facility.stationId}:${requiredString(facility.type, "facilities.type")}`),
+  );
+  for (const stationId of [...stationIds].sort((left, right) => left.localeCompare(right))) {
+    for (const facilityType of requiredStringArray(requiredFacilityTypes, "supportedV1Scope.requiredFacilityTypes")) {
+      const key = `${stationId}:${facilityType}`;
+      if (!facilityKeys.has(key)) {
+        throw new Error(`production facility evidence missing: ${key}`);
+      }
+    }
+  }
 }
 
 function sourceDomainEnabled(selectedSources, sourceDomain) {
@@ -262,8 +321,8 @@ function inventorySourceMap(inventory) {
   const sources = new Map();
   for (const source of inventory.sources) {
     const id = requiredString(source.id, "inventory.sources.id");
-    if (source.requiredForProductionPack !== true) {
-      throw new Error(`${id}.requiredForProductionPack must be true`);
+    if (typeof source.requiredForProductionPack !== "boolean") {
+      throw new TypeError(`${id}.requiredForProductionPack must be boolean`);
     }
     if (!source.license || source.license.redistributionAllowed !== true) {
       throw new Error(`${id}.license.redistributionAllowed must be true`);
@@ -477,17 +536,27 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey) {
   return rows.map((row) => {
     const sourceId = row.sourceId ?? row.station?.sourceId;
     requiredKnownSource(sourceId, allowedSourceIds, "facilityRows.sourceId");
+    const id = requiredString(row.id, "facilityRows.id");
     return {
-      id: requiredString(row.id, "facilityRows.id"),
+      id,
       stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
       exitId: row.exitId ?? null,
       type: requiredString(row.type, "facilityRows.type"),
       name: requiredString(row.name, "facilityRows.name"),
-      status: row.status ?? "NORMAL",
+      status: row.status ?? "UNKNOWN",
       floorFrom: row.floorFrom ?? "",
       floorTo: row.floorTo ?? "",
       description: row.description ?? "",
       sourceId,
+      providerFacilityRef: row.providerFacilityRef ?? id,
+      provenanceKind: row.provenanceKind ?? "OFFICIAL_SOURCE",
+      statusMeaning: row.statusMeaning,
+      operationalStatus: row.operationalStatus ?? "UNKNOWN",
+      installationStatus: row.installationStatus ?? "UNKNOWN",
+      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
+      retrievedAt: row.retrievedAt,
+      evidenceHash: row.evidenceHash,
+      confidence: row.confidence,
       derivationKind: "OFFICIAL",
       lastVerifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
     };

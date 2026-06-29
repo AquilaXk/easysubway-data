@@ -471,6 +471,7 @@ function regionalQualityMetrics(pack) {
 
 function buildSqlitePack(sqlitePath, schema, pack) {
   const database = new DatabaseSync(sqlitePath);
+  const isProductionPack = pack.artifactKind === "production";
   try {
     database.exec(schema);
     database.exec("BEGIN IMMEDIATE");
@@ -611,6 +612,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "verification_status",
           "facility_id",
           "last_verified_at",
+          "evidence_hash",
         ],
         pack.networkEdges ?? [],
         (row) => {
@@ -637,6 +639,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
             row.verificationStatus ?? "UNKNOWN",
             row.facilityId ?? null,
             timestamp(row.verifiedAt ?? row.lastVerifiedAt),
+            row.evidenceHash ?? "",
           ];
         },
       );
@@ -696,19 +699,52 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       insertRows(
         database,
         "facilities",
-        ["id", "station_id", "exit_id", "type", "name", "status", "floor_from", "floor_to", "description"],
-        pack.facilities ?? [],
-        (row) => [
-          requiredString(row.id, "facilities.id"),
-          requiredString(row.stationId, "facilities.stationId"),
-          row.exitId ?? null,
-          requiredString(row.type, "facilities.type"),
-          requiredString(row.name, "facilities.name"),
-          row.status ?? "NORMAL",
-          row.floorFrom ?? "",
-          row.floorTo ?? "",
-          row.description ?? "",
+        [
+          "id",
+          "station_id",
+          "exit_id",
+          "type",
+          "name",
+          "status",
+          "floor_from",
+          "floor_to",
+          "description",
+          "source_id",
+          "provider_facility_ref",
+          "provenance_kind",
+          "verified_at",
+          "retrieved_at",
+          "evidence_hash",
+          "status_meaning",
+          "operational_status",
+          "installation_status",
+          "confidence",
         ],
+        pack.facilities ?? [],
+        (row) => {
+          const id = requiredString(row.id, "facilities.id");
+          return [
+            id,
+            requiredString(row.stationId, "facilities.stationId"),
+            row.exitId ?? null,
+            requiredString(row.type, "facilities.type"),
+            requiredString(row.name, "facilities.name"),
+            row.status ?? "UNKNOWN",
+            row.floorFrom ?? "",
+            row.floorTo ?? "",
+            row.description ?? "",
+            productionFacilityString(row.sourceId, isProductionPack, "sourceId"),
+            productionFacilityString(row.providerFacilityRef, isProductionPack, "providerFacilityRef") || id,
+            productionFacilityString(row.provenanceKind, isProductionPack, "provenanceKind") || "UNKNOWN",
+            productionFacilityTimestamp(row.verifiedAt ?? row.lastVerifiedAt, isProductionPack, "verifiedAt") ?? 0,
+            productionFacilityTimestamp(row.retrievedAt, isProductionPack, "retrievedAt") ?? 0,
+            productionFacilityString(row.evidenceHash, isProductionPack, "evidenceHash"),
+            productionFacilityString(row.statusMeaning, isProductionPack, "statusMeaning"),
+            facilityOperationalStatus(row, isProductionPack),
+            facilityInstallationStatus(row, isProductionPack),
+            row.confidence ?? 0,
+          ];
+        },
       );
       insertRows(
         database,
@@ -744,6 +780,12 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "width_level",
           "reliability_score",
           "accessibility_status",
+          "source_id",
+          "provenance_kind",
+          "verification_status",
+          "facility_id",
+          "last_verified_at",
+          "evidence_hash",
           "instruction",
         ],
         pack.internalRouteEdges ?? [],
@@ -761,6 +803,12 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           row.widthLevel ?? 2,
           row.reliabilityScore ?? 100,
           normalizedAccessibilityStatus(row.accessibilityStatus, "internalRouteEdges.accessibilityStatus"),
+          row.sourceId ?? "",
+          row.provenanceKind ?? "UNKNOWN",
+          row.verificationStatus ?? "UNKNOWN",
+          row.facilityId ?? null,
+          timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+          row.evidenceHash ?? "",
           row.instruction ?? "",
         ],
       );
@@ -786,6 +834,44 @@ function buildSqlitePack(sqlitePath, schema, pack) {
   } finally {
     database.close();
   }
+}
+
+function productionFacilityString(value, isProductionPack, field) {
+  if (!isProductionPack) {
+    return value ?? "";
+  }
+  return requiredString(value, `production facilities.${field}`);
+}
+
+function productionFacilityTimestamp(value, isProductionPack, field) {
+  if (!isProductionPack) {
+    return timestamp(value);
+  }
+  return timestamp(requiredString(value, `production facilities.${field}`));
+}
+
+function facilityOperationalStatus(row, isProductionPack) {
+  if (isProductionPack) {
+    return productionFacilityString(row.operationalStatus, isProductionPack, "operationalStatus");
+  }
+  if (row.operationalStatus) {
+    return row.operationalStatus;
+  }
+  const status = String(row.status ?? "").toUpperCase();
+  if (["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(status)) {
+    return "AVAILABLE";
+  }
+  if (["BROKEN", "UNDER_CONSTRUCTION", "CLOSED", "UNAVAILABLE", "OUT_OF_SERVICE"].includes(status)) {
+    return "UNAVAILABLE";
+  }
+  return "";
+}
+
+function facilityInstallationStatus(row, isProductionPack) {
+  if (isProductionPack) {
+    return productionFacilityString(row.installationStatus, isProductionPack, "installationStatus");
+  }
+  return row.installationStatus ?? "UNKNOWN";
 }
 
 function insertCatalogMetadata(database, pack) {

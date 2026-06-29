@@ -65,7 +65,7 @@
           "realtime_arrivals"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "irregular-file-snapshot",
       "observedDataUpdatedAt": "2026-06-05",
       "retrievedAt": "2026-06-21",
@@ -105,7 +105,7 @@
           "route_map_positions"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "irregular-on-change",
       "observedDataUpdatedAt": "2026-06-28",
       "retrievedAt": "2026-06-28",
@@ -146,7 +146,7 @@
           "demand_reference"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "monthly-day-5",
       "observedDataUpdatedAt": "2026-06-06",
       "retrievedAt": "2026-06-21",
@@ -249,7 +249,7 @@
           "station_line_membership"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-03-05",
       "retrievedAt": "2026-06-22",
@@ -292,7 +292,7 @@
           "station_line_membership"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "ad-hoc",
       "observedDataUpdatedAt": "2025-09-11",
       "retrievedAt": "2026-06-22",
@@ -616,7 +616,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -667,7 +667,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -718,7 +718,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -769,7 +769,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -820,7 +820,7 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -872,7 +872,7 @@
           "station_line_membership"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
       "updateFrequency": "annual",
       "observedDataUpdatedAt": "2025-12-05",
       "retrievedAt": "2026-06-22",

@@ -121,7 +121,8 @@ jobs:
         run: |
           set -euo pipefail
           node tools/datapack/validate-source-inventory.mjs \
-            --inventory tools/datapack/source-inventory.json
+            --inventory tools/datapack/source-inventory.json \
+            --scope apps/mobile/release/production-datapack-scope.json
 
       - name: Data Pack Release / Validate generated data packs
         run: |
