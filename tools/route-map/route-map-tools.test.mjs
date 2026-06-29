@@ -734,6 +734,42 @@ test("route map position audit passes clean catalog fixture", async () => {
   ]);
 });
 
+test("route map position audit does not require coordinates for packs without route map claim", async () => {
+  const tmp = await mkdtemp(path.join(tmpdir(), "easysubway-route-map-no-claim-"));
+  try {
+    const fixture = JSON.parse(
+      await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"),
+    );
+    const pack = fixture.packs[0];
+    pack.routeMapPositions = [];
+    pack.sourceInventory = pack.sourceInventory.map((source) => ({
+      ...source,
+      fields: (source.fields ?? []).filter((field) => field !== "route_map_positions"),
+    }));
+    const fixturePath = path.join(tmp, "fixture.json");
+    await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`, "utf8");
+
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/audit-route-map.mjs",
+        "--fixture",
+        fixturePath,
+        "--fail-on",
+        "BLOCKER,HIGH",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    const output = JSON.parse(stdout);
+
+    assert.equal(output.summary.findingsBySeverity.BLOCKER, 0);
+    assert.equal(output.packs[0].summary.routeMapPositionCount, 0);
+    assert.equal(output.packs[0].summary.coverageRatio, 0);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("route map position audit can require label polygons", async () => {
   await assert.rejects(
     () =>

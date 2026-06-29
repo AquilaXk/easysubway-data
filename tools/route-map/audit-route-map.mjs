@@ -574,6 +574,7 @@ function auditPack(pack, reviewedAmbiguities, options = {}) {
   const positions = Array.isArray(pack.routeMapPositions)
     ? pack.routeMapPositions
     : [];
+  const requiresRouteMapPositions = packRequiresRouteMapPositions(pack, positions);
   const stationLineKeys = new Set(stationLines.map(stationLineKeyFor));
   const stationLineCoverageKeys = new Set(
     stationLines.map((stationLine) =>
@@ -777,24 +778,26 @@ function auditPack(pack, reviewedAmbiguities, options = {}) {
     });
   }
 
-  for (const membership of stationLines) {
-    if (
-      positionedStationLineCoverageKeys.has(
-        coverageKeyForStationLine(membership, stationsById),
-      )
-    ) {
-      continue;
+  if (requiresRouteMapPositions) {
+    for (const membership of stationLines) {
+      if (
+        positionedStationLineCoverageKeys.has(
+          coverageKeyForStationLine(membership, stationsById),
+        )
+      ) {
+        continue;
+      }
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "MISSING_ROUTE_MAP_POSITION",
+        packId: pack.id,
+        region: "",
+        lineId: membership.lineId,
+        stationId: membership.stationId,
+        message:
+          "stationLines membership has no matching routeMapPositions coordinate.",
+      });
     }
-    addFinding(findings, {
-      severity: "BLOCKER",
-      code: "MISSING_ROUTE_MAP_POSITION",
-      packId: pack.id,
-      region: "",
-      lineId: membership.lineId,
-      stationId: membership.stationId,
-      message:
-        "stationLines membership has no matching routeMapPositions coordinate.",
-    });
   }
 
   const missingLabelPolygonByRegion = new Map();
@@ -918,6 +921,18 @@ function auditPack(pack, reviewedAmbiguities, options = {}) {
       );
     }),
   };
+}
+
+function packRequiresRouteMapPositions(pack, positions) {
+  if (positions.length > 0) {
+    return true;
+  }
+  return (pack.sourceInventory ?? []).some((source) => {
+    if ((source.fields ?? []).includes("route_map_positions")) {
+      return true;
+    }
+    return (source.coverageScope?.sourceDomains ?? []).includes("route_map_positions");
+  });
 }
 
 function auditFixture(fixturePath, fixture, reviewedAmbiguities, options = {}) {
