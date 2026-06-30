@@ -8,6 +8,30 @@
     "snapshot-molit-urban-rail-full-route-fixture",
     "snapshot-seoulmetro-station-line-info-fixture"
   ],
+  "sourceSnapshots": [
+    {
+      "snapshotId": "snapshot-molit-urban-rail-full-route-fixture",
+      "sourceId": "molit-urban-rail-full-route",
+      "rawObjectUri": "s3://easysubway-datapack-sources/molit-urban-rail-full-route/snapshot-fixture.json",
+      "rawSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "redactedRequestFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "schemaFingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2099-07-07T03:00:00Z"
+    },
+    {
+      "snapshotId": "snapshot-seoulmetro-station-line-info-fixture",
+      "sourceId": "seoulmetro-station-line-info",
+      "rawObjectUri": "s3://easysubway-datapack-sources/seoulmetro-station-line-info/snapshot-fixture.json",
+      "rawSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "redactedRequestFingerprint": "5555555555555555555555555555555555555555555555555555555555555555",
+      "schemaFingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2099-07-07T03:00:00Z"
+    }
+  ],
   "sourceSnapshotSetHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "approvedAliasLedgerHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "facilityEvidenceLedgerHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
