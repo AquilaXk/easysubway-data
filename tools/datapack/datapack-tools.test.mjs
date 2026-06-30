@@ -2241,6 +2241,140 @@ test("데이터팩 검증기는 production verified edge coverage report를 출�
   assert.equal(report.generatedConnectorGapCount, 0);
 });
 
+test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에서 제외한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
+  entry.accessibilityStatus = "UNKNOWN";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  let failure;
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+  } catch (error) {
+    failure = error;
+  }
+
+  assert(failure);
+  assert.match(failure.message, /capital@1 verified ENTRY coverage gap: 1\/9/);
+  const report = JSON.parse(failure.stdout.trim().split("\n").at(-1));
+  assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, ["entry-sangnoksu-seoul-4"]);
+});
+
+test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance 오류를 숨기지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-late-validation-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
+  entry.accessibilityStatus = "UNKNOWN";
+  fixture.packs[0].internalRouteEdges[0].verificationStatus = "PENDING_ADMIN_REVIEW";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /internal_route_edges verification_status must be VERIFIED: edge-sangnoksu-concourse-exit-1/,
+  );
+});
+
+test("데이터팩 검증기는 UNKNOWN accessibility edge provenance를 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-provenance-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
+  fixture.packs[0].networkEdges.push({
+    ...entry,
+    id: "entry-sangnoksu-seoul-4-unknown-duplicate",
+    accessibilityStatus: "UNKNOWN",
+    verificationStatus: "PENDING_ADMIN_REVIEW",
+  });
+  fixture.packs[0].minimumTableRows.network_edges += 1;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /network_edges accessibility edge verification_status must be VERIFIED: entry-sangnoksu-seoul-4-unknown-duplicate/,
+  );
+});
+
 test("데이터팩 검증기는 production coverage에서 service pattern endpoint를 canonical station-line으로 계산한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-service-pattern-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -5587,7 +5721,7 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
   );
 });
 
-test("수도권 pilot production source input은 production manifest v2 pack으로 생성·검증된다", async () => {
+test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 노출한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
   const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
   const importedFixturePath = path.join(outputDir, "capital-pilot-production.json");
@@ -5688,18 +5822,33 @@ test("수도권 pilot production source input은 production manifest v2 pack으�
     ],
     { cwd: root, env: productionEnv },
   );
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/validate-datapack.mjs",
-      "--manifest",
-      path.join(packOutputDir, "current.json"),
-      "--root",
-      packOutputDir,
-      "--require-production",
-    ],
-    { cwd: root, env: productionEnv },
-  );
+  let validationFailure;
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
+        "--root",
+        packOutputDir,
+        "--require-production",
+      ],
+      { cwd: root, env: productionEnv },
+    );
+  } catch (error) {
+    validationFailure = error;
+  }
+
+  assert(validationFailure);
+  assert.match(validationFailure.message, /capital@1 verified ENTRY coverage gap: 2\/2/);
+  const strictCoverageReport = JSON.parse(validationFailure.stdout.trim().split("\n").at(-1));
+  assert.deepEqual(strictCoverageReport.unverifiedAccessibilityCoverageEdges, [
+    "edge-entry-sadang-seoul-4",
+    "edge-entry-sangnoksu-seoul-4",
+    "edge-exit-sadang-seoul-4",
+    "edge-exit-sangnoksu-seoul-4",
+  ]);
 
   const coverageReportPath = path.join(outputDir, "capital-pilot-coverage-summary.json");
   await execFileAsync(

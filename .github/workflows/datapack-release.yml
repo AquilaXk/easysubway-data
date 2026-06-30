@@ -47,6 +47,8 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE=${{ runner.temp }}/easysubway-production-source-fixture.json"
             echo "EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-catalog-fixture.json"
             echo "EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE=${{ runner.temp }}/easysubway-reviewed-production-source-fixture.json"
+            echo "EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT=${{ runner.temp }}/easysubway-production-gate"
+            echo "EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT=${{ runner.temp }}/easysubway-production-gate-validation.log"
             echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
           } >> "${GITHUB_ENV}"
@@ -79,6 +81,7 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
 
       - name: Data Pack Release / Prepare release fixture
+        id: release-fixture
         run: |
           set -euo pipefail
           node tools/datapack/apply-admin-review-overrides.mjs \
@@ -86,6 +89,7 @@ jobs:
             --overrides tools/datapack/fixtures/admin-review-overrides.json \
             --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
           build_fixture="${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
+          remote_publish_ready=false
           if [[ "${{ steps.remote-publish-env.outputs.enabled }}" == "true" ]]; then
             node tools/datapack/import-official-sources.mjs \
               --inventory tools/datapack/source-inventory.json \
@@ -95,8 +99,26 @@ jobs:
               --fixture "${EASYSUBWAY_DATAPACK_IMPORTED_FIXTURE}" \
               --overrides tools/datapack/fixtures/admin-review-overrides.json \
               --output "${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
-            build_fixture="${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
+            rm -rf "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}"
+            node tools/datapack/build-datapack.mjs \
+              --fixture "${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}" \
+              --output "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}"
+            if node tools/datapack/validate-datapack.mjs \
+              --manifest "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}/current.json" \
+              --root "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}" \
+              --require-production > "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}" 2>&1; then
+              build_fixture="${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
+              remote_publish_ready=true
+            elif grep -qE 'verified (ENTRY|EXIT|TRANSFER) coverage gap' "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"; then
+              cat "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"
+              echo "Production source strict route coverage is not ready; remote publish will be skipped." >&2
+              echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=blocked-strict-coverage" >> "${GITHUB_ENV}"
+            else
+              cat "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}" >&2
+              exit 1
+            fi
           fi
+          echo "remote_publish_ready=${remote_publish_ready}" >> "${GITHUB_OUTPUT}"
           echo "EASYSUBWAY_DATAPACK_BUILD_FIXTURE=${build_fixture}" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Audit route map coordinate coverage
@@ -188,7 +210,7 @@ jobs:
             --dry-run
 
       - name: Data Pack Release / Publish staged data packs to object storage
-        if: ${{ steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ steps.remote-publish-env.outputs.enabled == 'true' && steps.release-fixture.outputs.remote_publish_ready == 'true' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           node tools/datapack/validate-datapack.mjs \
@@ -232,17 +254,21 @@ jobs:
             sourceUpdatedAt = updatedAtValues.at(-1) ?? "unknown";
           }
           const remotePublishEnabled = "${{ steps.remote-publish-env.outputs.enabled }}";
+          const remotePublishReady = "${{ steps.release-fixture.outputs.remote_publish_ready }}";
           const remotePublishResult = process.env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT ?? "";
           const isMainBranch = process.env.GITHUB_REF === "refs/heads/main";
           let publishResult = "disabled-or-skipped";
-          if (isMainBranch && remotePublishEnabled !== "false") {
+          if (isMainBranch && remotePublishEnabled !== "false" && remotePublishReady !== "true") {
+            publishResult = remotePublishResult || "failed";
+          } else if (isMainBranch && remotePublishEnabled !== "false") {
             publishResult = remotePublishResult === "success" ? "success" : "failed";
           }
           const lines = [
             `commit=${process.env.GITHUB_SHA ?? "unknown"}`,
             `pack_version=${packVersion}`,
             `source_updated_at=${sourceUpdatedAt}`,
-            `remote_publish_enabled=${remotePublishEnabled || "false"}`,
+            `remote_publish_enabled=${remotePublishEnabled || "unknown"}`,
+            `remote_publish_ready=${remotePublishReady || "false"}`,
             `publish_result=${publishResult}`,
           ];
           fs.writeFileSync(path.join(stage, "datapack-observability.txt"), `${lines.join("\n")}\n`);

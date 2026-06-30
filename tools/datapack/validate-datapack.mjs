@@ -105,7 +105,7 @@ function validateSqlite(sqlitePath, pack) {
     }
 
     validateNetworkEdgeReferences(database, pack);
-    validateProductionNetworkEdgeProvenance(database, pack);
+    const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
@@ -116,6 +116,9 @@ function validateSqlite(sqlitePath, pack) {
       if (row.count < minimumRows) {
         throw new Error(`${pack.id}@${pack.version} ${tableName} row count ${row.count} is below ${minimumRows}`);
       }
+    }
+    if (productionCoverageError) {
+      throw productionCoverageError;
     }
   } finally {
     database.close();
@@ -644,7 +647,7 @@ function validateNetworkEdgeFacilityReferences(database, pack) {
 
 function validateProductionNetworkEdgeProvenance(database, pack) {
   if (pack.artifactKind !== "production" || !hasTable(database, "network_edges")) {
-    return;
+    return null;
   }
   const requiredColumns = [
     "source_id",
@@ -679,10 +682,13 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     `)
     .all();
   const coverage = productionVerifiedCoverage(database, edgeRows);
+  const unverifiedAccessibilityCoverageEdges = edgeRows
+    .filter(isUnverifiedAccessibilityCoverageEdge)
+    .map((edge) => edge.id);
 
   for (const edge of edgeRows) {
     validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
-    if (isAccessibilityCoverageCandidate(edge)) {
+    if (isAccessibilityProvenanceCandidate(edge)) {
       validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack);
     }
     if (isPositiveAccessibilityEdge(edge)) {
@@ -696,6 +702,7 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     entry: coverage.entry,
     exit: coverage.exit,
     transfer: coverage.transfer,
+    unverifiedAccessibilityCoverageEdges,
     generatedConnectorGapCount:
       coverage.entry.missingCount +
       coverage.exit.missingCount +
@@ -705,11 +712,12 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
 
   for (const [kind, item] of Object.entries(coverage)) {
     if (item.missingCount > 0) {
-      throw new Error(
+      return new Error(
         `${pack.id}@${pack.version} verified ${kind.toUpperCase()} coverage gap: ${item.missingCount}/${item.denominator}`,
       );
     }
   }
+  return null;
 }
 
 function validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack) {
@@ -965,7 +973,26 @@ function isAccessibilityCoverageCandidate(edge) {
   return (
     ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
     String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
-    ["AVAILABLE", "UNKNOWN"].includes(String(edge.accessibility_status ?? "").toUpperCase())
+    String(edge.accessibility_status ?? "").toUpperCase() === "AVAILABLE"
+  );
+}
+
+function isAccessibilityProvenanceCandidate(edge) {
+  const edgeType = normalizedEdgeType(edge.edge_type);
+  const accessibilityStatus = String(edge.accessibility_status ?? "").toUpperCase();
+  return (
+    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
+    ["AVAILABLE", "UNKNOWN"].includes(accessibilityStatus)
+  );
+}
+
+function isUnverifiedAccessibilityCoverageEdge(edge) {
+  const edgeType = normalizedEdgeType(edge.edge_type);
+  return (
+    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
+    String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE"
   );
 }
 
