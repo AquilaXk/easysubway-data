@@ -2288,6 +2288,52 @@ test("데이터팩 검증기는 UNKNOWN accessibility edge를 strict coverage에
   assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, ["entry-sangnoksu-seoul-4"]);
 });
 
+test("데이터팩 검증기는 UNKNOWN accessibility edge provenance를 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-provenance-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  const entry = fixture.packs[0].networkEdges.find((edge) => edge.id === "entry-sangnoksu-seoul-4");
+  fixture.packs[0].networkEdges.push({
+    ...entry,
+    id: "entry-sangnoksu-seoul-4-unknown-duplicate",
+    accessibilityStatus: "UNKNOWN",
+    verificationStatus: "PENDING_ADMIN_REVIEW",
+  });
+  fixture.packs[0].minimumTableRows.network_edges += 1;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /network_edges accessibility edge verification_status must be VERIFIED: entry-sangnoksu-seoul-4-unknown-duplicate/,
+  );
+});
+
 test("데이터팩 검증기는 production coverage에서 service pattern endpoint를 canonical station-line으로 계산한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-service-pattern-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");

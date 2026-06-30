@@ -685,7 +685,7 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
 
   for (const edge of edgeRows) {
     validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
-    if (isAccessibilityCoverageCandidate(edge)) {
+    if (isAccessibilityProvenanceCandidate(edge)) {
       validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack);
     }
     if (isPositiveAccessibilityEdge(edge)) {
@@ -970,6 +970,16 @@ function isAccessibilityCoverageCandidate(edge) {
     ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
     String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
     String(edge.accessibility_status ?? "").toUpperCase() === "AVAILABLE"
+  );
+}
+
+function isAccessibilityProvenanceCandidate(edge) {
+  const edgeType = normalizedEdgeType(edge.edge_type);
+  const accessibilityStatus = String(edge.accessibility_status ?? "").toUpperCase();
+  return (
+    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
+    ["AVAILABLE", "UNKNOWN"].includes(accessibilityStatus)
   );
 }
 
