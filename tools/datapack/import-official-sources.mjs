@@ -701,11 +701,7 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey, isProductionPack
       verificationStatus:
         productionString(row.verificationStatus, isProductionPack, "routeEdges.verificationStatus") ?? "VERIFIED",
       facilityId: row.facilityId ?? undefined,
-      lastVerifiedAt: productionString(
-        row.verifiedAt ?? row.lastVerifiedAt,
-        isProductionPack,
-        "routeEdges.lastVerifiedAt",
-      ),
+      lastVerifiedAt: requiredString(row.verifiedAt ?? row.lastVerifiedAt, "routeEdges.lastVerifiedAt"),
       evidenceHash: productionEvidenceHash(row.evidenceHash, isProductionPack, id, "routeEdges.evidenceHash"),
     };
   });
