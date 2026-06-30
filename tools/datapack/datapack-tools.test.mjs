@@ -7222,6 +7222,8 @@ function productionSourceIngestInput() {
     (row) => row.sourceId !== "seoul-realtime-arrival-station-info",
   );
   for (const edge of input.routeEdges) {
+    edge.provenanceKind = "OFFICIAL_SOURCE";
+    edge.verificationStatus = "VERIFIED";
     edge.sourceSnapshotId = `${edge.sourceId}-snapshot-20260621`;
     edge.providerRecordHash = sha256(`provider:${edge.id}:${edge.sourceId}`);
     edge.evidenceHash = sha256(`evidence:${edge.id}:${edge.sourceId}:${edge.lastVerifiedAt}`);
@@ -7284,6 +7286,7 @@ function productionSourceIngestInput() {
     operationalStatus: "UNKNOWN",
     installationStatus: "INSTALLED",
     providerFacilityRef: id,
+    provenanceKind: "OFFICIAL_SOURCE",
     description: "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
     verifiedAt: "2026-06-22T00:00:00.000Z",
     retrievedAt: "2026-06-22T00:00:00.000Z",
@@ -7409,6 +7412,8 @@ function productionSourceAccessRouteEdge({ id, sourceStationCode, edgeType, stat
     stairAccessState: "STEP_FREE",
     accessibilityStatus: "AVAILABLE",
     reliabilityScore: 90,
+    provenanceKind: "OFFICIAL_SOURCE",
+    verificationStatus: "VERIFIED",
     lastVerifiedAt: "2026-06-21T00:00:00.000Z",
     sourceSnapshotId: "seoulmetro-station-line-info-snapshot-20260621",
     providerRecordHash: sha256(`provider:${id}:seoulmetro-station-line-info`),

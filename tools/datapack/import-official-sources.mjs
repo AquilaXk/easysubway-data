@@ -685,8 +685,9 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey, isProductionPack
       servicePattern: row.servicePattern ?? "LOCAL",
       includesStairs: row.includesStairs === true,
       stairAccessState: row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN"),
-      accessibilityStatus: row.accessibilityStatus ?? "UNKNOWN",
-      reliabilityScore: row.reliabilityScore ?? 100,
+      accessibilityStatus:
+        productionString(row.accessibilityStatus, isProductionPack, "routeEdges.accessibilityStatus") ?? "UNKNOWN",
+      reliabilityScore: productionInteger(row.reliabilityScore, isProductionPack, "routeEdges.reliabilityScore") ?? 100,
       sourceId: row.sourceId,
       sourceSnapshotId: productionString(row.sourceSnapshotId, isProductionPack, "routeEdges.sourceSnapshotId"),
       providerRecordHash: productionEvidenceHash(
@@ -695,10 +696,14 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey, isProductionPack
         id,
         "routeEdges.providerRecordHash",
       ),
-      provenanceKind: row.provenanceKind ?? "OFFICIAL_SOURCE",
-      verificationStatus: row.verificationStatus ?? "VERIFIED",
+      provenanceKind:
+        productionString(row.provenanceKind, isProductionPack, "routeEdges.provenanceKind") ?? "OFFICIAL_SOURCE",
+      verificationStatus:
+        productionString(row.verificationStatus, isProductionPack, "routeEdges.verificationStatus") ?? "VERIFIED",
       facilityId: row.facilityId ?? undefined,
-      lastVerifiedAt: requiredString(row.verifiedAt ?? row.lastVerifiedAt, "routeEdges.lastVerifiedAt"),
+      lastVerifiedAt:
+        productionString(row.lastVerifiedAt, isProductionPack, "routeEdges.lastVerifiedAt") ??
+        requiredString(row.verifiedAt ?? row.lastVerifiedAt, "routeEdges.lastVerifiedAt"),
       evidenceHash: productionEvidenceHash(row.evidenceHash, isProductionPack, id, "routeEdges.evidenceHash"),
     };
   });
@@ -728,18 +733,22 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPa
       description: row.description ?? "",
       sourceId,
       sourceSnapshotId: productionString(row.sourceSnapshotId, isProductionPack, "facilityRows.sourceSnapshotId"),
-      providerFacilityRef: row.providerFacilityRef ?? id,
+      providerFacilityRef:
+        productionString(row.providerFacilityRef, isProductionPack, "facilityRows.providerFacilityRef") ?? id,
       providerRecordHash,
-      provenanceKind: row.provenanceKind ?? "OFFICIAL_SOURCE",
-      statusMeaning: row.statusMeaning,
-      operationalStatus: row.operationalStatus ?? "UNKNOWN",
-      installationStatus: row.installationStatus ?? "UNKNOWN",
-      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
-      retrievedAt: row.retrievedAt,
+      provenanceKind:
+        productionString(row.provenanceKind, isProductionPack, "facilityRows.provenanceKind") ?? "OFFICIAL_SOURCE",
+      statusMeaning: productionString(row.statusMeaning, isProductionPack, "facilityRows.statusMeaning"),
+      operationalStatus:
+        productionString(row.operationalStatus, isProductionPack, "facilityRows.operationalStatus") ?? "UNKNOWN",
+      installationStatus:
+        productionString(row.installationStatus, isProductionPack, "facilityRows.installationStatus") ?? "UNKNOWN",
+      verifiedAt: productionString(row.verifiedAt, isProductionPack, "facilityRows.verifiedAt") ?? row.lastVerifiedAt,
+      retrievedAt: productionString(row.retrievedAt, isProductionPack, "facilityRows.retrievedAt"),
       evidenceHash,
-      confidence: row.confidence,
+      confidence: productionInteger(row.confidence, isProductionPack, "facilityRows.confidence"),
       derivationKind: "OFFICIAL",
-      lastVerifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
+      lastVerifiedAt: productionString(row.verifiedAt, isProductionPack, "facilityRows.verifiedAt") ?? row.lastVerifiedAt,
     };
   });
 }
@@ -749,6 +758,13 @@ function productionString(value, isProductionPack, label) {
     return value;
   }
   return requiredString(value, label);
+}
+
+function productionInteger(value, isProductionPack, label) {
+  if (!isProductionPack) {
+    return value;
+  }
+  return requiredInteger(value, label);
 }
 
 function productionEvidenceHash(value, isProductionPack, rowId, label) {
