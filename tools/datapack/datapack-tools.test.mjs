@@ -435,6 +435,64 @@ test("source snapshot command는 raw token을 저장 전에 거부한다", async
   }
 });
 
+test("source snapshot command는 credential URI와 만료 retention metadata를 거부한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-policy-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "station\nSadang\n");
+  const baseArgs = [
+    "tools/datapack/build-source-snapshot.mjs",
+    "--input",
+    rawPath,
+    "--output",
+    path.join(workDir, "snapshot.json"),
+    "--snapshot-id",
+    "snapshot-kric-policy",
+    "--source-id",
+    "kric-station-elevator",
+    "--provider",
+    "국가철도공단",
+    "--retrieved-at",
+    "2026-06-30T03:00:00Z",
+    "--freshness-expires-at",
+    "2026-07-07T03:00:00Z",
+  ];
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          ...baseArgs,
+          "--raw-object-uri",
+          "s3://bucket/snapshot.json?serviceKey=secret",
+          "--raw-retention-expires-at",
+          "2026-09-30T03:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /--raw-object-uri must be a credential-free object storage URI/,
+    );
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          ...baseArgs,
+          "--raw-object-uri",
+          "s3://bucket/snapshot.json",
+          "--raw-retention-expires-at",
+          "2026-01-01T00:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /rawRetentionExpiresAt must be after retrievedAt/,
+    );
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
 test("source snapshot command는 raw CSV를 LOCKED snapshot metadata로 canonicalize한다", async () => {
   const workDir = path.join(tmpdir(), `easysubway-source-snapshot-ok-${process.pid}-${Date.now()}`);
   const rawPath = path.join(workDir, "raw.csv");
