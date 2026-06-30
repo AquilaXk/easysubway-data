@@ -169,6 +169,16 @@ function validateTransitSchedule(database, pack) {
       .all()
       .map((row) => [row.service_id, row]),
   );
+  const calendarDateAddsByService = new Map();
+  if (hasTable(database, "service_calendar_dates")) {
+    for (const row of database
+      .prepare("SELECT service_id, date FROM service_calendar_dates WHERE exception_type = 1")
+      .all()) {
+      const dates = calendarDateAddsByService.get(row.service_id) ?? [];
+      dates.push(row.date);
+      calendarDateAddsByService.set(row.service_id, dates);
+    }
+  }
   const routes = new Map(
     database
       .prepare("SELECT id, line_id FROM transit_routes")
@@ -180,7 +190,7 @@ function validateTransitSchedule(database, pack) {
     .all();
   for (const trip of trips) {
     const calendar = calendars.get(trip.service_id);
-    if (!calendar || !serviceCalendarHasActiveDate(calendar)) {
+    if (!calendar || !serviceCalendarHasActiveDate(calendar, calendarDateAddsByService.get(trip.service_id) ?? [])) {
       throw new Error(`${pack.id}@${pack.version} transit_trips service_id is not active: ${trip.id}`);
     }
     const route = routes.get(trip.route_id);
@@ -236,9 +246,12 @@ function validateTransitSchedule(database, pack) {
   }
 }
 
-function serviceCalendarHasActiveDate(calendar) {
+function serviceCalendarHasActiveDate(calendar, addedDates) {
   if (calendar.start_date > calendar.end_date) {
     return false;
+  }
+  if (addedDates.some((date) => calendar.start_date <= date && date <= calendar.end_date)) {
+    return true;
   }
   return [
     calendar.monday,

@@ -44,6 +44,9 @@ function buildFixture(inventory, input) {
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   const transitSchedule = transitScheduleRows(input);
   const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
+  if (isProductionPack && Object.keys(transitScheduleTableRows).length > 0) {
+    throw new Error("production transit schedule import requires sourced schedule provenance");
+  }
   validateSelectedSourceRows(input, sourceIds);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
   validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence);

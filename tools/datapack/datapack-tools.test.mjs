@@ -405,6 +405,41 @@ test("데이터팩 검증기는 trip별 stop_time 시간이 역행하면 거부�
   );
 });
 
+test("데이터팩 검증기는 calendar date 추가 운행만 있는 trip도 active로 인정한다", async () => {
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-calendar-date-only-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const calendar = fixture.packs[0].serviceCalendars[0];
+  calendar.monday = false;
+  calendar.tuesday = false;
+  calendar.wednesday = false;
+  calendar.thursday = false;
+  calendar.friday = false;
+  calendar.saturday = false;
+  calendar.sunday = false;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--root",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+});
+
 test("데이터팩 생성기는 buildSpec 요청으로 candidate provenance를 남긴다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-${Date.now()}`);
   await rm(outputDir, { recursive: true, force: true });
@@ -6254,7 +6289,7 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
 
 test("공식 source ingest adapter는 canonical transit schedule rows를 보존한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-schedule-${Date.now()}`);
-  const input = productionSourceIngestInput();
+  const input = sourceIngestInput();
   input.serviceCalendars = [
     {
       serviceId: "weekday-2026",
@@ -6334,6 +6369,30 @@ test("공식 source ingest adapter는 canonical transit schedule rows를 보존�
       packOutputDir,
     ],
     { cwd: root, env: productionEnv },
+  );
+});
+
+test("공식 source ingest adapter는 production schedule pass-through를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-production-schedule-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  input.serviceCalendars = [
+    {
+      serviceId: "weekday-2026",
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: "20260701",
+      endDate: "20261231",
+    },
+  ];
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /production transit schedule import requires sourced schedule provenance/,
   );
 });
 
