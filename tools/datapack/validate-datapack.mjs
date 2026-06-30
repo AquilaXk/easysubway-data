@@ -330,7 +330,7 @@ function validateStationPathways(database, pack) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge does not match endpoints: ${rule.id}`);
     }
     const strictEdgeType = String(strictEdge?.edge_type ?? "").toUpperCase();
-    if (strictEdge && (["STAIRS", "ESCALATOR"].includes(strictEdgeType) || strictEdge.includes_stairs === 1 || (strictEdge.requires_escalator === 1 && strictEdge.requires_elevator === 0))) {
+    if (strictEdge && (["STAIRS", "ESCALATOR"].includes(strictEdgeType) || strictEdge.includes_stairs === 1 || strictEdge.requires_escalator === 1)) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge is not step-free: ${rule.id}`);
     }
     const strictAccessibilityStatus = String(strictEdge?.accessibility_status ?? "").toUpperCase();
