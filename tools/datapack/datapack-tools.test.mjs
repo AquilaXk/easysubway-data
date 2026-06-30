@@ -7221,6 +7221,11 @@ function productionSourceIngestInput() {
   input.stationLineRows = input.stationLineRows.filter(
     (row) => row.sourceId !== "seoul-realtime-arrival-station-info",
   );
+  for (const edge of input.routeEdges) {
+    edge.sourceSnapshotId = `${edge.sourceId}-snapshot-20260621`;
+    edge.providerRecordHash = sha256(`provider:${edge.id}:${edge.sourceId}`);
+    edge.evidenceHash = sha256(`evidence:${edge.id}:${edge.sourceId}:${edge.lastVerifiedAt}`);
+  }
   input.facilityRows = [
     [
       "kric-station-elevator",
@@ -7316,7 +7321,12 @@ function productionSourceIngestInput() {
       movementOrder: 2,
       instruction: "KRIC 휠체어리프트 이동동선 후보",
     },
-  ];
+  ].map((row) => ({
+    ...row,
+    sourceSnapshotId: `${row.sourceId}-snapshot-20260622`,
+    providerRecordHash: sha256(`provider:${row.id}:${row.sourceId}`),
+    evidenceHash: sha256(`evidence:${row.id}:${row.sourceId}:2026-06-22T00:00:00.000Z`),
+  }));
   input.minimumProductionCoverage = {
     stations: 2,
     stationLines: 2,
