@@ -274,11 +274,15 @@ function validateStationPathways(database, pack) {
   const edges = database
     .prepare(
       `
-      SELECT id, from_node_id, to_node_id, edge_type, duration_seconds, includes_stairs,
-             requires_elevator, requires_escalator, requires_facility_id, accessibility_status,
-             provenance_kind, verification_status, legacy_internal_route_edge_id
-      FROM station_pathway_edges
-      ORDER BY id
+      SELECT spe.id, spe.from_node_id, spe.to_node_id, spe.edge_type, spe.duration_seconds, spe.bidirectional,
+             spe.includes_stairs, spe.requires_elevator, spe.requires_escalator, spe.requires_facility_id,
+             spe.accessibility_status, spe.provenance_kind, spe.verification_status, spe.legacy_internal_route_edge_id,
+             from_node.station_id AS from_station_id, from_node.line_id AS from_line_id,
+             to_node.station_id AS to_station_id, to_node.line_id AS to_line_id
+      FROM station_pathway_edges spe
+      JOIN station_pathway_nodes from_node ON from_node.id = spe.from_node_id
+      JOIN station_pathway_nodes to_node ON to_node.id = spe.to_node_id
+      ORDER BY spe.id
     `,
     )
     .all();
@@ -299,7 +303,8 @@ function validateStationPathways(database, pack) {
   for (const rule of database
     .prepare(
       `
-      SELECT id, min_transfer_seconds, pathway_edge_id, strict_step_free_pathway_edge_id
+      SELECT id, from_station_id, from_line_id, to_station_id, to_line_id,
+             min_transfer_seconds, pathway_edge_id, strict_step_free_pathway_edge_id
       FROM transfer_rules
       ORDER BY id
     `,
@@ -312,17 +317,38 @@ function validateStationPathways(database, pack) {
     if (rule.pathway_edge_id && !pathwayEdge) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules pathway_edge_id is missing: ${rule.id}`);
     }
+    if (pathwayEdge && !pathwayEdgeConnectsTransferRule(pathwayEdge, rule)) {
+      throw new Error(`${pack.id}@${pack.version} transfer_rules pathway edge does not match endpoints: ${rule.id}`);
+    }
     const strictEdge = rule.strict_step_free_pathway_edge_id
       ? edgesById.get(rule.strict_step_free_pathway_edge_id)
       : null;
     if (rule.strict_step_free_pathway_edge_id && !strictEdge) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict_step_free_pathway_edge_id is missing: ${rule.id}`);
     }
+    if (strictEdge && !pathwayEdgeConnectsTransferRule(strictEdge, rule)) {
+      throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge does not match endpoints: ${rule.id}`);
+    }
     const strictEdgeType = String(strictEdge?.edge_type ?? "").toUpperCase();
     if (strictEdge && (["STAIRS", "ESCALATOR"].includes(strictEdgeType) || strictEdge.includes_stairs === 1 || (strictEdge.requires_escalator === 1 && strictEdge.requires_elevator === 0))) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge is not step-free: ${rule.id}`);
     }
   }
+}
+
+function pathwayEdgeConnectsTransferRule(edge, rule) {
+  const direct =
+    edge.from_station_id === rule.from_station_id &&
+    edge.from_line_id === rule.from_line_id &&
+    edge.to_station_id === rule.to_station_id &&
+    edge.to_line_id === rule.to_line_id;
+  const reverse =
+    edge.bidirectional === 1 &&
+    edge.from_station_id === rule.to_station_id &&
+    edge.from_line_id === rule.to_line_id &&
+    edge.to_station_id === rule.from_station_id &&
+    edge.to_line_id === rule.from_line_id;
+  return direct || reverse;
 }
 
 function validateStationPathwayLegacyMappings(database, pack) {
@@ -356,6 +382,7 @@ function validateStationPathwayLegacyMappings(database, pack) {
       ["includes_stairs", "legacy_includes_stairs"],
       ["requires_elevator", "legacy_requires_elevator"],
       ["requires_escalator", "legacy_requires_escalator"],
+      ["accessibility_status", "legacy_accessibility_status"],
     ]) {
       if (row[current] !== row[legacy]) {
         throw new Error(`${pack.id}@${pack.version} station_pathway_edges legacy mapping mismatch: ${row.id}`);
