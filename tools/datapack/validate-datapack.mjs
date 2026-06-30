@@ -105,7 +105,7 @@ function validateSqlite(sqlitePath, pack) {
     }
 
     validateNetworkEdgeReferences(database, pack);
-    validateProductionNetworkEdgeProvenance(database, pack);
+    const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
@@ -116,6 +116,9 @@ function validateSqlite(sqlitePath, pack) {
       if (row.count < minimumRows) {
         throw new Error(`${pack.id}@${pack.version} ${tableName} row count ${row.count} is below ${minimumRows}`);
       }
+    }
+    if (productionCoverageError) {
+      throw productionCoverageError;
     }
   } finally {
     database.close();
@@ -644,7 +647,7 @@ function validateNetworkEdgeFacilityReferences(database, pack) {
 
 function validateProductionNetworkEdgeProvenance(database, pack) {
   if (pack.artifactKind !== "production" || !hasTable(database, "network_edges")) {
-    return;
+    return null;
   }
   const requiredColumns = [
     "source_id",
@@ -709,11 +712,12 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
 
   for (const [kind, item] of Object.entries(coverage)) {
     if (item.missingCount > 0) {
-      throw new Error(
+      return new Error(
         `${pack.id}@${pack.version} verified ${kind.toUpperCase()} coverage gap: ${item.missingCount}/${item.denominator}`,
       );
     }
   }
+  return null;
 }
 
 function validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack) {
