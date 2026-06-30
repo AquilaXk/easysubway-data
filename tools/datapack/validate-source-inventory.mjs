@@ -71,12 +71,71 @@ function validateSource(source, label) {
   assertDate(source.observedDataUpdatedAt, `${id}.observedDataUpdatedAt`);
   validateLicense(source.license, id);
   validateCoverageScope(source.coverageScope, id);
+  validateCapabilities(source.capabilities, source, id);
 
   if (!Array.isArray(source.fieldsProvided) || source.fieldsProvided.length === 0) {
     throw new Error(`${id}.fieldsProvided must be a non-empty array`);
   }
   for (const field of source.fieldsProvided) {
     assertString(field, `${id}.fieldsProvided[]`);
+  }
+}
+
+function validateCapabilities(capabilities, source, sourceId) {
+  if (!capabilities || typeof capabilities !== "object" || Array.isArray(capabilities)) {
+    throw new Error(`${sourceId}.capabilities must be an object`);
+  }
+
+  const capabilityNames = ["schedule", "realtime", "facility"];
+  for (const name of capabilityNames) {
+    validateCapability(capabilities[name], source, sourceId, name);
+  }
+
+  const declaredCapabilityNames = Object.keys(capabilities).sort();
+  const expectedCapabilityNames = [...capabilityNames].sort();
+  if (JSON.stringify(declaredCapabilityNames) !== JSON.stringify(expectedCapabilityNames)) {
+    throw new Error(`${sourceId}.capabilities must declare exactly schedule, realtime, and facility`);
+  }
+}
+
+function validateCapability(capability, source, sourceId, name) {
+  if (!capability || typeof capability !== "object" || Array.isArray(capability)) {
+    throw new Error(`${sourceId}.capabilities.${name} must be an object`);
+  }
+
+  const status = assertString(capability.status, `${sourceId}.capabilities.${name}.status`);
+  if (!["SUPPORTED", "CANDIDATE", "UNSUPPORTED"].includes(status)) {
+    throw new Error(`${sourceId}.capabilities.${name}.status must be SUPPORTED, CANDIDATE, or UNSUPPORTED`);
+  }
+  if (typeof capability.productionUseAllowed !== "boolean") {
+    throw new TypeError(`${sourceId}.capabilities.${name}.productionUseAllowed must be boolean`);
+  }
+  assertString(capability.coverageStatus, `${sourceId}.capabilities.${name}.coverageStatus`);
+  assertString(capability.updateFrequency, `${sourceId}.capabilities.${name}.updateFrequency`);
+  assertString(capability.unsupportedNotes, `${sourceId}.capabilities.${name}.unsupportedNotes`);
+
+  if (status === "UNSUPPORTED" && capability.productionUseAllowed !== false) {
+    throw new Error(`${sourceId}.capabilities.${name}.productionUseAllowed must be false when unsupported`);
+  }
+  if (
+    capability.productionUseAllowed &&
+    (source.license.commercialUseAllowed !== true || source.license.redistributionAllowed !== true)
+  ) {
+    throw new Error(`${sourceId}.capabilities.${name}.productionUseAllowed requires commercial use and redistribution license`);
+  }
+
+  if (name !== "realtime") {
+    return;
+  }
+  if (typeof capability.liveEtaEligible !== "boolean") {
+    throw new TypeError(`${sourceId}.capabilities.realtime.liveEtaEligible must be boolean`);
+  }
+  const rateLimitStatus = assertString(capability.rateLimitStatus, `${sourceId}.capabilities.realtime.rateLimitStatus`);
+  if (
+    capability.liveEtaEligible &&
+    (capability.productionUseAllowed !== true || rateLimitStatus !== "COMPATIBLE")
+  ) {
+    throw new Error(`${sourceId}.capabilities.realtime live ETA requires compatible provider terms and rate limits`);
   }
 }
 

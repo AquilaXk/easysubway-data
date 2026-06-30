@@ -39,7 +39,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify live sample response and route station order coverage before production inventory admission"
+      "nextAction": "verify live sample response and route station order coverage before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility records"
+        }
+      }
     },
     {
       "id": "kric-station-info",
@@ -84,7 +109,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify live sample response and compare with KRIC standard station file before production inventory admission"
+      "nextAction": "verify live sample response and compare with KRIC standard station file before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility records"
+        }
+      }
     },
     {
       "id": "kric-train-operation-organ",
@@ -115,7 +165,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify operator coverage for airport rail, GTX, and light rail before production inventory admission"
+      "nextAction": "verify operator coverage for airport rail, GTX, and light rail before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility records"
+        }
+      }
     },
     {
       "id": "kric-station-transfer-info",
@@ -151,7 +226,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify live sample response and keep transfer relationship evidence separate from step-free movement evidence before production inventory admission"
+      "nextAction": "verify live sample response and keep transfer relationship evidence separate from step-free movement evidence before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "kric-station-platform",
@@ -193,7 +293,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify live sample response and operator field completeness before production inventory admission"
+      "nextAction": "verify live sample response and operator field completeness before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "kric-station-movement-standard",
@@ -235,7 +360,32 @@
           "durationSeconds"
         ]
       },
-      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists"
+      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "kric-station-movement-detailed",
@@ -277,7 +427,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "compare with standard movement API before choosing a primary source"
+      "nextAction": "compare with standard movement API before choosing a primary source",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "kric-transfer-movement-standard",
@@ -319,7 +494,32 @@
           "durationSeconds"
         ]
       },
-      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists"
+      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "kric-transfer-movement-detailed",
@@ -360,7 +560,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify live sample response, image redistribution rights, and keep as admin review candidate until distance and duration evidence exists"
+      "nextAction": "verify live sample response, image redistribution rights, and keep as admin review candidate until distance and duration evidence exists",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "kric-station-convenience-standard",
@@ -396,7 +621,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "verify live sample response and decide primary or secondary role against detailed facility APIs before production inventory admission"
+      "nextAction": "verify live sample response and decide primary or secondary role against detailed facility APIs before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+        }
+      }
     },
     {
       "id": "seoul-topis-realtime-station-arrival",
@@ -445,7 +695,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "capture sanitized live sample with backend-only Seoul API key and confirm quota before production provider adapter"
+      "nextAction": "capture sanitized live sample with backend-only Seoul API key and confirm quota before production provider adapter",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime API; production quota not admitted",
+          "unsupportedNotes": "backend-only service key, provider terms, rate limits, and live sample evidence must be approved before live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility records"
+        }
+      }
     },
     {
       "id": "seoul-topis-realtime-train-position",
@@ -492,7 +767,32 @@
           "sampleResponse"
         ]
       },
-      "nextAction": "capture sanitized live sample with backend-only Seoul API key and keep train position separate from precise GPS claims"
+      "nextAction": "capture sanitized live sample with backend-only Seoul API key and keep train position separate from precise GPS claims",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime API; production quota not admitted",
+          "unsupportedNotes": "backend-only service key, provider terms, rate limits, and live sample evidence must be approved before live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility records"
+        }
+      }
     }
   ]
 }
