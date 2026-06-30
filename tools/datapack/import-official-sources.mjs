@@ -34,7 +34,7 @@ function buildFixture(inventory, input) {
   const stationLines = normalizedStationLines(stationRows);
   const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
   const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
-  const stationFacilityEvidence = stationFacilityEvidenceRows(input, facilities, isProductionPack);
+  const stationFacilityEvidence = stationFacilityEvidenceRows(input, stationRows, facilities, isProductionPack);
   const movementCandidates = movementPathCandidates(
     input.movementPathCandidates ?? [],
     allowedSourceIds,
@@ -763,7 +763,7 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPa
   });
 }
 
-function stationFacilityEvidenceRows(input, facilities, isProductionPack) {
+function stationFacilityEvidenceRows(input, stationRows, facilities, isProductionPack) {
   if (!isProductionPack) {
     return [];
   }
@@ -777,8 +777,12 @@ function stationFacilityEvidenceRows(input, facilities, isProductionPack) {
   );
 
   const facilitiesByCoverageKey = new Map();
+  const stationLineKeys = new Set(stationRows.map(({ mapping }) => `${mapping.stationId}:${mapping.lineId}`));
   for (const facility of facilities) {
     const key = `${facility.stationId}:${facility.lineId}:${requiredString(facility.type, "facilities.type")}`;
+    if (!stationLineKeys.has(`${facility.stationId}:${facility.lineId}`)) {
+      throw new Error(`production facility evidence station-line missing: ${key}:${facility.id}`);
+    }
     const current = facilitiesByCoverageKey.get(key);
     if (!current || facility.id.localeCompare(current.id) < 0) {
       facilitiesByCoverageKey.set(key, facility);

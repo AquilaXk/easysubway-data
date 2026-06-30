@@ -5774,28 +5774,14 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
 test("공식 source ingest adapter는 station-line 단위 facility evidence coverage를 요구한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-facility-line-coverage-${Date.now()}`);
   const input = productionSourceIngestInput();
-  input.lines.push({
-    ...input.lines[0],
-    id: "seoul-2",
-    nameKo: "수도권 2호선",
-    nameEn: "Seoul Subway Line 2",
-    color: "#00A84D",
-  });
-  input.supportedV1Scope.includedLineIds.push("seoul-2");
-  input.supportedV1Scope.facilityCoverageDenominator.expectedRows = 9;
-  input.stationMappings.push({
-    sourceId: "molit-urban-rail-full-route",
+  addSeoul2ProductionScope(input);
+  addMolitStationMapping(input, {
     sourceStationCode: "MOLIT-SEOUL-2-226",
-    lineId: "seoul-2",
     stationId: "station-sadang",
-    stationLineId: "station-sadang:seoul-2",
-    mappingStatus: "active",
   });
-  const sadangLine4 = input.stationLineRows.find((row) => row.sourceStationCode === "MOLIT-SEOUL-4-433");
-  input.stationLineRows.push({
-    ...sadangLine4,
+  addStationLineRow(input, {
+    baseSourceStationCode: "MOLIT-SEOUL-4-433",
     sourceStationCode: "MOLIT-SEOUL-2-226",
-    lineId: "seoul-2",
     stationCode: "226",
     lineSequence: 26,
     platformInfo: "내선순환 / 외선순환",
@@ -5846,6 +5832,48 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
         strictRouteEligible: true,
       },
     ],
+  );
+});
+
+test("공식 source ingest adapter는 stationLineRows 없는 facility evidence mapping을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-facility-missing-station-line-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  addSeoul2ProductionScope(input);
+  addMolitStationMapping(input, {
+    sourceStationCode: "MOLIT-SEOUL-2-999",
+    stationId: "station-sangnoksu",
+  });
+  addMolitStationMapping(input, {
+    sourceStationCode: "MOLIT-SEOUL-2-226",
+    stationId: "station-sadang",
+  });
+  addStationLineRow(input, {
+    baseSourceStationCode: "MOLIT-SEOUL-4-448",
+    sourceStationCode: "MOLIT-SEOUL-2-999",
+    stationCode: "999",
+    lineSequence: 99,
+  });
+  addRequiredFacilityRowsForStationLine(input, {
+    baseSourceStationCode: "MOLIT-SEOUL-4-448",
+    sourceStationCode: "MOLIT-SEOUL-2-999",
+    idPrefix: "facility-sangnoksu-seoul-2",
+  });
+  input.facilityRows.push({
+    ...input.facilityRows.find((row) => row.id === "facility-sadang-elevator-kric-1"),
+    id: "facility-sadang-seoul-2-elevator",
+    station: {
+      sourceId: "molit-urban-rail-full-route",
+      sourceStationCode: "MOLIT-SEOUL-2-226",
+      lineId: "seoul-2",
+    },
+    providerFacilityRef: "facility-sadang-seoul-2-elevator",
+    providerRecordHash: sha256("provider:facility-sadang-seoul-2-elevator:kric-station-elevator"),
+    evidenceHash: sha256("evidence:facility-sadang-seoul-2-elevator:kric-station-elevator:2026-06-22T00:00:00.000Z"),
+  });
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /production facility evidence station-line missing: station-sadang:seoul-2:ELEVATOR:facility-sadang-seoul-2-elevator/,
   );
 });
 
@@ -7687,6 +7715,62 @@ async function importOfficialSourceInput(outputDir, input) {
     { cwd: root },
   );
   return JSON.parse(await readFile(outputPath, "utf8"));
+}
+
+function addSeoul2ProductionScope(input) {
+  input.lines.push({
+    ...input.lines[0],
+    id: "seoul-2",
+    nameKo: "수도권 2호선",
+    nameEn: "Seoul Subway Line 2",
+    color: "#00A84D",
+  });
+  input.supportedV1Scope.includedLineIds.push("seoul-2");
+  input.supportedV1Scope.facilityCoverageDenominator.expectedRows = 9;
+}
+
+function addMolitStationMapping(input, { sourceStationCode, stationId }) {
+  input.stationMappings.push({
+    sourceId: "molit-urban-rail-full-route",
+    sourceStationCode,
+    lineId: "seoul-2",
+    stationId,
+    stationLineId: `${stationId}:seoul-2`,
+    mappingStatus: "active",
+  });
+}
+
+function addStationLineRow(input, { baseSourceStationCode, sourceStationCode, stationCode, lineSequence, platformInfo }) {
+  const base = input.stationLineRows.find((row) => row.sourceStationCode === baseSourceStationCode);
+  input.stationLineRows.push({
+    ...base,
+    sourceStationCode,
+    lineId: "seoul-2",
+    stationCode,
+    lineSequence,
+    platformInfo: platformInfo ?? base.platformInfo,
+  });
+}
+
+function addRequiredFacilityRowsForStationLine(input, { baseSourceStationCode, sourceStationCode, idPrefix }) {
+  for (const facilityType of input.supportedV1Scope.requiredFacilityTypes) {
+    const base = input.facilityRows.find(
+      (row) => row.station.sourceStationCode === baseSourceStationCode && row.type === facilityType,
+    );
+    const id = `${idPrefix}-${facilityType.toLowerCase()}`;
+    input.facilityRows.push({
+      ...base,
+      id,
+      station: {
+        sourceId: "molit-urban-rail-full-route",
+        sourceStationCode,
+        lineId: "seoul-2",
+      },
+      providerFacilityRef: id,
+      providerRecordHash: sha256(`provider:${id}:${base.sourceId}`),
+      evidenceHash: sha256(`evidence:${id}:${base.sourceId}:2026-06-22T00:00:00.000Z`),
+    });
+  }
 }
 
 function productionSourceAccessRouteEdge({ id, sourceStationCode, edgeType, stationToLine }) {
