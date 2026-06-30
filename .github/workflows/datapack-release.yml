@@ -258,16 +258,16 @@ jobs:
           const remotePublishResult = process.env.EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT ?? "";
           const isMainBranch = process.env.GITHUB_REF === "refs/heads/main";
           let publishResult = "disabled-or-skipped";
-          if (isMainBranch && remotePublishEnabled === "true" && remotePublishReady !== "true") {
+          if (isMainBranch && remotePublishEnabled !== "false" && remotePublishReady !== "true") {
             publishResult = remotePublishResult || "failed";
-          } else if (isMainBranch && remotePublishEnabled === "true") {
+          } else if (isMainBranch && remotePublishEnabled !== "false") {
             publishResult = remotePublishResult === "success" ? "success" : "failed";
           }
           const lines = [
             `commit=${process.env.GITHUB_SHA ?? "unknown"}`,
             `pack_version=${packVersion}`,
             `source_updated_at=${sourceUpdatedAt}`,
-            `remote_publish_enabled=${remotePublishEnabled || "false"}`,
+            `remote_publish_enabled=${remotePublishEnabled || "unknown"}`,
             `remote_publish_ready=${remotePublishReady || "false"}`,
             `publish_result=${publishResult}`,
           ];
