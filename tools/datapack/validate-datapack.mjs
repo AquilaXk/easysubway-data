@@ -318,7 +318,8 @@ function validateStationPathways(database, pack) {
     if (rule.strict_step_free_pathway_edge_id && !strictEdge) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict_step_free_pathway_edge_id is missing: ${rule.id}`);
     }
-    if (strictEdge && (strictEdge.includes_stairs === 1 || (strictEdge.requires_escalator === 1 && strictEdge.requires_elevator === 0))) {
+    const strictEdgeType = String(strictEdge?.edge_type ?? "").toUpperCase();
+    if (strictEdge && (["STAIRS", "ESCALATOR"].includes(strictEdgeType) || strictEdge.includes_stairs === 1 || (strictEdge.requires_escalator === 1 && strictEdge.requires_elevator === 0))) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge is not step-free: ${rule.id}`);
     }
   }
@@ -333,17 +334,21 @@ function validateStationPathwayLegacyMappings(database, pack) {
       `
       SELECT spe.id, spe.legacy_internal_route_edge_id, spe.edge_type, spe.duration_seconds, spe.distance_meters,
              spe.includes_stairs, spe.requires_elevator, spe.requires_escalator, spe.accessibility_status,
+             ire.id AS legacy_id,
              ire.edge_type AS legacy_edge_type, ire.duration_seconds AS legacy_duration_seconds,
              ire.distance_meters AS legacy_distance_meters, ire.includes_stairs AS legacy_includes_stairs,
              ire.requires_elevator AS legacy_requires_elevator, ire.requires_escalator AS legacy_requires_escalator,
              ire.accessibility_status AS legacy_accessibility_status
       FROM station_pathway_edges spe
-      JOIN internal_route_edges ire ON ire.id = spe.legacy_internal_route_edge_id
+      LEFT JOIN internal_route_edges ire ON ire.id = spe.legacy_internal_route_edge_id
       WHERE spe.legacy_internal_route_edge_id <> ''
     `,
     )
     .all();
   for (const row of rows) {
+    if (row.legacy_id == null) {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges legacy mapping is missing: ${row.id}`);
+    }
     for (const [current, legacy] of [
       ["edge_type", "legacy_edge_type"],
       ["duration_seconds", "legacy_duration_seconds"],
