@@ -679,6 +679,9 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     `)
     .all();
   const coverage = productionVerifiedCoverage(database, edgeRows);
+  const unverifiedAccessibilityCoverageEdges = edgeRows
+    .filter(isUnverifiedAccessibilityCoverageEdge)
+    .map((edge) => edge.id);
 
   for (const edge of edgeRows) {
     validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
@@ -696,6 +699,7 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     entry: coverage.entry,
     exit: coverage.exit,
     transfer: coverage.transfer,
+    unverifiedAccessibilityCoverageEdges,
     generatedConnectorGapCount:
       coverage.entry.missingCount +
       coverage.exit.missingCount +
@@ -965,7 +969,16 @@ function isAccessibilityCoverageCandidate(edge) {
   return (
     ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
     String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
-    ["AVAILABLE", "UNKNOWN"].includes(String(edge.accessibility_status ?? "").toUpperCase())
+    String(edge.accessibility_status ?? "").toUpperCase() === "AVAILABLE"
+  );
+}
+
+function isUnverifiedAccessibilityCoverageEdge(edge) {
+  const edgeType = normalizedEdgeType(edge.edge_type);
+  return (
+    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
+    String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE"
   );
 }
 
