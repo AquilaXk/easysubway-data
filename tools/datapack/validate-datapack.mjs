@@ -8,7 +8,27 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
-const productionMinimumTableRowNames = ["stations", "station_lines", "network_edges", "facilities"];
+const productionMinimumTableRowNames = [
+  "stations",
+  "station_lines",
+  "network_edges",
+  "facilities",
+  "station_facility_evidence",
+];
+const facilityEvidenceProvenanceColumns = [
+  "source_id",
+  "source_snapshot_id",
+  "provider_record_hash",
+  "evidence_hash",
+  "provenance_kind",
+  "installation_status",
+  "operational_status",
+  "status_meaning",
+  "confidence",
+  "verified_at",
+  "retrieved_at",
+];
+const productionFacilityProvenanceKinds = ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"];
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -108,6 +128,7 @@ function validateSqlite(sqlitePath, pack) {
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
+    validateProductionStationFacilityEvidence(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
     validateRepresentativeRouteRegressions(database, pack);
 
@@ -786,18 +807,8 @@ function validateProductionFacilityProvenance(database, pack) {
     return;
   }
   const requiredColumns = [
-    "source_id",
     "provider_facility_ref",
-    "provenance_kind",
-    "verified_at",
-    "retrieved_at",
-    "evidence_hash",
-    "status_meaning",
-    "operational_status",
-    "installation_status",
-    "confidence",
-    "source_snapshot_id",
-    "provider_record_hash",
+    ...facilityEvidenceProvenanceColumns,
   ];
   const columns = new Set(database.prepare("PRAGMA table_info(facilities)").all().map((row) => row.name));
   for (const column of requiredColumns) {
@@ -822,41 +833,53 @@ function validateProductionFacilityProvenance(database, pack) {
 }
 
 function validateProductionFacilityRow(row, sourceIds, pack) {
-  if (!sourceIds.has(requiredString(row.source_id, `facilities.${row.id}.source_id`))) {
-    throw new Error(`${pack.id}@${pack.version} facilities source_id is not in sourceInventory: ${row.id}`);
-  }
-  requiredString(row.source_snapshot_id, `facilities.${row.id}.source_snapshot_id`);
+  validateProductionEvidenceSource(row, sourceIds, pack, "facilities", row.id);
   requiredString(row.provider_facility_ref, `facilities.${row.id}.provider_facility_ref`);
-  requiredProductionSha256(row.provider_record_hash, `facilities.${row.id}.provider_record_hash`);
-  validateProductionFacilityProvenanceKind(row, pack);
-  validateProductionFacilityEvidenceTimestamps(row, pack);
-  requiredProductionSha256(row.evidence_hash, `facilities.${row.id}.evidence_hash`);
-  const statusMeaning = requiredString(row.status_meaning, `facilities.${row.id}.status_meaning`);
-  requiredString(row.operational_status, `facilities.${row.id}.operational_status`);
-  requiredString(row.installation_status, `facilities.${row.id}.installation_status`);
-  validateProductionFacilityConfidence(row, pack);
+  validateProductionEvidenceHashesAndKind(row, pack, "facilities", row.id);
+  const statusMeaning = validateProductionFacilityEvidenceState(row, pack, "facilities", row.id);
   validateProductionFacilityPositiveStatus(row, statusMeaning, pack);
 }
 
-function validateProductionFacilityProvenanceKind(row, pack) {
-  const provenanceKind = requiredString(row.provenance_kind, `facilities.${row.id}.provenance_kind`);
-  if (!["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(provenanceKind)) {
-    throw new Error(`${pack.id}@${pack.version} facilities provenance_kind is not allowed: ${row.id}`);
+function validateProductionEvidenceSource(row, sourceIds, pack, tableName, rowId) {
+  const label = `${tableName}.${rowId}`;
+  if (!sourceIds.has(requiredString(row.source_id, `${label}.source_id`))) {
+    throw new Error(`${pack.id}@${pack.version} ${tableName} source_id is not in sourceInventory: ${rowId}`);
+  }
+  requiredString(row.source_snapshot_id, `${label}.source_snapshot_id`);
+}
+
+function validateProductionEvidenceHashesAndKind(row, pack, tableName, rowId) {
+  const label = `${tableName}.${rowId}`;
+  requiredProductionSha256(row.provider_record_hash, `${label}.provider_record_hash`);
+  requiredProductionSha256(row.evidence_hash, `${label}.evidence_hash`);
+  const provenanceKind = requiredString(row.provenance_kind, `${label}.provenance_kind`);
+  if (!productionFacilityProvenanceKinds.includes(provenanceKind)) {
+    throw new Error(`${pack.id}@${pack.version} ${tableName} provenance_kind is not allowed: ${rowId}`);
   }
 }
 
-function validateProductionFacilityEvidenceTimestamps(row, pack) {
+function validateProductionFacilityEvidenceState(row, pack, tableName, rowId) {
+  const label = `${tableName}.${rowId}`;
+  const statusMeaning = requiredString(row.status_meaning, `${label}.status_meaning`);
+  requiredString(row.operational_status, `${label}.operational_status`);
+  requiredString(row.installation_status, `${label}.installation_status`);
+  validateProductionFacilityEvidenceConfidence(row.confidence, pack, tableName, rowId);
+  validateProductionFacilityEvidenceTimestamps(row, pack, tableName, rowId);
+  return statusMeaning;
+}
+
+function validateProductionFacilityEvidenceTimestamps(row, pack, tableName, rowId) {
   if (!Number.isInteger(row.verified_at) || row.verified_at <= 0) {
-    throw new Error(`${pack.id}@${pack.version} facilities verified_at is required: ${row.id}`);
+    throw new Error(`${pack.id}@${pack.version} ${tableName} verified_at is required: ${rowId}`);
   }
   if (!Number.isInteger(row.retrieved_at) || row.retrieved_at <= 0) {
-    throw new Error(`${pack.id}@${pack.version} facilities retrieved_at is required: ${row.id}`);
+    throw new Error(`${pack.id}@${pack.version} ${tableName} retrieved_at is required: ${rowId}`);
   }
 }
 
-function validateProductionFacilityConfidence(row, pack) {
-  if (!Number.isInteger(row.confidence) || row.confidence < 0 || row.confidence > 100) {
-    throw new Error(`${pack.id}@${pack.version} facilities confidence must be between 0 and 100: ${row.id}`);
+function validateProductionFacilityEvidenceConfidence(confidence, pack, tableName, rowId) {
+  if (!Number.isInteger(confidence) || confidence < 0 || confidence > 100) {
+    throw new Error(`${pack.id}@${pack.version} ${tableName} confidence must be between 0 and 100: ${rowId}`);
   }
 }
 
@@ -866,6 +889,63 @@ function validateProductionFacilityPositiveStatus(row, statusMeaning, pack) {
   );
   if (positiveStatus && statusMeaning !== "REALTIME_OPERATION") {
     throw new Error(`${pack.id}@${pack.version} facilities positive status requires REALTIME_OPERATION evidence: ${row.id}`);
+  }
+}
+
+function validateProductionStationFacilityEvidence(database, pack) {
+  if (pack.artifactKind !== "production" || !hasTable(database, "station_facility_evidence")) {
+    return;
+  }
+  const requiredColumns = [
+    "station_id",
+    "line_id",
+    "facility_type",
+    "evidence_kind",
+    ...facilityEvidenceProvenanceColumns,
+    "strict_route_eligible",
+    "strict_route_eligible_reason",
+  ];
+  const columns = new Set(database.prepare("PRAGMA table_info(station_facility_evidence)").all().map((row) => row.name));
+  for (const column of requiredColumns) {
+    if (!columns.has(column)) {
+      throw new Error(`${pack.id}@${pack.version} station_facility_evidence provenance column missing: ${column}`);
+    }
+  }
+
+  const sourceIds = new Set(pack.sourceInventory.map((source) => source.id));
+  const rows = database
+    .prepare(`
+      SELECT station_id, line_id, facility_type, evidence_kind, source_id,
+             source_snapshot_id, provider_record_hash, evidence_hash,
+             provenance_kind, installation_status, operational_status,
+             status_meaning, confidence, verified_at, retrieved_at,
+             strict_route_eligible, strict_route_eligible_reason
+      FROM station_facility_evidence
+      ORDER BY station_id, line_id, facility_type
+    `)
+    .all();
+  for (const row of rows) {
+    validateProductionStationFacilityEvidenceRow(row, sourceIds, pack);
+  }
+}
+
+function validateProductionStationFacilityEvidenceRow(row, sourceIds, pack) {
+  const id = `${row.station_id}:${row.line_id}:${row.facility_type}`;
+  requiredString(row.station_id, `station_facility_evidence.${id}.station_id`);
+  requiredString(row.line_id, `station_facility_evidence.${id}.line_id`);
+  requiredString(row.facility_type, `station_facility_evidence.${id}.facility_type`);
+  const evidenceKind = requiredString(row.evidence_kind, `station_facility_evidence.${id}.evidence_kind`);
+  if (!["EXISTS", "NOT_EXISTS", "UNKNOWN"].includes(evidenceKind)) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence evidence_kind is not allowed: ${id}`);
+  }
+  validateProductionEvidenceSource(row, sourceIds, pack, "station_facility_evidence", id);
+  validateProductionEvidenceHashesAndKind(row, pack, "station_facility_evidence", id);
+  validateProductionFacilityEvidenceState(row, pack, "station_facility_evidence", id);
+  if (row.strict_route_eligible === 1 && evidenceKind !== "EXISTS") {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence strict route eligibility requires EXISTS: ${id}`);
+  }
+  if (row.strict_route_eligible === 1) {
+    requiredString(row.strict_route_eligible_reason, `station_facility_evidence.${id}.strict_route_eligible_reason`);
   }
 }
 
@@ -1199,7 +1279,9 @@ function validateMinimumTableRows(pack, artifactKind, label) {
     return;
   }
   if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
-    throw new Error(`${label} production minimumTableRows must define positive stations, station_lines, network_edges, and facilities`);
+    throw new Error(
+      `${label} production minimumTableRows must define positive stations, station_lines, network_edges, facilities, and station_facility_evidence`,
+    );
   }
 }
 
