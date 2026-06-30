@@ -327,10 +327,221 @@ test("데이터팩 생성기는 buildSpec 요청으로 candidate provenance를 �
     "snapshot-molit-urban-rail-full-route-fixture",
     "snapshot-seoulmetro-station-line-info-fixture",
   ]);
+  assert.deepEqual(
+    provenance.candidateBuild.sourceSnapshots.map((snapshot) => ({
+      snapshotId: snapshot.snapshotId,
+      sourceId: snapshot.sourceId,
+      snapshotStatus: snapshot.snapshotStatus,
+      credentialRedacted: snapshot.credentialRedacted,
+    })),
+    [
+      {
+        snapshotId: "snapshot-molit-urban-rail-full-route-fixture",
+        sourceId: "molit-urban-rail-full-route",
+        snapshotStatus: "LOCKED",
+        credentialRedacted: true,
+      },
+      {
+        snapshotId: "snapshot-seoulmetro-station-line-info-fixture",
+        sourceId: "seoulmetro-station-line-info",
+        snapshotStatus: "LOCKED",
+        credentialRedacted: true,
+      },
+    ],
+  );
   assert.equal(
     provenance.candidateBuild.approvedAliasLedgerHash,
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   );
+});
+
+test("데이터팩 생성기는 만료된 source snapshot buildSpec을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-expired-output-${Date.now()}`);
+  const buildSpecDir = path.join(root, "tmp", `easysubway-datapack-build-spec-expired-${process.pid}-${Date.now()}`);
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.expired.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  buildSpec.sourceSnapshots[0].freshnessExpiresAt = "2026-06-30T00:00:00Z";
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--build-spec",
+          buildSpecPath,
+          "--output",
+          outputDir,
+        ],
+        {
+          cwd: root,
+          env: {
+            ...productionEnv,
+            EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-06-30T01:00:00Z",
+          },
+        },
+      ),
+      /buildSpec\.sourceSnapshots\[0\]\.freshnessExpiresAt must be in the future/,
+    );
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 raw token을 저장 전에 거부한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-token-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  const outputPath = path.join(workDir, "snapshot.json");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "station\nSadang\nserviceKey=secret-token\n");
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-source-snapshot.mjs",
+          "--input",
+          rawPath,
+          "--output",
+          outputPath,
+          "--snapshot-id",
+          "snapshot-kric-token",
+          "--source-id",
+          "kric-station-elevator",
+          "--provider",
+          "국가철도공단",
+          "--retrieved-at",
+          "2026-06-30T03:00:00Z",
+          "--raw-object-uri",
+          "s3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-token.json",
+          "--freshness-expires-at",
+          "2026-07-07T03:00:00Z",
+          "--raw-retention-expires-at",
+          "2026-09-30T03:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /raw snapshot contains credential-like token/,
+    );
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 credential URI와 만료 retention metadata를 거부한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-policy-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "station\nSadang\n");
+  const baseArgs = [
+    "tools/datapack/build-source-snapshot.mjs",
+    "--input",
+    rawPath,
+    "--output",
+    path.join(workDir, "snapshot.json"),
+    "--snapshot-id",
+    "snapshot-kric-policy",
+    "--source-id",
+    "kric-station-elevator",
+    "--provider",
+    "국가철도공단",
+    "--retrieved-at",
+    "2026-06-30T03:00:00Z",
+    "--freshness-expires-at",
+    "2026-07-07T03:00:00Z",
+  ];
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          ...baseArgs,
+          "--raw-object-uri",
+          "s3://bucket/snapshot.json?serviceKey=secret",
+          "--raw-retention-expires-at",
+          "2026-09-30T03:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /--raw-object-uri must be a credential-free object storage URI/,
+    );
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          ...baseArgs,
+          "--raw-object-uri",
+          "s3://bucket/snapshot.json",
+          "--raw-retention-expires-at",
+          "2026-01-01T00:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /rawRetentionExpiresAt must be after retrievedAt/,
+    );
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 raw CSV를 LOCKED snapshot metadata로 canonicalize한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-ok-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  const canonicalRawPath = path.join(workDir, "canonical.csv");
+  const outputPath = path.join(workDir, "snapshot.json");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "station,line\nSadang,2\nSangnoksu,4\n");
+
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-source-snapshot.mjs",
+        "--input",
+        rawPath,
+        "--raw-output",
+        canonicalRawPath,
+        "--output",
+        outputPath,
+        "--snapshot-id",
+        "snapshot-kric-station-elevator-20260630",
+        "--source-id",
+        "kric-station-elevator",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-06-30T03:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-station-elevator-20260630.csv",
+        "--freshness-expires-at",
+        "2026-07-07T03:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-09-30T03:00:00Z",
+      ],
+      { cwd: root },
+    );
+
+    const snapshot = JSON.parse(await readFile(outputPath, "utf8"));
+    assert.equal(snapshot.snapshotStatus, "LOCKED");
+    assert.equal(snapshot.credentialRedacted, true);
+    assert.equal(snapshot.rowCount, 2);
+    assert.match(snapshot.rawSha256, /^[0-9a-f]{64}$/);
+    assert.match(snapshot.schemaFingerprint, /^[0-9a-f]{64}$/);
+    assert.equal(snapshot.providerRecordHashes.length, 2);
+    assert.equal(await readFile(canonicalRawPath, "utf8"), "station,line\nSadang,2\nSangnoksu,4\n");
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
 });
 
 test("데이터팩 생성기는 같은 buildSpec에서 candidate artifact hash를 재현한다", async () => {

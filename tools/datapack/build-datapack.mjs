@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
+import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const productionMinimumTableRowNames = [
@@ -24,6 +25,7 @@ const candidateBuildSpecHashFields = [
   "approvedOverrideSetHash",
   "sourceInventorySha256",
 ];
+const sourceSnapshotStatuses = new Set(["LOCKED"]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -180,6 +182,8 @@ async function validateCandidateBuildSpec(buildSpec) {
   requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId");
   await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath");
   requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
+  const sourceSnapshots = requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots");
+  assertSourceSnapshotSet(buildSpec.sourceSnapshotIds, sourceSnapshots);
   for (const field of candidateBuildSpecHashFields) {
     sha256HexString(buildSpec[field], `buildSpec.${field}`);
   }
@@ -202,6 +206,7 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256) {
     productionScopeId: requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId"),
     buildSpecSha256,
     sourceSnapshotIds: requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds"),
+    sourceSnapshots: requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots"),
     sourceSnapshotSetHash: normalizedHashes.sourceSnapshotSetHash,
     approvedAliasLedgerHash: normalizedHashes.approvedAliasLedgerHash,
     facilityEvidenceLedgerHash: normalizedHashes.facilityEvidenceLedgerHash,
@@ -211,6 +216,58 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256) {
     builderGitSha: requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha"),
     builderVersion: requiredString(buildSpec.builderVersion, "buildSpec.builderVersion"),
   };
+}
+
+function requiredSourceSnapshots(value, label) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${label} must be a non-empty array`);
+  }
+  return value.map((snapshot, index) => {
+    const prefix = `${label}[${index}]`;
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      throw new Error(`${prefix} must be an object`);
+    }
+    const normalized = {
+      snapshotId: requiredString(snapshot.snapshotId, `${prefix}.snapshotId`),
+      sourceId: requiredString(snapshot.sourceId, `${prefix}.sourceId`),
+      rawObjectUri: requiredCredentialFreeObjectUri(snapshot.rawObjectUri, `${prefix}.rawObjectUri`),
+      rawSha256: sha256HexString(snapshot.rawSha256, `${prefix}.rawSha256`),
+      redactedRequestFingerprint: sha256HexString(
+        snapshot.redactedRequestFingerprint,
+        `${prefix}.redactedRequestFingerprint`,
+      ),
+      schemaFingerprint: sha256HexString(snapshot.schemaFingerprint, `${prefix}.schemaFingerprint`),
+      snapshotStatus: requiredString(snapshot.snapshotStatus, `${prefix}.snapshotStatus`),
+      credentialRedacted: snapshot.credentialRedacted,
+      freshnessExpiresAt: requiredUtcDateString(snapshot.freshnessExpiresAt, `${prefix}.freshnessExpiresAt`),
+    };
+    if (!sourceSnapshotStatuses.has(normalized.snapshotStatus)) {
+      throw new Error(`${prefix}.snapshotStatus must be LOCKED`);
+    }
+    if (snapshot.credentialRedacted !== true) {
+      throw new Error(`${prefix}.credentialRedacted must be true`);
+    }
+    if (Date.parse(normalized.freshnessExpiresAt) <= candidateBuildNow().getTime()) {
+      throw new Error(`${prefix}.freshnessExpiresAt must be in the future`);
+    }
+    return normalized;
+  });
+}
+
+function assertSourceSnapshotSet(sourceSnapshotIds, sourceSnapshots) {
+  const ids = requiredStringArray(sourceSnapshotIds, "buildSpec.sourceSnapshotIds")
+    .sort((left, right) => left.localeCompare(right));
+  const snapshotIds = sourceSnapshots
+    .map((snapshot) => snapshot.snapshotId)
+    .sort((left, right) => left.localeCompare(right));
+  if (JSON.stringify(ids) !== JSON.stringify(snapshotIds)) {
+    throw new Error("buildSpec.sourceSnapshotIds must match buildSpec.sourceSnapshots[].snapshotId");
+  }
+}
+
+function candidateBuildNow() {
+  const value = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  return value ? new Date(requiredUtcDateString(value, "EASYSUBWAY_DATAPACK_BUILD_NOW")) : new Date();
 }
 
 async function resolveBuildInputPath(value, label) {
