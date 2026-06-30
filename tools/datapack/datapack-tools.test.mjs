@@ -7256,6 +7256,87 @@ test("승인된 관리자 검수 결과는 다음 data pack fixture 시설 상�
   }
 });
 
+test("관리자 검수 override는 unavailable strict step-free transfer reference를 비운다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-admin-review-overrides-pathway-transfer-${Date.now()}`);
+  const inputPath = path.join(outputDir, "catalog-fixture.json");
+  const overridePath = path.join(outputDir, "admin-review-overrides.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.reviewed.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await copyFile("tools/datapack/fixtures/catalog-fixture.json", inputPath);
+  await writeFile(
+    overridePath,
+    `${JSON.stringify(
+      {
+        artifactKind: "datapack-manual-override-ledger",
+        schemaVersion: 1,
+        ledgerSource: "manual_overrides",
+        source: "facility-report-admin-review",
+        exportedAt: "2026-06-21T00:00:00.000Z",
+        facilityStatusUpdates: [
+          {
+            reportId: "report-admin-approved-broken-transfer-elevator",
+            facilityId: "facility-sadang-transfer-elevator-1",
+            status: "BROKEN",
+            reviewedBy: "admin-user",
+            reviewedAt: "2026-06-21T00:00:00.000Z",
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/apply-admin-review-overrides.mjs",
+      "--fixture",
+      inputPath,
+      "--overrides",
+      overridePath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const reviewedFixture = JSON.parse(await readFile(outputPath, "utf8"));
+  const reviewedPathwayEdge = reviewedFixture.packs[0].stationPathwayEdges.find(
+    (edge) => edge.id === "path-edge-sadang-4-to-2-step-free",
+  );
+  const reviewedTransferRule = reviewedFixture.packs[0].transferRules.find(
+    (rule) => rule.id === "transfer-sadang-seoul-4-to-seoul-2",
+  );
+  assert.equal(reviewedPathwayEdge.accessibilityStatus, "UNAVAILABLE");
+  assert.equal(reviewedTransferRule.strictStepFreePathwayEdgeId, null);
+
+  const packOutputDir = path.join(outputDir, "pack");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      outputPath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+});
+
 test("관리자 검수 override는 fixture에 없는 시설 id를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-admin-review-overrides-missing-facility-${Date.now()}`);
   const overridePath = path.join(outputDir, "admin-review-overrides.json");
