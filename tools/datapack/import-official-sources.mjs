@@ -16,6 +16,7 @@ async function main() {
 function buildFixture(inventory, input) {
   validateHeader(input);
   validateInventoryHeader(inventory, input.region);
+  const isProductionPack = (input.pack.artifactKind ?? "fixture") === "production";
   const inventorySources = inventorySourceMap(inventory);
   const sourceIds = requiredStringArray(input.sourceIds, "sourceIds");
   const selectedSources = sourceIds.map((sourceId) => {
@@ -31,9 +32,14 @@ function buildFixture(inventory, input) {
   const stationRows = stationLineRows(input.stationLineRows, allowedSourceIds, mappingBySourceKey);
   const stations = normalizedStations(stationRows);
   const stationLines = normalizedStationLines(stationRows);
-  const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey);
-  const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey);
-  const movementCandidates = movementPathCandidates(input.movementPathCandidates ?? [], allowedSourceIds, mappingBySourceKey);
+  const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
+  const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
+  const movementCandidates = movementPathCandidates(
+    input.movementPathCandidates ?? [],
+    allowedSourceIds,
+    mappingBySourceKey,
+    isProductionPack,
+  );
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   validateSelectedSourceRows(input, sourceIds);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
@@ -665,11 +671,12 @@ function stationAliases(stationMappings, mappingBySourceKey) {
   return aliases;
 }
 
-function routeEdges(rows, allowedSourceIds, mappingBySourceKey) {
+function routeEdges(rows, allowedSourceIds, mappingBySourceKey, isProductionPack) {
   return rows.map((row) => {
     requiredKnownSource(row.sourceId, allowedSourceIds, "routeEdges.sourceId");
+    const id = requiredString(row.id, "routeEdges.id");
     return {
-      id: requiredString(row.id, "routeEdges.id"),
+      id,
       fromNodeId: nodeIdForEndpoint(row.from, allowedSourceIds, mappingBySourceKey),
       toNodeId: nodeIdForEndpoint(row.to, allowedSourceIds, mappingBySourceKey),
       durationSeconds: row.durationSeconds ?? 0,
@@ -681,19 +688,34 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey) {
       accessibilityStatus: row.accessibilityStatus ?? "UNKNOWN",
       reliabilityScore: row.reliabilityScore ?? 100,
       sourceId: row.sourceId,
+      sourceSnapshotId: productionString(row.sourceSnapshotId, isProductionPack, "routeEdges.sourceSnapshotId"),
+      providerRecordHash: productionEvidenceHash(
+        row.providerRecordHash,
+        isProductionPack,
+        id,
+        "routeEdges.providerRecordHash",
+      ),
       provenanceKind: row.provenanceKind ?? "OFFICIAL_SOURCE",
       verificationStatus: row.verificationStatus ?? "VERIFIED",
       facilityId: row.facilityId ?? undefined,
       lastVerifiedAt: requiredString(row.verifiedAt ?? row.lastVerifiedAt, "routeEdges.lastVerifiedAt"),
+      evidenceHash: productionEvidenceHash(row.evidenceHash, isProductionPack, id, "routeEdges.evidenceHash"),
     };
   });
 }
 
-function facilityRows(rows, allowedSourceIds, mappingBySourceKey) {
+function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPack) {
   return rows.map((row) => {
     const sourceId = row.sourceId ?? row.station?.sourceId;
     requiredKnownSource(sourceId, allowedSourceIds, "facilityRows.sourceId");
     const id = requiredString(row.id, "facilityRows.id");
+    const evidenceHash = productionEvidenceHash(row.evidenceHash, isProductionPack, id, "facilityRows.evidenceHash");
+    const providerRecordHash = productionEvidenceHash(
+      row.providerRecordHash,
+      isProductionPack,
+      id,
+      "facilityRows.providerRecordHash",
+    );
     return {
       id,
       stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
@@ -705,14 +727,16 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey) {
       floorTo: row.floorTo ?? "",
       description: row.description ?? "",
       sourceId,
+      sourceSnapshotId: productionString(row.sourceSnapshotId, isProductionPack, "facilityRows.sourceSnapshotId"),
       providerFacilityRef: row.providerFacilityRef ?? id,
+      providerRecordHash,
       provenanceKind: row.provenanceKind ?? "OFFICIAL_SOURCE",
       statusMeaning: row.statusMeaning,
       operationalStatus: row.operationalStatus ?? "UNKNOWN",
       installationStatus: row.installationStatus ?? "UNKNOWN",
       verifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
       retrievedAt: row.retrievedAt,
-      evidenceHash: row.evidenceHash,
+      evidenceHash,
       confidence: row.confidence,
       derivationKind: "OFFICIAL",
       lastVerifiedAt: row.verifiedAt ?? row.lastVerifiedAt,
@@ -720,12 +744,42 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey) {
   });
 }
 
-function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey) {
+function productionString(value, isProductionPack, label) {
+  if (!isProductionPack) {
+    return value;
+  }
+  return requiredString(value, label);
+}
+
+function productionEvidenceHash(value, isProductionPack, rowId, label) {
+  if (!isProductionPack) {
+    return value;
+  }
+  const hash = requiredString(value, label);
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    throw new Error(`${label} must be lowercase sha256: ${rowId}`);
+  }
+  if (/^([0-9a-f])\1{63}$/.test(hash)) {
+    throw new Error(`${label} is placeholder evidence: ${rowId}`);
+  }
+  return hash;
+}
+
+function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey, isProductionPack) {
   return rows.map((row) => {
     requiredKnownSource(row.sourceId, allowedSourceIds, "movementPathCandidates.sourceId");
+    const id = requiredString(row.id, "movementPathCandidates.id");
     return {
-      id: requiredString(row.id, "movementPathCandidates.id"),
+      id,
       sourceId: requiredString(row.sourceId, "movementPathCandidates.sourceId"),
+      sourceSnapshotId: productionString(row.sourceSnapshotId, isProductionPack, "movementPathCandidates.sourceSnapshotId"),
+      providerRecordHash: productionEvidenceHash(
+        row.providerRecordHash,
+        isProductionPack,
+        id,
+        "movementPathCandidates.providerRecordHash",
+      ),
+      evidenceHash: productionEvidenceHash(row.evidenceHash, isProductionPack, id, "movementPathCandidates.evidenceHash"),
       stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
       facilityType: requiredString(row.facilityType, "movementPathCandidates.facilityType"),
       fromLabel: requiredString(row.fromLabel, "movementPathCandidates.fromLabel"),

@@ -106,6 +106,7 @@ function validateSqlite(sqlitePath, pack) {
 
     validateNetworkEdgeReferences(database, pack);
     validateProductionNetworkEdgeProvenance(database, pack);
+    validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
     validateRepresentativeRouteRegressions(database, pack);
@@ -647,9 +648,12 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
   }
   const requiredColumns = [
     "source_id",
+    "source_snapshot_id",
+    "provider_record_hash",
     "provenance_kind",
     "verification_status",
     "last_verified_at",
+    "evidence_hash",
   ];
   const columns = new Set(database.prepare("PRAGMA table_info(network_edges)").all().map((row) => row.name));
   for (const column of requiredColumns) {
@@ -668,7 +672,8 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     .prepare(`
       SELECT id, from_node_id, to_node_id, edge_type, stair_access_state,
              accessibility_status, reliability_score, source_id,
-             provenance_kind, verification_status, last_verified_at
+             source_snapshot_id, provider_record_hash, provenance_kind,
+             verification_status, last_verified_at, evidence_hash
       FROM network_edges
       ORDER BY id
     `)
@@ -676,6 +681,7 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
   const coverage = productionVerifiedCoverage(database, edgeRows);
 
   for (const edge of edgeRows) {
+    validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
     if (isAccessibilityCoverageCandidate(edge)) {
       validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack);
     }
@@ -706,6 +712,67 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
   }
 }
 
+function validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack) {
+  const sourceId = requiredString(edge.source_id, `network_edges.${edge.id}.source_id`);
+  if (!sourceUpdatedAtById.has(sourceId)) {
+    throw new Error(`${pack.id}@${pack.version} network_edges source_id is not in sourceInventory: ${edge.id}`);
+  }
+  requiredString(edge.source_snapshot_id, `network_edges.${edge.id}.source_snapshot_id`);
+  requiredProductionSha256(edge.provider_record_hash, `network_edges.${edge.id}.provider_record_hash`);
+  requiredProductionSha256(edge.evidence_hash, `network_edges.${edge.id}.evidence_hash`);
+}
+
+function validateProductionInternalRouteEdgeProvenance(database, pack) {
+  if (pack.artifactKind !== "production" || !hasTable(database, "internal_route_edges")) {
+    return;
+  }
+  const requiredColumns = [
+    "source_id",
+    "source_snapshot_id",
+    "provider_record_hash",
+    "provenance_kind",
+    "verification_status",
+    "last_verified_at",
+    "evidence_hash",
+  ];
+  const columns = new Set(database.prepare("PRAGMA table_info(internal_route_edges)").all().map((row) => row.name));
+  for (const column of requiredColumns) {
+    if (!columns.has(column)) {
+      throw new Error(`${pack.id}@${pack.version} internal_route_edges provenance column missing: ${column}`);
+    }
+  }
+
+  const sourceIds = new Set(pack.sourceInventory.map((source) => source.id));
+  const rows = database
+    .prepare(`
+      SELECT id, source_id, source_snapshot_id, provider_record_hash,
+             provenance_kind, verification_status, last_verified_at, evidence_hash
+      FROM internal_route_edges
+      ORDER BY id
+    `)
+    .all();
+  for (const row of rows) {
+    const sourceId = requiredString(row.source_id, `internal_route_edges.${row.id}.source_id`);
+    if (!sourceIds.has(sourceId)) {
+      throw new Error(`${pack.id}@${pack.version} internal_route_edges source_id is not in sourceInventory: ${row.id}`);
+    }
+    requiredString(row.source_snapshot_id, `internal_route_edges.${row.id}.source_snapshot_id`);
+    requiredProductionSha256(row.provider_record_hash, `internal_route_edges.${row.id}.provider_record_hash`);
+    const provenanceKind = requiredString(row.provenance_kind, `internal_route_edges.${row.id}.provenance_kind`);
+    if (!["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(provenanceKind)) {
+      throw new Error(`${pack.id}@${pack.version} internal_route_edges provenance_kind is not allowed: ${row.id}`);
+    }
+    const verificationStatus = requiredString(row.verification_status, `internal_route_edges.${row.id}.verification_status`);
+    if (verificationStatus !== "VERIFIED") {
+      throw new Error(`${pack.id}@${pack.version} internal_route_edges verification_status must be VERIFIED: ${row.id}`);
+    }
+    if (!Number.isInteger(row.last_verified_at) || row.last_verified_at <= 0) {
+      throw new Error(`${pack.id}@${pack.version} internal_route_edges verifiedAt is required: ${row.id}`);
+    }
+    requiredProductionSha256(row.evidence_hash, `internal_route_edges.${row.id}.evidence_hash`);
+  }
+}
+
 function validateProductionFacilityProvenance(database, pack) {
   if (pack.artifactKind !== "production" || !hasTable(database, "facilities")) {
     return;
@@ -721,6 +788,8 @@ function validateProductionFacilityProvenance(database, pack) {
     "operational_status",
     "installation_status",
     "confidence",
+    "source_snapshot_id",
+    "provider_record_hash",
   ];
   const columns = new Set(database.prepare("PRAGMA table_info(facilities)").all().map((row) => row.name));
   for (const column of requiredColumns) {
@@ -731,7 +800,8 @@ function validateProductionFacilityProvenance(database, pack) {
   const sourceIds = new Set(pack.sourceInventory.map((source) => source.id));
   const rows = database
     .prepare(`
-      SELECT id, status, source_id, provider_facility_ref, provenance_kind,
+      SELECT id, status, source_id, source_snapshot_id, provider_facility_ref,
+             provider_record_hash, provenance_kind,
              verified_at, retrieved_at, evidence_hash, status_meaning,
              operational_status, installation_status, confidence
       FROM facilities
@@ -747,10 +817,12 @@ function validateProductionFacilityRow(row, sourceIds, pack) {
   if (!sourceIds.has(requiredString(row.source_id, `facilities.${row.id}.source_id`))) {
     throw new Error(`${pack.id}@${pack.version} facilities source_id is not in sourceInventory: ${row.id}`);
   }
+  requiredString(row.source_snapshot_id, `facilities.${row.id}.source_snapshot_id`);
   requiredString(row.provider_facility_ref, `facilities.${row.id}.provider_facility_ref`);
+  requiredProductionSha256(row.provider_record_hash, `facilities.${row.id}.provider_record_hash`);
   validateProductionFacilityProvenanceKind(row, pack);
   validateProductionFacilityEvidenceTimestamps(row, pack);
-  requiredSha256(row.evidence_hash, `facilities.${row.id}.evidence_hash`);
+  requiredProductionSha256(row.evidence_hash, `facilities.${row.id}.evidence_hash`);
   const statusMeaning = requiredString(row.status_meaning, `facilities.${row.id}.status_meaning`);
   requiredString(row.operational_status, `facilities.${row.id}.operational_status`);
   requiredString(row.installation_status, `facilities.${row.id}.installation_status`);
@@ -1506,6 +1578,14 @@ function requiredSha256(value, label) {
   const hash = requiredString(value, label);
   if (!/^[a-f0-9]{64}$/.test(hash)) {
     throw new Error(`${label} must be a lowercase sha256 hex string`);
+  }
+  return hash;
+}
+
+function requiredProductionSha256(value, label) {
+  const hash = requiredSha256(value, label);
+  if (/^([0-9a-f])\1{63}$/.test(hash)) {
+    throw new Error(`${label} is placeholder evidence`);
   }
 }
 

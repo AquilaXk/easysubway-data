@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 6;
+PRAGMA user_version = 7;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -99,6 +99,8 @@ CREATE TABLE network_edges (
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   reliability_score INTEGER NOT NULL DEFAULT 100,
   source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
+  provider_record_hash TEXT NOT NULL DEFAULT '',
   provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
   verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   facility_id TEXT,
@@ -125,7 +127,9 @@ CREATE TABLE facilities (
   floor_to TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT '',
   source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
   provider_facility_ref TEXT NOT NULL DEFAULT '',
+  provider_record_hash TEXT NOT NULL DEFAULT '',
   provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
   verified_at INTEGER NOT NULL DEFAULT 0,
   retrieved_at INTEGER NOT NULL DEFAULT 0,
@@ -168,6 +172,8 @@ CREATE TABLE internal_route_edges (
   reliability_score INTEGER NOT NULL DEFAULT 100,
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
+  provider_record_hash TEXT NOT NULL DEFAULT '',
   provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
   verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   facility_id TEXT,
