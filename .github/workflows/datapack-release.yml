@@ -259,7 +259,7 @@ jobs:
           const isMainBranch = process.env.GITHUB_REF === "refs/heads/main";
           let publishResult = "disabled-or-skipped";
           if (isMainBranch && remotePublishEnabled === "true" && remotePublishReady !== "true") {
-            publishResult = remotePublishResult || "blocked-strict-coverage";
+            publishResult = remotePublishResult || "failed";
           } else if (isMainBranch && remotePublishEnabled === "true") {
             publishResult = remotePublishResult === "success" ? "success" : "failed";
           }
