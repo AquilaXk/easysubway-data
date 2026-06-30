@@ -158,7 +158,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 8);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
@@ -1591,7 +1591,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 8);
     assert.deepEqual(
       {
         ...database
@@ -5306,6 +5306,7 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
   assert.deepEqual(pack.facilities[0], {
     id: "facility-sangnoksu-elevator-1",
     stationId: "station-sangnoksu",
+    lineId: "seoul-4",
     exitId: null,
     type: "ELEVATOR",
     name: "상록수역 1번 승강기",
@@ -5774,8 +5775,8 @@ test("공식 source ingest adapter는 station-line 단위 facility evidence cove
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-facility-line-coverage-${Date.now()}`);
   const input = productionSourceIngestInput();
   input.lines.push({
+    ...input.lines[0],
     id: "seoul-2",
-    operatorId: "seoul-metro",
     nameKo: "수도권 2호선",
     nameEn: "Seoul Subway Line 2",
     color: "#00A84D",
@@ -5790,41 +5791,18 @@ test("공식 source ingest adapter는 station-line 단위 facility evidence cove
     stationLineId: "station-sadang:seoul-2",
     mappingStatus: "active",
   });
+  const sadangLine4 = input.stationLineRows.find((row) => row.sourceStationCode === "MOLIT-SEOUL-4-433");
   input.stationLineRows.push({
-    sourceId: "molit-urban-rail-full-route",
+    ...sadangLine4,
     sourceStationCode: "MOLIT-SEOUL-2-226",
     lineId: "seoul-2",
-    stationNameKo: "사당",
-    stationNameEn: "Sadang",
-    normalizedName: "사당",
-    region: "수도권",
-    latitude: 37.4766,
-    longitude: 126.9816,
     stationCode: "226",
     lineSequence: 26,
     platformInfo: "내선순환 / 외선순환",
-    lastVerifiedAt: "2026-06-21T00:00:00.000Z",
   });
-  const inputPath = path.join(outputDir, "official-source-input.json");
-  const outputPath = path.join(outputDir, "catalog-fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
 
   await assert.rejects(
-    execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/import-official-sources.mjs",
-        "--inventory",
-        "tools/datapack/source-inventory.json",
-        "--input",
-        inputPath,
-        "--output",
-        outputPath,
-      ],
-      { cwd: root },
-    ),
+    importOfficialSourceInput(outputDir, input),
     /production facility evidence missing: station-sadang:seoul-2:ELEVATOR/,
   );
 });
@@ -5840,27 +5818,8 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
     providerRecordHash: sha256("provider:facility-sadang-elevator-kric-2:kric-station-elevator"),
     evidenceHash: sha256("evidence:facility-sadang-elevator-kric-2:kric-station-elevator:2026-06-22T00:00:00.000Z"),
   });
-  const inputPath = path.join(outputDir, "official-source-input.json");
-  const outputPath = path.join(outputDir, "catalog-fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
 
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/import-official-sources.mjs",
-      "--inventory",
-      "tools/datapack/source-inventory.json",
-      "--input",
-      inputPath,
-      "--output",
-      outputPath,
-    ],
-    { cwd: root },
-  );
-
-  const generated = JSON.parse(await readFile(outputPath, "utf8"));
+  const generated = await importOfficialSourceInput(outputDir, input);
   assert.equal(generated.packs[0].facilities.length, 7);
   assert.equal(generated.packs[0].stationFacilityEvidence.length, 6);
   assert.deepEqual(
@@ -5977,7 +5936,7 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       ],
       { cwd: root },
     ),
-    /production facility evidence missing: station-sadang:WHEELCHAIR_LIFT/,
+    /production facility evidence missing: station-sadang:seoul-4:WHEELCHAIR_LIFT/,
   );
 
   await execFileAsync(
@@ -7706,6 +7665,28 @@ function productionSourceIngestInput() {
     },
   ];
   return input;
+}
+
+async function importOfficialSourceInput(outputDir, input) {
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+  return JSON.parse(await readFile(outputPath, "utf8"));
 }
 
 function productionSourceAccessRouteEdge({ id, sourceStationCode, edgeType, stationToLine }) {
