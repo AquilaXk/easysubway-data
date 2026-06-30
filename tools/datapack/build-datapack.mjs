@@ -254,8 +254,11 @@ function requiredSourceSnapshots(value, label) {
 }
 
 function assertSourceSnapshotSet(sourceSnapshotIds, sourceSnapshots) {
-  const ids = requiredStringArray(sourceSnapshotIds, "buildSpec.sourceSnapshotIds").sort();
-  const snapshotIds = sourceSnapshots.map((snapshot) => snapshot.snapshotId).sort();
+  const ids = requiredStringArray(sourceSnapshotIds, "buildSpec.sourceSnapshotIds")
+    .sort((left, right) => left.localeCompare(right));
+  const snapshotIds = sourceSnapshots
+    .map((snapshot) => snapshot.snapshotId)
+    .sort((left, right) => left.localeCompare(right));
   if (JSON.stringify(ids) !== JSON.stringify(snapshotIds)) {
     throw new Error("buildSpec.sourceSnapshotIds must match buildSpec.sourceSnapshots[].snapshotId");
   }

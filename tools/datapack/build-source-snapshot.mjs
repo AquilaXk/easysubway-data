@@ -96,7 +96,8 @@ function rowsFromRaw(raw) {
 }
 
 function schemaFields(records) {
-  return [...new Set(records.flatMap((record) => Object.keys(record)))].sort();
+  return [...new Set(records.flatMap((record) => Object.keys(record)))]
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function sortJson(value) {
