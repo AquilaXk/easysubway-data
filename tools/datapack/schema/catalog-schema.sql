@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 8;
+PRAGMA user_version = 9;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -51,6 +51,85 @@ CREATE TABLE station_lines (
   PRIMARY KEY (station_id, line_id),
   FOREIGN KEY (station_id) REFERENCES stations(id),
   FOREIGN KEY (line_id) REFERENCES lines(id)
+);
+
+CREATE TABLE service_calendars (
+  service_id TEXT NOT NULL PRIMARY KEY,
+  monday INTEGER NOT NULL CHECK (monday IN (0, 1)),
+  tuesday INTEGER NOT NULL CHECK (tuesday IN (0, 1)),
+  wednesday INTEGER NOT NULL CHECK (wednesday IN (0, 1)),
+  thursday INTEGER NOT NULL CHECK (thursday IN (0, 1)),
+  friday INTEGER NOT NULL CHECK (friday IN (0, 1)),
+  saturday INTEGER NOT NULL CHECK (saturday IN (0, 1)),
+  sunday INTEGER NOT NULL CHECK (sunday IN (0, 1)),
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  timezone TEXT NOT NULL DEFAULT 'Asia/Seoul',
+  CHECK (start_date <= end_date)
+);
+
+CREATE TABLE service_calendar_dates (
+  service_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  exception_type INTEGER NOT NULL CHECK (exception_type IN (1, 2)),
+  PRIMARY KEY (service_id, date),
+  FOREIGN KEY (service_id) REFERENCES service_calendars(service_id)
+);
+
+CREATE TABLE transit_routes (
+  id TEXT NOT NULL PRIMARY KEY,
+  line_id TEXT NOT NULL,
+  route_short_name TEXT NOT NULL DEFAULT '',
+  route_long_name TEXT NOT NULL DEFAULT '',
+  direction_name TEXT NOT NULL DEFAULT '',
+  timezone TEXT NOT NULL DEFAULT 'Asia/Seoul',
+  FOREIGN KEY (line_id) REFERENCES lines(id)
+);
+
+CREATE TABLE transit_trips (
+  id TEXT NOT NULL PRIMARY KEY,
+  route_id TEXT NOT NULL,
+  service_id TEXT NOT NULL,
+  trip_headsign TEXT NOT NULL DEFAULT '',
+  direction_id TEXT NOT NULL DEFAULT '',
+  service_pattern TEXT NOT NULL DEFAULT 'LOCAL',
+  service_day_start_seconds INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (route_id) REFERENCES transit_routes(id),
+  FOREIGN KEY (service_id) REFERENCES service_calendars(service_id),
+  CHECK (service_pattern IN ('LOCAL', 'EXPRESS')),
+  CHECK (service_day_start_seconds >= 0 AND service_day_start_seconds < 108000)
+);
+
+CREATE TABLE transit_stop_times (
+  trip_id TEXT NOT NULL,
+  stop_sequence INTEGER NOT NULL,
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  arrival_seconds INTEGER NOT NULL,
+  departure_seconds INTEGER NOT NULL,
+  pickup_type INTEGER NOT NULL DEFAULT 0,
+  drop_off_type INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (trip_id, stop_sequence),
+  FOREIGN KEY (trip_id) REFERENCES transit_trips(id),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id),
+  CHECK (stop_sequence > 0),
+  CHECK (arrival_seconds >= 0 AND arrival_seconds < 108000),
+  CHECK (departure_seconds >= 0 AND departure_seconds < 108000),
+  CHECK (arrival_seconds <= departure_seconds)
+);
+
+CREATE TABLE transit_frequencies (
+  trip_id TEXT NOT NULL,
+  start_time_seconds INTEGER NOT NULL,
+  end_time_seconds INTEGER NOT NULL,
+  headway_seconds INTEGER NOT NULL,
+  exact_times INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (trip_id, start_time_seconds),
+  FOREIGN KEY (trip_id) REFERENCES transit_trips(id),
+  CHECK (start_time_seconds >= 0 AND start_time_seconds < 108000),
+  CHECK (end_time_seconds > start_time_seconds AND end_time_seconds < 108000),
+  CHECK (headway_seconds > 0),
+  CHECK (exact_times IN (0, 1))
 );
 
 CREATE TABLE realtime_provider_line_mappings (
@@ -216,6 +295,9 @@ CREATE TABLE data_quality_records (
 
 CREATE INDEX idx_stations_normalized_name ON stations(normalized_name);
 CREATE INDEX idx_station_lines_line_sequence ON station_lines(line_id, line_sequence);
+CREATE INDEX idx_transit_stop_times_station_line_departure ON transit_stop_times(station_id, line_id, departure_seconds);
+CREATE INDEX idx_transit_stop_times_trip_sequence ON transit_stop_times(trip_id, stop_sequence);
+CREATE INDEX idx_transit_trips_route_service_pattern ON transit_trips(route_id, service_id, service_pattern);
 CREATE INDEX idx_realtime_provider_stations_internal ON realtime_provider_station_mappings(station_id, line_id);
 CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
 CREATE INDEX idx_station_facility_evidence_station ON station_facility_evidence(station_id, line_id);

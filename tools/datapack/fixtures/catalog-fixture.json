@@ -28,6 +28,12 @@
             "lines",
             "stations",
             "station_lines",
+            "service_calendars",
+            "service_calendar_dates",
+            "transit_routes",
+            "transit_trips",
+            "transit_stop_times",
+            "transit_frequencies",
             "network_edges",
             "route_map_positions",
             "station_exits",
@@ -42,6 +48,12 @@
         "lines",
         "stations",
         "station_lines",
+        "service_calendars",
+        "service_calendar_dates",
+        "transit_routes",
+        "transit_trips",
+        "transit_stop_times",
+        "transit_frequencies",
         "network_edges",
         "route_map_positions",
         "station_exits",
@@ -54,6 +66,12 @@
         "lines": 4,
         "stations": 6,
         "station_lines": 9,
+        "service_calendars": 1,
+        "service_calendar_dates": 1,
+        "transit_routes": 2,
+        "transit_trips": 4,
+        "transit_stop_times": 8,
+        "transit_frequencies": 1,
         "network_edges": 19,
         "route_map_positions": 9,
         "station_exits": 1,
@@ -264,6 +282,159 @@
           "stationCode": "211-4",
           "lineSequence": 4,
           "platformInfo": "성수 방면"
+        }
+      ],
+      "serviceCalendars": [
+        {
+          "serviceId": "weekday-2026",
+          "monday": true,
+          "tuesday": true,
+          "wednesday": false,
+          "thursday": true,
+          "friday": true,
+          "saturday": false,
+          "sunday": false,
+          "startDate": "20260701",
+          "endDate": "20261231",
+          "timezone": "Asia/Seoul"
+        }
+      ],
+      "serviceCalendarDates": [
+        {
+          "serviceId": "weekday-2026",
+          "date": "20260701",
+          "exceptionType": 1
+        }
+      ],
+      "transitRoutes": [
+        {
+          "id": "route-seoul-4-oido-bound",
+          "lineId": "seoul-4",
+          "routeShortName": "4",
+          "routeLongName": "수도권 4호선 오이도 방면",
+          "directionName": "오이도 방면",
+          "timezone": "Asia/Seoul"
+        },
+        {
+          "id": "route-seoul-2-inner",
+          "lineId": "seoul-2",
+          "routeShortName": "2",
+          "routeLongName": "수도권 2호선 내선",
+          "directionName": "내선",
+          "timezone": "Asia/Seoul"
+        }
+      ],
+      "transitTrips": [
+        {
+          "id": "trip-seoul-4-local-0805",
+          "routeId": "route-seoul-4-oido-bound",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "오이도",
+          "directionId": "down",
+          "servicePattern": "LOCAL",
+          "serviceDayStartSeconds": 0
+        },
+        {
+          "id": "trip-seoul-4-express-0810",
+          "routeId": "route-seoul-4-oido-bound",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "오이도",
+          "directionId": "down",
+          "servicePattern": "EXPRESS",
+          "serviceDayStartSeconds": 0
+        },
+        {
+          "id": "trip-seoul-2-local-0825",
+          "routeId": "route-seoul-2-inner",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "내선순환",
+          "directionId": "inner",
+          "servicePattern": "LOCAL",
+          "serviceDayStartSeconds": 0
+        },
+        {
+          "id": "trip-seoul-4-local-2505",
+          "routeId": "route-seoul-4-oido-bound",
+          "serviceId": "weekday-2026",
+          "tripHeadsign": "오이도",
+          "directionId": "down",
+          "servicePattern": "LOCAL",
+          "serviceDayStartSeconds": 0
+        }
+      ],
+      "transitStopTimes": [
+        {
+          "tripId": "trip-seoul-4-local-0805",
+          "stopSequence": 1,
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 29100,
+          "departureSeconds": 29100
+        },
+        {
+          "tripId": "trip-seoul-4-local-0805",
+          "stopSequence": 2,
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 29820,
+          "departureSeconds": 29940
+        },
+        {
+          "tripId": "trip-seoul-4-express-0810",
+          "stopSequence": 1,
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 29400,
+          "departureSeconds": 29400
+        },
+        {
+          "tripId": "trip-seoul-4-express-0810",
+          "stopSequence": 2,
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 30000,
+          "departureSeconds": 30120
+        },
+        {
+          "tripId": "trip-seoul-2-local-0825",
+          "stopSequence": 1,
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "arrivalSeconds": 30300,
+          "departureSeconds": 30300
+        },
+        {
+          "tripId": "trip-seoul-2-local-0825",
+          "stopSequence": 2,
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "arrivalSeconds": 30900,
+          "departureSeconds": 30900
+        },
+        {
+          "tripId": "trip-seoul-4-local-2505",
+          "stopSequence": 1,
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 90300,
+          "departureSeconds": 90300
+        },
+        {
+          "tripId": "trip-seoul-4-local-2505",
+          "stopSequence": 2,
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "arrivalSeconds": 91020,
+          "departureSeconds": 91020
+        }
+      ],
+      "transitFrequencies": [
+        {
+          "tripId": "trip-seoul-2-local-0825",
+          "startTimeSeconds": 30300,
+          "endTimeSeconds": 33300,
+          "headwaySeconds": 600,
+          "exactTimes": false
         }
       ],
       "networkEdges": [

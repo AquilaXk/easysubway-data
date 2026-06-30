@@ -42,6 +42,8 @@ function buildFixture(inventory, input) {
     isProductionPack,
   );
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
+  const transitSchedule = transitScheduleRows(input);
+  const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
   validateSelectedSourceRows(input, sourceIds);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
   validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence);
@@ -75,6 +77,7 @@ function buildFixture(inventory, input) {
           "station_lines",
           "network_edges",
           ...(requiresRouteMapPositions ? ["route_map_positions"] : []),
+          ...Object.keys(transitScheduleTableRows),
           "facilities",
           "station_facility_evidence",
         ]),
@@ -86,6 +89,7 @@ function buildFixture(inventory, input) {
           station_lines: productionMinimumRows?.station_lines ?? stationLines.length,
           network_edges: productionMinimumRows?.network_edges ?? networkEdges.length,
           ...(requiresRouteMapPositions ? { route_map_positions: routeMapPositions.length } : {}),
+          ...transitScheduleTableRows,
           facilities: productionMinimumRows?.facilities ?? facilities.length,
           station_facility_evidence: stationFacilityEvidence.length,
         },
@@ -114,6 +118,7 @@ function buildFixture(inventory, input) {
         stationExits: input.stationExits ?? [],
         facilities,
         stationFacilityEvidence,
+        ...transitSchedule,
         movementPathCandidates: movementCandidates,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
         representativeRouteRegressions: input.representativeRouteRegressions ?? [],
@@ -338,6 +343,13 @@ function addPassThroughScopeIds(input, stationIds, lineIds) {
   }
   for (const summary of input.stationAccessibilitySummaries ?? []) {
     stationIds.add(requiredString(summary.stationId, "stationAccessibilitySummaries.stationId"));
+  }
+  for (const route of input.transitRoutes ?? []) {
+    lineIds.add(requiredString(route.lineId, "transitRoutes.lineId"));
+  }
+  for (const stopTime of input.transitStopTimes ?? []) {
+    stationIds.add(requiredString(stopTime.stationId, "transitStopTimes.stationId"));
+    lineIds.add(requiredString(stopTime.lineId, "transitStopTimes.lineId"));
   }
   for (const route of input.representativeRouteRegressions ?? []) {
     addNodeScopeIds(route.fromNodeId, stationIds, lineIds, "representativeRouteRegressions.fromNodeId");
@@ -910,6 +922,40 @@ function routeMapPositionRows(rows, allowedSourceIds, mappingBySourceKey) {
       reviewedAt: requiredString(row.reviewedAt, "routeMapPositions.reviewedAt"),
     };
   });
+}
+
+function transitScheduleRows(input) {
+  return {
+    serviceCalendars: optionalRows(input.serviceCalendars, "serviceCalendars"),
+    serviceCalendarDates: optionalRows(input.serviceCalendarDates, "serviceCalendarDates"),
+    transitRoutes: optionalRows(input.transitRoutes, "transitRoutes"),
+    transitTrips: optionalRows(input.transitTrips, "transitTrips"),
+    transitStopTimes: optionalRows(input.transitStopTimes, "transitStopTimes"),
+    transitFrequencies: optionalRows(input.transitFrequencies, "transitFrequencies"),
+  };
+}
+
+function transitScheduleMinimumTableRows(rows) {
+  return Object.fromEntries(
+    [
+      ["service_calendars", rows.serviceCalendars.length],
+      ["service_calendar_dates", rows.serviceCalendarDates.length],
+      ["transit_routes", rows.transitRoutes.length],
+      ["transit_trips", rows.transitTrips.length],
+      ["transit_stop_times", rows.transitStopTimes.length],
+      ["transit_frequencies", rows.transitFrequencies.length],
+    ].filter(([, count]) => count > 0),
+  );
+}
+
+function optionalRows(value, label) {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array`);
+  }
+  return value;
 }
 
 function nodeIdForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey) {

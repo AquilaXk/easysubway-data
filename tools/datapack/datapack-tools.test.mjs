@@ -116,6 +116,12 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     "lines",
     "stations",
     "station_lines",
+    "service_calendars",
+    "service_calendar_dates",
+    "transit_routes",
+    "transit_trips",
+    "transit_stop_times",
+    "transit_frequencies",
     "network_edges",
     "route_map_positions",
     "station_exits",
@@ -123,6 +129,11 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     "data_quality_records",
   ]);
   assert.equal(pack.minimumTableRows.stations, 6);
+  assert.equal(pack.minimumTableRows.service_calendar_dates, 1);
+  assert.equal(pack.minimumTableRows.transit_routes, 2);
+  assert.equal(pack.minimumTableRows.transit_trips, 4);
+  assert.equal(pack.minimumTableRows.transit_stop_times, 8);
+  assert.equal(pack.minimumTableRows.transit_frequencies, 1);
   assert.equal(pack.minimumTableRows.route_map_positions, 9);
   assert.equal(pack.minimumTableRows.data_quality_records, 5);
   assert.match(pack.sha256, /^[a-f0-9]{64}$/);
@@ -158,12 +169,69 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 8);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 9);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
     assert.equal(database.prepare("SELECT checked_at FROM data_quality_records WHERE id = 'quality-station-sangnoksu'").get().checked_at, 1781827200);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM stations").get().count, 6);
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+              SELECT trip_id, departure_seconds
+              FROM transit_stop_times
+              WHERE station_id = ?
+                AND line_id = ?
+                AND departure_seconds >= ?
+              ORDER BY departure_seconds
+              LIMIT 1
+            `,
+          )
+          .get("station-sangnoksu", "seoul-4", 8 * 3600 + 2 * 60),
+      },
+      {
+        trip_id: "trip-seoul-4-local-0805",
+        departure_seconds: 8 * 3600 + 5 * 60,
+      },
+    );
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+              SELECT st.trip_id, st.departure_seconds
+              FROM transit_stop_times st
+              JOIN transit_trips t ON t.id = st.trip_id
+              JOIN service_calendars c ON c.service_id = t.service_id
+              LEFT JOIN service_calendar_dates d ON d.service_id = t.service_id AND d.date = ?
+              WHERE st.station_id = ?
+                AND st.line_id = ?
+                AND st.departure_seconds >= ?
+                AND ? BETWEEN c.start_date AND c.end_date
+                AND (d.exception_type = 1 OR (d.exception_type IS NULL AND c.wednesday = 1))
+              ORDER BY st.departure_seconds
+              LIMIT 1
+            `,
+          )
+          .get("20260701", "station-sangnoksu", "seoul-4", 8 * 3600 + 2 * 60, "20260701"),
+      },
+      {
+        trip_id: "trip-seoul-4-local-0805",
+        departure_seconds: 8 * 3600 + 5 * 60,
+      },
+    );
+    assert.equal(
+      database.prepare("SELECT service_pattern FROM transit_trips WHERE id = 'trip-seoul-4-express-0810'").get()
+        .service_pattern,
+      "EXPRESS",
+    );
+    assert.equal(
+      database.prepare("SELECT MAX(departure_seconds) AS max_departure FROM transit_stop_times").get().max_departure,
+      91020,
+    );
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_frequencies").get().count, 1);
     const routeMapPositions = database
       .prepare(`
         SELECT station_id, line_id, region, x, y, label_polygon, source_id, license_status,
@@ -297,6 +365,44 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   } finally {
     database.close();
   }
+});
+
+test("데이터팩 검증기는 trip별 stop_time 시간이 역행하면 거부한다", async () => {
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-stop-time-invalid-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const row = fixture.packs[0].transitStopTimes.find(
+    (stopTime) =>
+      stopTime.tripId === "trip-seoul-4-local-0805" &&
+      stopTime.stationId === "station-sadang",
+  );
+  row.arrivalSeconds = 8 * 3600 + 3 * 60;
+  row.departureSeconds = 8 * 3600 + 3 * 60;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /transit_stop_times must be monotonic/,
+  );
 });
 
 test("데이터팩 생성기는 buildSpec 요청으로 candidate provenance를 남긴다", async () => {
@@ -1836,7 +1942,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 8);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 9);
     assert.deepEqual(
       {
         ...database
@@ -6128,6 +6234,91 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
       "tools/datapack/build-datapack.mjs",
       "--fixture",
       outputPath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+});
+
+test("공식 source ingest adapter는 canonical transit schedule rows를 보존한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-schedule-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  input.serviceCalendars = [
+    {
+      serviceId: "weekday-2026",
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: "20260701",
+      endDate: "20261231",
+    },
+  ];
+  input.transitRoutes = [
+    {
+      id: "route-seoul-4-oido",
+      lineId: "seoul-4",
+      routeShortName: "4",
+      routeLongName: "상록수-사당",
+      directionName: "사당 방면",
+    },
+  ];
+  input.transitTrips = [
+    {
+      id: "trip-seoul-4-local-0805",
+      routeId: "route-seoul-4-oido",
+      serviceId: "weekday-2026",
+      tripHeadsign: "사당",
+      directionId: "0",
+      servicePattern: "LOCAL",
+    },
+  ];
+  input.transitStopTimes = [
+    {
+      tripId: "trip-seoul-4-local-0805",
+      stopSequence: 1,
+      stationId: "station-sangnoksu",
+      lineId: "seoul-4",
+      arrivalSeconds: 29100,
+      departureSeconds: 29100,
+    },
+    {
+      tripId: "trip-seoul-4-local-0805",
+      stopSequence: 2,
+      stationId: "station-sadang",
+      lineId: "seoul-4",
+      arrivalSeconds: 33300,
+      departureSeconds: 33320,
+    },
+  ];
+
+  const generated = await importOfficialSourceInput(outputDir, input);
+  assert.equal(generated.packs[0].requiredTables.includes("transit_stop_times"), true);
+  assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 2);
+  assert.equal(generated.packs[0].transitStopTimes[0].tripId, "trip-seoul-4-local-0805");
+
+  const packOutputDir = path.join(outputDir, "pack");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      path.join(outputDir, "catalog-fixture.json"),
       "--output",
       packOutputDir,
     ],

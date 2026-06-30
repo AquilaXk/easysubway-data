@@ -125,6 +125,7 @@ function validateSqlite(sqlitePath, pack) {
     }
 
     validateNetworkEdgeReferences(database, pack);
+    validateTransitSchedule(database, pack);
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
@@ -149,6 +150,105 @@ function validateSqlite(sqlitePath, pack) {
 function validateNetworkEdgeReferences(database, pack) {
   validateNetworkEdgeStationLineEndpoints(database, pack);
   validateNetworkEdgeFacilityReferences(database, pack);
+}
+
+function validateTransitSchedule(database, pack) {
+  if (!hasTable(database, "transit_trips")) {
+    return;
+  }
+
+  const calendars = new Map(
+    database
+      .prepare(
+        `
+        SELECT service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday,
+               start_date, end_date
+        FROM service_calendars
+      `,
+      )
+      .all()
+      .map((row) => [row.service_id, row]),
+  );
+  const routes = new Map(
+    database
+      .prepare("SELECT id, line_id FROM transit_routes")
+      .all()
+      .map((row) => [row.id, row]),
+  );
+  const trips = database
+    .prepare("SELECT id, route_id, service_id FROM transit_trips ORDER BY id")
+    .all();
+  for (const trip of trips) {
+    const calendar = calendars.get(trip.service_id);
+    if (!calendar || !serviceCalendarHasActiveDate(calendar)) {
+      throw new Error(`${pack.id}@${pack.version} transit_trips service_id is not active: ${trip.id}`);
+    }
+    const route = routes.get(trip.route_id);
+    if (!route) {
+      throw new Error(`${pack.id}@${pack.version} transit_trips route_id is missing: ${trip.id}`);
+    }
+    const stopTimes = database
+      .prepare(
+        `
+        SELECT stop_sequence, station_id, line_id, arrival_seconds, departure_seconds
+        FROM transit_stop_times
+        WHERE trip_id = ?
+        ORDER BY stop_sequence
+      `,
+      )
+      .all(trip.id);
+    if (stopTimes.length < 2) {
+      throw new Error(`${pack.id}@${pack.version} transit_trips must have at least 2 stop_times: ${trip.id}`);
+    }
+    let previousSequence = 0;
+    let previousDeparture = -1;
+    for (const stopTime of stopTimes) {
+      if (stopTime.stop_sequence <= previousSequence) {
+        throw new Error(`${pack.id}@${pack.version} transit_stop_times stop_sequence must be strictly increasing: ${trip.id}`);
+      }
+      if (stopTime.arrival_seconds > stopTime.departure_seconds) {
+        throw new Error(`${pack.id}@${pack.version} transit_stop_times arrival_seconds must be <= departure_seconds: ${trip.id}`);
+      }
+      if (stopTime.arrival_seconds < previousDeparture) {
+        throw new Error(`${pack.id}@${pack.version} transit_stop_times must be monotonic: ${trip.id}`);
+      }
+      if (stopTime.line_id !== route.line_id) {
+        throw new Error(`${pack.id}@${pack.version} transit_stop_times line_id must match route line_id: ${trip.id}`);
+      }
+      previousSequence = stopTime.stop_sequence;
+      previousDeparture = stopTime.departure_seconds;
+    }
+  }
+
+  if (hasTable(database, "transit_frequencies")) {
+    const frequencies = database
+      .prepare("SELECT trip_id, start_time_seconds, end_time_seconds, headway_seconds FROM transit_frequencies")
+      .all();
+    const tripIds = new Set(trips.map((trip) => trip.id));
+    for (const frequency of frequencies) {
+      if (!tripIds.has(frequency.trip_id)) {
+        throw new Error(`${pack.id}@${pack.version} transit_frequencies trip_id is missing: ${frequency.trip_id}`);
+      }
+      if (frequency.end_time_seconds <= frequency.start_time_seconds || frequency.headway_seconds <= 0) {
+        throw new Error(`${pack.id}@${pack.version} transit_frequencies time range is invalid: ${frequency.trip_id}`);
+      }
+    }
+  }
+}
+
+function serviceCalendarHasActiveDate(calendar) {
+  if (calendar.start_date > calendar.end_date) {
+    return false;
+  }
+  return [
+    calendar.monday,
+    calendar.tuesday,
+    calendar.wednesday,
+    calendar.thursday,
+    calendar.friday,
+    calendar.saturday,
+    calendar.sunday,
+  ].some((value) => value === 1);
 }
 
 function validateRegionalQualityMetricsMatchDatabase(database, pack) {

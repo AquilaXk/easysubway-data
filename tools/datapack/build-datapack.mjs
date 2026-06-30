@@ -717,6 +717,123 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       );
       insertRows(
         database,
+        "service_calendars",
+        [
+          "service_id",
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+          "sunday",
+          "start_date",
+          "end_date",
+          "timezone",
+        ],
+        pack.serviceCalendars ?? [],
+        (row) => [
+          requiredString(row.serviceId, "serviceCalendars.serviceId"),
+          boolFlag(row.monday, "serviceCalendars.monday"),
+          boolFlag(row.tuesday, "serviceCalendars.tuesday"),
+          boolFlag(row.wednesday, "serviceCalendars.wednesday"),
+          boolFlag(row.thursday, "serviceCalendars.thursday"),
+          boolFlag(row.friday, "serviceCalendars.friday"),
+          boolFlag(row.saturday, "serviceCalendars.saturday"),
+          boolFlag(row.sunday, "serviceCalendars.sunday"),
+          serviceDate(row.startDate, "serviceCalendars.startDate"),
+          serviceDate(row.endDate, "serviceCalendars.endDate"),
+          row.timezone ?? "Asia/Seoul",
+        ],
+      );
+      insertRows(
+        database,
+        "service_calendar_dates",
+        ["service_id", "date", "exception_type"],
+        pack.serviceCalendarDates ?? [],
+        (row) => [
+          requiredString(row.serviceId, "serviceCalendarDates.serviceId"),
+          serviceDate(row.date, "serviceCalendarDates.date"),
+          requiredInteger(row.exceptionType, "serviceCalendarDates.exceptionType"),
+        ],
+      );
+      insertRows(
+        database,
+        "transit_routes",
+        ["id", "line_id", "route_short_name", "route_long_name", "direction_name", "timezone"],
+        pack.transitRoutes ?? [],
+        (row) => [
+          requiredString(row.id, "transitRoutes.id"),
+          requiredString(row.lineId, "transitRoutes.lineId"),
+          row.routeShortName ?? "",
+          row.routeLongName ?? "",
+          row.directionName ?? "",
+          row.timezone ?? "Asia/Seoul",
+        ],
+      );
+      insertRows(
+        database,
+        "transit_trips",
+        [
+          "id",
+          "route_id",
+          "service_id",
+          "trip_headsign",
+          "direction_id",
+          "service_pattern",
+          "service_day_start_seconds",
+        ],
+        pack.transitTrips ?? [],
+        (row) => [
+          requiredString(row.id, "transitTrips.id"),
+          requiredString(row.routeId, "transitTrips.routeId"),
+          requiredString(row.serviceId, "transitTrips.serviceId"),
+          row.tripHeadsign ?? "",
+          row.directionId ?? "",
+          row.servicePattern ?? "LOCAL",
+          row.serviceDayStartSeconds ?? 0,
+        ],
+      );
+      insertRows(
+        database,
+        "transit_stop_times",
+        [
+          "trip_id",
+          "stop_sequence",
+          "station_id",
+          "line_id",
+          "arrival_seconds",
+          "departure_seconds",
+          "pickup_type",
+          "drop_off_type",
+        ],
+        pack.transitStopTimes ?? [],
+        (row) => [
+          requiredString(row.tripId, "transitStopTimes.tripId"),
+          requiredPositiveInteger(row.stopSequence, "transitStopTimes.stopSequence"),
+          requiredString(row.stationId, "transitStopTimes.stationId"),
+          requiredString(row.lineId, "transitStopTimes.lineId"),
+          requiredNonNegativeInteger(row.arrivalSeconds, "transitStopTimes.arrivalSeconds"),
+          requiredNonNegativeInteger(row.departureSeconds, "transitStopTimes.departureSeconds"),
+          row.pickupType ?? 0,
+          row.dropOffType ?? 0,
+        ],
+      );
+      insertRows(
+        database,
+        "transit_frequencies",
+        ["trip_id", "start_time_seconds", "end_time_seconds", "headway_seconds", "exact_times"],
+        pack.transitFrequencies ?? [],
+        (row) => [
+          requiredString(row.tripId, "transitFrequencies.tripId"),
+          requiredNonNegativeInteger(row.startTimeSeconds, "transitFrequencies.startTimeSeconds"),
+          requiredPositiveInteger(row.endTimeSeconds, "transitFrequencies.endTimeSeconds"),
+          requiredPositiveInteger(row.headwaySeconds, "transitFrequencies.headwaySeconds"),
+          boolFlag(row.exactTimes ?? false, "transitFrequencies.exactTimes"),
+        ],
+      );
+      insertRows(
+        database,
         "realtime_provider_line_mappings",
         [
           "provider_id",
@@ -1482,6 +1599,14 @@ function requiredNonNegativeFiniteNumber(value, label) {
     throw new Error(`${label} must be a non-negative number`);
   }
   return Math.round(value * 1000) / 1000;
+}
+
+function serviceDate(value, label) {
+  const text = requiredString(value, label);
+  if (!/^\d{8}$/.test(text)) {
+    throw new Error(`${label} must be YYYYMMDD`);
+  }
+  return text;
 }
 
 function schemaVersionNumber(value, label) {
