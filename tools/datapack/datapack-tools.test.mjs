@@ -2874,6 +2874,45 @@ test("데이터팩 검증기는 strict coverage gap 뒤의 production provenance
   );
 });
 
+test("데이터팩 검증기는 production pathway edge 증거 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-pathway-provenance-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  fixture.packs[0].stationPathwayEdges[0].providerRecordHash = "";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /station_pathway_edges\.path-edge-sangnoksu-entry-platform-elevator\.provider_record_hash/,
+  );
+});
+
 test("데이터팩 검증기는 UNKNOWN accessibility edge provenance를 검증한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-provenance-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -8711,6 +8750,15 @@ function markFixturePackProduction(fixture) {
     edge.evidenceHash = edge.evidenceHash ?? sha256(`evidence:${edge.id}:capital-official-stations:${edge.lastVerifiedAt}`);
   }
   for (const edge of pack.internalRouteEdges ?? []) {
+    edge.sourceId = "capital-official-stations";
+    edge.sourceSnapshotId = "capital-official-stations-snapshot-20260619";
+    edge.providerRecordHash = edge.providerRecordHash ?? sha256(`provider:${edge.id}:capital-official-stations`);
+    edge.provenanceKind = "OFFICIAL_SOURCE";
+    edge.verificationStatus = "VERIFIED";
+    edge.lastVerifiedAt = edge.lastVerifiedAt ?? "2026-06-19T00:00:00Z";
+    edge.evidenceHash = edge.evidenceHash ?? sha256(`evidence:${edge.id}:capital-official-stations:${edge.lastVerifiedAt}`);
+  }
+  for (const edge of pack.stationPathwayEdges ?? []) {
     edge.sourceId = "capital-official-stations";
     edge.sourceSnapshotId = "capital-official-stations-snapshot-20260619";
     edge.providerRecordHash = edge.providerRecordHash ?? sha256(`provider:${edge.id}:capital-official-stations`);

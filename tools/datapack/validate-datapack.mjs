@@ -129,6 +129,7 @@ function validateSqlite(sqlitePath, pack) {
     validateStationPathways(database, pack);
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
+    validateProductionStationPathwayEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
     validateProductionStationFacilityEvidence(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
@@ -1029,6 +1030,57 @@ function validateProductionInternalRouteEdgeProvenance(database, pack) {
       throw new Error(`${pack.id}@${pack.version} internal_route_edges verifiedAt is required: ${row.id}`);
     }
     requiredProductionSha256(row.evidence_hash, `internal_route_edges.${row.id}.evidence_hash`);
+  }
+}
+
+function validateProductionStationPathwayEdgeProvenance(database, pack) {
+  if (pack.artifactKind !== "production" || !hasTable(database, "station_pathway_edges")) {
+    return;
+  }
+  const requiredColumns = [
+    "source_id",
+    "source_snapshot_id",
+    "provider_record_hash",
+    "provenance_kind",
+    "verification_status",
+    "last_verified_at",
+    "evidence_hash",
+  ];
+  const columns = new Set(database.prepare("PRAGMA table_info(station_pathway_edges)").all().map((row) => row.name));
+  for (const column of requiredColumns) {
+    if (!columns.has(column)) {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges provenance column missing: ${column}`);
+    }
+  }
+
+  const sourceIds = new Set(pack.sourceInventory.map((source) => source.id));
+  const rows = database
+    .prepare(`
+      SELECT id, source_id, source_snapshot_id, provider_record_hash,
+             provenance_kind, verification_status, last_verified_at, evidence_hash
+      FROM station_pathway_edges
+      ORDER BY id
+    `)
+    .all();
+  for (const row of rows) {
+    const sourceId = requiredString(row.source_id, `station_pathway_edges.${row.id}.source_id`);
+    if (!sourceIds.has(sourceId)) {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges source_id is not in sourceInventory: ${row.id}`);
+    }
+    requiredString(row.source_snapshot_id, `station_pathway_edges.${row.id}.source_snapshot_id`);
+    requiredProductionSha256(row.provider_record_hash, `station_pathway_edges.${row.id}.provider_record_hash`);
+    const provenanceKind = requiredString(row.provenance_kind, `station_pathway_edges.${row.id}.provenance_kind`);
+    if (!productionFacilityProvenanceKinds.includes(provenanceKind)) {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges provenance_kind is not allowed: ${row.id}`);
+    }
+    const verificationStatus = requiredString(row.verification_status, `station_pathway_edges.${row.id}.verification_status`);
+    if (verificationStatus !== "VERIFIED") {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges verification_status must be VERIFIED: ${row.id}`);
+    }
+    if (!Number.isInteger(row.last_verified_at) || row.last_verified_at <= 0) {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges verifiedAt is required: ${row.id}`);
+    }
+    requiredProductionSha256(row.evidence_hash, `station_pathway_edges.${row.id}.evidence_hash`);
   }
 }
 
