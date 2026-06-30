@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 9;
+PRAGMA user_version = 10;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -285,6 +285,69 @@ CREATE TABLE internal_route_edges (
   FOREIGN KEY (to_node_id) REFERENCES internal_route_nodes(id)
 );
 
+CREATE TABLE station_pathway_nodes (
+  id TEXT NOT NULL PRIMARY KEY,
+  station_id TEXT NOT NULL,
+  line_id TEXT,
+  node_type TEXT NOT NULL,
+  label TEXT NOT NULL,
+  level TEXT NOT NULL DEFAULT '',
+  legacy_internal_route_node_id TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (station_id) REFERENCES stations(id),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
+);
+
+CREATE TABLE station_pathway_edges (
+  id TEXT NOT NULL PRIMARY KEY,
+  from_node_id TEXT NOT NULL,
+  to_node_id TEXT NOT NULL,
+  edge_type TEXT NOT NULL DEFAULT 'WALK',
+  duration_seconds INTEGER NOT NULL DEFAULT 0 CHECK (duration_seconds >= 0),
+  distance_meters INTEGER NOT NULL DEFAULT 0 CHECK (distance_meters >= 0),
+  bidirectional INTEGER NOT NULL DEFAULT 0 CHECK (bidirectional IN (0, 1)),
+  includes_stairs INTEGER NOT NULL DEFAULT 0 CHECK (includes_stairs IN (0, 1)),
+  requires_elevator INTEGER NOT NULL DEFAULT 0 CHECK (requires_elevator IN (0, 1)),
+  requires_escalator INTEGER NOT NULL DEFAULT 0 CHECK (requires_escalator IN (0, 1)),
+  level_from TEXT NOT NULL DEFAULT '',
+  level_to TEXT NOT NULL DEFAULT '',
+  requires_facility_id TEXT,
+  min_width_cm INTEGER,
+  slope_percent REAL,
+  vertical_meters REAL,
+  reliability_score INTEGER NOT NULL DEFAULT 100 CHECK (reliability_score >= 0 AND reliability_score <= 100),
+  accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
+  provider_record_hash TEXT NOT NULL DEFAULT '',
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  last_verified_at INTEGER NOT NULL DEFAULT 0,
+  evidence_hash TEXT NOT NULL DEFAULT '',
+  instruction TEXT NOT NULL DEFAULT '',
+  legacy_internal_route_edge_id TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (from_node_id) REFERENCES station_pathway_nodes(id),
+  FOREIGN KEY (to_node_id) REFERENCES station_pathway_nodes(id),
+  FOREIGN KEY (requires_facility_id) REFERENCES facilities(id)
+);
+
+CREATE TABLE transfer_rules (
+  id TEXT NOT NULL PRIMARY KEY,
+  from_station_id TEXT NOT NULL,
+  from_line_id TEXT NOT NULL,
+  to_station_id TEXT NOT NULL,
+  to_line_id TEXT NOT NULL,
+  transfer_type TEXT NOT NULL DEFAULT 'IN_STATION',
+  min_transfer_seconds INTEGER NOT NULL DEFAULT 0 CHECK (min_transfer_seconds >= 0),
+  pathway_edge_id TEXT,
+  strict_step_free_pathway_edge_id TEXT,
+  source_id TEXT NOT NULL DEFAULT '',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  FOREIGN KEY (from_station_id, from_line_id) REFERENCES station_lines(station_id, line_id),
+  FOREIGN KEY (to_station_id, to_line_id) REFERENCES station_lines(station_id, line_id),
+  FOREIGN KEY (pathway_edge_id) REFERENCES station_pathway_edges(id),
+  FOREIGN KEY (strict_step_free_pathway_edge_id) REFERENCES station_pathway_edges(id)
+);
+
 CREATE TABLE data_quality_records (
   id TEXT NOT NULL PRIMARY KEY,
   target_type TEXT NOT NULL,
@@ -329,3 +392,6 @@ CREATE TABLE route_map_positions (
 CREATE INDEX idx_facilities_station ON facilities(station_id);
 CREATE INDEX idx_route_map_positions_region_line ON route_map_positions(region, line_id);
 CREATE INDEX idx_internal_route_edges_from ON internal_route_edges(from_node_id);
+CREATE INDEX idx_station_pathway_nodes_station ON station_pathway_nodes(station_id, line_id, node_type);
+CREATE INDEX idx_station_pathway_edges_from ON station_pathway_edges(from_node_id);
+CREATE INDEX idx_transfer_rules_from_line ON transfer_rules(from_station_id, from_line_id);

@@ -34,6 +34,9 @@
             "transit_trips",
             "transit_stop_times",
             "transit_frequencies",
+            "transfer_rules",
+            "station_pathway_nodes",
+            "station_pathway_edges",
             "network_edges",
             "route_map_positions",
             "station_exits",
@@ -54,6 +57,9 @@
         "transit_trips",
         "transit_stop_times",
         "transit_frequencies",
+        "transfer_rules",
+        "station_pathway_nodes",
+        "station_pathway_edges",
         "network_edges",
         "route_map_positions",
         "station_exits",
@@ -72,10 +78,13 @@
         "transit_trips": 4,
         "transit_stop_times": 8,
         "transit_frequencies": 1,
+        "transfer_rules": 1,
+        "station_pathway_nodes": 6,
+        "station_pathway_edges": 5,
         "network_edges": 19,
         "route_map_positions": 9,
         "station_exits": 1,
-        "facilities": 3,
+        "facilities": 4,
         "data_quality_records": 5
       },
       "metadata": {
@@ -952,6 +961,16 @@
           "floorFrom": "B1",
           "floorTo": "B1",
           "description": "대합실 내부"
+        },
+        {
+          "id": "facility-sadang-transfer-elevator-1",
+          "stationId": "station-sadang",
+          "type": "ELEVATOR",
+          "name": "2호선-4호선 환승 엘리베이터",
+          "status": "NORMAL",
+          "floorFrom": "B2",
+          "floorTo": "B3",
+          "description": "환승 통로 step-free fixture"
         }
       ],
       "stationAccessibilitySummaries": [
@@ -991,6 +1010,168 @@
           "reliabilityScore": 88,
           "accessibilityStatus": "AVAILABLE",
           "instruction": "엘리베이터를 이용해 1번 출구로 이동"
+        }
+      ],
+      "stationPathwayNodes": [
+        {
+          "id": "path-node-sangnoksu-entrance-1",
+          "stationId": "station-sangnoksu",
+          "nodeType": "ENTRANCE",
+          "label": "상록수역 1번 출입구",
+          "level": "1F"
+        },
+        {
+          "id": "path-node-sangnoksu-concourse",
+          "stationId": "station-sangnoksu",
+          "nodeType": "CONCOURSE",
+          "label": "상록수역 대합실",
+          "level": "B1",
+          "legacyInternalRouteNodeId": "node-sangnoksu-concourse"
+        },
+        {
+          "id": "path-node-sangnoksu-platform-4",
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "nodeType": "PLATFORM",
+          "label": "상록수역 4호선 승강장",
+          "level": "B2"
+        },
+        {
+          "id": "path-node-sangnoksu-exit-1",
+          "stationId": "station-sangnoksu",
+          "nodeType": "EXIT",
+          "label": "상록수역 1번 출구",
+          "level": "1F",
+          "legacyInternalRouteNodeId": "node-sangnoksu-exit-1"
+        },
+        {
+          "id": "path-node-sadang-platform-4",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "nodeType": "PLATFORM",
+          "label": "사당역 4호선 승강장",
+          "level": "B3"
+        },
+        {
+          "id": "path-node-sadang-platform-2",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "nodeType": "PLATFORM",
+          "label": "사당역 2호선 승강장",
+          "level": "B2"
+        }
+      ],
+      "stationPathwayEdges": [
+        {
+          "id": "path-edge-sangnoksu-entry-platform-elevator",
+          "fromNodeId": "path-node-sangnoksu-entrance-1",
+          "toNodeId": "path-node-sangnoksu-platform-4",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 180,
+          "distanceMeters": 56,
+          "bidirectional": true,
+          "requiresElevator": true,
+          "levelFrom": "1F",
+          "levelTo": "B2",
+          "requiresFacilityId": "facility-sangnoksu-elevator-1",
+          "minWidthCm": 90,
+          "verticalMeters": 9.5,
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "엘리베이터로 4호선 승강장까지 이동"
+        },
+        {
+          "id": "path-edge-sangnoksu-platform-exit-elevator",
+          "fromNodeId": "path-node-sangnoksu-platform-4",
+          "toNodeId": "path-node-sangnoksu-exit-1",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 170,
+          "distanceMeters": 52,
+          "bidirectional": true,
+          "requiresElevator": true,
+          "levelFrom": "B2",
+          "levelTo": "1F",
+          "requiresFacilityId": "facility-sangnoksu-elevator-1",
+          "minWidthCm": 90,
+          "verticalMeters": 9.5,
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "승강장에서 1번 출구까지 엘리베이터로 이동"
+        },
+        {
+          "id": "path-edge-sangnoksu-concourse-exit-1",
+          "fromNodeId": "path-node-sangnoksu-concourse",
+          "toNodeId": "path-node-sangnoksu-exit-1",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 120,
+          "distanceMeters": 42,
+          "bidirectional": false,
+          "requiresElevator": true,
+          "levelFrom": "B1",
+          "levelTo": "1F",
+          "requiresFacilityId": "facility-sangnoksu-elevator-1",
+          "reliabilityScore": 88,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "엘리베이터를 이용해 1번 출구로 이동",
+          "legacyInternalRouteEdgeId": "edge-sangnoksu-concourse-exit-1"
+        },
+        {
+          "id": "path-edge-sadang-4-to-2-fast",
+          "fromNodeId": "path-node-sadang-platform-4",
+          "toNodeId": "path-node-sadang-platform-2",
+          "edgeType": "STAIRS",
+          "durationSeconds": 210,
+          "distanceMeters": 120,
+          "bidirectional": true,
+          "includesStairs": true,
+          "levelFrom": "B3",
+          "levelTo": "B2",
+          "reliabilityScore": 80,
+          "accessibilityStatus": "LIMITED",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "계단 환승 통로로 2호선 승강장 이동"
+        },
+        {
+          "id": "path-edge-sadang-4-to-2-step-free",
+          "fromNodeId": "path-node-sadang-platform-4",
+          "toNodeId": "path-node-sadang-platform-2",
+          "edgeType": "ELEVATOR",
+          "durationSeconds": 360,
+          "distanceMeters": 150,
+          "bidirectional": true,
+          "requiresElevator": true,
+          "levelFrom": "B3",
+          "levelTo": "B2",
+          "requiresFacilityId": "facility-sadang-transfer-elevator-1",
+          "minWidthCm": 90,
+          "verticalMeters": 5.2,
+          "reliabilityScore": 82,
+          "accessibilityStatus": "AVAILABLE",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED",
+          "instruction": "엘리베이터 환승 통로로 2호선 승강장 이동"
+        }
+      ],
+      "transferRules": [
+        {
+          "id": "transfer-sadang-seoul-4-to-seoul-2",
+          "fromStationId": "station-sadang",
+          "fromLineId": "seoul-4",
+          "toStationId": "station-sadang",
+          "toLineId": "seoul-2",
+          "transferType": "IN_STATION",
+          "minTransferSeconds": 210,
+          "pathwayEdgeId": "path-edge-sadang-4-to-2-fast",
+          "strictStepFreePathwayEdgeId": "path-edge-sadang-4-to-2-step-free",
+          "sourceId": "fixture-capital-catalog",
+          "verificationStatus": "VERIFIED"
         }
       ],
       "dataQualityRecords": [
