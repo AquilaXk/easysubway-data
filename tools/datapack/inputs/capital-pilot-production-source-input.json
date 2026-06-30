@@ -34,7 +34,7 @@
     "includedLineIds": ["seoul-4"],
     "includedStationIds": ["station-sangnoksu", "station-sadang"],
     "facilityCoverageDenominator": {
-      "kind": "station_x_required_facility_type",
+      "kind": "station_line_x_required_facility_type",
       "expectedRows": 6
     },
     "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]

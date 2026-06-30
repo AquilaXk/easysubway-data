@@ -312,7 +312,8 @@ function validateSupportedScopeDenominator(input, stationRows, networkEdges, fac
     rowOperatorIds,
     "supportedV1Scope.includedOperatorIds missing production station row",
   );
-  validateFacilityCoverageDenominator(supportedV1Scope.facilityCoverageDenominator, includedStationIds.size, supportedV1Scope);
+  const stationLineCount = new Set(stationRows.map(({ mapping }) => `${mapping.stationId}:${mapping.lineId}`)).size;
+  validateFacilityCoverageDenominator(supportedV1Scope.facilityCoverageDenominator, stationLineCount, supportedV1Scope);
 }
 
 function operatorIdsForLines(lineIds, lineOperatorIds) {
@@ -352,12 +353,12 @@ function addNodeScopeIds(nodeId, stationIds, lineIds, label = "networkEdges.node
   }
 }
 
-function validateFacilityCoverageDenominator(value, stationCount, supportedV1Scope) {
+function validateFacilityCoverageDenominator(value, stationLineCount, supportedV1Scope) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("supportedV1Scope.facilityCoverageDenominator must be an object for production pack");
   }
-  if (value.kind !== "station_x_required_facility_type") {
-    throw new Error("supportedV1Scope.facilityCoverageDenominator.kind must be station_x_required_facility_type");
+  if (value.kind !== "station_line_x_required_facility_type") {
+    throw new Error("supportedV1Scope.facilityCoverageDenominator.kind must be station_line_x_required_facility_type");
   }
   const requiredFacilityTypes = requiredStringArray(
     supportedV1Scope.requiredFacilityTypes,
@@ -367,10 +368,10 @@ function validateFacilityCoverageDenominator(value, stationCount, supportedV1Sco
     value.expectedRows,
     "supportedV1Scope.facilityCoverageDenominator.expectedRows",
   );
-  const computedRows = stationCount * requiredFacilityTypes.length;
+  const computedRows = stationLineCount * requiredFacilityTypes.length;
   if (expectedRows !== computedRows) {
     throw new Error(
-      `supportedV1Scope.facilityCoverageDenominator.expectedRows must equal includedStationIds x requiredFacilityTypes: ${computedRows}`,
+      `supportedV1Scope.facilityCoverageDenominator.expectedRows must equal stationLines x requiredFacilityTypes: ${computedRows}`,
     );
   }
 }
@@ -399,16 +400,17 @@ function validateSupportedFacilityCoverage(input, stationRows, stationFacilityEv
   if (!Array.isArray(requiredFacilityTypes) || requiredFacilityTypes.length === 0) {
     throw new Error("supportedV1Scope.requiredFacilityTypes must be a non-empty array for production pack");
   }
-  const stationIds = new Set(stationRows.map(({ mapping }) => mapping.stationId));
+  const stationLineKeys = new Set(stationRows.map(({ mapping }) => `${mapping.stationId}:${mapping.lineId}`));
   const evidenceKeys = new Set(
-    stationFacilityEvidence.map(
-      (evidence) =>
-        `${evidence.stationId}:${requiredString(evidence.facilityType, "stationFacilityEvidence.facilityType")}`,
-    ),
+    stationFacilityEvidence.map((evidence) => {
+      const lineId = requiredString(evidence.lineId, "stationFacilityEvidence.lineId");
+      const facilityType = requiredString(evidence.facilityType, "stationFacilityEvidence.facilityType");
+      return `${evidence.stationId}:${lineId}:${facilityType}`;
+    }),
   );
-  for (const stationId of [...stationIds].sort((left, right) => left.localeCompare(right))) {
+  for (const stationLineKey of [...stationLineKeys].sort((left, right) => left.localeCompare(right))) {
     for (const facilityType of requiredStringArray(requiredFacilityTypes, "supportedV1Scope.requiredFacilityTypes")) {
-      const key = `${stationId}:${facilityType}`;
+      const key = `${stationLineKey}:${facilityType}`;
       if (!evidenceKeys.has(key)) {
         throw new Error(`production facility evidence missing: ${key}`);
       }
@@ -777,10 +779,10 @@ function stationFacilityEvidenceRows(input, facilities, isProductionPack) {
   const facilitiesByCoverageKey = new Map();
   for (const facility of facilities) {
     const key = `${facility.stationId}:${facility.lineId}:${requiredString(facility.type, "facilities.type")}`;
-    if (facilitiesByCoverageKey.has(key)) {
-      throw new Error(`duplicate production facility evidence: ${key}`);
+    const current = facilitiesByCoverageKey.get(key);
+    if (!current || facility.id.localeCompare(current.id) < 0) {
+      facilitiesByCoverageKey.set(key, facility);
     }
-    facilitiesByCoverageKey.set(key, facility);
   }
 
   const rows = [];

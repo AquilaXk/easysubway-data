@@ -5770,6 +5770,126 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
   );
 });
 
+test("공식 source ingest adapter는 station-line 단위 facility evidence coverage를 요구한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-facility-line-coverage-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  input.lines.push({
+    id: "seoul-2",
+    operatorId: "seoul-metro",
+    nameKo: "수도권 2호선",
+    nameEn: "Seoul Subway Line 2",
+    color: "#00A84D",
+  });
+  input.supportedV1Scope.includedLineIds.push("seoul-2");
+  input.supportedV1Scope.facilityCoverageDenominator.expectedRows = 9;
+  input.stationMappings.push({
+    sourceId: "molit-urban-rail-full-route",
+    sourceStationCode: "MOLIT-SEOUL-2-226",
+    lineId: "seoul-2",
+    stationId: "station-sadang",
+    stationLineId: "station-sadang:seoul-2",
+    mappingStatus: "active",
+  });
+  input.stationLineRows.push({
+    sourceId: "molit-urban-rail-full-route",
+    sourceStationCode: "MOLIT-SEOUL-2-226",
+    lineId: "seoul-2",
+    stationNameKo: "사당",
+    stationNameEn: "Sadang",
+    normalizedName: "사당",
+    region: "수도권",
+    latitude: 37.4766,
+    longitude: 126.9816,
+    stationCode: "226",
+    lineSequence: 26,
+    platformInfo: "내선순환 / 외선순환",
+    lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+  });
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        inputPath,
+        "--output",
+        outputPath,
+      ],
+      { cwd: root },
+    ),
+    /production facility evidence missing: station-sadang:seoul-2:ELEVATOR/,
+  );
+});
+
+test("공식 source ingest adapter는 동일 station-line-type 시설을 evidence row 하나로 집계한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-duplicate-facility-evidence-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  input.facilityRows.push({
+    ...input.facilityRows.find((row) => row.id === "facility-sadang-elevator-kric-1"),
+    id: "facility-sadang-elevator-kric-2",
+    name: "사당 엘리베이터 설치 정보 2",
+    providerFacilityRef: "facility-sadang-elevator-kric-2",
+    providerRecordHash: sha256("provider:facility-sadang-elevator-kric-2:kric-station-elevator"),
+    evidenceHash: sha256("evidence:facility-sadang-elevator-kric-2:kric-station-elevator:2026-06-22T00:00:00.000Z"),
+  });
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const outputPath = path.join(outputDir, "catalog-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const generated = JSON.parse(await readFile(outputPath, "utf8"));
+  assert.equal(generated.packs[0].facilities.length, 7);
+  assert.equal(generated.packs[0].stationFacilityEvidence.length, 6);
+  assert.deepEqual(
+    generated.packs[0].stationFacilityEvidence
+      .filter(
+        (row) =>
+          row.stationId === "station-sadang" &&
+          row.lineId === "seoul-4" &&
+          row.facilityType === "ELEVATOR",
+      )
+      .map(({ stationId, lineId, facilityType, sourceId, strictRouteEligible }) => ({
+        stationId,
+        lineId,
+        facilityType,
+        sourceId,
+        strictRouteEligible,
+      })),
+    [
+      {
+        stationId: "station-sadang",
+        lineId: "seoul-4",
+        facilityType: "ELEVATOR",
+        sourceId: "kric-station-elevator",
+        strictRouteEligible: true,
+      },
+    ],
+  );
+});
+
 test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 노출한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
   const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
@@ -7381,7 +7501,7 @@ function productionSourceIngestInput() {
     includedLineIds: ["seoul-4"],
     includedStationIds: ["station-sangnoksu", "station-sadang"],
     facilityCoverageDenominator: {
-      kind: "station_x_required_facility_type",
+      kind: "station_line_x_required_facility_type",
       expectedRows: 6,
     },
     requiredFacilityTypes: ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
