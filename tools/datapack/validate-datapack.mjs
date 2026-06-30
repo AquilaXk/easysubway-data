@@ -681,6 +681,7 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
   const coverage = productionVerifiedCoverage(database, edgeRows);
 
   for (const edge of edgeRows) {
+    validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
     if (isAccessibilityCoverageCandidate(edge)) {
       validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack);
     }
@@ -709,6 +710,16 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
       );
     }
   }
+}
+
+function validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack) {
+  const sourceId = requiredString(edge.source_id, `network_edges.${edge.id}.source_id`);
+  if (!sourceUpdatedAtById.has(sourceId)) {
+    throw new Error(`${pack.id}@${pack.version} network_edges source_id is not in sourceInventory: ${edge.id}`);
+  }
+  requiredString(edge.source_snapshot_id, `network_edges.${edge.id}.source_snapshot_id`);
+  requiredProductionSha256(edge.provider_record_hash, `network_edges.${edge.id}.provider_record_hash`);
+  requiredProductionSha256(edge.evidence_hash, `network_edges.${edge.id}.evidence_hash`);
 }
 
 function validateProductionInternalRouteEdgeProvenance(database, pack) {
@@ -856,9 +867,6 @@ function validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, 
   if (sourceUpdatedAt === undefined) {
     throw new Error(`${pack.id}@${pack.version} network_edges accessibility edge source_id is not in sourceInventory: ${edge.id}`);
   }
-  requiredString(edge.source_snapshot_id, `network_edges.${edge.id}.source_snapshot_id`);
-  requiredProductionSha256(edge.provider_record_hash, `network_edges.${edge.id}.provider_record_hash`);
-  requiredProductionSha256(edge.evidence_hash, `network_edges.${edge.id}.evidence_hash`);
   const provenanceKind = requiredString(edge.provenance_kind, `network_edges.${edge.id}.provenance_kind`);
   if (!["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(provenanceKind)) {
     throw new Error(`${pack.id}@${pack.version} network_edges accessibility edge provenance_kind is not allowed: ${edge.id}`);
