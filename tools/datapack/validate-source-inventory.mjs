@@ -118,6 +118,9 @@ function validateCapability(capability, source, sourceId, name) {
   if (status === "UNSUPPORTED" && capability.productionUseAllowed !== false) {
     throw new Error(`${sourceId}.capabilities.${name}.productionUseAllowed must be false when unsupported`);
   }
+  if (status !== "SUPPORTED" && capability.productionUseAllowed !== false) {
+    throw new Error(`${sourceId}.capabilities.${name}.productionUseAllowed requires SUPPORTED status`);
+  }
   if (
     capability.productionUseAllowed &&
     (source.license.commercialUseAllowed !== true || source.license.redistributionAllowed !== true)

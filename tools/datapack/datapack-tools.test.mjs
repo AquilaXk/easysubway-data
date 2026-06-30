@@ -4703,6 +4703,32 @@ test("source inventory 검증기는 provider 조건이 막힌 live ETA 승격을
   );
 });
 
+test("source inventory 검증기는 candidate capability의 production 사용 승격을 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  const scheduleSource = invalidInventory.sources.find((source) => source.id === "molit-tago-subway-info");
+  scheduleSource.capabilities.schedule.productionUseAllowed = true;
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-candidate-production-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /productionUseAllowed requires SUPPORTED status/,
+  );
+});
+
 test("source inventory 검증기는 v1 optional source가 production 필수로 남는 것을 거부한다", async () => {
   const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const invalidInventory = structuredClone(sourceInventory);
