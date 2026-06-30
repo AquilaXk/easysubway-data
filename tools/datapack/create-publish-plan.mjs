@@ -60,6 +60,13 @@ async function main() {
         sizeBytes: manifestBytes.length,
         packCount: manifest.packs.length,
       },
+      {
+        type: "verify-manifest-object",
+        objectKey: "catalog/current.json",
+        sha256: sha256(manifestBytes),
+        sizeBytes: manifestBytes.length,
+        packCount: manifest.packs.length,
+      },
     ],
   };
 

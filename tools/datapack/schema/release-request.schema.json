@@ -13,6 +13,7 @@
     "sourceSnapshotSetHash",
     "approvedLedgerHash",
     "requestedBy",
+    "approvedBy",
     "approvalId",
     "targetChannel"
   ],
@@ -25,6 +26,7 @@
     "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
     "approvedLedgerHash": { "$ref": "#/$defs/sha256" },
     "requestedBy": { "type": "string", "minLength": 1 },
+    "approvedBy": { "type": "string", "minLength": 1 },
     "approvalId": { "type": "string", "minLength": 1 },
     "targetChannel": { "enum": ["dev", "staging", "production"] }
   },

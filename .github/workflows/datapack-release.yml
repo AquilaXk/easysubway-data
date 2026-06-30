@@ -11,6 +11,47 @@ on:
       - apps/mobile/lib/core/database/catalog/**
       - .github/workflows/datapack-release.yml
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Data pack release mode
+        type: choice
+        required: true
+        default: exploratory
+        options:
+          - exploratory
+          - release-candidate
+          - production-publish
+      buildSpecPath:
+        description: Production build spec path
+        required: true
+        default: tools/datapack/fixtures/candidate-build-spec.json
+      allowGaps:
+        description: Allow exploratory coverage gaps
+        type: boolean
+        required: true
+        default: false
+      targetChannel:
+        description: Target data pack channel
+        type: choice
+        required: true
+        default: dev
+        options:
+          - dev
+          - staging
+          - production
+      releaseRequestId:
+        description: Admin release request id
+        required: true
+        default: exploratory-local
+      releaseRequestPath:
+        description: Admin release request record path
+        required: false
+      androidEvidencePath:
+        description: Android datapack evidence bundle path
+        required: false
+      strictRouteRegressionPath:
+        description: Strict route regression evidence path
+        required: false
 
 permissions:
   contents: read
@@ -23,6 +64,8 @@ jobs:
   data-pack-release:
     name: Data Pack Release
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.mode == 'production-publish' && 'production-datapack' || 'datapack-release-check' }}
     env:
       NODE_OPTIONS: --disable-warning=ExperimentalWarning
 
@@ -51,7 +94,106 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT=${{ runner.temp }}/easysubway-production-gate-validation.log"
             echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
+            echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${{ runner.temp }}/easysubway-datapack-stage/release-evidence-bundle.json"
           } >> "${GITHUB_ENV}"
+
+      - name: Data Pack Release / Validate release mode inputs
+        id: release-mode
+        env:
+          MODE_INPUT: ${{ github.event.inputs.mode }}
+          BUILD_SPEC_PATH_INPUT: ${{ github.event.inputs.buildSpecPath }}
+          ALLOW_GAPS_INPUT: ${{ github.event.inputs.allowGaps }}
+          TARGET_CHANNEL_INPUT: ${{ github.event.inputs.targetChannel }}
+          RELEASE_REQUEST_ID_INPUT: ${{ github.event.inputs.releaseRequestId }}
+          RELEASE_REQUEST_PATH_INPUT: ${{ github.event.inputs.releaseRequestPath }}
+          ANDROID_EVIDENCE_PATH_INPUT: ${{ github.event.inputs.androidEvidencePath }}
+          STRICT_ROUTE_REGRESSION_PATH_INPUT: ${{ github.event.inputs.strictRouteRegressionPath }}
+        run: |
+          set -euo pipefail
+          mode="${MODE_INPUT:-exploratory}"
+          build_spec="${BUILD_SPEC_PATH_INPUT:-tools/datapack/fixtures/candidate-build-spec.json}"
+          allow_gaps="${ALLOW_GAPS_INPUT:-}"
+          target_channel="${TARGET_CHANNEL_INPUT:-dev}"
+          release_request_id="${RELEASE_REQUEST_ID_INPUT:-exploratory-${GITHUB_RUN_ID}}"
+          release_request_path="${RELEASE_REQUEST_PATH_INPUT:-}"
+          android_evidence_path="${ANDROID_EVIDENCE_PATH_INPUT:-}"
+          strict_route_regression_path="${STRICT_ROUTE_REGRESSION_PATH_INPUT:-}"
+
+          if [[ -z "${allow_gaps}" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" && "${mode}" == "exploratory" ]]; then
+              allow_gaps=true
+            else
+              allow_gaps=false
+            fi
+          fi
+          if [[ "${mode}" =~ ^(release-candidate|production-publish)$ ]]; then
+            if [[ "${allow_gaps}" != "false" ]]; then
+              echo "release mode cannot use --allow-gaps" >&2
+              exit 1
+            fi
+            if [[ "${build_spec}" =~ (fixture|debug|demo|sample) || "${build_spec}" == tools/datapack/fixtures/* ]]; then
+              echo "release mode cannot use fixture input" >&2
+              exit 1
+            fi
+            test -n "${release_request_id}"
+            test -f "${build_spec}"
+            test -n "${android_evidence_path}"
+            test -f "${android_evidence_path}"
+            test -n "${strict_route_regression_path}"
+            test -f "${strict_route_regression_path}"
+            if [[ "${mode}" == "production-publish" ]]; then
+              test -n "${release_request_path}"
+              test -f "${release_request_path}"
+            fi
+            node - "${build_spec}" "${release_request_id}" "${release_request_path}" "${target_channel}" "${mode}" <<'NODE'
+            const fs = require("fs");
+            const crypto = require("crypto");
+            const [buildSpecPath, releaseRequestId, releaseRequestPath, targetChannel, mode] = process.argv.slice(2);
+            const marker = /(fixture|debug|demo|sample)/i;
+            const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+            const requireHash = (value, label) => {
+              if (!/^[a-f0-9]{64}$/.test(String(value ?? ""))) throw new Error(`${label} must be sha256`);
+            };
+            const buildSpec = JSON.parse(fs.readFileSync(buildSpecPath, "utf8"));
+            if (buildSpec.artifactKind !== "datapack-candidate-build-spec") throw new Error("buildSpec.artifactKind must be datapack-candidate-build-spec");
+            if (marker.test(buildSpec.fixturePath ?? "")) throw new Error("release mode cannot use fixture input");
+            if (!Array.isArray(buildSpec.sourceSnapshotIds) || buildSpec.sourceSnapshotIds.length === 0) throw new Error("buildSpec.sourceSnapshotIds must not be empty");
+            for (const field of ["sourceSnapshotSetHash", "approvedAliasLedgerHash", "facilityEvidenceLedgerHash", "routeEvidenceLedgerHash", "approvedOverrideSetHash", "sourceInventorySha256"]) {
+              requireHash(buildSpec[field], `buildSpec.${field}`);
+            }
+            if (releaseRequestPath) {
+              const request = JSON.parse(fs.readFileSync(releaseRequestPath, "utf8"));
+              if (request.artifactKind !== "datapack-release-request") throw new Error("release request artifactKind must be datapack-release-request");
+              if (request.approvalId !== releaseRequestId) throw new Error("releaseRequestId must match approvalId");
+              if (!request.requestedBy || !request.approvedBy || request.requestedBy === request.approvedBy) throw new Error("release request approver must differ from requester");
+              if (request.targetChannel !== targetChannel) throw new Error("release request targetChannel mismatch");
+              if (request.buildSpecSha256 !== sha256(buildSpecPath)) throw new Error("release request buildSpecSha256 mismatch");
+              if (request.sourceSnapshotSetHash !== buildSpec.sourceSnapshotSetHash) throw new Error("release request sourceSnapshotSetHash mismatch");
+              if (request.approvedLedgerHash !== buildSpec.approvedAliasLedgerHash) throw new Error("release request approvedLedgerHash mismatch");
+              if (mode === "production-publish" && targetChannel !== "production") throw new Error("production-publish requires targetChannel=production");
+            }
+            NODE
+          fi
+          if [[ "${mode}" == "production-publish" && "${target_channel}" != "production" ]]; then
+            echo "production-publish requires targetChannel=production" >&2
+            exit 1
+          fi
+
+          {
+            echo "EASYSUBWAY_DATAPACK_RELEASE_MODE=${mode}"
+            echo "EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH=${build_spec}"
+            echo "EASYSUBWAY_DATAPACK_ALLOW_GAPS=${allow_gaps}"
+            echo "EASYSUBWAY_DATAPACK_TARGET_CHANNEL=${target_channel}"
+            echo "EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID=${release_request_id}"
+            echo "EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH=${release_request_path}"
+            echo "EASYSUBWAY_ANDROID_EVIDENCE_PATH=${android_evidence_path}"
+            echo "EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH=${strict_route_regression_path}"
+          } >> "${GITHUB_ENV}"
+          {
+            echo "mode=${mode}"
+            echo "allow_gaps=${allow_gaps}"
+            echo "target_channel=${target_channel}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Data Pack Release / Restore GitHub Actions dotenv secret
         env:
@@ -84,13 +226,17 @@ jobs:
         id: release-fixture
         run: |
           set -euo pipefail
-          node tools/datapack/apply-admin-review-overrides.mjs \
-            --fixture tools/datapack/fixtures/catalog-fixture.json \
-            --overrides tools/datapack/fixtures/admin-review-overrides.json \
-            --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
-          build_fixture="${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
           remote_publish_ready=false
-          if [[ "${{ steps.remote-publish-env.outputs.enabled }}" == "true" ]]; then
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "exploratory" ]]; then
+            node tools/datapack/apply-admin-review-overrides.mjs \
+              --fixture tools/datapack/fixtures/catalog-fixture.json \
+              --overrides tools/datapack/fixtures/admin-review-overrides.json \
+              --output "${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
+            build_fixture="${EASYSUBWAY_DATAPACK_REVIEWED_FIXTURE}"
+          elif [[ "${{ steps.remote-publish-env.outputs.enabled }}" != "true" ]]; then
+            echo "release mode requires production publish env" >&2
+            exit 1
+          else
             node tools/datapack/import-official-sources.mjs \
               --inventory tools/datapack/source-inventory.json \
               --input tools/datapack/inputs/capital-pilot-production-source-input.json \
@@ -109,7 +255,7 @@ jobs:
               --require-production > "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}" 2>&1; then
               build_fixture="${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
               remote_publish_ready=true
-            elif grep -qE 'verified (ENTRY|EXIT|TRANSFER) coverage gap' "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"; then
+            elif [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "exploratory" ]] && grep -qE 'verified (ENTRY|EXIT|TRANSFER) coverage gap' "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"; then
               cat "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"
               echo "Production source strict route coverage is not ready; remote publish will be skipped." >&2
               echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=blocked-strict-coverage" >> "${GITHUB_ENV}"
@@ -153,18 +299,30 @@ jobs:
           node tools/datapack/validate-datapack.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
             --root "${EASYSUBWAY_DATAPACK_OUTPUT}"
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+            node tools/datapack/validate-datapack.mjs \
+              --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+              --root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
+              --require-production
+            node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (manifest.channel !== process.env.EASYSUBWAY_DATAPACK_TARGET_CHANNEL) throw new Error('manifest channel must match targetChannel');"
+          fi
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
       - name: Data Pack Release / Write coverage gap evidence
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
-          node tools/datapack/report-coverage-gaps.mjs \
-            --targets tools/datapack/nationwide-coverage-targets.json \
-            --inventory tools/datapack/source-inventory.json \
-            --provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json" \
-            --output "${EASYSUBWAY_COVERAGE_GAP_REPORT}" \
-            --allow-gaps
+          coverage_args=(
+            tools/datapack/report-coverage-gaps.mjs
+            --targets tools/datapack/nationwide-coverage-targets.json
+            --inventory tools/datapack/source-inventory.json
+            --provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json"
+            --output "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
+          )
+          if [[ "${EASYSUBWAY_DATAPACK_ALLOW_GAPS}" == "true" ]]; then
+            coverage_args+=(--allow-gaps)
+          fi
+          node "${coverage_args[@]}"
           test -s "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
 
       - name: Data Pack Release / Stage pack files
@@ -192,6 +350,70 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
+      - name: Data Pack Release / Write release evidence bundle
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const { createHash } = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+
+          const hashFile = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          const zeroHash = "0".repeat(64);
+          const stage = process.env.EASYSUBWAY_DATAPACK_STAGE;
+          const manifestPath = path.join(stage, "catalog", "current.json");
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const pack = manifest.packs?.[0] ?? {};
+          const catalogDir = path.join(stage, "catalog");
+          const gzipFile = fs.readdirSync(catalogDir).find((name) => name.endsWith(".sqlite.gz"));
+          const releaseMode = process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE;
+          const releaseLike = /^(release-candidate|production-publish)$/.test(releaseMode);
+          const strictEvidence = process.env.EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH || "";
+          const androidEvidence = process.env.EASYSUBWAY_ANDROID_EVIDENCE_PATH || "";
+          const externalStatus = (file) => file && fs.existsSync(file) ? "PASS" : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
+          const externalHash = (file) => file && fs.existsSync(file) ? hashFile(file) : zeroHash;
+
+          const bundle = {
+            schemaVersion: 1,
+            artifactKind: "datapack-release-evidence-bundle",
+            candidateId: `${pack.id ?? "unknown"}@${pack.version ?? "unknown"}`,
+            scopeId: "capital_pilot_android_v1",
+            releaseRequestId: process.env.EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID,
+            builderGitSha: process.env.GITHUB_SHA,
+            buildSpecSha256: hashFile(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH),
+            supportedDenominatorSha256: hashFile("apps/mobile/release/production-datapack-scope.json"),
+            sourceSnapshotSetHash: pack.sourceSnapshotSetHash ?? zeroHash,
+            approvedAliasLedgerHash: pack.approvedAliasLedgerHash ?? zeroHash,
+            facilityEvidenceLedgerHash: pack.facilityEvidenceLedgerHash ?? zeroHash,
+            routeEvidenceLedgerHash: pack.routeEvidenceLedgerHash ?? zeroHash,
+            approvedOverrideSetHash: pack.approvedOverrideSetHash ?? zeroHash,
+            normalizedSourceInventorySha256: hashFile(`${process.env.EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json`),
+            sqliteSha256: pack.sqliteSha256 ?? pack.sha256 ?? zeroHash,
+            gzipSha256: gzipFile ? hashFile(path.join(catalogDir, gzipFile)) : zeroHash,
+            manifestSha256: hashFile(manifestPath),
+            coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
+            strictRouteRegressionSha256: externalHash(strictEvidence),
+            androidEvidenceSha256: externalHash(androidEvidence),
+            validatorStatus: "PASS",
+            coverageStatus: releaseLike ? "PASS" : "BLOCKED_EXTERNAL",
+            strictRouteRegressionStatus: externalStatus(strictEvidence),
+            manifestSignatureStatus: "PASS",
+            androidEvidenceStatus: externalStatus(androidEvidence),
+            createdAt: new Date().toISOString(),
+            workflowRunUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+          };
+          fs.writeFileSync(process.env.EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE, `${JSON.stringify(bundle, null, 2)}\n`);
+          NODE
+
+      - name: Data Pack Release / Validate release evidence bundle
+        run: |
+          set -euo pipefail
+          bundle_args=(--bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}")
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+            bundle_args+=(--require-pass)
+          fi
+          node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
+
       - name: Data Pack Release / Create manifest-last publish preflight plan
         run: |
           set -euo pipefail
@@ -210,9 +432,12 @@ jobs:
             --dry-run
 
       - name: Data Pack Release / Publish staged data packs to object storage
-        if: ${{ steps.remote-publish-env.outputs.enabled == 'true' && steps.release-fixture.outputs.remote_publish_ready == 'true' && github.ref == 'refs/heads/main' }}
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.remote-publish-env.outputs.enabled == 'true' && steps.release-fixture.outputs.remote_publish_ready == 'true' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
+          node tools/datapack/validate-release-evidence-bundle.mjs \
+            --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}" \
+            --require-pass
           node tools/datapack/validate-datapack.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
@@ -220,6 +445,10 @@ jobs:
           node tools/datapack/publish-object-storage.mjs \
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
+          node tools/datapack/publish-object-storage.mjs \
+            --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}" \
+            --verify-only
           echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=success" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Write observability metadata

@@ -12,6 +12,7 @@ async function main() {
   const planPath = path.resolve(requireArg(args, "plan"));
   const root = path.resolve(requireArg(args, "root"));
   const dryRun = args.has("dry-run");
+  const verifyOnly = args.has("verify-only");
   const plan = JSON.parse(await readFile(planPath, "utf8"));
   validatePlan(plan);
 
@@ -23,14 +24,14 @@ async function main() {
     if (step.type === "put-pack-object") {
       const bytes = await readAndVerifySource(root, step);
       putPackKeys.add(step.objectKey);
-      if (!dryRun) {
+      if (!dryRun && !verifyOnly) {
         await client.putObject(step.objectKey, bytes, step);
       }
       continue;
     }
 
     if (step.type === "verify-pack-object") {
-      if (!putPackKeys.has(step.objectKey)) {
+      if (!verifyOnly && !putPackKeys.has(step.objectKey)) {
         throw new Error(`${step.objectKey} must be uploaded before verification`);
       }
       if (!dryRun) {
@@ -47,8 +48,15 @@ async function main() {
         }
       }
       const bytes = await readAndVerifySource(root, step);
-      if (!dryRun) {
+      if (!dryRun && !verifyOnly) {
         await client.putObject(step.objectKey, bytes, step);
+      }
+      continue;
+    }
+
+    if (step.type === "verify-manifest-object") {
+      if (!dryRun) {
+        await client.verifyObject(step.objectKey, step);
       }
       continue;
     }
@@ -336,8 +344,8 @@ function parseArgs(argv) {
   const args = new Map();
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
-    if (key === "--dry-run") {
-      args.set("dry-run", "true");
+    if (key === "--dry-run" || key === "--verify-only") {
+      args.set(key.slice(2), "true");
       continue;
     }
     const value = argv[index + 1];
