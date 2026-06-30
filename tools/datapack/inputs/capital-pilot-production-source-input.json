@@ -209,7 +209,10 @@
       "stairAccessState": "STEP_FREE",
       "accessibilityStatus": "AVAILABLE",
       "reliabilityScore": 90,
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
+      "providerRecordHash": "a8d89e3b88c24a493843e41fd9b88f4c5072e2097f497db839421843efc1d7e9",
+      "evidenceHash": "be00b0216a07fa6ff0146b7b5835a31812b86819aad3344805695dfb44f6fcae"
     },
     {
       "id": "edge-sadang-sangnoksu-seoul-4",
@@ -232,7 +235,10 @@
       "stairAccessState": "STEP_FREE",
       "accessibilityStatus": "AVAILABLE",
       "reliabilityScore": 90,
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
+      "providerRecordHash": "f32228b9dbbfd6b5d565cb70986c07c6e5343c698099b012dc65084efb3d8d40",
+      "evidenceHash": "c4ca5a18552c5128e3c6d4d8fdb2efa661a23295f0d8da1b6d8dda862b21cb15"
     },
     {
       "id": "edge-entry-sangnoksu-seoul-4",
@@ -256,7 +262,10 @@
       "stairAccessState": "STEP_FREE",
       "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
+      "providerRecordHash": "ee6ab5a5882a1e9c81f919fcb05f6bfe02ec5607c51853f3a4f3ce53d8a058bf",
+      "evidenceHash": "41f4363d98aa42f92789af27296c14d98ee971c5625186c8cba5460916568b11"
     },
     {
       "id": "edge-exit-sangnoksu-seoul-4",
@@ -280,7 +289,10 @@
       "stairAccessState": "STEP_FREE",
       "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
+      "providerRecordHash": "27ed1e1be5e2aeb83f1a1e86ad2dcaf4da1a3b3abdcda508ad02ab949082f7e5",
+      "evidenceHash": "17e5c458684e7db1fc91170b4bca993ef2b4765ed63f12dcec866e4c34fbb372"
     },
     {
       "id": "edge-entry-sadang-seoul-4",
@@ -304,7 +316,10 @@
       "stairAccessState": "STEP_FREE",
       "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
+      "providerRecordHash": "d0f9b22a6ade2e8f29246adbe77d1d132114160a0662cedf155d37e7538c67a8",
+      "evidenceHash": "88507607bb4524312d3bb9c0d3a159310fec1e046a84a2a4ba0e8011ed0e1b90"
     },
     {
       "id": "edge-exit-sadang-seoul-4",
@@ -328,7 +343,10 @@
       "stairAccessState": "STEP_FREE",
       "accessibilityStatus": "UNKNOWN",
       "reliabilityScore": 90,
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
+      "providerRecordHash": "242aa0ae45f7589ced7818c3e8d0e77d7de27cec77765b914e055c4ca7605a0f",
+      "evidenceHash": "a3b03c2cd0fc3fb8445cb2e4946329380db7a50d8b153ba7701674d991a72343"
     }
   ],
   "routeMapPositions": [],
@@ -353,7 +371,9 @@
       "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
       "verifiedAt": "2026-06-22T00:00:00.000Z",
       "retrievedAt": "2026-06-22T00:00:00.000Z",
-      "evidenceHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sourceSnapshotId": "kric-station-elevator-snapshot-20260622",
+      "providerRecordHash": "c4fd27ffa4fb74e7bec8fc999ca451e278af1e5da4f7ba88724037ec8f444b9c",
+      "evidenceHash": "c16a378e0b324a89a67993db79d014e345361feb30320bbe9ef94970f6dd3d0c",
       "confidence": 80
     },
     {
@@ -376,7 +396,9 @@
       "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
       "verifiedAt": "2026-06-22T00:00:00.000Z",
       "retrievedAt": "2026-06-22T00:00:00.000Z",
-      "evidenceHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "sourceSnapshotId": "kric-station-escalator-snapshot-20260622",
+      "providerRecordHash": "7b7cbc828ba75d84892f882fd1f662b3249ea22220416494aead6b4d06871313",
+      "evidenceHash": "d1d80be7ee47434aa97da90738d46920c6496705a1aa9bfc4dae433ccd40569b",
       "confidence": 80
     },
     {
@@ -399,7 +421,9 @@
       "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
       "verifiedAt": "2026-06-22T00:00:00.000Z",
       "retrievedAt": "2026-06-22T00:00:00.000Z",
-      "evidenceHash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sourceSnapshotId": "kric-wheelchair-lift-location-snapshot-20260622",
+      "providerRecordHash": "ac5dd54bd87ce1a359da54ea802588b954b5b159de2fad9e45a52a3cb6a048e1",
+      "evidenceHash": "530a8763eea424ad0547a6ead5c410f189dd18b826807cc8695c336d87ffa1dd",
       "confidence": 80
     },
     {
@@ -422,7 +446,9 @@
       "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
       "verifiedAt": "2026-06-22T00:00:00.000Z",
       "retrievedAt": "2026-06-22T00:00:00.000Z",
-      "evidenceHash": "4444444444444444444444444444444444444444444444444444444444444444",
+      "sourceSnapshotId": "kric-station-elevator-snapshot-20260622",
+      "providerRecordHash": "f74b9c5c9fc09aef35b6cbffac5f266924eaab6f96b82adbaf7962452f67aa8a",
+      "evidenceHash": "4e3ab4493fb855193adc2fece2ab0fba818f2ae6e2dd5aaa5cca2b9f8cba3762",
       "confidence": 80
     },
     {
@@ -445,7 +471,9 @@
       "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
       "verifiedAt": "2026-06-22T00:00:00.000Z",
       "retrievedAt": "2026-06-22T00:00:00.000Z",
-      "evidenceHash": "5555555555555555555555555555555555555555555555555555555555555555",
+      "sourceSnapshotId": "kric-station-escalator-snapshot-20260622",
+      "providerRecordHash": "9cf55196ca4efe8289d1310bd809985cc615808700e180c676f071cb95c47960",
+      "evidenceHash": "3d36abf19dc7a5979c6fc7ac94c72d8672cb9f30037aabe84fdef898a909427f",
       "confidence": 80
     },
     {
@@ -468,7 +496,9 @@
       "description": "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
       "verifiedAt": "2026-06-22T00:00:00.000Z",
       "retrievedAt": "2026-06-22T00:00:00.000Z",
-      "evidenceHash": "6666666666666666666666666666666666666666666666666666666666666666",
+      "sourceSnapshotId": "kric-wheelchair-lift-location-snapshot-20260622",
+      "providerRecordHash": "dd48d0d4c29eec180120bcc3eae4ab2eec1b7b5220e097c9622d4228987b56f5",
+      "evidenceHash": "8a6b6a9f1b53e799f494436c23f08cf82b69c0725a2bbe7d118e4a1775987a60",
       "confidence": 80
     }
   ],
@@ -482,6 +512,9 @@
         "lineId": "seoul-4"
       },
       "facilityType": "ELEVATOR",
+      "sourceSnapshotId": "kric-station-elevator-movement-snapshot-20260622",
+      "providerRecordHash": "425dd4503d963c2954792cbfe7946a4932899873bcfeda20b4ab8309ffbe1b12",
+      "evidenceHash": "51b4ac1b21da7a911bc49e64d7b32f26dbc86dc8ec47e3a9880786277ce9e31c",
       "fromLabel": "출입구",
       "toLabel": "승강장",
       "movementOrder": 1,
@@ -496,6 +529,9 @@
         "lineId": "seoul-4"
       },
       "facilityType": "WHEELCHAIR_LIFT",
+      "sourceSnapshotId": "kric-wheelchair-lift-movement-snapshot-20260622",
+      "providerRecordHash": "2991c4a0ad58d6c1b035028e6747e05a4ab8af3f3c5cd3a644f9e3a64e144d67",
+      "evidenceHash": "368d8d883e75d402355e29c26154869b5ae0434db9ba6cbe0020193c7e4af2b3",
       "fromLabel": "대합실",
       "toLabel": "승강장",
       "movementOrder": 2,

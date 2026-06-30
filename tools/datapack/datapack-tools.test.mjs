@@ -7282,7 +7282,9 @@ function productionSourceIngestInput() {
     description: "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
     verifiedAt: "2026-06-22T00:00:00.000Z",
     retrievedAt: "2026-06-22T00:00:00.000Z",
-    evidenceHash: `${String(index + 1).repeat(64)}`,
+    sourceSnapshotId: `${sourceId}-snapshot-20260622`,
+    providerRecordHash: sha256(`provider:${id}:${sourceId}`),
+    evidenceHash: sha256(`evidence:${id}:${sourceId}:2026-06-22T00:00:00.000Z`),
     confidence: 80,
   }));
   input.movementPathCandidates = [
@@ -7398,6 +7400,9 @@ function productionSourceAccessRouteEdge({ id, sourceStationCode, edgeType, stat
     accessibilityStatus: "AVAILABLE",
     reliabilityScore: 90,
     lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+    sourceSnapshotId: "seoulmetro-station-line-info-snapshot-20260621",
+    providerRecordHash: sha256(`provider:${id}:seoulmetro-station-line-info`),
+    evidenceHash: sha256(`evidence:${id}:seoulmetro-station-line-info:2026-06-21T00:00:00.000Z`),
   };
 }
 
@@ -7490,17 +7495,31 @@ function markFixturePackProduction(fixture) {
   ];
   for (const edge of pack.networkEdges) {
     edge.sourceId = "capital-official-stations";
+    edge.sourceSnapshotId = "capital-official-stations-snapshot-20260619";
+    edge.providerRecordHash = edge.providerRecordHash ?? sha256(`provider:${edge.id}:capital-official-stations`);
     edge.provenanceKind = "OFFICIAL_SOURCE";
     edge.verificationStatus = "VERIFIED";
     edge.lastVerifiedAt = edge.lastVerifiedAt ?? "2026-06-19T00:00:00Z";
+    edge.evidenceHash = edge.evidenceHash ?? sha256(`evidence:${edge.id}:capital-official-stations:${edge.lastVerifiedAt}`);
   }
-  for (const [index, facility] of pack.facilities.entries()) {
+  for (const edge of pack.internalRouteEdges ?? []) {
+    edge.sourceId = "capital-official-stations";
+    edge.sourceSnapshotId = "capital-official-stations-snapshot-20260619";
+    edge.providerRecordHash = edge.providerRecordHash ?? sha256(`provider:${edge.id}:capital-official-stations`);
+    edge.provenanceKind = "OFFICIAL_SOURCE";
+    edge.verificationStatus = "VERIFIED";
+    edge.lastVerifiedAt = edge.lastVerifiedAt ?? "2026-06-19T00:00:00Z";
+    edge.evidenceHash = edge.evidenceHash ?? sha256(`evidence:${edge.id}:capital-official-stations:${edge.lastVerifiedAt}`);
+  }
+  for (const facility of pack.facilities) {
     facility.sourceId = "capital-official-stations";
+    facility.sourceSnapshotId = "capital-official-stations-snapshot-20260619";
     facility.providerFacilityRef = facility.providerFacilityRef ?? facility.id;
+    facility.providerRecordHash = facility.providerRecordHash ?? sha256(`provider:${facility.id}:capital-official-stations`);
     facility.provenanceKind = "OFFICIAL_SOURCE";
     facility.verifiedAt = facility.verifiedAt ?? "2026-06-19T00:00:00Z";
     facility.retrievedAt = facility.retrievedAt ?? "2026-06-19T00:00:00Z";
-    facility.evidenceHash = facility.evidenceHash ?? String(index + 1).repeat(64);
+    facility.evidenceHash = facility.evidenceHash ?? sha256(`evidence:${facility.id}:capital-official-stations:${facility.verifiedAt}`);
     facility.statusMeaning = facility.statusMeaning ?? "REALTIME_OPERATION";
     facility.operationalStatus = facility.operationalStatus ?? "AVAILABLE";
     facility.installationStatus = facility.installationStatus ?? "INSTALLED";
@@ -7559,9 +7578,12 @@ function productionAccessEdge({ id, fromNodeId, toNodeId, edgeType, durationSeco
     accessibilityStatus: "AVAILABLE",
     reliabilityScore: 90,
     sourceId: "capital-official-stations",
+    sourceSnapshotId: "capital-official-stations-snapshot-20260619",
+    providerRecordHash: sha256(`provider:${id}:capital-official-stations`),
     provenanceKind: "OFFICIAL_SOURCE",
     verificationStatus: "VERIFIED",
     lastVerifiedAt: "2026-06-19T00:00:00Z",
+    evidenceHash: sha256(`evidence:${id}:capital-official-stations:2026-06-19T00:00:00Z`),
   };
 }
 
