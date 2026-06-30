@@ -410,8 +410,8 @@ function validateStationPathwayFacilities(database, pack) {
     )
     .all();
   for (const row of rows) {
-    const facilityAvailable = ["NORMAL", "AVAILABLE", "UNKNOWN"].includes(row.status)
-      && ["NORMAL", "AVAILABLE", "UNKNOWN"].includes(row.operational_status);
+    const facilityAvailable =
+      ["NORMAL", "AVAILABLE"].includes(row.status) && ["NORMAL", "AVAILABLE"].includes(row.operational_status);
     if (!facilityAvailable && row.accessibility_status === "AVAILABLE") {
       throw new Error(`${pack.id}@${pack.version} station_pathway_edges unavailable facility cannot be AVAILABLE: ${row.id}`);
     }
