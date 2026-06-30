@@ -36,6 +36,7 @@ function buildFixture(inventory, input) {
   const movementCandidates = movementPathCandidates(input.movementPathCandidates ?? [], allowedSourceIds, mappingBySourceKey);
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   validateSelectedSourceRows(input, sourceIds);
+  validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
   validateSupportedFacilityCoverage(input, stationRows, facilities);
   const requiresRouteMapPositions = sourceDomainEnabled(selectedSources, "route_map_positions");
   if (requiresRouteMapPositions && routeMapPositions.length === 0) {
@@ -219,6 +220,162 @@ function validateSelectedSourceRows(input, sourceIds) {
   for (const sourceId of sourceIds) {
     if ((counts.get(sourceId) ?? 0) === 0) {
       throw new Error(`selected production source has no row provenance: ${sourceId}`);
+    }
+  }
+}
+
+function validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions) {
+  if ((input.pack.artifactKind ?? "fixture") !== "production") {
+    return;
+  }
+  const supportedV1Scope = input.supportedV1Scope;
+  if (!supportedV1Scope || typeof supportedV1Scope !== "object" || Array.isArray(supportedV1Scope)) {
+    throw new Error("supportedV1Scope must be an object for production pack");
+  }
+  const includedStationIds = new Set(
+    requiredStringArray(supportedV1Scope.includedStationIds, "supportedV1Scope.includedStationIds"),
+  );
+  const includedLineIds = new Set(requiredStringArray(supportedV1Scope.includedLineIds, "supportedV1Scope.includedLineIds"));
+  const includedOperatorIds = new Set(
+    requiredStringArray(supportedV1Scope.includedOperatorIds, "supportedV1Scope.includedOperatorIds"),
+  );
+  const rowStationIds = new Set(stationRows.map(({ mapping }) => mapping.stationId));
+  const rowLineIds = new Set(stationRows.map(({ mapping }) => mapping.lineId));
+  const scopedStationIds = new Set(rowStationIds);
+  const scopedLineIds = new Set(rowLineIds);
+  const lineOperatorIds = new Map();
+  const lineReferenceOperatorIds = new Set();
+  const operatorMetadataIds = new Set();
+
+  for (const line of input.lines ?? []) {
+    const lineId = requiredString(line.id, "lines.id");
+    const operatorId = requiredString(line.operatorId, "lines.operatorId");
+    scopedLineIds.add(lineId);
+    lineReferenceOperatorIds.add(operatorId);
+    lineOperatorIds.set(lineId, operatorId);
+  }
+  for (const operator of input.operators ?? []) {
+    operatorMetadataIds.add(requiredString(operator.id, "operators.id"));
+  }
+  const rowOperatorIds = operatorIdsForLines(rowLineIds, lineOperatorIds);
+  addPassThroughScopeIds(input, scopedStationIds, scopedLineIds);
+  for (const edge of networkEdges) {
+    addNodeScopeIds(edge.fromNodeId, scopedStationIds, scopedLineIds);
+    addNodeScopeIds(edge.toNodeId, scopedStationIds, scopedLineIds);
+  }
+  for (const facility of facilities) {
+    scopedStationIds.add(facility.stationId);
+  }
+  for (const candidate of movementCandidates) {
+    scopedStationIds.add(candidate.stationId);
+  }
+  for (const position of routeMapPositions) {
+    scopedStationIds.add(position.stationId);
+    scopedLineIds.add(position.lineId);
+  }
+
+  assertActualIdsWithinScope(
+    scopedStationIds,
+    includedStationIds,
+    "production scope station outside supportedV1Scope.includedStationIds",
+  );
+  assertScopeIdsHaveRows(
+    includedStationIds,
+    rowStationIds,
+    "supportedV1Scope.includedStationIds missing production station row",
+  );
+  assertActualIdsWithinScope(scopedLineIds, includedLineIds, "production scope line outside supportedV1Scope.includedLineIds");
+  assertScopeIdsHaveRows(includedLineIds, rowLineIds, "supportedV1Scope.includedLineIds missing production station row");
+  assertActualIdsWithinScope(
+    new Set([...lineReferenceOperatorIds, ...operatorMetadataIds]),
+    includedOperatorIds,
+    "production scope operator outside supportedV1Scope.includedOperatorIds",
+  );
+  assertScopeIdsHaveRows(
+    includedOperatorIds,
+    operatorMetadataIds,
+    "supportedV1Scope.includedOperatorIds missing production operator metadata",
+  );
+  assertScopeIdsHaveRows(
+    includedOperatorIds,
+    rowOperatorIds,
+    "supportedV1Scope.includedOperatorIds missing production station row",
+  );
+  validateFacilityCoverageDenominator(supportedV1Scope.facilityCoverageDenominator, includedStationIds.size, supportedV1Scope);
+}
+
+function operatorIdsForLines(lineIds, lineOperatorIds) {
+  const operatorIds = new Set();
+  for (const lineId of lineIds) {
+    const operatorId = lineOperatorIds.get(lineId);
+    if (!operatorId) {
+      throw new Error(`production scope line metadata missing: ${lineId}`);
+    }
+    operatorIds.add(operatorId);
+  }
+  return operatorIds;
+}
+
+function addPassThroughScopeIds(input, stationIds, lineIds) {
+  for (const mapping of input.stationMappings ?? []) {
+    stationIds.add(requiredString(mapping.stationId, "stationMappings.stationId"));
+    lineIds.add(requiredString(mapping.lineId, "stationMappings.lineId"));
+  }
+  for (const exit of input.stationExits ?? []) {
+    stationIds.add(requiredString(exit.stationId, "stationExits.stationId"));
+  }
+  for (const summary of input.stationAccessibilitySummaries ?? []) {
+    stationIds.add(requiredString(summary.stationId, "stationAccessibilitySummaries.stationId"));
+  }
+  for (const route of input.representativeRouteRegressions ?? []) {
+    addNodeScopeIds(route.fromNodeId, stationIds, lineIds, "representativeRouteRegressions.fromNodeId");
+    addNodeScopeIds(route.toNodeId, stationIds, lineIds, "representativeRouteRegressions.toNodeId");
+  }
+}
+
+function addNodeScopeIds(nodeId, stationIds, lineIds, label = "networkEdges.nodeId") {
+  const [stationId, lineId] = requiredString(nodeId, label).split(":");
+  stationIds.add(stationId);
+  if (lineId) {
+    lineIds.add(lineId);
+  }
+}
+
+function validateFacilityCoverageDenominator(value, stationCount, supportedV1Scope) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("supportedV1Scope.facilityCoverageDenominator must be an object for production pack");
+  }
+  if (value.kind !== "station_x_required_facility_type") {
+    throw new Error("supportedV1Scope.facilityCoverageDenominator.kind must be station_x_required_facility_type");
+  }
+  const requiredFacilityTypes = requiredStringArray(
+    supportedV1Scope.requiredFacilityTypes,
+    "supportedV1Scope.requiredFacilityTypes",
+  );
+  const expectedRows = requiredInteger(
+    value.expectedRows,
+    "supportedV1Scope.facilityCoverageDenominator.expectedRows",
+  );
+  const computedRows = stationCount * requiredFacilityTypes.length;
+  if (expectedRows !== computedRows) {
+    throw new Error(
+      `supportedV1Scope.facilityCoverageDenominator.expectedRows must equal includedStationIds x requiredFacilityTypes: ${computedRows}`,
+    );
+  }
+}
+
+function assertActualIdsWithinScope(actualIds, allowedIds, message) {
+  for (const id of [...actualIds].sort((left, right) => left.localeCompare(right))) {
+    if (!allowedIds.has(id)) {
+      throw new Error(`${message}: ${id}`);
+    }
+  }
+}
+
+function assertScopeIdsHaveRows(allowedIds, actualIds, message) {
+  for (const id of [...allowedIds].sort((left, right) => left.localeCompare(right))) {
+    if (!actualIds.has(id)) {
+      throw new Error(`${message}: ${id}`);
     }
   }
 }

@@ -7177,7 +7177,12 @@ function productionSourceIngestInput() {
     scopeId: "capital_pilot_android_v1",
     includedRegionIds: ["capital"],
     includedOperatorIds: ["seoul-metro"],
-    facilityCoverageDenominator: "includedStationIds x requiredFacilityTypes",
+    includedLineIds: ["seoul-4"],
+    includedStationIds: ["station-sangnoksu", "station-sadang"],
+    facilityCoverageDenominator: {
+      kind: "station_x_required_facility_type",
+      expectedRows: 6,
+    },
     requiredFacilityTypes: ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
   };
   input.stationMappings.unshift(
