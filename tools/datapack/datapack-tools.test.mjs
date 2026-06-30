@@ -909,6 +909,7 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
     "put-pack-object",
     "verify-pack-object",
     "put-manifest-object",
+    "verify-manifest-object",
   ]);
   assert.deepEqual(plan.steps[0], {
     type: "put-pack-object",
@@ -932,6 +933,9 @@ test("데이터팩 publish preflight plan은 pack 검증 후 manifest publish를
   assert.equal(plan.steps[2].objectKey, "catalog/current.json");
   assert.equal(plan.steps[2].packCount, 1);
   assert.equal(plan.steps[2].sha256, sha256(await readFile(stagedManifestPath)));
+  assert.equal(plan.steps[3].type, "verify-manifest-object");
+  assert.equal(plan.steps[3].objectKey, "catalog/current.json");
+  assert.equal(plan.steps[3].sha256, sha256(await readFile(stagedManifestPath)));
 
   const customPackBytes = Buffer.from("custom relative pack bytes");
   const customPackPath = path.join(stageDir, "packs", "custom-capital.sqlite.gz");
@@ -1028,6 +1032,12 @@ test("데이터팩 object storage publisher는 pack 검증 후 manifest를 마�
             sha256: sha256(manifestBytes),
             sizeBytes: manifestBytes.length,
           },
+          {
+            type: "verify-manifest-object",
+            objectKey: "catalog/current.json",
+            sha256: sha256(manifestBytes),
+            sizeBytes: manifestBytes.length,
+          },
         ],
       },
       null,
@@ -1058,6 +1068,7 @@ test("데이터팩 object storage publisher는 pack 검증 후 manifest를 마�
         "PUT /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
         "HEAD /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
         "PUT /easysubway-datapacks/catalog/current.json",
+        "HEAD /easysubway-datapacks/catalog/current.json",
       ],
     );
     assert.ok(
@@ -1066,6 +1077,29 @@ test("데이터팩 object storage publisher는 pack 검증 후 manifest를 마�
     );
     assert.equal(server.objects.get("catalog/capital-v1.sqlite.gz").sha256, sha256(packBytes));
     assert.equal(server.objects.get("catalog/current.json").sha256, sha256(manifestBytes));
+
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/publish-object-storage.mjs",
+        "--plan",
+        planPath,
+        "--root",
+        stageDir,
+        "--verify-only",
+      ],
+      {
+        cwd: root,
+        env: objectStorageEnv(server.origin),
+      },
+    );
+    assert.deepEqual(
+      server.requests.slice(-2).map((request) => `${request.method} ${request.path}`),
+      [
+        "HEAD /easysubway-datapacks/catalog/capital-v1.sqlite.gz",
+        "HEAD /easysubway-datapacks/catalog/current.json",
+      ],
+    );
   } finally {
     await server.close();
   }
