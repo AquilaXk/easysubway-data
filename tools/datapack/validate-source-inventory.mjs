@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
 const scopePath = optionValue("--scope");
+const compareStrings = (left, right) => left.localeCompare(right);
 
 try {
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
@@ -91,8 +92,8 @@ function validateCapabilities(capabilities, source, sourceId) {
     validateCapability(capabilities[name], source, sourceId, name);
   }
 
-  const declaredCapabilityNames = Object.keys(capabilities).sort();
-  const expectedCapabilityNames = [...capabilityNames].sort();
+  const declaredCapabilityNames = Object.keys(capabilities).sort(compareStrings);
+  const expectedCapabilityNames = [...capabilityNames].sort(compareStrings);
   if (JSON.stringify(declaredCapabilityNames) !== JSON.stringify(expectedCapabilityNames)) {
     throw new Error(`${sourceId}.capabilities must declare exactly schedule, realtime, and facility`);
   }
