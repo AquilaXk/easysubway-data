@@ -744,7 +744,7 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPa
       verifiedAt: productionString(row.verifiedAt, isProductionPack, "facilityRows.verifiedAt") ?? row.lastVerifiedAt,
       retrievedAt: productionString(row.retrievedAt, isProductionPack, "facilityRows.retrievedAt"),
       evidenceHash,
-      confidence: productionInteger(row.confidence, isProductionPack, "facilityRows.confidence"),
+      confidence: productionPercentageInteger(row.confidence, isProductionPack, "facilityRows.confidence"),
       derivationKind: "OFFICIAL",
       lastVerifiedAt: productionString(row.verifiedAt, isProductionPack, "facilityRows.verifiedAt") ?? row.lastVerifiedAt,
     };
@@ -763,6 +763,17 @@ function productionInteger(value, isProductionPack, label) {
     return value;
   }
   return requiredInteger(value, label);
+}
+
+function productionPercentageInteger(value, isProductionPack, label) {
+  if (!isProductionPack) {
+    return value;
+  }
+  const integer = requiredInteger(value, label);
+  if (integer < 0 || integer > 100) {
+    throw new Error(`${label} must be between 0 and 100`);
+  }
+  return integer;
 }
 
 function productionEvidenceHash(value, isProductionPack, rowId, label) {
