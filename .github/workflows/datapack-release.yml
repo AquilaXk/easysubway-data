@@ -53,9 +53,6 @@ on:
         description: Strict route regression evidence path
         required: false
 
-permissions:
-  contents: read
-
 concurrency:
   group: datapack-release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -64,6 +61,8 @@ jobs:
   data-pack-release:
     name: Data Pack Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     environment:
       name: ${{ github.event.inputs.mode == 'production-publish' && 'production-datapack' || 'datapack-release-check' }}
     env:
@@ -527,3 +526,35 @@ jobs:
           path: ${{ runner.temp }}/easysubway-datapack-stage
           if-no-files-found: error
           retention-days: 14
+
+  notify-slack-datapack-result:
+    name: Slack / Data pack release result
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs: data-pack-release
+    if: ${{ always() }}
+    env:
+      SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
+    steps:
+      - name: Slack / Skip missing release webhook
+        if: ${{ env.SLACK_RELEASE_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Slack notification::SLACK_RELEASE_WEBHOOK_URL is not configured."
+
+      - name: Slack / Notify data pack release result
+        if: ${{ env.SLACK_RELEASE_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
+        with:
+          webhook: ${{ env.SLACK_RELEASE_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway data pack release ${{ needs.data-pack-release.result }}"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway Data Pack Release ${{ needs.data-pack-release.result }}*
+                    • repo: `${{ github.repository }}`
+                    • ref: `${{ github.ref_name }}`
+                    • actor: `${{ github.actor }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>
