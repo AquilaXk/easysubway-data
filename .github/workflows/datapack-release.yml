@@ -253,7 +253,7 @@ jobs:
               --manifest "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}/current.json" \
               --root "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}" \
               --require-production > "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}" 2>&1; then
-              build_fixture="${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
+              build_fixture="$(node -e "const fs=require('fs'); const spec=JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH, 'utf8')); process.stdout.write(spec.fixturePath);")"
               remote_publish_ready=true
             elif [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" == "exploratory" ]] && grep -qE 'verified (ENTRY|EXIT|TRANSFER) coverage gap' "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"; then
               cat "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT}"
@@ -281,9 +281,15 @@ jobs:
       - name: Data Pack Release / Build data packs
         run: |
           set -euo pipefail
-          node tools/datapack/build-datapack.mjs \
-            --fixture "${EASYSUBWAY_DATAPACK_BUILD_FIXTURE}" \
-            --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+            node tools/datapack/build-datapack.mjs \
+              --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
+              --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
+          else
+            node tools/datapack/build-datapack.mjs \
+              --fixture "${EASYSUBWAY_DATAPACK_BUILD_FIXTURE}" \
+              --output "${EASYSUBWAY_DATAPACK_OUTPUT}"
+          fi
 
       - name: Data Pack Release / Validate source inventory
         run: |
@@ -364,6 +370,8 @@ jobs:
           const manifestPath = path.join(stage, "catalog", "current.json");
           const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
           const pack = manifest.packs?.[0] ?? {};
+          const buildSpecPath = process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH;
+          const buildSpec = JSON.parse(fs.readFileSync(buildSpecPath, "utf8"));
           const catalogDir = path.join(stage, "catalog");
           const gzipFile = fs.readdirSync(catalogDir).find((name) => name.endsWith(".sqlite.gz"));
           const releaseMode = process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE;
@@ -372,6 +380,14 @@ jobs:
           const androidEvidence = process.env.EASYSUBWAY_ANDROID_EVIDENCE_PATH || "";
           const externalStatus = (file) => file && fs.existsSync(file) ? "PASS" : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
           const externalHash = (file) => file && fs.existsSync(file) ? hashFile(file) : zeroHash;
+          const releaseHash = (field) => {
+            const value = releaseLike ? buildSpec[field] : pack[field] ?? zeroHash;
+            const normalized = String(value ?? "").trim().toLowerCase();
+            if (releaseLike && !/^[a-f0-9]{64}$/.test(normalized)) {
+              throw new Error(`buildSpec.${field} must be sha256`);
+            }
+            return normalized || zeroHash;
+          };
 
           const bundle = {
             schemaVersion: 1,
@@ -380,13 +396,13 @@ jobs:
             scopeId: "capital_pilot_android_v1",
             releaseRequestId: process.env.EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID,
             builderGitSha: process.env.GITHUB_SHA,
-            buildSpecSha256: hashFile(process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH),
+            buildSpecSha256: hashFile(buildSpecPath),
             supportedDenominatorSha256: hashFile("apps/mobile/release/production-datapack-scope.json"),
-            sourceSnapshotSetHash: pack.sourceSnapshotSetHash ?? zeroHash,
-            approvedAliasLedgerHash: pack.approvedAliasLedgerHash ?? zeroHash,
-            facilityEvidenceLedgerHash: pack.facilityEvidenceLedgerHash ?? zeroHash,
-            routeEvidenceLedgerHash: pack.routeEvidenceLedgerHash ?? zeroHash,
-            approvedOverrideSetHash: pack.approvedOverrideSetHash ?? zeroHash,
+            sourceSnapshotSetHash: releaseHash("sourceSnapshotSetHash"),
+            approvedAliasLedgerHash: releaseHash("approvedAliasLedgerHash"),
+            facilityEvidenceLedgerHash: releaseHash("facilityEvidenceLedgerHash"),
+            routeEvidenceLedgerHash: releaseHash("routeEvidenceLedgerHash"),
+            approvedOverrideSetHash: releaseHash("approvedOverrideSetHash"),
             normalizedSourceInventorySha256: hashFile(`${process.env.EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json`),
             sqliteSha256: pack.sqliteSha256 ?? pack.sha256 ?? zeroHash,
             gzipSha256: gzipFile ? hashFile(path.join(catalogDir, gzipFile)) : zeroHash,
