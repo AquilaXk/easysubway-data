@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -142,6 +142,28 @@ CREATE TABLE facilities (
   FOREIGN KEY (exit_id) REFERENCES station_exits(id)
 );
 
+CREATE TABLE station_facility_evidence (
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  facility_type TEXT NOT NULL,
+  evidence_kind TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  source_snapshot_id TEXT NOT NULL,
+  provider_record_hash TEXT NOT NULL,
+  evidence_hash TEXT NOT NULL,
+  provenance_kind TEXT NOT NULL,
+  installation_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  operational_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  status_meaning TEXT NOT NULL DEFAULT '',
+  confidence INTEGER NOT NULL DEFAULT 0,
+  verified_at INTEGER NOT NULL DEFAULT 0,
+  retrieved_at INTEGER NOT NULL DEFAULT 0,
+  strict_route_eligible INTEGER NOT NULL DEFAULT 0 CHECK (strict_route_eligible IN (0, 1)),
+  strict_route_eligible_reason TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (station_id, line_id, facility_type),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
+);
+
 CREATE TABLE station_accessibility_summaries (
   station_id TEXT NOT NULL PRIMARY KEY,
   summary TEXT NOT NULL,
@@ -196,6 +218,7 @@ CREATE INDEX idx_stations_normalized_name ON stations(normalized_name);
 CREATE INDEX idx_station_lines_line_sequence ON station_lines(line_id, line_sequence);
 CREATE INDEX idx_realtime_provider_stations_internal ON realtime_provider_station_mappings(station_id, line_id);
 CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
+CREATE INDEX idx_station_facility_evidence_station ON station_facility_evidence(station_id, line_id);
 
 CREATE TABLE route_map_positions (
   station_id TEXT NOT NULL,

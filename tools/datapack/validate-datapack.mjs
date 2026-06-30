@@ -8,7 +8,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
-const productionMinimumTableRowNames = ["stations", "station_lines", "network_edges", "facilities"];
+const productionMinimumTableRowNames = [
+  "stations",
+  "station_lines",
+  "network_edges",
+  "facilities",
+  "station_facility_evidence",
+];
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -108,6 +114,7 @@ function validateSqlite(sqlitePath, pack) {
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
+    validateProductionStationFacilityEvidence(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
     validateRepresentativeRouteRegressions(database, pack);
 
@@ -869,6 +876,92 @@ function validateProductionFacilityPositiveStatus(row, statusMeaning, pack) {
   }
 }
 
+function validateProductionStationFacilityEvidence(database, pack) {
+  if (pack.artifactKind !== "production" || !hasTable(database, "station_facility_evidence")) {
+    return;
+  }
+  const requiredColumns = [
+    "station_id",
+    "line_id",
+    "facility_type",
+    "evidence_kind",
+    "source_id",
+    "source_snapshot_id",
+    "provider_record_hash",
+    "evidence_hash",
+    "provenance_kind",
+    "installation_status",
+    "operational_status",
+    "status_meaning",
+    "confidence",
+    "verified_at",
+    "retrieved_at",
+    "strict_route_eligible",
+    "strict_route_eligible_reason",
+  ];
+  const columns = new Set(database.prepare("PRAGMA table_info(station_facility_evidence)").all().map((row) => row.name));
+  for (const column of requiredColumns) {
+    if (!columns.has(column)) {
+      throw new Error(`${pack.id}@${pack.version} station_facility_evidence provenance column missing: ${column}`);
+    }
+  }
+
+  const sourceIds = new Set(pack.sourceInventory.map((source) => source.id));
+  const rows = database
+    .prepare(`
+      SELECT station_id, line_id, facility_type, evidence_kind, source_id,
+             source_snapshot_id, provider_record_hash, evidence_hash,
+             provenance_kind, installation_status, operational_status,
+             status_meaning, confidence, verified_at, retrieved_at,
+             strict_route_eligible, strict_route_eligible_reason
+      FROM station_facility_evidence
+      ORDER BY station_id, line_id, facility_type
+    `)
+    .all();
+  for (const row of rows) {
+    validateProductionStationFacilityEvidenceRow(row, sourceIds, pack);
+  }
+}
+
+function validateProductionStationFacilityEvidenceRow(row, sourceIds, pack) {
+  const id = `${row.station_id}:${row.line_id}:${row.facility_type}`;
+  requiredString(row.station_id, `station_facility_evidence.${id}.station_id`);
+  requiredString(row.line_id, `station_facility_evidence.${id}.line_id`);
+  requiredString(row.facility_type, `station_facility_evidence.${id}.facility_type`);
+  const evidenceKind = requiredString(row.evidence_kind, `station_facility_evidence.${id}.evidence_kind`);
+  if (!["EXISTS", "NOT_EXISTS", "UNKNOWN"].includes(evidenceKind)) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence evidence_kind is not allowed: ${id}`);
+  }
+  if (!sourceIds.has(requiredString(row.source_id, `station_facility_evidence.${id}.source_id`))) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence source_id is not in sourceInventory: ${id}`);
+  }
+  requiredString(row.source_snapshot_id, `station_facility_evidence.${id}.source_snapshot_id`);
+  requiredProductionSha256(row.provider_record_hash, `station_facility_evidence.${id}.provider_record_hash`);
+  requiredProductionSha256(row.evidence_hash, `station_facility_evidence.${id}.evidence_hash`);
+  const provenanceKind = requiredString(row.provenance_kind, `station_facility_evidence.${id}.provenance_kind`);
+  if (!["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(provenanceKind)) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence provenance_kind is not allowed: ${id}`);
+  }
+  requiredString(row.installation_status, `station_facility_evidence.${id}.installation_status`);
+  requiredString(row.operational_status, `station_facility_evidence.${id}.operational_status`);
+  requiredString(row.status_meaning, `station_facility_evidence.${id}.status_meaning`);
+  if (!Number.isInteger(row.confidence) || row.confidence < 0 || row.confidence > 100) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence confidence must be between 0 and 100: ${id}`);
+  }
+  if (!Number.isInteger(row.verified_at) || row.verified_at <= 0) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence verified_at is required: ${id}`);
+  }
+  if (!Number.isInteger(row.retrieved_at) || row.retrieved_at <= 0) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence retrieved_at is required: ${id}`);
+  }
+  if (row.strict_route_eligible === 1 && evidenceKind !== "EXISTS") {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence strict route eligibility requires EXISTS: ${id}`);
+  }
+  if (row.strict_route_eligible === 1) {
+    requiredString(row.strict_route_eligible_reason, `station_facility_evidence.${id}.strict_route_eligible_reason`);
+  }
+}
+
 function validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack) {
   const sourceId = requiredString(edge.source_id, `network_edges.${edge.id}.source_id`);
   const sourceUpdatedAt = sourceUpdatedAtById.get(sourceId);
@@ -1199,7 +1292,9 @@ function validateMinimumTableRows(pack, artifactKind, label) {
     return;
   }
   if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
-    throw new Error(`${label} production minimumTableRows must define positive stations, station_lines, network_edges, and facilities`);
+    throw new Error(
+      `${label} production minimumTableRows must define positive stations, station_lines, network_edges, facilities, and station_facility_evidence`,
+    );
   }
 }
 

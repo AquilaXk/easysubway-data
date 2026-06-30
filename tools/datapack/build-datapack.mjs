@@ -8,7 +8,13 @@ import { tmpdir } from "node:os";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const productionMinimumTableRowNames = ["stations", "station_lines", "network_edges", "facilities"];
+const productionMinimumTableRowNames = [
+  "stations",
+  "station_lines",
+  "network_edges",
+  "facilities",
+  "station_facility_evidence",
+];
 const candidateBuildSpecArtifactKind = "datapack-candidate-build-spec";
 const candidateBuildSpecHashFields = [
   "sourceSnapshotSetHash",
@@ -872,6 +878,49 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       );
       insertRows(
         database,
+        "station_facility_evidence",
+        [
+          "station_id",
+          "line_id",
+          "facility_type",
+          "evidence_kind",
+          "source_id",
+          "source_snapshot_id",
+          "provider_record_hash",
+          "evidence_hash",
+          "provenance_kind",
+          "installation_status",
+          "operational_status",
+          "status_meaning",
+          "confidence",
+          "verified_at",
+          "retrieved_at",
+          "strict_route_eligible",
+          "strict_route_eligible_reason",
+        ],
+        pack.stationFacilityEvidence ?? [],
+        (row) => [
+          requiredString(row.stationId, "stationFacilityEvidence.stationId"),
+          requiredString(row.lineId, "stationFacilityEvidence.lineId"),
+          requiredString(row.facilityType, "stationFacilityEvidence.facilityType"),
+          requiredString(row.evidenceKind, "stationFacilityEvidence.evidenceKind"),
+          requiredString(row.sourceId, "stationFacilityEvidence.sourceId"),
+          requiredString(row.sourceSnapshotId, "stationFacilityEvidence.sourceSnapshotId"),
+          requiredString(row.providerRecordHash, "stationFacilityEvidence.providerRecordHash"),
+          requiredString(row.evidenceHash, "stationFacilityEvidence.evidenceHash"),
+          requiredString(row.provenanceKind, "stationFacilityEvidence.provenanceKind"),
+          row.installationStatus ?? "UNKNOWN",
+          row.operationalStatus ?? "UNKNOWN",
+          row.statusMeaning ?? "",
+          row.confidence ?? 0,
+          timestamp(row.verifiedAt) ?? 0,
+          timestamp(row.retrievedAt) ?? 0,
+          boolFlag(row.strictRouteEligible, "stationFacilityEvidence.strictRouteEligible"),
+          row.strictRouteEligibleReason ?? "",
+        ],
+      );
+      insertRows(
+        database,
         "station_accessibility_summaries",
         ["station_id", "summary", "warning"],
         pack.stationAccessibilitySummaries ?? [],
@@ -1102,13 +1151,16 @@ function validateMinimumTableRows(pack, artifactKind) {
     return;
   }
   if (!hasProductionMinimumTableRows(pack.minimumTableRows)) {
-    throw new Error("production minimumTableRows must define positive stations, station_lines, network_edges, and facilities");
+    throw new Error(
+      "production minimumTableRows must define positive stations, station_lines, network_edges, facilities, and station_facility_evidence",
+    );
   }
   const actualRowsByTable = {
     stations: pack.stations?.length ?? 0,
     station_lines: pack.stationLines?.length ?? 0,
     network_edges: pack.networkEdges?.length ?? 0,
     facilities: pack.facilities?.length ?? 0,
+    station_facility_evidence: pack.stationFacilityEvidence?.length ?? 0,
   };
   for (const tableName of productionMinimumTableRowNames) {
     if (actualRowsByTable[tableName] < pack.minimumTableRows[tableName]) {

@@ -34,6 +34,7 @@ function buildFixture(inventory, input) {
   const stationLines = normalizedStationLines(stationRows);
   const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
   const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
+  const stationFacilityEvidence = stationFacilityEvidenceRows(input, facilities, isProductionPack);
   const movementCandidates = movementPathCandidates(
     input.movementPathCandidates ?? [],
     allowedSourceIds,
@@ -43,7 +44,7 @@ function buildFixture(inventory, input) {
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   validateSelectedSourceRows(input, sourceIds);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
-  validateSupportedFacilityCoverage(input, stationRows, facilities);
+  validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence);
   const requiresRouteMapPositions = sourceDomainEnabled(selectedSources, "route_map_positions");
   if (requiresRouteMapPositions && routeMapPositions.length === 0) {
     throw new Error("routeMapPositions must include at least one row when route_map_positions source coverage is selected");
@@ -74,6 +75,8 @@ function buildFixture(inventory, input) {
           "station_lines",
           "network_edges",
           ...(requiresRouteMapPositions ? ["route_map_positions"] : []),
+          "facilities",
+          "station_facility_evidence",
         ]),
         minimumTableRows: {
           catalog_metadata: 2,
@@ -84,6 +87,7 @@ function buildFixture(inventory, input) {
           network_edges: productionMinimumRows?.network_edges ?? networkEdges.length,
           ...(requiresRouteMapPositions ? { route_map_positions: routeMapPositions.length } : {}),
           facilities: productionMinimumRows?.facilities ?? facilities.length,
+          station_facility_evidence: stationFacilityEvidence.length,
         },
         metadata: {
           activePack: requiredString(input.pack.id, "pack.id"),
@@ -109,6 +113,7 @@ function buildFixture(inventory, input) {
         routeMapPositions,
         stationExits: input.stationExits ?? [],
         facilities,
+        stationFacilityEvidence,
         movementPathCandidates: movementCandidates,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
         representativeRouteRegressions: input.representativeRouteRegressions ?? [],
@@ -386,7 +391,7 @@ function assertScopeIdsHaveRows(allowedIds, actualIds, message) {
   }
 }
 
-function validateSupportedFacilityCoverage(input, stationRows, facilities) {
+function validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence) {
   if ((input.pack.artifactKind ?? "fixture") !== "production") {
     return;
   }
@@ -395,13 +400,16 @@ function validateSupportedFacilityCoverage(input, stationRows, facilities) {
     throw new Error("supportedV1Scope.requiredFacilityTypes must be a non-empty array for production pack");
   }
   const stationIds = new Set(stationRows.map(({ mapping }) => mapping.stationId));
-  const facilityKeys = new Set(
-    facilities.map((facility) => `${facility.stationId}:${requiredString(facility.type, "facilities.type")}`),
+  const evidenceKeys = new Set(
+    stationFacilityEvidence.map(
+      (evidence) =>
+        `${evidence.stationId}:${requiredString(evidence.facilityType, "stationFacilityEvidence.facilityType")}`,
+    ),
   );
   for (const stationId of [...stationIds].sort((left, right) => left.localeCompare(right))) {
     for (const facilityType of requiredStringArray(requiredFacilityTypes, "supportedV1Scope.requiredFacilityTypes")) {
       const key = `${stationId}:${facilityType}`;
-      if (!facilityKeys.has(key)) {
+      if (!evidenceKeys.has(key)) {
         throw new Error(`production facility evidence missing: ${key}`);
       }
     }
@@ -719,9 +727,11 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPa
       id,
       "facilityRows.providerRecordHash",
     );
+    const stationMapping = mappingForEndpoint(row.station, allowedSourceIds, mappingBySourceKey);
     return {
       id,
-      stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
+      stationId: stationMapping.stationId,
+      lineId: stationMapping.lineId,
       exitId: row.exitId ?? null,
       type: requiredString(row.type, "facilityRows.type"),
       name: requiredString(row.name, "facilityRows.name"),
@@ -749,6 +759,59 @@ function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPa
       lastVerifiedAt: productionString(row.verifiedAt, isProductionPack, "facilityRows.verifiedAt") ?? row.lastVerifiedAt,
     };
   });
+}
+
+function stationFacilityEvidenceRows(input, facilities, isProductionPack) {
+  if (!isProductionPack) {
+    return [];
+  }
+  const includedStationIds = requiredStringArray(
+    input.supportedV1Scope?.includedStationIds,
+    "supportedV1Scope.includedStationIds",
+  );
+  const requiredFacilityTypes = requiredStringArray(
+    input.supportedV1Scope?.requiredFacilityTypes,
+    "supportedV1Scope.requiredFacilityTypes",
+  );
+
+  const facilitiesByCoverageKey = new Map();
+  for (const facility of facilities) {
+    const key = `${facility.stationId}:${facility.lineId}:${requiredString(facility.type, "facilities.type")}`;
+    if (facilitiesByCoverageKey.has(key)) {
+      throw new Error(`duplicate production facility evidence: ${key}`);
+    }
+    facilitiesByCoverageKey.set(key, facility);
+  }
+
+  const rows = [];
+  for (const stationId of [...includedStationIds].sort((left, right) => left.localeCompare(right))) {
+    for (const facilityType of [...requiredFacilityTypes].sort((left, right) => left.localeCompare(right))) {
+      for (const facility of [...facilitiesByCoverageKey.values()]
+        .filter((entry) => entry.stationId === stationId && entry.type === facilityType)
+        .sort((left, right) => left.lineId.localeCompare(right.lineId))) {
+        rows.push({
+          stationId,
+          lineId: facility.lineId,
+          facilityType,
+          evidenceKind: "EXISTS",
+          sourceId: facility.sourceId,
+          sourceSnapshotId: facility.sourceSnapshotId,
+          providerRecordHash: facility.providerRecordHash,
+          evidenceHash: facility.evidenceHash,
+          provenanceKind: facility.provenanceKind,
+          installationStatus: facility.installationStatus,
+          operationalStatus: facility.operationalStatus,
+          statusMeaning: facility.statusMeaning,
+          confidence: facility.confidence,
+          verifiedAt: facility.verifiedAt,
+          retrievedAt: facility.retrievedAt,
+          strictRouteEligible: true,
+          strictRouteEligibleReason: "FACILITY_EXISTS_AND_PROVENANCE_VERIFIED",
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 function productionString(value, isProductionPack, label) {
