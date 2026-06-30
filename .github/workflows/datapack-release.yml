@@ -172,7 +172,7 @@ jobs:
               if (request.approvedLedgerHash !== buildSpec.approvedAliasLedgerHash) throw new Error("release request approvedLedgerHash mismatch");
               if (mode === "production-publish" && targetChannel !== "production") throw new Error("production-publish requires targetChannel=production");
             }
-            NODE
+          NODE
           fi
           if [[ "${mode}" == "production-publish" && "${target_channel}" != "production" ]]; then
             echo "production-publish requires targetChannel=production" >&2
