@@ -42,6 +42,7 @@ function applyAdminReviewOverrides(fixture, overrides) {
         if (facility.id === facilityId) {
           applyFacilityStatusOverride(facility, status, reviewedAt, exportedAt);
           applyNetworkRouteAccessibilityOverride(pack, facility, status);
+          applyStationPathwayAccessibilityOverride(pack, facility, status);
           markAffectedStation(affectedStationIdsByPack, pack, facility);
           markAffectedInternalRouteType(affectedInternalRouteTypesByPack, pack, facility);
           matchedFacilities.push(facility);
@@ -255,6 +256,18 @@ function applyNetworkRouteAccessibilityOverride(pack, facility, status) {
 
   for (const edge of pack.networkEdges ?? []) {
     if (edge.facilityId === facility.id) {
+      edge.accessibilityStatus = accessibilityStatus;
+    }
+  }
+}
+
+function applyStationPathwayAccessibilityOverride(pack, facility, status) {
+  const accessibilityStatus = routeAccessibilityStatus(status);
+  if (accessibilityStatus == null) {
+    return;
+  }
+  for (const edge of pack.stationPathwayEdges ?? []) {
+    if (edge.requiresFacilityId === facility.id) {
       edge.accessibilityStatus = accessibilityStatus;
     }
   }

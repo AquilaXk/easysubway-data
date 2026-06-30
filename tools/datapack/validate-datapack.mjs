@@ -126,6 +126,7 @@ function validateSqlite(sqlitePath, pack) {
 
     validateNetworkEdgeReferences(database, pack);
     validateTransitSchedule(database, pack);
+    validateStationPathways(database, pack);
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionFacilityProvenance(database, pack);
@@ -262,6 +263,122 @@ function serviceCalendarHasActiveDate(calendar, addedDates) {
     calendar.saturday,
     calendar.sunday,
   ].some((value) => value === 1);
+}
+
+function validateStationPathways(database, pack) {
+  if (!hasTable(database, "station_pathway_edges")) {
+    return;
+  }
+
+  const edges = database
+    .prepare(
+      `
+      SELECT id, from_node_id, to_node_id, edge_type, duration_seconds, includes_stairs,
+             requires_elevator, requires_escalator, requires_facility_id, accessibility_status,
+             provenance_kind, verification_status, legacy_internal_route_edge_id
+      FROM station_pathway_edges
+      ORDER BY id
+    `,
+    )
+    .all();
+  const edgesById = new Map(edges.map((edge) => [edge.id, edge]));
+
+  for (const edge of edges) {
+    if (edge.duration_seconds < 0) {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges duration_seconds must be non-negative: ${edge.id}`);
+    }
+    if (edge.provenance_kind === "GENERATED" && edge.verification_status === "VERIFIED") {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges generated connector cannot be VERIFIED: ${edge.id}`);
+    }
+  }
+
+  validateStationPathwayLegacyMappings(database, pack);
+  validateStationPathwayFacilities(database, pack);
+
+  for (const rule of database
+    .prepare(
+      `
+      SELECT id, min_transfer_seconds, pathway_edge_id, strict_step_free_pathway_edge_id
+      FROM transfer_rules
+      ORDER BY id
+    `,
+    )
+    .all()) {
+    if (rule.min_transfer_seconds < 0) {
+      throw new Error(`${pack.id}@${pack.version} transfer_rules min_transfer_seconds must be non-negative: ${rule.id}`);
+    }
+    const pathwayEdge = rule.pathway_edge_id ? edgesById.get(rule.pathway_edge_id) : null;
+    if (rule.pathway_edge_id && !pathwayEdge) {
+      throw new Error(`${pack.id}@${pack.version} transfer_rules pathway_edge_id is missing: ${rule.id}`);
+    }
+    const strictEdge = rule.strict_step_free_pathway_edge_id
+      ? edgesById.get(rule.strict_step_free_pathway_edge_id)
+      : null;
+    if (rule.strict_step_free_pathway_edge_id && !strictEdge) {
+      throw new Error(`${pack.id}@${pack.version} transfer_rules strict_step_free_pathway_edge_id is missing: ${rule.id}`);
+    }
+    if (strictEdge && (strictEdge.includes_stairs === 1 || (strictEdge.requires_escalator === 1 && strictEdge.requires_elevator === 0))) {
+      throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge is not step-free: ${rule.id}`);
+    }
+  }
+}
+
+function validateStationPathwayLegacyMappings(database, pack) {
+  if (!hasTable(database, "internal_route_edges")) {
+    return;
+  }
+  const rows = database
+    .prepare(
+      `
+      SELECT spe.id, spe.legacy_internal_route_edge_id, spe.edge_type, spe.duration_seconds, spe.distance_meters,
+             spe.includes_stairs, spe.requires_elevator, spe.requires_escalator, spe.accessibility_status,
+             ire.edge_type AS legacy_edge_type, ire.duration_seconds AS legacy_duration_seconds,
+             ire.distance_meters AS legacy_distance_meters, ire.includes_stairs AS legacy_includes_stairs,
+             ire.requires_elevator AS legacy_requires_elevator, ire.requires_escalator AS legacy_requires_escalator,
+             ire.accessibility_status AS legacy_accessibility_status
+      FROM station_pathway_edges spe
+      JOIN internal_route_edges ire ON ire.id = spe.legacy_internal_route_edge_id
+      WHERE spe.legacy_internal_route_edge_id <> ''
+    `,
+    )
+    .all();
+  for (const row of rows) {
+    for (const [current, legacy] of [
+      ["edge_type", "legacy_edge_type"],
+      ["duration_seconds", "legacy_duration_seconds"],
+      ["distance_meters", "legacy_distance_meters"],
+      ["includes_stairs", "legacy_includes_stairs"],
+      ["requires_elevator", "legacy_requires_elevator"],
+      ["requires_escalator", "legacy_requires_escalator"],
+    ]) {
+      if (row[current] !== row[legacy]) {
+        throw new Error(`${pack.id}@${pack.version} station_pathway_edges legacy mapping mismatch: ${row.id}`);
+      }
+    }
+  }
+}
+
+function validateStationPathwayFacilities(database, pack) {
+  if (!hasTable(database, "facilities")) {
+    return;
+  }
+  const rows = database
+    .prepare(
+      `
+      SELECT spe.id, spe.accessibility_status, f.status, f.operational_status
+      FROM station_pathway_edges spe
+      JOIN facilities f ON f.id = spe.requires_facility_id
+      WHERE spe.requires_facility_id IS NOT NULL
+    `,
+    )
+    .all();
+  for (const row of rows) {
+    const facilityAvailable = ["NORMAL", "AVAILABLE", "UNKNOWN"].includes(row.status)
+      && ["NORMAL", "AVAILABLE", "UNKNOWN"].includes(row.operational_status);
+    if (!facilityAvailable && row.accessibility_status === "AVAILABLE") {
+      throw new Error(`${pack.id}@${pack.version} station_pathway_edges unavailable facility cannot be AVAILABLE: ${row.id}`);
+    }
+  }
 }
 
 function validateRegionalQualityMetricsMatchDatabase(database, pack) {
