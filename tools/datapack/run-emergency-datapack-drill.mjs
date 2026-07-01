@@ -94,7 +94,7 @@ async function main() {
   }
 
   const command = requireString(routeRegressionReplay.command, "routeRegressionReplay.command");
-  const commandOutput = JSON.stringify(routeRegressionReplay);
+  const commandOutput = requireString(routeRegressionReplay.commandOutput, "routeRegressionReplay.commandOutput");
   const evidence = {
     schemaVersion: 1,
     artifactKind: "emergency-datapack-release-drill",

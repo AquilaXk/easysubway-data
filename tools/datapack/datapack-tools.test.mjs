@@ -8193,6 +8193,7 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
         },
         routeRegressionReplay: {
           command: "node tools/routes/evaluate-eta-accuracy.mjs --dataset tools/routes/golden-od --output /tmp/report.json",
+          commandOutput: '{"failures":[],"sampleSize":100}',
           before: { blocked: true, blocker: "bad network edge" },
           after: { blocked: false },
         },
@@ -8228,7 +8229,7 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
   assert.equal(evidence.fixedPromotion.fixedManifestSha256, fixedManifestSha256);
   assert.equal(evidence.routeRegressionReplay.before.blocked, true);
   assert.equal(evidence.routeRegressionReplay.after.blocked, false);
-  assert.match(evidence.verification.commandOutputSha256, /^[a-f0-9]{64}$/);
+  assert.equal(evidence.verification.commandOutputSha256, sha256('{"failures":[],"sampleSize":100}'));
 });
 
 function sha256(bytes) {
