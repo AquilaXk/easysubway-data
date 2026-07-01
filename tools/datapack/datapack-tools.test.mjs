@@ -8152,6 +8152,85 @@ test("공식 source ingest adapter는 중복 CLI 인자를 거부한다", async 
   );
 });
 
+test("emergency datapack drill은 rollback, patch, route regression 증거를 묶는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-emergency-datapack-drill-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const inputPath = path.join(outputDir, "drill-input.json");
+  const outputPath = path.join(outputDir, "drill-evidence.json");
+  const knownGoodManifestSha256 = "a".repeat(64);
+  const badManifestSha256 = "b".repeat(64);
+  const fixedManifestSha256 = "c".repeat(64);
+
+  await writeFile(
+    inputPath,
+    `${JSON.stringify(
+      {
+        channel: "production",
+        previousKnownGoodManifest: {
+          url: "https://cdn.easysubway.example/datapacks/current-42.json",
+          sha256: knownGoodManifestSha256,
+        },
+        badManifest: {
+          url: "https://cdn.easysubway.example/datapacks/current-43.json",
+          sha256: badManifestSha256,
+        },
+        fixedManifest: {
+          url: "https://cdn.easysubway.example/datapacks/current-44.json",
+          sha256: fixedManifestSha256,
+        },
+        rollback: {
+          startedAt: "2026-07-01T10:00:00.000Z",
+          completedAt: "2026-07-01T10:03:20.000Z",
+        },
+        emergencyPatch: {
+          auditId: "patch-route-edge-1",
+          rows: [
+            { table: "network_edges", id: "edge-sangnoksu-sadang-local" },
+            { table: "facilities", id: "facility-sangnoksu-elevator" },
+            { table: "transit_stop_times", id: "stop-trip-seoul-4-local-0805-sangnoksu" },
+          ],
+        },
+        routeRegressionReplay: {
+          command: "node tools/routes/evaluate-eta-accuracy.mjs --dataset tools/routes/golden-od --output /tmp/report.json",
+          before: { blocked: true, blocker: "bad network edge" },
+          after: { blocked: false },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/run-emergency-datapack-drill.mjs",
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
+    ],
+    { cwd: root },
+  );
+
+  const evidence = JSON.parse(await readFile(outputPath, "utf8"));
+  assert.equal(evidence.artifactKind, "emergency-datapack-release-drill");
+  assert.equal(evidence.channel, "production");
+  assert.equal(evidence.rollback.previousKnownGoodManifestSha256, knownGoodManifestSha256);
+  assert.equal(evidence.rollback.badManifestSha256, badManifestSha256);
+  assert.equal(evidence.rollback.rollbackTimeSeconds, 200);
+  assert.equal(evidence.emergencyPatch.auditId, "patch-route-edge-1");
+  assert.deepEqual(
+    evidence.emergencyPatch.correctedTables,
+    ["facilities", "network_edges", "transit_stop_times"],
+  );
+  assert.equal(evidence.fixedPromotion.fixedManifestSha256, fixedManifestSha256);
+  assert.equal(evidence.routeRegressionReplay.before.blocked, true);
+  assert.equal(evidence.routeRegressionReplay.after.blocked, false);
+  assert.match(evidence.verification.commandOutputSha256, /^[a-f0-9]{64}$/);
+});
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
