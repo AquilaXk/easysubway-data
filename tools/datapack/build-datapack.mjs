@@ -354,7 +354,7 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     addRecord(stationLine, "station_line", entityId, "line", operatorIds);
     addRecord(stationLine, "station_line", entityId, "station_code", operatorIds);
   }
-  for (const edge of pack.networkEdges ?? []) {
+  for (const edge of routeGraphNetworkEdges(pack)) {
     const operatorIds = operatorIdsForNodes([edge.fromNodeId, edge.toNodeId], stationLineOperatorIds);
     addRecord(edge, "network_edge", edge.id, "network_edges", operatorIds);
     addRecord(edge, "network_edge", edge.id, "duration_seconds", operatorIds);
@@ -636,8 +636,9 @@ function regionalQualityMetrics(pack) {
       .map((facility) => facility.stationId)
       .filter((stationId) => stationIds.has(stationId)),
   );
-  const edgeCount = pack.networkEdges?.length ?? 0;
-  const unknownAccessibilityCount = (pack.networkEdges ?? []).filter(
+  const networkEdges = routeGraphNetworkEdges(pack);
+  const edgeCount = networkEdges.length;
+  const unknownAccessibilityCount = networkEdges.filter(
     (edge) => normalizedAccessibilityStatus(edge.accessibilityStatus, "networkEdges.accessibilityStatus") === "UNKNOWN",
   ).length;
   return {
@@ -648,9 +649,66 @@ function regionalQualityMetrics(pack) {
   };
 }
 
+function routeGraphNetworkEdges(pack) {
+  return [
+    ...(pack.networkEdges ?? []),
+    ...outOfStationTransferNetworkEdges(pack),
+  ];
+}
+
+function outOfStationTransferNetworkEdges(pack) {
+  const edges = [];
+  for (const link of pack.outOfStationTransferLinks ?? []) {
+    edges.push(outOfStationTransferNetworkEdge(link));
+    if (link.bidirectional === true) {
+      edges.push(
+        outOfStationTransferNetworkEdge({
+          ...link,
+          id: `${link.id}-reverse`,
+          fromStationId: link.toStationId,
+          fromLineId: link.toLineId,
+          toStationId: link.fromStationId,
+          toLineId: link.fromLineId,
+          fromExitId: link.toExitId,
+          toExitId: link.fromExitId,
+        }),
+      );
+    }
+  }
+  return edges;
+}
+
+function outOfStationTransferNetworkEdge(link) {
+  return {
+    id: requiredString(link.id, "outOfStationTransferLinks.id"),
+    fromNodeId: `${requiredString(link.fromStationId, "outOfStationTransferLinks.fromStationId")}:${requiredString(
+      link.fromLineId,
+      "outOfStationTransferLinks.fromLineId",
+    )}`,
+    toNodeId: `${requiredString(link.toStationId, "outOfStationTransferLinks.toStationId")}:${requiredString(
+      link.toLineId,
+      "outOfStationTransferLinks.toLineId",
+    )}`,
+    durationSeconds: link.durationSeconds ?? 0,
+    distanceMeters: link.distanceMeters ?? 0,
+    edgeType: "OUT_OF_STATION_TRANSFER",
+    stairAccessState: link.stairAccessState ?? "UNKNOWN",
+    accessibilityStatus: link.accessibilityStatus ?? "UNKNOWN",
+    reliabilityScore: link.reliabilityScore ?? 100,
+    sourceId: link.sourceId ?? "",
+    sourceSnapshotId: link.sourceSnapshotId ?? "",
+    providerRecordHash: link.providerRecordHash ?? "",
+    provenanceKind: link.provenanceKind ?? "UNKNOWN",
+    verificationStatus: link.verificationStatus ?? "UNKNOWN",
+    lastVerifiedAt: link.lastFieldVerifiedAt ?? link.lastVerifiedAt,
+    evidenceHash: link.evidenceHash ?? "",
+  };
+}
+
 function buildSqlitePack(sqlitePath, schema, pack) {
   const database = new DatabaseSync(sqlitePath);
   const isProductionPack = pack.artifactKind === "production";
+  const networkEdges = routeGraphNetworkEdges(pack);
   try {
     database.exec(schema);
     database.exec("BEGIN IMMEDIATE");
@@ -890,6 +948,69 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       );
       insertRows(
         database,
+        "out_of_station_transfer_links",
+        [
+          "id",
+          "from_station_id",
+          "from_line_id",
+          "to_station_id",
+          "to_line_id",
+          "from_exit_id",
+          "to_exit_id",
+          "duration_seconds",
+          "distance_meters",
+          "bidirectional",
+          "requires_fare_exit",
+          "requires_reentry",
+          "covered_route",
+          "crossing_risk",
+          "slope_level",
+          "curb_cut_status",
+          "sidewalk_status",
+          "accessibility_status",
+          "stair_access_state",
+          "reliability_score",
+          "source_id",
+          "source_snapshot_id",
+          "provider_record_hash",
+          "provenance_kind",
+          "verification_status",
+          "last_field_verified_at",
+          "evidence_hash",
+        ],
+        pack.outOfStationTransferLinks ?? [],
+        (row) => [
+          requiredString(row.id, "outOfStationTransferLinks.id"),
+          requiredString(row.fromStationId, "outOfStationTransferLinks.fromStationId"),
+          requiredString(row.fromLineId, "outOfStationTransferLinks.fromLineId"),
+          requiredString(row.toStationId, "outOfStationTransferLinks.toStationId"),
+          requiredString(row.toLineId, "outOfStationTransferLinks.toLineId"),
+          row.fromExitId ?? null,
+          row.toExitId ?? null,
+          row.durationSeconds ?? 0,
+          row.distanceMeters ?? 0,
+          boolFlag(row.bidirectional, "outOfStationTransferLinks.bidirectional"),
+          boolFlag(row.requiresFareExit ?? true, "outOfStationTransferLinks.requiresFareExit"),
+          boolFlag(row.requiresReentry ?? true, "outOfStationTransferLinks.requiresReentry"),
+          row.coveredRoute ?? "UNKNOWN",
+          row.crossingRisk ?? "UNKNOWN",
+          row.slopeLevel ?? 1,
+          row.curbCutStatus ?? "UNKNOWN",
+          row.sidewalkStatus ?? "UNKNOWN",
+          normalizedAccessibilityStatus(row.accessibilityStatus, "outOfStationTransferLinks.accessibilityStatus"),
+          row.stairAccessState ?? "UNKNOWN",
+          row.reliabilityScore ?? 100,
+          row.sourceId ?? "",
+          row.sourceSnapshotId ?? "",
+          row.providerRecordHash ?? "",
+          row.provenanceKind ?? "UNKNOWN",
+          row.verificationStatus ?? "UNKNOWN",
+          timestamp(row.lastFieldVerifiedAt ?? row.lastVerifiedAt),
+          row.evidenceHash ?? "",
+        ],
+      );
+      insertRows(
+        database,
         "network_edges",
         [
           "id",
@@ -912,7 +1033,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           "last_verified_at",
           "evidence_hash",
         ],
-        pack.networkEdges ?? [],
+        networkEdges,
         (row) => {
           const stairAccessState = row.stairAccessState ?? (row.includesStairs ? "STAIR_ONLY" : "UNKNOWN");
           const accessibilityStatus = normalizedAccessibilityStatus(
@@ -1441,7 +1562,7 @@ function validateMinimumTableRows(pack, artifactKind) {
   const actualRowsByTable = {
     stations: pack.stations?.length ?? 0,
     station_lines: pack.stationLines?.length ?? 0,
-    network_edges: pack.networkEdges?.length ?? 0,
+    network_edges: routeGraphNetworkEdges(pack).length,
     facilities: pack.facilities?.length ?? 0,
     station_facility_evidence: pack.stationFacilityEvidence?.length ?? 0,
   };

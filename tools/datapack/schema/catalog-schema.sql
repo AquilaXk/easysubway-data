@@ -191,6 +191,38 @@ CREATE TABLE network_edges (
   evidence_hash TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE out_of_station_transfer_links (
+  id TEXT NOT NULL PRIMARY KEY,
+  from_station_id TEXT NOT NULL,
+  from_line_id TEXT NOT NULL,
+  to_station_id TEXT NOT NULL,
+  to_line_id TEXT NOT NULL,
+  from_exit_id TEXT,
+  to_exit_id TEXT,
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  distance_meters INTEGER NOT NULL DEFAULT 0,
+  bidirectional INTEGER NOT NULL DEFAULT 0 CHECK (bidirectional IN (0, 1)),
+  requires_fare_exit INTEGER NOT NULL DEFAULT 1 CHECK (requires_fare_exit IN (0, 1)),
+  requires_reentry INTEGER NOT NULL DEFAULT 1 CHECK (requires_reentry IN (0, 1)),
+  covered_route TEXT NOT NULL DEFAULT 'UNKNOWN',
+  crossing_risk TEXT NOT NULL DEFAULT 'UNKNOWN',
+  slope_level INTEGER NOT NULL DEFAULT 1,
+  curb_cut_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  sidewalk_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  stair_access_state TEXT NOT NULL DEFAULT 'UNKNOWN',
+  reliability_score INTEGER NOT NULL DEFAULT 100,
+  source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
+  provider_record_hash TEXT NOT NULL DEFAULT '',
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  last_field_verified_at INTEGER,
+  evidence_hash TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (from_station_id, from_line_id) REFERENCES station_lines(station_id, line_id),
+  FOREIGN KEY (to_station_id, to_line_id) REFERENCES station_lines(station_id, line_id)
+);
+
 CREATE TABLE station_exits (
   id TEXT NOT NULL PRIMARY KEY,
   station_id TEXT NOT NULL,
@@ -367,6 +399,7 @@ CREATE INDEX idx_transit_stop_times_trip_sequence ON transit_stop_times(trip_id,
 CREATE INDEX idx_transit_trips_route_service_pattern ON transit_trips(route_id, service_id, service_pattern);
 CREATE INDEX idx_realtime_provider_stations_internal ON realtime_provider_station_mappings(station_id, line_id);
 CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
+CREATE INDEX idx_out_of_station_transfer_links_from ON out_of_station_transfer_links(from_station_id, from_line_id);
 CREATE INDEX idx_station_facility_evidence_station ON station_facility_evidence(station_id, line_id);
 
 CREATE TABLE route_map_positions (
