@@ -56,7 +56,9 @@ function correctedTables(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("emergencyPatch.rows is required");
   }
-  const tables = [...new Set(rows.map((row, index) => requireString(row?.table, `emergencyPatch.rows[${index}].table`)))].sort();
+  const tables = [...new Set(rows.map((row, index) => requireString(row?.table, `emergencyPatch.rows[${index}].table`)))].sort((left, right) =>
+    left.localeCompare(right),
+  );
   for (const table of REQUIRED_PATCH_TABLES) {
     if (!tables.includes(table)) {
       throw new Error(`emergencyPatch.rows must include ${table}`);
