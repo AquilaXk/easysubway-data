@@ -8192,8 +8192,7 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
           ],
         },
         routeRegressionReplay: {
-          command: "node tools/routes/evaluate-eta-accuracy.mjs --dataset tools/routes/golden-od --output /tmp/report.json",
-          commandOutput: '{"failures":[],"sampleSize":100}',
+          command: "node -e 'process.stdout.write(JSON.stringify({failures:[],sampleSize:100}))'",
           before: { blocked: true, blocker: "bad network edge" },
           after: { blocked: false },
         },

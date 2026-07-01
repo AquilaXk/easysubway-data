@@ -1,9 +1,12 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const REQUIRED_PATCH_TABLES = ["facilities", "network_edges", "transit_stop_times"];
+const execFileAsync = promisify(execFile);
 
 function argValue(args, name) {
   const index = args.indexOf(name);
@@ -39,7 +42,7 @@ function requireSha(value, name) {
 function parseTime(value, name) {
   const millis = Date.parse(requireString(value, name));
   if (!Number.isFinite(millis)) {
-    throw new Error(`${name} must be ISO date-time`);
+    throw new TypeError(`${name} must be ISO date-time`);
   }
   return millis;
 }
@@ -94,7 +97,7 @@ async function main() {
   }
 
   const command = requireString(routeRegressionReplay.command, "routeRegressionReplay.command");
-  const commandOutput = requireString(routeRegressionReplay.commandOutput, "routeRegressionReplay.commandOutput");
+  const { stdout: commandOutput } = await execFileAsync("bash", ["-c", command], { maxBuffer: 10 * 1024 * 1024 });
   const evidence = {
     schemaVersion: 1,
     artifactKind: "emergency-datapack-release-drill",
@@ -125,7 +128,9 @@ async function main() {
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
 }
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error(error.message);
   process.exitCode = 1;
-});
+}
