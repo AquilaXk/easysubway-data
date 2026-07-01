@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 10;
+PRAGMA user_version = 11;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -257,6 +257,24 @@ CREATE TABLE facilities (
   FOREIGN KEY (exit_id) REFERENCES station_exits(id)
 );
 
+CREATE TABLE facility_status_snapshots (
+  id TEXT NOT NULL PRIMARY KEY,
+  facility_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  source_snapshot_id TEXT NOT NULL,
+  provider_record_hash TEXT NOT NULL,
+  evidence_hash TEXT NOT NULL,
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  operational_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  confidence INTEGER NOT NULL DEFAULT 0,
+  observed_at INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER,
+  FOREIGN KEY (facility_id) REFERENCES facilities(id)
+);
+
 CREATE TABLE station_facility_evidence (
   station_id TEXT NOT NULL,
   line_id TEXT NOT NULL,
@@ -399,6 +417,8 @@ CREATE INDEX idx_transit_stop_times_trip_sequence ON transit_stop_times(trip_id,
 CREATE INDEX idx_transit_trips_route_service_pattern ON transit_trips(route_id, service_id, service_pattern);
 CREATE INDEX idx_realtime_provider_stations_internal ON realtime_provider_station_mappings(station_id, line_id);
 CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
+CREATE INDEX idx_facility_status_snapshots_facility
+  ON facility_status_snapshots(facility_id, expires_at, observed_at);
 CREATE INDEX idx_out_of_station_transfer_links_from ON out_of_station_transfer_links(from_station_id, from_line_id);
 CREATE INDEX idx_station_facility_evidence_station ON station_facility_evidence(station_id, line_id);
 
