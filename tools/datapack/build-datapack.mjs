@@ -926,7 +926,7 @@ function buildSqlitePack(sqlitePath, schema, pack) {
             requiredString(row.toNodeId, "networkEdges.toNodeId"),
             row.durationSeconds ?? 0,
             row.distanceMeters ?? 0,
-            row.edgeType ?? "WALK",
+            row.edgeType ?? "WALKWAY",
             row.servicePattern ?? "",
             stairAccessState === "STAIR_ONLY" ? 1 : 0,
             stairAccessState,

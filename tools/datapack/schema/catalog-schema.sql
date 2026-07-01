@@ -171,7 +171,11 @@ CREATE TABLE network_edges (
   to_node_id TEXT NOT NULL,
   duration_seconds INTEGER NOT NULL DEFAULT 0,
   distance_meters INTEGER NOT NULL DEFAULT 0,
-  edge_type TEXT NOT NULL DEFAULT 'WALK',
+  -- Allowed by datapack validator: RIDE, IN_STATION_TRANSFER,
+  -- OUT_OF_STATION_TRANSFER, ENTRY, EXIT, WALKWAY, ELEVATOR, RAMP,
+  -- STAIR, ESCALATOR, FACILITY_CONNECTOR, LEGACY_TRANSFER.
+  -- Mobile keeps old TRANSFER rows as inStationTransfer for saved/older packs.
+  edge_type TEXT NOT NULL DEFAULT 'WALKWAY',
   service_pattern TEXT NOT NULL DEFAULT '',
   includes_stairs INTEGER NOT NULL DEFAULT 0,
   stair_access_state TEXT NOT NULL DEFAULT 'UNKNOWN',

@@ -29,6 +29,20 @@ const facilityEvidenceProvenanceColumns = [
   "retrieved_at",
 ];
 const productionFacilityProvenanceKinds = ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"];
+const allowedNetworkEdgeTypes = new Set([
+  "RIDE",
+  "IN_STATION_TRANSFER",
+  "OUT_OF_STATION_TRANSFER",
+  "ENTRY",
+  "EXIT",
+  "WALKWAY",
+  "ELEVATOR",
+  "RAMP",
+  "STAIR",
+  "ESCALATOR",
+  "FACILITY_CONNECTOR",
+  "LEGACY_TRANSFER",
+]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -150,8 +164,24 @@ function validateSqlite(sqlitePath, pack) {
 }
 
 function validateNetworkEdgeReferences(database, pack) {
+  validateNetworkEdgeTypes(database, pack);
   validateNetworkEdgeStationLineEndpoints(database, pack);
   validateNetworkEdgeFacilityReferences(database, pack);
+}
+
+function validateNetworkEdgeTypes(database, pack) {
+  if (!hasTable(database, "network_edges")) {
+    return;
+  }
+  const edges = database
+    .prepare("SELECT id, edge_type FROM network_edges ORDER BY id")
+    .all();
+  for (const edge of edges) {
+    const edgeType = normalizedEdgeType(edge.edge_type);
+    if (!allowedNetworkEdgeTypes.has(edgeType)) {
+      throw new Error(`${pack.id}@${pack.version} network_edges edge_type is not allowed: ${edge.id} -> ${edge.edge_type}`);
+    }
+  }
 }
 
 function validateTransitSchedule(database, pack) {
@@ -772,14 +802,23 @@ function stationIdFromStationLineNode(stationLineNode) {
 
 function routeGraphConnectivityEdgeType(edgeType) {
   const normalized = normalizedEdgeType(edgeType);
-  if (normalized === "RIDE" || normalized === "TRANSFER") {
+  if (normalized === "RIDE") {
     return normalized;
+  }
+  if (isNetworkTransferEdgeType(normalized)) {
+    return "TRANSFER";
   }
   return null;
 }
 
 function normalizedEdgeType(edgeType) {
   return String(edgeType ?? "").toUpperCase();
+}
+
+function isNetworkTransferEdgeType(edgeType) {
+  return edgeType === "IN_STATION_TRANSFER" ||
+    edgeType === "OUT_OF_STATION_TRANSFER" ||
+    edgeType === "LEGACY_TRANSFER";
 }
 
 function connectedLineNodes(stationLineRows) {
@@ -1336,7 +1375,7 @@ function productionVerifiedCoverage(database, edgeRows) {
       verifiedEntryPairs.add(edgePairKey(fromNodeId, toNodeId));
     } else if (edgeType === "EXIT") {
       verifiedExitPairs.add(edgePairKey(fromNodeId, toNodeId));
-    } else if (edgeType === "TRANSFER") {
+    } else if (isNetworkTransferEdgeType(edgeType)) {
       verifiedTransferPairs.add(edgePairKey(fromNodeId, toNodeId));
       verifiedTransferPairs.add(edgePairKey(toNodeId, fromNodeId));
     }
@@ -1369,7 +1408,7 @@ function isPositiveAccessibilityEdge(edge) {
 function isAccessibilityCoverageCandidate(edge) {
   const edgeType = normalizedEdgeType(edge.edge_type);
   return (
-    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    (edgeType === "ENTRY" || edgeType === "EXIT" || isNetworkTransferEdgeType(edgeType)) &&
     String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
     String(edge.accessibility_status ?? "").toUpperCase() === "AVAILABLE"
   );
@@ -1379,7 +1418,7 @@ function isAccessibilityProvenanceCandidate(edge) {
   const edgeType = normalizedEdgeType(edge.edge_type);
   const accessibilityStatus = String(edge.accessibility_status ?? "").toUpperCase();
   return (
-    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    (edgeType === "ENTRY" || edgeType === "EXIT" || isNetworkTransferEdgeType(edgeType)) &&
     String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
     ["AVAILABLE", "UNKNOWN"].includes(accessibilityStatus)
   );
@@ -1388,7 +1427,7 @@ function isAccessibilityProvenanceCandidate(edge) {
 function isUnverifiedAccessibilityCoverageEdge(edge) {
   const edgeType = normalizedEdgeType(edge.edge_type);
   return (
-    ["ENTRY", "EXIT", "TRANSFER"].includes(edgeType) &&
+    (edgeType === "ENTRY" || edgeType === "EXIT" || isNetworkTransferEdgeType(edgeType)) &&
     String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
     String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE"
   );
