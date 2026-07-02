@@ -96,6 +96,7 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_PRODUCTION_GATE_REPORT=${{ runner.temp }}/easysubway-production-gate-validation.log"
             echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
+            echo "EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-graph-topology-report.json"
             echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${{ runner.temp }}/easysubway-datapack-stage/release-evidence-bundle.json"
           } >> "${GITHUB_ENV}"
 
@@ -358,6 +359,15 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
+      - name: Data Pack Release / Write route graph topology evidence
+        run: |
+          set -euo pipefail
+          node tools/datapack/build-route-graph-topology-report.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
+            --root "${EASYSUBWAY_DATAPACK_STAGE}" \
+            --output "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
+          test -s "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
+
       - name: Data Pack Release / Write release evidence bundle
         run: |
           set -euo pipefail
@@ -390,6 +400,16 @@ jobs:
             }
             return normalized || zeroHash;
           };
+          const topologyReport = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT, "utf8"));
+          const routeGraphTopologyViolationCount = [
+            "localRideAdjacencyViolationCount",
+            "rideSpeedViolationCount",
+            "disconnectedNodeCount",
+            "unreachableDirectedPairCount",
+          ].reduce((sum, field) => sum + Number(topologyReport.summary?.[field] ?? 0), 0);
+          const routeGraphTopologyStatus = routeGraphTopologyViolationCount === 0
+            ? "PASS"
+            : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
 
           const bundle = {
             schemaVersion: 1,
@@ -411,11 +431,13 @@ jobs:
             manifestSha256: hashFile(manifestPath),
             coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
             routeMapPositionCoverageSha256: hashFile(process.env.EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT),
+            routeGraphTopologySha256: hashFile(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT),
             strictRouteRegressionSha256: externalHash(strictEvidence),
             androidEvidenceSha256: externalHash(androidEvidence),
             validatorStatus: "PASS",
             coverageStatus: releaseLike ? "PASS" : "BLOCKED_EXTERNAL",
             routeMapPositionCoverageStatus: "PASS",
+            routeGraphTopologyStatus,
             strictRouteRegressionStatus: externalStatus(strictEvidence),
             manifestSignatureStatus: "PASS",
             androidEvidenceStatus: externalStatus(androidEvidence),
