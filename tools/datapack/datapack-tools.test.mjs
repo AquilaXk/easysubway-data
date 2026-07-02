@@ -8930,6 +8930,54 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
   assert.equal(evidence.verification.commandOutputSha256, sha256('{"failures":[],"sampleSize":100}'));
 });
 
+test("데이터팩 만료 알림 evidence는 SLA 임박 manifest를 FIRING으로 기록한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-expiry-alert-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const manifestPath = path.join(outputDir, "current.json");
+  const outputPath = path.join(outputDir, "expiry-alert-evidence.json");
+
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        manifestVersion: 2,
+        channel: "production",
+        releaseSequence: 42,
+        publishedAt: "2026-07-01T18:00:00.000Z",
+        expiresAt: "2026-07-02T05:30:00.000Z",
+        activePack: { id: "capital", version: "1" },
+        packs: [],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/check-datapack-expiry-alert.mjs",
+      "--manifest",
+      manifestPath,
+      "--output",
+      outputPath,
+      "--now",
+      "2026-07-02T00:00:00.000Z",
+    ],
+    { cwd: root },
+  );
+
+  const evidence = JSON.parse(await readFile(outputPath, "utf8"));
+  assert.equal(evidence.artifactKind, "datapack-expiry-alert-evidence");
+  assert.equal(evidence.policy.alertBeforePackExpiry, "PT6H");
+  assert.equal(evidence.manifest.channel, "production");
+  assert.equal(evidence.manifest.releaseSequence, 42);
+  assert.equal(evidence.alert.status, "FIRING");
+  assert.equal(evidence.alert.severity, "warning");
+  assert.equal(evidence.alert.secondsUntilExpiry, 19800);
+});
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
