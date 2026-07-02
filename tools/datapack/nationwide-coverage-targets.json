@@ -16,7 +16,7 @@
       "claimKo": "전국 도시철도·광역철도·공항철도·GTX·경전철 지원",
       "status": "NO_GO",
       "releaseScopeArtifact": "tools/datapack/nationwide-coverage-targets.json",
-      "unblockConditionKo": "모든 roadmap stage의 source admission과 6개 requiredSourceDomains coverage ratio 1을 통과해야 한다."
+      "unblockConditionKo": "모든 roadmap stage의 source admission과 7개 requiredSourceDomains coverage ratio 1을 통과해야 한다."
     },
     {
       "claimId": "realtime_eta_accuracy",
@@ -77,6 +77,18 @@
       "displayName": "실시간 도착/열차 참조",
       "requiredFields": [
         "realtime_arrival_reference"
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
+    },
+    {
+      "id": "schedule_timetable",
+      "displayName": "시간표와 운행 calendar",
+      "requiredFields": [
+        "service_calendar",
+        "trip",
+        "stop_time"
       ],
       "blockingThreshold": {
         "minimumOfficialFieldCoverageRatio": 1
@@ -261,12 +273,13 @@
     "readmeScopeEvidence": "README.md Scope section separates long-term denominator from Android v1 상록수·사당 검증 pilot claim.",
     "targetComparison": {
       "nationwideTargets": {
-        "requiredSourceDomainCount": 6,
+        "requiredSourceDomainCount": 7,
         "requiredSourceDomains": [
           "station_line_membership",
           "route_graph_topology",
           "accessibility_facilities",
           "realtime_arrivals",
+          "schedule_timetable",
           "route_map_positions",
           "demand_reference"
         ]
@@ -277,6 +290,7 @@
         "deferredSourceDomains": [
           "route_graph_topology",
           "realtime_arrivals",
+          "schedule_timetable",
           "route_map_positions",
           "demand_reference"
         ]
@@ -284,10 +298,10 @@
     },
     "sourceCandidateAdmission": {
       "sourceCandidatesPath": "tools/datapack/source-candidates.json",
-      "p0CandidateCount": 12,
+      "p0CandidateCount": 13,
       "requiredAdmissionStatusBeforeProductionClaim": "admitted_to_production_inventory",
       "currentSharedAdmissionStatus": "evidence_recorded_admin_review_required",
-      "productionClaimImpactKo": "P0 source candidate 12건이 production inventory로 승격되기 전까지 모든 expansionRoadmap stage는 NO-GO다."
+      "productionClaimImpactKo": "P0 source candidate 13건이 production inventory로 승격되기 전까지 모든 expansionRoadmap stage는 NO-GO다."
     },
     "gapEscalationRuleKo": "지원 claim을 깨는 P1/P2 gap은 P0 release blocker로 승격하고 release gate에서 실패시킨다."
   }

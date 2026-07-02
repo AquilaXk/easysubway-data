@@ -649,6 +649,77 @@
       }
     },
     {
+      "id": "molit-tago-subway-info",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "displayName": "국토교통부_(TAGO)_지하철정보",
+      "detailUrl": "https://www.data.go.kr/data/15098554/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "productionInventoryReferenceId": "molit-tago-subway-info",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_remains_schedule_candidate_until_sample_and_importer_validation",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15098554/openapi.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList",
+        "sampleUrl": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList?serviceKey=[서비스키값]&pageNo=1&numOfRows=10&_type=json&subwayStationId=448&dailyTypeCode=01&upDownTypeCode=U",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "XML",
+          "JSON"
+        ],
+        "coverageLimitations": [
+          "시간표 import adapter와 provider sample validation 전까지 production PLANNED ETA 근거로 쓰지 않음",
+          "route graph RIDE edge duration과 stop_times 정합 검증 필요"
+        ],
+        "outputFields": [
+          "endSubwayStationNm",
+          "subwayRouteId",
+          "subwayStationId",
+          "subwayStationNm",
+          "dailyTypeCode",
+          "upDownTypeCode",
+          "depTime",
+          "arrTime",
+          "endSubwayStationId"
+        ],
+        "missingEvidence": [
+          "sampleResponse",
+          "scheduleImporterValidation"
+        ]
+      },
+      "nextAction": "capture sanitized TAGO live sample and validate schedule importer before production timetable admission",
+      "capabilities": {
+        "schedule": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "commercial schedule import remains blocked until production schedule importer and provider sample validation are complete"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility records"
+        }
+      }
+    },
+    {
       "id": "seoul-topis-realtime-station-arrival",
       "priority": "P0",
       "domain": "realtime_arrivals",
