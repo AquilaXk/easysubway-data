@@ -931,6 +931,38 @@ test("데이터팩 생성기는 만료된 source snapshot buildSpec을 거부한
   }
 });
 
+test("데이터팩 생성기는 admin review 없는 source snapshot buildSpec을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-build-spec-admin-output-${Date.now()}`);
+  const buildSpecDir = path.join(root, "tmp", `easysubway-datapack-build-spec-admin-${process.pid}-${Date.now()}`);
+  const buildSpecPath = path.join(buildSpecDir, "candidate-build-spec.missing-admin.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(buildSpecDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await mkdir(buildSpecDir, { recursive: true });
+  const buildSpec = JSON.parse(await readFile("tools/datapack/fixtures/candidate-build-spec.json", "utf8"));
+  delete buildSpec.sourceSnapshots[0].adminReviewRecordHash;
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-datapack.mjs",
+          "--build-spec",
+          buildSpecPath,
+          "--output",
+          outputDir,
+        ],
+        { cwd: root, env: productionEnv },
+      ),
+      /buildSpec\.sourceSnapshots\[0\]\.adminReviewRecordHash must be a non-empty string/,
+    );
+  } finally {
+    await rm(buildSpecDir, { recursive: true, force: true });
+  }
+});
+
 test("source snapshot command는 raw token을 저장 전에 거부한다", async () => {
   const workDir = path.join(tmpdir(), `easysubway-source-snapshot-token-${process.pid}-${Date.now()}`);
   const rawPath = path.join(workDir, "raw.csv");

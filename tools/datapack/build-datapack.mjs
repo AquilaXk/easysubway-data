@@ -238,10 +238,19 @@ function requiredSourceSnapshots(value, label) {
         `${prefix}.redactedRequestFingerprint`,
       ),
       schemaFingerprint: sha256HexString(snapshot.schemaFingerprint, `${prefix}.schemaFingerprint`),
+      licenseStatus: requiredString(snapshot.licenseStatus, `${prefix}.licenseStatus`),
+      redistributionAllowed: snapshot.redistributionAllowed,
+      adminReviewRecordHash: sha256HexString(snapshot.adminReviewRecordHash, `${prefix}.adminReviewRecordHash`),
       snapshotStatus: requiredString(snapshot.snapshotStatus, `${prefix}.snapshotStatus`),
       credentialRedacted: snapshot.credentialRedacted,
       freshnessExpiresAt: requiredUtcDateString(snapshot.freshnessExpiresAt, `${prefix}.freshnessExpiresAt`),
     };
+    if (normalized.licenseStatus !== "PASS") {
+      throw new Error(`${prefix}.licenseStatus must be PASS`);
+    }
+    if (snapshot.redistributionAllowed !== true) {
+      throw new Error(`${prefix}.redistributionAllowed must be true`);
+    }
     if (!sourceSnapshotStatuses.has(normalized.snapshotStatus)) {
       throw new Error(`${prefix}.snapshotStatus must be LOCKED`);
     }
