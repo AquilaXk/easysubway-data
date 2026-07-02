@@ -4060,6 +4060,82 @@ test("데이터팩 생성기는 시설 coverage를 시설이 있는 역 비율�
   );
 });
 
+test("데이터팩 quality metric report는 denominator 기반 metric과 freshness를 산출한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-quality-report-${Date.now()}`);
+  const reportPath = path.join(outputDir, "artifacts/datapack-quality-metrics.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-quality-metric-report.mjs",
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--output",
+      reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.artifactKind, "datapack-quality-metric-report");
+  assert.equal(report.summary.packCount, 1);
+  assert.equal(report.summary.worstRequiredFacilityEvidenceCoverageRatio, 0.1852);
+  assert.equal(report.summary.worstFreshnessValidRatio, 0);
+  assert.equal(report.packs[0].denominatorPolicy, "station_line_x_required_facility_type");
+  assert.equal(report.packs[0].metrics.requiredFacilityEvidenceCoverageRatio, 0.1852);
+  assert.equal(report.packs[0].metrics.freshnessValidRatio, 0);
+});
+
+test("데이터팩 quality metric report는 freshness metric 누락 manifest를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-quality-report-invalid-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  delete manifest.packs[0].regionalQualityMetrics.freshnessValidRatio;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-quality-metric-report.mjs",
+        "--manifest",
+        manifestPath,
+      ],
+      { cwd: root },
+    ),
+    /freshnessValidRatio must be a ratio/,
+  );
+});
+
 test("데이터팩 생성기는 accessibilityStatus 대소문자를 정규화해 산출물을 검증 가능하게 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-accessibility-status-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
