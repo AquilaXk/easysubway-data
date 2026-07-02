@@ -612,6 +612,9 @@ test("원격 데이터팩 검증 wrapper는 manifest와 pack을 내려받아 기
     assert.equal(summary.manifestVersion, 1);
     assert.equal(summary.validation.exitCode, 0);
     assert.equal(summary.packs[0].id, "capital");
+    assert.equal(summary.packs[0].download.sizeBytesMatchesManifest, true);
+    assert.equal(summary.packs[0].download.sha256MatchesManifest, true);
+    assert.equal(summary.packs[0].download.sqliteSha256MatchesManifest, true);
     assert.match(summary.manifestSha256, /^[0-9a-f]{64}$/);
   } finally {
     await server.close();
@@ -673,6 +676,10 @@ test("원격 데이터팩 검증 wrapper는 validator 실패도 summary에 기�
     );
     assert.notEqual(summary.validation.exitCode, 0);
     assert.equal(summary.validation.signal, null);
+    assert.equal(summary.packs[0].download.sizeBytesMatchesManifest, false);
+    assert.equal(summary.packs[0].download.sha256MatchesManifest, false);
+    assert.equal(summary.packs[0].download.sqliteSha256MatchesManifest, false);
+    assert.match(summary.packs[0].download.sqliteDecompressionError, /incorrect header check|not in gzip format/);
     assert.match(summary.validation.stderr, /sizeBytes mismatch/);
   } finally {
     await server.close();

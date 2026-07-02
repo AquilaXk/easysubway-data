@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 import path from "node:path";
 
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -17,12 +18,15 @@ const manifestBytes = await download(manifestUrl);
 await writeFile(manifestPath, manifestBytes);
 
 const manifest = JSON.parse(manifestBytes.toString("utf8"));
+const downloadedPacks = [];
 for (const pack of manifest.packs ?? []) {
   const packUrl = /^https?:\/\//.test(pack.url)
     ? pack.url
     : new URL(pack.url, new URL("/", manifestUrl)).toString();
   const packPath = path.join(outputRoot, "catalog", `${pack.id}-v${pack.version}.sqlite.gz`);
-  await writeFile(packPath, await download(packUrl));
+  const packBytes = await download(packUrl);
+  await writeFile(packPath, packBytes);
+  downloadedPacks.push(summarizeDownloadedPack({ pack, packUrl, packBytes }));
 }
 
 const validation = await runValidator({ manifestPath, outputRoot, requireProduction });
@@ -42,6 +46,9 @@ const summary = {
     sha256: pack.sha256,
     sqliteSha256: pack.sqliteSha256,
     sizeBytes: pack.sizeBytes,
+    download: downloadedPacks.find(
+      (downloadedPack) => downloadedPack.id === pack.id && downloadedPack.version === pack.version,
+    ),
     regionalQualityMetrics: pack.regionalQualityMetrics,
   })),
   validation,
@@ -85,6 +92,29 @@ function requireArg(parsed, name) {
     throw new Error(`missing required argument: --${name}`);
   }
   return value;
+}
+
+function summarizeDownloadedPack({ pack, packUrl, packBytes }) {
+  const compressedSha256 = sha256(packBytes);
+  const summary = {
+    id: pack.id,
+    version: pack.version,
+    resolvedUrl: packUrl,
+    sizeBytes: packBytes.length,
+    sha256: compressedSha256,
+    sizeBytesMatchesManifest: packBytes.length === pack.sizeBytes,
+    sha256MatchesManifest: compressedSha256 === pack.sha256,
+  };
+  try {
+    const sqliteBytes = gunzipSync(packBytes);
+    const sqliteSha256 = sha256(sqliteBytes);
+    summary.sqliteSha256 = sqliteSha256;
+    summary.sqliteSha256MatchesManifest = sqliteSha256 === pack.sqliteSha256;
+  } catch (error) {
+    summary.sqliteSha256MatchesManifest = false;
+    summary.sqliteDecompressionError = error.message;
+  }
+  return summary;
 }
 
 async function download(url) {
