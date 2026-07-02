@@ -7,9 +7,12 @@ on:
     paths:
       - tools/datapack/**
       - tools/route-map/**
+      - apps/mobile/release/datapack-freshness-sla.json
       - apps/mobile/lib/core/datapack/**
       - apps/mobile/lib/core/database/catalog/**
       - .github/workflows/datapack-release.yml
+  schedule:
+    - cron: "17 18 * * *"
   workflow_dispatch:
     inputs:
       mode:
