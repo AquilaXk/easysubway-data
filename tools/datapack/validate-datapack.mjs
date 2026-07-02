@@ -1302,8 +1302,8 @@ function validateProductionFacilityPositiveStatus(row, statusMeaning, pack) {
   const positiveStatus = ["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(
     String(row.status ?? "").toUpperCase(),
   );
-  if (positiveStatus && statusMeaning !== "REALTIME_OPERATION") {
-    throw new Error(`${pack.id}@${pack.version} facilities positive status requires REALTIME_OPERATION evidence: ${row.id}`);
+  if (positiveStatus && !["REALTIME_OPERATION", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(statusMeaning)) {
+    throw new Error(`${pack.id}@${pack.version} facilities positive status requires verified operation evidence: ${row.id}`);
   }
 }
 

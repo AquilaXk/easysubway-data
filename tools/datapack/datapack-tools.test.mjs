@@ -3010,6 +3010,46 @@ test("데이터팩 생성기는 production 시설 status 의미와 검증 근거
   );
 });
 
+test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근거를 허용한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-production-facility-positive-evidence-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "catalog-fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  for (const [index, statusMeaning] of ["FIELD_SURVEY", "OPERATOR_CONFIRMED"].entries()) {
+    fixture.packs[0].facilities[index].status = "NORMAL";
+    fixture.packs[0].facilities[index].operationalStatus = "AVAILABLE";
+    fixture.packs[0].facilities[index].statusMeaning = statusMeaning;
+    fixture.packs[0].facilities[index].provenanceKind = statusMeaning;
+  }
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+});
+
 test("데이터팩 검증기는 production verified edge coverage report를 출력한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-report-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
