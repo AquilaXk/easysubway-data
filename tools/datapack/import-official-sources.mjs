@@ -33,6 +33,7 @@ function buildFixture(inventory, input) {
   const stations = normalizedStations(stationRows);
   const stationLines = normalizedStationLines(stationRows);
   const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
+  validateProductionRideEdgeAdmission(stationLines, networkEdges, isProductionPack);
   const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
   const stationFacilityEvidence = stationFacilityEvidenceRows(input, stationRows, facilities, isProductionPack);
   const movementCandidates = movementPathCandidates(
@@ -731,6 +732,39 @@ function routeEdges(rows, allowedSourceIds, mappingBySourceKey, isProductionPack
       evidenceHash: productionEvidenceHash(row.evidenceHash, isProductionPack, id, "routeEdges.evidenceHash"),
     };
   });
+}
+
+function validateProductionRideEdgeAdmission(stationLines, networkEdges, isProductionPack) {
+  if (!isProductionPack) {
+    return;
+  }
+  const stationLineByNode = new Map(
+    stationLines.map((row) => [
+      `${row.stationId}:${row.lineId}`,
+      { lineId: row.lineId, lineSequence: row.lineSequence },
+    ]),
+  );
+  for (const edge of networkEdges) {
+    if (edge.edgeType !== "RIDE" || String(edge.servicePattern || "LOCAL").toUpperCase() === "EXPRESS") {
+      continue;
+    }
+    const from = stationLineByNode.get(stationLineNodeFromRouteNode(edge.fromNodeId));
+    const to = stationLineByNode.get(stationLineNodeFromRouteNode(edge.toNodeId));
+    if (!from || !to) {
+      continue;
+    }
+    if (from.lineId !== to.lineId) {
+      throw new Error(`production routeEdges RIDE edge must stay on one line: ${edge.id}`);
+    }
+    if (Math.abs(from.lineSequence - to.lineSequence) !== 1) {
+      throw new Error(`production routeEdges LOCAL RIDE edge must connect adjacent station-line sequences: ${edge.id}`);
+    }
+  }
+}
+
+function stationLineNodeFromRouteNode(nodeId) {
+  const parts = nodeId.split(":");
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : "";
 }
 
 function facilityRows(rows, allowedSourceIds, mappingBySourceKey, isProductionPack) {

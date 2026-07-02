@@ -4644,7 +4644,7 @@ test("데이터팩 검증기는 분리된 route graph component를 거부한다"
     durationSeconds: 180,
     distanceMeters: 700,
     edgeType: "RIDE",
-    servicePattern: "LOCAL",
+    servicePattern: "EXPRESS",
     includesStairs: false,
     stairAccessState: "STEP_FREE",
     accessibilityStatus: "AVAILABLE",
@@ -6741,7 +6741,7 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     durationSeconds: 1860,
     distanceMeters: 18600,
     edgeType: "RIDE",
-    servicePattern: "LOCAL",
+    servicePattern: "EXPRESS",
     includesStairs: false,
     stairAccessState: "STEP_FREE",
     accessibilityStatus: "AVAILABLE",
@@ -7479,6 +7479,14 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   assert.equal(input.manifest.releaseSequence, undefined);
   assert.equal(input.manifest.publishedAt, undefined);
   assert.equal(input.manifest.expiresAt, undefined);
+  const adjacencySafeInput = {
+    ...input,
+    routeEdges: input.routeEdges.map((edge) =>
+      edge.edgeType === "RIDE" ? { ...edge, servicePattern: "EXPRESS" } : edge,
+    ),
+  };
+  const adjacencySafeInputPath = path.join(outputDir, "capital-pilot-production-adjacency-safe.json");
+  await writeFile(adjacencySafeInputPath, `${JSON.stringify(adjacencySafeInput, null, 2)}\n`);
 
   await execFileAsync(
     process.execPath,
@@ -7487,7 +7495,7 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       "--inventory",
       "tools/datapack/source-inventory.json",
       "--input",
-      inputPath,
+      adjacencySafeInputPath,
       "--output",
       importedFixturePath,
     ],
@@ -7497,12 +7505,72 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), false);
   assert.equal(importedFixture.packs[0].minimumTableRows.route_map_positions, undefined);
 
+  const validatorBypassFixture = JSON.parse(JSON.stringify(importedFixture));
+  validatorBypassFixture.packs[0].networkEdges = validatorBypassFixture.packs[0].networkEdges.map((edge) =>
+    edge.edgeType === "RIDE" ? { ...edge, servicePattern: "LOCAL" } : edge,
+  );
+  const validatorBypassFixturePath = path.join(outputDir, "validator-bypass-local-ride.json");
+  const validatorBypassPackDir = path.join(outputDir, "validator-bypass-local-ride-pack");
+  await writeFile(validatorBypassFixturePath, `${JSON.stringify(validatorBypassFixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      validatorBypassFixturePath,
+      "--output",
+      validatorBypassPackDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(validatorBypassPackDir, "current.json"),
+        "--root",
+        validatorBypassPackDir,
+        "--require-production",
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /network_edges LOCAL RIDE edge must connect adjacent station-line sequences/,
+  );
+
+  const nonAdjacentInput = {
+    ...input,
+    routeEdges: input.routeEdges.map((edge) =>
+      edge.edgeType === "RIDE" ? { ...edge, servicePattern: "LOCAL" } : edge,
+    ),
+  };
+  const nonAdjacentInputPath = path.join(outputDir, "non-adjacent-local-ride-input.json");
+  const nonAdjacentFixturePath = path.join(outputDir, "non-adjacent-local-ride.json");
+  await writeFile(nonAdjacentInputPath, `${JSON.stringify(nonAdjacentInput, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        nonAdjacentInputPath,
+        "--output",
+        nonAdjacentFixturePath,
+      ],
+      { cwd: root },
+    ),
+    /production routeEdges LOCAL RIDE edge must connect adjacent station-line sequences/,
+  );
+
   const missingFacilityInputPath = path.join(outputDir, "capital-pilot-production-missing-facility.json");
   await writeFile(
     missingFacilityInputPath,
     `${JSON.stringify(
       {
-        ...input,
+        ...adjacencySafeInput,
         facilityRows: [],
       },
       null,
@@ -7534,8 +7602,8 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     missingWheelchairLiftEvidenceInputPath,
     `${JSON.stringify(
       {
-        ...input,
-        facilityRows: input.facilityRows.filter((row) => row.id !== "facility-sadang-wheelchair-lift-kric-1"),
+        ...adjacencySafeInput,
+        facilityRows: adjacencySafeInput.facilityRows.filter((row) => row.id !== "facility-sadang-wheelchair-lift-kric-1"),
       },
       null,
       2,
@@ -7563,8 +7631,8 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     unrealisticRideSpeedInputPath,
     `${JSON.stringify(
       {
-        ...input,
-        routeEdges: input.routeEdges.map((edge) =>
+        ...adjacencySafeInput,
+        routeEdges: adjacencySafeInput.routeEdges.map((edge) =>
           edge.edgeType === "RIDE"
             ? { ...edge, durationSeconds: 420 }
             : edge,
@@ -8965,7 +9033,7 @@ function sourceIngestInput() {
         durationSeconds: 1860,
         distanceMeters: 18600,
         edgeType: "RIDE",
-        servicePattern: "LOCAL",
+        servicePattern: "EXPRESS",
         includesStairs: false,
         stairAccessState: "STEP_FREE",
         accessibilityStatus: "AVAILABLE",
@@ -8988,7 +9056,7 @@ function sourceIngestInput() {
         durationSeconds: 1860,
         distanceMeters: 18600,
         edgeType: "RIDE",
-        servicePattern: "LOCAL",
+        servicePattern: "EXPRESS",
         includesStairs: false,
         stairAccessState: "STEP_FREE",
         accessibilityStatus: "AVAILABLE",
