@@ -74,6 +74,7 @@ async function main() {
     "gzipSha256",
     "manifestSha256",
     "coverageSummarySha256",
+    "routeMapPositionCoverageSha256",
     "strictRouteRegressionSha256",
     "androidEvidenceSha256",
   ]) {
@@ -82,6 +83,7 @@ async function main() {
   for (const field of [
     "validatorStatus",
     "coverageStatus",
+    "routeMapPositionCoverageStatus",
     "strictRouteRegressionStatus",
     "manifestSignatureStatus",
     "androidEvidenceStatus",
