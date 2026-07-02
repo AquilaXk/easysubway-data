@@ -642,22 +642,83 @@ function rsaSha256Signature(privateKey, value) {
 function regionalQualityMetrics(pack) {
   const stationIds = new Set((pack.stations ?? []).map((station) => station.id));
   const stationCount = stationIds.size;
+  const stationLineKeys = new Set((pack.stationLines ?? []).map((row) => `${row.stationId}:${row.lineId}`));
   const coveredStationIds = new Set(
     (pack.facilities ?? [])
       .map((facility) => facility.stationId)
       .filter((stationId) => stationIds.has(stationId)),
   );
+  const facilityEvidence = pack.stationFacilityEvidence ?? [];
+  const facilityRows = pack.facilities ?? [];
+  const facilityTypes = new Set([
+    ...facilityEvidence.map((row) => row.facilityType),
+    ...facilityRows.map((row) => row.type),
+  ].filter(Boolean));
+  const facilityDenominator = stationLineKeys.size * facilityTypes.size;
+  const facilityEvidenceKeys = facilityEvidence.length > 0
+    ? new Set(facilityEvidence.map((row) => `${row.stationId}:${row.lineId}:${row.facilityType}`))
+    : facilityKeysFromRows(facilityRows, pack.stationLines ?? []);
+  const facilityFreshnessRows = facilityEvidence.length > 0 ? facilityEvidence : facilityRows;
+  const strictEligibleCount = facilityEvidence.filter((row) => row.strictRouteEligible === true).length;
+  const operationalKnownCount = facilityFreshnessRows.filter((row) =>
+    knownOperationalStatus(row.operationalStatus ?? row.status)
+  ).length;
+  const freshnessValidCount = facilityFreshnessRows.filter((row) => hasVerificationTimestamp(row)).length;
+  const pathwayEdges = pack.stationPathwayEdges ?? [];
+  const fieldVerifiedPathwayCount = pathwayEdges.filter((row) =>
+    ["FIELD_SURVEY", "OPERATOR_CONFIRMED"].includes(String(row.provenanceKind ?? "").toUpperCase())
+  ).length;
   const networkEdges = routeGraphNetworkEdges(pack);
   const edgeCount = networkEdges.length;
   const unknownAccessibilityCount = networkEdges.filter(
     (edge) => normalizedAccessibilityStatus(edge.accessibilityStatus, "networkEdges.accessibilityStatus") === "UNKNOWN",
   ).length;
+  const unknownAccessibilityRatio = ratio(unknownAccessibilityCount, edgeCount);
   return {
     stationCount,
-    facilityCoverageRatio: stationCount === 0 ? 0 : Number((coveredStationIds.size / stationCount).toFixed(4)),
+    facilityCoverageRatio: ratio(coveredStationIds.size, stationCount),
+    requiredFacilityEvidenceCoverageRatio: ratio(facilityEvidenceKeys.size, facilityDenominator),
+    strictRouteEligibleFacilityRatio: ratio(strictEligibleCount, facilityEvidence.length),
+    operationalKnownRatio: ratio(operationalKnownCount, facilityFreshnessRows.length),
+    freshnessValidRatio: ratio(freshnessValidCount, facilityFreshnessRows.length),
+    fieldVerifiedPathwayRatio: ratio(fieldVerifiedPathwayCount, pathwayEdges.length),
     edgeCount,
-    unknownAccessibilityRatio: edgeCount === 0 ? 0 : Number((unknownAccessibilityCount / edgeCount).toFixed(4)),
+    unknownAccessibilityRatio,
+    unknownEdgeRatioByProfile: {
+      wheelchair: unknownAccessibilityRatio,
+      stroller: unknownAccessibilityRatio,
+      lowMobility: unknownAccessibilityRatio,
+    },
   };
+}
+
+function ratio(numerator, denominator) {
+  return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+}
+
+function facilityKeysFromRows(facilities, stationLines) {
+  const lineIdsByStationId = new Map();
+  for (const row of stationLines) {
+    const lineIds = lineIdsByStationId.get(row.stationId) ?? [];
+    lineIds.push(row.lineId);
+    lineIdsByStationId.set(row.stationId, lineIds);
+  }
+  const keys = new Set();
+  for (const facility of facilities) {
+    for (const lineId of lineIdsByStationId.get(facility.stationId) ?? []) {
+      keys.add(`${facility.stationId}:${lineId}:${facility.type}`);
+    }
+  }
+  return keys;
+}
+
+function knownOperationalStatus(value) {
+  const status = String(value ?? "").toUpperCase();
+  return status !== "" && status !== "UNKNOWN";
+}
+
+function hasVerificationTimestamp(row) {
+  return Boolean(row.verifiedAt ?? row.lastVerifiedAt ?? row.reviewedAt ?? row.updatedAt);
 }
 
 function routeGraphNetworkEdges(pack) {

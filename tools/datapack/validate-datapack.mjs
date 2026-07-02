@@ -1857,9 +1857,26 @@ function validateRegionalQualityMetrics(metrics, label) {
   if (!Number.isInteger(metrics.edgeCount) || metrics.edgeCount < 0) {
     throw new Error(`${label} regionalQualityMetrics.edgeCount must be a non-negative integer`);
   }
-  for (const key of ["facilityCoverageRatio", "unknownAccessibilityRatio"]) {
+  for (const key of [
+    "facilityCoverageRatio",
+    "requiredFacilityEvidenceCoverageRatio",
+    "strictRouteEligibleFacilityRatio",
+    "operationalKnownRatio",
+    "freshnessValidRatio",
+    "fieldVerifiedPathwayRatio",
+    "unknownAccessibilityRatio",
+  ]) {
     if (typeof metrics[key] !== "number" || metrics[key] < 0 || metrics[key] > 1) {
       throw new Error(`${label} regionalQualityMetrics.${key} must be a ratio`);
+    }
+  }
+  if (!metrics.unknownEdgeRatioByProfile || typeof metrics.unknownEdgeRatioByProfile !== "object") {
+    throw new Error(`${label} regionalQualityMetrics.unknownEdgeRatioByProfile must be an object`);
+  }
+  for (const key of ["wheelchair", "stroller", "lowMobility"]) {
+    const value = metrics.unknownEdgeRatioByProfile[key];
+    if (typeof value !== "number" || value < 0 || value > 1) {
+      throw new Error(`${label} regionalQualityMetrics.unknownEdgeRatioByProfile.${key} must be a ratio`);
     }
   }
 }

@@ -144,14 +144,34 @@
             "required": [
               "stationCount",
               "facilityCoverageRatio",
+              "requiredFacilityEvidenceCoverageRatio",
+              "strictRouteEligibleFacilityRatio",
+              "operationalKnownRatio",
+              "freshnessValidRatio",
+              "fieldVerifiedPathwayRatio",
               "edgeCount",
-              "unknownAccessibilityRatio"
+              "unknownAccessibilityRatio",
+              "unknownEdgeRatioByProfile"
             ],
             "properties": {
               "stationCount": { "type": "integer", "minimum": 0 },
               "facilityCoverageRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "requiredFacilityEvidenceCoverageRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "strictRouteEligibleFacilityRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "operationalKnownRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "freshnessValidRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "fieldVerifiedPathwayRatio": { "type": "number", "minimum": 0, "maximum": 1 },
               "edgeCount": { "type": "integer", "minimum": 0 },
-              "unknownAccessibilityRatio": { "type": "number", "minimum": 0, "maximum": 1 }
+              "unknownAccessibilityRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "unknownEdgeRatioByProfile": {
+                "type": "object",
+                "required": ["wheelchair", "stroller", "lowMobility"],
+                "properties": {
+                  "wheelchair": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "stroller": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "lowMobility": { "type": "number", "minimum": 0, "maximum": 1 }
+                }
+              }
             }
           },
           "routeRegressionScope": {

@@ -88,6 +88,11 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-19T00:00:00.000Z");
   assert.equal(pack.regionalQualityMetrics.stationCount, 6);
   assert.equal(pack.regionalQualityMetrics.facilityCoverageRatio, 0.3333);
+  assert.equal(pack.regionalQualityMetrics.requiredFacilityEvidenceCoverageRatio, 0.1852);
+  assert.equal(pack.regionalQualityMetrics.strictRouteEligibleFacilityRatio, 0);
+  assert.equal(pack.regionalQualityMetrics.operationalKnownRatio, 1);
+  assert.equal(pack.regionalQualityMetrics.freshnessValidRatio, 0);
+  assert.equal(pack.regionalQualityMetrics.fieldVerifiedPathwayRatio, 0);
 
   const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
   assert.equal(provenance.artifactKind, "datapack-field-provenance");
@@ -106,6 +111,11 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   );
   assert.equal(pack.regionalQualityMetrics.edgeCount, 20);
   assert.equal(pack.regionalQualityMetrics.unknownAccessibilityRatio, 0);
+  assert.deepEqual(pack.regionalQualityMetrics.unknownEdgeRatioByProfile, {
+    wheelchair: 0,
+    stroller: 0,
+    lowMobility: 0,
+  });
   assert.deepEqual(
     pack.representativeRouteRegressions.map((route) => route.pattern).sort(),
     ["DIRECT", "EXPRESS_LOCAL", "LOOP_BRANCH", "MULTI_TRANSFER", "TRANSFER"],
@@ -4036,6 +4046,7 @@ test("데이터팩 생성기는 시설 coverage를 시설이 있는 역 비율�
   const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
   assert.equal(manifest.packs[0].regionalQualityMetrics.stationCount, 6);
   assert.equal(manifest.packs[0].regionalQualityMetrics.facilityCoverageRatio, 0.3333);
+  assert.equal(manifest.packs[0].regionalQualityMetrics.freshnessValidRatio, 0);
   await execFileAsync(
     process.execPath,
     [
