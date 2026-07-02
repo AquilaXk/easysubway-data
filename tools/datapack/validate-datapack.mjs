@@ -1361,6 +1361,18 @@ function validateProductionStationFacilityEvidenceRow(row, sourceIds, pack) {
   }
   if (row.strict_route_eligible === 1) {
     requiredString(row.strict_route_eligible_reason, `station_facility_evidence.${id}.strict_route_eligible_reason`);
+    validateStrictRouteEligibleFacilityEvidence(row, pack, id);
+  }
+}
+
+function validateStrictRouteEligibleFacilityEvidence(row, pack, id) {
+  const operationalStatus = String(row.operational_status ?? "").toUpperCase();
+  const statusMeaning = String(row.status_meaning ?? "").toUpperCase();
+  if (!["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(operationalStatus)) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence strict route eligibility requires available operation status: ${id}`);
+  }
+  if (!["REALTIME_OPERATION", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(statusMeaning)) {
+    throw new Error(`${pack.id}@${pack.version} station_facility_evidence strict route eligibility requires verified operation evidence: ${id}`);
   }
 }
 

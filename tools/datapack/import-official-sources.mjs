@@ -811,6 +811,7 @@ function stationFacilityEvidenceRows(input, stationRows, facilities, isProductio
       for (const facility of [...facilitiesByCoverageKey.values()]
         .filter((entry) => entry.stationId === stationId && entry.type === facilityType)
         .sort((left, right) => left.lineId.localeCompare(right.lineId))) {
+        const strictEligibility = facilityStrictRouteEligibility(facility);
         rows.push({
           stationId,
           lineId: facility.lineId,
@@ -827,13 +828,28 @@ function stationFacilityEvidenceRows(input, stationRows, facilities, isProductio
           confidence: facility.confidence,
           verifiedAt: facility.verifiedAt,
           retrievedAt: facility.retrievedAt,
-          strictRouteEligible: true,
-          strictRouteEligibleReason: "FACILITY_EXISTS_AND_PROVENANCE_VERIFIED",
+          strictRouteEligible: strictEligibility.eligible,
+          strictRouteEligibleReason: strictEligibility.reason,
         });
       }
     }
   }
   return rows;
+}
+
+function facilityStrictRouteEligibility(facility) {
+  const operationalStatus = String(facility.operationalStatus ?? "").toUpperCase();
+  const statusMeaning = String(facility.statusMeaning ?? "").toUpperCase();
+  if (["UNKNOWN", "CHECK_REQUIRED", ""].includes(operationalStatus)) {
+    return { eligible: false, reason: "OPERATION_STATUS_UNKNOWN" };
+  }
+  if (!["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(operationalStatus)) {
+    return { eligible: false, reason: "OPERATION_STATUS_NOT_AVAILABLE" };
+  }
+  if (!["REALTIME_OPERATION", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(statusMeaning)) {
+    return { eligible: false, reason: "OPERATION_EVIDENCE_MISSING" };
+  }
+  return { eligible: true, reason: "FACILITY_OPERATION_VERIFIED" };
 }
 
 function productionString(value, isProductionPack, label) {

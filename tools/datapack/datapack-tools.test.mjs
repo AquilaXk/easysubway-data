@@ -3050,6 +3050,45 @@ test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근
   );
 });
 
+test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route eligibility를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-production-facility-strict-unknown-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "catalog-fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  fixture.packs[0].stationFacilityEvidence[0].strictRouteEligible = true;
+  fixture.packs[0].stationFacilityEvidence[0].strictRouteEligibleReason = "FACILITY_EXISTS_AND_PROVENANCE_VERIFIED";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
+        "--root",
+        packOutputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /station_facility_evidence strict route eligibility requires available operation status/,
+  );
+});
+
 test("데이터팩 검증기는 production verified edge coverage report를 출력한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-report-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -7269,12 +7308,13 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
           row.lineId === "seoul-4" &&
           row.facilityType === "ELEVATOR",
       )
-      .map(({ stationId, lineId, facilityType, sourceId, strictRouteEligible }) => ({
+      .map(({ stationId, lineId, facilityType, sourceId, strictRouteEligible, strictRouteEligibleReason }) => ({
         stationId,
         lineId,
         facilityType,
         sourceId,
         strictRouteEligible,
+        strictRouteEligibleReason,
       })),
     [
       {
@@ -7282,7 +7322,8 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
         lineId: "seoul-4",
         facilityType: "ELEVATOR",
         sourceId: "kric-station-elevator",
-        strictRouteEligible: true,
+        strictRouteEligible: false,
+        strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN",
       },
     ],
   );
