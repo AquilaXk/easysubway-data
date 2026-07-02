@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "source-admission-runbook",
+  "issue": 1397,
+  "command": "node tools/datapack/run-source-admission-pipeline.mjs --candidate <candidateId> --url-template '<providerUrlWith{serviceKey}>' --service-key-env <ENV_NAME> --evidence-dir .codex/evidence/1397/<candidateId> --snapshot-id <snapshotId> --source-id <sourceId> --provider <providerName> --retrieved-at <ISO> --source-updated-at <ISO> --raw-object-uri s3://<bucket>/<key> --freshness-expires-at <ISO> --raw-retention-expires-at <ISO> --admin-review <local-admin-review.json> --output-inventory <candidate-source-inventory.json> --output <admission-summary.json>",
+  "steps": [
+    "fetch provider live sample using a backend/local secret env var",
+    "write raw response only under local evidence storage",
+    "build sanitized sample evidence with rawSha256, schemaFingerprint, providerRecordHashes, and evidenceHash",
+    "validate sample evidence against source-candidates.json",
+    "build a LOCKED source snapshot with credential-free rawObjectUri and freshness expiry",
+    "require admin review APPROVED record before production inventory admission",
+    "write candidate source inventory and validate it",
+    "write admission summary with sourceSnapshotSetHash, sourceInventorySha256, ledger hashes, and adminReviewRecordHash"
+  ],
+  "secretHandling": {
+    "serviceKeyInput": "environment variable only",
+    "trackedOutput": "sanitized summary only",
+    "rawOutput": ".codex/evidence or object storage only",
+    "mobileEmbeddingAllowed": false
+  },
+  "requiredAdminReviewFields": [
+    "schemaVersion",
+    "artifactKind",
+    "candidateId",
+    "sourceId",
+    "snapshotId",
+    "sampleEvidenceHash",
+    "decision",
+    "approvedBy",
+    "approvedAt",
+    "licenseEvidenceHash",
+    "aliasLedgerHash",
+    "operatorMappingLedgerHash",
+    "facilityEvidenceLedgerHash",
+    "routeEvidenceLedgerHash",
+    "overrideHash",
+    "productionSource"
+  ]
+}

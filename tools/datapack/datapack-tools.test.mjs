@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { sortJson } from "./run-source-admission-pipeline.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -6362,6 +6363,333 @@ test("source candidate sample evidence builder는 raw response의 TOPIS path ser
       { cwd: root },
     ),
     /raw sample response must not contain serviceKey credentials/,
+  );
+});
+
+test("source admission pipeline은 admin 승인 record로 inventory admission evidence를 만든다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-admission-${Date.now()}`);
+  const rawPath = path.join(outputDir, "kric-train-operation-organ.raw.json");
+  const seedSamplePath = path.join(outputDir, "seed-sample.json");
+  const adminReviewPath = path.join(outputDir, "admin-review.json");
+  const outputInventoryPath = path.join(outputDir, "source-inventory.admitted.json");
+  const summaryPath = path.join(outputDir, "admission-summary.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(rawPath, `${JSON.stringify([{ railOprIsttCd: "S1", railOprIsttNm: "서울교통공사" }])}\n`);
+
+  const { stdout: sampleStdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-source-candidate-sample-evidence.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--response",
+      rawPath,
+    ],
+    { cwd: root },
+  );
+  await writeFile(seedSamplePath, sampleStdout);
+  const sample = JSON.parse(sampleStdout);
+  const productionSource = {
+    id: "kric-train-operation-organ",
+    displayName: "열차운영기관정보",
+    owner: "국가철도공단",
+    provider: "국가철도공단",
+    sourceSystem: "KRIC OpenAPI",
+    datasetUrl: "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+    requiredForProductionPack: false,
+    updateFrequency: "provider-documented",
+    observedDataUpdatedAt: "2026-07-02",
+    retrievedAt: "2026-07-02",
+    license: {
+      type: "KOGL-1",
+      name: "공공누리 1유형",
+      attribution: "공공누리 제1유형: 출처표시",
+      commercialUseAllowed: true,
+      derivativeWorkAllowed: true,
+      redistributionAllowed: true,
+      evidenceUrl: "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+    },
+    coverageScope: {
+      regionIds: ["capital"],
+      operatorIds: ["seoul-metro"],
+      sourceDomains: ["station_line_membership"],
+    },
+    fieldsProvided: ["railOprIsttCd", "railOprIsttNm"],
+    capabilities: {
+      schedule: {
+        status: "UNSUPPORTED",
+        productionUseAllowed: false,
+        coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+        updateFrequency: "provider-documented",
+        unsupportedNotes: "candidate does not provide scheduled timetable data",
+      },
+      realtime: {
+        status: "UNSUPPORTED",
+        productionUseAllowed: false,
+        liveEtaEligible: false,
+        rateLimitStatus: "NOT_APPLICABLE",
+        coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+        updateFrequency: "provider-documented",
+        unsupportedNotes: "candidate does not provide realtime arrival data",
+      },
+      facility: {
+        status: "UNSUPPORTED",
+        productionUseAllowed: false,
+        coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+        updateFrequency: "provider-documented",
+        unsupportedNotes: "candidate does not provide accessibility facility records",
+      },
+    },
+  };
+  const adminReview = {
+    schemaVersion: 1,
+    artifactKind: "source-admission-admin-review",
+    candidateId: "kric-train-operation-organ",
+    sourceId: "kric-train-operation-organ",
+    snapshotId: "kric-train-operation-organ-snapshot-20260702",
+    sampleEvidenceHash: sample.evidenceHash,
+    decision: "APPROVED",
+    approvedBy: "qa-admin",
+    approvedAt: "2026-07-02T00:10:00Z",
+    licenseEvidenceHash: sha256("license-evidence"),
+    aliasLedgerHash: sha256("alias-ledger"),
+    operatorMappingLedgerHash: sha256("operator-mapping-ledger"),
+    facilityEvidenceLedgerHash: sha256("facility-evidence-ledger"),
+    routeEvidenceLedgerHash: sha256("route-evidence-ledger"),
+    overrideHash: sha256("override-ledger"),
+    productionSource,
+  };
+  await writeFile(adminReviewPath, `${JSON.stringify(adminReview, null, 2)}\n`);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/run-source-admission-pipeline.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--raw-input",
+      rawPath,
+      "--evidence-dir",
+      outputDir,
+      "--snapshot-id",
+      "kric-train-operation-organ-snapshot-20260702",
+      "--source-id",
+      "kric-train-operation-organ",
+      "--provider",
+      "국가철도공단",
+      "--retrieved-at",
+      "2026-07-02T00:00:00Z",
+      "--source-updated-at",
+      "2026-07-02T00:00:00Z",
+      "--raw-object-uri",
+      "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+      "--freshness-expires-at",
+      "2026-08-01T00:00:00Z",
+      "--raw-retention-expires-at",
+      "2026-10-01T00:00:00Z",
+      "--admin-review",
+      adminReviewPath,
+      "--output-inventory",
+      outputInventoryPath,
+      "--output",
+      summaryPath,
+    ],
+    { cwd: root },
+  );
+
+  assert.match(stdout, /source admission pipeline evidence written/);
+  const summary = JSON.parse(await readFile(summaryPath, "utf8"));
+  assert.equal(summary.artifactKind, "source-admission-pipeline-evidence");
+  assert.equal(summary.candidateId, "kric-train-operation-organ");
+  assert.match(summary.sourceSnapshotSetHash, /^[0-9a-f]{64}$/);
+  assert.equal(summary.adminReviewRecordHash, sha256(JSON.stringify(sortJson(adminReview))));
+  assert.equal(summary.licenseEvidenceHash, adminReview.licenseEvidenceHash);
+  const outputInventory = JSON.parse(await readFile(outputInventoryPath, "utf8"));
+  assert.ok(outputInventory.sources.some((source) => source.id === "kric-train-operation-organ"));
+});
+
+test("source admission pipeline은 JSON credential raw response를 저장 전에 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-admission-secret-${Date.now()}`);
+  const rawPath = path.join(outputDir, "kric-train-operation-organ.raw.json");
+  const adminReviewPath = path.join(outputDir, "admin-review.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(rawPath, JSON.stringify({ response: { body: { serviceKey: "actual-secret" } } }));
+  await writeFile(
+    adminReviewPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        artifactKind: "source-admission-admin-review",
+        decision: "APPROVED",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/run-source-admission-pipeline.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--raw-input",
+        rawPath,
+        "--evidence-dir",
+        outputDir,
+        "--snapshot-id",
+        "kric-train-operation-organ-snapshot-20260702",
+        "--source-id",
+        "kric-train-operation-organ",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-07-02T00:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+        "--freshness-expires-at",
+        "2026-08-01T00:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-10-01T00:00:00Z",
+        "--admin-review",
+        adminReviewPath,
+        "--output-inventory",
+        path.join(outputDir, "source-inventory.admitted.json"),
+        "--output",
+        path.join(outputDir, "admission-summary.json"),
+      ],
+      { cwd: root },
+    ),
+    /source admission raw response contains credential-like token/,
+  );
+});
+
+test("source admission pipeline은 live fetch 실패 메시지에서 service key를 숨긴다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-admission-fetch-secret-${Date.now()}`);
+  const adminReviewPath = path.join(outputDir, "admin-review.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    adminReviewPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        artifactKind: "source-admission-admin-review",
+        decision: "APPROVED",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/run-source-admission-pipeline.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--url-template",
+        "http://127.0.0.1:1/source?serviceKey={serviceKey}",
+        "--service-key-env",
+        "EASYSUBWAY_TEST_SERVICE_KEY",
+        "--evidence-dir",
+        outputDir,
+        "--snapshot-id",
+        "kric-train-operation-organ-snapshot-20260702",
+        "--source-id",
+        "kric-train-operation-organ",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-07-02T00:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+        "--freshness-expires-at",
+        "2026-08-01T00:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-10-01T00:00:00Z",
+        "--admin-review",
+        adminReviewPath,
+        "--output-inventory",
+        path.join(outputDir, "source-inventory.admitted.json"),
+        "--output",
+        path.join(outputDir, "admission-summary.json"),
+      ],
+      { cwd: root, env: { ...process.env, EASYSUBWAY_TEST_SERVICE_KEY: "actual-secret-value" } },
+    ),
+    (error) => {
+      assert.match(error.stderr, /source live fetch failed before response/);
+      assert.doesNotMatch(error.stderr, /actual-secret-value/);
+      return true;
+    },
+  );
+});
+
+test("source admission pipeline은 admin 승인 없는 inventory admission을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-admission-negative-${Date.now()}`);
+  const rawPath = path.join(outputDir, "kric-train-operation-organ.raw.json");
+  const adminReviewPath = path.join(outputDir, "admin-review.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(rawPath, `${JSON.stringify([{ railOprIsttCd: "S1", railOprIsttNm: "서울교통공사" }])}\n`);
+  await writeFile(
+    adminReviewPath,
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        artifactKind: "source-admission-admin-review",
+        candidateId: "kric-train-operation-organ",
+        sourceId: "kric-train-operation-organ",
+        snapshotId: "kric-train-operation-organ-snapshot-20260702",
+        sampleEvidenceHash: sha256("not-used"),
+        decision: "PENDING",
+        approvedBy: "qa-admin",
+        approvedAt: "2026-07-02T00:10:00Z",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/run-source-admission-pipeline.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--raw-input",
+        rawPath,
+        "--evidence-dir",
+        outputDir,
+        "--snapshot-id",
+        "kric-train-operation-organ-snapshot-20260702",
+        "--source-id",
+        "kric-train-operation-organ",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-07-02T00:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+        "--freshness-expires-at",
+        "2026-08-01T00:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-10-01T00:00:00Z",
+        "--admin-review",
+        adminReviewPath,
+        "--output-inventory",
+        path.join(outputDir, "source-inventory.admitted.json"),
+        "--output",
+        path.join(outputDir, "admission-summary.json"),
+      ],
+      { cwd: root },
+    ),
+    /adminReview\.decision must be APPROVED/,
   );
 });
 
