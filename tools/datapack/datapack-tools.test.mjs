@@ -7958,8 +7958,75 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     { cwd: root },
   );
   const importedFixture = JSON.parse(await readFile(importedFixturePath, "utf8"));
-  assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), false);
-  assert.equal(importedFixture.packs[0].minimumTableRows.route_map_positions, undefined);
+  assert.equal(importedFixture.packs[0].requiredTables.includes("route_map_positions"), true);
+  assert.equal(importedFixture.packs[0].minimumTableRows.route_map_positions, 2);
+  assert.equal(importedFixture.packs[0].routeMapPositions.length, 2);
+  assert.deepEqual(
+    importedFixture.packs[0].routeMapPositions.map((position) => ({
+      stationId: position.stationId,
+      lineId: position.lineId,
+      sourceId: position.sourceId,
+      sourceSha256: position.sourceSha256,
+      labelPolygonCount: position.labelPolygon.length,
+      updatedAt: position.updatedAt,
+    })),
+    [
+      {
+        stationId: "station-sangnoksu",
+        lineId: "seoul-4",
+        sourceId: "seoulmetro-cyberstation-route-map",
+        sourceSha256: "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
+        labelPolygonCount: 4,
+        updatedAt: "2026-06-28T00:00:00.000Z",
+      },
+      {
+        stationId: "station-sadang",
+        lineId: "seoul-4",
+        sourceId: "seoulmetro-cyberstation-route-map",
+        sourceSha256: "7370b4db2d2f398f46c55314b71d7335c77ec6745fd388793804874447cd25e0",
+        labelPolygonCount: 4,
+        updatedAt: "2026-06-28T00:00:00.000Z",
+      },
+    ],
+  );
+  for (const testCase of [
+    {
+      name: "string-label-dx",
+      mutate(position) {
+        position.labelDx = "0";
+      },
+      expected: /routeMapPositions\.labelDx must be an integer/,
+    },
+    {
+      name: "number-up-path",
+      mutate(position) {
+        position.upPath = 1;
+      },
+      expected: /routeMapPositions\.upPath must be a string/,
+    },
+  ]) {
+    const invalidRouteMapPositionInput = JSON.parse(JSON.stringify(adjacencySafeInput));
+    testCase.mutate(invalidRouteMapPositionInput.routeMapPositions[0]);
+    const invalidRouteMapPositionInputPath = path.join(outputDir, `${testCase.name}-input.json`);
+    const invalidRouteMapPositionOutputPath = path.join(outputDir, `${testCase.name}-fixture.json`);
+    await writeFile(invalidRouteMapPositionInputPath, `${JSON.stringify(invalidRouteMapPositionInput, null, 2)}\n`);
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/import-official-sources.mjs",
+          "--inventory",
+          "tools/datapack/source-inventory.json",
+          "--input",
+          invalidRouteMapPositionInputPath,
+          "--output",
+          invalidRouteMapPositionOutputPath,
+        ],
+        { cwd: root },
+      ),
+      testCase.expected,
+    );
+  }
 
   const validatorBypassFixture = JSON.parse(JSON.stringify(importedFixture));
   validatorBypassFixture.packs[0].networkEdges = validatorBypassFixture.packs[0].networkEdges.map((edge) =>
@@ -8260,7 +8327,7 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   const routeMapRecords = provenance.packs[0].records.filter(
     (record) => record.sourceId === "seoulmetro-cyberstation-route-map",
   );
-  assert.equal(routeMapRecords.length, 0);
+  assert.equal(routeMapRecords.length, 4);
   assert.equal(
     provenance.packs[0].records.filter(
       (record) => record.entityType === "facility" && record.field === "status",
@@ -8292,7 +8359,8 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       entry.operatorId === "seoul-metro" &&
       entry.sourceDomain === "route_map_positions",
   );
-  assert.notEqual(capitalRouteMapCoverage.status, "covered");
+  assert.equal(capitalRouteMapCoverage.status, "covered");
+  assert.deepEqual(capitalRouteMapCoverage.missingFields, []);
 });
 
 test("관리자 검수 NORMAL override는 production 시설 provenance와 validator를 통과한다", async () => {

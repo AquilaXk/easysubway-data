@@ -962,7 +962,11 @@ function routeMapPositionRows(rows, allowedSourceIds, mappingBySourceKey) {
       region: requiredString(row.region, "routeMapPositions.region"),
       x: requiredNonNegativeInteger(row.x, "routeMapPositions.x"),
       y: requiredNonNegativeInteger(row.y, "routeMapPositions.y"),
+      labelDx: optionalInteger(row.labelDx, "routeMapPositions.labelDx"),
+      labelDy: optionalInteger(row.labelDy, "routeMapPositions.labelDy"),
       labelPolygon: row.labelPolygon ?? undefined,
+      upPath: optionalString(row.upPath, "routeMapPositions.upPath"),
+      downPath: optionalString(row.downPath, "routeMapPositions.downPath"),
       sourceId,
       sourceName: requiredString(row.sourceName, "routeMapPositions.sourceName"),
       sourceUrl: requiredString(row.sourceUrl, "routeMapPositions.sourceUrl"),
@@ -974,6 +978,7 @@ function routeMapPositionRows(rows, allowedSourceIds, mappingBySourceKey) {
       derivationKind: "OFFICIAL",
       sourceLabel: row.sourceLabel ?? "",
       reviewedAt: requiredString(row.reviewedAt, "routeMapPositions.reviewedAt"),
+      updatedAt: requiredString(row.updatedAt, "routeMapPositions.updatedAt"),
     };
   });
 }
@@ -1088,6 +1093,23 @@ function requiredString(value, label) {
 function requiredInteger(value, label) {
   if (!Number.isInteger(value)) {
     throw new Error(`${label} must be an integer`);
+  }
+  return value;
+}
+
+function optionalInteger(value, label) {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+  return requiredInteger(value, label);
+}
+
+function optionalString(value, label) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
   }
   return value;
 }
