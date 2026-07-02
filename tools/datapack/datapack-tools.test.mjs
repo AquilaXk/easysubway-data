@@ -4678,6 +4678,48 @@ test("데이터팩 검증기는 대표 route regression 필수 pattern 누락을
   );
 });
 
+test("데이터팩 검증기는 대표 route regression route shape 재사용을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-duplicate-route-shape-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const direct = manifest.packs[0].representativeRouteRegressions.find((route) => route.pattern === "DIRECT");
+  const transfer = manifest.packs[0].representativeRouteRegressions.find((route) => route.pattern === "TRANSFER");
+  transfer.fromNodeId = direct.fromNodeId;
+  transfer.toNodeId = direct.toNodeId;
+  transfer.requiredEdgeIds = direct.requiredEdgeIds;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /representativeRouteRegressions duplicate route shape across patterns/,
+  );
+});
+
 test("데이터팩 검증기는 대표 route regression required edge 누락을 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-missing-route-edge-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -6338,7 +6380,7 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     id: "edge-sangnoksu-sadang-seoul-4",
     fromNodeId: "station-sangnoksu:seoul-4",
     toNodeId: "station-sadang:seoul-4",
-    durationSeconds: 420,
+    durationSeconds: 1860,
     distanceMeters: 18600,
     edgeType: "RIDE",
     servicePattern: "LOCAL",
@@ -7124,6 +7166,64 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     /production facility evidence missing: station-sadang:seoul-4:WHEELCHAIR_LIFT/,
   );
 
+  const unrealisticRideSpeedInputPath = path.join(outputDir, "capital-pilot-production-unrealistic-ride-speed.json");
+  await writeFile(
+    unrealisticRideSpeedInputPath,
+    `${JSON.stringify(
+      {
+        ...input,
+        routeEdges: input.routeEdges.map((edge) =>
+          edge.edgeType === "RIDE"
+            ? { ...edge, durationSeconds: 420 }
+            : edge,
+        ),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const unrealisticRideSpeedFixturePath = path.join(outputDir, "unrealistic-ride-speed.json");
+  const unrealisticRideSpeedPackDir = path.join(outputDir, "unrealistic-ride-speed-pack");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--input",
+      unrealisticRideSpeedInputPath,
+      "--output",
+      unrealisticRideSpeedFixturePath,
+    ],
+    { cwd: root },
+  );
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      unrealisticRideSpeedFixturePath,
+      "--output",
+      unrealisticRideSpeedPackDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(unrealisticRideSpeedPackDir, "current.json"),
+        "--root",
+        unrealisticRideSpeedPackDir,
+        "--require-production",
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /network_edges ride speed is outside production bounds/,
+  );
+
   await execFileAsync(
     process.execPath,
     [
@@ -7194,6 +7294,12 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   assert.equal(manifest.signature.algorithm, "rsa-sha256-manifest-v2");
   assert.equal(manifest.packs[0].artifactKind, "production");
   assert.equal(manifest.packs[0].signature.algorithm, "rsa-sha256-pack-manifest-v2");
+  assert.deepEqual(manifest.packs[0].routeRegressionScope, {
+    mode: "DIRECT_ONLY",
+    excludedPatterns: ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
+    claim: manifest.packs[0].routeRegressionScope.claim,
+  });
+  assert.deepEqual(manifest.packs[0].representativeRouteRegressions.map((route) => route.pattern), ["DIRECT"]);
   const database = new DatabaseSync(path.join(packOutputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
     assert.deepEqual(
@@ -8464,7 +8570,7 @@ function sourceIngestInput() {
           sourceStationCode: "433",
           lineId: "seoul-4",
         },
-        durationSeconds: 420,
+        durationSeconds: 1860,
         distanceMeters: 18600,
         edgeType: "RIDE",
         servicePattern: "LOCAL",
@@ -8487,7 +8593,7 @@ function sourceIngestInput() {
           sourceStationCode: "448",
           lineId: "seoul-4",
         },
-        durationSeconds: 420,
+        durationSeconds: 1860,
         distanceMeters: 18600,
         edgeType: "RIDE",
         servicePattern: "LOCAL",
@@ -8514,38 +8620,15 @@ function sourceIngestInput() {
         description: "상록수역 승강장과 지상을 연결합니다.",
       },
     ],
+    routeRegressionScope: {
+      mode: "DIRECT_ONLY",
+      excludedPatterns: ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
+      claim: "capital pilot Android v1 direct ride only; transfer, multi-transfer, branch/loop, and express/local claims are excluded until route graph evidence exists",
+    },
     representativeRouteRegressions: [
       {
         id: "direct-local-capital",
         pattern: "DIRECT",
-        fromNodeId: "station-sangnoksu:seoul-4",
-        toNodeId: "station-sadang:seoul-4",
-        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
-      },
-      {
-        id: "transfer-capital",
-        pattern: "TRANSFER",
-        fromNodeId: "station-sangnoksu:seoul-4",
-        toNodeId: "station-sadang:seoul-4",
-        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
-      },
-      {
-        id: "multi-transfer-capital",
-        pattern: "MULTI_TRANSFER",
-        fromNodeId: "station-sangnoksu:seoul-4",
-        toNodeId: "station-sadang:seoul-4",
-        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
-      },
-      {
-        id: "loop-branch-capital",
-        pattern: "LOOP_BRANCH",
-        fromNodeId: "station-sangnoksu:seoul-4",
-        toNodeId: "station-sadang:seoul-4",
-        requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
-      },
-      {
-        id: "express-local-capital",
-        pattern: "EXPRESS_LOCAL",
         fromNodeId: "station-sangnoksu:seoul-4",
         toNodeId: "station-sadang:seoul-4",
         requiredEdgeIds: ["edge-sangnoksu-sadang-seoul-4"],
@@ -9262,6 +9345,12 @@ function markFixturePackProduction(fixture) {
     },
   ];
   for (const edge of pack.networkEdges) {
+    if (edge.edgeType === "RIDE" && edge.distanceMeters > 0 && edge.durationSeconds > 0) {
+      const speedKmh = (edge.distanceMeters / edge.durationSeconds) * 3.6;
+      if (speedKmh < 15 || speedKmh > 110) {
+        edge.durationSeconds = Math.ceil((edge.distanceMeters * 3.6) / 60);
+      }
+    }
     edge.sourceId = "capital-official-stations";
     edge.sourceSnapshotId = "capital-official-stations-snapshot-20260619";
     edge.providerRecordHash = edge.providerRecordHash ?? sha256(`provider:${edge.id}:capital-official-stations`);

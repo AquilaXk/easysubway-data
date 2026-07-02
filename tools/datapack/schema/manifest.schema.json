@@ -154,9 +154,23 @@
               "unknownAccessibilityRatio": { "type": "number", "minimum": 0, "maximum": 1 }
             }
           },
+          "routeRegressionScope": {
+            "type": "object",
+            "required": ["mode", "excludedPatterns", "claim"],
+            "properties": {
+              "mode": { "enum": ["DIRECT_ONLY"] },
+              "excludedPatterns": {
+                "type": "array",
+                "items": {
+                  "enum": ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]
+                }
+              },
+              "claim": { "type": "string", "minLength": 1 }
+            }
+          },
           "representativeRouteRegressions": {
             "type": "array",
-            "minItems": 5,
+            "minItems": 1,
             "items": { "$ref": "#/$defs/representativeRouteRegression" }
           },
           "representativeRouteRegressionSignature": {

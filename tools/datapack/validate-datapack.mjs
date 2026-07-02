@@ -148,6 +148,7 @@ function validateSqlite(sqlitePath, pack) {
     validateProductionStationFacilityEvidence(database, pack);
     validateRegionalQualityMetricsMatchDatabase(database, pack);
     validateRepresentativeRouteRegressions(database, pack);
+    validateProductionRideEdgeSpeed(database, pack);
 
     for (const [tableName, minimumRows] of Object.entries(pack.minimumTableRows ?? {})) {
       const row = database.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get();
@@ -488,7 +489,7 @@ function validateRepresentativeRouteRegressions(database, pack) {
     return;
   }
   const routes = pack.representativeRouteRegressions;
-  const requiredPatterns = requiredRepresentativeRoutePatterns();
+  const requiredPatterns = requiredRepresentativeRoutePatterns(pack.routeRegressionScope);
   const seenPatterns = new Set(routes.map((route) => route.pattern));
   for (const pattern of requiredPatterns) {
     if (!seenPatterns.has(pattern)) {
@@ -514,11 +515,34 @@ function validateRepresentativeRouteRegressions(database, pack) {
       }
     }
     validateRequiredRouteEdgeSequence(route, graph, pack);
+    validateRepresentativeRoutePatternTopology(route, graph, pack);
     const reachableNodes = reachableNodesFrom(fromEndpoint.stationLineNode, graph.directedAdjacency);
     if (!reachableNodes.has(toEndpoint.stationLineNode)) {
       throw new Error(
         `${pack.id}@${pack.version} representativeRouteRegressions route unreachable: ${route.id}`,
       );
+    }
+  }
+}
+
+function validateProductionRideEdgeSpeed(database, pack) {
+  if (pack.artifactKind !== "production" || !hasTable(database, "network_edges")) {
+    return;
+  }
+  const rows = database
+    .prepare(`
+      SELECT id, duration_seconds, distance_meters
+      FROM network_edges
+      WHERE edge_type = 'RIDE'
+        AND duration_seconds > 0
+        AND distance_meters > 0
+      ORDER BY id
+    `)
+    .all();
+  for (const row of rows) {
+    const speedKmh = (row.distance_meters / row.duration_seconds) * 3.6;
+    if (speedKmh < 15 || speedKmh > 110) {
+      throw new Error(`${pack.id}@${pack.version} network_edges ride speed is outside production bounds: ${row.id}`);
     }
   }
 }
@@ -618,6 +642,40 @@ function validateRequiredRouteEdgeSequence(route, graph, pack) {
   const lastEdge = graph.routeEdges.get(route.requiredEdgeIds.at(-1));
   if (!routeNodeMatches(route.toNodeId, currentRouteNodeId, lastEdge?.servicePattern)) {
     throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions required edge not on route: ${route.id} -> ${route.requiredEdgeIds.at(-1)}`);
+  }
+}
+
+function validateRepresentativeRoutePatternTopology(route, graph, pack) {
+  const edges = route.requiredEdgeIds.map((edgeId) => graph.routeEdges.get(edgeId)).filter(Boolean);
+  const transferCount = edges.filter((edge) => edge.edgeType === "TRANSFER").length;
+  if (route.pattern === "DIRECT" && transferCount > 0) {
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions DIRECT route must not include transfer edges: ${route.id}`);
+  }
+  if (route.pattern === "TRANSFER" && transferCount < 1) {
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions TRANSFER route must include a transfer edge: ${route.id}`);
+  }
+  if (route.pattern === "MULTI_TRANSFER" && transferCount < 2) {
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions MULTI_TRANSFER route must include two transfer edges: ${route.id}`);
+  }
+  if (
+    route.pattern === "LOOP_BRANCH" &&
+    !edges.some((edge) => edge.fromRouteNodeId.includes("branch") || edge.toRouteNodeId.includes("branch"))
+  ) {
+    throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions LOOP_BRANCH route must include branch topology: ${route.id}`);
+  }
+  if (route.pattern === "EXPRESS_LOCAL") {
+    const hasExpress = edges.some((edge) => String(edge.servicePattern ?? "").toUpperCase() === "EXPRESS");
+    const hasLocalParallel = edges.some((edge) =>
+      [...graph.routeEdges.values()].some(
+        (candidate) =>
+          candidate.fromNode === edge.fromNode &&
+          candidate.toNode === edge.toNode &&
+          String(candidate.servicePattern ?? "").toUpperCase() === "LOCAL",
+      ),
+    );
+    if (!hasExpress || !hasLocalParallel) {
+      throw new Error(`${pack.id}@${pack.version} representativeRouteRegressions EXPRESS_LOCAL route must include express edge with local parallel: ${route.id}`);
+    }
   }
 }
 
@@ -1527,7 +1585,12 @@ function validateManifest(manifest, { requireProduction = false } = {}) {
     validateSignature(pack.signature, `${pack.id}@${pack.version}`, manifestVersion, artifactKind);
     validateSourceInventory(pack.sourceInventory, artifactKind, `${pack.id}@${pack.version}`);
     validateRegionalQualityMetrics(pack.regionalQualityMetrics, `${pack.id}@${pack.version}`);
-    validateRepresentativeRouteRegressionManifest(pack.representativeRouteRegressions, `${pack.id}@${pack.version}`);
+    validateRouteRegressionScopeManifest(pack.routeRegressionScope, `${pack.id}@${pack.version}`);
+    validateRepresentativeRouteRegressionManifest(
+      pack.representativeRouteRegressions,
+      `${pack.id}@${pack.version}`,
+      pack.routeRegressionScope,
+    );
     validateRepresentativeRouteRegressionSignature(
       pack.representativeRouteRegressionSignature,
       `${pack.id}@${pack.version}`,
@@ -1801,12 +1864,33 @@ function validateRegionalQualityMetrics(metrics, label) {
   }
 }
 
-function validateRepresentativeRouteRegressionManifest(routes, label) {
+function validateRouteRegressionScopeManifest(scope, label) {
+  if (scope === undefined) {
+    return;
+  }
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error(`${label} routeRegressionScope must be an object`);
+  }
+  const mode = requiredString(scope.mode, "routeRegressionScope.mode");
+  if (mode !== "DIRECT_ONLY") {
+    throw new Error(`${label} routeRegressionScope.mode is invalid`);
+  }
+  if (!Array.isArray(scope.excludedPatterns)) {
+    throw new Error(`${label} routeRegressionScope.excludedPatterns must be an array`);
+  }
+  for (const pattern of scope.excludedPatterns) {
+    requiredString(pattern, "routeRegressionScope.excludedPatterns");
+  }
+  requiredString(scope.claim, "routeRegressionScope.claim");
+}
+
+function validateRepresentativeRouteRegressionManifest(routes, label, scope = null) {
   if (!Array.isArray(routes) || routes.length === 0) {
     throw new Error(`${label} representativeRouteRegressions must be a non-empty array`);
   }
-  const requiredPatterns = requiredRepresentativeRoutePatterns();
+  const requiredPatterns = requiredRepresentativeRoutePatterns(scope);
   const seenPatterns = new Set();
+  const seenRouteShapes = new Map();
   for (const route of routes) {
     if (!route || typeof route !== "object" || Array.isArray(route)) {
       throw new Error(`${label} representativeRouteRegressions entries must be objects`);
@@ -1825,6 +1909,14 @@ function validateRepresentativeRouteRegressionManifest(routes, label) {
     for (const edgeId of route.requiredEdgeIds) {
       requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds");
     }
+    if (scope?.mode !== "DIRECT_ONLY") {
+      const shape = `${route.fromNodeId}->${route.toNodeId}:${route.requiredEdgeIds.join(">")}`;
+      const firstPattern = seenRouteShapes.get(shape);
+      if (firstPattern && firstPattern !== route.pattern) {
+        throw new Error(`${label} representativeRouteRegressions duplicate route shape across patterns: ${route.id}`);
+      }
+      seenRouteShapes.set(shape, route.pattern);
+    }
   }
   for (const pattern of requiredPatterns) {
     if (!seenPatterns.has(pattern)) {
@@ -1833,7 +1925,10 @@ function validateRepresentativeRouteRegressionManifest(routes, label) {
   }
 }
 
-function requiredRepresentativeRoutePatterns() {
+function requiredRepresentativeRoutePatterns(scope = null) {
+  if (scope?.mode === "DIRECT_ONLY") {
+    return new Set(["DIRECT"]);
+  }
   return new Set(["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]);
 }
 

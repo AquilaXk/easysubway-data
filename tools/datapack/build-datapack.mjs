@@ -84,6 +84,7 @@ async function main() {
       schemaVersion: pack.schemaVersion,
       sourceInventory: pack.sourceInventory,
       regionalQualityMetrics: regionalQualityMetrics(pack),
+      ...(pack.routeRegressionScope ? { routeRegressionScope: canonicalRouteRegressionScope(pack.routeRegressionScope) } : {}),
       representativeRouteRegressions,
       representativeRouteRegressionSignature: representativeRouteRegressionSignature({
         id: pack.id,
@@ -610,6 +611,16 @@ function canonicalRepresentativeRouteRegressions(routes) {
       requiredString(edgeId, "representativeRouteRegressions.requiredEdgeIds"),
     ),
   }));
+}
+
+function canonicalRouteRegressionScope(scope) {
+  return {
+    mode: requiredString(scope.mode, "routeRegressionScope.mode"),
+    excludedPatterns: Array.isArray(scope.excludedPatterns)
+      ? scope.excludedPatterns.map((pattern) => requiredString(pattern, "routeRegressionScope.excludedPatterns"))
+      : [],
+    claim: requiredString(scope.claim, "routeRegressionScope.claim"),
+  };
 }
 
 function canonicalProductionPackUrl(packUrl) {
@@ -1531,7 +1542,10 @@ function validateFixture(fixture) {
       throw new Error("production pack url must not use a local placeholder host");
     }
     validateSourceInventory(pack.sourceInventory, artifactKind);
-    validateRepresentativeRouteRegressions(pack.representativeRouteRegressions);
+    if (pack.routeRegressionScope !== undefined) {
+      validateRouteRegressionScope(pack.routeRegressionScope);
+    }
+    validateRepresentativeRouteRegressions(pack.representativeRouteRegressions, pack.routeRegressionScope);
     if (!Array.isArray(pack.requiredTables) || pack.requiredTables.length === 0) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
     }
@@ -1591,17 +1605,11 @@ function validateTableName(value) {
   }
 }
 
-function validateRepresentativeRouteRegressions(routes) {
+function validateRepresentativeRouteRegressions(routes, scope = null) {
   if (!Array.isArray(routes) || routes.length === 0) {
     throw new Error("pack.representativeRouteRegressions must be a non-empty array");
   }
-  const requiredPatterns = new Set([
-    "DIRECT",
-    "TRANSFER",
-    "MULTI_TRANSFER",
-    "LOOP_BRANCH",
-    "EXPRESS_LOCAL",
-  ]);
+  const requiredPatterns = requiredRepresentativeRoutePatterns(scope);
   const seenPatterns = new Set();
   for (const route of routes) {
     requiredString(route.id, "representativeRouteRegressions.id");
@@ -1624,6 +1632,30 @@ function validateRepresentativeRouteRegressions(routes) {
       throw new Error(`representativeRouteRegressions missing required pattern: ${pattern}`);
     }
   }
+}
+
+function validateRouteRegressionScope(scope) {
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error("routeRegressionScope must be an object");
+  }
+  const mode = requiredString(scope.mode, "routeRegressionScope.mode");
+  if (mode !== "DIRECT_ONLY") {
+    throw new Error("routeRegressionScope.mode is invalid");
+  }
+  if (!Array.isArray(scope.excludedPatterns)) {
+    throw new Error("routeRegressionScope.excludedPatterns must be an array");
+  }
+  for (const pattern of scope.excludedPatterns) {
+    requiredString(pattern, "routeRegressionScope.excludedPatterns");
+  }
+  requiredString(scope.claim, "routeRegressionScope.claim");
+}
+
+function requiredRepresentativeRoutePatterns(scope = null) {
+  if (scope?.mode === "DIRECT_ONLY") {
+    return new Set(["DIRECT"]);
+  }
+  return new Set(["DIRECT", "TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"]);
 }
 
 function validateSourceInventory(sourceInventory, artifactKind) {

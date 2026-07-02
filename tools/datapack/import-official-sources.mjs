@@ -124,6 +124,7 @@ function buildFixture(inventory, input) {
         ...transitSchedule,
         movementPathCandidates: movementCandidates,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
+        routeRegressionScope: input.routeRegressionScope,
         representativeRouteRegressions: input.representativeRouteRegressions ?? [],
       },
     ],

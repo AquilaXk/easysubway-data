@@ -201,7 +201,7 @@
         "sourceStationCode": "433",
         "lineId": "seoul-4"
       },
-      "durationSeconds": 420,
+      "durationSeconds": 1860,
       "distanceMeters": 18600,
       "edgeType": "RIDE",
       "servicePattern": "LOCAL",
@@ -229,7 +229,7 @@
         "sourceStationCode": "448",
         "lineId": "seoul-4"
       },
-      "durationSeconds": 420,
+      "durationSeconds": 1860,
       "distanceMeters": 18600,
       "edgeType": "RIDE",
       "servicePattern": "LOCAL",
@@ -556,38 +556,15 @@
       "instruction": "KRIC 휠체어리프트 이동동선 후보이며 검수 전 route edge로 승격하지 않습니다."
     }
   ],
+  "routeRegressionScope": {
+    "mode": "DIRECT_ONLY",
+    "excludedPatterns": ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
+    "claim": "capital pilot Android v1 direct ride only; transfer, multi-transfer, branch/loop, and express/local claims are excluded until route graph evidence exists"
+  },
   "representativeRouteRegressions": [
     {
       "id": "direct-local-capital",
       "pattern": "DIRECT",
-      "fromNodeId": "station-sangnoksu:seoul-4",
-      "toNodeId": "station-sadang:seoul-4",
-      "requiredEdgeIds": ["edge-sangnoksu-sadang-seoul-4"]
-    },
-    {
-      "id": "transfer-capital",
-      "pattern": "TRANSFER",
-      "fromNodeId": "station-sangnoksu:seoul-4",
-      "toNodeId": "station-sadang:seoul-4",
-      "requiredEdgeIds": ["edge-sangnoksu-sadang-seoul-4"]
-    },
-    {
-      "id": "multi-transfer-capital",
-      "pattern": "MULTI_TRANSFER",
-      "fromNodeId": "station-sangnoksu:seoul-4",
-      "toNodeId": "station-sadang:seoul-4",
-      "requiredEdgeIds": ["edge-sangnoksu-sadang-seoul-4"]
-    },
-    {
-      "id": "loop-branch-capital",
-      "pattern": "LOOP_BRANCH",
-      "fromNodeId": "station-sangnoksu:seoul-4",
-      "toNodeId": "station-sadang:seoul-4",
-      "requiredEdgeIds": ["edge-sangnoksu-sadang-seoul-4"]
-    },
-    {
-      "id": "express-local-capital",
-      "pattern": "EXPRESS_LOCAL",
       "fromNodeId": "station-sangnoksu:seoul-4",
       "toNodeId": "station-sadang:seoul-4",
       "requiredEdgeIds": ["edge-sangnoksu-sadang-seoul-4"]
