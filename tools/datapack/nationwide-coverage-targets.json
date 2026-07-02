@@ -253,5 +253,42 @@
       "goIssueIds": [1397, 1400, 1415, 1416, 1417],
       "verificationCommandIds": ["coverage_gap_report", "source_inventory_validation", "route_commercialization_gate"]
     }
-  ]
+  ],
+  "roadmapEvidenceLedger": {
+    "issue": 1399,
+    "goNoGoSummaryIssue": 1020,
+    "goNoGoSummaryReferencePolicyKo": "#1020 final GO/NO-GO summary는 이 roadmap의 claimLedger와 expansionRoadmap을 참조해야 하며, 이 참조가 없으면 전국/실시간/보장 claim은 계속 NO-GO다.",
+    "readmeScopeEvidence": "README.md Scope section separates long-term denominator from Android v1 상록수·사당 검증 pilot claim.",
+    "targetComparison": {
+      "nationwideTargets": {
+        "requiredSourceDomainCount": 6,
+        "requiredSourceDomains": [
+          "station_line_membership",
+          "route_graph_topology",
+          "accessibility_facilities",
+          "realtime_arrivals",
+          "route_map_positions",
+          "demand_reference"
+        ]
+      },
+      "capitalPilotTargets": {
+        "requiredSourceDomainCount": 2,
+        "requiredSourceDomains": ["station_line_membership", "accessibility_facilities"],
+        "deferredSourceDomains": [
+          "route_graph_topology",
+          "realtime_arrivals",
+          "route_map_positions",
+          "demand_reference"
+        ]
+      }
+    },
+    "sourceCandidateAdmission": {
+      "sourceCandidatesPath": "tools/datapack/source-candidates.json",
+      "p0CandidateCount": 12,
+      "requiredAdmissionStatusBeforeProductionClaim": "admitted_to_production_inventory",
+      "currentSharedAdmissionStatus": "evidence_recorded_admin_review_required",
+      "productionClaimImpactKo": "P0 source candidate 12건이 production inventory로 승격되기 전까지 모든 expansionRoadmap stage는 NO-GO다."
+    },
+    "gapEscalationRuleKo": "지원 claim을 깨는 P1/P2 gap은 P0 release blocker로 승격하고 release gate에서 실패시킨다."
+  }
 }
