@@ -5917,9 +5917,9 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
   );
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.equal(report.summary.totalRequirements, 42);
+  assert.equal(report.summary.totalRequirements, 102);
   assert.equal(report.summary.coveredRequirements, 4);
-  assert.equal(report.summary.missingRequirements, 38);
+  assert.equal(report.summary.missingRequirements, 98);
 
   const busanStationMembership = report.requirements.find(
     (entry) =>

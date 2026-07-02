@@ -1,8 +1,38 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-datapack-coverage-targets",
-  "targetVersion": "2026-06-22",
+  "targetVersion": "2026-07-02",
   "coverageGoal": "pre-store nationwide 100 percent functional subway coverage",
+  "claimLedger": [
+    {
+      "claimId": "android_v1_public_support_scope",
+      "claimKo": "상록수·사당 검증 pilot",
+      "status": "SCOPE_LOCKED_NO_GO_UNTIL_EVIDENCE_CLOSED",
+      "releaseScopeArtifact": "apps/mobile/release/production-datapack-scope.json",
+      "unblockConditionKo": "#1392-#1398 Android v1 pilot evidence만 대상으로 한다."
+    },
+    {
+      "claimId": "nationwide_subway_support",
+      "claimKo": "전국 도시철도·광역철도·공항철도·GTX·경전철 지원",
+      "status": "NO_GO",
+      "releaseScopeArtifact": "tools/datapack/nationwide-coverage-targets.json",
+      "unblockConditionKo": "모든 roadmap stage의 source admission과 6개 requiredSourceDomains coverage ratio 1을 통과해야 한다."
+    },
+    {
+      "claimId": "realtime_eta_accuracy",
+      "claimKo": "실시간 ETA 정확 보장",
+      "status": "NO_GO",
+      "releaseScopeArtifact": "apps/mobile/release/datapack-release-readiness-gate.json",
+      "unblockConditionKo": "#1416 realtime overlay coverage와 #1417 ground truth P50/P90 report가 통과해야 한다."
+    },
+    {
+      "claimId": "strict_accessible_route_guarantee",
+      "claimKo": "교통약자 경로 보장",
+      "status": "NO_GO",
+      "releaseScopeArtifact": "apps/mobile/release/datapack-release-readiness-gate.json",
+      "unblockConditionKo": "#1394 pathway/facility evidence와 strict profile regression이 UNKNOWN/stale/generated false positive 0건을 증명해야 한다."
+    }
+  ],
   "requiredSourceDomains": [
     {
       "id": "station_line_membership",
@@ -80,9 +110,19 @@
       "id": "capital",
       "displayName": "수도권",
       "operatorIds": [
+        "airport-railroad",
+        "gimpo-goldline",
+        "gtx-a",
+        "gtx-b",
+        "gtx-c",
         "seoul-metro",
+        "shinbundang",
+        "sillim-line",
         "korail",
-        "incheon-transit"
+        "incheon-transit",
+        "ui-sinseol-light-rail",
+        "uijeongbu-light-rail",
+        "yongin-everline"
       ]
     },
     {
@@ -112,6 +152,106 @@
       "operatorIds": [
         "daejeon-transportation"
       ]
+    }
+  ],
+  "roadmapConditionAxes": [
+    "station-line membership",
+    "adjacent ride edges",
+    "facility evidence",
+    "entry/exit",
+    "transfer/pathway",
+    "schedule/realtime",
+    "route map positions",
+    "source/license evidence"
+  ],
+  "roadmapGateCommands": [
+    {
+      "id": "coverage_gap_report",
+      "command": "node tools/datapack/report-coverage-gaps.mjs --targets tools/datapack/nationwide-coverage-targets.json --inventory tools/datapack/source-inventory.json --output artifacts/datapack-coverage-gaps.json"
+    },
+    {
+      "id": "source_inventory_validation",
+      "command": "node tools/datapack/validate-source-inventory.mjs --scope apps/mobile/release/production-datapack-scope.json tools/datapack/source-inventory.json"
+    },
+    {
+      "id": "production_datapack_validation",
+      "command": "node tools/datapack/validate-datapack.mjs --manifest artifacts/datapack/current.json --root artifacts/datapack --require-production"
+    },
+    {
+      "id": "route_commercialization_gate",
+      "command": "node tools/routes/check-route-commercialization-gate.mjs --gate apps/mobile/release/route-commercialization-gate.json --accuracy artifacts/route-accuracy-report.json --accessibility artifacts/route-accessibility-regression-report.json --coverage artifacts/realtime-provider-coverage-report.json --contract artifacts/route-v2-contract-report.json"
+    }
+  ],
+  "expansionRoadmap": [
+    {
+      "stage": 0,
+      "scopeKo": "상록수·사당 pilot",
+      "status": "CURRENT_NO_GO_UNTIL_PILOT_EVIDENCE_CLOSED",
+      "operatorIds": ["seoul-metro"],
+      "conditionAxesRef": "roadmapConditionAxes",
+      "goIssueIds": [1392, 1393, 1394, 1395, 1396, 1397, 1398],
+      "verificationCommandIds": ["source_inventory_validation", "production_datapack_validation"]
+    },
+    {
+      "stage": 1,
+      "scopeKo": "서울교통공사 4호선 전체",
+      "status": "NO_GO",
+      "operatorIds": ["seoul-metro"],
+      "conditionAxesRef": "roadmapConditionAxes",
+      "goIssueIds": [1394, 1397, 1400],
+      "verificationCommandIds": ["coverage_gap_report", "source_inventory_validation"]
+    },
+    {
+      "stage": 2,
+      "scopeKo": "서울교통공사 1-8호선과 9호선 2-3단계",
+      "status": "NO_GO",
+      "operatorIds": ["seoul-metro"],
+      "conditionAxesRef": "roadmapConditionAxes",
+      "goIssueIds": [1394, 1395, 1397, 1400, 1415],
+      "verificationCommandIds": ["coverage_gap_report", "source_inventory_validation", "route_commercialization_gate"]
+    },
+    {
+      "stage": 3,
+      "scopeKo": "KORAIL·인천교통공사 수도권 광역",
+      "status": "NO_GO",
+      "operatorIds": ["korail", "incheon-transit"],
+      "conditionAxesRef": "roadmapConditionAxes",
+      "goIssueIds": [1394, 1395, 1397, 1400, 1415, 1416],
+      "verificationCommandIds": ["coverage_gap_report", "source_inventory_validation", "route_commercialization_gate"]
+    },
+    {
+      "stage": 4,
+      "scopeKo": "부산·대구·광주·대전 권역",
+      "status": "NO_GO",
+      "operatorIds": [
+        "busan-transportation",
+        "daegu-transportation",
+        "gwangju-metropolitan-rapid-transit",
+        "daejeon-transportation"
+      ],
+      "conditionAxesRef": "roadmapConditionAxes",
+      "goIssueIds": [1397, 1398, 1399, 1400, 1415, 1418],
+      "verificationCommandIds": ["coverage_gap_report", "source_inventory_validation", "production_datapack_validation"]
+    },
+    {
+      "stage": 5,
+      "scopeKo": "공항철도·GTX·경전철",
+      "status": "NO_GO",
+      "operatorIds": [
+        "airport-railroad",
+        "gtx-a",
+        "gtx-b",
+        "gtx-c",
+        "shinbundang",
+        "gimpo-goldline",
+        "ui-sinseol-light-rail",
+        "uijeongbu-light-rail",
+        "yongin-everline",
+        "sillim-line"
+      ],
+      "conditionAxesRef": "roadmapConditionAxes",
+      "goIssueIds": [1397, 1400, 1415, 1416, 1417],
+      "verificationCommandIds": ["coverage_gap_report", "source_inventory_validation", "route_commercialization_gate"]
     }
   ]
 }
