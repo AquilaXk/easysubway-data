@@ -5487,6 +5487,61 @@ test("source candidate sample 검증기는 KRIC live evidence metadata를 허용
   const samplePath = path.join(outputDir, "sample.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
+  const sample = {
+    candidateId: "kric-subway-route-info",
+    endpoint: "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+    format: "json",
+    fields: [
+      "lnCd",
+      "mreaWideCd",
+      "railOprIsttCd",
+      "routCd",
+      "routNm",
+      "stinCd",
+      "stinConsOrdr",
+      "stinNm",
+    ],
+    rowCount: 1,
+    rawSha256: sha256("kric-subway-route-info raw sample"),
+    schemaFingerprint: sha256(JSON.stringify([
+      "lnCd",
+      "mreaWideCd",
+      "railOprIsttCd",
+      "routCd",
+      "routNm",
+      "stinCd",
+      "stinConsOrdr",
+      "stinNm",
+    ])),
+    credentialRedacted: true,
+    providerRecordHashes: [sha256("kric-subway-route-info row")],
+  };
+  sample.evidenceHash = sha256(JSON.stringify(sample));
+  await writeFile(
+    samplePath,
+    `${JSON.stringify(sample, null, 2)}\n`,
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-candidate-sample.mjs",
+      "--candidate",
+      "kric-subway-route-info",
+      "--sample",
+      samplePath,
+    ],
+    { cwd: root },
+  );
+
+  assert.match(stdout, /source candidate sample evidence valid: kric-subway-route-info/);
+});
+
+test("source candidate sample 검증기는 evidence hash metadata 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-sample-hash-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
   await writeFile(
     samplePath,
     `${JSON.stringify(
@@ -5510,19 +5565,56 @@ test("source candidate sample 검증기는 KRIC live evidence metadata를 허용
     )}\n`,
   );
 
-  const { stdout } = await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/validate-source-candidate-sample.mjs",
-      "--candidate",
-      "kric-subway-route-info",
-      "--sample",
-      samplePath,
-    ],
-    { cwd: root },
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "kric-subway-route-info",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /rawSha256 must be a sha256 hex string/,
   );
+});
 
-  assert.match(stdout, /source candidate sample evidence valid: kric-subway-route-info/);
+test("source candidate sample 검증기는 hand-edited evidence hash를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-stale-hash-${Date.now()}`);
+  const samplePath = path.join(outputDir, "sample.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const sample = {
+    candidateId: "kric-train-operation-organ",
+    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
+    format: "json",
+    fields: ["railOprIsttCd", "railOprIsttNm"],
+    rowCount: 1,
+    rawSha256: sha256("raw"),
+    schemaFingerprint: sha256(JSON.stringify(["railOprIsttCd", "railOprIsttNm"])),
+    credentialRedacted: true,
+    providerRecordHashes: [sha256("row")],
+  };
+  sample.evidenceHash = sha256(JSON.stringify(sample));
+  sample.fields.push("unexpectedField");
+  await writeFile(samplePath, `${JSON.stringify(sample, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--sample",
+        samplePath,
+      ],
+      { cwd: root },
+    ),
+    /output field missing|schemaFingerprint does not match fields/,
+  );
 });
 
 test("source candidate sample 검증기는 endpoint mismatch를 거부한다", async () => {
@@ -5742,25 +5834,14 @@ test("source candidate sample evidence builder는 raw JSON response를 validator
   await mkdir(outputDir, { recursive: true });
   await writeFile(
     responsePath,
-    `${JSON.stringify({
-      response: {
-        body: {
-          pageNo: 1,
-          numOfRows: 10,
-          totalCount: 1,
-          items: {
-            item: [
-              {
-                railOprIsttCd: "S1",
-              },
-              {
-                railOprIsttNm: "서울교통공사",
-              },
-            ],
-          },
-        },
+    `${JSON.stringify([
+      {
+        railOprIsttCd: "S1",
       },
-    })}\n`,
+      {
+        railOprIsttNm: "서울교통공사",
+      },
+    ])}\n`,
   );
 
   const { stdout } = await execFileAsync(
@@ -5775,6 +5856,13 @@ test("source candidate sample evidence builder는 raw JSON response를 validator
     { cwd: root },
   );
   await writeFile(evidencePath, stdout);
+  const evidence = JSON.parse(stdout);
+  assert.match(evidence.rawSha256, /^[0-9a-f]{64}$/);
+  assert.match(evidence.schemaFingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(evidence.credentialRedacted, true);
+  assert.equal(evidence.rowCount, 2);
+  assert.equal(evidence.providerRecordHashes.length, 2);
+  assert.match(evidence.evidenceHash, /^[0-9a-f]{64}$/);
 
   await execFileAsync(
     process.execPath,
@@ -5817,6 +5905,13 @@ test("source candidate sample evidence builder는 raw XML response를 validator 
     { cwd: root },
   );
   await writeFile(evidencePath, stdout);
+  const evidence = JSON.parse(stdout);
+  assert.match(evidence.rawSha256, /^[0-9a-f]{64}$/);
+  assert.match(evidence.schemaFingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(evidence.credentialRedacted, true);
+  assert.equal(evidence.rowCount, 2);
+  assert.equal(evidence.providerRecordHashes.length, 2);
+  assert.match(evidence.evidenceHash, /^[0-9a-f]{64}$/);
 
   await execFileAsync(
     process.execPath,

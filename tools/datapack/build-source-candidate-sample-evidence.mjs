@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -70,6 +71,10 @@ function bestJsonRow(value, best = { row: null, count: 0 }) {
 
 function itemRows(value) {
   if (Array.isArray(value)) {
+    const objectRows = value.filter((item) => item && typeof item === "object" && !Array.isArray(item));
+    if (objectRows.some((item) => scalarFieldCount(item) > 0)) {
+      return objectRows;
+    }
     return value.flatMap(itemRows);
   }
   if (!value || typeof value !== "object") {
@@ -83,54 +88,65 @@ function itemRows(value) {
   return Object.values(value).flatMap(itemRows);
 }
 
-function fieldsFromJson(raw) {
+function fieldsFromRows(rows, format) {
+  const fields = new Set();
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row)) {
+      if (value == null || typeof value !== "object") {
+        fields.add(key);
+      }
+    }
+  }
+  if (fields.size === 0) {
+    throw new Error(`${format} response has no object fields`);
+  }
+  return [...fields].sort();
+}
+
+function jsonRows(raw) {
   const parsed = JSON.parse(raw);
   const rows = itemRows(parsed);
   if (rows.length > 0) {
-    const fields = new Set();
-    for (const row of rows) {
-      for (const [key, value] of Object.entries(row)) {
-        if (value == null || typeof value !== "object") {
-          fields.add(key);
-        }
-      }
-    }
-    if (fields.size === 0) {
-      throw new Error("JSON response has no object fields");
-    }
-    return [...fields].sort();
+    return rows.map(sortJson);
   }
 
   const row = bestJsonRow(parsed).row;
   if (!row) {
     throw new Error("JSON response has no object fields");
   }
-  return Object.keys(row)
-    .filter((key) => row[key] == null || typeof row[key] !== "object")
-    .sort();
+  return [sortJson(row)];
 }
 
-function fieldsFromXml(raw) {
+function fieldsFromJson(raw) {
+  return fieldsFromRows(jsonRows(raw), "JSON");
+}
+
+function xmlRows(raw) {
   const items = [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map((match) => match[1]);
   const fragments = items.length > 0 ? items : [raw];
-  const fields = new Set();
-  for (const fragment of fragments) {
+  return fragments.map((fragment) => {
+    const row = {};
     const selfClosingTagPattern = /<([A-Za-z_][\w.-]*)\b[^>]*\/>/g;
     for (const match of fragment.matchAll(selfClosingTagPattern)) {
-      fields.add(match[1]);
+      row[match[1]] = null;
     }
     const tagPattern = /<([A-Za-z_][\w.-]*)\b[^>]*>([\s\S]*?)<\/\1>/g;
     for (const match of fragment.matchAll(tagPattern)) {
       const [, tagName, body] = match;
       if (!/<[A-Za-z_][\w.-]*\b/.test(body)) {
-        fields.add(tagName);
+        row[tagName] = body.trim();
       }
     }
-  }
-  if (fields.size === 0) {
+    return sortJson(row);
+  }).filter((row) => Object.keys(row).length > 0);
+}
+
+function fieldsFromXml(raw) {
+  const fields = fieldsFromRows(xmlRows(raw), "XML");
+  if (fields.length === 0) {
     throw new Error("XML response has no leaf fields");
   }
-  return [...fields].sort();
+  return fields;
 }
 
 function detectFormat(raw, explicitFormat) {
@@ -147,6 +163,28 @@ function detectFormat(raw, explicitFormat) {
   throw new Error("response format must be json or xml");
 }
 
+function rowsFromRaw(raw, format) {
+  return format === "json" ? jsonRows(raw) : xmlRows(raw);
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortJson);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, sortJson(entry)]),
+  );
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const candidates = await readJson(path.resolve(args.candidates));
@@ -159,19 +197,25 @@ async function main() {
   assertNoServiceKey(raw);
   const format = detectFormat(raw, args.format);
   const fields = format === "json" ? fieldsFromJson(raw) : fieldsFromXml(raw);
+  const rows = rowsFromRaw(raw, format);
+  const providerRecordHashes = rows.map((row) => sha256(JSON.stringify(row)));
+  const rawSha256 = sha256(raw);
+  const schemaFingerprint = sha256(JSON.stringify(fields));
 
-  console.log(
-    JSON.stringify(
-      {
-        candidateId: args.candidate,
-        endpoint: candidate.evidence.endpoint,
-        format,
-        fields,
-      },
-      null,
-      2,
-    ),
-  );
+  const evidence = {
+    candidateId: args.candidate,
+    endpoint: candidate.evidence.endpoint,
+    format,
+    fields,
+    rowCount: rows.length,
+    rawSha256,
+    schemaFingerprint,
+    credentialRedacted: true,
+    providerRecordHashes,
+  };
+  evidence.evidenceHash = sha256(JSON.stringify(evidence));
+
+  console.log(JSON.stringify(evidence, null, 2));
 }
 
 main().catch((error) => {
