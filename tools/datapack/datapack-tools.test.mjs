@@ -1,5 +1,5 @@
-import { gunzipSync } from "node:zlib";
-import { createHash } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
+import { createHash, createSign } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { createServer } from "node:http";
@@ -3616,6 +3616,71 @@ test("데이터팩 검증기는 production sourceInventory coverageScope 누락�
       { cwd: root, env: productionEnv },
     ),
     /capital@1 production sourceInventory.coverageScope must be an object/,
+  );
+});
+
+test("데이터팩 검증기는 production pack의 realtime payload table을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-realtime-payload-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const pack = manifest.packs[0];
+  const sqlitePath = path.join(outputDir, "catalog", "capital-v1.sqlite");
+  const database = new DatabaseSync(sqlitePath);
+  try {
+    database.exec(`
+      CREATE TABLE realtime_station_arrivals (
+        provider_id TEXT NOT NULL,
+        station_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      )
+    `);
+    database.exec("INSERT INTO realtime_station_arrivals VALUES ('topis', 'station-sadang', '{}')");
+  } finally {
+    database.close();
+  }
+
+  const sqliteBytes = await readFile(sqlitePath);
+  const compressedBytes = gzipSync(sqliteBytes);
+  await writeFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"), compressedBytes);
+  pack.sizeBytes = compressedBytes.length;
+  pack.sha256 = sha256(compressedBytes);
+  pack.sqliteSha256 = sha256(sqliteBytes);
+  resignProductionManifest(manifest);
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /capital@1 realtime payload table is not allowed in production datapack: realtime_station_arrivals/,
   );
 });
 
@@ -9819,6 +9884,43 @@ function productionSourceCoverageScope() {
 
 function packSignaturePayload(pack) {
   return `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`;
+}
+
+function resignProductionManifest(manifest) {
+  const pack = manifest.packs[0];
+  const packUrl = new URL(pack.url).toString();
+  const fixturePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+  pack.signature.value = rsaSha256Signature(`${fixturePayload}:${packUrl}`);
+  pack.representativeRouteRegressionSignature.value = rsaSha256Signature(
+    `${fixturePayload}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}:${packUrl}`,
+  );
+  if (manifest.signature) {
+    manifest.signature.value = rsaSha256Signature(canonicalJson(withoutSignature(manifest)));
+  }
+}
+
+function rsaSha256Signature(value) {
+  return createSign("RSA-SHA256").update(value).sign(testPrivateKeyPem).toString("base64url");
+}
+
+function withoutSignature(value) {
+  const copy = { ...value };
+  delete copy.signature;
+  return copy;
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalValue(value));
+}
+
+function canonicalValue(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(canonicalValue);
+  }
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
 }
 
 function representativeRouteRegressionPayload(routes) {

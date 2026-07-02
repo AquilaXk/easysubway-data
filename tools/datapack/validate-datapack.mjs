@@ -29,6 +29,10 @@ const facilityEvidenceProvenanceColumns = [
   "retrieved_at",
 ];
 const productionFacilityProvenanceKinds = ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"];
+const allowedRealtimeDatapackTables = new Set([
+  "realtime_provider_line_mappings",
+  "realtime_provider_station_mappings",
+]);
 const allowedNetworkEdgeTypes = new Set([
   "RIDE",
   "IN_STATION_TRANSFER",
@@ -138,6 +142,7 @@ function validateSqlite(sqlitePath, pack) {
       }
     }
 
+    validateNoRealtimePayloadTables(database, pack);
     validateNetworkEdgeReferences(database, pack);
     validateTransitSchedule(database, pack);
     validateStationPathways(database, pack);
@@ -161,6 +166,20 @@ function validateSqlite(sqlitePath, pack) {
     }
   } finally {
     database.close();
+  }
+}
+
+function validateNoRealtimePayloadTables(database, pack) {
+  if (pack.artifactKind !== "production") {
+    return;
+  }
+  const rows = database
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'realtime_%' ORDER BY name")
+    .all();
+  for (const row of rows) {
+    if (!allowedRealtimeDatapackTables.has(row.name)) {
+      throw new Error(`${pack.id}@${pack.version} realtime payload table is not allowed in production datapack: ${row.name}`);
+    }
   }
 }
 
