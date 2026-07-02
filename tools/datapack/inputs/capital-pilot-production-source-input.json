@@ -6,7 +6,7 @@
     "version": "1",
     "schemaVersion": "1",
     "artifactKind": "production",
-    "url": "https://datapack.aquilaxk.site/catalog/capital-v1.sqlite.gz"
+    "url": "https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/capital-v1.sqlite.gz"
   },
   "manifest": {
     "manifestVersion": 2,
