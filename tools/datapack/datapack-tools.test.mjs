@@ -4405,6 +4405,140 @@ test("데이터팩 quality metric report는 denominator 기반 metric과 freshne
   assert.equal(report.packs[0].metrics.freshnessValidRatio, 0);
 });
 
+test("데이터팩 headway report는 stop_times와 frequencies에서 대기시간 근거를 산출한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-headway-report-${Date.now()}`);
+  const reportPath = path.join(outputDir, "artifacts/datapack-headways.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-headway-report.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.artifactKind, "datapack-headway-report");
+  assert.equal(report.summary.packCount, 1);
+  assert.equal(report.summary.declaredFrequencyCount, 1);
+  assert.equal(report.packs[0].declaredFrequencies[0].headwaySeconds, 600);
+  const sangnoksu = report.packs[0].observedHeadways.find(
+    (row) =>
+      row.stationId === "station-sangnoksu" &&
+      row.stationLineId === "seoul-4" &&
+      row.servicePattern === "LOCAL",
+  );
+  assert.deepEqual(sangnoksu.departures, [29100, 90300]);
+  assert.equal(sangnoksu.minHeadwaySeconds, 61200);
+
+  const defaultLocalFixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  delete defaultLocalFixture.packs[0].transitTrips.find(
+    (row) => row.id === "trip-seoul-4-local-2505",
+  ).servicePattern;
+  const defaultLocalFixturePath = path.join(outputDir, "default-local-fixture.json");
+  const defaultLocalReportPath = path.join(outputDir, "artifacts/datapack-headways-default-local.json");
+  await writeFile(defaultLocalFixturePath, `${JSON.stringify(defaultLocalFixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-headway-report.mjs",
+      "--fixture",
+      defaultLocalFixturePath,
+      "--output",
+      defaultLocalReportPath,
+    ],
+    { cwd: root },
+  );
+  const defaultLocalReport = JSON.parse(await readFile(defaultLocalReportPath, "utf8"));
+  const defaultLocalSangnoksu = defaultLocalReport.packs[0].observedHeadways.find(
+    (row) =>
+      row.stationId === "station-sangnoksu" &&
+      row.stationLineId === "seoul-4" &&
+      row.servicePattern === "LOCAL",
+  );
+  assert.deepEqual(defaultLocalSangnoksu.departures, [29100, 90300]);
+
+  const frequencyTemplateFixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  frequencyTemplateFixture.packs[0].transitTrips.push({
+    id: "trip-seoul-2-local-0830",
+    routeId: "route-seoul-2-inner",
+    serviceId: "weekday-2026",
+    tripHeadsign: "내선순환",
+    directionId: "inner",
+    servicePattern: "LOCAL",
+    serviceDayStartSeconds: 0,
+  });
+  frequencyTemplateFixture.packs[0].transitStopTimes.push({
+    tripId: "trip-seoul-2-local-0830",
+    stopSequence: 1,
+    stationId: "station-sadang",
+    lineId: "seoul-2",
+    arrivalSeconds: 30600,
+    departureSeconds: 30600,
+  });
+  frequencyTemplateFixture.packs[0].transitFrequencies.push({
+    tripId: "trip-seoul-2-local-0830",
+    startTimeSeconds: 30600,
+    endTimeSeconds: 33600,
+    headwaySeconds: 600,
+    exactTimes: false,
+  });
+  const frequencyTemplateFixturePath = path.join(outputDir, "frequency-template-fixture.json");
+  const frequencyTemplateReportPath = path.join(outputDir, "artifacts/datapack-headways-frequency-template.json");
+  await writeFile(frequencyTemplateFixturePath, `${JSON.stringify(frequencyTemplateFixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-headway-report.mjs",
+      "--fixture",
+      frequencyTemplateFixturePath,
+      "--output",
+      frequencyTemplateReportPath,
+    ],
+    { cwd: root },
+  );
+  const frequencyTemplateReport = JSON.parse(await readFile(frequencyTemplateReportPath, "utf8"));
+  assert.equal(
+    frequencyTemplateReport.packs[0].observedHeadways.some((row) => row.lineId === "seoul-2"),
+    false,
+  );
+
+  const noPickupFixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  noPickupFixture.packs[0].transitStopTimes.find(
+    (row) => row.tripId === "trip-seoul-4-local-2505" && row.stationId === "station-sangnoksu",
+  ).pickupType = 1;
+  const noPickupFixturePath = path.join(outputDir, "no-pickup-fixture.json");
+  const noPickupReportPath = path.join(outputDir, "artifacts/datapack-headways-no-pickup.json");
+  await writeFile(noPickupFixturePath, `${JSON.stringify(noPickupFixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-headway-report.mjs",
+      "--fixture",
+      noPickupFixturePath,
+      "--output",
+      noPickupReportPath,
+    ],
+    { cwd: root },
+  );
+  const noPickupReport = JSON.parse(await readFile(noPickupReportPath, "utf8"));
+  assert.equal(
+    noPickupReport.packs[0].observedHeadways.some(
+      (row) =>
+        row.stationId === "station-sangnoksu" &&
+        row.stationLineId === "seoul-4" &&
+        row.servicePattern === "LOCAL",
+    ),
+    false,
+  );
+});
+
 test("데이터팩 quality metric report는 freshness metric 누락 manifest를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-quality-report-invalid-${Date.now()}`);
   await rm(outputDir, { recursive: true, force: true });
