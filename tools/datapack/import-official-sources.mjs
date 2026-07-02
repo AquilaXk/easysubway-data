@@ -45,7 +45,7 @@ function buildFixture(inventory, input) {
   const transitSchedule = transitScheduleRows(input);
   const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
   if (isProductionPack && Object.keys(transitScheduleTableRows).length > 0) {
-    throw new Error("production transit schedule import requires sourced schedule provenance");
+    validateProductionScheduleProvenance(input.scheduleProvenance, selectedSources, allowedSourceIds);
   }
   validateSelectedSourceRows(input, sourceIds);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
@@ -950,6 +950,24 @@ function transitScheduleMinimumTableRows(rows) {
       ["transit_frequencies", rows.transitFrequencies.length],
     ].filter(([, count]) => count > 0),
   );
+}
+
+function validateProductionScheduleProvenance(provenance, selectedSources, allowedSourceIds) {
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    throw new Error("production transit schedule import requires sourced schedule provenance");
+  }
+  const sourceId = requiredKnownSource(provenance.sourceId, allowedSourceIds, "scheduleProvenance.sourceId");
+  const source = selectedSources.find((entry) => entry.id === sourceId);
+  if (!sourceDomainEnabled([source], "schedule_timetable")) {
+    throw new Error(`scheduleProvenance source is not a schedule_timetable source: ${sourceId}`);
+  }
+  if (source.capabilities?.schedule?.productionUseAllowed !== true) {
+    throw new Error(`scheduleProvenance source is not admitted for production schedule use: ${sourceId}`);
+  }
+  requiredString(provenance.sourceSnapshotId, "scheduleProvenance.sourceSnapshotId");
+  productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");
+  productionEvidenceHash(provenance.evidenceHash, true, sourceId, "scheduleProvenance.evidenceHash");
+  requiredString(provenance.retrievedAt, "scheduleProvenance.retrievedAt");
 }
 
 function optionalRows(value, label) {

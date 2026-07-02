@@ -7076,6 +7076,38 @@ test("공식 source ingest adapter는 production schedule pass-through를 거부
   );
 });
 
+test("공식 source ingest adapter는 admission 전 schedule provenance도 production 적재하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-production-schedule-candidate-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  input.sourceIds.push("molit-tago-subway-info");
+  input.scheduleProvenance = {
+    sourceId: "molit-tago-subway-info",
+    sourceSnapshotId: "molit-tago-subway-info-snapshot-20260702",
+    providerRecordHash: sha256("provider:molit-tago-subway-info:schedule:20260702"),
+    evidenceHash: sha256("evidence:molit-tago-subway-info:schedule:20260702"),
+    retrievedAt: "2026-07-02T00:00:00.000Z",
+  };
+  input.serviceCalendars = [
+    {
+      serviceId: "weekday-2026",
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: "20260701",
+      endDate: "20261231",
+    },
+  ];
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /scheduleProvenance source is not a schedule_timetable source: molit-tago-subway-info/,
+  );
+});
+
 test("공식 source ingest adapter는 station-line 단위 facility evidence coverage를 요구한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-facility-line-coverage-${Date.now()}`);
   const input = productionSourceIngestInput();
