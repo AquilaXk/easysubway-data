@@ -20,6 +20,7 @@
   "knownSourceDomains": [
     "route_graph_topology",
     "realtime_arrivals",
+    "schedule_timetable",
     "route_map_positions",
     "demand_reference"
   ],
@@ -44,6 +45,18 @@
         "escalator",
         "wheelchair_lift",
         "verified_at"
+      ],
+      "blockingThreshold": {
+        "minimumOfficialFieldCoverageRatio": 1
+      }
+    },
+    {
+      "id": "schedule_timetable",
+      "displayName": "수도권 pilot 시간표와 운행 calendar",
+      "requiredFields": [
+        "service_calendar",
+        "trip",
+        "stop_time"
       ],
       "blockingThreshold": {
         "minimumOfficialFieldCoverageRatio": 1

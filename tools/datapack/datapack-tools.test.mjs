@@ -7736,13 +7736,18 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       path.join(packOutputDir, "current.provenance.json"),
       "--output",
       coverageReportPath,
+      "--allow-gaps",
     ],
     { cwd: root },
   );
   const coverageReport = JSON.parse(await readFile(coverageReportPath, "utf8"));
-  assert.equal(coverageReport.summary.coverageComplete, true);
-  assert.equal(coverageReport.summary.missingRequirements, 0);
-  assert.equal(coverageReport.summary.coverageRatio, 1);
+  assert.equal(coverageReport.summary.coverageComplete, false);
+  assert.equal(coverageReport.summary.missingRequirements, 1);
+  assert.equal(coverageReport.summary.coverageRatio, 0.6667);
+  assert.deepEqual(
+    coverageReport.requirements.find((requirement) => requirement.sourceDomain === "schedule_timetable").missingFields,
+    ["service_calendar", "trip", "stop_time"],
+  );
 
   const manifest = JSON.parse(await readFile(path.join(packOutputDir, "current.json"), "utf8"));
   assert.equal(manifest.manifestVersion, 2);
