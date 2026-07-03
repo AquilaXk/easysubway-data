@@ -720,7 +720,7 @@
           "productionUseAllowed": false,
           "coverageStatus": "TRIP_STOP_SEQUENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "commercial schedule import remains blocked until trip id/stop sequence source and admin review are complete"
+          "unsupportedNotes": "commercial schedule import remains blocked until a provider trip/stop-sequence source is identified and validated"
         },
         "realtime": {
           "status": "UNSUPPORTED",
