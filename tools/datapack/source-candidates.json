@@ -749,7 +749,7 @@
       "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "productionInventoryReferenceId": "seoul-realtime-arrival-station-info",
       "productionInventoryRelationship": "same_dataset_station_reference_is_production_live_provider_contract_remains_candidate",
       "serviceKeyHandling": "backend_secret_only",
@@ -784,16 +784,29 @@
           "updnLine"
         ],
         "missingEvidence": [
-          "providerTermsOrQuotaApproval",
-          "adminReview"
+          "providerTermsOrQuotaApproval"
         ],
         "liveSampleRetrievedAt": "2026-07-03T15:37:21Z",
         "liveSampleRowCount": 5,
         "liveSampleRawSha256": "d07597c4936e4a5af61f465abf25851a6e4881c09781b034bed2696d4fd396a8",
         "liveSampleSchemaFingerprint": "868d78c39e620f62a464cd547760de538e71cb7e863bf962cd14a25b30b3ff47",
-        "liveSampleEvidenceHash": "86c6fede4ddef9e5038142ef1ae1ceb700fe15d1f2d2eca2aa6e57bc6a27862b"
+        "liveSampleEvidenceHash": "86c6fede4ddef9e5038142ef1ae1ceb700fe15d1f2d2eca2aa6e57bc6a27862b",
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "qa-admin",
+          "approvedAt": "2026-07-04T01:00:00Z",
+          "sampleEvidenceHash": "86c6fede4ddef9e5038142ef1ae1ceb700fe15d1f2d2eca2aa6e57bc6a27862b",
+          "admissionDurationSeconds": 0,
+          "quotaEvidence": {
+            "portal": "서울 열린데이터광장",
+            "defaultDailyLimit": 1000,
+            "unlockStatus": "pending_gallery_review",
+            "productionUseAllowed": false
+          }
+        }
       },
-      "nextAction": "complete TOPIS provider terms/quota approval and admin review before production realtime ETA admission",
+      "nextAction": "complete TOPIS provider terms/quota approval before production realtime ETA admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -809,7 +822,7 @@
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
           "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
           "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "live sample evidence is validated, but backend-only key terms, provider quota, and admin review are still required before live ETA"
+          "unsupportedNotes": "live sample evidence and admin review are validated, but backend-only key terms and provider quota are still required before live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
@@ -829,7 +842,9 @@
       "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimePosition",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
+      "productionInventoryReferenceId": "seoul-topis-realtime-train-position",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_remains_realtime_candidate_until_provider_terms_or_quota_approval",
       "serviceKeyHandling": "backend_secret_only",
       "mobileEmbeddingAllowed": false,
       "dataRetentionPolicy": "provider_does_not_offer_past_realtime_data",
@@ -862,16 +877,29 @@
           "updnLine"
         ],
         "missingEvidence": [
-          "providerTermsOrQuotaApproval",
-          "adminReview"
+          "providerTermsOrQuotaApproval"
         ],
         "liveSampleRetrievedAt": "2026-07-03T15:37:21Z",
         "liveSampleRowCount": 5,
         "liveSampleRawSha256": "c48be5d948394ff8af18617feee43c902a09e4a6237da76e6003b442aa6445b3",
         "liveSampleSchemaFingerprint": "94d22dd5b64ad968f1347d94c3cce657e0f539c5a0e6bf2c2570245715479209",
-        "liveSampleEvidenceHash": "33734c425b0896ca26cf1f5eae718b9516f43fd4caa92fa14fbbb6b8bf58f6f6"
+        "liveSampleEvidenceHash": "33734c425b0896ca26cf1f5eae718b9516f43fd4caa92fa14fbbb6b8bf58f6f6",
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "qa-admin",
+          "approvedAt": "2026-07-04T01:05:00Z",
+          "sampleEvidenceHash": "33734c425b0896ca26cf1f5eae718b9516f43fd4caa92fa14fbbb6b8bf58f6f6",
+          "admissionDurationSeconds": 0,
+          "quotaEvidence": {
+            "portal": "서울 열린데이터광장",
+            "defaultDailyLimit": 1000,
+            "unlockStatus": "pending_gallery_review",
+            "productionUseAllowed": false
+          }
+        }
       },
-      "nextAction": "complete TOPIS provider terms/quota approval and admin review before using train position as realtime overlay evidence",
+      "nextAction": "complete TOPIS provider terms/quota approval before using train position as realtime overlay evidence",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -887,7 +915,7 @@
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
           "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
           "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "live sample evidence is validated, but backend-only key terms, provider quota, and admin review are still required before live ETA"
+          "unsupportedNotes": "live sample evidence and admin review are validated, but backend-only key terms and provider quota are still required before live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
