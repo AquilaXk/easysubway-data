@@ -44,7 +44,7 @@ function buildFixture(inventory, input) {
   );
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   const transitSchedule = transitScheduleRows(input);
-  validateTransitStopTimesFollowLineSequence(transitSchedule.transitStopTimes, stationLines);
+  validateTransitStopTimesFollowLineSequence(transitSchedule.transitStopTimes, stationLines, input.lines ?? []);
   const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
   if (isProductionPack && Object.keys(transitScheduleTableRows).length > 0) {
     validateProductionScheduleProvenance(input.scheduleProvenance, selectedSources, allowedSourceIds);
@@ -995,12 +995,12 @@ function transitScheduleRows(input) {
   };
 }
 
-function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
+function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines, lines) {
   if (stopTimes.length === 0) {
     return;
   }
   const lineSequences = new Map(stationLines.map((row) => [`${row.stationId}:${row.lineId}`, row.lineSequence]));
-  const lineSequenceRanges = lineSequenceRangesByLine(stationLines);
+  const lineSequenceRanges = lineSequenceRangesByLine(stationLines, lineSequenceWrapAllowedLineIds(lines));
   const byTrip = new Map();
 
   for (const stopTime of stopTimes) {
@@ -1051,10 +1051,23 @@ function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
   }
 }
 
-function lineSequenceRangesByLine(stationLines) {
+function lineSequenceWrapAllowedLineIds(lines) {
+  return new Set(
+    lines
+      .filter((line) => line.lineSequenceWrapAllowed === true)
+      .map((line) => requiredString(line.id, "lines.id")),
+  );
+}
+
+function lineSequenceRangesByLine(stationLines, wrapAllowedLineIds) {
   const ranges = new Map();
   for (const row of stationLines) {
-    const current = ranges.get(row.lineId) ?? { min: row.lineSequence, max: row.lineSequence, count: 0 };
+    const current = ranges.get(row.lineId) ?? {
+      min: row.lineSequence,
+      max: row.lineSequence,
+      count: 0,
+      wrapAllowed: wrapAllowedLineIds.has(row.lineId),
+    };
     current.min = Math.min(current.min, row.lineSequence);
     current.max = Math.max(current.max, row.lineSequence);
     current.count += 1;
@@ -1069,6 +1082,7 @@ function isLineSequenceBoundaryWrap(previous, current, ranges) {
   }
   const range = ranges.get(previous.lineId);
   return (
+    range?.wrapAllowed === true &&
     range?.count >= 4 &&
     Math.min(previous.lineSequence, current.lineSequence) === range.min &&
     Math.max(previous.lineSequence, current.lineSequence) === range.max

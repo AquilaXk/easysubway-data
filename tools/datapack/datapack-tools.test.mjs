@@ -7918,7 +7918,7 @@ test("공식 source ingest adapter는 production schedule pass-through를 거부
   );
 });
 
-test("공식 source ingest adapter는 stop_times가 lineSequence 경계를 감싸는 순환 운행을 허용한다", async () => {
+test("공식 source ingest adapter는 명시한 lineSequence 경계 wrap만 허용한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-stop-times-wrap-${Date.now()}`);
   const input = sourceIngestInput();
   addSourceIngestStation(input, {
@@ -7962,6 +7962,12 @@ test("공식 source ingest adapter는 stop_times가 lineSequence 경계를 감�
     },
   ];
 
+  await assert.rejects(
+    importOfficialSourceInput(path.join(outputDir, "blocked"), input),
+    /transit_stop_times stop_sequence must follow station lineSequence order: trip-seoul-4-loop-wrap/,
+  );
+
+  input.lines[0].lineSequenceWrapAllowed = true;
   const generated = await importOfficialSourceInput(outputDir, input);
   assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 3);
 });
