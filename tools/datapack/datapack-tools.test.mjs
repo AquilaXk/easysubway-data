@@ -7918,6 +7918,102 @@ test("공식 source ingest adapter는 production schedule pass-through를 거부
   );
 });
 
+test("공식 source ingest adapter는 stop_times 순서가 lineSequence와 뒤섞이면 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-stop-times-sequence-${Date.now()}`);
+  const input = sourceIngestInput();
+  input.stationMappings.push({
+    sourceId: "seoulmetro-station-line-info",
+    sourceStationCode: "450",
+    lineId: "seoul-4",
+    stationId: "station-jungang",
+    stationLineId: "station-jungang:seoul-4",
+    mappingStatus: "active",
+  });
+  input.stationLineRows.push({
+    sourceId: "seoulmetro-station-line-info",
+    sourceStationCode: "450",
+    lineId: "seoul-4",
+    stationNameKo: "중앙",
+    stationNameEn: "Jungang",
+    normalizedName: "중앙",
+    region: "수도권",
+    latitude: 37.3159,
+    longitude: 126.8385,
+    stationCode: "450",
+    lineSequence: 50,
+    platformInfo: "당고개 방면 / 오이도 방면",
+    lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+  });
+  input.serviceCalendars = [
+    {
+      serviceId: "weekday-2026",
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: "20260701",
+      endDate: "20261231",
+    },
+  ];
+  input.transitRoutes = [
+    {
+      routeId: "route-seoul-4",
+      lineId: "seoul-4",
+      agencyId: "seoul-metro",
+      routeShortName: "4",
+      routeLongName: "수도권 4호선",
+      routeColor: "00A5DE",
+      routeTextColor: "FFFFFF",
+      routeSortOrder: 4,
+    },
+  ];
+  input.transitTrips = [
+    {
+      tripId: "trip-seoul-4-zigzag",
+      routeId: "route-seoul-4",
+      serviceId: "weekday-2026",
+      directionId: "down",
+      tripHeadsign: "오이도",
+      blockId: "block-seoul-4-zigzag",
+      wheelchairAccessible: true,
+    },
+  ];
+  input.transitStopTimes = [
+    {
+      tripId: "trip-seoul-4-zigzag",
+      stopSequence: 1,
+      stationId: "station-sangnoksu",
+      lineId: "seoul-4",
+      arrivalSeconds: 28800,
+      departureSeconds: 28800,
+    },
+    {
+      tripId: "trip-seoul-4-zigzag",
+      stopSequence: 2,
+      stationId: "station-sadang",
+      lineId: "seoul-4",
+      arrivalSeconds: 29400,
+      departureSeconds: 29400,
+    },
+    {
+      tripId: "trip-seoul-4-zigzag",
+      stopSequence: 3,
+      stationId: "station-jungang",
+      lineId: "seoul-4",
+      arrivalSeconds: 30000,
+      departureSeconds: 30000,
+    },
+  ];
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /transit_stop_times stop_sequence must follow station lineSequence order: trip-seoul-4-zigzag/,
+  );
+});
+
 test("공식 source ingest adapter는 admission 전 schedule provenance도 production 적재하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-production-schedule-candidate-${Date.now()}`);
   const input = productionSourceIngestInput();

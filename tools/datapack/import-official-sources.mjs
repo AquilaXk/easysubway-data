@@ -44,6 +44,7 @@ function buildFixture(inventory, input) {
   );
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   const transitSchedule = transitScheduleRows(input);
+  validateTransitStopTimesFollowLineSequence(transitSchedule.transitStopTimes, stationLines);
   const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
   if (isProductionPack && Object.keys(transitScheduleTableRows).length > 0) {
     validateProductionScheduleProvenance(input.scheduleProvenance, selectedSources, allowedSourceIds);
@@ -992,6 +993,49 @@ function transitScheduleRows(input) {
     transitStopTimes: optionalRows(input.transitStopTimes, "transitStopTimes"),
     transitFrequencies: optionalRows(input.transitFrequencies, "transitFrequencies"),
   };
+}
+
+function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
+  if (stopTimes.length === 0) {
+    return;
+  }
+  const lineSequences = new Map(stationLines.map((row) => [`${row.stationId}:${row.lineId}`, row.lineSequence]));
+  const byTrip = new Map();
+
+  for (const stopTime of stopTimes) {
+    const tripId = requiredString(stopTime.tripId, "transitStopTimes.tripId");
+    const stationId = requiredString(stopTime.stationId, "transitStopTimes.stationId");
+    const lineId = requiredString(stopTime.lineId, "transitStopTimes.lineId");
+    const stationLineKey = `${stationId}:${lineId}`;
+    if (!lineSequences.has(stationLineKey)) {
+      throw new Error(`transit_stop_times station-line is missing from station_lines: ${tripId}:${stationLineKey}`);
+    }
+    const rows = byTrip.get(tripId) ?? [];
+    rows.push({
+      stopSequence: requiredInteger(stopTime.stopSequence, "transitStopTimes.stopSequence"),
+      lineSequence: lineSequences.get(stationLineKey),
+    });
+    byTrip.set(tripId, rows);
+  }
+
+  for (const [tripId, rows] of byTrip) {
+    rows.sort((left, right) => left.stopSequence - right.stopSequence);
+    let direction = 0;
+    for (let index = 1; index < rows.length; index += 1) {
+      const delta = rows[index].lineSequence - rows[index - 1].lineSequence;
+      if (delta === 0) {
+        throw new Error(`transit_stop_times lineSequence must change between stops: ${tripId}`);
+      }
+      const stepDirection = Math.sign(delta);
+      if (direction === 0) {
+        direction = stepDirection;
+        continue;
+      }
+      if (stepDirection !== direction) {
+        throw new Error(`transit_stop_times stop_sequence must follow station lineSequence order: ${tripId}`);
+      }
+    }
+  }
 }
 
 function transitScheduleMinimumTableRows(rows) {
