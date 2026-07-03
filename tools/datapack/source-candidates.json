@@ -656,17 +656,23 @@
       "detailUrl": "https://www.data.go.kr/data/15098554/openapi.do",
       "requestUrl": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
       "productionInventoryReferenceId": "molit-tago-subway-info",
-      "productionInventoryRelationship": "same_dataset_inventory_entry_remains_schedule_candidate_until_sample_and_importer_validation",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_remains_schedule_candidate_until_importer_validation",
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
         "detailPageUrl": "https://www.data.go.kr/data/15098554/openapi.do",
         "retrievedAt": "2026-06-22",
         "endpoint": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList",
-        "sampleUrl": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList?serviceKey=[서비스키값]&pageNo=1&numOfRows=10&_type=json&subwayStationId=448&dailyTypeCode=01&upDownTypeCode=U",
+        "sampleUrl": "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList?serviceKey=[서비스키값]&pageNo=1&numOfRows=10&_type=json&subwayStationId=MTRKR4448&dailyTypeCode=01&upDownTypeCode=U",
+        "stationDiscoveryUrl": "https://apis.data.go.kr/1613000/SubwayInfo/GetKwrdFndSubwaySttnList?serviceKey=[서비스키값]&pageNo=1&numOfRows=10&_type=json&subwayStationName=상록수",
+        "liveSampleRetrievedAt": "2026-07-03T14:22:16Z",
+        "liveSampleRowCount": 10,
+        "liveSampleRawSha256": "34af0c0e6750012070282b0b59f0226075bfbc8ee533f0bd934c78b130d297d4",
+        "liveSampleSchemaFingerprint": "6e5d572290d2d5a8ea2d243a615b6f310417995944c140353a5606228016bd48",
+        "liveSampleEvidenceHash": "d5a60bcc1907d346a24fbf720a5d362268720e8fab68e35c42eace270e5fe9ae",
         "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
         "formats": [
           "XML",
@@ -688,16 +694,15 @@
           "endSubwayStationId"
         ],
         "missingEvidence": [
-          "sampleResponse",
           "scheduleImporterValidation"
         ]
       },
-      "nextAction": "capture sanitized TAGO live sample and validate schedule importer before production timetable admission",
+      "nextAction": "validate schedule importer against sanitized TAGO live sample before production timetable admission",
       "capabilities": {
         "schedule": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "IMPORTER_VALIDATION_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "commercial schedule import remains blocked until production schedule importer and provider sample validation are complete"
         },
