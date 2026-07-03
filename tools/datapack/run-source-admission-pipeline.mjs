@@ -33,7 +33,13 @@ async function main() {
   const inventory = await readJson(path.resolve(root, requireArg(args, "inventory")));
   const outputInventory = admitSource({ inventory, productionSource: adminReview.productionSource });
   await writeFile(outputInventoryPath, `${JSON.stringify(outputInventory, null, 2)}\n`);
-  await execNode(["tools/datapack/validate-source-inventory.mjs", "--inventory", outputInventoryPath]);
+  await execNode([
+    "tools/datapack/validate-source-inventory.mjs",
+    "--inventory",
+    outputInventoryPath,
+    "--candidates",
+    args.candidates,
+  ]);
 
   const summary = {
     schemaVersion: 1,

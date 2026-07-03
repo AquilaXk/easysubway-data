@@ -3,13 +3,16 @@ import { readFile } from "node:fs/promises";
 
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
+const candidatesPath = optionValue("--candidates") ?? "tools/datapack/source-candidates.json";
 const scopePath = optionValue("--scope");
 const compareStrings = (left, right) => left.localeCompare(right);
 
 try {
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
   const scope = scopePath ? JSON.parse(await readFile(scopePath, "utf8")) : null;
   validateInventory(inventory);
+  validateAdmittedCandidateEvidence(inventory, candidates);
   if (scope) {
     validateProductionScope(inventory, scope);
   }
@@ -187,6 +190,76 @@ function validateProductionScope(inventory, scope) {
   }
 }
 
+function validateAdmittedCandidateEvidence(inventory, candidates) {
+  if (!candidates || typeof candidates !== "object" || Array.isArray(candidates)) {
+    throw new Error("source candidates must be an object");
+  }
+  assertEqual(candidates.schemaVersion, 1, "source candidates schemaVersion");
+  assertEqual(candidates.artifactKind, "production-source-candidates", "source candidates artifactKind");
+  if (!Array.isArray(candidates.candidates)) {
+    throw new Error("source candidates must include candidates array");
+  }
+
+  const sources = new Map(inventory.sources.map((source) => [source.id, source]));
+  for (const candidate of candidates.candidates) {
+    if (candidate?.admissionStatus !== "admitted_to_production_inventory") {
+      continue;
+    }
+    const sourceId = assertString(
+      candidate.productionInventoryReferenceId ?? candidate.id,
+      `${candidate.id}.productionInventoryReferenceId`,
+    );
+    const source = sources.get(sourceId);
+    if (!source) {
+      throw new Error(`${candidate.id} admitted candidate missing production inventory source: ${sourceId}`);
+    }
+    validateAdmissionEvidence(source.admissionEvidence, candidate, sourceId);
+  }
+}
+
+function validateAdmissionEvidence(evidence, candidate, sourceId) {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new Error(`${sourceId}.admissionEvidence must be an object for admitted candidate ${candidate.id}`);
+  }
+  assertEqual(evidence.artifactKind, "source-admission-pipeline-evidence-summary", `${sourceId}.admissionEvidence.artifactKind`);
+  assertEqual(evidence.candidateId, candidate.id, `${sourceId}.admissionEvidence.candidateId`);
+  assertEqual(evidence.sourceId, sourceId, `${sourceId}.admissionEvidence.sourceId`);
+  assertString(evidence.snapshotId, `${sourceId}.admissionEvidence.snapshotId`);
+  assertEqual(evidence.decision, "APPROVED", `${sourceId}.admissionEvidence.decision`);
+  assertString(evidence.approvedBy, `${sourceId}.admissionEvidence.approvedBy`);
+  assertString(evidence.approvedAt, `${sourceId}.admissionEvidence.approvedAt`);
+
+  for (const field of [
+    "sampleEvidenceHash",
+    "rawSha256",
+    "schemaFingerprint",
+    "sourceSnapshotSetHash",
+    "sourceInventorySha256",
+    "adminReviewRecordHash",
+    "licenseEvidenceHash",
+    "aliasLedgerHash",
+    "operatorMappingLedgerHash",
+    "facilityEvidenceLedgerHash",
+    "routeEvidenceLedgerHash",
+    "overrideHash",
+  ]) {
+    assertSha256(evidence[field], `${sourceId}.admissionEvidence.${field}`);
+  }
+
+  const liveSampleEvidenceHash = assertString(
+    candidate.evidence?.liveSampleEvidenceHash,
+    `${candidate.id}.evidence.liveSampleEvidenceHash`,
+  );
+  assertEqual(
+    evidence.sampleEvidenceHash,
+    liveSampleEvidenceHash,
+    `${sourceId}.admissionEvidence.sampleEvidenceHash`,
+  );
+  if (!Number.isInteger(evidence.admissionDurationSeconds) || evidence.admissionDurationSeconds < 0) {
+    throw new Error(`${sourceId}.admissionEvidence.admissionDurationSeconds must be a non-negative integer`);
+  }
+}
+
 function requireInventorySource(sources, sourceId) {
   const source = sources.get(sourceId);
   if (!source) {
@@ -258,6 +331,12 @@ function assertDate(value, label) {
   assertString(value, label);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00.000Z`))) {
     throw new Error(`${label} must be YYYY-MM-DD`);
+  }
+}
+
+function assertSha256(value, label) {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${label} must be a sha256 hex string`);
   }
 }
 

@@ -5970,6 +5970,84 @@ test("source inventory 검증기는 candidate capability의 production 사용 �
   );
 });
 
+test("source inventory 검증기는 admitted candidate의 admission evidence 누락을 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  const source = invalidInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+  delete source.admissionEvidence;
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-admission-evidence-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.admissionEvidence must be an object/,
+  );
+});
+
+test("source inventory 검증기는 admitted candidate sample evidence hash 불일치를 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  const source = invalidInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+  source.admissionEvidence.sampleEvidenceHash = sha256("wrong-sample-evidence");
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-admission-hash-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/,
+  );
+});
+
+test("source inventory 검증기는 admitted candidate live sample evidence hash 누락을 거부한다", async () => {
+  const sourceCandidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+  const invalidCandidates = structuredClone(sourceCandidates);
+  const candidate = invalidCandidates.candidates.find((entry) => entry.id === "molit-tago-subway-info");
+  delete candidate.evidence.liveSampleEvidenceHash;
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-candidate-admission-hash-${Date.now()}`);
+  const candidatesPath = path.join(outputDir, "source-candidates.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(candidatesPath, `${JSON.stringify(invalidCandidates, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--candidates",
+        candidatesPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.evidence\.liveSampleEvidenceHash is required/,
+  );
+});
+
 test("source inventory 검증기는 v1 optional source가 production 필수로 남는 것을 거부한다", async () => {
   const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const invalidInventory = structuredClone(sourceInventory);
@@ -6641,6 +6719,149 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
   assert.equal(summary.licenseEvidenceHash, adminReview.licenseEvidenceHash);
   const outputInventory = JSON.parse(await readFile(outputInventoryPath, "utf8"));
   assert.ok(outputInventory.sources.some((source) => source.id === "kric-train-operation-organ"));
+});
+
+test("source admission pipeline은 custom candidates를 최종 inventory 검증에 전달한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-admission-candidates-${Date.now()}`);
+  const rawPath = path.join(outputDir, "kric-train-operation-organ.raw.json");
+  const seedSamplePath = path.join(outputDir, "seed-sample.json");
+  const candidatesPath = path.join(outputDir, "source-candidates.json");
+  const adminReviewPath = path.join(outputDir, "admin-review.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(rawPath, `${JSON.stringify([{ railOprIsttCd: "S1", railOprIsttNm: "서울교통공사" }])}\n`);
+
+  const { stdout: sampleStdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-source-candidate-sample-evidence.mjs",
+      "--candidate",
+      "kric-train-operation-organ",
+      "--response",
+      rawPath,
+    ],
+    { cwd: root },
+  );
+  await writeFile(seedSamplePath, sampleStdout);
+  const sample = JSON.parse(sampleStdout);
+
+  const stagedCandidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+  const tagoCandidate = stagedCandidates.candidates.find((entry) => entry.id === "molit-tago-subway-info");
+  tagoCandidate.evidence.liveSampleEvidenceHash = sha256("staged-candidate-hash-mismatch");
+  await writeFile(candidatesPath, `${JSON.stringify(stagedCandidates, null, 2)}\n`);
+
+  const productionSource = {
+    id: "kric-train-operation-organ",
+    displayName: "열차운영기관정보",
+    owner: "국가철도공단",
+    provider: "국가철도공단",
+    sourceSystem: "KRIC OpenAPI",
+    datasetUrl: "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+    requiredForProductionPack: false,
+    updateFrequency: "provider-documented",
+    observedDataUpdatedAt: "2026-07-02",
+    retrievedAt: "2026-07-02",
+    license: {
+      type: "KOGL-1",
+      name: "공공누리 1유형",
+      attribution: "공공누리 제1유형: 출처표시",
+      commercialUseAllowed: true,
+      derivativeWorkAllowed: true,
+      redistributionAllowed: true,
+      evidenceUrl: "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+    },
+    coverageScope: {
+      regionIds: ["capital"],
+      operatorIds: ["seoul-metro"],
+      sourceDomains: ["station_line_membership"],
+    },
+    fieldsProvided: ["railOprIsttCd", "railOprIsttNm"],
+    capabilities: {
+      schedule: {
+        status: "UNSUPPORTED",
+        productionUseAllowed: false,
+        coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+        updateFrequency: "provider-documented",
+        unsupportedNotes: "candidate does not provide scheduled timetable data",
+      },
+      realtime: {
+        status: "UNSUPPORTED",
+        productionUseAllowed: false,
+        liveEtaEligible: false,
+        rateLimitStatus: "NOT_APPLICABLE",
+        coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+        updateFrequency: "provider-documented",
+        unsupportedNotes: "candidate does not provide realtime arrival data",
+      },
+      facility: {
+        status: "UNSUPPORTED",
+        productionUseAllowed: false,
+        coverageStatus: "NOT_PROVIDED_BY_SOURCE",
+        updateFrequency: "provider-documented",
+        unsupportedNotes: "candidate does not provide accessibility facility records",
+      },
+    },
+  };
+  const adminReview = {
+    schemaVersion: 1,
+    artifactKind: "source-admission-admin-review",
+    candidateId: "kric-train-operation-organ",
+    sourceId: "kric-train-operation-organ",
+    snapshotId: "kric-train-operation-organ-snapshot-20260702",
+    sampleEvidenceHash: sample.evidenceHash,
+    decision: "APPROVED",
+    approvedBy: "qa-admin",
+    approvedAt: "2026-07-02T00:10:00Z",
+    licenseEvidenceHash: sha256("license-evidence"),
+    aliasLedgerHash: sha256("alias-ledger"),
+    operatorMappingLedgerHash: sha256("operator-mapping-ledger"),
+    facilityEvidenceLedgerHash: sha256("facility-evidence-ledger"),
+    routeEvidenceLedgerHash: sha256("route-evidence-ledger"),
+    overrideHash: sha256("override-ledger"),
+    productionSource,
+  };
+  await writeFile(adminReviewPath, `${JSON.stringify(adminReview, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/run-source-admission-pipeline.mjs",
+        "--candidates",
+        candidatesPath,
+        "--candidate",
+        "kric-train-operation-organ",
+        "--raw-input",
+        rawPath,
+        "--evidence-dir",
+        outputDir,
+        "--snapshot-id",
+        "kric-train-operation-organ-snapshot-20260702",
+        "--source-id",
+        "kric-train-operation-organ",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-07-02T00:00:00Z",
+        "--source-updated-at",
+        "2026-07-02T00:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+        "--freshness-expires-at",
+        "2026-08-01T00:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-10-01T00:00:00Z",
+        "--admin-review",
+        adminReviewPath,
+        "--output-inventory",
+        path.join(outputDir, "source-inventory.admitted.json"),
+        "--output",
+        path.join(outputDir, "admission-summary.json"),
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/,
+  );
 });
 
 test("source admission pipeline은 JSON credential raw response를 저장 전에 거부한다", async () => {
