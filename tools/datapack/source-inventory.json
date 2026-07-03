@@ -419,6 +419,30 @@
           "updateFrequency": "realtime",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "molit-tago-subway-info",
+        "sourceId": "molit-tago-subway-info",
+        "snapshotId": "molit-tago-subway-info-snapshot-20260704",
+        "decision": "APPROVED",
+        "approvedBy": "qa-admin",
+        "approvedAt": "2026-07-04T00:20:00Z",
+        "sampleEvidenceHash": "d5a60bcc1907d346a24fbf720a5d362268720e8fab68e35c42eace270e5fe9ae",
+        "rawSha256": "34af0c0e6750012070282b0b59f0226075bfbc8ee533f0bd934c78b130d297d4",
+        "schemaFingerprint": "6e5d572290d2d5a8ea2d243a615b6f310417995944c140353a5606228016bd48",
+        "sourceSnapshotSetHash": "f6a7dcb11a04a1993202fc5fbd3068eb5808f66a237f2b72c907700bbd660578",
+        "sourceInventorySha256": "85a88db7f1c9f389adda7a8c1b9bc7c682ec1fe3762a4cb647ce332d52a916f1",
+        "adminReviewRecordHash": "68de2df243b1b73b5eb5b50c786bbd43385c99338c29945d7fd38b2163640ef0",
+        "licenseEvidenceHash": "1bece434e20038b0e5fc9fb7812b96fc088936905208ad1619317dda73e17c60",
+        "aliasLedgerHash": "6915e06ab8432339b4c3b19ec2a7abeba0698b004234e85e5c1d19735a8b6f6f",
+        "operatorMappingLedgerHash": "436598de70ed9d75b909010aa9fe8a283fe86d9ab9041fcb1ab8c1f54b43f9d0",
+        "facilityEvidenceLedgerHash": "2f9ddabfb6c983c428d2194ea88e65818b5ae951750f82078375ca883ace110c",
+        "routeEvidenceLedgerHash": "db2a0915adbf98eabc8f4ee52b4a9f27d25ebca95ecdfff3e3c8e4554ef768cc",
+        "overrideHash": "b5fb2c6fed271ff24e1c8ecd0d2334b257540e2032492f78b4d8417964215787",
+        "admissionDurationSeconds": 0,
+        "productionUseNoteKo": "admin review는 통과했지만 trip/stop sequence source가 없어 schedule_timetable production use는 아직 차단한다."
       }
     },
     {
