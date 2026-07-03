@@ -8876,6 +8876,27 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     ],
     { cwd: root, env: productionEnv },
   );
+  const routeGraphTopologyReportPath = path.join(outputDir, "route-graph-topology-report.json");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-route-graph-topology-report.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+      "--output",
+      routeGraphTopologyReportPath,
+    ],
+    { cwd: root },
+  );
+  const routeGraphTopologyReport = JSON.parse(await readFile(routeGraphTopologyReportPath, "utf8"));
+  assert.equal(routeGraphTopologyReport.summary.nonAdjacentExpressRideViolationCount, 2);
+  assert.deepEqual(
+    routeGraphTopologyReport.packs[0].violations.nonAdjacentExpressRide.map((violation) => violation.edgeId),
+    ["edge-sadang-sangnoksu-seoul-4", "edge-sangnoksu-sadang-seoul-4"],
+  );
+
   let validationFailure;
   try {
     await execFileAsync(
@@ -10318,7 +10339,7 @@ function sourceIngestInput() {
     routeRegressionScope: {
       mode: "DIRECT_ONLY",
       excludedPatterns: ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
-      claim: "capital pilot Android v1 direct ride only; transfer, multi-transfer, branch/loop, and express/local claims are excluded until route graph evidence exists",
+      claim: "capital pilot Android v1 direct regression only; current summary RIDE edge is release-blocking and not ETA evidence until adjacent-station route graph evidence exists",
     },
     representativeRouteRegressions: [
       {

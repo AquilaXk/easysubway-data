@@ -450,6 +450,7 @@ jobs:
           const headwayReport = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_HEADWAY_REPORT, "utf8"));
           const routeGraphTopologyViolationCount = [
             "localRideAdjacencyViolationCount",
+            "nonAdjacentExpressRideViolationCount",
             "rideSpeedViolationCount",
             "disconnectedNodeCount",
             "unreachableDirectedPairCount",
