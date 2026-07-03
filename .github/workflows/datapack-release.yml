@@ -97,6 +97,7 @@ jobs:
             echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
             echo "EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-graph-topology-report.json"
+            echo "EASYSUBWAY_HEADWAY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/datapack-headways.json"
             echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${{ runner.temp }}/easysubway-datapack-stage/release-evidence-bundle.json"
           } >> "${GITHUB_ENV}"
 
@@ -368,6 +369,14 @@ jobs:
             --output "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
           test -s "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
 
+      - name: Data Pack Release / Write headway evidence
+        run: |
+          set -euo pipefail
+          node tools/datapack/build-headway-report.mjs \
+            --fixture "${EASYSUBWAY_DATAPACK_BUILD_FIXTURE}" \
+            --output "${EASYSUBWAY_HEADWAY_REPORT}"
+          test -s "${EASYSUBWAY_HEADWAY_REPORT}"
+
       - name: Data Pack Release / Write release evidence bundle
         run: |
           set -euo pipefail
@@ -401,6 +410,7 @@ jobs:
             return normalized || zeroHash;
           };
           const topologyReport = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT, "utf8"));
+          const headwayReport = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_HEADWAY_REPORT, "utf8"));
           const routeGraphTopologyViolationCount = [
             "localRideAdjacencyViolationCount",
             "rideSpeedViolationCount",
@@ -410,6 +420,10 @@ jobs:
           const routeGraphTopologyStatus = routeGraphTopologyViolationCount === 0
             ? "PASS"
             : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
+          const headwayEvidenceCount =
+            Number(headwayReport.summary?.observedHeadwayGroupCount ?? 0) +
+            Number(headwayReport.summary?.declaredFrequencyCount ?? 0);
+          const headwayReportStatus = headwayEvidenceCount > 0 ? "PASS" : "DEFERRED";
 
           const bundle = {
             schemaVersion: 1,
@@ -432,12 +446,14 @@ jobs:
             coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
             routeMapPositionCoverageSha256: hashFile(process.env.EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT),
             routeGraphTopologySha256: hashFile(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT),
+            headwayReportSha256: hashFile(process.env.EASYSUBWAY_HEADWAY_REPORT),
             strictRouteRegressionSha256: externalHash(strictEvidence),
             androidEvidenceSha256: externalHash(androidEvidence),
             validatorStatus: "PASS",
             coverageStatus: releaseLike ? "PASS" : "BLOCKED_EXTERNAL",
             routeMapPositionCoverageStatus: "PASS",
             routeGraphTopologyStatus,
+            headwayReportStatus,
             strictRouteRegressionStatus: externalStatus(strictEvidence),
             manifestSignatureStatus: "PASS",
             androidEvidenceStatus: externalStatus(androidEvidence),
