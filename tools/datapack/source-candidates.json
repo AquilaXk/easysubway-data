@@ -741,7 +741,7 @@
       "detailUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
       "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
       "productionInventoryReferenceId": "seoul-realtime-arrival-station-info",
       "productionInventoryRelationship": "same_dataset_station_reference_is_production_live_provider_contract_remains_candidate",
@@ -777,10 +777,16 @@
           "updnLine"
         ],
         "missingEvidence": [
-          "sampleResponse"
-        ]
+          "providerTermsOrQuotaApproval",
+          "adminReview"
+        ],
+        "liveSampleRetrievedAt": "2026-07-03T15:37:21Z",
+        "liveSampleRowCount": 5,
+        "liveSampleRawSha256": "d07597c4936e4a5af61f465abf25851a6e4881c09781b034bed2696d4fd396a8",
+        "liveSampleSchemaFingerprint": "868d78c39e620f62a464cd547760de538e71cb7e863bf962cd14a25b30b3ff47",
+        "liveSampleEvidenceHash": "86c6fede4ddef9e5038142ef1ae1ceb700fe15d1f2d2eca2aa6e57bc6a27862b"
       },
-      "nextAction": "capture sanitized live sample with backend-only Seoul API key and confirm quota before production provider adapter",
+      "nextAction": "complete TOPIS provider terms/quota approval and admin review before production realtime ETA admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -794,9 +800,9 @@
           "productionUseAllowed": false,
           "liveEtaEligible": false,
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
           "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "backend-only service key, provider terms, rate limits, and live sample evidence must be approved before live ETA"
+          "unsupportedNotes": "live sample evidence is validated, but backend-only key terms, provider quota, and admin review are still required before live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
@@ -815,7 +821,7 @@
       "detailUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do",
       "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimePosition",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
       "serviceKeyHandling": "backend_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -849,10 +855,16 @@
           "updnLine"
         ],
         "missingEvidence": [
-          "sampleResponse"
-        ]
+          "providerTermsOrQuotaApproval",
+          "adminReview"
+        ],
+        "liveSampleRetrievedAt": "2026-07-03T15:37:21Z",
+        "liveSampleRowCount": 5,
+        "liveSampleRawSha256": "c48be5d948394ff8af18617feee43c902a09e4a6237da76e6003b442aa6445b3",
+        "liveSampleSchemaFingerprint": "94d22dd5b64ad968f1347d94c3cce657e0f539c5a0e6bf2c2570245715479209",
+        "liveSampleEvidenceHash": "33734c425b0896ca26cf1f5eae718b9516f43fd4caa92fa14fbbb6b8bf58f6f6"
       },
-      "nextAction": "capture sanitized live sample with backend-only Seoul API key and keep train position separate from precise GPS claims",
+      "nextAction": "complete TOPIS provider terms/quota approval and admin review before using train position as realtime overlay evidence",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -866,9 +878,9 @@
           "productionUseAllowed": false,
           "liveEtaEligible": false,
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
           "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "backend-only service key, provider terms, rate limits, and live sample evidence must be approved before live ETA"
+          "unsupportedNotes": "live sample evidence is validated, but backend-only key terms, provider quota, and admin review are still required before live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
