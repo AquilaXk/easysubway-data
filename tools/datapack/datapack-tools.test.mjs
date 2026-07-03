@@ -7466,7 +7466,7 @@ test("공식 source ingest adapter는 전국 마스터 source를 canonical 역·
         stationId: "station-sangnoksu",
         lineId: "seoul-4",
         stationCode: "448",
-        lineSequence: 48,
+        lineSequence: 43,
       },
       {
         stationId: "station-busan-station",
@@ -9692,7 +9692,7 @@ function sourceIngestInput() {
         latitude: 37.3028,
         longitude: 126.8666,
         stationCode: "448",
-        lineSequence: 48,
+        lineSequence: 43,
         platformInfo: "당고개 방면 / 오이도 방면",
         lastVerifiedAt: "2026-06-21T00:00:00.000Z",
       },
@@ -9707,7 +9707,7 @@ function sourceIngestInput() {
         latitude: 37.3028,
         longitude: 126.8666,
         stationCode: "448",
-        lineSequence: 48,
+        lineSequence: 43,
         platformInfo: "당고개 방면 / 오이도 방면",
         lastVerifiedAt: "2026-06-21T00:00:00.000Z",
       },
@@ -9722,7 +9722,7 @@ function sourceIngestInput() {
         latitude: 37.4766,
         longitude: 126.9816,
         stationCode: "433",
-        lineSequence: 33,
+        lineSequence: 28,
         platformInfo: "당고개 방면 / 오이도 방면",
         lastVerifiedAt: "2026-06-21T00:00:00.000Z",
       },
@@ -9810,9 +9810,9 @@ function sourceIngestInput() {
 
 function nationwideMasterSourceIngestInput() {
   const stationSources = [
-    ["molit-urban-rail-full-route", "MOLIT-SEOUL-4-448", "seoul-4", "station-sangnoksu", "448", 48, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
-    ["molit-tago-subway-info", "448", "seoul-4", "station-sangnoksu", "448", 48, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
-    ["kric-metropolitan-rail-station-info", "KRIC-SEOUL-4-448", "seoul-4", "station-sangnoksu", "448", 48, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
+    ["molit-urban-rail-full-route", "MOLIT-SEOUL-4-448", "seoul-4", "station-sangnoksu", "448", 43, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
+    ["molit-tago-subway-info", "448", "seoul-4", "station-sangnoksu", "448", 43, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
+    ["kric-metropolitan-rail-station-info", "KRIC-SEOUL-4-448", "seoul-4", "station-sangnoksu", "448", 43, "상록수", "Sangnoksu", "수도권", 37.3028, 126.8666],
     ["molit-urban-rail-full-route", "MOLIT-BUSAN-1-113", "busan-1", "station-busan-station", "113", 13, "부산역", "Busan Station", "부산권", 35.1152, 129.0422],
     ["kric-metropolitan-rail-station-info", "KRIC-BUSAN-1-113", "busan-1", "station-busan-station", "113", 13, "부산역", "Busan Station", "부산권", 35.1152, 129.0422],
   ];

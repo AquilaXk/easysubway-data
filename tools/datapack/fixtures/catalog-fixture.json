@@ -236,7 +236,7 @@
           "stationId": "station-sangnoksu",
           "lineId": "seoul-4",
           "stationCode": "448",
-          "lineSequence": 48,
+          "lineSequence": 43,
           "platformInfo": "당고개 방면 / 오이도 방면"
         },
         {
@@ -250,7 +250,7 @@
           "stationId": "station-sadang",
           "lineId": "seoul-4",
           "stationCode": "433",
-          "lineSequence": 33,
+          "lineSequence": 28,
           "platformInfo": "당고개 방면 / 오이도 방면"
         },
         {

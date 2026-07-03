@@ -145,7 +145,7 @@
       "latitude": 37.3028,
       "longitude": 126.8666,
       "stationCode": "448",
-      "lineSequence": 48,
+      "lineSequence": 43,
       "platformInfo": "당고개 방면 / 오이도 방면",
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
@@ -160,7 +160,7 @@
       "latitude": 37.4766,
       "longitude": 126.9816,
       "stationCode": "433",
-      "lineSequence": 33,
+      "lineSequence": 28,
       "platformInfo": "당고개 방면 / 오이도 방면",
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
@@ -175,7 +175,7 @@
       "latitude": 37.3028,
       "longitude": 126.8666,
       "stationCode": "448",
-      "lineSequence": 48,
+      "lineSequence": 43,
       "platformInfo": "당고개 방면 / 오이도 방면",
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     },
@@ -190,7 +190,7 @@
       "latitude": 37.4766,
       "longitude": 126.9816,
       "stationCode": "433",
-      "lineSequence": 33,
+      "lineSequence": 28,
       "platformInfo": "당고개 방면 / 오이도 방면",
       "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
     }
