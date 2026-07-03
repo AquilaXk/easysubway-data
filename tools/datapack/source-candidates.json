@@ -673,13 +673,21 @@
         "liveSampleRawSha256": "34af0c0e6750012070282b0b59f0226075bfbc8ee533f0bd934c78b130d297d4",
         "liveSampleSchemaFingerprint": "6e5d572290d2d5a8ea2d243a615b6f310417995944c140353a5606228016bd48",
         "liveSampleEvidenceHash": "d5a60bcc1907d346a24fbf720a5d362268720e8fab68e35c42eace270e5fe9ae",
+        "scheduleImporterValidation": {
+          "status": "validated_station_timetable_projection",
+          "tool": "tools/datapack/validate-tago-schedule-sample.mjs",
+          "validatedAt": "2026-07-03",
+          "validatedRawSha256": "34af0c0e6750012070282b0b59f0226075bfbc8ee533f0bd934c78b130d297d4",
+          "productionCanonicalStopTimesStatus": "blocked_requires_trip_stop_sequence",
+          "plannedEtaUseAllowed": false
+        },
         "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
         "formats": [
           "XML",
           "JSON"
         ],
         "coverageLimitations": [
-          "시간표 import adapter와 provider sample validation 전까지 production PLANNED ETA 근거로 쓰지 않음",
+          "provider station timetable sample projection은 검증했지만 trip id와 전체 stop sequence가 없어 production PLANNED ETA 근거로 쓰지 않음",
           "route graph RIDE edge duration과 stop_times 정합 검증 필요"
         ],
         "outputFields": [
@@ -694,17 +702,18 @@
           "endSubwayStationId"
         ],
         "missingEvidence": [
-          "scheduleImporterValidation"
+          "tripStopSequenceSource",
+          "adminReview"
         ]
       },
-      "nextAction": "validate schedule importer against sanitized TAGO live sample before production timetable admission",
+      "nextAction": "identify provider trip/stop-sequence source and complete admin review before production timetable admission",
       "capabilities": {
         "schedule": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "IMPORTER_VALIDATION_REQUIRED",
+          "coverageStatus": "TRIP_STOP_SEQUENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "commercial schedule import remains blocked until production schedule importer and provider sample validation are complete"
+          "unsupportedNotes": "commercial schedule import remains blocked until trip id/stop sequence source and admin review are complete"
         },
         "realtime": {
           "status": "UNSUPPORTED",
