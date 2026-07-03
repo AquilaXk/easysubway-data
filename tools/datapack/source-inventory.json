@@ -91,9 +91,9 @@
         ]
       },
       "requiredForProductionPack": false,
-      "updateFrequency": "irregular-file-snapshot",
-      "observedDataUpdatedAt": "2026-06-05",
-      "retrievedAt": "2026-06-21",
+      "updateFrequency": "provider-realtime-api-and-irregular-file-snapshot",
+      "observedDataUpdatedAt": "2026-07-03",
+      "retrievedAt": "2026-06-23",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -106,14 +106,26 @@
       "fieldsProvided": [
         "station_name_alias",
         "external_station_code",
-        "realtime_arrival_reference"
+        "realtime_arrival_reference",
+        "arvlCd",
+        "arvlMsg2",
+        "arvlMsg3",
+        "barvlDt",
+        "bstatnNm",
+        "btrainNo",
+        "recptnDt",
+        "statnId",
+        "statnNm",
+        "subwayId",
+        "trainLineNm",
+        "updnLine"
       ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
           "productionUseAllowed": false,
           "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
-          "updateFrequency": "irregular-file-snapshot",
+          "updateFrequency": "provider-realtime-api-and-irregular-file-snapshot",
           "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
         },
         "realtime": {
@@ -122,14 +134,14 @@
           "liveEtaEligible": false,
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
           "coverageStatus": "SOURCE_INVENTORY_COVERED",
-          "updateFrequency": "irregular-file-snapshot",
+          "updateFrequency": "provider-realtime-api-and-irregular-file-snapshot",
           "unsupportedNotes": "provider terms and rate limits are not approved for production live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
           "productionUseAllowed": false,
           "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
-          "updateFrequency": "irregular-file-snapshot",
+          "updateFrequency": "provider-realtime-api-and-irregular-file-snapshot",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
       },
@@ -146,7 +158,7 @@
         "rawSha256": "d07597c4936e4a5af61f465abf25851a6e4881c09781b034bed2696d4fd396a8",
         "schemaFingerprint": "868d78c39e620f62a464cd547760de538e71cb7e863bf962cd14a25b30b3ff47",
         "sourceSnapshotSetHash": "04f8cca3e306ca6132d614bb3646d3fa2848608446d32a2a6587243c0b76e8da",
-        "sourceInventorySha256": "c3074eeafb97e81f3948bb6891d4dfcdf5ca6a935a2f3dc67182364ae705edbc",
+        "sourceInventorySha256": "6f0440fb8d960e57b2144397735c962053ccbfa742db94f776f3a18fd6840e7e",
         "adminReviewRecordHash": "fbac8e5d12dc46f343bbd4d36bdfc1a240cabc44971ae3a28b787c8c9c14e61d",
         "licenseEvidenceHash": "da753bd8a514bcad1cedaa57c6ffaa215686ae75b40ae2bb4f12f73dd148d8b7",
         "aliasLedgerHash": "3ec5e7e104e38a3a0143804b230f51753fb317e425356cd95d0cae2b827f5cea",
@@ -199,14 +211,18 @@
         "evidenceUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do"
       },
       "fieldsProvided": [
+        "directAt",
+        "lastRecptnDt",
+        "recptnDt",
+        "statnId",
+        "statnNm",
+        "statnTid",
+        "statnTnm",
         "subwayId",
         "subwayNm",
         "trainNo",
-        "statnId",
-        "statnNm",
         "trainSttus",
-        "recptnDt",
-        "lastRecptnDt"
+        "updnLine"
       ],
       "capabilities": {
         "schedule": {
@@ -246,7 +262,7 @@
         "rawSha256": "c48be5d948394ff8af18617feee43c902a09e4a6237da76e6003b442aa6445b3",
         "schemaFingerprint": "94d22dd5b64ad968f1347d94c3cce657e0f539c5a0e6bf2c2570245715479209",
         "sourceSnapshotSetHash": "97b462e77362e3cef54a9073ac62b12a34932f7552bffc7a34092ddfa22f41b4",
-        "sourceInventorySha256": "c3074eeafb97e81f3948bb6891d4dfcdf5ca6a935a2f3dc67182364ae705edbc",
+        "sourceInventorySha256": "6f0440fb8d960e57b2144397735c962053ccbfa742db94f776f3a18fd6840e7e",
         "adminReviewRecordHash": "cf0d7a2923f37833b0856180ef9437620680840c2e6bbef968acb21737328c96",
         "licenseEvidenceHash": "57024e3d0baf158e8540536c716855d94e356935fdfba460dfbdad0223ceeabc",
         "aliasLedgerHash": "8af485e4c374132a2e5ca7454716b840fc06376d2509d8e7bf71c5846f6a95c4",
@@ -563,7 +579,7 @@
         "rawSha256": "34af0c0e6750012070282b0b59f0226075bfbc8ee533f0bd934c78b130d297d4",
         "schemaFingerprint": "6e5d572290d2d5a8ea2d243a615b6f310417995944c140353a5606228016bd48",
         "sourceSnapshotSetHash": "f6a7dcb11a04a1993202fc5fbd3068eb5808f66a237f2b72c907700bbd660578",
-        "sourceInventorySha256": "c3074eeafb97e81f3948bb6891d4dfcdf5ca6a935a2f3dc67182364ae705edbc",
+        "sourceInventorySha256": "6f0440fb8d960e57b2144397735c962053ccbfa742db94f776f3a18fd6840e7e",
         "adminReviewRecordHash": "68de2df243b1b73b5eb5b50c786bbd43385c99338c29945d7fd38b2163640ef0",
         "licenseEvidenceHash": "1bece434e20038b0e5fc9fb7812b96fc088936905208ad1619317dda73e17c60",
         "aliasLedgerHash": "6915e06ab8432339b4c3b19ec2a7abeba0698b004234e85e5c1d19735a8b6f6f",

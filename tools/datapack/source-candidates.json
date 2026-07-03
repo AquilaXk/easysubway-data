@@ -822,7 +822,7 @@
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
           "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
           "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "live sample evidence is validated, but backend-only key terms, provider quota, and admin review are still required before live ETA"
+          "unsupportedNotes": "live sample evidence and admin review are validated, but backend-only key terms and provider quota are still required before live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
@@ -915,7 +915,7 @@
           "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
           "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
           "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "live sample evidence is validated, but backend-only key terms, provider quota, and admin review are still required before live ETA"
+          "unsupportedNotes": "live sample evidence and admin review are validated, but backend-only key terms and provider quota are still required before live ETA"
         },
         "facility": {
           "status": "UNSUPPORTED",
