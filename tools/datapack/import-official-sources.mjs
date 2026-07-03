@@ -1000,6 +1000,7 @@ function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
     return;
   }
   const lineSequences = new Map(stationLines.map((row) => [`${row.stationId}:${row.lineId}`, row.lineSequence]));
+  const lineSequenceRanges = lineSequenceRangesByLine(stationLines);
   const byTrip = new Map();
 
   for (const stopTime of stopTimes) {
@@ -1014,6 +1015,7 @@ function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
     rows.push({
       stopSequence: requiredInteger(stopTime.stopSequence, "transitStopTimes.stopSequence"),
       lineSequence: lineSequences.get(stationLineKey),
+      lineId,
     });
     byTrip.set(tripId, rows);
   }
@@ -1021,14 +1023,25 @@ function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
   for (const [tripId, rows] of byTrip) {
     rows.sort((left, right) => left.stopSequence - right.stopSequence);
     let direction = 0;
+    let wrapped = false;
     for (let index = 1; index < rows.length; index += 1) {
+      const previous = rows[index - 1];
+      const current = rows[index];
       const delta = rows[index].lineSequence - rows[index - 1].lineSequence;
       if (delta === 0) {
         throw new Error(`transit_stop_times lineSequence must change between stops: ${tripId}`);
       }
       const stepDirection = Math.sign(delta);
+      if (direction === 0 && isLineSequenceBoundaryWrap(previous, current, lineSequenceRanges)) {
+        wrapped = true;
+        continue;
+      }
       if (direction === 0) {
         direction = stepDirection;
+        continue;
+      }
+      if (!wrapped && stepDirection !== direction && isLineSequenceBoundaryWrap(previous, current, lineSequenceRanges)) {
+        wrapped = true;
         continue;
       }
       if (stepDirection !== direction) {
@@ -1036,6 +1049,30 @@ function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines) {
       }
     }
   }
+}
+
+function lineSequenceRangesByLine(stationLines) {
+  const ranges = new Map();
+  for (const row of stationLines) {
+    const current = ranges.get(row.lineId) ?? { min: row.lineSequence, max: row.lineSequence, count: 0 };
+    current.min = Math.min(current.min, row.lineSequence);
+    current.max = Math.max(current.max, row.lineSequence);
+    current.count += 1;
+    ranges.set(row.lineId, current);
+  }
+  return ranges;
+}
+
+function isLineSequenceBoundaryWrap(previous, current, ranges) {
+  if (previous.lineId !== current.lineId) {
+    return false;
+  }
+  const range = ranges.get(previous.lineId);
+  return (
+    range?.count >= 4 &&
+    Math.min(previous.lineSequence, current.lineSequence) === range.min &&
+    Math.max(previous.lineSequence, current.lineSequence) === range.max
+  );
 }
 
 function transitScheduleMinimumTableRows(rows) {
