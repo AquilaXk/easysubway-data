@@ -3211,6 +3211,46 @@ test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근
   );
 });
 
+test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-production-facility-operational-evidence-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "catalog-fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  fixture.packs[0].facilities[0].status = "UNKNOWN";
+  fixture.packs[0].facilities[0].operationalStatus = "AVAILABLE";
+  fixture.packs[0].facilities[0].statusMeaning = "OFFICIAL_SOURCE";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      packOutputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
+        "--root",
+        packOutputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /facilities positive status requires verified operation evidence/,
+  );
+});
+
 test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route eligibility를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-production-facility-strict-unknown-${Date.now()}`);
   const fixturePath = path.join(outputDir, "catalog-fixture.json");

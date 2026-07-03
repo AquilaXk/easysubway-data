@@ -29,6 +29,7 @@ const facilityEvidenceProvenanceColumns = [
   "retrieved_at",
 ];
 const productionFacilityProvenanceKinds = ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"];
+const positiveFacilityStatuses = new Set(["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"]);
 const allowedRealtimeDatapackTables = new Set([
   "realtime_provider_line_mappings",
   "realtime_provider_station_mappings",
@@ -1358,8 +1359,8 @@ function validateProductionFacilityEvidenceConfidence(confidence, pack, tableNam
 }
 
 function validateProductionFacilityPositiveStatus(row, statusMeaning, pack) {
-  const positiveStatus = ["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(
-    String(row.status ?? "").toUpperCase(),
+  const positiveStatus = [row.status, row.operational_status].some((status) =>
+    positiveFacilityStatuses.has(String(status ?? "").toUpperCase()),
   );
   if (positiveStatus && !["REALTIME_OPERATION", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(statusMeaning)) {
     throw new Error(`${pack.id}@${pack.version} facilities positive status requires verified operation evidence: ${row.id}`);
