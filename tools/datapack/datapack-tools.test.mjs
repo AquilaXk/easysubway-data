@@ -7918,6 +7918,110 @@ test("공식 source ingest adapter는 production schedule pass-through를 거부
   );
 });
 
+test("공식 source ingest adapter는 명시한 lineSequence 경계 wrap만 허용한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-stop-times-wrap-${Date.now()}`);
+  const input = sourceIngestInput();
+  addSourceIngestStation(input, {
+    sourceStationCode: "410",
+    stationId: "station-loop-min",
+    stationNameKo: "순환최소",
+    stationCode: "410",
+    lineSequence: 10,
+  });
+  addSourceIngestStation(input, {
+    sourceStationCode: "420",
+    stationId: "station-loop-next",
+    stationNameKo: "순환다음",
+    stationCode: "420",
+    lineSequence: 20,
+  });
+  input.transitStopTimes = [
+    {
+      tripId: "trip-seoul-4-loop-wrap",
+      stopSequence: 1,
+      stationId: "station-sangnoksu",
+      lineId: "seoul-4",
+      arrivalSeconds: 28800,
+      departureSeconds: 28800,
+    },
+    {
+      tripId: "trip-seoul-4-loop-wrap",
+      stopSequence: 2,
+      stationId: "station-loop-min",
+      lineId: "seoul-4",
+      arrivalSeconds: 29400,
+      departureSeconds: 29400,
+    },
+    {
+      tripId: "trip-seoul-4-loop-wrap",
+      stopSequence: 3,
+      stationId: "station-loop-next",
+      lineId: "seoul-4",
+      arrivalSeconds: 30000,
+      departureSeconds: 30000,
+    },
+  ];
+
+  await assert.rejects(
+    importOfficialSourceInput(path.join(outputDir, "blocked"), input),
+    /transit_stop_times stop_sequence must follow station lineSequence order: trip-seoul-4-loop-wrap/,
+  );
+
+  input.lines[0].lineSequenceWrapAllowed = true;
+  const generated = await importOfficialSourceInput(outputDir, input);
+  assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 3);
+});
+
+test("공식 source ingest adapter는 stop_times 순서가 lineSequence와 뒤섞이면 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-stop-times-sequence-${Date.now()}`);
+  const input = sourceIngestInput();
+  addSourceIngestStation(input, {
+    sourceStationCode: "450",
+    stationId: "station-jungang",
+    stationNameKo: "중앙",
+    stationCode: "450",
+    lineSequence: 50,
+  });
+  addSourceIngestStation(input, {
+    sourceStationCode: "451",
+    stationId: "station-extra",
+    stationNameKo: "추가",
+    stationCode: "451",
+    lineSequence: 60,
+  });
+  input.transitStopTimes = [
+    {
+      tripId: "trip-seoul-4-zigzag",
+      stopSequence: 1,
+      stationId: "station-sangnoksu",
+      lineId: "seoul-4",
+      arrivalSeconds: 28800,
+      departureSeconds: 28800,
+    },
+    {
+      tripId: "trip-seoul-4-zigzag",
+      stopSequence: 2,
+      stationId: "station-sadang",
+      lineId: "seoul-4",
+      arrivalSeconds: 29400,
+      departureSeconds: 29400,
+    },
+    {
+      tripId: "trip-seoul-4-zigzag",
+      stopSequence: 3,
+      stationId: "station-jungang",
+      lineId: "seoul-4",
+      arrivalSeconds: 30000,
+      departureSeconds: 30000,
+    },
+  ];
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /transit_stop_times stop_sequence must follow station lineSequence order: trip-seoul-4-zigzag/,
+  );
+});
+
 test("공식 source ingest adapter는 admission 전 schedule provenance도 production 적재하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-production-schedule-candidate-${Date.now()}`);
   const input = productionSourceIngestInput();
@@ -10005,6 +10109,32 @@ function sourceIngestInput() {
       },
     ],
   };
+}
+
+function addSourceIngestStation(input, { sourceStationCode, stationId, stationNameKo, stationCode, lineSequence }) {
+  input.stationMappings.push({
+    sourceId: "seoulmetro-station-line-info",
+    sourceStationCode,
+    lineId: "seoul-4",
+    stationId,
+    stationLineId: `${stationId}:seoul-4`,
+    mappingStatus: "active",
+  });
+  input.stationLineRows.push({
+    sourceId: "seoulmetro-station-line-info",
+    sourceStationCode,
+    lineId: "seoul-4",
+    stationNameKo,
+    stationNameEn: stationNameKo,
+    normalizedName: stationNameKo,
+    region: "수도권",
+    latitude: 37.3159,
+    longitude: 126.8385,
+    stationCode,
+    lineSequence,
+    platformInfo: "당고개 방면 / 오이도 방면",
+    lastVerifiedAt: "2026-06-21T00:00:00.000Z",
+  });
 }
 
 function nationwideMasterSourceIngestInput() {
