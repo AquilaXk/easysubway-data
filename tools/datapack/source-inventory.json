@@ -588,6 +588,12 @@
         "routeEvidenceLedgerHash": "db2a0915adbf98eabc8f4ee52b4a9f27d25ebca95ecdfff3e3c8e4554ef768cc",
         "overrideHash": "b5fb2c6fed271ff24e1c8ecd0d2334b257540e2032492f78b4d8417964215787",
         "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": 1000,
+          "unlockStatus": "pending_production_account_transition",
+          "productionUseAllowed": false
+        },
         "productionUseNoteKo": "admin review는 통과했지만 trip/stop sequence source가 없어 schedule_timetable production use는 아직 차단한다."
       }
     },

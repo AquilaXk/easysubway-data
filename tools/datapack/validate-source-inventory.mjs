@@ -6,6 +6,7 @@ const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inven
 const candidatesPath = optionValue("--candidates") ?? "tools/datapack/source-candidates.json";
 const scopePath = optionValue("--scope");
 const compareStrings = (left, right) => left.localeCompare(right);
+const quotaEvidenceKeys = ["defaultDailyLimit", "portal", "productionUseAllowed", "unlockStatus"];
 
 try {
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
@@ -213,11 +214,11 @@ function validateAdmittedCandidateEvidence(inventory, candidates) {
     if (!source) {
       throw new Error(`${candidate.id} admitted candidate missing production inventory source: ${sourceId}`);
     }
-    validateAdmissionEvidence(source.admissionEvidence, candidate, sourceId);
+    validateAdmissionEvidence(source.admissionEvidence, candidate, source, sourceId);
   }
 }
 
-function validateAdmissionEvidence(evidence, candidate, sourceId) {
+function validateAdmissionEvidence(evidence, candidate, source, sourceId) {
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
     throw new Error(`${sourceId}.admissionEvidence must be an object for admitted candidate ${candidate.id}`);
   }
@@ -257,6 +258,39 @@ function validateAdmissionEvidence(evidence, candidate, sourceId) {
   );
   if (!Number.isInteger(evidence.admissionDurationSeconds) || evidence.admissionDurationSeconds < 0) {
     throw new Error(`${sourceId}.admissionEvidence.admissionDurationSeconds must be a non-negative integer`);
+  }
+  validateQuotaEvidence(evidence.quotaEvidence, `${sourceId}.admissionEvidence.quotaEvidence`);
+  if (sourceHasProductionCapability(source) && evidence.quotaEvidence.productionUseAllowed !== true) {
+    throw new Error(
+      `${sourceId}.admissionEvidence.quotaEvidence.productionUseAllowed must be true when source has production capability`,
+    );
+  }
+}
+
+function sourceHasProductionCapability(source) {
+  return ["schedule", "realtime", "facility"].some(
+    (capabilityName) => source.capabilities?.[capabilityName]?.productionUseAllowed === true,
+  );
+}
+
+function validateQuotaEvidence(quotaEvidence, label) {
+  if (!quotaEvidence || typeof quotaEvidence !== "object" || Array.isArray(quotaEvidence)) {
+    throw new Error(`${label} must be an object`);
+  }
+  const keys = Object.keys(quotaEvidence).sort(compareStrings);
+  if (JSON.stringify(keys) !== JSON.stringify(quotaEvidenceKeys)) {
+    throw new Error(`${label} must only include ${quotaEvidenceKeys.join(", ")}`);
+  }
+  assertString(quotaEvidence.portal, `${label}.portal`);
+  if (
+    quotaEvidence.defaultDailyLimit !== "unlimited" &&
+    (!Number.isInteger(quotaEvidence.defaultDailyLimit) || quotaEvidence.defaultDailyLimit < 0)
+  ) {
+    throw new Error(`${label}.defaultDailyLimit must be a non-negative integer or unlimited`);
+  }
+  assertString(quotaEvidence.unlockStatus, `${label}.unlockStatus`);
+  if (typeof quotaEvidence.productionUseAllowed !== "boolean") {
+    throw new Error(`${label}.productionUseAllowed must be a boolean`);
   }
 }
 

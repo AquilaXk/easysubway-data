@@ -6710,6 +6710,12 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
     facilityEvidenceLedgerHash: sha256("facility-evidence-ledger"),
     routeEvidenceLedgerHash: sha256("route-evidence-ledger"),
     overrideHash: sha256("override-ledger"),
+    quotaEvidence: {
+      portal: "KRIC 레일포털",
+      defaultDailyLimit: "unlimited",
+      unlockStatus: "not_required",
+      productionUseAllowed: true,
+    },
     productionSource,
   };
   await writeFile(adminReviewPath, `${JSON.stringify(adminReview, null, 2)}\n`);
@@ -6759,6 +6765,97 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
   assert.equal(summary.licenseEvidenceHash, adminReview.licenseEvidenceHash);
   const outputInventory = JSON.parse(await readFile(outputInventoryPath, "utf8"));
   assert.ok(outputInventory.sources.some((source) => source.id === "kric-train-operation-organ"));
+
+  const mismatchedAdminReview = JSON.parse(JSON.stringify(adminReview));
+  mismatchedAdminReview.productionSource.admissionEvidence = {
+    quotaEvidence: {
+      portal: "KRIC 레일포털",
+      defaultDailyLimit: "unlimited",
+      unlockStatus: "not_required",
+      productionUseAllowed: false,
+    },
+  };
+  await writeFile(adminReviewPath, `${JSON.stringify(mismatchedAdminReview, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/run-source-admission-pipeline.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--raw-input",
+        rawPath,
+        "--evidence-dir",
+        outputDir,
+        "--snapshot-id",
+        "kric-train-operation-organ-snapshot-20260702",
+        "--source-id",
+        "kric-train-operation-organ",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-07-02T00:00:00Z",
+        "--source-updated-at",
+        "2026-07-02T00:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+        "--freshness-expires-at",
+        "2026-08-01T00:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-10-01T00:00:00Z",
+        "--admin-review",
+        adminReviewPath,
+        "--output-inventory",
+        path.join(outputDir, "source-inventory.mismatched-quota.json"),
+        "--output",
+        path.join(outputDir, "admission-summary-mismatched-quota.json"),
+      ],
+      { cwd: root },
+    ),
+    /adminReview\.productionSource\.admissionEvidence\.quotaEvidence must match adminReview\.quotaEvidence/,
+  );
+
+  const unsanitizedAdminReview = JSON.parse(JSON.stringify(adminReview));
+  unsanitizedAdminReview.quotaEvidence.providerAccountMemo = "local-only quota account detail";
+  await writeFile(adminReviewPath, `${JSON.stringify(unsanitizedAdminReview, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/run-source-admission-pipeline.mjs",
+        "--candidate",
+        "kric-train-operation-organ",
+        "--raw-input",
+        rawPath,
+        "--evidence-dir",
+        outputDir,
+        "--snapshot-id",
+        "kric-train-operation-organ-snapshot-20260702",
+        "--source-id",
+        "kric-train-operation-organ",
+        "--provider",
+        "국가철도공단",
+        "--retrieved-at",
+        "2026-07-02T00:00:00Z",
+        "--source-updated-at",
+        "2026-07-02T00:00:00Z",
+        "--raw-object-uri",
+        "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
+        "--freshness-expires-at",
+        "2026-08-01T00:00:00Z",
+        "--raw-retention-expires-at",
+        "2026-10-01T00:00:00Z",
+        "--admin-review",
+        adminReviewPath,
+        "--output-inventory",
+        path.join(outputDir, "source-inventory.unsanitized-quota.json"),
+        "--output",
+        path.join(outputDir, "admission-summary-unsanitized-quota.json"),
+      ],
+      { cwd: root },
+    ),
+    /adminReview\.quotaEvidence must only include defaultDailyLimit, portal, productionUseAllowed, unlockStatus/,
+  );
 });
 
 test("source admission pipeline은 custom candidates를 최종 inventory 검증에 전달한다", async () => {
@@ -6858,6 +6955,12 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
     facilityEvidenceLedgerHash: sha256("facility-evidence-ledger"),
     routeEvidenceLedgerHash: sha256("route-evidence-ledger"),
     overrideHash: sha256("override-ledger"),
+    quotaEvidence: {
+      portal: "KRIC 레일포털",
+      defaultDailyLimit: "unlimited",
+      unlockStatus: "not_required",
+      productionUseAllowed: true,
+    },
     productionSource,
   };
   await writeFile(adminReviewPath, `${JSON.stringify(adminReview, null, 2)}\n`);
@@ -6901,6 +7004,51 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
       { cwd: root },
     ),
     /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/,
+  );
+});
+
+test("source inventory 검증기는 admitted candidate의 quota evidence 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-admission-quota-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const promotedInventoryPath = path.join(outputDir, "source-inventory.quota-blocked-production.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const source = inventory.sources.find((entry) => entry.id === "seoul-realtime-arrival-station-info");
+  delete source.admissionEvidence.quotaEvidence;
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /seoul-realtime-arrival-station-info\.admissionEvidence\.quotaEvidence must be an object/,
+  );
+
+  const promotedInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const promotedSource = promotedInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+  promotedSource.capabilities.schedule.status = "SUPPORTED";
+  promotedSource.capabilities.schedule.productionUseAllowed = true;
+  await writeFile(promotedInventoryPath, `${JSON.stringify(promotedInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        promotedInventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.admissionEvidence\.quotaEvidence\.productionUseAllowed must be true when source has production capability/,
   );
 });
 

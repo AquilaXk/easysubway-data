@@ -687,7 +687,13 @@
           "approvedBy": "qa-admin",
           "approvedAt": "2026-07-04T00:20:00Z",
           "sampleEvidenceHash": "d5a60bcc1907d346a24fbf720a5d362268720e8fab68e35c42eace270e5fe9ae",
-          "admissionDurationSeconds": 0
+          "admissionDurationSeconds": 0,
+          "quotaEvidence": {
+            "portal": "공공데이터포털",
+            "defaultDailyLimit": 1000,
+            "unlockStatus": "pending_production_account_transition",
+            "productionUseAllowed": false
+          }
         },
         "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
         "formats": [

@@ -35,6 +35,7 @@
     "facilityEvidenceLedgerHash",
     "routeEvidenceLedgerHash",
     "overrideHash",
+    "quotaEvidence",
     "productionSource"
   ]
 }
