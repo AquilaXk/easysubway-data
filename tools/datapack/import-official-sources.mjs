@@ -1114,6 +1114,9 @@ function validateProductionScheduleProvenance(provenance, selectedSources, allow
   if (source.capabilities?.schedule?.productionUseAllowed !== true) {
     throw new Error(`scheduleProvenance source is not admitted for production schedule use: ${sourceId}`);
   }
+  if (source.admissionEvidence?.quotaEvidence?.productionUseAllowed !== true) {
+    throw new Error(`scheduleProvenance source quota does not allow production schedule use: ${sourceId}`);
+  }
   requiredString(provenance.sourceSnapshotId, "scheduleProvenance.sourceSnapshotId");
   productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");
   productionEvidenceHash(provenance.evidenceHash, true, sourceId, "scheduleProvenance.evidenceHash");

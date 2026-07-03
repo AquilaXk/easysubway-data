@@ -8463,6 +8463,68 @@ test("공식 source ingest adapter는 admission 전 schedule provenance도 produ
   );
 });
 
+test("공식 source ingest adapter는 quota 미승인 schedule source를 production 적재하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-production-schedule-quota-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  input.sourceIds.push("molit-tago-subway-info");
+  input.stationMappings.push({
+    sourceId: "molit-tago-subway-info",
+    sourceStationCode: "448",
+    lineId: "seoul-4",
+    stationId: "station-sangnoksu",
+    stationLineId: "station-sangnoksu:seoul-4",
+    mappingStatus: "active",
+  });
+  input.stationLineRows.push({
+    ...input.stationLineRows[0],
+    sourceId: "molit-tago-subway-info",
+    sourceStationCode: "448",
+  });
+  input.coverageEvidence.push({
+    regionId: "capital",
+    operatorId: "seoul-metro",
+    sourceDomain: "schedule_timetable",
+    sourceIds: ["molit-tago-subway-info"],
+    evidence: "TAGO schedule admission quota gate regression",
+  });
+  input.scheduleProvenance = {
+    sourceId: "molit-tago-subway-info",
+    sourceSnapshotId: "molit-tago-subway-info-snapshot-20260704",
+    providerRecordHash: sha256("provider:molit-tago-subway-info:schedule:20260704"),
+    evidenceHash: sha256("evidence:molit-tago-subway-info:schedule:20260704"),
+    retrievedAt: "2026-07-04T00:00:00.000Z",
+  };
+  input.serviceCalendars = [
+    {
+      serviceId: "weekday-2026",
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: "20260701",
+      endDate: "20261231",
+    },
+  ];
+
+  const inventoryPath = path.join(tmpdir(), `easysubway-source-inventory-schedule-quota-${Date.now()}.json`);
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const tago = inventory.sources.find((source) => source.id === "molit-tago-subway-info");
+  tago.coverageScope.sourceDomains.push("schedule_timetable");
+  tago.capabilities.schedule.status = "SUPPORTED";
+  tago.capabilities.schedule.productionUseAllowed = true;
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input, inventoryPath),
+    /scheduleProvenance source quota does not allow production schedule use: molit-tago-subway-info/,
+  );
+});
+
 test("TAGO 시간표 sample validator는 station-level row shape만 검증하고 production 승격은 막는다", async () => {
   const samplePath = path.join(tmpdir(), `easysubway-tago-schedule-sample-${Date.now()}.json`);
   const rawSample = `${JSON.stringify({
@@ -11025,7 +11087,7 @@ function productionSourceIngestInput() {
   return input;
 }
 
-async function importOfficialSourceInput(outputDir, input) {
+async function importOfficialSourceInput(outputDir, input, inventoryPath = "tools/datapack/source-inventory.json") {
   const inputPath = path.join(outputDir, "official-source-input.json");
   const outputPath = path.join(outputDir, "catalog-fixture.json");
   await rm(outputDir, { recursive: true, force: true });
@@ -11036,7 +11098,7 @@ async function importOfficialSourceInput(outputDir, input) {
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      inventoryPath,
       "--input",
       inputPath,
       "--output",
