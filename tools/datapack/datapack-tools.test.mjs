@@ -6022,6 +6022,32 @@ test("source inventory 검증기는 admitted candidate sample evidence hash 불�
   );
 });
 
+test("source inventory 검증기는 admitted candidate live sample evidence hash 누락을 거부한다", async () => {
+  const sourceCandidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+  const invalidCandidates = structuredClone(sourceCandidates);
+  const candidate = invalidCandidates.candidates.find((entry) => entry.id === "molit-tago-subway-info");
+  delete candidate.evidence.liveSampleEvidenceHash;
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-candidate-admission-hash-${Date.now()}`);
+  const candidatesPath = path.join(outputDir, "source-candidates.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(candidatesPath, `${JSON.stringify(invalidCandidates, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--candidates",
+        candidatesPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.evidence\.liveSampleEvidenceHash is required/,
+  );
+});
+
 test("source inventory 검증기는 v1 optional source가 production 필수로 남는 것을 거부한다", async () => {
   const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const invalidInventory = structuredClone(sourceInventory);

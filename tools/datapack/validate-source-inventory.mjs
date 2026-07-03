@@ -246,14 +246,15 @@ function validateAdmissionEvidence(evidence, candidate, sourceId) {
     assertSha256(evidence[field], `${sourceId}.admissionEvidence.${field}`);
   }
 
-  const liveSampleEvidenceHash = candidate.evidence?.liveSampleEvidenceHash;
-  if (liveSampleEvidenceHash) {
-    assertEqual(
-      evidence.sampleEvidenceHash,
-      liveSampleEvidenceHash,
-      `${sourceId}.admissionEvidence.sampleEvidenceHash`,
-    );
-  }
+  const liveSampleEvidenceHash = assertString(
+    candidate.evidence?.liveSampleEvidenceHash,
+    `${candidate.id}.evidence.liveSampleEvidenceHash`,
+  );
+  assertEqual(
+    evidence.sampleEvidenceHash,
+    liveSampleEvidenceHash,
+    `${sourceId}.admissionEvidence.sampleEvidenceHash`,
+  );
   if (!Number.isInteger(evidence.admissionDurationSeconds) || evidence.admissionDurationSeconds < 0) {
     throw new Error(`${sourceId}.admissionEvidence.admissionDurationSeconds must be a non-negative integer`);
   }
