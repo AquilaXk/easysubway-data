@@ -117,6 +117,9 @@
       }
     }
   ],
+  "knownSourceDomains": [
+    "realtime_train_positions"
+  ],
   "regions": [
     {
       "id": "capital",

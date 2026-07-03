@@ -20,6 +20,7 @@
   "knownSourceDomains": [
     "route_graph_topology",
     "realtime_arrivals",
+    "realtime_train_positions",
     "schedule_timetable",
     "route_map_positions",
     "demand_reference"
