@@ -132,6 +132,136 @@
           "updateFrequency": "irregular-file-snapshot",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "seoul-topis-realtime-station-arrival",
+        "sourceId": "seoul-realtime-arrival-station-info",
+        "snapshotId": "seoul-topis-realtime-station-arrival-snapshot-20260704",
+        "decision": "APPROVED",
+        "approvedBy": "qa-admin",
+        "approvedAt": "2026-07-04T01:00:00Z",
+        "sampleEvidenceHash": "86c6fede4ddef9e5038142ef1ae1ceb700fe15d1f2d2eca2aa6e57bc6a27862b",
+        "rawSha256": "d07597c4936e4a5af61f465abf25851a6e4881c09781b034bed2696d4fd396a8",
+        "schemaFingerprint": "868d78c39e620f62a464cd547760de538e71cb7e863bf962cd14a25b30b3ff47",
+        "sourceSnapshotSetHash": "04f8cca3e306ca6132d614bb3646d3fa2848608446d32a2a6587243c0b76e8da",
+        "sourceInventorySha256": "c3074eeafb97e81f3948bb6891d4dfcdf5ca6a935a2f3dc67182364ae705edbc",
+        "adminReviewRecordHash": "fbac8e5d12dc46f343bbd4d36bdfc1a240cabc44971ae3a28b787c8c9c14e61d",
+        "licenseEvidenceHash": "da753bd8a514bcad1cedaa57c6ffaa215686ae75b40ae2bb4f12f73dd148d8b7",
+        "aliasLedgerHash": "3ec5e7e104e38a3a0143804b230f51753fb317e425356cd95d0cae2b827f5cea",
+        "operatorMappingLedgerHash": "f880106394ca2ed9157669a93b5ae51662ba33d47c1c2aa940822a0de7eb491f",
+        "facilityEvidenceLedgerHash": "1d7dad6b570b2570268e42babb55a4324991aedf1fc1a1a88d6a8422f67a74d7",
+        "routeEvidenceLedgerHash": "66c9905b65cef49e5d9434253205cfd3c54fb0054ac377a14621af8ae2756b03",
+        "overrideHash": "5a7a2a21e5251c819ca0cb2aa1a27293519f6a86cec2813fb0e53df03fd09dde",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "서울 열린데이터광장",
+          "defaultDailyLimit": 1000,
+          "unlockStatus": "pending_gallery_review",
+          "productionUseAllowed": false
+        },
+        "productionUseNoteKo": "admin review는 통과했지만 TOPIS daily quota 해제와 provider terms 승인이 없어 realtime live ETA production use는 아직 차단한다."
+      }
+    },
+    {
+      "id": "seoul-topis-realtime-train-position",
+      "displayName": "서울시 지하철 실시간 열차 위치정보",
+      "owner": "서울특별시",
+      "provider": "서울특별시",
+      "providerDepartment": "교통정보과",
+      "sourceSystem": "TOPIS",
+      "datasetUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do",
+      "datasetKind": "open-api",
+      "coverage": "서울시 TOPIS 지하철 실시간 열차 위치정보 API",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "realtime_arrivals"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "updateFrequency": "provider-realtime-api",
+      "observedDataUpdatedAt": "2026-07-03",
+      "retrievedAt": "2026-06-23",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do"
+      },
+      "fieldsProvided": [
+        "subwayId",
+        "subwayNm",
+        "trainNo",
+        "statnId",
+        "statnNm",
+        "trainSttus",
+        "recptnDt",
+        "lastRecptnDt"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider-realtime-api",
+          "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
+          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "updateFrequency": "provider-realtime-api",
+          "unsupportedNotes": "provider terms and daily quota are not approved for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider-realtime-api",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "seoul-topis-realtime-train-position",
+        "sourceId": "seoul-topis-realtime-train-position",
+        "snapshotId": "seoul-topis-realtime-train-position-snapshot-20260704",
+        "decision": "APPROVED",
+        "approvedBy": "qa-admin",
+        "approvedAt": "2026-07-04T01:05:00Z",
+        "sampleEvidenceHash": "33734c425b0896ca26cf1f5eae718b9516f43fd4caa92fa14fbbb6b8bf58f6f6",
+        "rawSha256": "c48be5d948394ff8af18617feee43c902a09e4a6237da76e6003b442aa6445b3",
+        "schemaFingerprint": "94d22dd5b64ad968f1347d94c3cce657e0f539c5a0e6bf2c2570245715479209",
+        "sourceSnapshotSetHash": "97b462e77362e3cef54a9073ac62b12a34932f7552bffc7a34092ddfa22f41b4",
+        "sourceInventorySha256": "c3074eeafb97e81f3948bb6891d4dfcdf5ca6a935a2f3dc67182364ae705edbc",
+        "adminReviewRecordHash": "cf0d7a2923f37833b0856180ef9437620680840c2e6bbef968acb21737328c96",
+        "licenseEvidenceHash": "57024e3d0baf158e8540536c716855d94e356935fdfba460dfbdad0223ceeabc",
+        "aliasLedgerHash": "8af485e4c374132a2e5ca7454716b840fc06376d2509d8e7bf71c5846f6a95c4",
+        "operatorMappingLedgerHash": "11eebb42b2fe57125b19b540caa50355bd2a867b32764d9f41f27d2f51a8ab22",
+        "facilityEvidenceLedgerHash": "9abe23dcbd55778d0c3f75bca8b5e4b66ee602afa52829f9fe5020b2bb40f6d2",
+        "routeEvidenceLedgerHash": "b4904f3d75dc0db11449950e6ff7d389ebb4c6c201f2376633ea91f33d13869b",
+        "overrideHash": "8871b8b6c7c5dfba01672c276061f5d598ffc56ab4ff8bea849c2da8e6b81fee",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "서울 열린데이터광장",
+          "defaultDailyLimit": 1000,
+          "unlockStatus": "pending_gallery_review",
+          "productionUseAllowed": false
+        },
+        "productionUseNoteKo": "admin review는 통과했지만 TOPIS daily quota 해제와 provider terms 승인이 없어 realtime live ETA production use는 아직 차단한다."
       }
     },
     {
@@ -433,7 +563,7 @@
         "rawSha256": "34af0c0e6750012070282b0b59f0226075bfbc8ee533f0bd934c78b130d297d4",
         "schemaFingerprint": "6e5d572290d2d5a8ea2d243a615b6f310417995944c140353a5606228016bd48",
         "sourceSnapshotSetHash": "f6a7dcb11a04a1993202fc5fbd3068eb5808f66a237f2b72c907700bbd660578",
-        "sourceInventorySha256": "85a88db7f1c9f389adda7a8c1b9bc7c682ec1fe3762a4cb647ce332d52a916f1",
+        "sourceInventorySha256": "c3074eeafb97e81f3948bb6891d4dfcdf5ca6a935a2f3dc67182364ae705edbc",
         "adminReviewRecordHash": "68de2df243b1b73b5eb5b50c786bbd43385c99338c29945d7fd38b2163640ef0",
         "licenseEvidenceHash": "1bece434e20038b0e5fc9fb7812b96fc088936905208ad1619317dda73e17c60",
         "aliasLedgerHash": "6915e06ab8432339b4c3b19ec2a7abeba0698b004234e85e5c1d19735a8b6f6f",
