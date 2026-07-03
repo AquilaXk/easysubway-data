@@ -39,6 +39,7 @@ export async function main(argv) {
       summary: {
         packCount: packs.length,
         localRideAdjacencyViolationCount: packs.reduce((sum, pack) => sum + pack.violations.localRideAdjacency.length, 0),
+        nonAdjacentExpressRideViolationCount: packs.reduce((sum, pack) => sum + pack.violations.nonAdjacentExpressRide.length, 0),
         rideSpeedViolationCount: packs.reduce((sum, pack) => sum + pack.violations.rideSpeed.length, 0),
         disconnectedNodeCount: packs.reduce((sum, pack) => sum + pack.violations.disconnectedNodes.length, 0),
         unreachableDirectedPairCount: packs.reduce((sum, pack) => sum + pack.violations.unreachableDirectedPairs.length, 0),
@@ -74,6 +75,7 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
     const undirected = new Map([...routeGraphNodes].map((node) => [node, new Set()]));
     const violations = {
       localRideAdjacency: [],
+      nonAdjacentExpressRide: [],
       rideSpeed: [],
       disconnectedNodes: [],
       unreachableDirectedPairs: [],
@@ -97,15 +99,20 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
       const toNode = stationLineNodeFromRouteNodeId(edge.to_node_id);
       const from = stationLineByNode.get(fromNode);
       const to = stationLineByNode.get(toNode);
-      if (edgeType === "RIDE" && servicePattern !== "EXPRESS" && from && to) {
+      if (edgeType === "RIDE" && from && to) {
         if (from.line_id !== to.line_id || Math.abs(from.line_sequence - to.line_sequence) !== 1) {
-          violations.localRideAdjacency.push({
+          const violation = {
             edgeId: edge.id,
             fromNode,
             toNode,
             fromLineSequence: from.line_sequence,
             toLineSequence: to.line_sequence,
-          });
+          };
+          if (servicePattern === "EXPRESS") {
+            violations.nonAdjacentExpressRide.push(violation);
+          } else {
+            violations.localRideAdjacency.push(violation);
+          }
         }
       }
       if (!isRouteGraphEdge(edgeType) || !routeGraphNodes.has(fromNode) || !routeGraphNodes.has(toNode)) {

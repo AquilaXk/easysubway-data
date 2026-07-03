@@ -45,6 +45,15 @@ test("route graph topology report exposes LOCAL adjacency and speed violations",
       toLineSequence: 5,
     },
   ]);
+  assert.deepEqual(report.violations.nonAdjacentExpressRide, [
+    {
+      edgeId: "edge-c-a-express",
+      fromNode: "station-c:line-4",
+      toNode: "station-a:line-4",
+      fromLineSequence: 5,
+      toLineSequence: 1,
+    },
+  ]);
   assert.deepEqual(report.violations.rideSpeed.map((row) => row.edgeId), ["edge-a-c-local"]);
   assert.equal(report.violations.unreachableDirectedPairs.length, 2);
 });
@@ -123,6 +132,7 @@ test("route graph topology report CLI writes artifact json", async () => {
   assert.equal(report.artifactKind, "route-graph-topology-report");
   assert.equal(report.summary.packCount, 1);
   assert.equal(report.summary.localRideAdjacencyViolationCount, 0);
+  assert.equal(report.summary.nonAdjacentExpressRideViolationCount, 0);
   assert.equal(report.summary.rideSpeedViolationCount, 0);
   assert.equal(report.summary.unreachableDirectedPairCount, 0);
 });
