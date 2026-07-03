@@ -300,8 +300,9 @@
       "sourceCandidatesPath": "tools/datapack/source-candidates.json",
       "p0CandidateCount": 13,
       "requiredAdmissionStatusBeforeProductionClaim": "admitted_to_production_inventory",
-      "currentSharedAdmissionStatus": "evidence_recorded_admin_review_required",
-      "productionClaimImpactKo": "P0 source candidate 13건이 production inventory로 승격되기 전까지 모든 expansionRoadmap stage는 NO-GO다."
+      "admittedCandidateCount": 1,
+      "currentOpenAdmissionStatus": "evidence_recorded_admin_review_required",
+      "productionClaimImpactKo": "P0 source candidate 13건 중 1건만 production inventory 승격 증거가 있어 모든 expansionRoadmap stage는 계속 NO-GO다."
     },
     "gapEscalationRuleKo": "지원 claim을 깨는 P1/P2 gap은 P0 release blocker로 승격하고 release gate에서 실패시킨다."
   }
