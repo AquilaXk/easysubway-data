@@ -5970,6 +5970,58 @@ test("source inventory 검증기는 candidate capability의 production 사용 �
   );
 });
 
+test("source inventory 검증기는 admitted candidate의 admission evidence 누락을 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  const source = invalidInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+  delete source.admissionEvidence;
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-admission-evidence-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.admissionEvidence must be an object/,
+  );
+});
+
+test("source inventory 검증기는 admitted candidate sample evidence hash 불일치를 거부한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const invalidInventory = structuredClone(sourceInventory);
+  const source = invalidInventory.sources.find((entry) => entry.id === "molit-tago-subway-info");
+  source.admissionEvidence.sampleEvidenceHash = sha256("wrong-sample-evidence");
+
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-admission-hash-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(invalidInventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-source-inventory.mjs",
+        "--inventory",
+        inventoryPath,
+      ],
+      { cwd: root },
+    ),
+    /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/,
+  );
+});
+
 test("source inventory 검증기는 v1 optional source가 production 필수로 남는 것을 거부한다", async () => {
   const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const invalidInventory = structuredClone(sourceInventory);
