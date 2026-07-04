@@ -34,6 +34,7 @@ function buildFixture(inventory, input) {
   const stationLines = normalizedStationLines(stationRows);
   const networkEdges = routeEdges(input.routeEdges ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
   validateProductionRideEdgeAdmission(stationLines, networkEdges, isProductionPack);
+  validateProductionSummaryRideEdgePolicy(stationLines, networkEdges, input.routeGraphTopologyPolicy, isProductionPack);
   const facilities = facilityRows(input.facilityRows ?? [], allowedSourceIds, mappingBySourceKey, isProductionPack);
   const stationFacilityEvidence = stationFacilityEvidenceRows(input, stationRows, facilities, isProductionPack);
   const movementCandidates = movementPathCandidates(
@@ -761,6 +762,54 @@ function validateProductionRideEdgeAdmission(stationLines, networkEdges, isProdu
       throw new Error(`production routeEdges LOCAL RIDE edge must connect adjacent station-line sequences: ${edge.id}`);
     }
   }
+}
+
+function validateProductionSummaryRideEdgePolicy(stationLines, networkEdges, policy, isProductionPack) {
+  if (!isProductionPack) {
+    return;
+  }
+  const stationLineByNode = new Map(
+    stationLines.map((row) => [
+      `${row.stationId}:${row.lineId}`,
+      { lineId: row.lineId, lineSequence: row.lineSequence },
+    ]),
+  );
+  const nonAdjacentExpressRideEdgeIds = networkEdges
+    .filter((edge) =>
+      String(edge.edgeType ?? "").toUpperCase() === "RIDE" &&
+      String(edge.servicePattern || "LOCAL").toUpperCase() === "EXPRESS"
+    )
+    .filter((edge) => {
+      const from = stationLineByNode.get(stationLineNodeFromRouteNode(edge.fromNodeId));
+      const to = stationLineByNode.get(stationLineNodeFromRouteNode(edge.toNodeId));
+      return from && to && (from.lineId !== to.lineId || Math.abs(from.lineSequence - to.lineSequence) !== 1);
+    })
+    .map((edge) => edge.id)
+    .sort((left, right) => left.localeCompare(right));
+  if (nonAdjacentExpressRideEdgeIds.length === 0) {
+    return;
+  }
+  if (
+    !policy ||
+    typeof policy !== "object" ||
+    Array.isArray(policy) ||
+    policy.summaryRideEdges !== "release-blocking-regression-only"
+  ) {
+    throw new Error(
+      "routeGraphTopologyPolicy.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only",
+    );
+  }
+  const declaredEdgeIds = requiredStringArray(
+    policy.nonAdjacentExpressRideEdgeIds,
+    "routeGraphTopologyPolicy.nonAdjacentExpressRideEdgeIds",
+  );
+  const declaredEdgeIdSet = new Set(declaredEdgeIds);
+  for (const edgeId of nonAdjacentExpressRideEdgeIds) {
+    if (!declaredEdgeIdSet.has(edgeId)) {
+      throw new Error(`routeGraphTopologyPolicy.nonAdjacentExpressRideEdgeIds missing: ${edgeId}`);
+    }
+  }
+  requiredString(policy.productionReadinessRequirement, "routeGraphTopologyPolicy.productionReadinessRequirement");
 }
 
 function stationLineNodeFromRouteNode(nodeId) {

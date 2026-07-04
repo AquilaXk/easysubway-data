@@ -8381,6 +8381,49 @@ test("공식 source ingest adapter는 명시한 lineSequence 경계 wrap만 허�
   assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 3);
 });
 
+test("공식 source ingest adapter는 cross-line EXPRESS summary edge도 격리 정책을 요구한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-cross-line-express-policy-${Date.now()}`);
+  const input = productionSourceIngestInput();
+  addSeoul2ProductionScope(input);
+  addMolitStationMapping(input, {
+    sourceStationCode: "MOLIT-SEOUL-2-226",
+    stationId: "station-sadang",
+  });
+  addStationLineRow(input, {
+    baseSourceStationCode: "MOLIT-SEOUL-4-433",
+    sourceStationCode: "MOLIT-SEOUL-2-226",
+    stationCode: "226",
+    lineSequence: 29,
+  });
+  input.routeEdges = [
+    {
+      ...input.routeEdges[0],
+      id: "edge-cross-line-express-summary",
+      sourceId: "molit-urban-rail-full-route",
+      from: {
+        sourceId: "molit-urban-rail-full-route",
+        sourceStationCode: "MOLIT-SEOUL-4-448",
+        lineId: "seoul-4",
+      },
+      to: {
+        sourceId: "molit-urban-rail-full-route",
+        sourceStationCode: "MOLIT-SEOUL-2-226",
+        lineId: "seoul-2",
+      },
+      servicePattern: "EXPRESS",
+      sourceSnapshotId: "molit-urban-rail-full-route-snapshot-20260621",
+      providerRecordHash: sha256("provider:edge-cross-line-express-summary:molit-urban-rail-full-route"),
+      evidenceHash: sha256("evidence:edge-cross-line-express-summary:molit-urban-rail-full-route:2026-06-21T00:00:00.000Z"),
+    },
+  ];
+  delete input.routeGraphTopologyPolicy;
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /routeGraphTopologyPolicy\.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only/,
+  );
+});
+
 test("공식 source ingest adapter는 stop_times 순서가 lineSequence와 뒤섞이면 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-stop-times-sequence-${Date.now()}`);
   const input = sourceIngestInput();
@@ -8851,6 +8894,51 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   };
   const adjacencySafeInputPath = path.join(outputDir, "capital-pilot-production-adjacency-safe.json");
   await writeFile(adjacencySafeInputPath, `${JSON.stringify(adjacencySafeInput, null, 2)}\n`);
+
+  const missingSummaryRidePolicyInput = JSON.parse(JSON.stringify(adjacencySafeInput));
+  delete missingSummaryRidePolicyInput.routeGraphTopologyPolicy;
+  const missingSummaryRidePolicyInputPath = path.join(outputDir, "missing-summary-ride-policy.json");
+  await writeFile(missingSummaryRidePolicyInputPath, `${JSON.stringify(missingSummaryRidePolicyInput, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        missingSummaryRidePolicyInputPath,
+        "--output",
+        path.join(outputDir, "missing-summary-ride-policy-fixture.json"),
+      ],
+      { cwd: root },
+    ),
+    /routeGraphTopologyPolicy\.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only/,
+  );
+
+  const lowercaseRideEdgeInput = JSON.parse(JSON.stringify(adjacencySafeInput));
+  lowercaseRideEdgeInput.routeEdges = lowercaseRideEdgeInput.routeEdges.map((edge) =>
+    edge.edgeType === "RIDE" ? { ...edge, edgeType: "ride" } : edge,
+  );
+  delete lowercaseRideEdgeInput.routeGraphTopologyPolicy;
+  const lowercaseRideEdgeInputPath = path.join(outputDir, "lowercase-ride-summary-policy.json");
+  await writeFile(lowercaseRideEdgeInputPath, `${JSON.stringify(lowercaseRideEdgeInput, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--input",
+        lowercaseRideEdgeInputPath,
+        "--output",
+        path.join(outputDir, "lowercase-ride-summary-policy-fixture.json"),
+      ],
+      { cwd: root },
+    ),
+    /routeGraphTopologyPolicy\.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only/,
+  );
 
   await execFileAsync(
     process.execPath,
@@ -10864,6 +10952,15 @@ function productionSourceIngestInput() {
   const input = sourceIngestInput();
   input.pack.artifactKind = "production";
   input.pack.url = "https://datapack.example.com/easysubway/catalog/capital-v1.sqlite.gz";
+  input.routeGraphTopologyPolicy = {
+    summaryRideEdges: "release-blocking-regression-only",
+    productionReadinessRequirement:
+      "replace summary RIDE edges with adjacent-station LOCAL RIDE edges before ETA or release-readiness claim",
+    nonAdjacentExpressRideEdgeIds: [
+      "edge-sangnoksu-sadang-seoul-4",
+      "edge-sadang-sangnoksu-seoul-4",
+    ],
+  };
   input.sourceIds = [
     "molit-urban-rail-full-route",
     "seoulmetro-station-line-info",
