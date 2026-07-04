@@ -12,7 +12,7 @@ const severityRank = new Map([
 ]);
 
 function usage() {
-  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--reviewed-ambiguities reviewed.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
+  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--line-tracks tracks.json]... [--reviewed-ambiguities reviewed.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
 
 Audits routeMapPositions against stationLines so production route-map coordinate
 coverage can be checked before rebuilding datapacks.`;
@@ -23,6 +23,7 @@ function parseArgs(argv) {
     fixture: null,
     reviewedAmbiguities: null,
     requireLabelPolygons: false,
+    lineTracks: [],
     failOn: [],
     pretty: false,
   };
@@ -31,6 +32,9 @@ function parseArgs(argv) {
     switch (arg) {
       case "--fixture":
         options.fixture = argv[++index];
+        break;
+      case "--line-tracks":
+        options.lineTracks.push(argv[++index]);
         break;
       case "--reviewed-ambiguities":
         options.reviewedAmbiguities = argv[++index];
@@ -935,12 +939,89 @@ function packRequiresRouteMapPositions(pack, positions) {
   });
 }
 
+// build/apply-route-map-line-tracks의 tracks.json(들)을 fixture 노선 집합과 대조해
+// 커버리지·무결성 findings를 만든다. #1638 track 직접 렌더 게이트.
+function auditLineTracks(packs, lineTracksDocs) {
+  const lineIdsByRegion = new Map();
+  for (const pack of packs) {
+    for (const position of pack.routeMapPositions ?? []) {
+      const region = position.region;
+      if (!region) continue;
+      if (!lineIdsByRegion.has(region)) lineIdsByRegion.set(region, new Set());
+      lineIdsByRegion.get(region).add(position.lineId);
+    }
+  }
+  const findings = [];
+  const coveredRegions = new Set(lineTracksDocs.map((doc) => doc.region));
+  for (const region of lineIdsByRegion.keys()) {
+    if (!coveredRegions.has(region)) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "LINE_TRACKS_MISSING_REGION",
+        region,
+        message: `route-map region '${region}'에 line-track 문서가 없다.`,
+      });
+    }
+  }
+  for (const doc of lineTracksDocs) {
+    const region = doc.region ?? "";
+    const expected = lineIdsByRegion.get(region) ?? new Set();
+    // 색↔노선 1:1 전제는 SVG stroke 원천에만 적용(Route B는 색이 없다).
+    if (doc.source === "svg-strokes" && Number.isInteger(doc.colorCount) && Number.isInteger(doc.lineCount) && doc.colorCount !== doc.lineCount) {
+      addFinding(findings, {
+        severity: "BLOCKER",
+        code: "LINE_TRACKS_COLOR_LINE_MISMATCH",
+        region,
+        message: `track 색 수(${doc.colorCount}) ≠ 노선 수(${doc.lineCount}) — 색이 노선 식별자라는 전제 위반.`,
+      });
+    }
+    const covered = new Set();
+    for (const line of doc.lines ?? []) {
+      covered.add(line.lineId);
+      if (!line.paths || line.paths.length === 0) {
+        addFinding(findings, {
+          severity: "BLOCKER",
+          code: "LINE_TRACKS_EMPTY_PATH",
+          region,
+          lineId: line.lineId,
+          message: "line-track path가 비어 있다.",
+        });
+      }
+      if (line.matchVotes === 0) {
+        addFinding(findings, {
+          severity: "HIGH",
+          code: "LINE_TRACKS_ZERO_VOTE",
+          region,
+          lineId: line.lineId,
+          message: `근접 역 0표 소거법 배정(색 ${line.svgColor || "-"}). SVG와 육안 대조 수동 검수 대상.`,
+        });
+      }
+    }
+    for (const lineId of expected) {
+      if (!covered.has(lineId)) {
+        addFinding(findings, {
+          severity: "BLOCKER",
+          code: "LINE_TRACKS_MISSING_LINE",
+          region,
+          lineId,
+          message: "노선에 대응 line-track이 없다.",
+        });
+      }
+    }
+  }
+  return findings;
+}
+
 function auditFixture(fixturePath, fixture, reviewedAmbiguities, options = {}) {
   const packs = Array.isArray(fixture.packs) ? fixture.packs : [];
   const auditedPacks = packs.map((pack) =>
     auditPack(pack, reviewedAmbiguities, options),
   );
   const findings = auditedPacks.flatMap((pack) => pack.findings);
+  const lineTracksDocs = options.lineTracks ?? [];
+  if (lineTracksDocs.length > 0) {
+    findings.push(...auditLineTracks(packs, lineTracksDocs));
+  }
   const findingCounts = {};
   for (const severity of severityRank.keys()) {
     findingCounts[severity] = 0;
@@ -970,8 +1051,12 @@ async function main() {
         JSON.parse(await readFile(options.reviewedAmbiguities, "utf8")),
       )
     : new Map();
+  const lineTracksDocs = await Promise.all(
+    options.lineTracks.map(async (file) => JSON.parse(await readFile(file, "utf8"))),
+  );
   const report = auditFixture(options.fixture, fixture, reviewedAmbiguities, {
     requireLabelPolygons: options.requireLabelPolygons,
+    lineTracks: lineTracksDocs,
   });
   console.log(JSON.stringify(report, null, options.pretty ? 2 : 0));
 

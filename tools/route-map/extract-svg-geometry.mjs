@@ -9,12 +9,21 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const extractorVersion = "route-map-svg-geometry-v1";
+// v2: <text> 라벨에 더해 노선 track geometry(line/polyline/polygon/path)를
+// root 좌표 정점 목록 + 확정 stroke 색(getComputedStyle)으로 함께 추출한다.
+const extractorVersion = "route-map-svg-geometry-v2";
+
+// 이 길이(root 좌표) 미만인 stroke는 노선이 아니라 역 마커 틱/장식으로 보고 버린다.
+// seoul SVG의 <line class="SDI">(≈20px 대각선 장식)를 걸러내는 하한이다.
+const MIN_STROKE_LENGTH = 24;
+// path는 정점 정보가 d 안에 있어 직접 못 읽으므로 등간격으로 재샘플한다(root 좌표 px).
+const PATH_SAMPLE_SPACING = 8;
 
 function usage() {
   return `Usage: node tools/route-map/extract-svg-geometry.mjs <svg-file> --region <name> [--browser <path>] [--pretty]
 
-Extract visible SVG <text> bounding polygons in root SVG coordinates.
+Extract visible SVG <text> bounding polygons and line/polyline/polygon/path
+stroke geometry (with computed stroke color) in root SVG coordinates.
 `;
 }
 
@@ -77,7 +86,7 @@ function stripSvgPreamble(svg) {
 
 function browserExtractorExpression(svg) {
   const svgBase64 = Buffer.from(stripSvgPreamble(svg), "utf8").toString("base64");
-  return `(${async function extract(value) {
+  return `(${async function extract(value, config) {
     function decodeBase64Utf8(base64) {
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
@@ -101,11 +110,26 @@ function browserExtractorExpression(svg) {
       const point = new DOMPoint(x, y).matrixTransform(matrix);
       return { x: number(point.x), y: number(point.y) };
     }
+    // matrix의 등방 스케일 근사(root px = local px × scale). path 재샘플 간격 환산용.
+    function matrixScale(matrix) {
+      return Math.hypot(matrix.a, matrix.b) || 1;
+    }
+    // getComputedStyle의 "rgb(r,g,b)"/"rgba(r,g,b,a)"를 "#rrggbb"로. 투명/none은 null.
+    function normalizeColor(value) {
+      const match = /rgba?\(([^)]+)\)/i.exec(value || "");
+      if (!match) return null;
+      const parts = match[1].split(",").map((part) => Number.parseFloat(part.trim()));
+      const [r, g, b, a = 1] = parts;
+      if (![r, g, b].every(Number.isFinite) || a <= 0) return null;
+      const hex = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+      return `#${hex(r)}${hex(g)}${hex(b)}`;
+    }
     function elementClasses(element) {
       if (typeof element.className === "string") return element.className;
       return element.className?.baseVal ?? "";
     }
-    function descriptorFor(element, text, bbox) {
+    // svg 루트 전까지의 조상 체인 — descriptor(sourceElementKey 원천)에 공통 사용.
+    function ancestorChain(element) {
       const ancestors = [];
       let current = element.parentElement;
       while (current && current.tagName.toLowerCase() !== "svg") {
@@ -117,13 +141,16 @@ function browserExtractorExpression(svg) {
         });
         current = current.parentElement;
       }
+      return ancestors;
+    }
+    function descriptorFor(element, text, bbox) {
       return {
         text,
         tag: element.tagName.toLowerCase(),
         id: element.id || "",
         className: elementClasses(element),
         transform: element.getAttribute("transform") || "",
-        ancestors,
+        ancestors: ancestorChain(element),
         bbox: {
           x: number(bbox.x),
           y: number(bbox.y),
@@ -131,6 +158,34 @@ function browserExtractorExpression(svg) {
           height: number(bbox.height),
         },
       };
+    }
+    function strokeDescriptor(element, stroke) {
+      return {
+        tag: element.tagName.toLowerCase(),
+        id: element.id || "",
+        className: elementClasses(element),
+        transform: element.getAttribute("transform") || "",
+        stroke,
+        ancestors: ancestorChain(element),
+      };
+    }
+    // line/polyline/polygon의 로컬 정점 목록(원본 꺾임점 그대로 보존). path는 별도 재샘플.
+    function localVertices(element, tag) {
+      if (tag === "line") {
+        return [
+          { x: Number.parseFloat(element.getAttribute("x1") || "0"), y: Number.parseFloat(element.getAttribute("y1") || "0") },
+          { x: Number.parseFloat(element.getAttribute("x2") || "0"), y: Number.parseFloat(element.getAttribute("y2") || "0") },
+        ];
+      }
+      const list = element.points;
+      const vertices = [];
+      for (let index = 0; index < list.numberOfItems; index += 1) {
+        const point = list.getItem(index);
+        vertices.push({ x: point.x, y: point.y });
+      }
+      // polygon은 닫힌 도형 — 마지막→첫 정점 세그먼트를 명시적으로 잇는다.
+      if (tag === "polygon" && vertices.length > 1) vertices.push({ ...vertices[0] });
+      return vertices;
     }
     function isVisibleText(element, root) {
       if (element.closest("defs")) return false;
@@ -202,8 +257,62 @@ function browserExtractorExpression(svg) {
       });
     }
 
-    return { sourceViewBox: sourceViewBox(root), labels };
-  }})(${JSON.stringify(svgBase64)})`;
+    // 노선 track geometry: stroke가 있는 line/polyline/polygon/path를 root 좌표
+    // 정점 목록 + 확정 stroke 색으로 모은다. fill 전용 도형(마커/배경)과 장식 틱은
+    // stroke 없음/길이 하한으로 자연 배제한다. 점선(미개통/예정)은 dashed로 표시.
+    const strokes = [];
+    for (const element of root.querySelectorAll("line, polyline, polygon, path")) {
+      if (element.closest("defs") || !isVisibleText(element, root)) continue;
+      const style = getComputedStyle(element);
+      const stroke = normalizeColor(style.stroke);
+      if (!stroke) continue; // stroke 없는 도형은 노선 track이 아니다.
+      const elementMatrix = element.getScreenCTM();
+      if (!elementMatrix) continue;
+      const matrix = rootInverse.multiply(elementMatrix);
+      const tag = element.tagName.toLowerCase();
+
+      let vertices;
+      if (tag === "path") {
+        const totalLength = element.getTotalLength();
+        if (!(totalLength > 0)) continue;
+        // root 좌표 기준 등간격이 되도록 로컬 길이를 스케일로 환산해 샘플 수를 정한다.
+        const rootLength = totalLength * matrixScale(matrix);
+        const samples = Math.max(2, Math.min(600, Math.ceil(rootLength / config.pathSampleSpacing)));
+        vertices = [];
+        for (let step = 0; step <= samples; step += 1) {
+          const point = element.getPointAtLength((totalLength * step) / samples);
+          vertices.push({ x: point.x, y: point.y });
+        }
+      } else {
+        vertices = localVertices(element, tag);
+      }
+      if (vertices.length < 2) continue;
+
+      const points = vertices.map((vertex) => matrixPoint(matrix, vertex.x, vertex.y));
+      let length = 0;
+      for (let index = 1; index < points.length; index += 1) {
+        length += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+      }
+      if (length < config.minStrokeLength) continue; // 역 마커 틱/장식 배제.
+
+      const dashArray = style.strokeDasharray;
+      const dashed = Boolean(dashArray) && dashArray !== "none" && dashArray.trim() !== "";
+      strokes.push({
+        tag,
+        stroke,
+        strokeWidth: Number.parseFloat(style.strokeWidth) || 0,
+        dashed,
+        length: number(length),
+        points,
+        descriptor: strokeDescriptor(element, stroke),
+      });
+    }
+
+    return { sourceViewBox: sourceViewBox(root), labels, strokes };
+  }})(${JSON.stringify(svgBase64)}, ${JSON.stringify({
+    minStrokeLength: MIN_STROKE_LENGTH,
+    pathSampleSpacing: PATH_SAMPLE_SPACING,
+  })})`;
 }
 
 async function browserVersion(browser) {
@@ -349,6 +458,12 @@ async function extractSvgGeometry({ svgFile, region, browser }) {
         const sourceElementKey = sha256(JSON.stringify(descriptor));
         const { descriptor: _descriptor, ...publicLabel } = label;
         return { ...publicLabel, polygonIndex, sourceElementKey };
+      }),
+      strokes: extracted.strokes.map((stroke, strokeIndex) => {
+        const descriptor = { ...stroke.descriptor, sourceSvgSha256 };
+        const sourceElementKey = sha256(JSON.stringify(descriptor));
+        const { descriptor: _descriptor, ...publicStroke } = stroke;
+        return { ...publicStroke, strokeIndex, sourceElementKey };
       }),
     };
   } finally {

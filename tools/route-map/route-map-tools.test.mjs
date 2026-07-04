@@ -5,10 +5,191 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+const buildLineTracksScript = path.resolve(import.meta.dirname, "build-route-map-line-tracks.mjs");
+const applyLineTracksScript = path.resolve(import.meta.dirname, "apply-route-map-line-tracks.mjs");
+const auditRouteMapScript = path.resolve(import.meta.dirname, "audit-route-map.mjs");
+
+// audit-route-map을 temp fixture + line-tracks 문서로 실행하고 report JSON을 돌려준다.
+// --fail-on으로 exit 1이 나도 stdout에 report가 있으므로 그대로 파싱한다.
+async function runAuditRouteMap({ fixture, lineTracks = [], failOn = [] }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "easysubway-audit-tracks-"));
+  try {
+    const fixturePath = path.join(dir, "fixture.json");
+    await writeFile(fixturePath, JSON.stringify(fixture));
+    const trackArgs = [];
+    for (let i = 0; i < lineTracks.length; i += 1) {
+      const trackPath = path.join(dir, `line-tracks-${i}.json`);
+      await writeFile(trackPath, JSON.stringify(lineTracks[i]));
+      trackArgs.push("--line-tracks", trackPath);
+    }
+    const failArgs = failOn.length > 0 ? ["--fail-on", failOn.join(",")] : [];
+    let stdout;
+    try {
+      ({ stdout } = await execFileAsync(
+        "node",
+        [auditRouteMapScript, "--fixture", fixturePath, ...trackArgs, ...failArgs],
+        { cwd: root, maxBuffer: 4 * 1024 * 1024 },
+      ));
+    } catch (error) {
+      stdout = error.stdout; // --fail-on exit 1이어도 report는 stdout에 있다.
+    }
+    return JSON.parse(stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// temp .gz pack(route_map_positions 라이선스 메타 포함) + index.json + tracks.json을
+// 만들어 apply-route-map-line-tracks를 실행하고, 기록된 route_map_line_tracks 행을
+// region 순으로 돌려준다. args로 --check 등을 전달할 수 있다.
+async function runApplyLineTracks({ region, positions, tracksDocs, args = [] }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "easysubway-apply-tracks-"));
+  try {
+    const sqlitePath = path.join(dir, "capital.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(
+      `CREATE TABLE route_map_positions (
+        station_id TEXT NOT NULL, line_id TEXT NOT NULL, region TEXT NOT NULL,
+        x INTEGER NOT NULL, y INTEGER NOT NULL,
+        source_id TEXT NOT NULL, source_name TEXT NOT NULL, source_url TEXT NOT NULL,
+        license TEXT NOT NULL, license_status TEXT NOT NULL,
+        commercial_use_allowed INTEGER NOT NULL, attribution_required INTEGER NOT NULL
+      )`,
+    );
+    const insert = db.prepare(
+      `INSERT INTO route_map_positions
+       (station_id, line_id, region, x, y, source_id, source_name, source_url,
+        license, license_status, commercial_use_allowed, attribution_required)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const p of positions) {
+      insert.run(p.station_id, p.line_id, region, p.x ?? 0, p.y ?? 0, p.source_id, p.source_name,
+        p.source_url, p.license, p.license_status, p.commercial_use_allowed, p.attribution_required);
+    }
+    db.close();
+    const packPath = path.join(dir, "capital.sqlite.gz");
+    await writeFile(packPath, gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 }));
+    const indexPath = path.join(dir, "index.json");
+    await writeFile(indexPath, `${JSON.stringify({ packs: [{ id: "capital", sha256: "old", sqliteSha256: "old", byteSize: 0 }] }, null, 2)}\n`);
+    const trackArgs = [];
+    for (let i = 0; i < tracksDocs.length; i += 1) {
+      const trackPath = path.join(dir, `tracks-${i}.json`);
+      await writeFile(trackPath, JSON.stringify(tracksDocs[i]));
+      trackArgs.push("--tracks", trackPath);
+    }
+    await execFileAsync(
+      "node",
+      [applyLineTracksScript, "--pack", packPath, "--index", indexPath, ...trackArgs, ...args],
+      { cwd: root, maxBuffer: 4 * 1024 * 1024 },
+    );
+    const readback = path.join(dir, "readback.sqlite");
+    await writeFile(readback, gunzipSync(await readFile(packPath)));
+    const verifyDb = new DatabaseSync(readback);
+    let rows = [];
+    try {
+      const hasTable = verifyDb
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='route_map_line_tracks'")
+        .get();
+      if (hasTable) {
+        rows = verifyDb
+          .prepare("SELECT * FROM route_map_line_tracks WHERE region = ? ORDER BY line_id, track_index")
+          .all(region);
+      }
+    } finally {
+      verifyDb.close();
+    }
+    const index = JSON.parse(await readFile(indexPath, "utf8"));
+    return { rows, indexCapital: index.packs.find((pack) => pack.id === "capital") };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// build-route-map-line-tracks를 temp pack + geometry로 실행하고 stdout JSON을 돌려준다.
+// route_map_positions는 build가 SELECT하는 컬럼(station_id/line_id/region/x/y)만 만든다.
+async function runBuildLineTracks({ geometry, region, stations, args = [] }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "easysubway-line-tracks-test-"));
+  try {
+    const packPath = path.join(dir, "pack.sqlite");
+    const db = new DatabaseSync(packPath);
+    db.exec(
+      `CREATE TABLE route_map_positions (
+        station_id TEXT NOT NULL,
+        line_id TEXT NOT NULL,
+        region TEXT NOT NULL,
+        x INTEGER NOT NULL,
+        y INTEGER NOT NULL
+      )`,
+    );
+    const insert = db.prepare(
+      "INSERT INTO route_map_positions (station_id, line_id, region, x, y) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (const station of stations) {
+      insert.run(station.station_id, station.line_id, region, station.x, station.y);
+    }
+    db.close();
+    const geometryPath = path.join(dir, "geometry.json");
+    await writeFile(geometryPath, JSON.stringify(geometry));
+    const { stdout } = await execFileAsync(
+      "node",
+      [buildLineTracksScript, "--geometry", geometryPath, "--pack", packPath, "--region", region, ...args],
+      { cwd: root, maxBuffer: 4 * 1024 * 1024 },
+    );
+    return JSON.parse(stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// --source pack-down-path 모드용: route_map_positions(down_path)+station_lines(line_sequence)를
+// 만들고 실행한다(앱 drift_station_repository의 조회 구조와 동일).
+async function runBuildLineTracksFromPack({ region, rows, args = [] }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "easysubway-line-tracks-pack-"));
+  try {
+    const packPath = path.join(dir, "pack.sqlite");
+    const db = new DatabaseSync(packPath);
+    db.exec(
+      `CREATE TABLE route_map_positions (
+        station_id TEXT NOT NULL,
+        line_id TEXT NOT NULL,
+        region TEXT NOT NULL,
+        x INTEGER NOT NULL,
+        y INTEGER NOT NULL,
+        down_path TEXT NOT NULL DEFAULT ''
+      );
+      CREATE TABLE station_lines (
+        station_id TEXT NOT NULL,
+        line_id TEXT NOT NULL,
+        line_sequence INTEGER NOT NULL
+      )`,
+    );
+    const insertPosition = db.prepare(
+      "INSERT INTO route_map_positions (station_id, line_id, region, x, y, down_path) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    const insertLine = db.prepare(
+      "INSERT INTO station_lines (station_id, line_id, line_sequence) VALUES (?, ?, ?)",
+    );
+    for (const row of rows) {
+      insertPosition.run(row.station_id, row.line_id, region, row.x, row.y, row.down_path ?? "");
+      insertLine.run(row.station_id, row.line_id, row.sequence);
+    }
+    db.close();
+    const { stdout } = await execFileAsync(
+      "node",
+      [buildLineTracksScript, "--source", "pack-down-path", "--pack", packPath, "--region", region, ...args],
+      { cwd: root, maxBuffer: 4 * 1024 * 1024 },
+    );
+    return JSON.parse(stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 test("structured route map contract pins nationwide vector-rendered layers", async () => {
   const contract = JSON.parse(
@@ -38,7 +219,22 @@ test("structured route map contract pins nationwide vector-rendered layers", asy
   );
   assert.deepEqual(
     contract.layers.find((layer) => layer.id === "line_geometry").requiredFields,
-    ["station_id", "line_id", "region", "x", "y", "up_path", "down_path"],
+    ["region", "line_id", "track_index", "path"],
+  );
+  assert.deepEqual(
+    contract.layers.find((layer) => layer.id === "line_geometry").source,
+    ["route_map_line_tracks"],
+  );
+  assert.ok(
+    /track 직접 렌더/.test(
+      contract.layers.find((layer) => layer.id === "line_geometry").deriveRule,
+    ),
+    "line_geometry deriveRule은 track 직접 렌더를 명시해야 한다",
+  );
+  assert.ok(
+    Array.isArray(contract.routeMapLineTracksColumns) &&
+      contract.routeMapLineTracksColumns.includes("path"),
+    "routeMapLineTracksColumns에 path가 있어야 한다",
   );
   assert.equal(
     contract.layers.find((layer) => layer.id === "station_nodes").featureId,
@@ -132,7 +328,7 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
 
   assert.equal(output.schemaVersion, 1);
   assert.equal(output.region, "fixture");
-  assert.equal(output.extractorVersion, "route-map-svg-geometry-v1");
+  assert.equal(output.extractorVersion, "route-map-svg-geometry-v2");
   assert.equal(output.sourceSvgSha256, createHash("sha256").update(source).digest("hex"));
   assert.deepEqual(output.sourceViewBox, [0, 0, 200, 120]);
   assert.match(output.browser.version, /Chrome|Chromium/i);
@@ -1901,4 +2097,171 @@ test("MOLIT nationwide fixture builder emits route map source hashes", async () 
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
+});
+
+test("build-route-map-line-tracks stitches touching fragments and reports proximity", async () => {
+  // 같은 색 두 조각: (0,0)-(10,0) 와 (10.5,0)-(20,0) → tolerance 1.5로 한 조각.
+  const geometry = {
+    extractorVersion: 2,
+    strokes: [
+      { tag: "polyline", stroke: "#ff0000", dashed: false, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] },
+      { tag: "polyline", stroke: "#ff0000", dashed: false, points: [{ x: 10.5, y: 0 }, { x: 20, y: 0 }] },
+    ],
+  };
+  const result = await runBuildLineTracks({
+    geometry,
+    region: "테스트권",
+    stations: [
+      { station_id: "s1", line_id: "line-a", x: 2, y: 5 },
+      { station_id: "s2", line_id: "line-a", x: 18, y: 5 },
+    ],
+  });
+  assert.equal(result.lines.length, 1);
+  assert.equal(result.lines[0].trackCount, 1); // 2 조각 → 1 (stitched)
+  assert.equal(result.lines[0].paths[0], "M 0 0 L 10 0 L 20 0");
+  assert.equal(result.stationProximityRatio, 1); // 2/2 역이 반경 내
+});
+
+test("build-route-map-line-tracks refines surplus colors (achromatic drop + similar merge)", async () => {
+  // 노선 2개(line-a, line-b). 색 4개 = 빨강·빨강변종(line-a)·파랑(line-b)·검정(무채색 외곽선).
+  // 정제: 빨강 변종 병합 + 무채색 검정 제외 → 색2 = 노선2.
+  const geometry = {
+    extractorVersion: 2,
+    strokes: [
+      { tag: "polyline", stroke: "#ff0000", dashed: false, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] },
+      { tag: "polyline", stroke: "#fe0202", dashed: false, points: [{ x: 100, y: 0 }, { x: 200, y: 0 }] },
+      { tag: "polyline", stroke: "#0000ff", dashed: false, points: [{ x: 0, y: 100 }, { x: 100, y: 100 }] },
+      { tag: "polyline", stroke: "#1a1a1a", dashed: false, points: [{ x: 0, y: 400 }, { x: 200, y: 400 }] },
+    ],
+  };
+  const result = await runBuildLineTracks({
+    geometry,
+    region: "테스트권",
+    stations: [
+      { station_id: "a1", line_id: "line-a", x: 5, y: 5 },
+      { station_id: "a2", line_id: "line-a", x: 195, y: 5 },
+      { station_id: "b1", line_id: "line-b", x: 5, y: 105 },
+      { station_id: "b2", line_id: "line-b", x: 95, y: 105 },
+    ],
+  });
+  assert.equal(result.lines.length, 2);
+  assert.equal(result.colorCount, 2); // 정제 후 색 수 = 노선 수
+  assert.equal(result.refinement.originalColorCount, 4);
+  assert.ok(result.refinement.dropped.some((drop) => drop.color === "#1a1a1a" && drop.achromatic)); // 무채색 제외
+  assert.ok(result.refinement.merged.some((pair) => pair.includes("#fe0202"))); // 유사색 병합
+  // 빨강 노선은 병합으로 한 조각(0→200), 파랑은 별도.
+  const redLine = result.lines.find((line) => line.svgColor === "#ff0000");
+  assert.ok(redLine, "대표색 #ff0000 노선이 있어야 한다");
+});
+
+test("build-route-map-line-tracks --source pack-down-path chains existing segments", async () => {
+  // down_path "M 0 0 L 10 0" → "M 10 0 L 20 0": 끝점=시작점이라 한 조각으로 이어진다.
+  const result = await runBuildLineTracksFromPack({
+    region: "테스트권",
+    rows: [
+      { station_id: "s1", line_id: "line-a", sequence: 1, x: 0, y: 0, down_path: "" },
+      { station_id: "s2", line_id: "line-a", sequence: 2, x: 10, y: 0, down_path: "M 0 0 L 10 0" },
+      { station_id: "s3", line_id: "line-a", sequence: 3, x: 20, y: 0, down_path: "M 10 0 L 20 0" },
+    ],
+  });
+  assert.equal(result.source, "pack-down-path");
+  assert.equal(result.lines.length, 1);
+  assert.equal(result.lines[0].lineId, "line-a");
+  assert.equal(result.lines[0].trackCount, 1);
+  assert.equal(result.lines[0].paths[0], "M 0 0 L 10 0 L 20 0");
+});
+
+test("apply-route-map-line-tracks writes tracks with inherited license metadata", async () => {
+  const positions = [{
+    station_id: "s1", line_id: "line-a", x: 0, y: 0,
+    source_id: "src-official", source_name: "공식 노선도", source_url: "https://example.test",
+    license: "public-reference", license_status: "reviewed",
+    commercial_use_allowed: 0, attribution_required: 1,
+  }];
+  const tracksDocs = [{
+    region: "테스트권", source: "svg-strokes",
+    lines: [{ lineId: "line-a", svgColor: "#ff0000", paths: ["M 0 0 L 10 0", "M 20 0 L 30 0"] }],
+  }];
+  const { rows, indexCapital } = await runApplyLineTracks({ region: "테스트권", positions, tracksDocs });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].track_index, 0);
+  assert.equal(rows[1].track_index, 1);
+  assert.equal(rows[0].svg_color, "#ff0000");
+  assert.equal(rows[0].license, "public-reference"); // 라이선스 승계
+  assert.equal(rows[0].attribution_required, 1);
+  assert.equal(rows[0].source_id, "src-official");
+  assert.match(rows[0].path, /^M -?\d/);
+  assert.notEqual(indexCapital.sqliteSha256, "old"); // index sha 갱신
+
+  // 재실행(같은 region)은 기존 행 DELETE 후 INSERT — 중복 없음.
+  const rerun = await runApplyLineTracks({ region: "테스트권", positions, tracksDocs });
+  assert.equal(rerun.rows.length, 2);
+});
+
+test("audit-route-map flags line-track gaps as blockers", async () => {
+  const fixture = {
+    packs: [{
+      id: "test",
+      routeMapPositions: [
+        { stationId: "s1", lineId: "line-a", region: "테스트권", x: 0, y: 0 },
+        { stationId: "s2", lineId: "line-b", region: "테스트권", x: 10, y: 10 },
+      ],
+    }],
+  };
+  // tracks에 line-a만(line-b 누락) + 색≠노선.
+  const lineTracks = [{
+    region: "테스트권", source: "svg-strokes", colorCount: 1, lineCount: 2,
+    lines: [{ lineId: "line-a", svgColor: "#ff0000", matchVotes: 5, paths: ["M 0 0 L 1 0"] }],
+  }];
+  const report = await runAuditRouteMap({ fixture, lineTracks });
+  const codes = report.findings.map((finding) => finding.code);
+  assert.ok(codes.includes("LINE_TRACKS_MISSING_LINE"), "누락 노선 blocker");
+  assert.ok(codes.includes("LINE_TRACKS_COLOR_LINE_MISMATCH"), "색≠노선 blocker");
+  const missing = report.findings.find((finding) => finding.code === "LINE_TRACKS_MISSING_LINE");
+  assert.equal(missing.severity, "BLOCKER");
+  assert.equal(missing.lineId, "line-b");
+});
+
+test("audit-route-map flags zero-vote tracks as HIGH for manual review", async () => {
+  const fixture = {
+    packs: [{
+      id: "test",
+      routeMapPositions: [{ stationId: "s1", lineId: "line-a", region: "테스트권", x: 0, y: 0 }],
+    }],
+  };
+  const lineTracks = [{
+    region: "테스트권", source: "svg-strokes", colorCount: 1, lineCount: 1,
+    lines: [{ lineId: "line-a", svgColor: "#ff0000", matchVotes: 0, paths: ["M 0 0 L 1 0"] }],
+  }];
+  const report = await runAuditRouteMap({ fixture, lineTracks });
+  const zeroVote = report.findings.find((finding) => finding.code === "LINE_TRACKS_ZERO_VOTE");
+  assert.ok(zeroVote, "0표 노선 finding");
+  assert.equal(zeroVote.severity, "HIGH");
+  assert.equal(zeroVote.lineId, "line-a");
+});
+
+test("apply-route-map-line-tracks --check does not write and flags missing line license", async () => {
+  const positions = [{
+    station_id: "s1", line_id: "line-a", x: 0, y: 0,
+    source_id: "src", source_name: "공식", source_url: "https://example.test",
+    license: "public-reference", license_status: "reviewed",
+    commercial_use_allowed: 0, attribution_required: 1,
+  }];
+  // --check: 파일 미기록 → route_map_line_tracks 없음(빈 rows).
+  const checkRun = await runApplyLineTracks({
+    region: "테스트권", positions,
+    tracksDocs: [{ region: "테스트권", source: "svg-strokes", lines: [{ lineId: "line-a", svgColor: "#ff0000", paths: ["M 0 0 L 10 0"] }] }],
+    args: ["--check"],
+  });
+  assert.equal(checkRun.rows.length, 0);
+  assert.equal(checkRun.indexCapital.sqliteSha256, "old"); // --check는 index도 안 건드림
+
+  // route_map_positions에 없는 노선을 tracks가 참조하면 실패.
+  await assert.rejects(
+    runApplyLineTracks({
+      region: "테스트권", positions,
+      tracksDocs: [{ region: "테스트권", source: "svg-strokes", lines: [{ lineId: "line-ghost", svgColor: "#00ff00", paths: ["M 0 0 L 1 0"] }] }],
+    }),
+    /line-ghost/,
+  );
 });

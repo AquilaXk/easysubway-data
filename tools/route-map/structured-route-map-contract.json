@@ -6,8 +6,9 @@
   "layers": [
     {
       "id": "line_geometry",
-      "source": ["network_edges", "route_map_positions.up_path", "route_map_positions.down_path"],
-      "requiredFields": ["station_id", "line_id", "region", "x", "y", "up_path", "down_path"],
+      "source": ["route_map_line_tracks"],
+      "requiredFields": ["region", "line_id", "track_index", "path"],
+      "deriveRule": "노선 track polyline을 노선 단위로 저장된 path 그대로 그린다. 역별 up_path/down_path 조립은 line_geometry의 source가 아니다(#1638 track 직접 렌더 전환). track은 공식 SVG stroke(색↔노선 매칭) 또는 SVG가 fill 렌더라 추출 불가한 region의 실측 down_path 변환(pack-down-path)에서 온다.",
       "lod": [
         { "minZoom": 0, "visible": true, "labelPolicy": "hide_station_labels" },
         { "minZoom": 1, "visible": true, "labelPolicy": "major_transfer_labels" },
@@ -67,6 +68,21 @@
     "commercial_use_allowed",
     "attribution_required",
     "reviewed_at",
+    "updated_at"
+  ],
+  "routeMapLineTracksColumns": [
+    "region",
+    "line_id",
+    "track_index",
+    "path",
+    "svg_color",
+    "source_id",
+    "source_name",
+    "source_url",
+    "license",
+    "license_status",
+    "commercial_use_allowed",
+    "attribution_required",
     "updated_at"
   ],
   "lineStationProgression": {
