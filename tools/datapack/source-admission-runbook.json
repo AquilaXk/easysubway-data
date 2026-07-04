@@ -10,6 +10,7 @@
     "validate sample evidence against source-candidates.json",
     "build a LOCKED source snapshot with credential-free rawObjectUri and freshness expiry",
     "require admin review APPROVED record before production inventory admission",
+    "for TAGO schedule collection, generate a checkpoint/resume plan before provider calls",
     "write candidate source inventory and validate it",
     "write admission summary with sourceSnapshotSetHash, sourceInventorySha256, ledger hashes, and adminReviewRecordHash"
   ],

@@ -681,6 +681,16 @@
           "productionCanonicalStopTimesStatus": "blocked_requires_trip_stop_sequence",
           "plannedEtaUseAllowed": false
         },
+        "scheduleCollectionPlan": {
+          "status": "planned_pilot_collection",
+          "tool": "tools/datapack/validate-tago-schedule-sample.mjs",
+          "command": "node tools/datapack/validate-tago-schedule-sample.mjs --plan --input tools/datapack/inputs/capital-pilot-production-source-input.json --daily-limit 1000 --checkpoint <checkpoint.json> --output <plan.json>",
+          "input": "tools/datapack/inputs/capital-pilot-production-source-input.json",
+          "defaultDailyLimit": 1000,
+          "pilotRequestCount": 12,
+          "checkpointField": "completedRequestKeys",
+          "productionUseAllowed": false
+        },
         "adminReview": {
           "artifactKind": "source-admission-admin-review-summary",
           "decision": "APPROVED",
