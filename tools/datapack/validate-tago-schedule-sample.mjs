@@ -30,7 +30,7 @@ function parseArgs(argv) {
     if (!flag.startsWith("--")) {
       throw new Error(`unexpected argument: ${flag}`);
     }
-    if (flag === "--plan" || flag === "--summary") {
+    if (flag === "--plan" || flag === "--summary" || flag === "--collect") {
       args[flag.slice(2)] = true;
       continue;
     }
@@ -154,7 +154,11 @@ function buildTagoScheduleCollectionSummary(collection) {
   if (!Array.isArray(responses) || responses.length === 0) {
     throw new Error("responses must be a non-empty array");
   }
-  const completedRequestKeys = [];
+  const checkpointRequestKeys = collection?.checkpoint?.completedRequestKeys ?? [];
+  for (const requestKey of checkpointRequestKeys) {
+    requestKeyParts(requestKey);
+  }
+  const responseRequestKeys = [];
   const rawSha256ByRequest = {};
   const providerRecordHashes = [];
   let rowCount = 0;
@@ -163,7 +167,7 @@ function buildTagoScheduleCollectionSummary(collection) {
     requestKeyParts(response.requestKey);
   }
   for (const response of [...responses].sort((left, right) => left.requestKey.localeCompare(right.requestKey))) {
-    if (completedRequestKeys.includes(response.requestKey)) {
+    if (responseRequestKeys.includes(response.requestKey)) {
       throw new Error(`duplicate requestKey: ${response.requestKey}`);
     }
     if (typeof response.rawText !== "string" || response.rawText.length === 0) {
@@ -171,16 +175,20 @@ function buildTagoScheduleCollectionSummary(collection) {
     }
     const validation = validateTagoScheduleSample(response.rawText);
     assertResponseMatchesRequestKey(validation, response.requestKey);
-    completedRequestKeys.push(response.requestKey);
+    responseRequestKeys.push(response.requestKey);
     rawSha256ByRequest[response.requestKey] = validation.rawSha256;
     providerRecordHashes.push(...validation.providerRecordHashes);
     rowCount += validation.rowCount;
   }
+  const completedRequestKeys = [...new Set([...checkpointRequestKeys, ...responseRequestKeys])].sort(
+    (left, right) => left.localeCompare(right),
+  );
 
   const evidencePayload = {
     sourceId: "molit-tago-subway-info",
     endpoint: TAGO_SCHEDULE_ENDPOINT,
     completedRequestKeys,
+    responseRequestKeys,
     rawSha256ByRequest,
     providerRecordHashes,
   };
@@ -189,8 +197,9 @@ function buildTagoScheduleCollectionSummary(collection) {
     sourceId: evidencePayload.sourceId,
     endpoint: evidencePayload.endpoint,
     completedRequestKeys,
+    responseRequestKeys,
     checkpoint: { completedRequestKeys },
-    responseCount: completedRequestKeys.length,
+    responseCount: responseRequestKeys.length,
     rowCount,
     rawSha256ByRequest,
     providerRecordHashes,
@@ -199,6 +208,115 @@ function buildTagoScheduleCollectionSummary(collection) {
     productionUseAllowed: false,
     remainingAdmissionBlocker: "line_wide_trip_stop_sequence_validation_required",
   };
+}
+
+async function collectTagoSchedules(input, options = {}) {
+  const serviceKey = requiredString(options.serviceKey, "serviceKey");
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  if (typeof fetchImpl !== "function") {
+    throw new TypeError("fetch is required for TAGO schedule collection");
+  }
+  const checkpoint = options.checkpoint ?? {};
+  const dailyLimit = options.dailyLimit ?? 1000;
+  const plan = buildTagoScheduleCollectionPlan(input, checkpoint, dailyLimit);
+  const requests = plan.batches[0]?.requests ?? [];
+  const collectedAt = options.collectedAt ?? new Date().toISOString();
+  const responses = [];
+
+  for (const request of requests) {
+    let response;
+    try {
+      response = await fetchImpl(buildTagoScheduleRequestUrl(request, serviceKey));
+    } catch {
+      throw new TagoScheduleCollectionError(
+        `TAGO schedule fetch failed before response: ${request.requestKey}`,
+        buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, {
+          failedRequestKey: request.requestKey,
+        }),
+      );
+    }
+    if (!response.ok) {
+      throw new TagoScheduleCollectionError(
+        `TAGO schedule fetch failed: ${request.requestKey} status ${response.status}`,
+        buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, {
+          failedRequestKey: request.requestKey,
+        }),
+      );
+    }
+    let rawText;
+    try {
+      rawText = await response.text();
+    } catch {
+      throw new TagoScheduleCollectionError(
+        `TAGO schedule response read failed: ${request.requestKey}`,
+        buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, {
+          failedRequestKey: request.requestKey,
+        }),
+      );
+    }
+    try {
+      const validation = validateTagoScheduleSample(rawText);
+      assertResponseMatchesRequestKey(validation, request.requestKey);
+    } catch (error) {
+      throw new TagoScheduleCollectionError(
+        error instanceof Error ? error.message : `TAGO schedule validation failed: ${request.requestKey}`,
+        buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, {
+          failedRequestKey: request.requestKey,
+        }),
+      );
+    }
+    responses.push({ requestKey: request.requestKey, rawText });
+  }
+
+  return buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses);
+}
+
+function buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, failure = {}) {
+  const checkpoint = options.checkpoint ?? {};
+  const completedRequestKeys = [
+    ...new Set([...(checkpoint.completedRequestKeys ?? []), ...responses.map((response) => response.requestKey)]),
+  ].sort((left, right) => left.localeCompare(right));
+  return {
+    artifactKind: "tago-schedule-collection",
+    sourceId: plan.sourceId,
+    endpoint: plan.endpoint,
+    serviceKeyEnv: options.serviceKeyEnv ?? "DATA_GO_KR_SERVICE_KEY",
+    collectedAt,
+    dailyLimit: plan.dailyLimit,
+    totalRequestCount: plan.totalRequestCount,
+    requestedCount: responses.length,
+    completedRequestCount: completedRequestKeys.length,
+    pendingRequestCount: Math.max(0, plan.pendingRequestCount - responses.length),
+    completedRequestKeys,
+    checkpoint: { completedRequestKeys },
+    collectionStatus: failure.failedRequestKey ? "partial_failed" : "completed_batch",
+    ...(failure.failedRequestKey ? { failedRequestKey: failure.failedRequestKey } : {}),
+    responses,
+  };
+}
+
+class TagoScheduleCollectionError extends Error {
+  constructor(message, collection) {
+    super(message);
+    this.name = "TagoScheduleCollectionError";
+    this.collection = collection;
+  }
+}
+
+function buildTagoScheduleRequestUrl(request, serviceKey) {
+  const [stationId, dailyTypeCode, upDownTypeCode] = requestKeyParts(request.requestKey);
+  const params = new URLSearchParams();
+  params.set("pageNo", "1");
+  params.set("numOfRows", "1000");
+  params.set("_type", "json");
+  params.set("subwayStationId", stationId);
+  params.set("dailyTypeCode", dailyTypeCode);
+  params.set("upDownTypeCode", upDownTypeCode);
+  return `${TAGO_SCHEDULE_ENDPOINT}?serviceKey=${encodeDataGoKrServiceKey(serviceKey)}&${params.toString()}`;
+}
+
+function encodeDataGoKrServiceKey(serviceKey) {
+  return /%[0-9a-f]{2}/i.test(serviceKey) ? serviceKey : encodeURIComponent(serviceKey);
 }
 
 function assertResponseMatchesRequestKey(validation, requestKey) {
@@ -317,6 +435,23 @@ async function main() {
     const checkpoint = args.checkpoint ? JSON.parse(await readFile(path.resolve(args.checkpoint), "utf8")) : {};
     const dailyLimit = args["daily-limit"] === undefined ? undefined : Number(args["daily-limit"]);
     result = buildTagoScheduleCollectionPlan(JSON.parse(await readFile(inputPath, "utf8")), checkpoint, dailyLimit);
+  } else if (args.collect) {
+    const checkpoint = args.checkpoint ? JSON.parse(await readFile(path.resolve(args.checkpoint), "utf8")) : {};
+    const dailyLimit = args["daily-limit"] === undefined ? undefined : Number(args["daily-limit"]);
+    const serviceKeyEnv = args["service-key-env"] ?? "DATA_GO_KR_SERVICE_KEY";
+    try {
+      result = await collectTagoSchedules(JSON.parse(await readFile(inputPath, "utf8")), {
+        checkpoint,
+        dailyLimit,
+        serviceKey: process.env[serviceKeyEnv],
+        serviceKeyEnv,
+      });
+    } catch (error) {
+      if (error instanceof TagoScheduleCollectionError && args.output) {
+        await writeJsonOutput(args.output, error.collection);
+      }
+      throw error;
+    }
   } else if (args.summary) {
     const input = JSON.parse(await readFile(inputPath, "utf8"));
     const inputDir = path.dirname(inputPath);
@@ -335,9 +470,13 @@ async function main() {
     result = validateTagoScheduleSample(await readFile(inputPath, "utf8"));
   }
   if (args.output) {
-    await writeFile(path.resolve(args.output), `${JSON.stringify(result, null, 2)}\n`);
+    await writeJsonOutput(args.output, result);
   }
   console.log(JSON.stringify(result, null, 2));
+}
+
+async function writeJsonOutput(outputPath, value) {
+  await writeFile(path.resolve(outputPath), `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function requiredString(value, label) {
@@ -347,7 +486,12 @@ function requiredString(value, label) {
   return value;
 }
 
-export { buildTagoScheduleCollectionPlan, buildTagoScheduleCollectionSummary, validateTagoScheduleSample };
+export {
+  buildTagoScheduleCollectionPlan,
+  buildTagoScheduleCollectionSummary,
+  collectTagoSchedules,
+  validateTagoScheduleSample,
+};
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
