@@ -3,15 +3,19 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 
 // region별 기대 역 point/노선 수 — QA 회귀 방지용 고정값. 새 region을 enrich할 때
 // 여기에 등록해야 exact-count 검증이 동작한다. (segment path 수는 positions-lines로
 // region 무관하게 파생된다.)
-const expectedCountsByRegion = {
+export const expectedCountsByRegion = {
   "수도권": { positions: 796, lines: 24 },
   "부산권": { positions: 158, lines: 6 },
+  "대구권": { positions: 101, lines: 4 },
+  "광주권": { positions: 20, lines: 1 },
+  "대전권": { positions: 22, lines: 1 },
 };
 
 function usage() {
@@ -379,7 +383,9 @@ function assertCapitalRouteMap(summary, region) {
       `${region} label polygons must cover every station-line row, got ${summary.labelPolygons}/${summary.positions}`,
     );
   }
-  if (summary.transferGroups <= 0) {
+  // 단일 노선 지역(예: 광주·대전 1호선)은 환승역이 없어 transfer 0이 정상.
+  // 다노선 지역은 환승 그룹이 도출되어야 한다.
+  if (expected.lines > 1 && summary.transferGroups <= 0) {
     throw new Error(`${region} transfer groups must be derivable`);
   }
   if (summary.lod.zoom1MajorLabels !== summary.transferGroups) {
@@ -421,7 +427,11 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+// CLI로 직접 실행할 때만 main을 돌린다. import(테스트에서 expectedCountsByRegion
+// 재사용)로 로드하면 실행하지 않는다.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

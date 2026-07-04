@@ -4,6 +4,8 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
+import { expectedCountsByRegion } from "./enrich-capital-route-map-layer.mjs";
+
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -30,22 +32,17 @@ async function regionCoverage(region) {
   return JSON.parse(stdout);
 }
 
-// region → 최소 기대치(실측 기준). enrich 도구의 expectedCountsByRegion가 정확한
-// exact-count를 이미 강제하므로 여기서는 하한과 layer 정합만 확인한다.
-const regionExpectations = {
-  "수도권": { minPositions: 796, lines: 24 },
-  "부산권": { minPositions: 158, lines: 6 },
-};
-
-for (const [region, expected] of Object.entries(regionExpectations)) {
+// enrich 도구의 expectedCountsByRegion를 단일 소스로 재사용한다(카운트 표 중복·
+// drift 방지). 여기서는 하한과 layer 정합만 확인하고, exact-count는 enrich가 강제.
+for (const [region, expected] of Object.entries(expectedCountsByRegion)) {
   test(`${region} route map pack retains structured coverage`, async () => {
     const report = await regionCoverage(region);
     const after = report.after;
 
     assert.equal(after.region, region);
     assert.ok(
-      after.positions >= expected.minPositions,
-      `${region} 역 point는 ${expected.minPositions} 이상 (실측 ${after.positions})`,
+      after.positions >= expected.positions,
+      `${region} 역 point는 ${expected.positions} 이상 (실측 ${after.positions})`,
     );
     assert.equal(after.lines, expected.lines, `${region} 노선 수`);
 
@@ -63,8 +60,10 @@ for (const [region, expected] of Object.entries(regionExpectations)) {
       `${region} 모든 역에 label_polygon`,
     );
 
-    // 환승 그룹과 LOD 정합.
-    assert.ok(after.transferGroups > 0, `${region} 환승 그룹 도출`);
+    // 환승 그룹과 LOD 정합. 단일 노선 지역(광주·대전)은 환승 0이 정상.
+    if (expected.lines > 1) {
+      assert.ok(after.transferGroups > 0, `${region} 환승 그룹 도출`);
+    }
     assert.equal(after.lod.zoom0, "lines_only");
     assert.equal(
       after.lod.zoom1MajorLabels,
