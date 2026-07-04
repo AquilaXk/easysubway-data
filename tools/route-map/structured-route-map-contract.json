@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "structured-route-map-contract",
+  "goal": "전국 도시철도 노선도를 PDF/SVG 전체 확대가 아니라 구조화 데이터와 클라이언트 렌더링으로 표시한다.",
+  "regions": ["수도권", "부산", "대구", "광주", "대전"],
+  "layers": [
+    {
+      "id": "line_geometry",
+      "source": ["network_edges", "route_map_positions.up_path", "route_map_positions.down_path"],
+      "requiredFields": ["station_id", "line_id", "region", "x", "y", "up_path", "down_path"],
+      "lod": [
+        { "minZoom": 0, "visible": true, "labelPolicy": "hide_station_labels" },
+        { "minZoom": 1, "visible": true, "labelPolicy": "major_transfer_labels" },
+        { "minZoom": 2, "visible": true, "labelPolicy": "collision_checked_station_labels" }
+      ]
+    },
+    {
+      "id": "station_nodes",
+      "source": ["route_map_positions", "station_lines", "stations", "lines"],
+      "requiredFields": ["station_id", "line_id", "region", "x", "y"],
+      "featureId": "{region}:{station_id}:{line_id}",
+      "nodeKinds": ["regular", "transfer"]
+    },
+    {
+      "id": "transfer_groups",
+      "source": ["stations", "station_lines", "route_map_positions"],
+      "featureId": "{region}:{station_id}",
+      "deriveRule": "같은 station_id에 여러 line_id가 있으면 환승 그룹으로 묶고, 표시 좌표는 해당 station_id의 route_map_positions 중심값을 쓴다."
+    },
+    {
+      "id": "station_labels",
+      "source": ["stations", "route_map_positions.label_dx", "route_map_positions.label_dy", "route_map_positions.label_polygon"],
+      "requiredFields": ["station_id", "line_id", "region", "label_dx", "label_dy"],
+      "priority": ["transfer", "major", "regular"],
+      "majorRule": "환승역이 아니어도 지역별 공식 노선도에서 주요 거점으로 별도 검수된 역을 major로 둔다. 별도 검수값이 없으면 regular다.",
+      "collisionField": "label_polygon",
+      "renderRule": "데이터에는 역명을 보관하되 화면에는 zoom과 collision 결과로 필요한 라벨만 그린다."
+    }
+  ],
+  "packSourceOfTruth": {
+    "routeMapRegionPack": "지역별 datapack의 route_map_positions를 우선한다.",
+    "corePack": "core pack은 앱 부팅용 최소 데이터만 보유하고, 지역 노선도 좌표의 source of truth가 아니다."
+  },
+  "routeMapPositionsColumns": [
+    "station_id",
+    "line_id",
+    "region",
+    "x",
+    "y",
+    "label_dx",
+    "label_dy",
+    "label_polygon",
+    "up_path",
+    "down_path",
+    "source_id",
+    "source_name",
+    "source_url",
+    "license",
+    "license_status",
+    "commercial_use_allowed",
+    "attribution_required",
+    "reviewed_at",
+    "updated_at"
+  ],
+  "releaseGate": {
+    "allRegionsRequired": true,
+    "officialOrReviewedSourceRequired": true,
+    "commercialUseMustBeResolvedBeforeProduction": true,
+    "wholePdfOrSvgZoomRendererAllowed": false
+  }
+}

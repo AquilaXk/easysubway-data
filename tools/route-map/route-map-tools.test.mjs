@@ -10,6 +10,69 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 
+test("structured route map contract pins nationwide vector-rendered layers", async () => {
+  const contract = JSON.parse(
+    await readFile(
+      path.join(root, "tools/route-map/structured-route-map-contract.json"),
+      "utf8",
+    ),
+  );
+  const schema = await readFile(
+    path.join(root, "tools/datapack/schema/catalog-schema.sql"),
+    "utf8",
+  );
+  const fixture = JSON.parse(
+    await readFile(
+      path.join(root, "tools/datapack/fixtures/catalog-fixture.json"),
+      "utf8",
+    ),
+  );
+
+  assert.equal(contract.schemaVersion, 1);
+  assert.equal(contract.artifactKind, "structured-route-map-contract");
+  assert.deepEqual(contract.regions, ["수도권", "부산", "대구", "광주", "대전"]);
+  assert.equal(contract.releaseGate.wholePdfOrSvgZoomRendererAllowed, false);
+  assert.deepEqual(
+    contract.layers.map((layer) => layer.id),
+    ["line_geometry", "station_nodes", "transfer_groups", "station_labels"],
+  );
+  assert.deepEqual(
+    contract.layers.find((layer) => layer.id === "line_geometry").requiredFields,
+    ["station_id", "line_id", "region", "x", "y", "up_path", "down_path"],
+  );
+  assert.equal(
+    contract.layers.find((layer) => layer.id === "station_nodes").featureId,
+    "{region}:{station_id}:{line_id}",
+  );
+  assert.deepEqual(
+    contract.layers.find((layer) => layer.id === "station_labels").priority,
+    ["transfer", "major", "regular"],
+  );
+  assert.equal(
+    contract.layers.find((layer) => layer.id === "station_labels").majorRule,
+    "환승역이 아니어도 지역별 공식 노선도에서 주요 거점으로 별도 검수된 역을 major로 둔다. 별도 검수값이 없으면 regular다.",
+  );
+  assert.equal(
+    contract.layers.find((layer) => layer.id === "station_labels").renderRule,
+    "데이터에는 역명을 보관하되 화면에는 zoom과 collision 결과로 필요한 라벨만 그린다.",
+  );
+  assert.equal(
+    contract.packSourceOfTruth.routeMapRegionPack,
+    "지역별 datapack의 route_map_positions를 우선한다.",
+  );
+
+  const routeMapPositionsTable = schema.match(
+    /CREATE TABLE route_map_positions \(([\s\S]*?)\);/,
+  );
+  assert.ok(routeMapPositionsTable, "route_map_positions table definition not found");
+  const routeMapPositionsDdl = routeMapPositionsTable[1];
+  for (const column of contract.routeMapPositionsColumns) {
+    assert.match(routeMapPositionsDdl, new RegExp(`\\b${column}\\b`));
+  }
+  assert.ok(fixture.packs[0].requiredTables.includes("route_map_positions"));
+  assert.ok(fixture.packs[0].minimumTableRows.route_map_positions > 0);
+});
+
 test("SVG geometry extractor returns transformed visible text polygons", async () => {
   const fixture = "tools/route-map/fixtures/geometry-fixture.svg";
   const { stdout } = await execFileAsync(
