@@ -12,7 +12,14 @@
         { "minZoom": 0, "visible": true, "labelPolicy": "hide_station_labels" },
         { "minZoom": 1, "visible": true, "labelPolicy": "major_transfer_labels" },
         { "minZoom": 2, "visible": true, "labelPolicy": "collision_checked_station_labels" }
-      ]
+      ],
+      "linearParameter": {
+        "field": "t",
+        "range": [0, 1],
+        "basis": "schematic polyline 누적 거리 정규화 (GTFS shape_dist_traveled 방식)",
+        "directions": ["up", "down"],
+        "deriveRule": "방향별 polyline(up_path/down_path)의 시작점 t=0, 끝점 t=1로 두고, 각 정점까지의 누적 거리를 전체 길이로 나눠 t를 계산한다. 렌더러는 t만으로 polyline 위 좌표를 보간한다."
+      }
     },
     {
       "id": "station_nodes",
@@ -62,6 +69,24 @@
     "reviewed_at",
     "updated_at"
   ],
+  "lineStationProgression": {
+    "id": "line_station_progression",
+    "source": ["route_map_positions.up_path", "route_map_positions.down_path", "station_lines"],
+    "featureId": "{region}:{line_id}:{direction}:{station_id}",
+    "requiredFields": ["region", "line_id", "station_id", "direction", "t"],
+    "tRule": "역이 line_geometry polyline 위에서 차지하는 위치를 linearParameter.t(0..1)로 둔다. 방향별(up/down)로 t는 단조 증가한다.",
+    "rendererContract": "열차 overlay는 line path 선형 파라미터만으로 좌표 계산 가능: #1649 렌더러는 line_geometry geometry와 역별 t만으로 노선도 좌표를 계산하며, 별도 좌표 조회 없이 t 보간으로 열차 위치를 그린다."
+  },
+  "realtimeOverlayHook": {
+    "purpose": "실시간 열차 위치 overlay(#1649)를 정적 노선도 위에 온라인 전용 layer로 그린다.",
+    "joinPath": {
+      "line": "realtime_provider_line_mappings(provider_id, provider_line_id) ↔ line_id",
+      "station": "realtime_provider_station_mappings(provider_id, provider_station_id) ↔ (station_id, line_id)"
+    },
+    "coordinateRule": "provider payload 위치를 line_station_progression.t 또는 인접 두 역 사이 t 보간으로 노선도 좌표에 매핑한다. 열차 overlay는 line path 선형 파라미터만으로 좌표 계산이 가능하다.",
+    "payloadLocation": "datapack 밖. pack은 정적 geometry/mapping 계약만 보유하고 실시간 payload 자체는 온라인 provider에서 받는다.",
+    "separationPrinciple": "#1416 분리 원칙: 정적 노선도(pack)와 실시간 overlay(online)를 분리한다."
+  },
   "releaseGate": {
     "allRegionsRequired": true,
     "officialOrReviewedSourceRequired": true,

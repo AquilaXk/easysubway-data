@@ -61,6 +61,53 @@ test("structured route map contract pins nationwide vector-rendered layers", asy
     "지역별 datapack의 route_map_positions를 우선한다.",
   );
 
+  const lineGeometry = contract.layers.find((layer) => layer.id === "line_geometry");
+  assert.deepEqual(lineGeometry.linearParameter.range, [0, 1]);
+  assert.deepEqual(lineGeometry.linearParameter.directions, ["up", "down"]);
+  assert.equal(lineGeometry.linearParameter.field, "t");
+  assert.ok(
+    /shape_dist_traveled/.test(lineGeometry.linearParameter.basis),
+    "linearParameter must anchor to GTFS shape_dist_traveled 방식",
+  );
+
+  assert.deepEqual(
+    contract.lineStationProgression.requiredFields,
+    ["region", "line_id", "station_id", "direction", "t"],
+  );
+  assert.equal(
+    contract.lineStationProgression.featureId,
+    "{region}:{line_id}:{direction}:{station_id}",
+  );
+  assert.ok(
+    /line path 선형 파라미터만으로 좌표 계산 가능/.test(
+      contract.lineStationProgression.rendererContract,
+    ),
+    "renderer가 line path + 역별 t만으로 좌표를 계산할 수 있어야 함",
+  );
+
+  assert.match(
+    contract.realtimeOverlayHook.joinPath.line,
+    /realtime_provider_line_mappings/,
+  );
+  assert.match(
+    contract.realtimeOverlayHook.joinPath.station,
+    /realtime_provider_station_mappings/,
+  );
+  assert.ok(
+    /datapack 밖/.test(contract.realtimeOverlayHook.payloadLocation),
+    "실시간 payload는 datapack 밖이어야 함",
+  );
+  for (const providerTable of [
+    "realtime_provider_line_mappings",
+    "realtime_provider_station_mappings",
+  ]) {
+    assert.match(
+      schema,
+      new RegExp(`CREATE TABLE ${providerTable} \\(`),
+      `${providerTable} join 대상 테이블이 스키마에 존재해야 함`,
+    );
+  }
+
   const routeMapPositionsTable = schema.match(
     /CREATE TABLE route_map_positions \(([\s\S]*?)\);/,
   );
