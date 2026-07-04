@@ -20,6 +20,7 @@ const OBSERVED_FIELDS = [
 ];
 const DAILY_TYPE_CODES = new Set(["01", "02", "03"]);
 const UP_DOWN_CODES = new Set(["U", "D"]);
+const TAGO_SCHEDULE_ENDPOINT = "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList";
 
 function parseArgs(argv) {
   const args = {};
@@ -98,7 +99,7 @@ function validateTagoScheduleSample(rawText) {
   return {
     artifactKind: "tago-schedule-sample-importer-validation",
     candidateId: "molit-tago-subway-info",
-    endpoint: "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList",
+    endpoint: TAGO_SCHEDULE_ENDPOINT,
     rowCount: rows.length,
     providerRecordHashes,
     rawSha256: sha256(rawText),
@@ -110,6 +111,66 @@ function validateTagoScheduleSample(rawText) {
     productionCanonicalStopTimesStatus: "blocked_requires_trip_stop_sequence",
     plannedEtaUseAllowed: false,
   };
+}
+
+function buildTagoScheduleCollectionPlan(input, checkpoint = {}, dailyLimit = 1000) {
+  if (!Number.isInteger(dailyLimit) || dailyLimit <= 0) {
+    throw new Error("dailyLimit must be a positive integer");
+  }
+  const completed = new Set(checkpoint.completedRequestKeys ?? []);
+  const allRequests = tagoStationIds(input).flatMap((stationId) =>
+    [...DAILY_TYPE_CODES].flatMap((dailyTypeCode) =>
+      [...UP_DOWN_CODES].map((upDownTypeCode) => {
+        const requestKey = `${stationId}|${dailyTypeCode}|${upDownTypeCode}`;
+        return {
+          requestKey,
+          stationId,
+          dailyTypeCode,
+          upDownTypeCode,
+          url: `${TAGO_SCHEDULE_ENDPOINT}?serviceKey=[서비스키값]&pageNo=1&numOfRows=1000&_type=json&subwayStationId=${stationId}&dailyTypeCode=${dailyTypeCode}&upDownTypeCode=${upDownTypeCode}`,
+        };
+      }),
+    ),
+  );
+  const pending = allRequests.filter((request) => !completed.has(request.requestKey));
+  return {
+    artifactKind: "tago-schedule-collection-plan",
+    sourceId: "molit-tago-subway-info",
+    endpoint: TAGO_SCHEDULE_ENDPOINT,
+    dailyLimit,
+    totalRequestCount: allRequests.length,
+    completedRequestCount: allRequests.length - pending.length,
+    pendingRequestCount: pending.length,
+    batches: chunk(pending, dailyLimit).map((requests, index) => ({ batchNumber: index + 1, requests })),
+  };
+}
+
+function tagoStationIds(input) {
+  const stationIds = new Set();
+  for (const row of input.stationLineRows ?? []) {
+    if (!row.stationCode) continue;
+    // TODO: pilot line 4 mapping only; replace with explicit provider station ids before nationwide collection.
+    if (row.stationCode.startsWith("MTRKR")) {
+      stationIds.add(row.stationCode);
+      continue;
+    }
+    if (row.lineId !== "seoul-4") {
+      throw new Error(`Unsupported lineId for pilot mapping: ${row.lineId}`);
+    }
+    stationIds.add(`MTRKR4${row.stationCode}`);
+  }
+  if (stationIds.size === 0) {
+    throw new Error("stationLineRows must contain at least one stationCode");
+  }
+  return [...stationIds];
+}
+
+function chunk(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function normalizeRows(value) {
@@ -177,7 +238,7 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-export { validateTagoScheduleSample };
+export { buildTagoScheduleCollectionPlan, validateTagoScheduleSample };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
