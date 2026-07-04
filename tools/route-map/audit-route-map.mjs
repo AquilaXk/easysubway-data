@@ -12,7 +12,7 @@ const severityRank = new Map([
 ]);
 
 function usage() {
-  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--line-tracks tracks.json]... [--reviewed-ambiguities reviewed.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
+  return `Usage: node tools/route-map/audit-route-map.mjs --fixture <catalog-fixture.json> [--line-tracks tracks.json]... [--reviewed-ambiguities reviewed.json] [--reviewed-line-tracks reviewed.json] [--require-label-polygons] [--fail-on BLOCKER,HIGH] [--pretty]
 
 Audits routeMapPositions against stationLines so production route-map coordinate
 coverage can be checked before rebuilding datapacks.`;
@@ -22,6 +22,7 @@ function parseArgs(argv) {
   const options = {
     fixture: null,
     reviewedAmbiguities: null,
+    reviewedLineTracks: null,
     requireLabelPolygons: false,
     lineTracks: [],
     failOn: [],
@@ -38,6 +39,9 @@ function parseArgs(argv) {
         break;
       case "--reviewed-ambiguities":
         options.reviewedAmbiguities = argv[++index];
+        break;
+      case "--reviewed-line-tracks":
+        options.reviewedLineTracks = argv[++index];
         break;
       case "--require-label-polygons":
         options.requireLabelPolygons = true;
@@ -519,6 +523,54 @@ function reviewedAmbiguityEntries(raw) {
   );
 }
 
+function reviewedLineTrackKeyFor(region, lineId) {
+  return `${normalizedText(region)} ${normalizedText(lineId)}`;
+}
+
+// #1638 line-track 0표(소거법 배정) 노선의 수동 검수 기록. region+lineId로
+// LINE_TRACKS_ZERO_VOTE(HIGH)를 REVIEWED_LINE_TRACK_ZERO_VOTE(INFO)로 다운그레이드해
+// --fail-on BLOCKER,HIGH 게이트를 통과시킨다. 검수 provenance는 필수.
+function parseReviewedLineTracks(raw) {
+  const entries = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.reviewedLineTracks)
+      ? raw.reviewedLineTracks
+      : null;
+  if (entries == null) {
+    throw new Error(
+      "reviewed line tracks must be an array or contain reviewedLineTracks array",
+    );
+  }
+  const reviewed = new Map();
+  for (const [index, entry] of entries.entries()) {
+    const region = normalizedText(entry?.region);
+    const lineId = normalizedText(entry?.lineId);
+    const reason = normalizedText(entry?.reason);
+    const reviewedAt = normalizedText(entry?.reviewedAt);
+    const reviewedBy = normalizedText(entry?.reviewedBy);
+    const reviewSource = normalizedText(entry?.reviewSource);
+    if (!region || !lineId) {
+      throw new Error(
+        `reviewedLineTracks[${index}] must include region and lineId`,
+      );
+    }
+    if (!reason || !reviewedAt || !reviewedBy || !reviewSource) {
+      throw new Error(
+        `reviewedLineTracks[${index}] must include reason, reviewedAt, reviewedBy, and reviewSource`,
+      );
+    }
+    reviewed.set(reviewedLineTrackKeyFor(region, lineId), {
+      region,
+      lineId,
+      reason,
+      reviewedAt,
+      reviewedBy,
+      reviewSource,
+    });
+  }
+  return reviewed;
+}
+
 function parseReviewedAmbiguities(raw) {
   const reviewed = new Map();
   for (const [index, entry] of reviewedAmbiguityEntries(raw).entries()) {
@@ -941,7 +993,7 @@ function packRequiresRouteMapPositions(pack, positions) {
 
 // build/apply-route-map-line-tracks의 tracks.json(들)을 fixture 노선 집합과 대조해
 // 커버리지·무결성 findings를 만든다. #1638 track 직접 렌더 게이트.
-function auditLineTracks(packs, lineTracksDocs) {
+function auditLineTracks(packs, lineTracksDocs, reviewedLineTracks = new Map()) {
   const lineIdsByRegion = new Map();
   for (const pack of packs) {
     for (const position of pack.routeMapPositions ?? []) {
@@ -988,13 +1040,26 @@ function auditLineTracks(packs, lineTracksDocs) {
         });
       }
       if (line.matchVotes === 0) {
-        addFinding(findings, {
-          severity: "HIGH",
-          code: "LINE_TRACKS_ZERO_VOTE",
-          region,
-          lineId: line.lineId,
-          message: `근접 역 0표 소거법 배정(색 ${line.svgColor || "-"}). SVG와 육안 대조 수동 검수 대상.`,
-        });
+        const reviewed = reviewedLineTracks.get(
+          reviewedLineTrackKeyFor(region, line.lineId),
+        );
+        if (reviewed != null) {
+          addFinding(findings, {
+            severity: "INFO",
+            code: "REVIEWED_LINE_TRACK_ZERO_VOTE",
+            region,
+            lineId: line.lineId,
+            message: `검수 완료된 0표 소거법 배정(색 ${line.svgColor || "-"}): ${reviewed.reason} (${reviewed.reviewedAt}, ${reviewed.reviewedBy}, ${reviewed.reviewSource}).`,
+          });
+        } else {
+          addFinding(findings, {
+            severity: "HIGH",
+            code: "LINE_TRACKS_ZERO_VOTE",
+            region,
+            lineId: line.lineId,
+            message: `근접 역 0표 소거법 배정(색 ${line.svgColor || "-"}). SVG와 육안 대조 수동 검수 대상.`,
+          });
+        }
       }
     }
     for (const lineId of expected) {
@@ -1020,7 +1085,9 @@ function auditFixture(fixturePath, fixture, reviewedAmbiguities, options = {}) {
   const findings = auditedPacks.flatMap((pack) => pack.findings);
   const lineTracksDocs = options.lineTracks ?? [];
   if (lineTracksDocs.length > 0) {
-    findings.push(...auditLineTracks(packs, lineTracksDocs));
+    findings.push(
+      ...auditLineTracks(packs, lineTracksDocs, options.reviewedLineTracks),
+    );
   }
   const findingCounts = {};
   for (const severity of severityRank.keys()) {
@@ -1051,12 +1118,18 @@ async function main() {
         JSON.parse(await readFile(options.reviewedAmbiguities, "utf8")),
       )
     : new Map();
+  const reviewedLineTracks = options.reviewedLineTracks
+    ? parseReviewedLineTracks(
+        JSON.parse(await readFile(options.reviewedLineTracks, "utf8")),
+      )
+    : new Map();
   const lineTracksDocs = await Promise.all(
     options.lineTracks.map(async (file) => JSON.parse(await readFile(file, "utf8"))),
   );
   const report = auditFixture(options.fixture, fixture, reviewedAmbiguities, {
     requireLabelPolygons: options.requireLabelPolygons,
     lineTracks: lineTracksDocs,
+    reviewedLineTracks,
   });
   console.log(JSON.stringify(report, null, options.pretty ? 2 : 0));
 

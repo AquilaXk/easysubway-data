@@ -165,6 +165,19 @@ async function openPack(packPath) {
   return { db: new DatabaseSync(resolved), tempDir: null };
 }
 
+// 0표 노선 down_path 완충에 필요한 station_lines 테이블 + route_map_positions.down_path
+// 컬럼이 있는지 확인한다(최소 스키마 테스트 팩에는 없을 수 있다).
+function hasDownPathSource(db) {
+  const hasStationLines = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'station_lines'")
+    .get() != null;
+  if (!hasStationLines) return false;
+  return db
+    .prepare("PRAGMA table_info(route_map_positions)")
+    .all()
+    .some((column) => column.name === "down_path");
+}
+
 function number(value) {
   return Math.round(value * 1000) / 1000;
 }
@@ -185,8 +198,32 @@ function toPaths(pointLists, tolerance) {
 }
 
 // tracks.json의 노선 레코드. 두 소스가 동일 shape를 내도록 공유한다.
-function makeLine({ lineId, svgColor, matchVotes, stationCount, paths }) {
-  return { lineId, svgColor, trackCount: paths.length, matchVotes, stationCount, paths };
+// source는 노선 단위 원천 표시(예: SVG track 없는 0표 노선의 down_path 완충)로,
+// 지정된 경우에만 포함한다.
+function makeLine({ lineId, svgColor, matchVotes, stationCount, paths, source }) {
+  const line = { lineId, svgColor, trackCount: paths.length, matchVotes, stationCount, paths };
+  if (source) line.source = source;
+  return line;
+}
+
+// sequence 순 down_path 세그먼트를 끝점 연속이면 이어 붙이고 stitching으로 통합해
+// path 문자열 배열로 만든다. Route B와 0표 노선 down_path 완충이 공유한다. 체이닝
+// 규칙은 앱 _assemblePolylines(structured_route_map.dart)와 동일.
+function chainDownPathSegments(segments, stitchTolerance) {
+  const polylines = [];
+  let current = null;
+  for (const segment of segments) {
+    const points = parseAbsolutePolyline(segment);
+    if (points.length === 0) continue;
+    const tail = current?.[current.length - 1];
+    if (current && tail.x === points[0].x && tail.y === points[0].y) {
+      current.push(...points.slice(1));
+    } else {
+      current = [...points];
+      polylines.push(current);
+    }
+  }
+  return toPaths(polylines, stitchTolerance);
 }
 
 // "#rrggbb" → [r, g, b].
@@ -287,11 +324,28 @@ async function buildLineTracks({ geometry, pack, region, snapRadius, stitchToler
 
   const { db, tempDir } = await openPack(pack);
   let stations;
+  const downPathSegmentsByLine = new Map();
   try {
     stations = db
       .prepare("SELECT station_id, line_id, x, y FROM route_map_positions WHERE region = ?")
       .all(region)
       .map((row) => ({ lineId: row.line_id, x: row.x, y: row.y }));
+    // SVG track이 없는 0표 노선을 pack 실측 down_path로 완충하기 위한 세그먼트.
+    // station_lines(line_sequence)와 down_path 컬럼이 있는 실팩에서만 로드한다.
+    if (hasDownPathSource(db)) {
+      for (const row of db
+        .prepare(
+          `SELECT rmp.line_id AS lineId, rmp.down_path AS downPath
+           FROM route_map_positions rmp
+           JOIN station_lines sl ON sl.station_id = rmp.station_id AND sl.line_id = rmp.line_id
+           WHERE rmp.region = ?
+           ORDER BY rmp.line_id, sl.line_sequence, rmp.station_id`,
+        )
+        .all(region)) {
+        if (!downPathSegmentsByLine.has(row.lineId)) downPathSegmentsByLine.set(row.lineId, []);
+        downPathSegmentsByLine.get(row.lineId).push(row.downPath ?? "");
+      }
+    }
   } finally {
     db.close();
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
@@ -359,9 +413,32 @@ async function buildLineTracks({ geometry, pack, region, snapRadius, stitchToler
       warnings.push(`색 ${item.color}: 매칭된 노선 없음(track ${item.tracks.length}개).`);
       return;
     }
+    // 0표(소거법 배정)이고 pack 실측 down_path가 있으면, 신뢰할 수 없는 SVG 고아
+    // 색 대신 down_path를 track으로 완충한다(Route B 로직 재사용). 고아 색은 방출하지
+    // 않으므로 colorToLineId에 남기지 않는다. 예: 수도권 우이신설(SVG에 연결 track 없이
+    // 역 틱마크만 존재해 minStrokeLength로 전량 배제됨).
+    if (votes === 0) {
+      const filledPaths = chainDownPathSegments(
+        downPathSegmentsByLine.get(lineId) ?? [],
+        stitchTolerance,
+      );
+      if (filledPaths.length > 0) {
+        warnings.push(`색 ${item.color} → ${lineId}: 근접 역 0표 — SVG 고아 색 폐기, down_path 완충 적용.`);
+        lines.push(makeLine({
+          lineId,
+          svgColor: "",
+          matchVotes: null,
+          stationCount: stationCountByLine.get(lineId) ?? 0,
+          paths: filledPaths,
+          source: "pack-down-path",
+        }));
+        return;
+      }
+      warnings.push(`색 ${item.color} → ${lineId}: 근접 역 0표(소거법 배정). 위치 검수 필요.`);
+    } else if (votes !== bestVotes) {
+      warnings.push(`색 ${item.color} → ${lineId}: 최적매칭 표(${votes})가 국소 최다표(${bestVotes})와 다름.`);
+    }
     colorToLineId[item.color] = lineId;
-    if (votes === 0) warnings.push(`색 ${item.color} → ${lineId}: 근접 역 0표(소거법 배정). 위치 검수 필요.`);
-    else if (votes !== bestVotes) warnings.push(`색 ${item.color} → ${lineId}: 최적매칭 표(${votes})가 국소 최다표(${bestVotes})와 다름.`);
     const paths = toPaths(item.tracks.map((track) => track.points), stitchTolerance);
     lines.push(makeLine({
       lineId,
@@ -439,22 +516,7 @@ async function buildLineTracksFromDownPath({ pack, region, stitchTolerance }) {
   const warnings = [];
   const orderedLineIds = [...segmentsByLine.keys()].sort((a, b) => a.localeCompare(b));
   for (const lineId of orderedLineIds) {
-    // sequence 순 down_path 세그먼트를 끝점 연속이면 이어 붙인다.
-    const polylines = [];
-    let current = null;
-    for (const segment of segmentsByLine.get(lineId)) {
-      const points = parseAbsolutePolyline(segment);
-      if (points.length === 0) continue;
-      const tail = current?.[current.length - 1];
-      if (current && tail.x === points[0].x && tail.y === points[0].y) {
-        current.push(...points.slice(1));
-      } else {
-        current = [...points];
-        polylines.push(current);
-      }
-    }
-    // 미세 hole은 stitching으로 추가 통합.
-    const paths = toPaths(polylines, stitchTolerance);
+    const paths = chainDownPathSegments(segmentsByLine.get(lineId), stitchTolerance);
     if (paths.length === 0) warnings.push(`노선 ${lineId}: down_path 세그먼트가 없어 빈 track.`);
     lines.push(makeLine({
       lineId,

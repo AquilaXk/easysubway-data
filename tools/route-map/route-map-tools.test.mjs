@@ -17,7 +17,7 @@ const auditRouteMapScript = path.resolve(import.meta.dirname, "audit-route-map.m
 
 // audit-route-map을 temp fixture + line-tracks 문서로 실행하고 report JSON을 돌려준다.
 // --fail-on으로 exit 1이 나도 stdout에 report가 있으므로 그대로 파싱한다.
-async function runAuditRouteMap({ fixture, lineTracks = [], failOn = [] }) {
+async function runAuditRouteMap({ fixture, lineTracks = [], reviewedLineTracks = null, failOn = [] }) {
   const dir = await mkdtemp(path.join(tmpdir(), "easysubway-audit-tracks-"));
   try {
     const fixturePath = path.join(dir, "fixture.json");
@@ -27,6 +27,11 @@ async function runAuditRouteMap({ fixture, lineTracks = [], failOn = [] }) {
       const trackPath = path.join(dir, `line-tracks-${i}.json`);
       await writeFile(trackPath, JSON.stringify(lineTracks[i]));
       trackArgs.push("--line-tracks", trackPath);
+    }
+    if (reviewedLineTracks != null) {
+      const reviewedPath = path.join(dir, "reviewed-line-tracks.json");
+      await writeFile(reviewedPath, JSON.stringify(reviewedLineTracks));
+      trackArgs.push("--reviewed-line-tracks", reviewedPath);
     }
     const failArgs = failOn.length > 0 ? ["--fail-on", failOn.join(",")] : [];
     let stdout;
@@ -183,6 +188,46 @@ async function runBuildLineTracksFromPack({ region, rows, args = [] }) {
     const { stdout } = await execFileAsync(
       "node",
       [buildLineTracksScript, "--source", "pack-down-path", "--pack", packPath, "--region", region, ...args],
+      { cwd: root, maxBuffer: 4 * 1024 * 1024 },
+    );
+    return JSON.parse(stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// svg-strokes 모드 + 0표 노선 down_path 완충 검증용: route_map_positions(down_path)+
+// station_lines(line_sequence)를 실제 팩 스키마대로 만들고 geometry로 실행한다.
+async function runBuildLineTracksWithDownPath({ geometry, region, rows, args = [] }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "easysubway-line-tracks-fill-"));
+  try {
+    const packPath = path.join(dir, "pack.sqlite");
+    const db = new DatabaseSync(packPath);
+    db.exec(
+      `CREATE TABLE route_map_positions (
+        station_id TEXT NOT NULL, line_id TEXT NOT NULL, region TEXT NOT NULL,
+        x INTEGER NOT NULL, y INTEGER NOT NULL, down_path TEXT NOT NULL DEFAULT ''
+      );
+      CREATE TABLE station_lines (
+        station_id TEXT NOT NULL, line_id TEXT NOT NULL, line_sequence INTEGER NOT NULL
+      )`,
+    );
+    const insertPosition = db.prepare(
+      "INSERT INTO route_map_positions (station_id, line_id, region, x, y, down_path) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    const insertLine = db.prepare(
+      "INSERT INTO station_lines (station_id, line_id, line_sequence) VALUES (?, ?, ?)",
+    );
+    for (const row of rows) {
+      insertPosition.run(row.station_id, row.line_id, region, row.x, row.y, row.down_path ?? "");
+      insertLine.run(row.station_id, row.line_id, row.sequence);
+    }
+    db.close();
+    const geometryPath = path.join(dir, "geometry.json");
+    await writeFile(geometryPath, JSON.stringify(geometry));
+    const { stdout } = await execFileAsync(
+      "node",
+      [buildLineTracksScript, "--geometry", geometryPath, "--pack", packPath, "--region", region, ...args],
       { cwd: root, maxBuffer: 4 * 1024 * 1024 },
     );
     return JSON.parse(stdout);
@@ -2171,6 +2216,43 @@ test("build-route-map-line-tracks --source pack-down-path chains existing segmen
   assert.equal(result.lines[0].paths[0], "M 0 0 L 10 0 L 20 0");
 });
 
+test("build-route-map-line-tracks completes zero-vote svg lines from pack down_path", async () => {
+  // line-a: 빨강 track 근처 역 → 득표. line-b: 어느 track과도 멀어 0표지만
+  // down_path 보유 → SVG 고아 색 대신 down_path 완충(Route B 로직 재사용).
+  const geometry = {
+    extractorVersion: 2,
+    strokes: [
+      { tag: "polyline", stroke: "#ff0000", dashed: false,
+        points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] },
+      // 고아 주황 track — 어느 역과도 멀어 0표. 소거법으로 line-b에 배정될 후보.
+      { tag: "polyline", stroke: "#f58921", dashed: false,
+        points: [{ x: 0, y: 500 }, { x: 100, y: 500 }] },
+    ],
+  };
+  const result = await runBuildLineTracksWithDownPath({
+    geometry,
+    region: "테스트권",
+    rows: [
+      { station_id: "a1", line_id: "line-a", sequence: 1, x: 10, y: 5, down_path: "" },
+      { station_id: "a2", line_id: "line-a", sequence: 2, x: 90, y: 5, down_path: "M 10 5 L 90 5" },
+      { station_id: "b1", line_id: "line-b", sequence: 1, x: 10, y: 1000, down_path: "" },
+      { station_id: "b2", line_id: "line-b", sequence: 2, x: 90, y: 1000, down_path: "M 10 1000 L 90 1000" },
+    ],
+  });
+  assert.equal(result.source, "svg-strokes");
+  assert.equal(result.colorCount, result.lineCount, "완충 후에도 색=노선 전제 유지");
+  const lineB = result.lines.find((line) => line.lineId === "line-b");
+  assert.ok(lineB, "line-b 존재");
+  assert.equal(lineB.matchVotes, null, "완충 노선은 SVG 득표가 아니므로 matchVotes=null");
+  assert.equal(lineB.svgColor, "", "완충 노선은 SVG 색을 버린다(고아 색 미방출)");
+  assert.equal(lineB.source, "pack-down-path", "노선 단위 down_path 완충 표시");
+  assert.equal(lineB.trackCount, 1);
+  assert.equal(lineB.paths[0], "M 10 1000 L 90 1000", "down_path 실측 track");
+  const lineA = result.lines.find((line) => line.lineId === "line-a");
+  assert.ok(lineA.matchVotes > 0, "정상 매칭 노선은 SVG track 유지");
+  assert.equal(lineA.svgColor, "#ff0000");
+});
+
 test("apply-route-map-line-tracks writes tracks with inherited license metadata", async () => {
   const positions = [{
     station_id: "s1", line_id: "line-a", x: 0, y: 0,
@@ -2238,6 +2320,74 @@ test("audit-route-map flags zero-vote tracks as HIGH for manual review", async (
   assert.ok(zeroVote, "0표 노선 finding");
   assert.equal(zeroVote.severity, "HIGH");
   assert.equal(zeroVote.lineId, "line-a");
+});
+
+test("audit-route-map downgrades reviewed zero-vote tracks to INFO", async () => {
+  const fixture = {
+    packs: [{
+      id: "test",
+      routeMapPositions: [{ stationId: "s1", lineId: "line-a", region: "테스트권", x: 0, y: 0 }],
+    }],
+  };
+  const lineTracks = [{
+    region: "테스트권", source: "svg-strokes", colorCount: 1, lineCount: 1,
+    lines: [{ lineId: "line-a", svgColor: "#f58921", matchVotes: 0, paths: ["M 0 0 L 1 0"] }],
+  }];
+  const reviewedLineTracks = {
+    reviewedLineTracks: [{
+      region: "테스트권",
+      lineId: "line-a",
+      reason: "공용 색 노선이라 근접 역 0표지만 SVG 육안 대조로 track 정합 확인",
+      reviewedAt: "2026-07-05T00:00:00.000Z",
+      reviewedBy: "QA",
+      reviewSource: "https://github.com/AquilaXk/easysubway/issues/1638",
+    }],
+  };
+  const report = await runAuditRouteMap({ fixture, lineTracks, reviewedLineTracks });
+  assert.equal(
+    report.findings.find((finding) => finding.code === "LINE_TRACKS_ZERO_VOTE"),
+    undefined,
+    "검수된 0표는 HIGH finding으로 남지 않는다",
+  );
+  const reviewed = report.findings.find(
+    (finding) => finding.code === "REVIEWED_LINE_TRACK_ZERO_VOTE",
+  );
+  assert.ok(reviewed, "검수 기록 finding");
+  assert.equal(reviewed.severity, "INFO");
+  assert.equal(reviewed.lineId, "line-a");
+  assert.match(reviewed.message, /육안 대조/);
+});
+
+test("audit-route-map keeps unreviewed zero-vote as HIGH when reviewed list covers a different line", async () => {
+  const fixture = {
+    packs: [{
+      id: "test",
+      routeMapPositions: [{ stationId: "s1", lineId: "line-a", region: "테스트권", x: 0, y: 0 }],
+    }],
+  };
+  const lineTracks = [{
+    region: "테스트권", source: "svg-strokes", colorCount: 1, lineCount: 1,
+    lines: [{ lineId: "line-a", svgColor: "#f58921", matchVotes: 0, paths: ["M 0 0 L 1 0"] }],
+  }];
+  const reviewedLineTracks = {
+    reviewedLineTracks: [{
+      region: "테스트권",
+      lineId: "line-other",
+      reason: "다른 노선 검수 — line-a는 미검수",
+      reviewedAt: "2026-07-05T00:00:00.000Z",
+      reviewedBy: "QA",
+      reviewSource: "https://github.com/AquilaXk/easysubway/issues/1638",
+    }],
+  };
+  const report = await runAuditRouteMap({ fixture, lineTracks, reviewedLineTracks });
+  const zeroVote = report.findings.find((finding) => finding.code === "LINE_TRACKS_ZERO_VOTE");
+  assert.ok(zeroVote, "미검수 0표는 HIGH로 남는다");
+  assert.equal(zeroVote.severity, "HIGH");
+  assert.equal(
+    report.findings.find((finding) => finding.code === "REVIEWED_LINE_TRACK_ZERO_VOTE"),
+    undefined,
+    "다른 노선 검수는 line-a에 적용되지 않는다",
+  );
 });
 
 test("apply-route-map-line-tracks --check does not write and flags missing line license", async () => {
