@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "route-map-tile-expansion-adr",
+  "status": "accepted",
+  "issue": 1644,
+  "decision": "v1은 region 단위 single structured pack(현행 capital.sqlite.gz의 route_map_positions 연장)으로 닫는다. 서버 vector tile은 v1 범위 밖 후속 확장으로 분리한다. 확장이 필요해지면 표준 Web Mercator XYZ가 아니라 도식(schematic) 좌표계 기준 custom tile grid를 도입하고, layer/feature id는 #1636 스키마와 1:1로 MVT 호환 명명을 유지한다.",
+  "context": "노선도 좌표는 지리 좌표가 아니라 도식(schematic) 좌표계다. 지역당 수백 역·수십 노선 규모라 타일 분할 없이 클라이언트 벡터 렌더링으로 충분하다(카카오지하철·네이버지도 지하철도 지역 단위 도식 노선도를 통째로 클라이언트 렌더링). 표준 Web Mercator XYZ 타일링은 도식 좌표에 부적합하다.",
+  "tileCoordinateSpace": {
+    "decision": "no-tiling-for-v1",
+    "rationale": "구조화 데이터량이 작다: 5개 지역 route_map_positions는 압축 capital.sqlite.gz 한 팩(수백 KB)에 모두 들어간다. viewport당 부분 로드의 이득보다 타일 grid·조립 복잡도가 크다.",
+    "futureOption": "확장 시 도식 좌표 bounds를 정수 grid로 나눈 schematic tile grid(경위도/Web Mercator 변환 없음). tile 좌표는 source 좌표계 정수 grid index."
+  },
+  "options": [
+    {
+      "id": "region-single-pack",
+      "chosen": true,
+      "summary": "현행 region 단위 structured pack 연장",
+      "pros": [
+        "현행 index.json/데이터팩·오프라인 경로 그대로 재사용",
+        "노선도 규모에서 데이터량이 작아 타일 분할 불필요",
+        "구현 복잡도 최소, v1 출시 차단 아님"
+      ],
+      "cons": ["지역 전체를 한 번에 로드(대규모 확장 시 부분 로드 불가)"]
+    },
+    {
+      "id": "schematic-custom-tile-grid",
+      "chosen": false,
+      "summary": "도식 좌표계 기준 custom tile grid",
+      "pros": ["초대형 노선도에서 viewport 부분 로드 가능"],
+      "cons": ["현 규모에서 과설계", "tile 조립·캐시 복잡도", "v1 불요"],
+      "futureTrigger": "단일 region 데이터가 모바일 메모리·초기 로드 예산을 초과할 때"
+    },
+    {
+      "id": "mvt-web-mercator",
+      "chosen": false,
+      "summary": "표준 MVT + Web Mercator XYZ 타일링",
+      "pros": ["표준 도구 생태계"],
+      "cons": ["도식 좌표는 지리 좌표가 아니라 Web Mercator 매핑이 의미 없음", "부적합"]
+    }
+  ],
+  "layerMapping": [
+    { "schemaSource": "route_map_positions(x,y)", "tileLayer": "station_point", "geometry": "Point" },
+    { "schemaSource": "route_map_positions.up_path/down_path", "tileLayer": "line_path", "geometry": "LineString" },
+    { "schemaSource": "derived transfer_groups(#1636)", "tileLayer": "transfer_node", "geometry": "Point" },
+    { "schemaSource": "route_map_positions.label_polygon", "tileLayer": "station_label", "geometry": "Polygon" }
+  ],
+  "featureIdStrategy": "#1636 feature id 체계와 동일: station/label은 {region}:{station_id}:{line_id}, transfer는 {region}:{station_id}. MVT feature id에는 이 문자열을 그대로 두거나 안정 해시(FNV/xxhash)로 정수화한다. linearParameter(t)는 line_path feature의 property로 싣는다.",
+  "cacheVersioning": "현행 apps/mobile/assets/datapacks/index.json(sha256/byteSize) 체계를 원격 tile-pack manifest로 확장한다. region+contentHash로 버전하고, tools/datapack/publish-object-storage.mjs·validate-remote-datapack-artifact.mjs 배포·검증 경로를 재사용한다.",
+  "offlineFallback": "원격 tile/pack 실패 시 로컬 데이터팩(assets/datapacks) 표시를 유지한다(AGENTS.md 오프라인 원칙). 원격은 최신화 overlay이며 필수 의존이 아니다.",
+  "serverApiBoundary": "backend(eGovFrame/Spring Boot)는 tile-pack 아티팩트를 object storage에 게시하고 manifest endpoint만 제공한다. 타일 조립·벡터 렌더링은 클라이언트 책임. 실시간 열차 위치(#1649)는 별도 online endpoint로 분리한다(정적 pack과 실시간 overlay 분리 원칙 #1416).",
+  "schemaCompatibility": {
+    "conclusion": "#1636 structured-route-map-contract의 layer/feature id는 MVT/GeoJSON/tile-pack 변환을 막지 않는다.",
+    "evidence": [
+      "layer는 위 layerMapping대로 스키마 테이블과 1:1",
+      "feature id는 #1636과 동일 체계",
+      "geometry는 Point/LineString/Polygon 표준 타입으로 표현",
+      "linearParameter(t)는 feature property로 실려 MVT 변환에 무손실"
+    ]
+  },
+  "nonGoalsForV1": [
+    "서버 vector tile 구현",
+    "Web Mercator 타일링",
+    "tile 분할 로딩"
+  ],
+  "v1ClosesWithLocalPack": true,
+  "references": [
+    "https://docs.mapbox.com/data/tilesets/guides/vector-tiles-standards/",
+    "https://docs.mapbox.com/vector-tiles/reference/"
+  ]
+}
