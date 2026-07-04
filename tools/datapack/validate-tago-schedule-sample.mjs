@@ -30,6 +30,10 @@ function parseArgs(argv) {
     if (!flag.startsWith("--")) {
       throw new Error(`unexpected argument: ${flag}`);
     }
+    if (flag === "--plan") {
+      args.plan = true;
+      continue;
+    }
     if (!value || value.startsWith("--")) {
       throw new Error(`${flag} requires a value`);
     }
@@ -231,7 +235,14 @@ function sha256(value) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const inputPath = path.resolve(args.input);
-  const result = validateTagoScheduleSample(await readFile(inputPath, "utf8"));
+  let result;
+  if (args.plan) {
+    const checkpoint = args.checkpoint ? JSON.parse(await readFile(path.resolve(args.checkpoint), "utf8")) : {};
+    const dailyLimit = args["daily-limit"] === undefined ? undefined : Number(args["daily-limit"]);
+    result = buildTagoScheduleCollectionPlan(JSON.parse(await readFile(inputPath, "utf8")), checkpoint, dailyLimit);
+  } else {
+    result = validateTagoScheduleSample(await readFile(inputPath, "utf8"));
+  }
   if (args.output) {
     await writeFile(path.resolve(args.output), `${JSON.stringify(result, null, 2)}\n`);
   }
