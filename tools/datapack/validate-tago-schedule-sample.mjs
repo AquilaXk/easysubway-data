@@ -30,8 +30,8 @@ function parseArgs(argv) {
     if (!flag.startsWith("--")) {
       throw new Error(`unexpected argument: ${flag}`);
     }
-    if (flag === "--plan") {
-      args.plan = true;
+    if (flag === "--plan" || flag === "--summary") {
+      args[flag.slice(2)] = true;
       continue;
     }
     if (!value || value.startsWith("--")) {
@@ -149,6 +149,83 @@ function buildTagoScheduleCollectionPlan(input, checkpoint = {}, dailyLimit = 10
   };
 }
 
+function buildTagoScheduleCollectionSummary(collection) {
+  const responses = collection?.responses;
+  if (!Array.isArray(responses) || responses.length === 0) {
+    throw new Error("responses must be a non-empty array");
+  }
+  const completedRequestKeys = [];
+  const rawSha256ByRequest = {};
+  const providerRecordHashes = [];
+  let rowCount = 0;
+
+  for (const response of responses) {
+    requestKeyParts(response.requestKey);
+  }
+  for (const response of [...responses].sort((left, right) => left.requestKey.localeCompare(right.requestKey))) {
+    if (completedRequestKeys.includes(response.requestKey)) {
+      throw new Error(`duplicate requestKey: ${response.requestKey}`);
+    }
+    if (typeof response.rawText !== "string" || response.rawText.length === 0) {
+      throw new Error(`responses.rawText is required: ${response.requestKey}`);
+    }
+    const validation = validateTagoScheduleSample(response.rawText);
+    assertResponseMatchesRequestKey(validation, response.requestKey);
+    completedRequestKeys.push(response.requestKey);
+    rawSha256ByRequest[response.requestKey] = validation.rawSha256;
+    providerRecordHashes.push(...validation.providerRecordHashes);
+    rowCount += validation.rowCount;
+  }
+
+  const evidencePayload = {
+    sourceId: "molit-tago-subway-info",
+    endpoint: TAGO_SCHEDULE_ENDPOINT,
+    completedRequestKeys,
+    rawSha256ByRequest,
+    providerRecordHashes,
+  };
+  return {
+    artifactKind: "tago-schedule-collection-summary",
+    sourceId: evidencePayload.sourceId,
+    endpoint: evidencePayload.endpoint,
+    completedRequestKeys,
+    checkpoint: { completedRequestKeys },
+    responseCount: completedRequestKeys.length,
+    rowCount,
+    rawSha256ByRequest,
+    providerRecordHashes,
+    evidenceHash: sha256(JSON.stringify(evidencePayload)),
+    stationLevelOnly: true,
+    productionUseAllowed: false,
+    remainingAdmissionBlocker: "line_wide_trip_stop_sequence_validation_required",
+  };
+}
+
+function assertResponseMatchesRequestKey(validation, requestKey) {
+  const [stationId, dailyTypeCode, upDownTypeCode] = requestKeyParts(requestKey);
+  if (
+    validation.departures.some(
+      (row) =>
+        row.subwayStationId !== stationId ||
+        row.dailyTypeCode !== dailyTypeCode ||
+        row.upDownTypeCode !== upDownTypeCode,
+    )
+  ) {
+    throw new Error(`response does not match requestKey: ${requestKey}`);
+  }
+}
+
+function requestKeyParts(requestKey) {
+  if (typeof requestKey !== "string" || requestKey.length === 0) {
+    throw new Error("responses.requestKey is required");
+  }
+  const parts = requestKey.split("|");
+  if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
+    throw new Error(`response does not match requestKey: ${requestKey}`);
+  }
+  return parts;
+}
+
 function tagoStationIds(input) {
   const stationIds = new Set();
   for (const row of input.stationLineRows ?? []) {
@@ -240,6 +317,20 @@ async function main() {
     const checkpoint = args.checkpoint ? JSON.parse(await readFile(path.resolve(args.checkpoint), "utf8")) : {};
     const dailyLimit = args["daily-limit"] === undefined ? undefined : Number(args["daily-limit"]);
     result = buildTagoScheduleCollectionPlan(JSON.parse(await readFile(inputPath, "utf8")), checkpoint, dailyLimit);
+  } else if (args.summary) {
+    const input = JSON.parse(await readFile(inputPath, "utf8"));
+    const inputDir = path.dirname(inputPath);
+    result = buildTagoScheduleCollectionSummary({
+      ...input,
+      responses: await Promise.all(
+        (input.responses ?? []).map(async (response) => ({
+          ...response,
+          rawText:
+            response.rawText ??
+            (await readFile(path.resolve(inputDir, requiredString(response.rawPath, "responses.rawPath")), "utf8")),
+        })),
+      ),
+    });
   } else {
     result = validateTagoScheduleSample(await readFile(inputPath, "utf8"));
   }
@@ -249,7 +340,14 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-export { buildTagoScheduleCollectionPlan, validateTagoScheduleSample };
+function requiredString(value, label) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} is required`);
+  }
+  return value;
+}
+
+export { buildTagoScheduleCollectionPlan, buildTagoScheduleCollectionSummary, validateTagoScheduleSample };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
