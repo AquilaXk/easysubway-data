@@ -4884,6 +4884,64 @@ test("데이터팩 검증기는 route graph에서 고립된 station-line node를
   );
 });
 
+test("데이터팩 검증기는 빈 route regression pack도 명시 route edge가 있으면 route graph를 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-empty-regression-route-graph-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  fixture.packs[0].representativeRouteRegressions = [];
+  fixture.packs[0].stations.push({
+    id: "station-isolated",
+    nameKo: "고립역",
+    nameEn: "Isolated",
+    normalizedName: "isolated",
+    region: "capital",
+    latitude: 37.1,
+    longitude: 127.1,
+    dataQualityLevel: "LEVEL_2",
+    dataSourceType: "OFFICIAL_FILE",
+    lastVerifiedAt: "2026-06-19T00:00:00.000Z",
+  });
+  fixture.packs[0].stationLines.push({
+    stationId: "station-isolated",
+    lineId: "seoul-4",
+    stationCode: "499",
+    lineSequence: 999,
+    platformInfo: "테스트 고립 노드",
+  });
+  fixture.packs[0].minimumTableRows.stations = 3;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+      ],
+      { cwd: root },
+    ),
+    /station-line node is isolated from route graph/,
+  );
+});
+
 test("데이터팩 검증기는 분리된 route graph component를 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-disconnected-graph-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -8142,7 +8200,7 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
     lines: 1,
     stations: 2,
     station_lines: 2,
-    network_edges: 6,
+    network_edges: 4,
     facilities: 6,
     station_facility_evidence: 6,
   });
@@ -8397,7 +8455,7 @@ test("공식 source ingest adapter는 cross-line EXPRESS summary edge도 격리 
   });
   input.routeEdges = [
     {
-      ...input.routeEdges[0],
+      ...productionSummaryRideEdges()[0],
       id: "edge-cross-line-express-summary",
       sourceId: "molit-urban-rail-full-route",
       from: {
@@ -8886,19 +8944,15 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   assert.equal(input.manifest.releaseSequence, undefined);
   assert.equal(input.manifest.publishedAt, undefined);
   assert.equal(input.manifest.expiresAt, undefined);
-  const adjacencySafeInput = {
-    ...input,
-    routeEdges: input.routeEdges.map((edge) =>
-      edge.edgeType === "RIDE" ? { ...edge, servicePattern: "EXPRESS" } : edge,
-    ),
-  };
+  assert.deepEqual(input.routeEdges.filter((edge) => edge.edgeType === "RIDE"), []);
+  assert.equal(input.routeGraphTopologyPolicy, undefined);
+  const adjacencySafeInput = input;
   const adjacencySafeInputPath = path.join(outputDir, "capital-pilot-production-adjacency-safe.json");
   await writeFile(adjacencySafeInputPath, `${JSON.stringify(adjacencySafeInput, null, 2)}\n`);
 
-  const missingSummaryRidePolicyInput = JSON.parse(JSON.stringify(adjacencySafeInput));
-  delete missingSummaryRidePolicyInput.routeGraphTopologyPolicy;
-  const missingSummaryRidePolicyInputPath = path.join(outputDir, "missing-summary-ride-policy.json");
-  await writeFile(missingSummaryRidePolicyInputPath, `${JSON.stringify(missingSummaryRidePolicyInput, null, 2)}\n`);
+  const summaryRideRegressionInput = withProductionSummaryRideEdges(input);
+  const summaryRideRegressionInputPath = path.join(outputDir, "summary-ride-regression-only.json");
+  await writeFile(summaryRideRegressionInputPath, `${JSON.stringify(summaryRideRegressionInput, null, 2)}\n`);
   await assert.rejects(
     execFileAsync(
       process.execPath,
@@ -8907,20 +8961,19 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
         "--inventory",
         "tools/datapack/source-inventory.json",
         "--input",
-        missingSummaryRidePolicyInputPath,
+        summaryRideRegressionInputPath,
         "--output",
-        path.join(outputDir, "missing-summary-ride-policy-fixture.json"),
+        path.join(outputDir, "summary-ride-regression-only-fixture.json"),
       ],
       { cwd: root },
     ),
-    /routeGraphTopologyPolicy\.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only/,
+    /production routeEdges non-adjacent EXPRESS summary edge is regression-only/,
   );
 
-  const lowercaseRideEdgeInput = JSON.parse(JSON.stringify(adjacencySafeInput));
+  const lowercaseRideEdgeInput = JSON.parse(JSON.stringify(withProductionSummaryRideEdges(input)));
   lowercaseRideEdgeInput.routeEdges = lowercaseRideEdgeInput.routeEdges.map((edge) =>
     edge.edgeType === "RIDE" ? { ...edge, edgeType: "ride" } : edge,
   );
-  delete lowercaseRideEdgeInput.routeGraphTopologyPolicy;
   const lowercaseRideEdgeInputPath = path.join(outputDir, "lowercase-ride-summary-policy.json");
   await writeFile(lowercaseRideEdgeInputPath, `${JSON.stringify(lowercaseRideEdgeInput, null, 2)}\n`);
   await assert.rejects(
@@ -8937,7 +8990,7 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       ],
       { cwd: root },
     ),
-    /routeGraphTopologyPolicy\.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only/,
+    /production routeEdges non-adjacent EXPRESS summary edge is regression-only/,
   );
 
   await execFileAsync(
@@ -9025,8 +9078,33 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   }
 
   const validatorBypassFixture = JSON.parse(JSON.stringify(importedFixture));
-  validatorBypassFixture.packs[0].networkEdges = validatorBypassFixture.packs[0].networkEdges.map((edge) =>
-    edge.edgeType === "RIDE" ? { ...edge, servicePattern: "LOCAL" } : edge,
+  validatorBypassFixture.packs[0].networkEdges.push(
+    ...productionSummaryRideEdges("LOCAL").map((edge) => ({
+      id: edge.id,
+      fromNodeId:
+        edge.from.sourceStationCode === "448"
+          ? "station-sangnoksu:seoul-4:LOCAL"
+          : "station-sadang:seoul-4:LOCAL",
+      toNodeId:
+        edge.to.sourceStationCode === "433"
+          ? "station-sadang:seoul-4:LOCAL"
+          : "station-sangnoksu:seoul-4:LOCAL",
+      durationSeconds: edge.durationSeconds,
+      distanceMeters: edge.distanceMeters,
+      edgeType: edge.edgeType,
+      servicePattern: edge.servicePattern,
+      includesStairs: edge.includesStairs,
+      stairAccessState: edge.stairAccessState,
+      accessibilityStatus: edge.accessibilityStatus,
+      reliabilityScore: edge.reliabilityScore,
+      sourceId: edge.sourceId,
+      sourceSnapshotId: edge.sourceSnapshotId,
+      providerRecordHash: edge.providerRecordHash,
+      provenanceKind: edge.provenanceKind,
+      verificationStatus: edge.verificationStatus,
+      lastVerifiedAt: edge.lastVerifiedAt,
+      evidenceHash: edge.evidenceHash,
+    })),
   );
   const validatorBypassFixturePath = path.join(outputDir, "validator-bypass-local-ride.json");
   const validatorBypassPackDir = path.join(outputDir, "validator-bypass-local-ride-pack");
@@ -9060,9 +9138,7 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
 
   const nonAdjacentInput = {
     ...input,
-    routeEdges: input.routeEdges.map((edge) =>
-      edge.edgeType === "RIDE" ? { ...edge, servicePattern: "LOCAL" } : edge,
-    ),
+    routeEdges: [...productionSummaryRideEdges("LOCAL"), ...input.routeEdges],
   };
   const nonAdjacentInputPath = path.join(outputDir, "non-adjacent-local-ride-input.json");
   const nonAdjacentFixturePath = path.join(outputDir, "non-adjacent-local-ride.json");
@@ -9145,37 +9221,16 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     /production facility evidence missing: station-sadang:seoul-4:WHEELCHAIR_LIFT/,
   );
 
-  const unrealisticRideSpeedInputPath = path.join(outputDir, "capital-pilot-production-unrealistic-ride-speed.json");
-  await writeFile(
-    unrealisticRideSpeedInputPath,
-    `${JSON.stringify(
-      {
-        ...adjacencySafeInput,
-        routeEdges: adjacencySafeInput.routeEdges.map((edge) =>
-          edge.edgeType === "RIDE"
-            ? { ...edge, durationSeconds: 420 }
-            : edge,
-        ),
-      },
-      null,
-      2,
-    )}\n`,
+  const unrealisticRideSpeedFixture = JSON.parse(JSON.stringify(importedFixture));
+  unrealisticRideSpeedFixture.packs[0].networkEdges.push(
+    ...productionSummaryNetworkEdges("EXPRESS").map((edge) => ({
+      ...edge,
+      durationSeconds: 420,
+    })),
   );
   const unrealisticRideSpeedFixturePath = path.join(outputDir, "unrealistic-ride-speed.json");
   const unrealisticRideSpeedPackDir = path.join(outputDir, "unrealistic-ride-speed-pack");
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/import-official-sources.mjs",
-      "--inventory",
-      "tools/datapack/source-inventory.json",
-      "--input",
-      unrealisticRideSpeedInputPath,
-      "--output",
-      unrealisticRideSpeedFixturePath,
-    ],
-    { cwd: root },
-  );
+  await writeFile(unrealisticRideSpeedFixturePath, `${JSON.stringify(unrealisticRideSpeedFixture, null, 2)}\n`);
   await execFileAsync(
     process.execPath,
     [
@@ -9229,10 +9284,10 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     { cwd: root },
   );
   const routeGraphTopologyReport = JSON.parse(await readFile(routeGraphTopologyReportPath, "utf8"));
-  assert.equal(routeGraphTopologyReport.summary.nonAdjacentExpressRideViolationCount, 2);
+  assert.equal(routeGraphTopologyReport.summary.nonAdjacentExpressRideViolationCount, 0);
   assert.deepEqual(
     routeGraphTopologyReport.packs[0].violations.nonAdjacentExpressRide.map((violation) => violation.edgeId),
-    ["edge-sadang-sangnoksu-seoul-4", "edge-sangnoksu-sadang-seoul-4"],
+    [],
   );
 
   let validationFailure;
@@ -9299,12 +9354,8 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   assert.equal(manifest.signature.algorithm, "rsa-sha256-manifest-v2");
   assert.equal(manifest.packs[0].artifactKind, "production");
   assert.equal(manifest.packs[0].signature.algorithm, "rsa-sha256-pack-manifest-v2");
-  assert.deepEqual(manifest.packs[0].routeRegressionScope, {
-    mode: "DIRECT_ONLY",
-    excludedPatterns: ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
-    claim: manifest.packs[0].routeRegressionScope.claim,
-  });
-  assert.deepEqual(manifest.packs[0].representativeRouteRegressions.map((route) => route.pattern), ["DIRECT"]);
+  assert.equal(manifest.packs[0].routeRegressionScope, undefined);
+  assert.deepEqual(manifest.packs[0].representativeRouteRegressions, []);
   const database = new DatabaseSync(path.join(packOutputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
     assert.deepEqual(
@@ -10952,15 +11003,6 @@ function productionSourceIngestInput() {
   const input = sourceIngestInput();
   input.pack.artifactKind = "production";
   input.pack.url = "https://datapack.example.com/easysubway/catalog/capital-v1.sqlite.gz";
-  input.routeGraphTopologyPolicy = {
-    summaryRideEdges: "release-blocking-regression-only",
-    productionReadinessRequirement:
-      "replace summary RIDE edges with adjacent-station LOCAL RIDE edges before ETA or release-readiness claim",
-    nonAdjacentExpressRideEdgeIds: [
-      "edge-sangnoksu-sadang-seoul-4",
-      "edge-sadang-sangnoksu-seoul-4",
-    ],
-  };
   input.sourceIds = [
     "molit-urban-rail-full-route",
     "seoulmetro-station-line-info",
@@ -11018,13 +11060,9 @@ function productionSourceIngestInput() {
   input.stationLineRows = input.stationLineRows.filter(
     (row) => row.sourceId !== "seoul-realtime-arrival-station-info",
   );
-  for (const edge of input.routeEdges) {
-    edge.provenanceKind = "OFFICIAL_SOURCE";
-    edge.verificationStatus = "VERIFIED";
-    edge.sourceSnapshotId = `${edge.sourceId}-snapshot-20260621`;
-    edge.providerRecordHash = sha256(`provider:${edge.id}:${edge.sourceId}`);
-    edge.evidenceHash = sha256(`evidence:${edge.id}:${edge.sourceId}:${edge.lastVerifiedAt}`);
-  }
+  input.routeEdges = [];
+  input.representativeRouteRegressions = [];
+  delete input.routeRegressionScope;
   input.facilityRows = [
     [
       "kric-station-elevator",
@@ -11130,7 +11168,7 @@ function productionSourceIngestInput() {
   input.minimumProductionCoverage = {
     stations: 2,
     stationLines: 2,
-    routeEdges: 6,
+    routeEdges: 4,
     facilities: 6,
   };
   input.routeEdges.push(
@@ -11294,6 +11332,63 @@ function productionSourceAccessRouteEdge({ id, sourceStationCode, edgeType, stat
     providerRecordHash: sha256(`provider:${id}:seoulmetro-station-line-info`),
     evidenceHash: sha256(`evidence:${id}:seoulmetro-station-line-info:2026-06-21T00:00:00.000Z`),
   };
+}
+
+function withProductionSummaryRideEdges(input, servicePattern = "EXPRESS") {
+  return {
+    ...input,
+    routeEdges: [...productionSummaryRideEdges(servicePattern), ...input.routeEdges],
+    routeGraphTopologyPolicy: {
+      summaryRideEdges: "release-blocking-regression-only",
+      productionReadinessRequirement:
+        "replace summary RIDE edges with adjacent-station LOCAL RIDE edges before ETA or release-readiness claim",
+      nonAdjacentExpressRideEdgeIds: [
+        "edge-sangnoksu-sadang-seoul-4",
+        "edge-sadang-sangnoksu-seoul-4",
+      ],
+    },
+  };
+}
+
+function productionSummaryRideEdges(servicePattern = "EXPRESS") {
+  return sourceIngestInput().routeEdges.map((edge) => ({
+    ...edge,
+    servicePattern,
+    provenanceKind: "OFFICIAL_SOURCE",
+    verificationStatus: "VERIFIED",
+    sourceSnapshotId: `${edge.sourceId}-snapshot-20260621`,
+    providerRecordHash: sha256(`provider:${edge.id}:${edge.sourceId}`),
+    evidenceHash: sha256(`evidence:${edge.id}:${edge.sourceId}:${edge.lastVerifiedAt}`),
+  }));
+}
+
+function productionSummaryNetworkEdges(servicePattern = "EXPRESS") {
+  return productionSummaryRideEdges(servicePattern).map((edge) => ({
+    id: edge.id,
+    fromNodeId:
+      edge.from.sourceStationCode === "448"
+        ? "station-sangnoksu:seoul-4:LOCAL"
+        : "station-sadang:seoul-4:LOCAL",
+    toNodeId:
+      edge.to.sourceStationCode === "433"
+        ? "station-sadang:seoul-4:LOCAL"
+        : "station-sangnoksu:seoul-4:LOCAL",
+    durationSeconds: edge.durationSeconds,
+    distanceMeters: edge.distanceMeters,
+    edgeType: edge.edgeType,
+    servicePattern: edge.servicePattern,
+    includesStairs: edge.includesStairs,
+    stairAccessState: edge.stairAccessState,
+    accessibilityStatus: edge.accessibilityStatus,
+    reliabilityScore: edge.reliabilityScore,
+    sourceId: edge.sourceId,
+    sourceSnapshotId: edge.sourceSnapshotId,
+    providerRecordHash: edge.providerRecordHash,
+    provenanceKind: edge.provenanceKind,
+    verificationStatus: edge.verificationStatus,
+    lastVerifiedAt: edge.lastVerifiedAt,
+    evidenceHash: edge.evidenceHash,
+  }));
 }
 
 function completeCoverageInventory(targets) {

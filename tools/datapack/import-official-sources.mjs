@@ -789,6 +789,11 @@ function validateProductionSummaryRideEdgePolicy(stationLines, networkEdges, pol
   if (nonAdjacentExpressRideEdgeIds.length === 0) {
     return;
   }
+  if (policy?.summaryRideEdges === "release-blocking-regression-only") {
+    throw new Error(
+      `production routeEdges non-adjacent EXPRESS summary edge is regression-only: ${nonAdjacentExpressRideEdgeIds.join(", ")}`,
+    );
+  }
   if (
     !policy ||
     typeof policy !== "object" ||

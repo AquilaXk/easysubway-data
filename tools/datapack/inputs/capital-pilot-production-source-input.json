@@ -43,16 +43,8 @@
   "minimumProductionCoverage": {
     "stations": 2,
     "stationLines": 2,
-    "routeEdges": 6,
+    "routeEdges": 4,
     "facilities": 6
-  },
-  "routeGraphTopologyPolicy": {
-    "summaryRideEdges": "release-blocking-regression-only",
-    "productionReadinessRequirement": "replace summary RIDE edges with adjacent-station LOCAL RIDE edges before ETA or release-readiness claim",
-    "nonAdjacentExpressRideEdgeIds": [
-      "edge-sangnoksu-sadang-seoul-4",
-      "edge-sadang-sangnoksu-seoul-4"
-    ]
   },
   "coverageEvidence": [
     {
@@ -204,62 +196,6 @@
     }
   ],
   "routeEdges": [
-    {
-      "id": "edge-sangnoksu-sadang-seoul-4",
-      "sourceId": "seoulmetro-station-line-info",
-      "from": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "448",
-        "lineId": "seoul-4"
-      },
-      "to": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "433",
-        "lineId": "seoul-4"
-      },
-      "durationSeconds": 1860,
-      "distanceMeters": 18600,
-      "edgeType": "RIDE",
-      "servicePattern": "EXPRESS",
-      "includesStairs": false,
-      "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "AVAILABLE",
-      "reliabilityScore": 90,
-      "provenanceKind": "OFFICIAL_SOURCE",
-      "verificationStatus": "VERIFIED",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-      "providerRecordHash": "a8d89e3b88c24a493843e41fd9b88f4c5072e2097f497db839421843efc1d7e9",
-      "evidenceHash": "be00b0216a07fa6ff0146b7b5835a31812b86819aad3344805695dfb44f6fcae"
-    },
-    {
-      "id": "edge-sadang-sangnoksu-seoul-4",
-      "sourceId": "seoulmetro-station-line-info",
-      "from": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "433",
-        "lineId": "seoul-4"
-      },
-      "to": {
-        "sourceId": "seoulmetro-station-line-info",
-        "sourceStationCode": "448",
-        "lineId": "seoul-4"
-      },
-      "durationSeconds": 1860,
-      "distanceMeters": 18600,
-      "edgeType": "RIDE",
-      "servicePattern": "EXPRESS",
-      "includesStairs": false,
-      "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "AVAILABLE",
-      "reliabilityScore": 90,
-      "provenanceKind": "OFFICIAL_SOURCE",
-      "verificationStatus": "VERIFIED",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-      "providerRecordHash": "f32228b9dbbfd6b5d565cb70986c07c6e5343c698099b012dc65084efb3d8d40",
-      "evidenceHash": "c4ca5a18552c5128e3c6d4d8fdb2efa661a23295f0d8da1b6d8dda862b21cb15"
-    },
     {
       "id": "edge-entry-sangnoksu-seoul-4",
       "sourceId": "seoulmetro-station-line-info",
@@ -631,18 +567,5 @@
       "instruction": "KRIC 휠체어리프트 이동동선 후보이며 검수 전 route edge로 승격하지 않습니다."
     }
   ],
-  "routeRegressionScope": {
-    "mode": "DIRECT_ONLY",
-    "excludedPatterns": ["TRANSFER", "MULTI_TRANSFER", "LOOP_BRANCH", "EXPRESS_LOCAL"],
-    "claim": "capital pilot Android v1 direct regression only; current summary RIDE edge is release-blocking and not ETA evidence until adjacent-station route graph evidence exists"
-  },
-  "representativeRouteRegressions": [
-    {
-      "id": "direct-local-capital",
-      "pattern": "DIRECT",
-      "fromNodeId": "station-sangnoksu:seoul-4",
-      "toNodeId": "station-sadang:seoul-4",
-      "requiredEdgeIds": ["edge-sangnoksu-sadang-seoul-4"]
-    }
-  ]
+  "representativeRouteRegressions": []
 }

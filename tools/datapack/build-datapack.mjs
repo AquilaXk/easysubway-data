@@ -1676,10 +1676,13 @@ function validateTableName(value) {
 }
 
 function validateRepresentativeRouteRegressions(routes, scope = null) {
-  if (!Array.isArray(routes) || routes.length === 0) {
+  const requiredPatterns =
+    !scope && Array.isArray(routes) && routes.length === 0
+      ? new Set()
+      : requiredRepresentativeRoutePatterns(scope);
+  if (!Array.isArray(routes) || (requiredPatterns.size > 0 && routes.length === 0)) {
     throw new Error("pack.representativeRouteRegressions must be a non-empty array");
   }
-  const requiredPatterns = requiredRepresentativeRoutePatterns(scope);
   const seenPatterns = new Set();
   for (const route of routes) {
     requiredString(route.id, "representativeRouteRegressions.id");

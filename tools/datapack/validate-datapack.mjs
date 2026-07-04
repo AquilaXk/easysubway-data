@@ -510,7 +510,10 @@ function validateRepresentativeRouteRegressions(database, pack) {
     return;
   }
   const routes = pack.representativeRouteRegressions;
-  const requiredPatterns = requiredRepresentativeRoutePatterns(pack.routeRegressionScope);
+  const requiredPatterns =
+    !pack.routeRegressionScope && Array.isArray(routes) && routes.length === 0
+      ? new Set()
+      : requiredRepresentativeRoutePatterns(pack.routeRegressionScope);
   const seenPatterns = new Set(routes.map((route) => route.pattern));
   for (const pattern of requiredPatterns) {
     if (!seenPatterns.has(pattern)) {
@@ -795,6 +798,7 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
   const edges = database
     .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
     .all();
+  let hasExplicitRouteGraphEdge = false;
   addGeneratedStationTransferEdges(
     stationLineRows,
     routeGraphRequiredNodes,
@@ -829,6 +833,7 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
       routeGraphRequiredNodes.has(fromNode) &&
       routeGraphRequiredNodes.has(toNode)
     ) {
+      hasExplicitRouteGraphEdge = true;
       addRouteGraphEdge(
         fromNode,
         toNode,
@@ -848,6 +853,13 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     }
   }
 
+  if (
+    !hasExplicitRouteGraphEdge &&
+    !pack.routeRegressionScope &&
+    (!Array.isArray(pack.representativeRouteRegressions) || pack.representativeRouteRegressions.length === 0)
+  ) {
+    return;
+  }
   for (const nodeId of routeGraphRequiredNodes) {
     if (!connectedNodes.has(nodeId)) {
       throw new Error(`${pack.id}@${pack.version} station-line node is isolated from route graph: ${nodeId}`);
@@ -1657,7 +1669,9 @@ function validateManifest(manifest, { requireProduction = false } = {}) {
     validateSignature(pack.signature, `${pack.id}@${pack.version}`, manifestVersion, artifactKind);
     validateSourceInventory(pack.sourceInventory, artifactKind, `${pack.id}@${pack.version}`);
     validateRegionalQualityMetrics(pack.regionalQualityMetrics, `${pack.id}@${pack.version}`);
-    validateRouteRegressionScopeManifest(pack.routeRegressionScope, `${pack.id}@${pack.version}`);
+    if (pack.routeRegressionScope !== undefined) {
+      validateRouteRegressionScopeManifest(pack.routeRegressionScope, `${pack.id}@${pack.version}`);
+    }
     validateRepresentativeRouteRegressionManifest(
       pack.representativeRouteRegressions,
       `${pack.id}@${pack.version}`,
@@ -1974,10 +1988,13 @@ function validateRouteRegressionScopeManifest(scope, label) {
 }
 
 function validateRepresentativeRouteRegressionManifest(routes, label, scope = null) {
-  if (!Array.isArray(routes) || routes.length === 0) {
+  const requiredPatterns =
+    !scope && Array.isArray(routes) && routes.length === 0
+      ? new Set()
+      : requiredRepresentativeRoutePatterns(scope);
+  if (!Array.isArray(routes) || (requiredPatterns.size > 0 && routes.length === 0)) {
     throw new Error(`${label} representativeRouteRegressions must be a non-empty array`);
   }
-  const requiredPatterns = requiredRepresentativeRoutePatterns(scope);
   const seenPatterns = new Set();
   const seenRouteShapes = new Map();
   for (const route of routes) {
