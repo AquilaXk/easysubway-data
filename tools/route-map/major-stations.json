@@ -1,0 +1,27 @@
+{
+  "artifactKind": "route-map-major-stations",
+  "issue": 1764,
+  "decidedAt": "2026-07-05",
+  "rule": "노선도 major(주요역) = ① 각 노선 양 종점(앱 빌더 buildStructuredRouteMap이 line별 sequence min/max로 자동 산출) + ② 아래 지역별 비환승 거점 allowlist. 환승역은 transfer class로 별도 처리(major보다 우선)되므로 여기엔 비환승 거점만 둔다. 역명은 데이터팩 stations.name_ko와 정확히 일치해야 하며(계약 테스트로 검증), 앱 상수 route_map_major_stations.dart와 정합해야 한다.",
+  "derivation": "major class는 데이터팩에 굽지 않고 앱 런타임(buildStructuredRouteMap)이 산출한다(스키마·팩 무변경, #1764 사용자 결정 2026-07-05). 이 파일은 allowlist 정본이자 앱 상수의 검수 소스다.",
+  "landmarksByRegion": {
+    "수도권": [
+      { "name": "성수", "note": "2호선 성수지선 분기·도심 거점(비환승)" }
+    ],
+    "부산권": [
+      { "name": "해운대", "note": "관광 거점(비환승)" },
+      { "name": "부산대", "note": "대학·상권 거점(비환승)" }
+    ],
+    "대구권": [
+      { "name": "중앙로", "note": "도심 중심(비환승)" }
+    ],
+    "대전권": [
+      { "name": "시청", "note": "행정 거점(비환승)" },
+      { "name": "정부청사", "note": "행정 거점(비환승)" }
+    ],
+    "광주권": [
+      { "name": "금남로4가", "note": "도심 중심(비환승)" },
+      { "name": "상무", "note": "신도심 거점(비환승)" }
+    ]
+  }
+}
