@@ -65,9 +65,7 @@ function validateTagoScheduleSample(rawText) {
     }
   }
 
-  let previousDeparture = -1;
-  const providerRecordHashes = [];
-  const departures = [];
+  const parsedRows = [];
   for (const [index, row] of rows.entries()) {
     for (const field of REQUIRED_FIELDS) {
       if (typeof row[field] !== "string" || row[field].length === 0) {
@@ -85,12 +83,10 @@ function validateTagoScheduleSample(rawText) {
     if (arrivalSeconds > departureSeconds) {
       throw new Error(`TAGO schedule row ${index} arrival must be <= departure`);
     }
-    if (departureSeconds < previousDeparture) {
-      throw new Error(`TAGO schedule rows must be sorted by depTime`);
-    }
-    previousDeparture = departureSeconds;
-    providerRecordHashes.push(sha256(JSON.stringify(sortObject(row))));
-    departures.push({
+    const rowHash = sha256(JSON.stringify(sortObject(row)));
+    parsedRows.push({
+      row,
+      rowHash,
       subwayStationId: row.subwayStationId,
       subwayRouteId: row.subwayRouteId,
       dailyTypeCode: row.dailyTypeCode,
@@ -99,6 +95,14 @@ function validateTagoScheduleSample(rawText) {
       departureSeconds,
     });
   }
+  parsedRows.sort(
+    (left, right) =>
+      left.departureSeconds - right.departureSeconds ||
+      left.arrivalSeconds - right.arrivalSeconds ||
+      left.rowHash.localeCompare(right.rowHash),
+  );
+  const providerRecordHashes = parsedRows.map(({ rowHash }) => rowHash);
+  const departures = parsedRows.map(({ row: _row, rowHash: _rowHash, ...departure }) => departure);
 
   return {
     artifactKind: "tago-schedule-sample-importer-validation",
