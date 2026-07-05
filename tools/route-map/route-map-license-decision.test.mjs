@@ -65,7 +65,7 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   assert.equal(seoul.commercialProductionReady, true);
   assert.equal(seoul.attributionRequired, false);
 
-  // 부산·대구·대전·광주는 self-drawn 전환 + 상용 미승격 + 번들 중 attribution 유지.
+  // 부산·대구·대전·광주 모두 self-drawn-schematic 전환(원본 SVG는 좌표 검수 참조만).
   for (const id of ["busan", "daegu", "daejeon", "gwangju"]) {
     const region = decisionById.get(id);
     assert.equal(
@@ -74,25 +74,34 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
       `${id}는 self-drawn-schematic으로 전환되어야 함`,
     );
     assert.equal(region.bundledSvgRole, "review-reference-only");
+  }
+
+  // 부산·대구·대전: #1639/#1640 좌표 provenance(사실 데이터) 재검증 + line_tracks를
+  // down_path(위상=사실)로 재빌드 + SVG 번들 제거(#1715) 완료 → 상용 승격·attribution 해제.
+  for (const id of ["busan", "daegu", "daejeon"]) {
+    const region = decisionById.get(id);
     assert.equal(
       region.commercialProductionReady,
-      false,
-      `${id}는 원본 라이선스로 상용 승격되지 않아야 함`,
+      true,
+      `${id}는 사실 데이터 재검증 후 상용 승격되어야 함`,
     );
-    // 원본 SVG 번들 유지 중에는 attribution을 유지한다(license 위반 방지).
     assert.equal(
       region.attributionRequired,
-      true,
-      `${id}는 SVG 번들 유지 중 attributionRequired=true여야 함`,
+      false,
+      `${id}는 자체 도식 전환 후 attribution 해제되어야 함`,
     );
-
-    // 상용 불명확 원본은 production으로 승격하지 않는다: manifest도 상용 불가.
     assert.equal(
       manifestById.get(id).license.commercialUseAllowed,
-      false,
-      `${id} manifest license.commercialUseAllowed는 false여야 함`,
+      true,
+      `${id} manifest license.commercialUseAllowed는 true여야 함`,
     );
   }
+
+  // 광주: CC-BY-SA 2.0 KR ShareAlike라 사실 재구성에도 보수적으로 미승격·attribution 유지.
+  const gwangjuRegion = decisionById.get("gwangju");
+  assert.equal(gwangjuRegion.commercialProductionReady, false);
+  assert.equal(gwangjuRegion.attributionRequired, true);
+  assert.equal(manifestById.get("gwangju").license.commercialUseAllowed, false);
 
   // 광주 ShareAlike 결론이 사실≠저작물 근거와 함께 기록된다.
   const gwangju = decision.gwangjuShareAlikeConclusion;
@@ -103,12 +112,8 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
 
   // attribution 필요 지역 목록이 #1641로 전달 가능한 형태로 확정된다.
   const handoff = decision.attributionHandoffTo1641;
-  assert.deepEqual(handoff.attributionRequiredRegions, [
-    "부산",
-    "대구",
-    "대전",
-    "광주",
-  ]);
+  // #1639/#1640: 부산·대구·대전 attribution 해제, 광주(CC-BY-SA)만 유지.
+  assert.deepEqual(handoff.attributionRequiredRegions, ["광주"]);
   // handoff 목록이 per-region attributionRequired 플래그와 정합한다.
   const requiredKoreanNames = decision.regions
     .filter((region) => region.attributionRequired)

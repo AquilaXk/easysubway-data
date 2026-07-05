@@ -5,8 +5,14 @@
   "decidedAt": "2026-07-04",
   "summary": "부산·대구·대전·광주 노선도는 원본 SVG 이미지를 앱 렌더링 source of truth로 쓰지 않고, 역 좌표·노선 위상(사실 데이터) 기반 자체 schematic layout으로 그린다(대안 A). 원본 SVG는 좌표 검수 기준으로만 사용한다.",
   "renderingSourceOfTruth": "structured-data",
-  "strategyValues": ["official-svg", "self-drawn-schematic"],
-  "bundledSvgRoleValues": ["app-render-source", "review-reference-only"],
+  "strategyValues": [
+    "official-svg",
+    "self-drawn-schematic"
+  ],
+  "bundledSvgRoleValues": [
+    "app-render-source",
+    "review-reference-only"
+  ],
   "regions": [
     {
       "id": "seoul",
@@ -32,10 +38,12 @@
       "originalCommercialUseAllowed": false,
       "renderingStrategy": "self-drawn-schematic",
       "bundledSvgRole": "review-reference-only",
-      "attributionRequired": true,
+      "attributionRequired": false,
       "attributionDropTargetAfterSelfDrawn": true,
-      "commercialProductionReady": false,
-      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 사실 데이터 기반 자체 schematic으로 전환하고, 원본 SVG는 좌표 검수 참조로만 쓴다. 원본 SVG가 아직 번들되어 있는 동안에는 attribution을 유지하며(=true), 자체 도식 전환 + SVG 제거 + 좌표 provenance 확정(#1639/#1641) 후 attribution 해제 가능(attributionDropTargetAfterSelfDrawn)."
+      "commercialProductionReady": true,
+      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 사실 데이터 기반 자체 schematic으로 전환하고, 원본 SVG는 좌표 검수 참조로만 쓴다. 원본 SVG가 아직 번들되어 있는 동안에는 attribution을 유지하며(=true), 자체 도식 전환 + SVG 제거 + 좌표 provenance 확정(#1639/#1641) 후 attribution 해제 가능(attributionDropTargetAfterSelfDrawn). [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격.",
+      "licenseStatus": "self-drawn-fact-based",
+      "provenanceVerifiedAt": "2026-07-05"
     },
     {
       "id": "daegu",
@@ -47,10 +55,12 @@
       "originalCommercialUseAllowed": false,
       "renderingStrategy": "self-drawn-schematic",
       "bundledSvgRole": "review-reference-only",
-      "attributionRequired": true,
+      "attributionRequired": false,
       "attributionDropTargetAfterSelfDrawn": true,
-      "commercialProductionReady": false,
-      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다."
+      "commercialProductionReady": true,
+      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다. [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격.",
+      "licenseStatus": "self-drawn-fact-based",
+      "provenanceVerifiedAt": "2026-07-05"
     },
     {
       "id": "daejeon",
@@ -62,10 +72,12 @@
       "originalCommercialUseAllowed": false,
       "renderingStrategy": "self-drawn-schematic",
       "bundledSvgRole": "review-reference-only",
-      "attributionRequired": true,
+      "attributionRequired": false,
       "attributionDropTargetAfterSelfDrawn": true,
-      "commercialProductionReady": false,
-      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다."
+      "commercialProductionReady": true,
+      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다. [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격.",
+      "licenseStatus": "self-drawn-fact-based",
+      "provenanceVerifiedAt": "2026-07-05"
     },
     {
       "id": "gwangju",
@@ -90,10 +102,22 @@
     "conservativeGuard": "확정 전까지 광주는 attribution-pending으로 두고, CC-BY-SA SVG 자체는 앱에 배포하지 않으며 좌표 검수 참조로만 쓴다."
   },
   "attributionHandoffTo1641": {
-    "attributionRequiredRegions": ["부산", "대구", "대전", "광주"],
-    "attributionDropTargetRegions": ["부산", "대구", "대전", "광주"],
-    "rule": "현재 원본 SVG(permission-required / CC-BY-SA)가 여전히 번들되어 있으므로, #1641 렌더러는 부산·대구·대전·광주에 대해 화면 attribution(출처표시)을 표시해야 한다. 수도권은 public domain으로 attribution 불필요. 대안 A 완료(자체 schematic 전환 + 원본 SVG 제거 + 좌표 provenance 사실 출처 확정, #1639/#1640/#1641) 후에는 배포 렌더링이 원본 저작물 파생이 아니게 되어 해당 지역 attribution을 해제할 수 있다(attributionDropTargetRegions). 그 시점에 attributionRequiredRegions를 갱신한다.",
-    "consistencyRule": "각 지역의 attributionRequiredRegions 포함 여부는 regions[].attributionRequired와 일치한다(attributionRequired=true인 지역은 목록에 포함, 수도권은 false로 제외)."
+    "attributionRequiredRegions": [
+      "광주"
+    ],
+    "attributionDropTargetRegions": [
+      "부산",
+      "대구",
+      "대전",
+      "광주"
+    ],
+    "rule": "[2026-07-05 #1639/#1640 기준 현재 상태] #1641 렌더러는 attributionRequiredRegions(=광주)에 대해서만 화면 attribution(출처표시)을 표시한다. 부산·대구·대전은 자체 도식(down_path=사실 위상) 전환 + 원본 SVG 번들 제거(#1715) + 좌표 provenance 사실 출처 확정 완료로 원본 저작물 파생이 아니게 되어 attribution을 해제했다(attributionDroppedRegions). 수도권은 public domain으로 attribution 불필요. 광주는 CC-BY-SA ShareAlike라 사실 재구성에도 보수적으로 attribution 유지. [연혁] 원본 SVG(permission-required / CC-BY-SA)가 번들되어 있던 동안에는 부산·대구·대전·광주 전체에 attribution을 표시했고, 대안 A 완료(#1639/#1640/#1641) 시점에 위와 같이 갱신했다.",
+    "consistencyRule": "각 지역의 attributionRequiredRegions 포함 여부는 regions[].attributionRequired와 일치한다(attributionRequired=true인 지역은 목록에 포함, 수도권은 false로 제외).",
+    "attributionDroppedRegions": [
+      "부산",
+      "대구",
+      "대전"
+    ]
   },
   "productionPromotionRule": "renderingStrategy=self-drawn-schematic 지역은 원본 SVG 라이선스로 production source 승격하지 않는다. 상용 가능성이 불명확한 원본(permission-required, ShareAlike)은 앱 렌더링 source of truth가 아니며, PDF/SVG 원본은 좌표 검수 기준으로만 쓴다.",
   "svgAdmissionRule": "qa-provided-route-map-svg 등 비공식 경로로 입수했거나 재배포 권한이 확인되지 않은 원본은 production route_map source로 승격하지 않는다. import-official-sources의 source admission gate가 미승인 source를 거부한다.",
@@ -102,29 +126,83 @@
       "type1": "출처표시. 상업적 이용 가능, 2차적 저작물(변형) 가능. 출처표시 필수(기관명·작성연도·저작물명, 가능하면 하이퍼링크).",
       "type2": "출처표시 + 상업적 이용금지. 비영리만 가능.",
       "default": "공공기관은 상업 활용·변경이 가능한 제1유형을 기본 적용하도록 권고되나, 개별 노선도 이미지에 KOGL 유형이 실제 표기되어 있는지는 기관별 확인이 필요하다.",
-      "sources": ["https://www.kogl.or.kr/info/licenseType1.do", "https://www.kogl.or.kr/info/licenseType2.do"]
+      "sources": [
+        "https://www.kogl.or.kr/info/licenseType1.do",
+        "https://www.kogl.or.kr/info/licenseType2.do"
+      ]
     },
     "operatorFindings": [
-      { "operator": "부산교통공사", "koglTypeConfirmed": false, "note": "사이버스테이션 노선도에 KOGL 유형·상업 이용 조건이 공개 표기되어 있지 않다(웹 확인, 2026-07-04). 현재 번들 SVG는 비공식 경로 입수분으로 재배포 권한 미확인. 상용 확정하려면 기관 직접 문의 또는 공식 KOGL-1 표기 확인 필요." },
-      { "operator": "대구교통공사", "koglTypeConfirmed": false, "note": "동일 — KOGL 유형 공개 표기 미확인(웹 확인, 2026-07-04)." },
-      { "operator": "대전교통공사", "koglTypeConfirmed": false, "note": "동일 — KOGL 유형 공개 표기 미확인(웹 확인, 2026-07-04)." },
-      { "operator": "광주교통공사", "koglTypeConfirmed": false, "note": "번들 SVG 출처는 CC BY-SA 2.0 KR(나무위키 사용자 저작물)이며 기관 공식 KOGL 배포가 아니다. ShareAlike 이슈로 별도 처리(gwangjuShareAlikeConclusion)." }
+      {
+        "operator": "부산교통공사",
+        "koglTypeConfirmed": false,
+        "note": "사이버스테이션 노선도에 KOGL 유형·상업 이용 조건이 공개 표기되어 있지 않다(웹 확인, 2026-07-04). 현재 번들 SVG는 비공식 경로 입수분으로 재배포 권한 미확인. 상용 확정하려면 기관 직접 문의 또는 공식 KOGL-1 표기 확인 필요."
+      },
+      {
+        "operator": "대구교통공사",
+        "koglTypeConfirmed": false,
+        "note": "동일 — KOGL 유형 공개 표기 미확인(웹 확인, 2026-07-04)."
+      },
+      {
+        "operator": "대전교통공사",
+        "koglTypeConfirmed": false,
+        "note": "동일 — KOGL 유형 공개 표기 미확인(웹 확인, 2026-07-04)."
+      },
+      {
+        "operator": "광주교통공사",
+        "koglTypeConfirmed": false,
+        "note": "번들 SVG 출처는 CC BY-SA 2.0 KR(나무위키 사용자 저작물)이며 기관 공식 KOGL 배포가 아니다. ShareAlike 이슈로 별도 처리(gwangjuShareAlikeConclusion)."
+      }
     ],
     "decisionRationale": "부산·대구·대전은 상용 가능(KOGL-1) 여부가 웹상 확인되지 않았고 현재 원본은 재배포 권한 미확인이다. 상용 확정을 기다리는 대신, 저작권 대상이 아닌 사실 데이터(좌표·위상·역 순서)로 자체 도식을 그리는 대안 A를 택해 상용 배포 리스크를 원천 제거한다. 추후 기관이 KOGL-1 또는 명시적 상용 허가를 확인해 주면 official-svg 전략으로 승격 가능(그 경우에도 attribution 필수)."
   },
   "similarServiceBenchmarks": [
-    { "service": "카카오맵 / 카카오지하철", "approach": "원본 이미지가 아닌 자체 벡터 지도·노선도. 2025-06 '초정밀 지하철'은 벡터 선로 geometry 위에 실시간 열차 위치를 렌더링(수도권 23개 노선 + 부산 1~4호선). 정적 노선도와 실시간 overlay 분리.", "url": "https://www.kakaocorp.com/page/detail/11586" },
-    { "service": "네이버 지도", "approach": "NAVER DEVIEW 2013: SVG 원본을 구조화 데이터로 변환해 자체 벡터 렌더링 엔진으로 노선도를 그린다(원본 디지털화 + 클라이언트 벡터 엔진).", "url": "https://deview.kr/2013/detail.nhn?topicSeq=10" },
-    { "service": "Transit 앱", "approach": "GTFS 데이터에서 도식 노선도 geometry 자동 생성(ILP 기반 노선 배치, arc 곡선). 원본 이미지 없이 사실 데이터에서 도식화.", "url": "https://blog.transitapp.com/how-we-built-the-worlds-prettiest-auto-generated-transit-maps-12d0c6fa502f/" },
-    { "service": "Google Maps", "approach": "이미지 타일 대신 vector tiles를 클라이언트에서 동적 렌더링(확대 선명도·오프라인·라벨 제어).", "url": "https://googlemobile.blogspot.com/2010/12/under-hood-of-google-maps-50-for.html" },
-    { "service": "OpenStreetMap", "approach": "사실 지리 데이터에 CC BY-SA가 부적합하다고 판단해 데이터 라이선스를 ODbL로 전환. 사실≠저작물 원리의 대표 사례로, 우리의 광주 ShareAlike 결론 근거.", "url": "https://osmfoundation.org/wiki/Licence/Licence_and_Legal_FAQ/Why_CC_BY-SA_is_Unsuitable" }
+    {
+      "service": "카카오맵 / 카카오지하철",
+      "approach": "원본 이미지가 아닌 자체 벡터 지도·노선도. 2025-06 '초정밀 지하철'은 벡터 선로 geometry 위에 실시간 열차 위치를 렌더링(수도권 23개 노선 + 부산 1~4호선). 정적 노선도와 실시간 overlay 분리.",
+      "url": "https://www.kakaocorp.com/page/detail/11586"
+    },
+    {
+      "service": "네이버 지도",
+      "approach": "NAVER DEVIEW 2013: SVG 원본을 구조화 데이터로 변환해 자체 벡터 렌더링 엔진으로 노선도를 그린다(원본 디지털화 + 클라이언트 벡터 엔진).",
+      "url": "https://deview.kr/2013/detail.nhn?topicSeq=10"
+    },
+    {
+      "service": "Transit 앱",
+      "approach": "GTFS 데이터에서 도식 노선도 geometry 자동 생성(ILP 기반 노선 배치, arc 곡선). 원본 이미지 없이 사실 데이터에서 도식화.",
+      "url": "https://blog.transitapp.com/how-we-built-the-worlds-prettiest-auto-generated-transit-maps-12d0c6fa502f/"
+    },
+    {
+      "service": "Google Maps",
+      "approach": "이미지 타일 대신 vector tiles를 클라이언트에서 동적 렌더링(확대 선명도·오프라인·라벨 제어).",
+      "url": "https://googlemobile.blogspot.com/2010/12/under-hood-of-google-maps-50-for.html"
+    },
+    {
+      "service": "OpenStreetMap",
+      "approach": "사실 지리 데이터에 CC BY-SA가 부적합하다고 판단해 데이터 라이선스를 ODbL로 전환. 사실≠저작물 원리의 대표 사례로, 우리의 광주 ShareAlike 결론 근거.",
+      "url": "https://osmfoundation.org/wiki/Licence/Licence_and_Legal_FAQ/Why_CC_BY-SA_is_Unsuitable"
+    }
   ],
   "benchmarkConclusion": "국내외 상용 지하철·지도 앱의 표준은 공식 노선도 '이미지'를 그대로 확대 렌더링하는 것이 아니라, 사실 데이터(좌표·위상·GTFS)에서 자체 벡터 도식을 그리는 것이다. 대안 A는 이 표준과 정합하며 상용 배포 리스크도 없다.",
   "references": [
-    { "title": "KOGL 제1유형 (출처표시)", "url": "https://www.kogl.or.kr/info/licenseType1.do" },
-    { "title": "KOGL 제2유형 (출처표시+상업적 이용금지)", "url": "https://www.kogl.or.kr/info/licenseType2.do" },
-    { "title": "공공누리 제도/유형 안내", "url": "https://www.kogl.or.kr/info/introduce.do" },
-    { "title": "CC BY-SA 2.0 KR deed", "url": "https://creativecommons.org/licenses/by-sa/2.0/kr/" },
-    { "title": "OSM Foundation: Why CC BY-SA is Unsuitable (for data)", "url": "https://osmfoundation.org/wiki/Licence/Licence_and_Legal_FAQ/Why_CC_BY-SA_is_Unsuitable" }
+    {
+      "title": "KOGL 제1유형 (출처표시)",
+      "url": "https://www.kogl.or.kr/info/licenseType1.do"
+    },
+    {
+      "title": "KOGL 제2유형 (출처표시+상업적 이용금지)",
+      "url": "https://www.kogl.or.kr/info/licenseType2.do"
+    },
+    {
+      "title": "공공누리 제도/유형 안내",
+      "url": "https://www.kogl.or.kr/info/introduce.do"
+    },
+    {
+      "title": "CC BY-SA 2.0 KR deed",
+      "url": "https://creativecommons.org/licenses/by-sa/2.0/kr/"
+    },
+    {
+      "title": "OSM Foundation: Why CC BY-SA is Unsuitable (for data)",
+      "url": "https://osmfoundation.org/wiki/Licence/Licence_and_Legal_FAQ/Why_CC_BY-SA_is_Unsuitable"
+    }
   ]
 }
