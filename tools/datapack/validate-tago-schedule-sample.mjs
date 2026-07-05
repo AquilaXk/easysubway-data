@@ -30,7 +30,7 @@ function parseArgs(argv) {
     if (!flag.startsWith("--")) {
       throw new Error(`unexpected argument: ${flag}`);
     }
-    if (flag === "--plan" || flag === "--summary" || flag === "--collect") {
+    if (flag === "--plan" || flag === "--summary" || flag === "--collect" || flag === "--quiet") {
       args[flag.slice(2)] = true;
       continue;
     }
@@ -153,10 +153,13 @@ function buildTagoScheduleCollectionPlan(input, checkpoint = {}, dailyLimit = 10
 
 function buildTagoScheduleCollectionSummary(collection) {
   const responses = collection?.responses;
-  if (!Array.isArray(responses) || responses.length === 0) {
-    throw new Error("responses must be a non-empty array");
+  if (!Array.isArray(responses)) {
+    throw new Error("responses must be an array");
   }
   const checkpointRequestKeys = collection?.checkpoint?.completedRequestKeys ?? [];
+  if (responses.length === 0 && checkpointRequestKeys.length === 0) {
+    throw new Error("responses must be non-empty unless checkpoint has completedRequestKeys");
+  }
   for (const requestKey of checkpointRequestKeys) {
     requestKeyParts(requestKey);
   }
@@ -486,7 +489,9 @@ async function main() {
   if (args.output) {
     await writeJsonOutput(args.output, result);
   }
-  console.log(JSON.stringify(result, null, 2));
+  if (!args.quiet) {
+    console.log(JSON.stringify(result, null, 2));
+  }
 }
 
 async function writeJsonOutput(outputPath, value) {
