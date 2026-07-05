@@ -21,6 +21,7 @@ const OBSERVED_FIELDS = [
 const DAILY_TYPE_CODES = new Set(["01", "02", "03"]);
 const UP_DOWN_CODES = new Set(["U", "D"]);
 const TAGO_SCHEDULE_ENDPOINT = "https://apis.data.go.kr/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList";
+const TAGO_STATION_DISCOVERY_ENDPOINT = "https://apis.data.go.kr/1613000/SubwayInfo/GetKwrdFndSubwaySttnList";
 
 function parseArgs(argv) {
   const args = {};
@@ -30,7 +31,13 @@ function parseArgs(argv) {
     if (!flag.startsWith("--")) {
       throw new Error(`unexpected argument: ${flag}`);
     }
-    if (flag === "--plan" || flag === "--summary" || flag === "--collect" || flag === "--quiet") {
+    if (
+      flag === "--plan" ||
+      flag === "--summary" ||
+      flag === "--collect" ||
+      flag === "--discover-stations" ||
+      flag === "--quiet"
+    ) {
       args[flag.slice(2)] = true;
       continue;
     }
@@ -311,6 +318,66 @@ async function collectTagoSchedules(input, options = {}) {
   return buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses);
 }
 
+async function collectTagoStationDiscovery(input, options = {}) {
+  const serviceKey = requiredString(options.serviceKey, "serviceKey");
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  if (typeof fetchImpl !== "function") {
+    throw new TypeError("fetch is required for TAGO station discovery");
+  }
+  const stationNames = [...new Set((input.stationLineRows ?? []).map((row) => row.stationNameKo).filter(Boolean))];
+  if (stationNames.length === 0) {
+    throw new Error("stationLineRows must contain stationNameKo");
+  }
+  const discoveredAt = options.discoveredAt ?? new Date().toISOString();
+  const queries = [];
+
+  for (const stationNameKo of stationNames) {
+    try {
+      const response = await fetchImpl(buildTagoStationDiscoveryRequestUrl(stationNameKo, serviceKey));
+      if (!response.ok) {
+        throw new Error(`TAGO station discovery failed: ${stationNameKo} status ${response.status}`);
+      }
+      const rawText = await response.text();
+      const payload = JSON.parse(rawText);
+      rejectCredentialLeak(rawText, payload);
+      if (payload.response?.header && payload.response.header.resultCode !== "00") {
+        throw new Error(`TAGO station discovery is not normal service: ${stationNameKo}`);
+      }
+      const candidates = normalizeRows(payload.response?.body?.items?.item).map((row) => sortObject(row));
+      queries.push({
+        stationNameKo,
+        rawSha256: sha256(rawText),
+        rowCount: candidates.length,
+        providerRecordHashes: candidates.map((row) => sha256(JSON.stringify(row))),
+        candidates,
+      });
+    } catch (error) {
+      throw new TagoStationDiscoveryError(
+        error instanceof Error ? error.message : `TAGO station discovery failed: ${stationNameKo}`,
+        buildTagoStationDiscoveryArtifact(options, discoveredAt, queries, { failedStationNameKo: stationNameKo }),
+      );
+    }
+  }
+
+  return buildTagoStationDiscoveryArtifact(options, discoveredAt, queries);
+}
+
+function buildTagoStationDiscoveryArtifact(options, discoveredAt, queries, failure = {}) {
+  const failedRequestCount = failure.failedStationNameKo ? 1 : 0;
+  return {
+    artifactKind: "tago-station-discovery",
+    sourceId: "molit-tago-subway-info",
+    endpoint: TAGO_STATION_DISCOVERY_ENDPOINT,
+    serviceKeyEnv: options.serviceKeyEnv ?? "DATA_GO_KR_SERVICE_KEY",
+    discoveredAt,
+    queryCount: queries.length,
+    quotaObservedRequestCount: queries.length + failedRequestCount,
+    collectionStatus: failure.failedStationNameKo ? "partial_failed" : "completed_batch",
+    ...(failure.failedStationNameKo ? { failedStationNameKo: failure.failedStationNameKo } : {}),
+    queries,
+  };
+}
+
 function buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, failure = {}) {
   const checkpoint = options.checkpoint ?? {};
   const failedRequestCount = failure.failedRequestKey ? 1 : 0;
@@ -355,6 +422,14 @@ class TagoScheduleCollectionError extends Error {
   }
 }
 
+class TagoStationDiscoveryError extends Error {
+  constructor(message, collection) {
+    super(message);
+    this.name = "TagoStationDiscoveryError";
+    this.collection = collection;
+  }
+}
+
 function buildTagoScheduleRequestUrl(request, serviceKey) {
   const [stationId, dailyTypeCode, upDownTypeCode] = requestKeyParts(request.requestKey);
   const params = new URLSearchParams();
@@ -365,6 +440,15 @@ function buildTagoScheduleRequestUrl(request, serviceKey) {
   params.set("dailyTypeCode", dailyTypeCode);
   params.set("upDownTypeCode", upDownTypeCode);
   return `${TAGO_SCHEDULE_ENDPOINT}?serviceKey=${encodeDataGoKrServiceKey(serviceKey)}&${params.toString()}`;
+}
+
+function buildTagoStationDiscoveryRequestUrl(stationNameKo, serviceKey) {
+  const params = new URLSearchParams();
+  params.set("pageNo", "1");
+  params.set("numOfRows", "100");
+  params.set("_type", "json");
+  params.set("subwayStationName", stationNameKo);
+  return `${TAGO_STATION_DISCOVERY_ENDPOINT}?serviceKey=${encodeDataGoKrServiceKey(serviceKey)}&${params.toString()}`;
 }
 
 function encodeDataGoKrServiceKey(serviceKey) {
@@ -515,6 +599,19 @@ async function main() {
       }
       throw error;
     }
+  } else if (args["discover-stations"]) {
+    const serviceKeyEnv = args["service-key-env"] ?? "DATA_GO_KR_SERVICE_KEY";
+    try {
+      result = await collectTagoStationDiscovery(JSON.parse(await readFile(inputPath, "utf8")), {
+        serviceKey: process.env[serviceKeyEnv],
+        serviceKeyEnv,
+      });
+    } catch (error) {
+      if (error instanceof TagoStationDiscoveryError && args.output) {
+        await writeJsonOutput(args.output, error.collection);
+      }
+      throw error;
+    }
   } else if (args.summary) {
     const input = JSON.parse(await readFile(inputPath, "utf8"));
     const inputDir = path.dirname(inputPath);
@@ -554,6 +651,7 @@ function requiredString(value, label) {
 export {
   buildTagoScheduleCollectionPlan,
   buildTagoScheduleCollectionSummary,
+  collectTagoStationDiscovery,
   collectTagoSchedules,
   validateTagoScheduleSample,
 };

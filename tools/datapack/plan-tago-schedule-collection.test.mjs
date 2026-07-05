@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import {
   buildTagoScheduleCollectionPlan,
   buildTagoScheduleCollectionSummary,
+  collectTagoStationDiscovery,
   collectTagoSchedules,
   validateTagoScheduleSample,
 } from "./validate-tago-schedule-sample.mjs";
@@ -115,6 +116,94 @@ test("TAGO 시간표 수집 plan CLI는 quiet 모드에서 stdout을 비운다",
   assert.equal(stdout, "");
   const plan = JSON.parse(await readFile(outputPath, "utf8"));
   assert.equal(plan.totalRequestCount, 6);
+});
+
+test("TAGO station discovery는 역명 query별 provider 후보를 secret 없이 남긴다", async () => {
+  const fetchUrls = [];
+  const discovery = await collectTagoStationDiscovery(
+    {
+      stationLineRows: [
+        { stationNameKo: "상록수" },
+        { stationNameKo: "사당" },
+        { stationNameKo: "사당" },
+      ],
+    },
+    {
+      serviceKey: "actual-secret-key",
+      serviceKeyEnv: "DATA_GO_KR_SERVICE_KEY",
+      discoveredAt: "2026-07-05T00:00:00.000Z",
+      fetchImpl: async (url) => {
+        fetchUrls.push(url);
+        const params = new URL(url).searchParams;
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return tagoStationDiscoveryResponse(params.get("subwayStationName"));
+          },
+        };
+      },
+    },
+  );
+
+  assert.equal(discovery.artifactKind, "tago-station-discovery");
+  assert.equal(discovery.queryCount, 2);
+  assert.equal(discovery.quotaObservedRequestCount, 2);
+  assert.deepEqual(
+    discovery.queries.map((query) => query.stationNameKo),
+    ["상록수", "사당"],
+  );
+  assert.equal(discovery.queries[0].candidates[0].subwayStationId, "MTRKR4448");
+  assert.equal(discovery.queries[1].candidates[0].subwayStationId, "MTRKR433");
+  assert.equal(new URL(fetchUrls[0]).searchParams.get("serviceKey"), "actual-secret-key");
+  assert.doesNotMatch(JSON.stringify(discovery), /actual-secret-key|serviceKey=/);
+});
+
+test("TAGO station discovery 실패는 partial artifact에 quota와 성공 query를 보존한다", async () => {
+  await assert.rejects(
+    async () =>
+      collectTagoStationDiscovery(
+        {
+          stationLineRows: [{ stationNameKo: "상록수" }, { stationNameKo: "사당" }],
+        },
+        {
+          serviceKey: "actual-secret-key",
+          serviceKeyEnv: "DATA_GO_KR_SERVICE_KEY",
+          discoveredAt: "2026-07-05T00:00:00.000Z",
+          fetchImpl: async (url) => {
+            const stationNameKo = new URL(url).searchParams.get("subwayStationName");
+            if (stationNameKo === "사당") {
+              return {
+                ok: false,
+                status: 503,
+                async text() {
+                  return "";
+                },
+              };
+            }
+            return {
+              ok: true,
+              status: 200,
+              async text() {
+                return tagoStationDiscoveryResponse(stationNameKo);
+              },
+            };
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.name, "TagoStationDiscoveryError");
+      assert.equal(error.collection.collectionStatus, "partial_failed");
+      assert.equal(error.collection.failedStationNameKo, "사당");
+      assert.equal(error.collection.quotaObservedRequestCount, 2);
+      assert.deepEqual(
+        error.collection.queries.map((query) => query.stationNameKo),
+        ["상록수"],
+      );
+      assert.doesNotMatch(JSON.stringify(error.collection), /actual-secret-key|serviceKey=/);
+      return true;
+    },
+  );
 });
 
 test("TAGO 시간표 수집 summary는 완료 checkpoint와 evidence hash를 남긴다", () => {
@@ -653,6 +742,26 @@ function emptyTagoResponse() {
       header: { resultCode: "00" },
       body: {
         items: {},
+      },
+    },
+  });
+}
+
+function tagoStationDiscoveryResponse(stationNameKo) {
+  const id = stationNameKo === "상록수" ? "MTRKR4448" : "MTRKR433";
+  return JSON.stringify({
+    response: {
+      header: { resultCode: "00" },
+      body: {
+        items: {
+          item: [
+            {
+              subwayStationId: id,
+              subwayStationNm: stationNameKo,
+              subwayRouteId: "MTRKR4",
+            },
+          ],
+        },
       },
     },
   });
