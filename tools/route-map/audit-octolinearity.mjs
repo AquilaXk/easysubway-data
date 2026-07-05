@@ -84,6 +84,16 @@ export function parsePathVertices(pathText) {
   return points;
 }
 
+/** 정점 배열을 "M x y L x y ..." 절대 좌표 path 문자열로. parsePathVertices의 역. */
+export function verticesToPath(vertices) {
+  return (
+    "M " +
+    vertices
+      .map((v, i) => (i === 0 ? `${v.x} ${v.y}` : `L ${v.x} ${v.y}`))
+      .join(" ")
+  );
+}
+
 function quantile(sorted, q) {
   if (sorted.length === 0) return null;
   const pos = (sorted.length - 1) * q;
