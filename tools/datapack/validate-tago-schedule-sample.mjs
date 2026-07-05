@@ -122,7 +122,8 @@ function buildTagoScheduleCollectionPlan(input, checkpoint = {}, dailyLimit = 10
     throw new Error("dailyLimit must be a positive integer");
   }
   const completed = new Set(checkpoint.completedRequestKeys ?? []);
-  const allRequests = tagoStationIds(input).flatMap((stationId) =>
+  const stationIds = tagoStationIds(input);
+  const allRequests = stationIds.flatMap((stationId) =>
     [...DAILY_TYPE_CODES].flatMap((dailyTypeCode) =>
       [...UP_DOWN_CODES].map((upDownTypeCode) => {
         const requestKey = `${stationId}|${dailyTypeCode}|${upDownTypeCode}`;
@@ -142,6 +143,7 @@ function buildTagoScheduleCollectionPlan(input, checkpoint = {}, dailyLimit = 10
     sourceId: "molit-tago-subway-info",
     endpoint: TAGO_SCHEDULE_ENDPOINT,
     dailyLimit,
+    stationCount: stationIds.length,
     totalRequestCount: allRequests.length,
     completedRequestCount: allRequests.length - pending.length,
     pendingRequestCount: pending.length,
@@ -273,6 +275,7 @@ async function collectTagoSchedules(input, options = {}) {
 
 function buildTagoScheduleCollectionArtifact(plan, options, collectedAt, responses, failure = {}) {
   const checkpoint = options.checkpoint ?? {};
+  const failedRequestCount = failure.failedRequestKey ? 1 : 0;
   const completedRequestKeys = [
     ...new Set([...(checkpoint.completedRequestKeys ?? []), ...responses.map((response) => response.requestKey)]),
   ].sort((left, right) => left.localeCompare(right));
@@ -290,6 +293,17 @@ function buildTagoScheduleCollectionArtifact(plan, options, collectedAt, respons
     completedRequestKeys,
     checkpoint: { completedRequestKeys },
     collectionStatus: failure.failedRequestKey ? "partial_failed" : "completed_batch",
+    collectionReport: {
+      stationCount: plan.stationCount,
+      totalCallCount: plan.totalRequestCount,
+      attemptedCallCount: responses.length + failedRequestCount,
+      successfulCallCount: responses.length,
+      failedCallCount: failedRequestCount,
+      // ponytail: no retry loop yet; count actual retries here if collection adds one.
+      retryCount: 0,
+      quotaObservedRequestCount: responses.length + failedRequestCount,
+      quotaDailyLimit: plan.dailyLimit,
+    },
     ...(failure.failedRequestKey ? { failedRequestKey: failure.failedRequestKey } : {}),
     responses,
   };

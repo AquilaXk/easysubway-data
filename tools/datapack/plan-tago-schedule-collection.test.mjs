@@ -27,6 +27,7 @@ test("TAGO 시간표 수집 plan은 daily limit과 checkpoint resume을 적용�
   );
   assert.equal(plan.artifactKind, "tago-schedule-collection-plan");
   assert.equal(plan.dailyLimit, 3);
+  assert.equal(plan.stationCount, 2);
   assert.equal(plan.totalRequestCount, 12);
   assert.equal(plan.completedRequestCount, 1);
   assert.deepEqual(
@@ -231,6 +232,16 @@ test("TAGO 시간표 수집기는 checkpoint 다음 batch만 호출하고 secret
   assert.equal(collection.requestedCount, 2);
   assert.equal(collection.pendingRequestCount, 9);
   assert.equal(collection.collectionStatus, "completed_batch");
+  assert.deepEqual(collection.collectionReport, {
+    stationCount: 2,
+    totalCallCount: 12,
+    attemptedCallCount: 2,
+    successfulCallCount: 2,
+    failedCallCount: 0,
+    retryCount: 0,
+    quotaObservedRequestCount: 2,
+    quotaDailyLimit: 2,
+  });
   assert.deepEqual(
     collection.responses.map((response) => response.requestKey),
     ["MTRKR4448|01|D", "MTRKR4448|02|U"],
@@ -367,6 +378,8 @@ test("TAGO 시간표 수집기는 batch 중간 실패 시 성공분 checkpoint�
       assert.equal(error.message, "TAGO schedule fetch failed before response: MTRKR4448|02|U");
       assert.equal(error.collection.collectionStatus, "partial_failed");
       assert.equal(error.collection.failedRequestKey, "MTRKR4448|02|U");
+      assert.equal(error.collection.collectionReport.failedCallCount, 1);
+      assert.equal(error.collection.collectionReport.quotaObservedRequestCount, 2);
       assert.deepEqual(error.collection.completedRequestKeys, ["MTRKR4448|01|D", "MTRKR4448|01|U"]);
       assert.deepEqual(
         error.collection.responses.map((response) => response.requestKey),
