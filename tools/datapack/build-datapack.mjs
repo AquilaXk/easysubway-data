@@ -973,6 +973,13 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       );
       insertRows(
         database,
+        "transit_feed_info",
+        ["id", "feed_end_date"],
+        pack.transitFeedInfo ?? [],
+        (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
+      );
+      insertRows(
+        database,
         "realtime_provider_line_mappings",
         [
           "provider_id",
