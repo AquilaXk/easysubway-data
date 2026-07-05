@@ -91,8 +91,17 @@ function validateTagoScheduleSample(rawText, options = {}) {
     if (!UP_DOWN_CODES.has(row.upDownTypeCode)) {
       throw new Error(`TAGO schedule row ${index} has unknown upDownTypeCode: ${row.upDownTypeCode}`);
     }
-    const arrivalSeconds = parseHhmmss(row.arrTime, `row ${index} arrTime`);
-    const departureSeconds = parseHhmmss(row.depTime, `row ${index} depTime`);
+    // 서울교통공사 스케줄은 시발(origin) 열차의 arrTime, 종착(terminal) 열차의 depTime을 "0"으로 채운다.
+    // 한쪽이 없으면 있는 쪽으로 대체(도착=출발 무정차 대기). 코레일 등은 둘 다 정상 HHMMSS로 제공한다.
+    const arrMissing = isMissingTagoTime(row.arrTime);
+    const depMissing = isMissingTagoTime(row.depTime);
+    if (arrMissing && depMissing) {
+      throw new Error(`TAGO schedule row ${index} has neither arrTime nor depTime`);
+    }
+    const parsedArrival = arrMissing ? null : parseHhmmss(row.arrTime, `row ${index} arrTime`);
+    const parsedDeparture = depMissing ? null : parseHhmmss(row.depTime, `row ${index} depTime`);
+    const arrivalSeconds = parsedArrival ?? parsedDeparture;
+    const departureSeconds = parsedDeparture ?? parsedArrival;
     if (arrivalSeconds > departureSeconds) {
       throw new Error(`TAGO schedule row ${index} arrival must be <= departure`);
     }
@@ -483,8 +492,14 @@ function requestKeyParts(requestKey) {
 function tagoStationIds(input) {
   const stationIds = new Set();
   for (const row of input.stationLineRows ?? []) {
+    // discovery(GetKwrdFndSubwaySttnList)로 확인된 실제 provider station id를 formula보다 우선한다.
+    // 운영기관 prefix가 다르므로(코레일 MTRKR vs 서울교통공사 MTRS1) formula는 사당 등 비-코레일 역에서 틀린다.
+    if (row.providerStationId) {
+      stationIds.add(row.providerStationId);
+      continue;
+    }
     if (!row.stationCode) continue;
-    // TODO: pilot line 4 mapping only; replace with explicit provider station ids before nationwide collection.
+    // seoul-4 코레일 구간 한정 폴백. 비-코레일 역은 providerStationId를 명시해야 한다.
     if (row.stationCode.startsWith("MTRKR")) {
       stationIds.add(row.stationCode);
       continue;
@@ -495,7 +510,7 @@ function tagoStationIds(input) {
     stationIds.add(`MTRKR4${row.stationCode}`);
   }
   if (stationIds.size === 0) {
-    throw new Error("stationLineRows must contain at least one stationCode");
+    throw new Error("stationLineRows must contain at least one providerStationId or stationCode");
   }
   return [...stationIds];
 }
@@ -527,6 +542,11 @@ function isNormalEmptyTagoSchedulePayload(payload) {
     return false;
   }
   return !("item" in items) || (Array.isArray(items.item) && items.item.length === 0);
+}
+
+function isMissingTagoTime(value) {
+  // 서울교통공사 스케줄은 시발역 arrTime·종착역 depTime을 "0"(또는 전부 0)으로 채운다(미제공 표기).
+  return /^0+$/.test(value);
 }
 
 function parseHhmmss(value, label) {

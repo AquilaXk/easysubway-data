@@ -30,15 +30,28 @@
   ],
   "supportedV1Scope": {
     "scopeId": "capital_pilot_android_v1",
-    "includedRegionIds": ["capital"],
-    "includedOperatorIds": ["seoul-metro"],
-    "includedLineIds": ["seoul-4"],
-    "includedStationIds": ["station-sangnoksu", "station-sadang"],
+    "includedRegionIds": [
+      "capital"
+    ],
+    "includedOperatorIds": [
+      "seoul-metro"
+    ],
+    "includedLineIds": [
+      "seoul-4"
+    ],
+    "includedStationIds": [
+      "station-sangnoksu",
+      "station-sadang"
+    ],
     "facilityCoverageDenominator": {
       "kind": "station_line_x_required_facility_type",
       "expectedRows": 6
     },
-    "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"]
+    "requiredFacilityTypes": [
+      "ELEVATOR",
+      "ESCALATOR",
+      "WHEELCHAIR_LIFT"
+    ]
   },
   "minimumProductionCoverage": {
     "stations": 2,
@@ -51,14 +64,19 @@
       "regionId": "capital",
       "operatorId": "seoul-metro",
       "sourceDomain": "station_line_membership",
-      "sourceIds": ["molit-urban-rail-full-route", "seoulmetro-station-line-info"],
+      "sourceIds": [
+        "molit-urban-rail-full-route",
+        "seoulmetro-station-line-info"
+      ],
       "evidence": "국토교통부 도시철도 전체노선정보와 서울교통공사 노선별 지하철역 정보 source inventory coverageScope"
     },
     {
       "regionId": "capital",
       "operatorId": "seoul-metro",
       "sourceDomain": "route_map_positions",
-      "sourceIds": ["seoulmetro-cyberstation-route-map"],
+      "sourceIds": [
+        "seoulmetro-cyberstation-route-map"
+      ],
       "evidence": "서울교통공사 사이버스테이션 route map snapshot sourceSha256와 label polygon 관리자 검수 기준"
     },
     {
@@ -130,7 +148,9 @@
       "stationId": "station-sadang",
       "stationLineId": "station-sadang:seoul-4",
       "mappingStatus": "renamed",
-      "previousNames": ["총신대입구"]
+      "previousNames": [
+        "총신대입구"
+      ]
     }
   ],
   "stationLineRows": [
@@ -147,7 +167,8 @@
       "stationCode": "448",
       "lineSequence": 43,
       "platformInfo": "당고개 방면 / 오이도 방면",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "providerStationId": "MTRKR4448"
     },
     {
       "sourceId": "molit-urban-rail-full-route",
@@ -162,7 +183,8 @@
       "stationCode": "433",
       "lineSequence": 28,
       "platformInfo": "당고개 방면 / 오이도 방면",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "providerStationId": "MTRS14433"
     },
     {
       "sourceId": "seoulmetro-station-line-info",
@@ -177,7 +199,8 @@
       "stationCode": "448",
       "lineSequence": 43,
       "platformInfo": "당고개 방면 / 오이도 방면",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "providerStationId": "MTRKR4448"
     },
     {
       "sourceId": "seoulmetro-station-line-info",
@@ -192,7 +215,8 @@
       "stationCode": "433",
       "lineSequence": 28,
       "platformInfo": "당고개 방면 / 오이도 방면",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z"
+      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
+      "providerStationId": "MTRS14433"
     }
   ],
   "routeEdges": [
@@ -327,10 +351,22 @@
       "labelDx": 0,
       "labelDy": -14,
       "labelPolygon": [
-        { "x": 352, "y": 915 },
-        { "x": 408, "y": 915 },
-        { "x": 408, "y": 937 },
-        { "x": 352, "y": 937 }
+        {
+          "x": 352,
+          "y": 915
+        },
+        {
+          "x": 408,
+          "y": 915
+        },
+        {
+          "x": 408,
+          "y": 937
+        },
+        {
+          "x": 352,
+          "y": 937
+        }
       ],
       "sourceName": "서울교통공사 사이버스테이션 노선도",
       "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
@@ -356,10 +392,22 @@
       "labelDx": 20,
       "labelDy": -20,
       "labelPolygon": [
-        { "x": 721, "y": 650 },
-        { "x": 769, "y": 650 },
-        { "x": 769, "y": 672 },
-        { "x": 721, "y": 672 }
+        {
+          "x": 721,
+          "y": 650
+        },
+        {
+          "x": 769,
+          "y": 650
+        },
+        {
+          "x": 769,
+          "y": 672
+        },
+        {
+          "x": 721,
+          "y": 672
+        }
       ],
       "sourceName": "서울교통공사 사이버스테이션 노선도",
       "sourceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",

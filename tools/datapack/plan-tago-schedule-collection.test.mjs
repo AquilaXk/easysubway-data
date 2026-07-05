@@ -40,6 +40,37 @@ test("TAGO 시간표 수집 plan은 daily limit과 checkpoint resume을 적용�
   assert.ok(plan.batches.every((batch) => batch.requests.length <= 3));
 });
 
+test("TAGO 시간표 수집 plan은 명시된 providerStationId를 formula보다 우선한다", () => {
+  const plan = buildTagoScheduleCollectionPlan(
+    {
+      stationLineRows: [{ stationCode: "433", lineId: "seoul-4", providerStationId: "MTRS14433" }],
+    },
+    { completedRequestKeys: [] },
+    12,
+  );
+  assert.equal(plan.stationCount, 1);
+  assert.ok(
+    plan.batches.every((batch) => batch.requests.every((request) => request.requestKey.startsWith("MTRS14433|"))),
+    "plan은 discovery로 확인된 providerStationId(MTRS14433)를 써야 한다",
+  );
+  assert.ok(
+    !plan.batches.some((batch) => batch.requests.some((request) => request.requestKey.startsWith("MTRKR4433"))),
+    "formula로 만든 잘못된 MTRKR4433을 쓰면 안 된다",
+  );
+});
+
+test("TAGO 시간표 수집 plan은 providerStationId 없으면 seoul-4 formula로 폴백한다", () => {
+  const plan = buildTagoScheduleCollectionPlan(
+    { stationLineRows: [{ stationCode: "448", lineId: "seoul-4" }] },
+    { completedRequestKeys: [] },
+    12,
+  );
+  assert.ok(
+    plan.batches.every((batch) => batch.requests.every((request) => request.requestKey.startsWith("MTRKR4448|"))),
+    "providerStationId 없으면 seoul-4 formula(MTRKR4448)로 폴백해야 한다",
+  );
+});
+
 test("TAGO 시간표 수집 plan은 파일럿 매핑 대상이 아닌 lineId를 거부한다", () => {
   assert.throws(
     () =>
@@ -241,6 +272,49 @@ test("TAGO 시간표 검증은 provider row order에 의존하지 않는다", ()
   assert.deepEqual(
     validation.departures.map((departure) => departure.departureSeconds),
     [18_900, 19_500],
+  );
+});
+
+test("TAGO 시간표 검증은 arrTime이 '0'(서울교통공사 미제공)이면 도착=출발로 처리한다", () => {
+  const validation = validateTagoScheduleSample(
+    tagoResponse("MTRS14433", "01", "U", [
+      ["0", "051500"],
+      ["0", "052500"],
+    ]),
+  );
+
+  assert.deepEqual(
+    validation.departures.map((departure) => departure.departureSeconds),
+    [18_900, 19_500],
+  );
+  assert.deepEqual(
+    validation.departures.map((departure) => departure.arrivalSeconds),
+    [18_900, 19_500],
+  );
+});
+
+test("TAGO 시간표 검증은 depTime이 '0'(종착 열차)이면 출발=도착으로 처리한다", () => {
+  const validation = validateTagoScheduleSample(
+    tagoResponse("MTRS14433", "01", "U", [
+      ["051000", "0"],
+      ["052000", "0"],
+    ]),
+  );
+
+  assert.deepEqual(
+    validation.departures.map((departure) => departure.arrivalSeconds),
+    [18_600, 19_200],
+  );
+  assert.deepEqual(
+    validation.departures.map((departure) => departure.departureSeconds),
+    [18_600, 19_200],
+  );
+});
+
+test("TAGO 시간표 검증은 arrTime과 depTime이 모두 '0'이면 거부한다", () => {
+  assert.throws(
+    () => validateTagoScheduleSample(tagoResponse("MTRS14433", "01", "U", [["0", "0"]])),
+    /has neither arrTime nor depTime/,
   );
 });
 
