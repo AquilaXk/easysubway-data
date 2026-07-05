@@ -2,6 +2,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+const SUMMARY_RIDE_EDGE_PRODUCTION_POLICY = "fixture-only";
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const inventory = JSON.parse(await readFile(requireArg(args, "inventory"), "utf8"));
@@ -789,32 +791,14 @@ function validateProductionSummaryRideEdgePolicy(stationLines, networkEdges, pol
   if (nonAdjacentExpressRideEdgeIds.length === 0) {
     return;
   }
-  if (policy?.summaryRideEdges === "release-blocking-regression-only") {
+  if (policy?.summaryRideEdges && policy.summaryRideEdges !== SUMMARY_RIDE_EDGE_PRODUCTION_POLICY) {
     throw new Error(
-      `production routeEdges non-adjacent EXPRESS summary edge is regression-only: ${nonAdjacentExpressRideEdgeIds.join(", ")}`,
+      `routeGraphTopologyPolicy.summaryRideEdges must be ${SUMMARY_RIDE_EDGE_PRODUCTION_POLICY} for non-adjacent EXPRESS RIDE edges`,
     );
   }
-  if (
-    !policy ||
-    typeof policy !== "object" ||
-    Array.isArray(policy) ||
-    policy.summaryRideEdges !== "release-blocking-regression-only"
-  ) {
-    throw new Error(
-      "routeGraphTopologyPolicy.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only",
-    );
-  }
-  const declaredEdgeIds = requiredStringArray(
-    policy.nonAdjacentExpressRideEdgeIds,
-    "routeGraphTopologyPolicy.nonAdjacentExpressRideEdgeIds",
+  throw new Error(
+    `production routeEdges non-adjacent EXPRESS summary edge is ${SUMMARY_RIDE_EDGE_PRODUCTION_POLICY}: ${nonAdjacentExpressRideEdgeIds.join(", ")}`,
   );
-  const declaredEdgeIdSet = new Set(declaredEdgeIds);
-  for (const edgeId of nonAdjacentExpressRideEdgeIds) {
-    if (!declaredEdgeIdSet.has(edgeId)) {
-      throw new Error(`routeGraphTopologyPolicy.nonAdjacentExpressRideEdgeIds missing: ${edgeId}`);
-    }
-  }
-  requiredString(policy.productionReadinessRequirement, "routeGraphTopologyPolicy.productionReadinessRequirement");
 }
 
 function stationLineNodeFromRouteNode(nodeId) {

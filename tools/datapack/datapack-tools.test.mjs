@@ -8478,7 +8478,7 @@ test("공식 source ingest adapter는 cross-line EXPRESS summary edge도 격리 
 
   await assert.rejects(
     importOfficialSourceInput(outputDir, input),
-    /routeGraphTopologyPolicy\.summaryRideEdges must mark non-adjacent EXPRESS RIDE edges as release-blocking-regression-only/,
+    /production routeEdges non-adjacent EXPRESS summary edge is fixture-only/,
   );
 });
 
@@ -8950,9 +8950,9 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
   const adjacencySafeInputPath = path.join(outputDir, "capital-pilot-production-adjacency-safe.json");
   await writeFile(adjacencySafeInputPath, `${JSON.stringify(adjacencySafeInput, null, 2)}\n`);
 
-  const summaryRideRegressionInput = withProductionSummaryRideEdges(input);
-  const summaryRideRegressionInputPath = path.join(outputDir, "summary-ride-regression-only.json");
-  await writeFile(summaryRideRegressionInputPath, `${JSON.stringify(summaryRideRegressionInput, null, 2)}\n`);
+  const summaryRideFixtureOnlyInput = withProductionSummaryRideEdges(input);
+  const summaryRideFixtureOnlyInputPath = path.join(outputDir, "summary-ride-fixture-only.json");
+  await writeFile(summaryRideFixtureOnlyInputPath, `${JSON.stringify(summaryRideFixtureOnlyInput, null, 2)}\n`);
   await assert.rejects(
     execFileAsync(
       process.execPath,
@@ -8961,13 +8961,13 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
         "--inventory",
         "tools/datapack/source-inventory.json",
         "--input",
-        summaryRideRegressionInputPath,
+        summaryRideFixtureOnlyInputPath,
         "--output",
-        path.join(outputDir, "summary-ride-regression-only-fixture.json"),
+        path.join(outputDir, "summary-ride-fixture-only-output.json"),
       ],
       { cwd: root },
     ),
-    /production routeEdges non-adjacent EXPRESS summary edge is regression-only/,
+    /production routeEdges non-adjacent EXPRESS summary edge is fixture-only/,
   );
 
   const lowercaseRideEdgeInput = JSON.parse(JSON.stringify(withProductionSummaryRideEdges(input)));
@@ -8990,7 +8990,7 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       ],
       { cwd: root },
     ),
-    /production routeEdges non-adjacent EXPRESS summary edge is regression-only/,
+    /production routeEdges non-adjacent EXPRESS summary edge is fixture-only/,
   );
 
   await execFileAsync(
@@ -11339,13 +11339,7 @@ function withProductionSummaryRideEdges(input, servicePattern = "EXPRESS") {
     ...input,
     routeEdges: [...productionSummaryRideEdges(servicePattern), ...input.routeEdges],
     routeGraphTopologyPolicy: {
-      summaryRideEdges: "release-blocking-regression-only",
-      productionReadinessRequirement:
-        "replace summary RIDE edges with adjacent-station LOCAL RIDE edges before ETA or release-readiness claim",
-      nonAdjacentExpressRideEdgeIds: [
-        "edge-sangnoksu-sadang-seoul-4",
-        "edge-sadang-sangnoksu-seoul-4",
-      ],
+      summaryRideEdges: "fixture-only",
     },
   };
 }
