@@ -6228,6 +6228,100 @@ test("source candidate sample 검증기는 KRIC live evidence metadata를 허용
   assert.match(stdout, /source candidate sample evidence valid: kric-subway-route-info/);
 });
 
+test("KRIC route graph 수집 계획은 인접역 membership 후보를 JSON redacted URL로 고정한다", async () => {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/plan-kric-route-graph-collection.mjs",
+    ],
+    { cwd: root },
+  );
+  const plan = JSON.parse(stdout);
+
+  assert.equal(plan.artifactKind, "kric-route-graph-membership-collection-plan");
+  assert.equal(plan.serviceKeyEnv, "KRIC_SERVICE_KEY");
+  assert.equal(plan.productionUseAllowed, false);
+  assert.deepEqual(
+    plan.requests.map((request) => request.candidateId),
+    ["kric-subway-route-info", "kric-station-info"],
+  );
+  assert.equal(plan.requests[0].priority, 1);
+  assert.match(plan.requests[0].url, /serviceKey=\[서비스키값\]/);
+  assert.match(plan.requests[0].url, /format=json/);
+  assert.doesNotMatch(plan.requests[0].url, /format=xml/);
+  assert.deepEqual(plan.requests[0].expectedFields, [
+    "lnCd",
+    "mreaWideCd",
+    "railOprIsttCd",
+    "routCd",
+    "routNm",
+    "stinCd",
+    "stinConsOrdr",
+    "stinNm",
+  ]);
+});
+
+test("KRIC route graph 수집 계획은 실제 serviceKey가 섞인 후보를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-kric-plan-secret-${Date.now()}`);
+  const candidatesPath = path.join(outputDir, "source-candidates.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  const candidates = JSON.parse(await readFile("tools/datapack/source-candidates.json", "utf8"));
+  const candidate = candidates.candidates.find((entry) => entry.id === "kric-subway-route-info");
+  const originalSampleUrl = candidate.evidence.sampleUrl;
+  candidate.evidence.sampleUrl = candidate.evidence.sampleUrl.replace("[서비스키값]", "real-secret-key");
+  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/plan-kric-route-graph-collection.mjs",
+        "--candidates",
+        candidatesPath,
+        "--candidate",
+        "kric-subway-route-info",
+      ],
+      { cwd: root },
+    ),
+    /sampleUrl must keep exactly one redacted serviceKey/,
+  );
+
+  candidate.evidence.sampleUrl = `${originalSampleUrl}&serviceKey=real-secret-key`;
+  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/plan-kric-route-graph-collection.mjs",
+        "--candidates",
+        candidatesPath,
+        "--candidate",
+        "kric-subway-route-info",
+      ],
+      { cwd: root },
+    ),
+    /sampleUrl must keep exactly one redacted serviceKey/,
+  );
+
+  candidate.evidence.sampleUrl = `${originalSampleUrl}&ServiceKey=real-secret-key`;
+  await writeFile(candidatesPath, `${JSON.stringify(candidates, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/plan-kric-route-graph-collection.mjs",
+        "--candidates",
+        candidatesPath,
+        "--candidate",
+        "kric-subway-route-info",
+      ],
+      { cwd: root },
+    ),
+    /sampleUrl must keep exactly one redacted serviceKey/,
+  );
+});
+
 test("source candidate sample 검증기는 evidence hash metadata 누락을 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-candidate-sample-hash-${Date.now()}`);
   const samplePath = path.join(outputDir, "sample.json");
