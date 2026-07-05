@@ -110,10 +110,19 @@ function validateTagoScheduleSample(rawText, options = {}) {
   const providerRecordHashes = parsedRows.map(({ rowHash }) => rowHash);
   const departures = parsedRows.map(({ row: _row, rowHash: _rowHash, ...departure }) => departure);
 
-  return buildTagoScheduleValidationResult(rawText, rows, providerRecordHashes, departures, false);
+  const scheduleRows = parsedRows.map(({ row }) => sortObject(row));
+
+  return buildTagoScheduleValidationResult(rawText, rows, providerRecordHashes, departures, false, scheduleRows);
 }
 
-function buildTagoScheduleValidationResult(rawText, rows, providerRecordHashes, departures, emptyProviderResponse) {
+function buildTagoScheduleValidationResult(
+  rawText,
+  rows,
+  providerRecordHashes,
+  departures,
+  emptyProviderResponse,
+  scheduleRows = [],
+) {
   return {
     artifactKind: "tago-schedule-sample-importer-validation",
     candidateId: "molit-tago-subway-info",
@@ -122,6 +131,7 @@ function buildTagoScheduleValidationResult(rawText, rows, providerRecordHashes, 
     providerRecordHashes,
     rawSha256: sha256(rawText),
     departures,
+    scheduleRows,
     emptyProviderResponse,
     stationLevelOnly: true,
     productionUseAllowed: false,
@@ -182,6 +192,7 @@ function buildTagoScheduleCollectionSummary(collection) {
   const emptyResponseRequestKeys = [];
   const rawSha256ByRequest = {};
   const providerRecordHashes = [];
+  const scheduleRows = [];
   let rowCount = 0;
 
   for (const response of responses) {
@@ -202,6 +213,7 @@ function buildTagoScheduleCollectionSummary(collection) {
     }
     rawSha256ByRequest[response.requestKey] = validation.rawSha256;
     providerRecordHashes.push(...validation.providerRecordHashes);
+    scheduleRows.push(...validation.scheduleRows);
     rowCount += validation.rowCount;
   }
   const completedRequestKeys = [...new Set([...checkpointRequestKeys, ...responseRequestKeys])].sort(
@@ -216,6 +228,7 @@ function buildTagoScheduleCollectionSummary(collection) {
     emptyResponseRequestKeys,
     rawSha256ByRequest,
     providerRecordHashes,
+    scheduleRows,
   };
   return {
     artifactKind: "tago-schedule-collection-summary",
@@ -229,6 +242,7 @@ function buildTagoScheduleCollectionSummary(collection) {
     rowCount,
     rawSha256ByRequest,
     providerRecordHashes,
+    scheduleRows,
     evidenceHash: sha256(JSON.stringify(evidencePayload)),
     stationLevelOnly: true,
     productionUseAllowed: false,

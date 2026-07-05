@@ -135,6 +135,10 @@ test("TAGO 시간표 수집 summary는 완료 checkpoint와 evidence hash를 남
   assert.match(summary.rawSha256ByRequest["MTRKR4448|01|U"], /^[0-9a-f]{64}$/);
   assert.match(summary.evidenceHash, /^[0-9a-f]{64}$/);
   assert.equal(summary.productionUseAllowed, false);
+  assert.equal(summary.scheduleRows.length, 2);
+  assert.equal(summary.scheduleRows[0].subwayStationId, "MTRKR4448");
+  assert.equal(summary.scheduleRows[0].depTime, "051500");
+  assert.doesNotMatch(JSON.stringify(summary.scheduleRows), /rawText|serviceKey|actual-secret-key/);
 });
 
 test("TAGO 시간표 검증은 provider row order에 의존하지 않는다", () => {
