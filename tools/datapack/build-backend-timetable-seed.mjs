@@ -13,8 +13,10 @@
 //     --roster sources/kric-line4-route-roster-20260706.json --line-id seoul-4 --output <artifact.json>
 //   node build-backend-timetable-seed.mjs --input <artifact.json> --line-id seoul-4 --output <seed.sql>
 // 실증(2026-07-06): 895 trip·33,062 stop_times가 V29 제약을 전량 통과, H2 적재 후 RAPTOR PLANNED 산출.
-// 커밋된 것은 코리도 슬라이스 테스트 리소스뿐. **전량 seed의 prod Flyway 마이그레이션 = 실제 go-live(출시게이트)**로
-// 별도 단계다(feed_end_date 미설정 시 STALE 아님=즉시 PLANNED 활성이므로 게이팅 필수).
+// 전량 seed는 **prod-게이트 런타임 로더**(TimetableSeedLoader, @Profile prod + @ConditionalOnProperty
+// easysubway.timetable.seed.enabled)가 startup(Flyway 이후)에 TransactionTemplate으로 all-or-nothing 적재한다.
+// Flyway 데이터 마이그레이션을 쓰지 않는 이유: 배포 시 자동 적용이라 flag 게이트가 불가하고 ~67개 @SpringBootTest DB를
+// 오염시키며 버전 번호 경합이 있다. feed_end_date는 seed에 포함(--feed-end-date, 기본=--end-date; STALE 안전장치).
 import { readFile, writeFile } from "node:fs/promises";
 
 const SECONDS_LIMIT_EXCLUSIVE = 108000; // V29 CHECK: arrival/departure BETWEEN 0 AND 107999
@@ -37,6 +39,10 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
   const lineId = options.lineId ?? null;
   const startDate = options.startDate ?? DEFAULT_START_DATE;
   const endDate = options.endDate ?? DEFAULT_END_DATE;
+  const feedEndDate = options.feedEndDate ?? endDate;
+  if (!/^\d{8}$/.test(feedEndDate)) {
+    throw new Error(`feed_end_date must be 8-digit YYYYMMDD (transit_feed_info VARCHAR(8)): ${feedEndDate}`);
+  }
   const dayMap = options.serviceCalendarDayMap ?? SERVICE_CALENDAR_DAY_MAP;
 
   const tripIds = validateTrips(trips);
@@ -46,6 +52,7 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
   const routes = deriveRoutes(trips, lineId);
 
   const statements = [
+    feedInfoInsert(feedEndDate),
     ...calendars.map(calendarInsert),
     ...routes.map(routeInsert),
     ...trips.map(tripInsert),
@@ -192,8 +199,17 @@ function stopTimeInsert(s) {
   );
 }
 
+function feedInfoInsert(feedEndDate) {
+  return `INSERT INTO transit_feed_info (id, feed_end_date) VALUES (1, ${quote(feedEndDate)});`;
+}
+
 function quote(value) {
-  return `'${String(value).split("'").join("''")}'`;
+  const text = String(value);
+  if (/[\r\n]/.test(text)) {
+    // 로더는 한 줄=한 statement로 파싱하므로 값에 개행이 있으면 statement가 쪼개진다(불변식 강제).
+    throw new Error(`value must not contain a newline (single-line statement invariant): ${JSON.stringify(text)}`);
+  }
+  return `'${text.replaceAll("'", "''")}'`;
 }
 
 function bool(value) {
@@ -221,6 +237,7 @@ async function main() {
     lineId: args["line-id"],
     startDate: args["start-date"],
     endDate: args["end-date"],
+    feedEndDate: args["feed-end-date"],
   });
   if (args.output) {
     await writeFile(args.output, seed.sql);
