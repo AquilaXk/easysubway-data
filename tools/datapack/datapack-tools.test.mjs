@@ -188,7 +188,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 12);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 13);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
@@ -546,7 +546,7 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 12);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 13);
     assert.equal(
       database.prepare("SELECT feed_end_date FROM transit_feed_info").get().feed_end_date,
       "20261231",
@@ -2588,7 +2588,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 12);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 13);
     assert.deepEqual(
       {
         ...database

@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 12;
+PRAGMA user_version = 13;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -26,6 +26,7 @@ CREATE TABLE stations (
   id TEXT NOT NULL PRIMARY KEY,
   name_ko TEXT NOT NULL,
   name_en TEXT NOT NULL DEFAULT '',
+  name_sub TEXT NOT NULL DEFAULT '',
   normalized_name TEXT NOT NULL,
   region TEXT NOT NULL DEFAULT '',
   latitude REAL,
