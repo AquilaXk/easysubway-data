@@ -24,6 +24,7 @@ on:
           - exploratory
           - release-candidate
           - production-publish
+          - rollback
       buildSpecPath:
         description: Production build spec path
         required: true
@@ -55,6 +56,15 @@ on:
       strictRouteRegressionPath:
         description: Strict route regression evidence path
         required: false
+      rollbackTargetSequence:
+        description: Target release sequence number for rollback (rollback mode only)
+        required: false
+      rollbackReason:
+        description: Reason for rollback (rollback mode only)
+        required: false
+      rollbackIdempotencyKey:
+        description: Idempotency key for rollback (rollback mode only)
+        required: false
 
 concurrency:
   group: datapack-release-${{ github.workflow }}-${{ github.ref }}
@@ -67,7 +77,7 @@ jobs:
     permissions:
       contents: read
     environment:
-      name: ${{ github.event.inputs.mode == 'production-publish' && 'production-datapack' || 'datapack-release-check' }}
+      name: ${{ (github.event.inputs.mode == 'production-publish' || github.event.inputs.mode == 'rollback') && 'production-datapack' || 'datapack-release-check' }}
     env:
       NODE_OPTIONS: --disable-warning=ExperimentalWarning
 
@@ -277,6 +287,7 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
 
       - name: Data Pack Release / Prepare release fixture
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         id: release-fixture
         run: |
           set -euo pipefail
@@ -322,6 +333,7 @@ jobs:
           echo "EASYSUBWAY_DATAPACK_BUILD_FIXTURE=${build_fixture}" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Audit route map coordinate coverage
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
@@ -333,6 +345,7 @@ jobs:
           test -s "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
 
       - name: Data Pack Release / Build data packs
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
@@ -346,6 +359,7 @@ jobs:
           fi
 
       - name: Data Pack Release / Validate source inventory
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node tools/datapack/validate-source-inventory.mjs \
@@ -353,6 +367,7 @@ jobs:
             --scope apps/mobile/release/production-datapack-scope.json
 
       - name: Data Pack Release / Validate generated data packs
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           test -f tools/datapack/schema/manifest.schema.json
@@ -369,6 +384,7 @@ jobs:
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
       - name: Data Pack Release / Write coverage gap evidence
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
@@ -386,6 +402,7 @@ jobs:
           test -s "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
 
       - name: Data Pack Release / Stage pack files
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}/catalog"
@@ -396,6 +413,7 @@ jobs:
           test -n "$(find "${EASYSUBWAY_DATAPACK_STAGE}/catalog" -name "*.sqlite.gz" -type f -print -quit)"
 
       - name: Data Pack Release / Verify uploaded pack checksums before manifest publish
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node tools/datapack/validate-datapack.mjs \
@@ -403,6 +421,7 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Stage manifest
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
@@ -411,6 +430,7 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Write route graph topology evidence
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node tools/datapack/build-route-graph-topology-report.mjs \
@@ -420,6 +440,7 @@ jobs:
           test -s "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
 
       - name: Data Pack Release / Write headway evidence
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node tools/datapack/build-headway-report.mjs \
@@ -428,6 +449,7 @@ jobs:
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
       - name: Data Pack Release / Write release evidence bundle
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -515,6 +537,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Validate release evidence bundle
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           bundle_args=(--bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}")
@@ -524,6 +547,7 @@ jobs:
           node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
 
       - name: Data Pack Release / Create manifest-last publish preflight plan
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node tools/datapack/create-publish-plan.mjs \
@@ -533,6 +557,7 @@ jobs:
           test -f "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
 
       - name: Data Pack Release / Validate object storage publish executor dry run
+        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
         run: |
           set -euo pipefail
           node tools/datapack/publish-object-storage.mjs \
@@ -559,6 +584,23 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --verify-only
           echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=success" >> "${GITHUB_ENV}"
+
+      - name: Data Pack Release / Rollback pointer swap
+        if: ${{ steps.release-mode.outputs.mode == 'rollback' && steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          # workflow_dispatch 자유입력을 셸에 직접 보간하지 않고 env로 전달한다(GHA expression injection 방지).
+          ROLLBACK_TARGET_SEQUENCE: ${{ github.event.inputs.rollbackTargetSequence }}
+          ROLLBACK_TARGET_CHANNEL: ${{ github.event.inputs.targetChannel }}
+          ROLLBACK_REASON: ${{ github.event.inputs.rollbackReason }}
+          ROLLBACK_IDEMPOTENCY_KEY: ${{ github.event.inputs.rollbackIdempotencyKey }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/rollback-manifest.mjs \
+            --target-sequence "${ROLLBACK_TARGET_SEQUENCE}" \
+            --channel "${ROLLBACK_TARGET_CHANNEL}" \
+            --base-url "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" \
+            --reason "${ROLLBACK_REASON}" \
+            --idempotency-key "${ROLLBACK_IDEMPOTENCY_KEY}"
 
       - name: Data Pack Release / Write observability metadata
         if: ${{ always() }}

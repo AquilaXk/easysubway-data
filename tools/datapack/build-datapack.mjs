@@ -7,6 +7,14 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { usesLocalPlaceholderHost } from "./production-url-policy.mjs";
 import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
+import {
+  canonicalJson,
+  stagedPackPath,
+  validatePackIdentity,
+  validatePackUrl,
+  validatePackUrlMatchesStagedPath,
+  withoutSignature,
+} from "./lib/manifest-validation.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const productionMinimumTableRowNames = [
@@ -41,6 +49,9 @@ async function main() {
   for (const pack of fixture.packs) {
     const artifactKind = pack.artifactKind ?? "fixture";
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
+    // requiredString은 non-empty 문자열을 강제하고, 검증·경로 파생·매니페스트는 모두 raw packUrl을
+    // 대상으로 한다(추출 전 로컬 validatePackUrl과 동일 — 검증 대상과 실사용 문자열 일치).
+    requiredString(packUrl, "pack.url");
     validatePackUrl(packUrl, "pack.url");
     validatePackUrlMatchesStagedPath(packUrl, pack, "pack.url");
     const outputPackPath = outputPathForPack(outputDir, packUrl, pack);
@@ -487,44 +498,6 @@ function outputPathForPack(outputDir, packUrl, pack) {
   return path.join(outputDir, packUrl);
 }
 
-function validatePackUrl(packUrl, label) {
-  requiredString(packUrl, label);
-  if (/%[0-9a-f]{2}/i.test(packUrl)) {
-    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
-  }
-  if (/^https:\/\//.test(packUrl)) {
-    if (!isAbsoluteHttpsWithHost(packUrl)) {
-      throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
-    }
-    return;
-  }
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(packUrl) || packUrl.startsWith("/") || packUrl.startsWith("//") || packUrl.includes("\\")) {
-    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
-  }
-  if (packUrl.split("/").includes("..")) {
-    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
-  }
-  const normalized = path.posix.normalize(packUrl);
-  if (normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
-    throw new Error(`${label} must be a safe relative path or absolute HTTPS URL`);
-  }
-}
-
-function validatePackUrlMatchesStagedPath(packUrl, pack, label) {
-  if (!/^https:\/\//.test(packUrl)) {
-    return;
-  }
-  const url = new URL(packUrl);
-  const expectedPathSuffix = `/${stagedPackPath(pack)}`;
-  if (!url.pathname.endsWith(expectedPathSuffix) || url.search !== "" || url.hash !== "") {
-    throw new Error(`${label} absolute HTTPS URL path must end with ${stagedPackPath(pack)}`);
-  }
-}
-
-function stagedPackPath(pack) {
-  return `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
-}
-
 function packSignature(pack) {
   if (pack.artifactKind === "production") {
     const canonical = productionSignaturePayload(pack);
@@ -552,29 +525,6 @@ function manifestSignature(manifest, packs) {
     algorithm: "sha256-manifest-v2",
     value: sha256(Buffer.from(canonical)),
   };
-}
-
-function withoutSignature(value) {
-  const copy = { ...value };
-  delete copy.signature;
-  return copy;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonicalValue(value));
-}
-
-function canonicalValue(value) {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map(canonicalValue);
-  }
-  if (typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
-  }
-  throw new Error("manifest canonical value is unsupported");
 }
 
 function fixtureSignaturePayload(pack) {
@@ -1610,8 +1560,10 @@ function validateFixture(fixture) {
       throw new Error("pack.artifactKind must be fixture or production");
     }
     schemaVersionNumber(pack.schemaVersion, "pack.schemaVersion");
-    validatePackUrl(pack.url ?? stagedPackPath(pack), "pack.url");
-    validatePackUrlMatchesStagedPath(pack.url ?? stagedPackPath(pack), pack, "pack.url");
+    const validatedPackUrl = pack.url ?? stagedPackPath(pack);
+    requiredString(validatedPackUrl, "pack.url");
+    validatePackUrl(validatedPackUrl, "pack.url");
+    validatePackUrlMatchesStagedPath(validatedPackUrl, pack, "pack.url");
     if (artifactKind === "production" && !isAbsoluteHttpsWithHost(pack.url)) {
       throw new Error("production pack url must be an absolute HTTPS URL");
     }
@@ -1794,20 +1746,6 @@ function isAbsoluteHttpsWithHost(value) {
     return url.protocol === "https:" && url.hostname !== "";
   } catch {
     return false;
-  }
-}
-
-function validatePackIdentity(value, label) {
-  if (!value || typeof value !== "object") {
-    throw new Error(`${label} must be an object`);
-  }
-  const packId = requiredString(value.id, `${label}.id`);
-  const version = requiredString(value.version, `${label}.version`);
-  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(packId)) {
-    throw new Error(`${label}.id is invalid`);
-  }
-  if (!/^[0-9]+$/.test(version)) {
-    throw new Error(`${label}.version is invalid`);
   }
 }
 

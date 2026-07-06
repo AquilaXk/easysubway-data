@@ -35,15 +35,43 @@ async function main() {
     });
   }
 
+  const currentManifestPath = args.has("current-manifest")
+    ? path.resolve(args.get("current-manifest"))
+    : manifestPath;
+  const currentManifestBytes = currentManifestPath === manifestPath
+    ? manifestBytes
+    : await readFile(currentManifestPath);
+
+  const releaseSequence = manifest.releaseSequence;
+  const includeReleaseManifest = Number.isInteger(releaseSequence) && releaseSequence >= 1;
+  const releaseSteps = includeReleaseManifest
+    ? [
+        {
+          type: "put-release-manifest-object",
+          sourcePath: "catalog/current.json",
+          objectKey: `catalog/releases/${releaseSequence}.json`,
+          sha256: sha256(manifestBytes),
+          sizeBytes: manifestBytes.length,
+          packCount: manifest.packs.length,
+          immutable: true,
+        },
+        {
+          type: "verify-release-manifest-object",
+          objectKey: `catalog/releases/${releaseSequence}.json`,
+          sha256: sha256(manifestBytes),
+          sizeBytes: manifestBytes.length,
+          packCount: manifest.packs.length,
+          immutable: true,
+        },
+      ]
+    : [];
+
   const plan = {
-    schemaVersion: 1,
+    schemaVersion: includeReleaseManifest ? 2 : 1,
     mode: "object-storage-preflight",
     manifestObjectKey: "catalog/current.json",
     steps: [
-      ...packPlans.map((packPlan) => ({
-        type: "put-pack-object",
-        ...packPlan,
-      })),
+      ...packPlans.map((packPlan) => ({ type: "put-pack-object", ...packPlan })),
       ...packPlans.map((packPlan) => ({
         type: "verify-pack-object",
         packId: packPlan.packId,
@@ -52,19 +80,20 @@ async function main() {
         sha256: packPlan.sha256,
         sizeBytes: packPlan.sizeBytes,
       })),
+      ...releaseSteps,
       {
         type: "put-manifest-object",
         sourcePath: "catalog/current.json",
         objectKey: "catalog/current.json",
-        sha256: sha256(manifestBytes),
-        sizeBytes: manifestBytes.length,
+        sha256: sha256(currentManifestBytes),
+        sizeBytes: currentManifestBytes.length,
         packCount: manifest.packs.length,
       },
       {
         type: "verify-manifest-object",
         objectKey: "catalog/current.json",
-        sha256: sha256(manifestBytes),
-        sizeBytes: manifestBytes.length,
+        sha256: sha256(currentManifestBytes),
+        sizeBytes: currentManifestBytes.length,
         packCount: manifest.packs.length,
       },
     ],
