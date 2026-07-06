@@ -23,10 +23,10 @@
       "originalLicenseSpdx": "Public-Domain",
       "originalCommercialUseAllowed": true,
       "renderingStrategy": "official-svg",
-      "bundledSvgRole": "app-render-source",
+      "bundledSvgRole": "review-reference-only",
       "attributionRequired": false,
       "commercialProductionReady": true,
-      "notes": "Public domain(IRTC1015). 상용 가능. 앱 렌더링에 원본 SVG를 그대로 사용하며 좌표는 SVG 텍스트 위치에서 재생성한다."
+      "notes": "Public domain(IRTC1015). 상용 가능. [2026-07-05 #1789 정정] SVG 번들은 #1715에서 제거되어 앱은 SVG를 직접 렌더하지 않는다. 렌더 정본은 PD SVG에서 파생한 구조화 데이터(track stroke 기하 + 투영 좌표)다 — PD는 창작적 표현의 파생·개변·상용이 모두 허용되므로 부산 등에 적용되는 'SVG 표현 파생 금지' 규칙의 예외이며, 좌표·기하 provenance = qa-wikimedia-seoul-svg-coordinate. GO SEOUL(서울시 2023) 노선도는 공공누리 제4유형(상업 금지·변경 금지)이라 레이아웃 트레이스를 렌더 소스로 쓰지 않고 비교 QA 기준 이미지로만 쓴다."
     },
     {
       "id": "busan",
