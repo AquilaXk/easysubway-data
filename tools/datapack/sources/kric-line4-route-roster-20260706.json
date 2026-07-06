@@ -1,0 +1,418 @@
+{
+  "sourceId": "kric-subway-route-info",
+  "mreaWideCd": "01",
+  "lnCd": "4",
+  "routNm": "4호선",
+  "capturedAt": "2026-07-06",
+  "stationCount": 51,
+  "stations": [
+    {
+      "stinConsOrdr": 1,
+      "stinCd": "405",
+      "railOprIsttCd": "NU",
+      "stinNm": "진접",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 2,
+      "stinCd": "406",
+      "railOprIsttCd": "NU",
+      "stinNm": "오남",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 3,
+      "stinCd": "408",
+      "railOprIsttCd": "NU",
+      "stinNm": "별내별가람",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 4,
+      "stinCd": "409",
+      "railOprIsttCd": "S1",
+      "stinNm": "불암산(당고개)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 5,
+      "stinCd": "410",
+      "railOprIsttCd": "S1",
+      "stinNm": "상계",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 6,
+      "stinCd": "411",
+      "railOprIsttCd": "S1",
+      "stinNm": "노원",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 7,
+      "stinCd": "412",
+      "railOprIsttCd": "S1",
+      "stinNm": "창동",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 8,
+      "stinCd": "413",
+      "railOprIsttCd": "S1",
+      "stinNm": "쌍문",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 9,
+      "stinCd": "414",
+      "railOprIsttCd": "S1",
+      "stinNm": "수유(강북구청)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 10,
+      "stinCd": "415",
+      "railOprIsttCd": "S1",
+      "stinNm": "미아",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 11,
+      "stinCd": "416",
+      "railOprIsttCd": "S1",
+      "stinNm": "미아사거리",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 12,
+      "stinCd": "417",
+      "railOprIsttCd": "S1",
+      "stinNm": "길음",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 13,
+      "stinCd": "418",
+      "railOprIsttCd": "S1",
+      "stinNm": "성신여대입구(돈암)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 14,
+      "stinCd": "419",
+      "railOprIsttCd": "S1",
+      "stinNm": "한성대입구(삼선교)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 15,
+      "stinCd": "420",
+      "railOprIsttCd": "S1",
+      "stinNm": "혜화",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 16,
+      "stinCd": "421",
+      "railOprIsttCd": "S1",
+      "stinNm": "동대문",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 17,
+      "stinCd": "422",
+      "railOprIsttCd": "S1",
+      "stinNm": "동대문역사문화공원",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 18,
+      "stinCd": "423",
+      "railOprIsttCd": "S1",
+      "stinNm": "충무로",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 19,
+      "stinCd": "424",
+      "railOprIsttCd": "S1",
+      "stinNm": "명동",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 20,
+      "stinCd": "425",
+      "railOprIsttCd": "S1",
+      "stinNm": "회현(남대문시장)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 21,
+      "stinCd": "426",
+      "railOprIsttCd": "S1",
+      "stinNm": "서울역",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 22,
+      "stinCd": "427",
+      "railOprIsttCd": "S1",
+      "stinNm": "숙대입구(갈월)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 23,
+      "stinCd": "428",
+      "railOprIsttCd": "S1",
+      "stinNm": "삼각지",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 24,
+      "stinCd": "429",
+      "railOprIsttCd": "S1",
+      "stinNm": "신용산",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 25,
+      "stinCd": "430",
+      "railOprIsttCd": "S1",
+      "stinNm": "이촌(국립중앙박물관)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 26,
+      "stinCd": "431",
+      "railOprIsttCd": "S1",
+      "stinNm": "동작(현충원)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 27,
+      "stinCd": "432",
+      "railOprIsttCd": "S1",
+      "stinNm": "총신대입구(이수)",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 28,
+      "stinCd": "433",
+      "railOprIsttCd": "S1",
+      "stinNm": "사당",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 29,
+      "stinCd": "434",
+      "railOprIsttCd": "S1",
+      "stinNm": "남태령",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 30,
+      "stinCd": "435",
+      "railOprIsttCd": "KR",
+      "stinNm": "선바위",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 31,
+      "stinCd": "436",
+      "railOprIsttCd": "KR",
+      "stinNm": "경마공원",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 32,
+      "stinCd": "437",
+      "railOprIsttCd": "KR",
+      "stinNm": "대공원",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 33,
+      "stinCd": "438",
+      "railOprIsttCd": "KR",
+      "stinNm": "과천",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 34,
+      "stinCd": "439",
+      "railOprIsttCd": "KR",
+      "stinNm": "정부과천청사",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 35,
+      "stinCd": "440",
+      "railOprIsttCd": "KR",
+      "stinNm": "인덕원",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 36,
+      "stinCd": "441",
+      "railOprIsttCd": "KR",
+      "stinNm": "평촌",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 37,
+      "stinCd": "442",
+      "railOprIsttCd": "KR",
+      "stinNm": "범계",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 38,
+      "stinCd": "443",
+      "railOprIsttCd": "KR",
+      "stinNm": "금정",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 39,
+      "stinCd": "444",
+      "railOprIsttCd": "KR",
+      "stinNm": "산본",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 40,
+      "stinCd": "445",
+      "railOprIsttCd": "KR",
+      "stinNm": "수리산",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 41,
+      "stinCd": "446",
+      "railOprIsttCd": "KR",
+      "stinNm": "대야미",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 42,
+      "stinCd": "447",
+      "railOprIsttCd": "KR",
+      "stinNm": "반월",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 43,
+      "stinCd": "448",
+      "railOprIsttCd": "KR",
+      "stinNm": "상록수",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 44,
+      "stinCd": "449",
+      "railOprIsttCd": "KR",
+      "stinNm": "한대앞",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 45,
+      "stinCd": "450",
+      "railOprIsttCd": "KR",
+      "stinNm": "중앙",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 46,
+      "stinCd": "451",
+      "railOprIsttCd": "KR",
+      "stinNm": "고잔",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 47,
+      "stinCd": "452",
+      "railOprIsttCd": "KR",
+      "stinNm": "초지",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 48,
+      "stinCd": "453",
+      "railOprIsttCd": "KR",
+      "stinNm": "안산",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 49,
+      "stinCd": "454",
+      "railOprIsttCd": "KR",
+      "stinNm": "능길",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 50,
+      "stinCd": "455",
+      "railOprIsttCd": "KR",
+      "stinNm": "정왕",
+      "lnCd": "4",
+      "routCd": "4"
+    },
+    {
+      "stinConsOrdr": 51,
+      "stinCd": "456",
+      "railOprIsttCd": "KR",
+      "stinNm": "오이도",
+      "lnCd": "4",
+      "routCd": "4"
+    }
+  ]
+}

@@ -92,3 +92,38 @@ test("KRIC normalizer는 context를 Map으로도 받는다", () => {
   });
   assert.equal(rows[0].stationId, "station-sadang");
 });
+
+test("KRIC normalizer는 자정 넘김(3시 미만) 시각에 +24h를 적용해 도착<=출발을 유지한다", () => {
+  // 오남 실데이터: 23:59:30 도착 → 00:00:00 출발(자정 넘김)
+  const rows = normalizeKricSubwayTimetable(
+    [{ railOprIsttCd: "S1", trnNo: "S4224", dayCd: "8", stinCd: "433", lnCd: "4", arvTm: "235930", dptTm: "000000" }],
+    CONTEXT,
+  );
+  const hms = (h, m, s = 0) => h * 3600 + m * 60 + s;
+  assert.equal(rows[0].arrivalSeconds, hms(23, 59, 30)); // 그대로
+  assert.equal(rows[0].departureSeconds, hms(24, 0, 0)); // 00:00 → 24:00
+  assert.ok(rows[0].arrivalSeconds <= rows[0].departureSeconds);
+});
+
+test("KRIC normalizer는 row별 exptCd로 급행/일반 servicePattern을 도출한다", () => {
+  const rows = normalizeKricSubwayTimetable(
+    [
+      { railOprIsttCd: "S1", trnNo: "E1", dayCd: "8", stinCd: "433", lnCd: "4", arvTm: "084830", dptTm: "084900", exptCd: "1" },
+      { railOprIsttCd: "S1", trnNo: "L1", dayCd: "8", stinCd: "433", lnCd: "4", arvTm: "085830", dptTm: "085900", exptCd: null },
+    ],
+    CONTEXT,
+  );
+  assert.equal(rows.find((r) => r.trnNo === "E1").servicePattern, "EXPRESS");
+  assert.equal(rows.find((r) => r.trnNo === "L1").servicePattern, "LOCAL");
+});
+
+test("KRIC normalizer는 공백(' ') 시각을 미제공(null)으로 처리한다", () => {
+  // 불암산 K4534 실데이터: dptTm=" "(공백) → 종착으로 보고 출발=도착
+  const rows = normalizeKricSubwayTimetable(
+    [{ railOprIsttCd: "S1", trnNo: "K4534", dayCd: "8", stinCd: "433", lnCd: "4", arvTm: "085330", dptTm: " " }],
+    CONTEXT,
+  );
+  const hms = (h, m, s = 0) => h * 3600 + m * 60 + s;
+  assert.equal(rows[0].arrivalSeconds, hms(8, 53, 30));
+  assert.equal(rows[0].departureSeconds, hms(8, 53, 30));
+});
