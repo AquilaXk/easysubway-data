@@ -1,0 +1,23 @@
+{
+  "region": "수도권",
+  "spacing": {
+    "count": 753,
+    "p5": 44.95077808002862,
+    "p25": 73.8140000000003,
+    "median": 101.02400000000034,
+    "p75": 145.29189450441206,
+    "p95": 295.15287906719755,
+    "max": 1069.4688765510982,
+    "p95OverP5": 6.566135040904494
+  },
+  "crossings": 86,
+  "crossingsByClass": {
+    "free": 19,
+    "knotCovered": 26,
+    "knotVisible": 41,
+    "knot": 67,
+    "total": 86
+  },
+  "octoViolations": 10,
+  "warnings": 0
+}
