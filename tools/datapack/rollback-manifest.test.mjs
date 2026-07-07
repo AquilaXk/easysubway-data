@@ -278,7 +278,7 @@ test("③ 참조 팩이 스토리지에 없으면 거부한다", async () => {
   try {
     await assert.rejects(
       runRollback(["--target-sequence", "2", "--channel", "staging", "--reason", "test", "--idempotency-key", "k3"], baseUrl),
-      /missing pack/,
+      /referenced pack.*not found/,
     );
   } finally {
     storage.server.close();

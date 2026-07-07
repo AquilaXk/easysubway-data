@@ -20,7 +20,7 @@ on:
         type: choice
         required: true
         default: exploratory
-        options: [exploratory, release-candidate, production-publish, rollback]
+        options: [exploratory, release-candidate, production-publish, rollback, rollout-update]
       targetChannel:
         description: Target data pack channel
         type: choice
@@ -45,7 +45,7 @@ jobs:
     permissions:
       contents: read
     environment:
-      name: ${{ (github.event.inputs.mode == 'production-publish' || github.event.inputs.mode == 'rollback') && 'production-datapack' || 'datapack-release-check' }}
+      name: ${{ (github.event.inputs.mode == 'production-publish' || github.event.inputs.mode == 'rollback' || github.event.inputs.mode == 'rollout-update') && 'production-datapack' || 'datapack-release-check' }}
     env:
       NODE_OPTIONS: --disable-warning=ExperimentalWarning
 
@@ -97,7 +97,7 @@ jobs:
               console.error("modeArgs must be a JSON object");
               process.exit(1);
             }
-            const keys = ["buildSpecPath","releaseRequestId","releaseRequestPath","androidEvidencePath","strictRouteRegressionPath","allowGaps","rollbackTargetSequence","rollbackReason","rollbackIdempotencyKey"];
+            const keys = ["buildSpecPath","releaseRequestId","releaseRequestPath","androidEvidencePath","strictRouteRegressionPath","allowGaps","rollbackTargetSequence","rollbackReason","rollbackIdempotencyKey","rolloutPercentage","rolloutTargetSequence"];
             const out = [];
             for (const k of keys) {
               const v = String(a[k] ?? "");
@@ -209,6 +209,11 @@ jobs:
             echo "mode=${mode}"
             echo "allow_gaps=${allow_gaps}"
             echo "target_channel=${target_channel}"
+            if [[ "${mode}" == "rollback" || "${mode}" == "rollout-update" ]]; then
+              echo "is-pointer-only=true"
+            else
+              echo "is-pointer-only=false"
+            fi
           } >> "${GITHUB_OUTPUT}"
 
       - name: Data Pack Release / Restore GitHub Actions dotenv secret
@@ -307,7 +312,7 @@ jobs:
           echo "RELEASE_REQUEST_PATH=release-request.json" >> "$GITHUB_ENV"
 
       - name: Data Pack Release / Prepare release fixture
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         id: release-fixture
         run: |
           set -euo pipefail
@@ -353,7 +358,7 @@ jobs:
           echo "EASYSUBWAY_DATAPACK_BUILD_FIXTURE=${build_fixture}" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Audit route map coordinate coverage
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
@@ -365,7 +370,7 @@ jobs:
           test -s "${EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT}"
 
       - name: Data Pack Release / Build data packs
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
@@ -379,7 +384,7 @@ jobs:
           fi
 
       - name: Data Pack Release / Validate source inventory
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           node tools/datapack/validate-source-inventory.mjs \
@@ -387,7 +392,7 @@ jobs:
             --scope apps/mobile/release/production-datapack-scope.json
 
       - name: Data Pack Release / Validate generated data packs
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           test -f tools/datapack/schema/manifest.schema.json
@@ -404,7 +409,7 @@ jobs:
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
       - name: Data Pack Release / Write coverage gap evidence
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}"
@@ -422,7 +427,7 @@ jobs:
           test -s "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
 
       - name: Data Pack Release / Stage pack files
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           mkdir -p "${EASYSUBWAY_DATAPACK_STAGE}/catalog"
@@ -433,7 +438,7 @@ jobs:
           test -n "$(find "${EASYSUBWAY_DATAPACK_STAGE}/catalog" -name "*.sqlite.gz" -type f -print -quit)"
 
       - name: Data Pack Release / Verify uploaded pack checksums before manifest publish
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           node tools/datapack/validate-datapack.mjs \
@@ -441,7 +446,7 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Stage manifest
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
@@ -450,7 +455,7 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}"
 
       - name: Data Pack Release / Write route graph topology evidence
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           node tools/datapack/build-route-graph-topology-report.mjs \
@@ -460,7 +465,7 @@ jobs:
           test -s "${EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT}"
 
       - name: Data Pack Release / Write headway evidence
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           node tools/datapack/build-headway-report.mjs \
@@ -469,7 +474,7 @@ jobs:
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
       - name: Data Pack Release / Write release evidence bundle
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         id: evidence-bundle
         run: |
           set -euo pipefail
@@ -558,7 +563,7 @@ jobs:
           NODE
 
       - name: Data Pack Release / Validate release evidence bundle
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           bundle_args=(--bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}")
@@ -568,7 +573,7 @@ jobs:
           node tools/datapack/validate-release-evidence-bundle.mjs "${bundle_args[@]}"
 
       - name: Data Pack Release / Create manifest-last publish preflight plan
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           node tools/datapack/create-publish-plan.mjs \
@@ -578,7 +583,7 @@ jobs:
           test -f "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}"
 
       - name: Data Pack Release / Validate object storage publish executor dry run
-        if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
           node tools/datapack/publish-object-storage.mjs \
@@ -663,6 +668,21 @@ jobs:
             --base-url "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" \
             --reason "${ROLLBACK_REASON}" \
             --idempotency-key "${ROLLBACK_IDEMPOTENCY_KEY}"
+
+      - name: Data Pack Release / Rollout update pointer swap
+        if: ${{ steps.release-mode.outputs.mode == 'rollout-update' && steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          # workflow_dispatch 자유입력을 셸에 직접 보간하지 않고 env로 전달한다(GHA expression injection 방지).
+          ROLLOUT_TARGET_SEQUENCE: ${{ steps.args.outputs.rolloutTargetSequence }}
+          ROLLOUT_PERCENTAGE: ${{ steps.args.outputs.rolloutPercentage }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/publish-rollout.mjs \
+            --base-url "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" \
+            --target-sequence "${ROLLOUT_TARGET_SEQUENCE}" \
+            --percentage "${ROLLOUT_PERCENTAGE}" \
+            --channel production
+          echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=success" >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Write observability metadata
         if: ${{ always() }}

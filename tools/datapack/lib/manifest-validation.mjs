@@ -472,7 +472,7 @@ export function validateManifestSignature(manifest) {
   }
 }
 
-export function validateManifest(manifest, { requireProduction = false } = {}) {
+export function validateManifest(manifest, { requireProduction = false, releasesTarget = false } = {}) {
   validateManifestJsonSchema(manifest);
   if (!manifest || typeof manifest !== "object") {
     throw new Error("manifest must be an object");
@@ -503,6 +503,20 @@ export function validateManifest(manifest, { requireProduction = false } = {}) {
   if (manifest.emergencyOverride !== undefined) {
     validatePackIdentity(manifest.emergencyOverride, "emergencyOverride");
     requiredString(manifest.emergencyOverride.reason, "emergencyOverride.reason");
+  }
+  if (manifest.rollout !== undefined) {
+    if (releasesTarget) {
+      throw new Error("releases 게시 대상 매니페스트에는 rollout을 넣을 수 없다");
+    }
+    const r = manifest.rollout;
+    if (typeof r !== "object" || r === null) throw new Error("rollout must be object");
+    if (!Number.isInteger(r.percentage) || r.percentage < 0 || r.percentage > 100) {
+      throw new Error("rollout.percentage must be integer 0..100");
+    }
+    if (typeof r.seed !== "string" || !/^[a-f0-9]{32}$/.test(r.seed)) {
+      throw new Error("rollout.seed must be 32-char lowercase hex");
+    }
+    // 서명 경계 안 필드이므로 별도 처리 없음(canonicalJson이 자동 포함)
   }
   for (const pack of manifest.packs) {
     validatePackIdentity(pack, "pack");

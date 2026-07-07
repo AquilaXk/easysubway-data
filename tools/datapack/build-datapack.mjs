@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, createSign } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
@@ -15,6 +15,7 @@ import {
   validatePackUrlMatchesStagedPath,
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
+import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const productionMinimumTableRowNames = [
@@ -584,18 +585,6 @@ function canonicalRouteRegressionScope(scope) {
 
 function canonicalProductionPackUrl(packUrl) {
   return new URL(packUrl).toString();
-}
-
-function signingPrivateKey() {
-  const key = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM?.trim();
-  if (!key) {
-    throw new Error("EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM is required for production data pack signatures");
-  }
-  return key;
-}
-
-function rsaSha256Signature(privateKey, value) {
-  return createSign("RSA-SHA256").update(value).sign(privateKey).toString("base64url");
 }
 
 function regionalQualityMetrics(pack) {

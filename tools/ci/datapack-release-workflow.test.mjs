@@ -58,3 +58,12 @@ test("production-publish는 release request 조회 스텝과 !cancelled() 콜백
   // evidence-bundle 출력을 콜백 게이트로 사용하면 release-candidate에서도 발사 → 금지
   assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
 });
+
+test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고 빌드 스텝을 pointer-only로 게이트한다", () => {
+  assert.match(yml, /rollout-update/);
+  assert.match(yml, /publish-rollout\.mjs/);
+  assert.match(yml, /rolloutPercentage/);
+  assert.match(yml, /rolloutTargetSequence/);
+  assert.match(yml, /is-pointer-only/);            // 빌드 스텝 게이팅 output
+  assert.doesNotMatch(yml, /mode != 'rollback'/);  // 구 게이트가 pointer-only로 통합됨
+});

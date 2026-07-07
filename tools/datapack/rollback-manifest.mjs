@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
-import http from "node:http";
-import https from "node:https";
 import {
   validateManifest,
 } from "./lib/manifest-validation.mjs";
+import {
+  request,
+  objectUrl,
+  sha256,
+  verifyReferencedPacks,
+  putCurrentAndVerify,
+} from "./lib/object-storage-publish.mjs";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -40,65 +44,23 @@ async function main() {
     throw new Error("rollback target expired; rebuild required");
   }
 
-  // (4) 참조 팩 존재·sha256 대조
-  // preauth(OCI PAR) 대상은 HEAD/meta sha를 신뢰할 수 없어(publish-object-storage와 동일 이유)
-  // GET 본문 sha256을 manifest pack.sha256과 직접 대조한다 — 팩이 훼손·교체되면 스왑 거부(fail-closed).
-  for (const pack of manifest.packs) {
-    const packKey = pack.url && !/^https:\/\//.test(pack.url) ? pack.url : `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
-    const packResponse = await request(objectUrl(baseUrl, packKey), "GET");
-    if (packResponse.statusCode !== 200) {
-      throw new Error(`rollback target references missing pack ${packKey} (HTTP ${packResponse.statusCode})`);
-    }
-    const storedSha256 = sha256(packResponse.body);
-    if (storedSha256 !== pack.sha256) {
-      throw new Error(`rollback target pack ${packKey} sha256 mismatch: stored=${storedSha256} manifest=${pack.sha256}`);
-    }
-  }
+  // (4) 참조 팩 존재·sha256 대조 (lib 공유, fail-closed)
+  await verifyReferencedPacks(baseUrl, manifest);
 
-  // (5) 바이트 동일 current.json PUT + 재검증
-  const currentUrl = objectUrl(baseUrl, "catalog/current.json");
-  const previous = await request(currentUrl, "GET");
-  const previousCurrentSha256 = previous.statusCode === 200 ? sha256(previous.body) : null;
-  if (!dryRun) {
-    const put = await request(currentUrl, "PUT", releaseBytes, {
-      "content-type": "application/json",
-      "content-length": String(releaseBytes.length),
-      "cache-control": "public, max-age=60",
-    });
-    if (put.statusCode < 200 || put.statusCode >= 300) {
-      throw new Error(`current.json PUT failed with HTTP ${put.statusCode}`);
-    }
-    const verify = await request(currentUrl, "GET");
-    if (sha256(verify.body) !== sha256(releaseBytes)) {
-      throw new Error("current.json byte-identity verification failed");
-    }
+  // (5) 바이트 동일 current.json PUT + 재검증 (dry-run 시 GET만)
+  let previousCurrentSha256;
+  if (dryRun) {
+    const currentUrl = objectUrl(baseUrl, "catalog/current.json");
+    const previous = await request(currentUrl, "GET");
+    previousCurrentSha256 = previous.statusCode === 200 ? sha256(previous.body) : null;
+  } else {
+    previousCurrentSha256 = await putCurrentAndVerify(baseUrl, releaseBytes);
   }
 
   process.stdout.write(`${JSON.stringify({
     targetSequence, channel, previousCurrentSha256,
     newCurrentSha256: sha256(releaseBytes), reason, idempotencyKey,
   })}\n`);
-}
-
-function request(url, method, body = Buffer.alloc(0), headers = {}) {
-  const transport = url.protocol === "https:" ? https : http;
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    const req = transport.request(url, { method, headers }, (res) => {
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => { res.body = Buffer.concat(chunks); resolve(res); });
-    });
-    req.on("error", reject);
-    if (body.length > 0) req.write(body);
-    req.end();
-  });
-}
-
-function objectUrl(baseUrl, key) {
-  const url = new URL(baseUrl.toString());
-  const base = url.pathname.replace(/\/+$/, "");
-  url.pathname = `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  return url;
 }
 
 function parseArgs(argv) {
@@ -120,7 +82,5 @@ function requireArg(args, name) {
   if (!v) throw new Error(`missing required argument: --${name}`);
   return v;
 }
-
-function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 main().catch((error) => { console.error(error.message); process.exitCode = 1; });

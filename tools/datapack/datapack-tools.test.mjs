@@ -10,6 +10,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
+import { validateManifest } from "./lib/manifest-validation.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -11925,3 +11926,519 @@ function representativeRouteRegressionPayload(routes) {
     })),
   );
 }
+
+// rollout 검증 단위 테스트용 최소 유효 v1 fixture 매니페스트 생성 헬퍼
+function minimalFixtureManifest() {
+  const hex64 = "a".repeat(64);
+  return {
+    ttlSeconds: 3600,
+    packs: [
+      {
+        id: "test",
+        version: "1",
+        artifactKind: "fixture",
+        url: "catalog/test-v1.sqlite.gz",
+        sha256: hex64,
+        sqliteSha256: hex64,
+        sizeBytes: 1,
+        signature: { algorithm: "sha256-pack-manifest-v1", value: hex64 },
+        schemaVersion: "1",
+        sourceInventory: [
+          {
+            id: "src",
+            owner: "test",
+            url: "https://example.com",
+            license: "fixture",
+            licenseStatus: "fixture-only",
+            redistributionAllowed: false,
+            updateFrequency: "manual",
+            updatedAt: "2026-01-01",
+            fields: ["test"],
+          },
+        ],
+        regionalQualityMetrics: {
+          stationCount: 0,
+          facilityCoverageRatio: 0,
+          requiredFacilityEvidenceCoverageRatio: 0,
+          strictRouteEligibleFacilityRatio: 0,
+          operationalKnownRatio: 0,
+          freshnessValidRatio: 0,
+          fieldVerifiedPathwayRatio: 0,
+          edgeCount: 0,
+          unknownAccessibilityRatio: 0,
+          unknownEdgeRatioByProfile: { wheelchair: 0, stroller: 0, lowMobility: 0 },
+        },
+        representativeRouteRegressions: [],
+        representativeRouteRegressionSignature: {
+          algorithm: "sha256-route-regression-v1",
+          value: hex64,
+        },
+        requiredTables: ["catalog_metadata"],
+      },
+    ],
+  };
+}
+
+test("매니페스트 rollout은 percentage 0~100·seed hex32만 허용한다", () => {
+  const base = minimalFixtureManifest();
+  const ok = { ...base, rollout: { percentage: 10, seed: "a".repeat(32) } };
+  assert.doesNotThrow(() => validateManifest(ok));
+  assert.throws(
+    () => validateManifest({ ...base, rollout: { percentage: 101, seed: "a".repeat(32) } }),
+    /rollout.*percentage/,
+  );
+  assert.throws(
+    () => validateManifest({ ...base, rollout: { percentage: 10, seed: "zz" } }),
+    /rollout.*seed/,
+  );
+});
+
+test("releases 게시 대상 매니페스트에 rollout이 있으면 거부한다", () => {
+  const base = minimalFixtureManifest();
+  const withRollout = { ...base, rollout: { percentage: 10, seed: "a".repeat(32) } };
+  assert.throws(
+    () => validateManifest(withRollout, { releasesTarget: true }),
+    /releases.*rollout/i,
+  );
+});
+
+test("manifest-signing: rsaSha256Signature는 base64url 서명을 반환하고 공개키로 검증된다", async () => {
+  const { rsaSha256Signature } = await import("./lib/manifest-signing.mjs");
+  const { verifyRsaSha256Signature } = await import("./lib/manifest-validation.mjs");
+  const value = "manifest-signing-unit-test-fixture-payload";
+  const sig = rsaSha256Signature(testPrivateKeyPem, value);
+  assert.ok(typeof sig === "string", "서명은 문자열이어야 함");
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(sig), "base64url 형식이어야 함");
+  assert.ok(verifyRsaSha256Signature(testPublicKeyPem, value, sig), "공개키로 검증되어야 함");
+});
+
+test("manifest-signing: signingPrivateKey는 env 미설정 시 throw, 설정 시 PEM 반환", async () => {
+  const { signingPrivateKey } = await import("./lib/manifest-signing.mjs");
+  const savedKey = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  try {
+    delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+    assert.throws(() => signingPrivateKey(), /EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM/);
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = testPrivateKeyPem;
+    assert.equal(signingPrivateKey(), testPrivateKeyPem.trim());
+  } finally {
+    if (savedKey !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = savedKey;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  }
+});
+
+test("manifest-signing: manifestSignatureValue는 canonicalJson(withoutSignature) 기반 RSA 서명을 반환한다", async () => {
+  const { manifestSignatureValue } = await import("./lib/manifest-signing.mjs");
+  const { verifyRsaSha256Signature, canonicalJson, withoutSignature } = await import("./lib/manifest-validation.mjs");
+  const manifest = {
+    manifestVersion: 2,
+    channel: "test",
+    releaseSequence: 1,
+    publishedAt: "2026-01-01T00:00:00.000Z",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    keyId: "test-key",
+    ttlSeconds: 3600,
+    packs: [],
+    signature: { algorithm: "rsa-sha256-manifest-v2", value: "PLACEHOLDER" },
+  };
+  const savedKey = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  try {
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = testPrivateKeyPem;
+    const sigValue = manifestSignatureValue(manifest);
+    const canonical = canonicalJson(withoutSignature(manifest));
+    assert.ok(/^[A-Za-z0-9_-]+$/.test(sigValue), "base64url 형식이어야 함");
+    assert.ok(verifyRsaSha256Signature(testPublicKeyPem, canonical, sigValue), "서명 검증 통과해야 함");
+  } finally {
+    if (savedKey !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = savedKey;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  }
+});
+
+// ─── buildRolloutManifest 단위 테스트 (#1692) ──────────────────────────────────
+// production releases 픽스처 생성 헬퍼 (keyId="production-v1", RSA-SHA256 서명 계산)
+
+function _rolloutCanonicalValue(value) {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.map(_rolloutCanonicalValue);
+  return Object.fromEntries(
+    Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((k) => [k, _rolloutCanonicalValue(value[k])]),
+  );
+}
+
+function _rolloutCanonicalJson(value) {
+  return JSON.stringify(_rolloutCanonicalValue(value));
+}
+
+function _rolloutSign(data) {
+  return createSign("RSA-SHA256").update(data).sign(testPrivateKeyPem).toString("base64url");
+}
+
+function buildProductionReleasesManifest(overrides = {}) {
+  const hex64 = "a".repeat(64);
+  const base = {
+    manifestVersion: 2,
+    channel: "production",
+    releaseSequence: 5,
+    publishedAt: "2026-07-07T00:00:00.000Z",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+    keyId: "production-v1",
+    ttlSeconds: 3600,
+    signature: { algorithm: "rsa-sha256-manifest-v2", value: "placeholder" },
+    packs: [
+      {
+        id: "capital",
+        version: "1",
+        artifactKind: "production",
+        url: "https://cdn.example.com/catalog/capital-v1.sqlite.gz",
+        sha256: hex64,
+        sqliteSha256: hex64,
+        sizeBytes: 1000,
+        signature: {
+          algorithm: "rsa-sha256-pack-manifest-v2",
+          value: _rolloutSign("pack-payload"),
+        },
+        schemaVersion: "1",
+        sourceInventory: [
+          {
+            id: "src1",
+            owner: "test-owner",
+            url: "https://data.example.com/catalog",
+            license: "CC-BY-4.0",
+            licenseStatus: "redistributable",
+            redistributionAllowed: true,
+            updateFrequency: "daily",
+            updatedAt: "2026-07-07T00:00:00.000Z",
+            fields: ["stations"],
+            coverageScope: {
+              regionIds: ["seoul"],
+              operatorIds: ["seoulmetro"],
+              sourceDomains: ["station_map"],
+            },
+          },
+        ],
+        regionalQualityMetrics: {
+          stationCount: 100,
+          edgeCount: 200,
+          facilityCoverageRatio: 0.5,
+          requiredFacilityEvidenceCoverageRatio: 0.5,
+          strictRouteEligibleFacilityRatio: 0.5,
+          operationalKnownRatio: 1.0,
+          freshnessValidRatio: 0.8,
+          fieldVerifiedPathwayRatio: 0.3,
+          unknownAccessibilityRatio: 0.2,
+          unknownEdgeRatioByProfile: { wheelchair: 0.1, stroller: 0.1, lowMobility: 0.1 },
+        },
+        representativeRouteRegressions: [],
+        representativeRouteRegressionSignature: {
+          algorithm: "rsa-sha256-route-regression-v1",
+          value: _rolloutSign("regression-payload"),
+        },
+        requiredTables: ["stations"],
+        minimumTableRows: {
+          stations: 1,
+          station_lines: 1,
+          network_edges: 1,
+          facilities: 1,
+          station_facility_evidence: 1,
+        },
+      },
+    ],
+    ...overrides,
+  };
+  const { signature: _dropSig, ...unsigned } = base;
+  base.signature = {
+    algorithm: "rsa-sha256-manifest-v2",
+    value: _rolloutSign(_rolloutCanonicalJson(unsigned)),
+  };
+  return base;
+}
+
+test("buildRolloutManifest (a): percentage 50 → rollout{50,seed hex32} + validateManifest 통과(재서명 유효)", async () => {
+  const { buildRolloutManifest } = await import("./update-rollout.mjs");
+  const { verifyRsaSha256Signature, canonicalJson, withoutSignature } = await import("./lib/manifest-validation.mjs");
+  const releases = buildProductionReleasesManifest();
+  const savedPriv = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  const savedPub = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  try {
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = testPrivateKeyPem;
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = testPublicKeyPem;
+    const result = buildRolloutManifest({ releases, current: null, targetSequence: 5, percentage: 50 });
+    assert.ok(result.rollout, "rollout 필드 있어야 함");
+    assert.equal(result.rollout.percentage, 50);
+    assert.match(result.rollout.seed, /^[a-f0-9]{32}$/, "seed hex32 이어야 함");
+    assert.ok(
+      verifyRsaSha256Signature(testPublicKeyPem, canonicalJson(withoutSignature(result)), result.signature.value),
+      "재서명이 공개키로 검증되어야 함",
+    );
+    assert.doesNotThrow(() => validateManifest(result, { requireProduction: true }), "validateManifest 통과해야 함");
+  } finally {
+    if (savedPriv !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = savedPriv;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+    if (savedPub !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = savedPub;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  }
+});
+
+test("buildRolloutManifest (b): percentage 100 → rollout 없음, releases에서 rollout 제거한 구조와 deepStrictEqual", async () => {
+  const { buildRolloutManifest } = await import("./update-rollout.mjs");
+  const releases = buildProductionReleasesManifest();
+  const { rollout: _dropRollout, ...releasesWithoutRollout } = releases;
+  const result = buildRolloutManifest({ releases, current: null, targetSequence: releases.releaseSequence, percentage: 100 });
+  assert.deepStrictEqual(result, releasesWithoutRollout);
+});
+
+test("buildRolloutManifest (c): current.rollout.seed 존재 → 신규 percentage 결과 seed 계승", async () => {
+  const { buildRolloutManifest } = await import("./update-rollout.mjs");
+  const releases = buildProductionReleasesManifest();
+  const existingSeed = "b".repeat(32);
+  const current = { ...releases, rollout: { percentage: 30, seed: existingSeed } };
+  const savedPriv = process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+  const savedPub = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  try {
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = testPrivateKeyPem;
+    process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = testPublicKeyPem;
+    const result = buildRolloutManifest({ releases, current, targetSequence: releases.releaseSequence, percentage: 70 });
+    assert.equal(result.rollout.seed, existingSeed, "seed 계승해야 함");
+    assert.equal(result.rollout.percentage, 70);
+  } finally {
+    if (savedPriv !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = savedPriv;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
+    if (savedPub !== undefined) process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = savedPub;
+    else delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
+  }
+});
+
+test("buildRolloutManifest (d): targetSequence ≠ releases.releaseSequence → throws /sequence mismatch/", async () => {
+  const { buildRolloutManifest } = await import("./update-rollout.mjs");
+  const releases = buildProductionReleasesManifest();
+  assert.throws(
+    () => buildRolloutManifest({ releases, current: null, targetSequence: 999, percentage: 50 }),
+    /sequence mismatch/,
+  );
+});
+
+test("buildRolloutManifest (e): current.releaseSequence ≠ targetSequence → throws /다른 릴리즈/", async () => {
+  const { buildRolloutManifest } = await import("./update-rollout.mjs");
+  const releases = buildProductionReleasesManifest();
+  const staleRelease = buildProductionReleasesManifest({ releaseSequence: 3 });
+  assert.throws(
+    () => buildRolloutManifest({ releases, current: staleRelease, targetSequence: releases.releaseSequence, percentage: 50 }),
+    /다른 릴리즈/,
+  );
+});
+
+// ─── publish-rollout CLI 테스트 (#1692) ────────────────────────────────────────
+// rollback-manifest.test.mjs의 startStorage·패턴을 재사용해 mock 객체스토리지를 구성.
+
+const ROLLOUT_PACK_BYTES = Buffer.from("rollout-test-pack-bytes");
+const ROLLOUT_PACK_SHA = createHash("sha256").update(ROLLOUT_PACK_BYTES).digest("hex");
+
+function buildRolloutTestReleasesManifest(overrides = {}) {
+  const sqliteSha = "a".repeat(64);
+  const base = {
+    manifestVersion: 2,
+    channel: "production",
+    releaseSequence: 10,
+    publishedAt: "2026-07-07T00:00:00.000Z",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+    keyId: "production-v1",
+    ttlSeconds: 3600,
+    signature: { algorithm: "rsa-sha256-manifest-v2", value: "placeholder" },
+    packs: [
+      {
+        id: "capital",
+        version: "1",
+        artifactKind: "production",
+        url: "https://cdn.example.com/catalog/capital-v1.sqlite.gz",
+        sha256: ROLLOUT_PACK_SHA,
+        sqliteSha256: sqliteSha,
+        sizeBytes: ROLLOUT_PACK_BYTES.length,
+        signature: {
+          algorithm: "rsa-sha256-pack-manifest-v2",
+          value: _rolloutSign("rollout-pack-payload"),
+        },
+        schemaVersion: "1",
+        sourceInventory: [
+          {
+            id: "src1",
+            owner: "test-owner",
+            url: "https://data.example.com/catalog",
+            license: "CC-BY-4.0",
+            licenseStatus: "redistributable",
+            redistributionAllowed: true,
+            updateFrequency: "daily",
+            updatedAt: "2026-07-07T00:00:00.000Z",
+            fields: ["stations"],
+            coverageScope: {
+              regionIds: ["seoul"],
+              operatorIds: ["seoulmetro"],
+              sourceDomains: ["station_map"],
+            },
+          },
+        ],
+        regionalQualityMetrics: {
+          stationCount: 100,
+          edgeCount: 200,
+          facilityCoverageRatio: 0.5,
+          requiredFacilityEvidenceCoverageRatio: 0.5,
+          strictRouteEligibleFacilityRatio: 0.5,
+          operationalKnownRatio: 1.0,
+          freshnessValidRatio: 0.8,
+          fieldVerifiedPathwayRatio: 0.3,
+          unknownAccessibilityRatio: 0.2,
+          unknownEdgeRatioByProfile: { wheelchair: 0.1, stroller: 0.1, lowMobility: 0.1 },
+        },
+        representativeRouteRegressions: [],
+        representativeRouteRegressionSignature: {
+          algorithm: "rsa-sha256-route-regression-v1",
+          value: _rolloutSign("rollout-regression-payload"),
+        },
+        requiredTables: ["stations"],
+        minimumTableRows: {
+          stations: 1,
+          station_lines: 1,
+          network_edges: 1,
+          facilities: 1,
+          station_facility_evidence: 1,
+        },
+      },
+    ],
+    ...overrides,
+  };
+  const { signature: _dropSig, ...unsigned } = base;
+  base.signature = {
+    algorithm: "rsa-sha256-manifest-v2",
+    value: _rolloutSign(_rolloutCanonicalJson(unsigned)),
+  };
+  return base;
+}
+
+async function startRolloutTestStorage(seed) {
+  const objects = new Map(seed);
+  const server = createServer((req, res) => {
+    const key = decodeURIComponent(req.url.replace(/^\//, ""));
+    if (req.method === "PUT") {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        objects.set(key, { body: Buffer.concat(chunks) });
+        res.statusCode = 200;
+        res.end();
+      });
+      return;
+    }
+    const found = objects.get(key);
+    if (!found) { res.statusCode = 404; res.end(); return; }
+    res.setHeader("content-length", String(found.body.length));
+    res.statusCode = 200;
+    res.end(req.method === "HEAD" ? undefined : found.body);
+  });
+  return new Promise((r) => server.listen(0, "127.0.0.1", () => r({ server, objects, port: server.address().port })));
+}
+
+const rolloutTestEnv = {
+  ...process.env,
+  EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+  EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: testPrivateKeyPem,
+};
+
+async function runPublishRollout(args, baseUrl) {
+  return execFileAsync(
+    "node",
+    [path.join(root, "tools/datapack/publish-rollout.mjs"), "--base-url", baseUrl, ...args],
+    { env: rolloutTestEnv },
+  );
+}
+
+test("publish-rollout (①): --percentage 30 → current.json에 rollout{30,seed hex32}+서명 유효+참조 pack sha 검증 통과", async () => {
+  const manifest = buildRolloutTestReleasesManifest();
+  const manifestBytes = Buffer.from(JSON.stringify(manifest));
+  const oldCurrentBytes = Buffer.from(JSON.stringify({ ...manifest, rollout: { percentage: 10, seed: "c".repeat(32) } }));
+
+  const storage = await startRolloutTestStorage([
+    ["catalog/releases/10.json", { body: manifestBytes }],
+    ["catalog/capital-v1.sqlite.gz", { body: ROLLOUT_PACK_BYTES }],
+    ["catalog/current.json", { body: oldCurrentBytes }],
+  ]);
+  const baseUrl = `http://127.0.0.1:${storage.port}`;
+  try {
+    const { stdout } = await runPublishRollout(
+      ["--target-sequence", "10", "--percentage", "30"],
+      baseUrl,
+    );
+    const report = JSON.parse(stdout);
+    assert.equal(report.targetSequence, 10);
+    assert.equal(report.percentage, 30);
+    assert.equal(report.channel, "production");
+
+    // PUT된 current.json 검증
+    const currentBytes = storage.objects.get("catalog/current.json").body;
+    const current = JSON.parse(currentBytes.toString("utf8"));
+    assert.ok(current.rollout, "rollout 필드 있어야 함");
+    assert.equal(current.rollout.percentage, 30);
+    assert.match(current.rollout.seed, /^[a-f0-9]{32}$/, "seed hex32 이어야 함");
+
+    // 서명 재검증 — 재서명된 manifest 서명이 공개키로 검증되어야 한다
+    const { verifyRsaSha256Signature, canonicalJson, withoutSignature } = await import("./lib/manifest-validation.mjs");
+    assert.ok(
+      verifyRsaSha256Signature(testPublicKeyPem, canonicalJson(withoutSignature(current)), current.signature.value),
+      "재서명이 공개키로 검증되어야 함",
+    );
+
+    // 리포트 newCurrentSha256이 저장된 bytes와 일치
+    const storedSha = createHash("sha256").update(currentBytes).digest("hex");
+    assert.equal(report.newCurrentSha256, storedSha);
+  } finally {
+    storage.server.close();
+  }
+});
+
+test("publish-rollout (②): 참조 팩 sha256 불일치 → PUT 없이 throw (fail-closed)", async () => {
+  const manifest = buildRolloutTestReleasesManifest();
+  const manifestBytes = Buffer.from(JSON.stringify(manifest));
+  // current.json에는 releases와 동일한 매니페스트를 넣어 buildRolloutManifest가 통과하도록 한다.
+  // 팩 sha256 불일치만이 fail-closed의 트리거가 되어야 한다.
+  const originalCurrentBytes = Buffer.from(JSON.stringify(manifest));
+
+  const storage = await startRolloutTestStorage([
+    ["catalog/releases/10.json", { body: manifestBytes }],
+    // 훼손된 팩 바이트 — sha256 불일치
+    ["catalog/capital-v1.sqlite.gz", { body: Buffer.from("tampered-pack-bytes") }],
+    ["catalog/current.json", { body: originalCurrentBytes }],
+  ]);
+  const baseUrl = `http://127.0.0.1:${storage.port}`;
+  try {
+    await assert.rejects(
+      runPublishRollout(["--target-sequence", "10", "--percentage", "30"], baseUrl),
+      /sha256 mismatch/,
+    );
+    // fail-closed: current.json은 원본 그대로 보존되어야 한다
+    assert.deepEqual(storage.objects.get("catalog/current.json").body, originalCurrentBytes);
+  } finally {
+    storage.server.close();
+  }
+});
+
+test("publish-rollout (③): --dry-run → current.json 수정 없이 exit 0 + 리포트 반환", async () => {
+  const manifest = buildRolloutTestReleasesManifest();
+  const manifestBytes = Buffer.from(JSON.stringify(manifest));
+  const originalCurrentBytes = Buffer.from(JSON.stringify(manifest));
+
+  const storage = await startRolloutTestStorage([
+    ["catalog/releases/10.json", { body: manifestBytes }],
+    ["catalog/capital-v1.sqlite.gz", { body: ROLLOUT_PACK_BYTES }],
+    ["catalog/current.json", { body: originalCurrentBytes }],
+  ]);
+  const baseUrl = `http://127.0.0.1:${storage.port}`;
+  try {
+    const { stdout } = await runPublishRollout(
+      ["--dry-run", "--target-sequence", "10", "--percentage", "50"],
+      baseUrl,
+    );
+    const report = JSON.parse(stdout);
+    assert.equal(report.percentage, 50);
+    // current.json은 원본 그대로 (PUT 미수행)
+    assert.deepEqual(storage.objects.get("catalog/current.json").body, originalCurrentBytes);
+  } finally {
+    storage.server.close();
+  }
+});

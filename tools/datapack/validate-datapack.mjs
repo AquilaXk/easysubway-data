@@ -53,8 +53,9 @@ async function main() {
   const manifestPath = path.resolve(requireArg(args, "manifest"));
   const root = path.resolve(requireArg(args, "root"));
   const requireProduction = args["require-production"] === true;
+  const releasesTarget = args["releases-target"] === true;
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  validateManifest(manifest, { requireProduction });
+  validateManifest(manifest, { requireProduction, releasesTarget });
 
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-validate-"));
   try {
@@ -1695,6 +1696,10 @@ function parseArgs(argv) {
     const key = argv[index];
     if (key === "--require-production") {
       args["require-production"] = true;
+      continue;
+    }
+    if (key === "--releases-target") {
+      args["releases-target"] = true;
       continue;
     }
     const value = argv[index + 1];
