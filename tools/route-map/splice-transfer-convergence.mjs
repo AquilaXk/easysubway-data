@@ -110,12 +110,16 @@ function nearestVertexIndex(verts, oldPos, threshold = 30) {
  * 원위 정점은 반올림하지 않고(float base + 정확 45° dogleg 보존), 이동/삽입하는 np만 정수.
  * @returns {{ verts: Array<{x:number,y:number}>, attached: boolean }}
  */
-export function spliceTrackToNode(verts, oldPos, newPos, { radius = 1, maxDist = 30 } = {}) {
+export function spliceTrackToNode(verts, oldPos, newPos, { radius = 1, maxDist = 30, matchDist = null } = {}) {
   // newPos를 정수로 한번만 반올림 — position과 동일 정수라 track 정합 보장
   const np = { x: Math.round(newPos.x), y: Math.round(newPos.y) };
+  // 정점-이동 매칭 반경. 기본은 maxDist(하위호환). 회랑 붕괴처럼 여러 역이 한 정점을
+  // 공유할 때는 tight 값으로 넘겨, 앞선 역이 옮긴 정점을 뒤 역이 재포착하지 않고
+  // mid-segment 삽입(Step 2)을 타게 한다(자기 정점만 이동, 남의 이동 정점은 삽입).
+  const md = matchDist == null ? maxDist : matchDist;
 
-  // Step 1: oldPos 가장 가까운 정점 탐색 (maxDist 이내)
-  const idx = nearestVertexIndex(verts, oldPos, maxDist);
+  // Step 1: oldPos 가장 가까운 정점 탐색 (matchDist 이내 — 자기 정점만 이동)
+  const idx = nearestVertexIndex(verts, oldPos, md);
   if (idx >= 0) {
     const moved = verts.map((v, i) => (i === idx ? np : { x: v.x, y: v.y }));
     const lo = Math.max(0, idx - radius);
