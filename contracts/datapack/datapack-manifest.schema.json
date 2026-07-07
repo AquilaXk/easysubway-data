@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "easysubway/contracts/datapack/datapack-manifest",
+  "title": "원격 데이터팩 manifest",
+  "type": "object",
+  "required": ["ttlSeconds", "packs"],
+  "additionalProperties": false,
+  "properties": {
+    "manifestVersion": { "type": "integer", "enum": [1, 2] },
+    "channel": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+    "releaseSequence": { "type": "integer", "minimum": 1 },
+    "publishedAt": { "type": "string" },
+    "expiresAt": { "type": "string" },
+    "keyId": { "type": "string" },
+    "signature": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "type": "string" },
+        "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+      }
+    },
+    "ttlSeconds": { "type": "integer", "minimum": 1 },
+    "activePack": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "version": { "type": "string", "pattern": "^[0-9]+$" }
+      }
+    },
+    "emergencyOverride": {
+      "type": "object",
+      "required": ["id", "version", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "version": { "type": "string", "pattern": "^[0-9]+$" },
+        "reason": { "type": "string" }
+      }
+    },
+    "rollout": {
+      "type": "object",
+      "required": ["percentage", "seed"],
+      "additionalProperties": false,
+      "properties": {
+        "percentage": { "type": "integer", "minimum": 0 },
+        "seed": { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+      }
+    },
+    "packs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "artifactKind",
+          "url",
+          "sha256",
+          "sqliteSha256",
+          "sizeBytes",
+          "signature",
+          "schemaVersion",
+          "sourceInventory",
+          "regionalQualityMetrics",
+          "representativeRouteRegressions",
+          "representativeRouteRegressionSignature",
+          "requiredTables",
+          "minimumTableRows"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "version": { "type": "string", "pattern": "^[0-9]+$" },
+          "artifactKind": { "type": "string" },
+          "url": { "type": "string", "pattern": "^(catalog/.+\\.sqlite\\.gz|https://[^?#]+\\.sqlite\\.gz)$" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "sqliteSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "sizeBytes": { "type": "integer", "minimum": 1 },
+          "signature": {
+            "type": "object",
+            "required": ["algorithm", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "algorithm": { "type": "string" },
+              "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+            }
+          },
+          "schemaVersion": { "type": "string", "pattern": "^[0-9]+$" },
+          "sourceInventory": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["id", "licenseStatus", "updatedAt"],
+              "properties": {
+                "id": { "type": "string" },
+                "licenseStatus": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            }
+          },
+          "regionalQualityMetrics": { "type": "object" },
+          "representativeRouteRegressions": { "type": "array" },
+          "representativeRouteRegressionSignature": {
+            "type": "object",
+            "required": ["algorithm", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "algorithm": { "type": "string" },
+              "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+            }
+          },
+          "requiredTables": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "minimumTableRows": { "type": "object" }
+        }
+      }
+    }
+  }
+}

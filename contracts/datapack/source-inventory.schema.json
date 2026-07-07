@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "easysubway/contracts/datapack/source-inventory",
+  "title": "데이터팩 source inventory",
+  "type": "object",
+  "required": ["schemaVersion", "region", "artifactKind", "retrievedAt", "sources"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "region": { "type": "string" },
+    "artifactKind": { "type": "string", "const": "production-source-inventory" },
+    "retrievedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "displayName",
+          "owner",
+          "provider",
+          "providerDepartment",
+          "sourceSystem",
+          "datasetUrl",
+          "datasetKind",
+          "coverage",
+          "coverageScope",
+          "requiredForProductionPack",
+          "updateFrequency",
+          "observedDataUpdatedAt",
+          "retrievedAt",
+          "license",
+          "fieldsProvided",
+          "capabilities"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "displayName": { "type": "string" },
+          "owner": { "type": "string" },
+          "provider": { "type": "string" },
+          "providerDepartment": { "type": "string" },
+          "sourceSystem": { "type": "string" },
+          "datasetUrl": { "type": "string" },
+          "datasetKind": { "type": "string" },
+          "coverage": { "type": "string" },
+          "coverageScope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["regionIds", "operatorIds", "sourceDomains"],
+            "properties": {
+              "regionIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "operatorIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "sourceDomains": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            }
+          },
+          "requiredForProductionPack": { "type": "boolean" },
+          "updateFrequency": { "type": "string" },
+          "observedDataUpdatedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+          "retrievedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+          "license": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "name",
+              "attribution",
+              "commercialUseAllowed",
+              "derivativeWorkAllowed",
+              "redistributionAllowed",
+              "evidenceUrl"
+            ],
+            "properties": {
+              "type": { "type": "string" },
+              "name": { "type": "string" },
+              "attribution": { "type": "string" },
+              "commercialUseAllowed": { "type": "boolean" },
+              "derivativeWorkAllowed": { "type": "boolean" },
+              "redistributionAllowed": { "type": "boolean" },
+              "evidenceUrl": { "type": "string" }
+            }
+          },
+          "fieldsProvided": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schedule", "realtime", "facility"],
+            "properties": {
+              "schedule": { "type": "object" },
+              "realtime": { "type": "object" },
+              "facility": { "type": "object" }
+            }
+          },
+          "admissionEvidence": { "type": "object" }
+        }
+      }
+    }
+  }
+}
