@@ -7,7 +7,11 @@
 //
 // 재구성은 (trnNo, dayCd) group-by로 결정적이다(휴리스틱 매칭 아님). 각 group이 한 trip이며,
 // 정차는 시각순으로 정렬되고 lineSequence가 방향당 단조(line-wide)임을 강제한다 — 이것이 기존
-// blocker(line_wide_trip_stop_sequence_validation_required)가 요구하는 검증이다.
+// blocker(line_wide_trip_stop_sequence_validation_required)가 요구하는 검증 *메커니즘*이다.
+// 다만 이 코어만으로 blocker가 해소되는 것은 아니다: 검증은 trnNo(열차번호)를 제공하는 소스와
+// 결합해야 성립한다. KRIC subwayTimetable(kric-subway-timetable 후보)이 그 소스이며, TAGO는
+// trnNo가 없어 이 검증을 단독 충족하지 못한다(TAGO blocker·missingEvidence는 그대로 참). 즉
+// TAGO 검증기의 blocker를 이 코어의 존재만으로 지워도 된다는 뜻이 아니다.
 
 const DEFAULT_SERVICE_PATTERN = "LOCAL";
 
