@@ -1,0 +1,56 @@
+{
+  "artifactKind": "c2-coordinate-overrides",
+  "region": "수도권",
+  "note": "오라클 스팬·축만 선언, 좌표 없음(가드레일). maxDist는 극단 대변위 부착용, C2 한정.",
+  "overrides": [
+    {
+      "stationId": "station-9707f89c740a",
+      "targetSpan": 13,
+      "axis": "auto",
+      "maxDist": 224,
+      "note": "신사 2선 변위 102 — C2 수동(오라클 스팬 13)"
+    },
+    {
+      "stationId": "station-4a2c2985d3b7",
+      "targetSpan": 13,
+      "axis": "auto",
+      "maxDist": 152,
+      "note": "논현 2선 변위 66 — C2 수동(오라클 스팬 13)"
+    },
+    {
+      "stationId": "station-d0aceb7dd41f",
+      "targetSpan": 13,
+      "axis": "auto",
+      "maxDist": 152,
+      "note": "영등포구청 2선 변위 66 — C2 수동(오라클 스팬 13)"
+    },
+    {
+      "stationId": "station-63e60a85df8e",
+      "targetSpan": 13,
+      "axis": "auto",
+      "maxDist": 144,
+      "note": "효창공원앞 2선 변위 62 — C2 수동(오라클 스팬 13)"
+    },
+    {
+      "stationId": "station-0f50a307ac33",
+      "targetSpan": 28,
+      "axis": "auto",
+      "maxDist": 120,
+      "note": "홍대입구 3선 변위 50 — C2 수동(오라클 스팬 28)"
+    },
+    {
+      "stationId": "station-b819702fa7d9",
+      "targetSpan": 54,
+      "axis": "auto",
+      "maxDist": 118,
+      "note": "청량리 4선 변위 49 — C2 수동(오라클 스팬 54)"
+    },
+    {
+      "stationId": "station-28e5946b8e67",
+      "targetSpan": 28,
+      "axis": "auto",
+      "maxDist": 96,
+      "note": "회기 3선 변위 38 — C2 수동(오라클 스팬 28)"
+    }
+  ]
+}
