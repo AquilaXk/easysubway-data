@@ -46,3 +46,15 @@ test("modeArgs 파싱 스텝은 비-JSON·개행 주입을 방어한다", () => 
   // GITHUB_OUTPUT 개행 주입 차단 — 값에 개행이 있으면 거부
   assert.match(yml, /must not contain newlines/);
 });
+
+test("production-publish는 release request 조회 스텝과 !cancelled() 콜백 스텝을 가진다", () => {
+  assert.match(yml, /release-requests\/\$\{?\{?.*releaseRequestId/); // 조회 GET
+  assert.match(yml, /release-callbacks/); // 콜백 POST
+  assert.match(yml, /build-release-callback\.mjs/);
+  assert.match(yml, /!cancelled\(\)\s*&&/); // 콜백 조건에 !cancelled()
+  assert.match(yml, /manifestSha256/);
+  // 콜백 조건은 production-publish 스텝 출력 기준이어야 한다 — 비-production 모드에선 빈값
+  assert.match(yml, /steps\.production-publish\.outputs\.manifestSha256/);
+  // evidence-bundle 출력을 콜백 게이트로 사용하면 release-candidate에서도 발사 → 금지
+  assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
+});

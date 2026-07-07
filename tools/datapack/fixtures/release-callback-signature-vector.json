@@ -1,0 +1,17 @@
+{
+  "hmacKey": "test-callback-hmac-key",
+  "fields": {
+    "schemaVersion": 1,
+    "artifactKind": "datapack-release-callback",
+    "releaseRequestId": "release-request-1",
+    "workflowRunUrl": "https://github.com/AquilaXk/easysubway/actions/runs/9001",
+    "manifestSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "sqliteSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "gzipSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "evidenceBundleSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "validatorStatus": "PASS",
+    "routeRegressionStatus": "PASS",
+    "publishStatus": "PASS"
+  },
+  "expectedHmacHex": "43fbd313aa1c1e01ac6904c0a813093478c17dd262230baf8d378e9af93e5021"
+}

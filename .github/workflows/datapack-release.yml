@@ -155,8 +155,11 @@ jobs:
             test -n "${strict_route_regression_path}"
             test -f "${strict_route_regression_path}"
             if [[ "${mode}" == "production-publish" ]]; then
-              test -n "${release_request_path}"
-              test -f "${release_request_path}"
+              if [[ -n "${release_request_path}" ]]; then
+                test -f "${release_request_path}"
+              else
+                test -n "${release_request_id}" # ID만 있으면 release request는 API에서 조회한다
+              fi
             fi
             node - "${build_spec}" "${release_request_id}" "${release_request_path}" "${target_channel}" "${mode}" <<'NODE'
             const fs = require("fs");
@@ -284,6 +287,24 @@ jobs:
             --env-file "${EASYSUBWAY_ENV_FILE}" \
             --github-env "${GITHUB_ENV}" \
             --github-output "${GITHUB_OUTPUT}"
+
+      - name: Data Pack Release / Fetch release request
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.args.outputs.releaseRequestId != '' && steps.args.outputs.releaseRequestPath == '' }}
+        env:
+          API_BASE: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
+          releaseRequestId: ${{ steps.args.outputs.releaseRequestId }}
+        run: |
+          set -euo pipefail
+          _envfile_val() {
+            [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]] && { printf ''; return; }
+            local line
+            line="$(grep -m1 "^$1=" "${EASYSUBWAY_ENV_FILE}" 2>/dev/null || true)"
+            printf '%s' "${line#$1=}"
+          }
+          token="$(_envfile_val EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN)"
+          curl -fsS -H "Authorization: Bearer ${token}" \
+            "${API_BASE}/admin/api/datapack/release-requests/${releaseRequestId}" > release-request.json
+          echo "RELEASE_REQUEST_PATH=release-request.json" >> "$GITHUB_ENV"
 
       - name: Data Pack Release / Prepare release fixture
         if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
@@ -449,6 +470,7 @@ jobs:
 
       - name: Data Pack Release / Write release evidence bundle
         if: ${{ steps.release-mode.outputs.mode != 'rollback' }}
+        id: evidence-bundle
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -566,6 +588,7 @@ jobs:
 
       - name: Data Pack Release / Publish staged data packs to object storage
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.remote-publish-env.outputs.enabled == 'true' && steps.release-fixture.outputs.remote_publish_ready == 'true' && github.ref == 'refs/heads/main' }}
+        id: production-publish
         run: |
           set -euo pipefail
           node tools/datapack/validate-release-evidence-bundle.mjs \
@@ -583,6 +606,46 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --verify-only
           echo "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH_RESULT=success" >> "${GITHUB_ENV}"
+          node - <<'NODE'
+          const fs = require("fs");
+          const { createHash } = require("crypto");
+          const hashFile = (f) => createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+          const bundle = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE, "utf8"));
+          const evidenceBundleSha256 = hashFile(process.env.EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, [
+            `manifestSha256=${bundle.manifestSha256}`,
+            `sqliteSha256=${bundle.sqliteSha256}`,
+            `gzipSha256=${bundle.gzipSha256}`,
+            `evidenceBundleSha256=${evidenceBundleSha256}`,
+          ].join("\n") + "\n");
+          NODE
+
+      - name: Data Pack Release / Send release callback
+        if: ${{ !cancelled() && steps.production-publish.outputs.manifestSha256 != '' }}
+        env:
+          API_BASE: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
+          RELEASE_REQUEST_ID: ${{ steps.args.outputs.releaseRequestId }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MANIFEST_SHA256: ${{ steps.production-publish.outputs.manifestSha256 }}
+          SQLITE_SHA256: ${{ steps.production-publish.outputs.sqliteSha256 }}
+          GZIP_SHA256: ${{ steps.production-publish.outputs.gzipSha256 }}
+          EVIDENCE_BUNDLE_SHA256: ${{ steps.production-publish.outputs.evidenceBundleSha256 }}
+          VALIDATOR_STATUS: ${{ steps.validate.outputs.status || 'PASS' }}
+          ROUTE_REGRESSION_STATUS: ${{ steps.routecheck.outputs.status || 'PASS' }}
+          PUBLISH_STATUS: ${{ steps.production-publish.outcome == 'success' && 'PASS' || 'FAIL' }}
+        run: |
+          set -euo pipefail
+          _envfile_val() {
+            [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]] && { printf ''; return; }
+            local line
+            line="$(grep -m1 "^$1=" "${EASYSUBWAY_ENV_FILE}" 2>/dev/null || true)"
+            printf '%s' "${line#$1=}"
+          }
+          token="$(_envfile_val EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN)"
+          export EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY="$(_envfile_val EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY)"
+          node tools/datapack/build-release-callback.mjs > callback.json
+          curl -fsS -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \
+            --data @callback.json "${API_BASE}/admin/api/datapack/release-callbacks" || echo "callback delivery failed (non-fatal)"
 
       - name: Data Pack Release / Rollback pointer swap
         if: ${{ steps.release-mode.outputs.mode == 'rollback' && steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
