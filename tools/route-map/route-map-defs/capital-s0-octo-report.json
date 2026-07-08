@@ -1,0 +1,111 @@
+{
+  "artifactKind": "octolinearity-audit",
+  "options": {
+    "pack": "tools/route-map/route-map-defs/capital-s0-spike.sqlite.gz",
+    "angleTolerance": 0.5,
+    "alignThreshold": 0.75,
+    "json": true
+  },
+  "reports": [
+    {
+      "region": "광주권",
+      "lines": 1,
+      "g1": {
+        "segments": 19,
+        "octolinear": 15,
+        "octolinearRatio": 0.7894736842105263
+      },
+      "g3": {
+        "nodes": 20,
+        "nodesWithoutTrack": 0,
+        "measured": 20,
+        "min": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "alignedWithinThreshold": 20,
+        "alignedRatio": 1
+      }
+    },
+    {
+      "region": "대구권",
+      "lines": 4,
+      "g1": {
+        "segments": 97,
+        "octolinear": 80,
+        "octolinearRatio": 0.8247422680412371
+      },
+      "g3": {
+        "nodes": 101,
+        "nodesWithoutTrack": 0,
+        "measured": 101,
+        "min": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "alignedWithinThreshold": 101,
+        "alignedRatio": 1
+      }
+    },
+    {
+      "region": "대전권",
+      "lines": 1,
+      "g1": {
+        "segments": 21,
+        "octolinear": 15,
+        "octolinearRatio": 0.7142857142857143
+      },
+      "g3": {
+        "nodes": 22,
+        "nodesWithoutTrack": 0,
+        "measured": 22,
+        "min": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "alignedWithinThreshold": 22,
+        "alignedRatio": 1
+      }
+    },
+    {
+      "region": "부산권",
+      "lines": 6,
+      "g1": {
+        "segments": 152,
+        "octolinear": 125,
+        "octolinearRatio": 0.8223684210526315
+      },
+      "g3": {
+        "nodes": 158,
+        "nodesWithoutTrack": 0,
+        "measured": 158,
+        "min": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "alignedWithinThreshold": 158,
+        "alignedRatio": 1
+      }
+    },
+    {
+      "region": "수도권",
+      "lines": 3,
+      "g1": {
+        "segments": 54,
+        "octolinear": 54,
+        "octolinearRatio": 1
+      },
+      "g3": {
+        "nodes": 155,
+        "nodesWithoutTrack": 0,
+        "measured": 155,
+        "min": 0,
+        "median": 0,
+        "p90": 0,
+        "max": 0,
+        "alignedWithinThreshold": 155,
+        "alignedRatio": 1
+      }
+    }
+  ]
+}
