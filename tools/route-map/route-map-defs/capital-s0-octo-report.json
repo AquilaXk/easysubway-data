@@ -91,8 +91,8 @@
       "region": "수도권",
       "lines": 3,
       "g1": {
-        "segments": 54,
-        "octolinear": 54,
+        "segments": 56,
+        "octolinear": 56,
         "octolinearRatio": 1
       },
       "g3": {
