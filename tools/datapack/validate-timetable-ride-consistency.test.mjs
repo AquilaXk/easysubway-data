@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { checkTimetableRideConsistency } from "./validate-timetable-ride-consistency.mjs";
 
 // 3역(A→B→C) 하행 코리도, trip 2개. 인접역 구간 소요 = arrival(next) - departure(current).
@@ -104,4 +110,89 @@ test("음수·0 구간(도착≤출발)은 표본에서 제외된다", () => {
   assert.equal(result.matched.length, 0);
   assert.equal(result.violations.length, 0);
   assert.equal(result.rideEdgesWithoutTimetable.length, 1);
+});
+
+test("번들 수도권 pack의 KRIC pilot stop_times는 직접 RIDE edge와 정합한다", () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), "capital-pack-"));
+  const sqlitePath = path.join(tempDir, "capital.sqlite");
+  const repoRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../..",
+  );
+  const capitalPackPath = path.join(
+    repoRoot,
+    "apps/mobile/assets/datapacks/capital.sqlite.gz",
+  );
+  let database;
+  try {
+    writeFileSync(
+      sqlitePath,
+      gunzipSync(readFileSync(capitalPackPath)),
+    );
+    database = new DatabaseSync(sqlitePath, { readOnly: true });
+    const transitStopTimes = database
+      .prepare(`
+        SELECT trip_id AS tripId,
+               stop_sequence AS stopSequence,
+               station_id AS stationId,
+               line_id AS lineId,
+               arrival_seconds AS arrivalSeconds,
+               departure_seconds AS departureSeconds
+        FROM transit_stop_times
+        WHERE line_id = 'seoul-4'
+          AND station_id IN ('station-sangnoksu', 'station-sadang')
+        ORDER BY trip_id, stop_sequence
+      `)
+      .all();
+    const rideEdges = database
+      .prepare(`
+        SELECT from_node_id AS fromNodeId,
+               to_node_id AS toNodeId,
+               edge_type AS edgeType,
+               duration_seconds AS durationSeconds
+        FROM network_edges
+        WHERE id IN (
+          'edge-sangnoksu-sadang-seoul-4',
+          'edge-sadang-sangnoksu-seoul-4'
+        )
+        ORDER BY id
+      `)
+      .all();
+
+    const result = checkTimetableRideConsistency({
+      reconstruction: { transitStopTimes },
+      rideEdges,
+    });
+
+    assert.equal(transitStopTimes.length, 932);
+    assert.equal(rideEdges.length, 2);
+    assert.equal(result.violations.length, 0);
+    assert.equal(result.timetableSegmentsWithoutEdge.length, 0);
+    assert.equal(result.summary.matchedCount, 2);
+    assert.deepEqual(
+      result.matched.map((row) => ({
+        from: row.fromStationId,
+        to: row.toStationId,
+        edgeSeconds: row.edgeSeconds,
+        timetableSeconds: row.timetableSeconds,
+      })),
+      [
+        {
+          from: "station-sadang",
+          to: "station-sangnoksu",
+          edgeSeconds: 2430,
+          timetableSeconds: 2430,
+        },
+        {
+          from: "station-sangnoksu",
+          to: "station-sadang",
+          edgeSeconds: 2430,
+          timetableSeconds: 2430,
+        },
+      ],
+    );
+  } finally {
+    database?.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
