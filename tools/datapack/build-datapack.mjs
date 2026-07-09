@@ -797,6 +797,59 @@ function buildSqlitePack(sqlitePath, schema, pack) {
       );
       insertRows(
         database,
+        "fare_zones",
+        ["id", "name_ko", "region", "currency_code", "source_id"],
+        pack.fareZones ?? [],
+        (row) => [
+          requiredString(row.id, "fareZones.id"),
+          requiredString(row.nameKo, "fareZones.nameKo"),
+          requiredString(row.region, "fareZones.region"),
+          row.currencyCode ?? "KRW",
+          row.sourceId ?? "",
+        ],
+      );
+      insertRows(
+        database,
+        "fare_rules",
+        ["id", "zone_id", "base_card_fare", "base_cash_fare", "base_distance_meters", "additional_steps_json"],
+        pack.fareRules ?? [],
+        (row) => [
+          requiredString(row.id, "fareRules.id"),
+          requiredString(row.zoneId, "fareRules.zoneId"),
+          requiredNonNegativeInteger(row.baseCardFare, "fareRules.baseCardFare"),
+          requiredNonNegativeInteger(row.baseCashFare, "fareRules.baseCashFare"),
+          requiredNonNegativeInteger(row.baseDistanceMeters, "fareRules.baseDistanceMeters"),
+          canonicalFareAdditionalSteps(row.additionalSteps ?? [], "fareRules.additionalSteps"),
+        ],
+      );
+      insertRows(
+        database,
+        "fare_discounts",
+        ["id", "zone_id", "rider_type", "card_fare", "cash_fare", "free_ride", "description_ko"],
+        pack.fareDiscounts ?? [],
+        (row) => [
+          requiredString(row.id, "fareDiscounts.id"),
+          requiredString(row.zoneId, "fareDiscounts.zoneId"),
+          requiredString(row.riderType, "fareDiscounts.riderType"),
+          optionalNonNegativeInteger(row.cardFare, "fareDiscounts.cardFare"),
+          optionalNonNegativeInteger(row.cashFare, "fareDiscounts.cashFare"),
+          boolFlag(row.freeRide ?? false, "fareDiscounts.freeRide"),
+          row.descriptionKo ?? "",
+        ],
+      );
+      insertRows(
+        database,
+        "station_fare_zones",
+        ["station_id", "line_id", "zone_id"],
+        pack.stationFareZones ?? [],
+        (row) => [
+          requiredString(row.stationId, "stationFareZones.stationId"),
+          requiredString(row.lineId, "stationFareZones.lineId"),
+          requiredString(row.zoneId, "stationFareZones.zoneId"),
+        ],
+      );
+      insertRows(
+        database,
         "service_calendars",
         [
           "service_id",
@@ -1841,6 +1894,28 @@ function requiredNonNegativeInteger(value, label) {
     throw new Error(`${label} must be a non-negative integer`);
   }
   return integer;
+}
+
+function optionalNonNegativeInteger(value, label) {
+  return value === undefined || value === null ? null : requiredNonNegativeInteger(value, label);
+}
+
+function canonicalFareAdditionalSteps(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array`);
+  }
+  return JSON.stringify(
+    value.map((step, index) => {
+      if (!step || typeof step !== "object" || Array.isArray(step)) {
+        throw new Error(`${label}[${index}] must be an object`);
+      }
+      return {
+        distanceMeters: requiredPositiveInteger(step.distanceMeters, `${label}[${index}].distanceMeters`),
+        cardFare: requiredNonNegativeInteger(step.cardFare, `${label}[${index}].cardFare`),
+        cashFare: requiredNonNegativeInteger(step.cashFare, `${label}[${index}].cashFare`),
+      };
+    }),
+  );
 }
 
 function canonicalLabelPolygon(value, label) {

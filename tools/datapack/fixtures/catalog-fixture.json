@@ -34,6 +34,10 @@
             "transit_trips",
             "transit_stop_times",
             "transit_frequencies",
+            "fare_zones",
+            "fare_rules",
+            "fare_discounts",
+            "station_fare_zones",
             "transfer_rules",
             "station_pathway_nodes",
             "station_pathway_edges",
@@ -58,6 +62,10 @@
         "transit_trips",
         "transit_stop_times",
         "transit_frequencies",
+        "fare_zones",
+        "fare_rules",
+        "fare_discounts",
+        "station_fare_zones",
         "transfer_rules",
         "station_pathway_nodes",
         "station_pathway_edges",
@@ -80,6 +88,10 @@
         "transit_trips": 4,
         "transit_stop_times": 8,
         "transit_frequencies": 1,
+        "fare_zones": 1,
+        "fare_rules": 1,
+        "fare_discounts": 3,
+        "station_fare_zones": 9,
         "transfer_rules": 1,
         "station_pathway_nodes": 6,
         "station_pathway_edges": 5,
@@ -294,6 +306,103 @@
           "stationCode": "211-4",
           "lineSequence": 4,
           "platformInfo": "성수 방면"
+        }
+      ],
+      "fareZones": [
+        {
+          "id": "capital-integrated",
+          "nameKo": "수도권 통합요금",
+          "region": "수도권",
+          "currencyCode": "KRW",
+          "sourceId": "fixture-capital-catalog"
+        }
+      ],
+      "fareRules": [
+        {
+          "id": "capital-integrated-standard",
+          "zoneId": "capital-integrated",
+          "baseCardFare": 1550,
+          "baseCashFare": 1650,
+          "baseDistanceMeters": 10000,
+          "additionalSteps": [
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            }
+          ]
+        }
+      ],
+      "fareDiscounts": [
+        {
+          "id": "capital-integrated-youth",
+          "zoneId": "capital-integrated",
+          "riderType": "YOUTH",
+          "cardFare": 900,
+          "cashFare": 1000,
+          "descriptionKo": "청소년 기준 요금"
+        },
+        {
+          "id": "capital-integrated-child",
+          "zoneId": "capital-integrated",
+          "riderType": "CHILD",
+          "cardFare": 550,
+          "cashFare": 550,
+          "descriptionKo": "어린이 기준 요금"
+        },
+        {
+          "id": "capital-integrated-concession",
+          "zoneId": "capital-integrated",
+          "riderType": "CONCESSION",
+          "freeRide": true,
+          "descriptionKo": "만 65세 이상·장애인·국가유공자 우대 무임"
+        }
+      ],
+      "stationFareZones": [
+        {
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-2",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-gangnam",
+          "lineId": "shinbundang",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-jeongja",
+          "lineId": "shinbundang",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2-branch",
+          "zoneId": "capital-integrated"
+        },
+        {
+          "stationId": "station-sinseoldong",
+          "lineId": "seoul-2-branch",
+          "zoneId": "capital-integrated"
         }
       ],
       "serviceCalendars": [

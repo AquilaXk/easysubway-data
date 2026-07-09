@@ -134,6 +134,10 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     "transit_trips",
     "transit_stop_times",
     "transit_frequencies",
+    "fare_zones",
+    "fare_rules",
+    "fare_discounts",
+    "station_fare_zones",
     "transfer_rules",
     "station_pathway_nodes",
     "station_pathway_edges",
@@ -150,6 +154,10 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.minimumTableRows.transit_trips, 4);
   assert.equal(pack.minimumTableRows.transit_stop_times, 8);
   assert.equal(pack.minimumTableRows.transit_frequencies, 1);
+  assert.equal(pack.minimumTableRows.fare_zones, 1);
+  assert.equal(pack.minimumTableRows.fare_rules, 1);
+  assert.equal(pack.minimumTableRows.fare_discounts, 3);
+  assert.equal(pack.minimumTableRows.station_fare_zones, 9);
   assert.equal(pack.minimumTableRows.transfer_rules, 1);
   assert.equal(pack.minimumTableRows.station_pathway_nodes, 6);
   assert.equal(pack.minimumTableRows.station_pathway_edges, 5);
@@ -189,11 +197,58 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 13);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 14);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
     assert.equal(database.prepare("SELECT checked_at FROM data_quality_records WHERE id = 'quality-station-sangnoksu'").get().checked_at, 1781827200);
+    assert.deepEqual(
+      database
+        .prepare(
+          `
+          SELECT id, name_ko, region, currency_code
+          FROM fare_zones
+          ORDER BY id
+        `,
+        )
+        .all()
+        .map((row) => ({ ...row })),
+      [
+        {
+          id: "capital-integrated",
+          name_ko: "수도권 통합요금",
+          region: "수도권",
+          currency_code: "KRW",
+        },
+      ],
+    );
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+            SELECT zone_id, base_card_fare, base_cash_fare, base_distance_meters,
+                   additional_steps_json
+            FROM fare_rules
+            WHERE id = ?
+          `,
+          )
+          .get("capital-integrated-standard"),
+      },
+      {
+        zone_id: "capital-integrated",
+        base_card_fare: 1550,
+        base_cash_fare: 1650,
+        base_distance_meters: 10000,
+        additional_steps_json: '[{"distanceMeters":5000,"cardFare":100,"cashFare":100}]',
+      },
+    );
+    assert.equal(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM station_fare_zones WHERE zone_id = ?")
+        .get("capital-integrated").count,
+      9,
+    );
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM stations").get().count, 6);
     assert.deepEqual(
       {
@@ -547,7 +602,7 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 13);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 14);
     assert.equal(
       database.prepare("SELECT feed_end_date FROM transit_feed_info").get().feed_end_date,
       "20261231",
@@ -555,6 +610,34 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
   } finally {
     database.close();
   }
+});
+
+test("데이터팩 검증기는 fare zone이 일부 station-line에만 매핑되면 거부한다", async () => {
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-fare-zone-missing-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  fixture.packs[0].stationFareZones = fixture.packs[0].stationFareZones.filter(
+    (row) => row.stationId !== "station-sangnoksu",
+  );
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/validate-datapack.mjs", "--manifest", path.join(outputDir, "current.json"), "--root", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /fare zone mapping missing: station-sangnoksu\/seoul-4/,
+  );
 });
 
 test("데이터팩 생성기는 transit_feed_info가 2개 이상이면 단일 행 제약으로 거부한다", async () => {
@@ -2589,7 +2672,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 13);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 14);
     assert.deepEqual(
       {
         ...database

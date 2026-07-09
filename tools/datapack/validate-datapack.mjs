@@ -146,6 +146,7 @@ function validateSqlite(sqlitePath, pack, requireProduction) {
     validateNoRealtimePayloadTables(database, pack);
     validateNetworkEdgeReferences(database, pack);
     validateTransitSchedule(database, pack);
+    validateFareTables(database, pack);
     validateStationPathways(database, pack);
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
@@ -168,6 +169,56 @@ function validateSqlite(sqlitePath, pack, requireProduction) {
     }
   } finally {
     database.close();
+  }
+}
+
+function validateFareTables(database, pack) {
+  if (!hasTable(database, "fare_zones")) {
+    return;
+  }
+  const fareZoneCount = database.prepare("SELECT COUNT(*) AS count FROM fare_zones").get().count;
+  const fareRuleCount = database.prepare("SELECT COUNT(*) AS count FROM fare_rules").get().count;
+  const stationFareZoneCount = database.prepare("SELECT COUNT(*) AS count FROM station_fare_zones").get().count;
+  if (fareZoneCount === 0 && fareRuleCount === 0 && stationFareZoneCount === 0) {
+    return;
+  }
+  if (fareZoneCount === 0) {
+    throw new Error(`${pack.id}@${pack.version} fare rules require at least one fare_zones row`);
+  }
+  if (fareRuleCount === 0) {
+    throw new Error(`${pack.id}@${pack.version} fare zones require at least one fare_rules row`);
+  }
+
+  const zonesWithoutRules = database
+    .prepare(
+      `
+      SELECT z.id
+      FROM fare_zones z
+      LEFT JOIN fare_rules r ON r.zone_id = z.id
+      WHERE r.id IS NULL
+      ORDER BY z.id
+    `,
+    )
+    .all();
+  if (zonesWithoutRules.length > 0) {
+    throw new Error(`${pack.id}@${pack.version} fare zone has no rule: ${zonesWithoutRules[0].id}`);
+  }
+
+  const unmapped = database
+    .prepare(
+      `
+      SELECT sl.station_id, sl.line_id
+      FROM station_lines sl
+      LEFT JOIN station_fare_zones sfz
+        ON sfz.station_id = sl.station_id AND sfz.line_id = sl.line_id
+      WHERE sfz.zone_id IS NULL
+      ORDER BY sl.station_id, sl.line_id
+    `,
+    )
+    .all();
+  if (unmapped.length > 0) {
+    const first = unmapped[0];
+    throw new Error(`${pack.id}@${pack.version} fare zone mapping missing: ${first.station_id}/${first.line_id}`);
   }
 }
 

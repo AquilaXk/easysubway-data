@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 13;
+PRAGMA user_version = 14;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -131,6 +131,49 @@ CREATE TABLE transit_frequencies (
   CHECK (end_time_seconds > start_time_seconds AND end_time_seconds < 108000),
   CHECK (headway_seconds > 0),
   CHECK (exact_times IN (0, 1))
+);
+
+CREATE TABLE fare_zones (
+  id TEXT NOT NULL PRIMARY KEY,
+  name_ko TEXT NOT NULL,
+  region TEXT NOT NULL,
+  currency_code TEXT NOT NULL DEFAULT 'KRW',
+  source_id TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE fare_rules (
+  id TEXT NOT NULL PRIMARY KEY,
+  zone_id TEXT NOT NULL,
+  base_card_fare INTEGER NOT NULL,
+  base_cash_fare INTEGER NOT NULL,
+  base_distance_meters INTEGER NOT NULL,
+  additional_steps_json TEXT NOT NULL DEFAULT '[]',
+  FOREIGN KEY (zone_id) REFERENCES fare_zones(id),
+  CHECK (base_card_fare >= 0),
+  CHECK (base_cash_fare >= 0),
+  CHECK (base_distance_meters >= 0)
+);
+
+CREATE TABLE fare_discounts (
+  id TEXT NOT NULL PRIMARY KEY,
+  zone_id TEXT NOT NULL,
+  rider_type TEXT NOT NULL,
+  card_fare INTEGER,
+  cash_fare INTEGER,
+  free_ride INTEGER NOT NULL DEFAULT 0 CHECK (free_ride IN (0, 1)),
+  description_ko TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (zone_id) REFERENCES fare_zones(id),
+  CHECK (card_fare IS NULL OR card_fare >= 0),
+  CHECK (cash_fare IS NULL OR cash_fare >= 0)
+);
+
+CREATE TABLE station_fare_zones (
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  zone_id TEXT NOT NULL,
+  PRIMARY KEY (station_id, line_id),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id),
+  FOREIGN KEY (zone_id) REFERENCES fare_zones(id)
 );
 
 -- GTFS feed_info.feed_end_date (시간표 개정 유효 종료일). 단일 행(검증기가 강제). 요청 service date가
