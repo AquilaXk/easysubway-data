@@ -1067,7 +1067,14 @@
           "id": "exit-sangnoksu-1",
           "stationId": "station-sangnoksu",
           "exitNumber": "1",
-          "description": "상록수역 1번 출구"
+          "description": "상록수역 1번 출구",
+          "latitude": 37.3021,
+          "longitude": 126.8661,
+          "hasElevatorConnection": true,
+          "sourceId": "fixture-capital-catalog",
+          "sourceSnapshotId": "fixture-capital-catalog-20260619",
+          "dataSourceType": "OFFICIAL_FILE",
+          "lastVerifiedAt": "2026-06-19T00:00:00.000Z"
         }
       ],
       "facilities": [

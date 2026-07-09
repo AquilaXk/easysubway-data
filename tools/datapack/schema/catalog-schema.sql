@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 14;
+PRAGMA user_version = 15;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -280,6 +280,13 @@ CREATE TABLE station_exits (
   station_id TEXT NOT NULL,
   exit_number TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  latitude REAL,
+  longitude REAL,
+  has_elevator_connection INTEGER NOT NULL DEFAULT 0,
+  source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
+  data_source_type TEXT NOT NULL DEFAULT 'OFFICIAL_FILE',
+  last_verified_at INTEGER,
   FOREIGN KEY (station_id) REFERENCES stations(id)
 );
 

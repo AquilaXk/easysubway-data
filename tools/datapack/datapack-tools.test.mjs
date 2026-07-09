@@ -197,11 +197,34 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 14);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 15);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
     assert.equal(database.prepare("SELECT checked_at FROM data_quality_records WHERE id = 'quality-station-sangnoksu'").get().checked_at, 1781827200);
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+            SELECT latitude, longitude, has_elevator_connection, data_source_type, last_verified_at,
+                   source_id, source_snapshot_id
+            FROM station_exits
+            WHERE id = 'exit-sangnoksu-1'
+            `,
+          )
+          .get(),
+      },
+      {
+        latitude: 37.3021,
+        longitude: 126.8661,
+        has_elevator_connection: 1,
+        data_source_type: "OFFICIAL_FILE",
+        last_verified_at: 1781827200,
+        source_id: "fixture-capital-catalog",
+        source_snapshot_id: "fixture-capital-catalog-20260619",
+      },
+    );
     assert.deepEqual(
       database
         .prepare(
@@ -579,6 +602,41 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   }
 });
 
+test("데이터팩 검증기는 공개 채널 user_version 상한을 넘는 pack을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-public-user-version-${Date.now()}`);
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      "tools/datapack/fixtures/catalog-fixture.json",
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        path.join(outputDir, "current.json"),
+        "--root",
+        outputDir,
+        "--max-public-catalog-user-version",
+        "14",
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /capital@1 catalog user_version 15 exceeds public compatibility maximum 14/,
+  );
+});
+
 test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 검증을 통과한다", async () => {
   const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
   const outputDir = path.join(tmpdir(), `easysubway-datapack-feed-info-${Date.now()}`);
@@ -602,7 +660,7 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 14);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 15);
     assert.equal(
       database.prepare("SELECT feed_end_date FROM transit_feed_info").get().feed_end_date,
       "20261231",
@@ -2672,7 +2730,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 14);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 15);
     assert.deepEqual(
       {
         ...database

@@ -602,7 +602,8 @@ jobs:
           node tools/datapack/validate-datapack.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
-            --require-production
+            --require-production \
+            --max-public-catalog-user-version 14
           node tools/datapack/publish-object-storage.mjs \
             --plan "${EASYSUBWAY_DATAPACK_PUBLISH_PLAN}" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}"

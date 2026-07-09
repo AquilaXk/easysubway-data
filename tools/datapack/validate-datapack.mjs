@@ -54,20 +54,33 @@ async function main() {
   const root = path.resolve(requireArg(args, "root"));
   const requireProduction = args["require-production"] === true;
   const releasesTarget = args["releases-target"] === true;
+  const maxPublicCatalogUserVersion = optionalPositiveIntegerArgument(
+    args["max-public-catalog-user-version"],
+    "--max-public-catalog-user-version",
+  );
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   validateManifest(manifest, { requireProduction, releasesTarget });
 
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-validate-"));
   try {
     for (const pack of manifest.packs) {
-      await validatePack(root, temporaryDir, pack, manifest.manifestVersion ?? 1, requireProduction);
+      await validatePack(root, temporaryDir, pack, manifest.manifestVersion ?? 1, {
+        requireProduction,
+        maxPublicCatalogUserVersion,
+      });
     }
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
   }
 }
 
-async function validatePack(root, temporaryDir, pack, manifestVersion, requireProduction = false) {
+async function validatePack(
+  root,
+  temporaryDir,
+  pack,
+  manifestVersion,
+  { requireProduction = false, maxPublicCatalogUserVersion = null } = {},
+) {
   const compressedPath = localPackPathForUrl(root, pack);
   const compressedBytes = await readFile(compressedPath);
   if (compressedBytes.length !== pack.sizeBytes) {
@@ -100,7 +113,10 @@ async function validatePack(root, temporaryDir, pack, manifestVersion, requirePr
 
   const sqlitePath = path.join(temporaryDir, `${pack.id}-v${pack.version}.sqlite`);
   await writeFile(sqlitePath, sqliteBytes);
-  validateSqlite(sqlitePath, pack, requireProduction);
+  validateSqlite(sqlitePath, pack, {
+    requireProduction,
+    maxPublicCatalogUserVersion,
+  });
 }
 
 function localPackPathForUrl(root, pack) {
@@ -110,7 +126,11 @@ function localPackPathForUrl(root, pack) {
   return path.join(root, pack.url);
 }
 
-function validateSqlite(sqlitePath, pack, requireProduction) {
+function validateSqlite(
+  sqlitePath,
+  pack,
+  { requireProduction, maxPublicCatalogUserVersion = null },
+) {
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     const quickCheck = database.prepare("PRAGMA quick_check").all();
@@ -134,6 +154,14 @@ function validateSqlite(sqlitePath, pack, requireProduction) {
     }
     if (userVersion < manifestSchemaVersion) {
       throw new Error(`${pack.id}@${pack.version} PRAGMA user_version mismatch`);
+    }
+    if (
+      maxPublicCatalogUserVersion !== null &&
+      userVersion > maxPublicCatalogUserVersion
+    ) {
+      throw new Error(
+        `${pack.id}@${pack.version} catalog user_version ${userVersion} exceeds public compatibility maximum ${maxPublicCatalogUserVersion}`,
+      );
     }
 
     for (const tableName of pack.requiredTables) {
@@ -1768,6 +1796,17 @@ function requireArg(args, name) {
     throw new Error(`--${name} is required`);
   }
   return args[name];
+}
+
+function optionalPositiveIntegerArgument(value, label) {
+  if (value === undefined) {
+    return null;
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return number;
 }
 
 function requiredProductionSha256(value, label) {

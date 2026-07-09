@@ -1193,12 +1193,37 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           timestamp(row.updatedAt),
         ],
       );
-      insertRows(database, "station_exits", ["id", "station_id", "exit_number", "description"], pack.stationExits ?? [], (row) => [
-        requiredString(row.id, "stationExits.id"),
-        requiredString(row.stationId, "stationExits.stationId"),
-        requiredString(row.exitNumber, "stationExits.exitNumber"),
-        row.description ?? "",
-      ]);
+      insertRows(
+        database,
+        "station_exits",
+        [
+          "id",
+          "station_id",
+          "exit_number",
+          "description",
+          "latitude",
+          "longitude",
+          "has_elevator_connection",
+          "source_id",
+          "source_snapshot_id",
+          "data_source_type",
+          "last_verified_at",
+        ],
+        pack.stationExits ?? [],
+        (row) => [
+          requiredString(row.id, "stationExits.id"),
+          requiredString(row.stationId, "stationExits.stationId"),
+          requiredString(row.exitNumber, "stationExits.exitNumber"),
+          row.description ?? "",
+          optionalLatitude(row.latitude, "stationExits.latitude"),
+          optionalLongitude(row.longitude, "stationExits.longitude"),
+          boolFlag(row.hasElevatorConnection, "stationExits.hasElevatorConnection"),
+          row.sourceId ?? "",
+          row.sourceSnapshotId ?? "",
+          row.dataSourceType ?? "OFFICIAL_FILE",
+          timestamp(row.lastVerifiedAt),
+        ],
+      );
       insertRows(
         database,
         "facilities",
@@ -1945,6 +1970,27 @@ function requiredNonNegativeFiniteNumber(value, label) {
     throw new Error(`${label} must be a non-negative number`);
   }
   return Math.round(value * 1000) / 1000;
+}
+
+function optionalLatitude(value, label) {
+  return optionalCoordinate(value, label, -90, 90);
+}
+
+function optionalLongitude(value, label) {
+  return optionalCoordinate(value, label, -180, 180);
+}
+
+function optionalCoordinate(value, label, min, max) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number`);
+  }
+  if (value < min || value > max) {
+    throw new Error(`${label} must be between ${min} and ${max}`);
+  }
+  return Math.round(value * 1000000) / 1000000;
 }
 
 function serviceDate(value, label) {
