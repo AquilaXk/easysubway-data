@@ -49,9 +49,13 @@ function buildFixture(inventory, input) {
   const transitSchedule = transitScheduleRows(input);
   validateTransitStopTimesFollowLineSequence(transitSchedule.transitStopTimes, stationLines, input.lines ?? []);
   const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
+  let scheduleProvenance = null;
   if (isProductionPack && Object.keys(transitScheduleTableRows).length > 0) {
-    validateProductionScheduleProvenance(input.scheduleProvenance, selectedSources, allowedSourceIds);
+    scheduleProvenance = validateProductionScheduleProvenance(input.scheduleProvenance, selectedSources, allowedSourceIds);
   }
+  const transitScheduleWithProvenance = scheduleProvenance
+    ? transitScheduleRowsWithProvenance(transitSchedule, scheduleProvenance)
+    : transitSchedule;
   validateSelectedSourceRows(input, sourceIds);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
   validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence);
@@ -126,7 +130,7 @@ function buildFixture(inventory, input) {
         stationExits: input.stationExits ?? [],
         facilities,
         stationFacilityEvidence,
-        ...transitSchedule,
+        ...transitScheduleWithProvenance,
         movementPathCandidates: movementCandidates,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
         routeRegressionScope: input.routeRegressionScope,
@@ -1030,6 +1034,32 @@ function transitScheduleRows(input) {
     transitTrips: optionalRows(input.transitTrips, "transitTrips"),
     transitStopTimes: optionalRows(input.transitStopTimes, "transitStopTimes"),
     transitFrequencies: optionalRows(input.transitFrequencies, "transitFrequencies"),
+    transitFeedInfo: optionalRows(input.transitFeedInfo, "transitFeedInfo"),
+  };
+}
+
+function transitScheduleRowsWithProvenance(rows, provenance) {
+  return {
+    ...rows,
+    serviceCalendars: rows.serviceCalendars.map((row) => scheduleRowWithProvenance(row, provenance)),
+    serviceCalendarDates: rows.serviceCalendarDates.map((row) => scheduleRowWithProvenance(row, provenance)),
+    transitRoutes: rows.transitRoutes.map((row) => scheduleRowWithProvenance(row, provenance)),
+    transitTrips: rows.transitTrips.map((row) => scheduleRowWithProvenance(row, provenance)),
+    transitStopTimes: rows.transitStopTimes.map((row) => scheduleRowWithProvenance(row, provenance)),
+    transitFrequencies: rows.transitFrequencies.map((row) => scheduleRowWithProvenance(row, provenance)),
+    transitFeedInfo: rows.transitFeedInfo.map((row) => scheduleRowWithProvenance(row, provenance)),
+  };
+}
+
+function scheduleRowWithProvenance(row, provenance) {
+  return {
+    ...row,
+    sourceId: provenance.sourceId,
+    sourceSnapshotId: provenance.sourceSnapshotId,
+    providerRecordHash: provenance.providerRecordHash,
+    evidenceHash: provenance.evidenceHash,
+    provenanceKind: "OFFICIAL_SOURCE",
+    updatedAt: provenance.retrievedAt,
   };
 }
 
@@ -1136,6 +1166,7 @@ function transitScheduleMinimumTableRows(rows) {
       ["transit_trips", rows.transitTrips.length],
       ["transit_stop_times", rows.transitStopTimes.length],
       ["transit_frequencies", rows.transitFrequencies.length],
+      ["transit_feed_info", rows.transitFeedInfo.length],
     ].filter(([, count]) => count > 0),
   );
 }
@@ -1159,6 +1190,13 @@ function validateProductionScheduleProvenance(provenance, selectedSources, allow
   productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");
   productionEvidenceHash(provenance.evidenceHash, true, sourceId, "scheduleProvenance.evidenceHash");
   requiredString(provenance.retrievedAt, "scheduleProvenance.retrievedAt");
+  return {
+    sourceId,
+    sourceSnapshotId: provenance.sourceSnapshotId,
+    providerRecordHash: provenance.providerRecordHash,
+    evidenceHash: provenance.evidenceHash,
+    retrievedAt: provenance.retrievedAt,
+  };
 }
 
 function optionalRows(value, label) {

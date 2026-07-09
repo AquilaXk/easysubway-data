@@ -390,6 +390,57 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
       addRecord(position, "route_map_position", entityId, "route_map_label_polygon", operatorIds);
     }
   }
+  const transitRouteLineIds = new Map((pack.transitRoutes ?? []).map((route) => [route.id, route.lineId]));
+  const transitRouteOperatorIds = new Map();
+  for (const route of pack.transitRoutes ?? []) {
+    const operatorIds = [lineOperatorIds.get(route.lineId)].filter(Boolean);
+    transitRouteOperatorIds.set(route.id, operatorIds);
+    addRecord(route, "transit_route", route.id, "route", operatorIds);
+  }
+  const serviceOperatorIds = new Map();
+  const tripOperatorIds = new Map();
+  for (const trip of pack.transitTrips ?? []) {
+    const lineId = transitRouteLineIds.get(trip.routeId);
+    const operatorId = lineOperatorIds.get(lineId);
+    if (operatorId) {
+      tripOperatorIds.set(trip.id, [operatorId]);
+      const operatorIds = serviceOperatorIds.get(trip.serviceId) ?? new Set();
+      operatorIds.add(operatorId);
+      serviceOperatorIds.set(trip.serviceId, operatorIds);
+    }
+  }
+  for (const calendar of pack.serviceCalendars ?? []) {
+    addRecord(calendar, "service_calendar", calendar.serviceId, "service_calendar", [
+      ...(serviceOperatorIds.get(calendar.serviceId) ?? []),
+    ]);
+  }
+  for (const calendarDate of pack.serviceCalendarDates ?? []) {
+    addRecord(calendarDate, "service_calendar_date", `${calendarDate.serviceId}:${calendarDate.date}`, "calendar_date", [
+      ...(serviceOperatorIds.get(calendarDate.serviceId) ?? []),
+    ]);
+  }
+  for (const trip of pack.transitTrips ?? []) {
+    addRecord(trip, "transit_trip", trip.id, "trip", tripOperatorIds.get(trip.id) ?? []);
+  }
+  for (const stopTime of pack.transitStopTimes ?? []) {
+    const operatorIds = [lineOperatorIds.get(stopTime.lineId)].filter(Boolean);
+    addRecord(stopTime, "transit_stop_time", `${stopTime.tripId}:${stopTime.stopSequence}`, "stop_time", operatorIds);
+  }
+  for (const frequency of pack.transitFrequencies ?? []) {
+    addRecord(
+      frequency,
+      "transit_frequency",
+      `${frequency.tripId}:${frequency.startTimeSeconds}:${frequency.endTimeSeconds}`,
+      "frequency",
+      tripOperatorIds.get(frequency.tripId) ?? [],
+    );
+  }
+  const scheduleOperatorIds = [...new Set([...transitRouteOperatorIds.values()].flat())].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  for (const feedInfo of pack.transitFeedInfo ?? []) {
+    addRecord(feedInfo, "transit_feed_info", "feed_info", "feed_info", scheduleOperatorIds);
+  }
   for (const facility of pack.facilities ?? []) {
     const operatorIds = [...(stationOperatorIds.get(facility.stationId) ?? [])];
     const field = facilityField(facility.type);

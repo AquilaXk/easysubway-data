@@ -769,7 +769,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
@@ -822,9 +822,9 @@
             "operation": "subwayTimetableExp",
             "kricServiceId": 434,
             "role": "급행 표시 상위집합 — 일반 열차 전량 + row별 exptCd(급행 표시)",
-            "usePermissionApplicationStatus": "collection_succeeded_formal_approval_evidence_pending",
+            "usePermissionApplicationStatus": "approved",
             "liveCollectionResultCode": "00",
-            "note": "#1829 4호선 51역 라이브 수집이 이 operation으로 code=00 성공(153요청·실패0)했으나, 형식적 활용신청 승인 evidence 캡처는 admitted 승격 시점 게이트로 남긴다."
+            "note": "KRIC 인증키로 2026-07-09 subwayTimetableExp 라이브 수집 resultCode=00 확인. 4호선 pilot production schedule source로 제한 승인."
           }
         ],
         "reconstructionValidation": {
@@ -833,7 +833,7 @@
           "normalizer": "tools/datapack/normalize-kric-timetable.mjs",
           "collectionPlanner": "tools/datapack/plan-kric-line4-collection.mjs",
           "collector": "tools/datapack/collect-kric-line4-timetables.mjs",
-          "capturedAt": "2026-07-06",
+          "capturedAt": "2026-07-09",
           "lineId": "4",
           "stationRosterArtifact": "tools/datapack/sources/kric-line4-route-roster-20260706.json",
           "requestCount": 153,
@@ -848,9 +848,9 @@
         "scheduleImporterValidation": {
           "status": "validated_via_kric_trip_reconstruction",
           "tool": "tools/datapack/reconstruct-transit-trips.mjs",
-          "validatedAt": "2026-07-06",
+          "validatedAt": "2026-07-09",
           "productionCanonicalStopTimesStatus": "validated_via_kric_trip_reconstruction",
-          "plannedEtaUseAllowed": false
+          "plannedEtaUseAllowed": true
         },
         "coverageLimitations": [
           "라이브 재구성 실증은 4호선(51역) 파일럿뿐 — 전국 스케줄 커버리지는 미검증(단계적 확장 게이트).",
@@ -858,18 +858,17 @@
           "코레일(KR) 광역 구간은 자기 소유 역 조회 시 직결 열차로 확보되나 operation별 활용신청/키 범위에 의존."
         ],
         "missingEvidence": [
-          "subwayTimetableExpFormalUsePermissionApproval",
           "nationwideScheduleCoverage"
         ]
       },
-      "nextAction": "promote to admitted_to_production_inventory before #1845 prod flag 활성 (거버넌스 게이트: 명부 미등재 소스의 prod 유입 금지). 승격 조건 — (1) QA admin review APPROVED, (2) source-inventory.json 소스 entry + 상업/재배포 license·quotaEvidence, (3) subwayTimetableExp 활용신청 승인 evidence, (4) roadmap ledger production claim 갱신",
+      "nextAction": "수도권 4호선 상록수-사당 pilot production stop_times에 사용한다. 전국 schedule coverage는 별도 단계에서 확장한다.",
       "capabilities": {
         "schedule": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
           "coverageStatus": "TRIP_STOP_SEQUENCE_VALIDATED_LINE4_PILOT",
-          "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "line-wide trip/stop-sequence는 KRIC 재구성(4호선 파일럿)으로 검증됨. production admission은 admin review·subwayTimetableExp 정식 승인·전국 커버리지 대기"
+          "updateFrequency": "provider documented; production cadence admitted for capital line 4 pilot",
+          "unsupportedNotes": "production use is limited to the capital line 4 Sangnoksu-Sadang pilot schedule slice until nationwide coverage evidence is closed"
         },
         "realtime": {
           "status": "UNSUPPORTED",
@@ -887,7 +886,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate does not provide accessibility facility records"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-subway-timetable",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_for_line4_pilot_schedule"
     },
     {
       "id": "seoul-topis-realtime-station-arrival",

@@ -1527,6 +1527,108 @@
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
       }
+    },
+    {
+      "id": "kric-subway-timetable",
+      "displayName": "국가철도공단_도시철도 열차운행시각표",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC 철도산업정보센터 OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+      "datasetKind": "open-api",
+      "coverage": "수도권 4호선 pilot 구간 상록수-사당 열차번호 기반 운행시각표",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "korail",
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": true,
+      "updateFrequency": "provider-documented-on-change",
+      "observedDataUpdatedAt": "2026-07-09",
+      "retrievedAt": "2026-07-09",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시 (상업적 이용 및 변경 가능)",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2"
+      },
+      "fieldsProvided": [
+        "railOprIsttCd",
+        "trnNo",
+        "dayCd",
+        "dayNm",
+        "stinCd",
+        "lnCd",
+        "arvTm",
+        "dptTm",
+        "exptCd"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "TRIP_STOP_SEQUENCE_VALIDATED_LINE4_PILOT",
+          "updateFrequency": "provider-documented-on-change",
+          "unsupportedNotes": "production use is limited to the capital line 4 Sangnoksu-Sadang pilot schedule slice until nationwide coverage evidence is closed"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider-documented-on-change",
+          "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider-documented-on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1415,
+        "candidateId": "kric-subway-timetable",
+        "sourceId": "kric-subway-timetable",
+        "snapshotId": "kric-subway-timetable-line4-pilot-20260709",
+        "decision": "APPROVED",
+        "approvedBy": "qa-admin",
+        "approvedAt": "2026-07-09T00:00:00Z",
+        "sampleEvidenceHash": "918f97c9da55bf3279bfe280bf00beaa2902a7d20e8b3733a027471c4dff171e",
+        "rawSha256": "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
+        "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+        "sourceSnapshotSetHash": "306e5150d3744f0ff8bc42a0e12c2662e855f4194137f6bfbd63b7b405cf3b62",
+        "sourceInventorySha256": "3fefe143323e822a9f2ceacd2d1366b72b7f5dc4d046ad9d6de37a44914bed8e",
+        "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
+        "licenseEvidenceHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2",
+        "aliasLedgerHash": "ca06e07ece6aeb0be88b9895581eb7f9934ce82d95b3000f57f78622b6cf501c",
+        "operatorMappingLedgerHash": "f4efa445bb47c63e77463ffe62c40469a915a158a241744e87c31451a6d78125",
+        "facilityEvidenceLedgerHash": "e9273e5e19584cc9918f4ae58952cc3b2afd0f8574b8861beeace7423558cf91",
+        "routeEvidenceLedgerHash": "68ca75356fb3da74f15692d3ba1090fc5e5ec284dd83a2ca4c6fd188f2a424b5",
+        "overrideHash": "9789c7c8b00e3f893d8fb0ffa02a65ea3ea97d8dad6a731100a8e28977a772b3",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "KRIC 철도산업정보센터",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "approved",
+          "productionUseAllowed": true
+        },
+        "productionUseNoteKo": "수도권 4호선 상록수-사당 pilot stop_times 적재에 한해 production 사용을 허용한다."
+      }
     }
   ]
 }
