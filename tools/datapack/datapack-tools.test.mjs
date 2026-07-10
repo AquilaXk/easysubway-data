@@ -266,6 +266,20 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
         additional_steps_json: '[{"distanceMeters":5000,"cardFare":100,"cashFare":100}]',
       },
     );
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+            SELECT card_fare, cash_fare
+            FROM fare_discounts
+            WHERE id = ?
+          `,
+          )
+          .get("capital-integrated-youth"),
+      },
+      { card_fare: 900, cash_fare: 1650 },
+    );
     assert.equal(
       database
         .prepare("SELECT COUNT(*) AS count FROM station_fare_zones WHERE zone_id = ?")
