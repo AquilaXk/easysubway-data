@@ -649,6 +649,130 @@
       }
     },
     {
+      "id": "seoul-metro-accessibility",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "서울교통공사_교통약자이용정보",
+      "detailUrl": "https://www.data.go.kr/data/15143843/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B553766/wksn/getWksnElvtr",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "serviceKeyHandling": "offline_collection_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15143843/openapi.do",
+        "retrievedAt": "2026-07-10",
+        "endpoint": "https://apis.data.go.kr/B553766/wksn/getWksnElvtr",
+        "sampleUrl": "https://apis.data.go.kr/B553766/wksn/getWksnElvtr?serviceKey=[서비스키값]&pageNo=1&numOfRows=1000&dataType=JSON",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "outputFields": [
+          "lineNm",
+          "stnNm",
+          "oprtngSitu",
+          "dtlPstn"
+        ],
+        "coverageLimitations": [
+          "운영계정 활용은 공공데이터포털 심의승인이 필요함"
+        ],
+        "missingEvidence": [
+          "sampleResponse",
+          "credentialFreeSnapshotHash",
+          "adminAdmissionEvidence"
+        ]
+      },
+      "nextAction": "collect a credential-free 상록수·사당 snapshot and require admin admission evidence before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate requires credential-free snapshot hashes and admin admission evidence before production use"
+        }
+      }
+    },
+    {
+      "id": "seoul-metro-facility-location",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "서울교통공사_편의시설위치정보",
+      "detailUrl": "https://www.data.go.kr/data/15143841/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B553766/facility/getFcElvtr",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "serviceKeyHandling": "offline_collection_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15143841/openapi.do",
+        "retrievedAt": "2026-07-10",
+        "endpoint": "https://apis.data.go.kr/B553766/facility/getFcElvtr",
+        "sampleUrl": "https://apis.data.go.kr/B553766/facility/getFcElvtr?serviceKey=[서비스키값]&pageNo=1&numOfRows=1000&dataType=JSON",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "outputFields": [
+          "stnNm",
+          "oprtngSitu",
+          "dtlPstn"
+        ],
+        "missingEvidence": [
+          "sampleResponse",
+          "credentialFreeSnapshotHash",
+          "adminAdmissionEvidence"
+        ]
+      },
+      "nextAction": "collect credential-free facility location evidence and require admin admission evidence before production inventory admission",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate requires credential-free snapshot hashes and admin admission evidence before production use"
+        }
+      }
+    },
+    {
       "id": "molit-tago-subway-info",
       "priority": "P0",
       "domain": "schedule_timetable",

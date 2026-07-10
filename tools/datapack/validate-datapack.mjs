@@ -460,8 +460,7 @@ function validateStationPathways(database, pack) {
     if (strictEdge && !pathwayEdgeConnectsTransferRule(strictEdge, rule)) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge does not match endpoints: ${rule.id}`);
     }
-    const strictEdgeType = String(strictEdge?.edge_type ?? "").toUpperCase();
-    if (strictEdge && (["STAIRS", "ESCALATOR"].includes(strictEdgeType) || strictEdge.includes_stairs === 1 || strictEdge.requires_escalator === 1)) {
+    if (strictEdge && isNonStepFreePathwayEdge(strictEdge)) {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge is not step-free: ${rule.id}`);
     }
     const strictAccessibilityStatus = String(strictEdge?.accessibility_status ?? "").toUpperCase();
@@ -484,6 +483,14 @@ function pathwayEdgeConnectsTransferRule(edge, rule) {
     edge.to_station_id === rule.from_station_id &&
     edge.to_line_id === rule.from_line_id;
   return direct || reverse;
+}
+
+function isNonStepFreePathwayEdge(edge) {
+  return (
+    ["STAIR", "STAIRS", "ESCALATOR"].includes(String(edge.edge_type ?? "").toUpperCase()) ||
+    edge.includes_stairs === 1 ||
+    edge.requires_escalator === 1
+  );
 }
 
 function validateStationPathwayLegacyMappings(database, pack) {
@@ -1217,7 +1224,8 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
       ORDER BY id
     `)
     .all();
-  const coverage = productionVerifiedCoverage(database, edgeRows);
+  const accessibilityEvidence = productionAccessibilityEvidence(database, pack);
+  const coverage = productionVerifiedCoverage(database, edgeRows, accessibilityEvidence);
   const unverifiedAccessibilityCoverageEdges = edgeRows
     .filter(isUnverifiedAccessibilityCoverageEdge)
     .map((edge) => edge.id);
@@ -1225,10 +1233,10 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
   for (const edge of edgeRows) {
     validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
     if (isAccessibilityProvenanceCandidate(edge)) {
-      validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack);
+      validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence);
     }
     if (isPositiveAccessibilityEdge(edge)) {
-      validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack);
+      validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence);
     }
   }
 
@@ -1527,7 +1535,7 @@ function validateStrictRouteEligibleFacilityEvidence(row, pack, id) {
   }
 }
 
-function validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack) {
+function validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence) {
   const sourceId = requiredString(edge.source_id, `network_edges.${edge.id}.source_id`);
   const sourceUpdatedAt = sourceUpdatedAtById.get(sourceId);
   if (sourceUpdatedAt === undefined) {
@@ -1550,16 +1558,28 @@ function validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, 
   if (!Number.isInteger(edge.reliability_score) || edge.reliability_score < 80) {
     throw new Error(`${pack.id}@${pack.version} network_edges accessibility edge reliability_score is below 80: ${edge.id}`);
   }
+  validateAvailableAccessEdgeEvidence(edge, accessibilityEvidence, pack);
 }
 
-function validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack) {
-  validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack);
+function validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence) {
+  validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence);
 }
 
-function productionVerifiedCoverage(database, edgeRows) {
+function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
   const stationLineRows = database
     .prepare("SELECT station_id, line_id FROM station_lines ORDER BY station_id, line_id")
     .all();
+  const requiredPairs = requiredAccessibilityCoveragePairs(stationLineRows);
+  const verifiedPairs = verifiedAccessibilityCoveragePairs(edgeRows, accessibilityEvidence);
+
+  return {
+    entry: coverageItem(requiredPairs.entry, verifiedPairs.entry),
+    exit: coverageItem(requiredPairs.exit, verifiedPairs.exit),
+    transfer: coverageItem(requiredPairs.transfer, verifiedPairs.transfer),
+  };
+}
+
+function requiredAccessibilityCoveragePairs(stationLineRows) {
   const requiredEntryPairs = new Set();
   const requiredExitPairs = new Set();
   const requiredTransferPairs = new Set();
@@ -1581,12 +1601,15 @@ function productionVerifiedCoverage(database, edgeRows) {
       }
     }
   }
+  return { entry: requiredEntryPairs, exit: requiredExitPairs, transfer: requiredTransferPairs };
+}
 
+function verifiedAccessibilityCoveragePairs(edgeRows, accessibilityEvidence) {
   const verifiedEntryPairs = new Set();
   const verifiedExitPairs = new Set();
   const verifiedTransferPairs = new Set();
   for (const edge of edgeRows) {
-    if (!isVerifiedAccessibilityCoverageEdge(edge)) {
+    if (!isVerifiedAccessibilityCoverageEdge(edge, accessibilityEvidence)) {
       continue;
     }
     const edgeType = normalizedEdgeType(edge.edge_type);
@@ -1601,12 +1624,7 @@ function productionVerifiedCoverage(database, edgeRows) {
       verifiedTransferPairs.add(edgePairKey(toNodeId, fromNodeId));
     }
   }
-
-  return {
-    entry: coverageItem(requiredEntryPairs, verifiedEntryPairs),
-    exit: coverageItem(requiredExitPairs, verifiedExitPairs),
-    transfer: coverageItem(requiredTransferPairs, verifiedTransferPairs),
-  };
+  return { entry: verifiedEntryPairs, exit: verifiedExitPairs, transfer: verifiedTransferPairs };
 }
 
 function coverageItem(requiredPairs, verifiedPairs) {
@@ -1654,7 +1672,7 @@ function isUnverifiedAccessibilityCoverageEdge(edge) {
   );
 }
 
-function isVerifiedAccessibilityCoverageEdge(edge) {
+function isVerifiedAccessibilityCoverageEdge(edge, accessibilityEvidence) {
   return (
     isAccessibilityCoverageCandidate(edge) &&
     edge.source_id &&
@@ -1663,8 +1681,196 @@ function isVerifiedAccessibilityCoverageEdge(edge) {
     Number.isInteger(edge.last_verified_at) &&
     edge.last_verified_at > 0 &&
     Number.isInteger(edge.reliability_score) &&
-    edge.reliability_score >= 80
+    edge.reliability_score >= 80 &&
+    hasAvailableAccessEdgeEvidence(edge, accessibilityEvidence)
   );
+}
+
+function productionAccessibilityEvidence(database, pack) {
+  const sourceById = new Map(pack.sourceInventory.map((source) => [source.id, source]));
+  const strictFacilityStationLines = new Set();
+  if (hasTable(database, "station_facility_evidence")) {
+    const rows = database
+      .prepare(`
+        SELECT station_id, line_id, source_id, evidence_kind, operational_status, strict_route_eligible
+        FROM station_facility_evidence
+        ORDER BY station_id, line_id, facility_type
+      `)
+      .all();
+    for (const row of rows) {
+      if (
+        row.strict_route_eligible === 1 &&
+        row.evidence_kind === "EXISTS" &&
+        ["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(
+          String(row.operational_status ?? "").toUpperCase(),
+        ) &&
+        sourceSupportsDomain(sourceById.get(row.source_id), "accessibility_facilities")
+      ) {
+        strictFacilityStationLines.add(stationLineEvidenceKey(row.station_id, row.line_id));
+      }
+    }
+  }
+  const approvedMovementPathways = approvedMovementPathwayStationLines(database, sourceById);
+  return { sourceById, strictFacilityStationLines, ...approvedMovementPathways };
+}
+
+function approvedMovementPathwayStationLines(database, sourceById) {
+  const approvedEntryMovementStationLines = new Set();
+  const approvedExitMovementStationLines = new Set();
+  if (!hasTable(database, "station_pathway_nodes") || !hasTable(database, "station_pathway_edges")) {
+    return { approvedEntryMovementStationLines, approvedExitMovementStationLines };
+  }
+
+  const nodes = database
+    .prepare(`
+      SELECT id, station_id, line_id, node_type
+      FROM station_pathway_nodes
+      ORDER BY id
+    `)
+    .all();
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const adjacency = new Map(nodes.map((node) => [node.id, new Set()]));
+  const pathwayEdges = database
+    .prepare(`
+      SELECT from_node_id, to_node_id, edge_type, bidirectional, includes_stairs, requires_escalator,
+             accessibility_status, reliability_score, source_id, provenance_kind,
+             verification_status, last_verified_at
+      FROM station_pathway_edges
+      ORDER BY id
+    `)
+    .all();
+  for (const edge of pathwayEdges) {
+    const fromNode = nodeById.get(edge.from_node_id);
+    const toNode = nodeById.get(edge.to_node_id);
+    if (
+      !fromNode ||
+      !toNode ||
+      fromNode.station_id !== toNode.station_id ||
+      isNonStepFreePathwayEdge(edge) ||
+      String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE" ||
+      !Number.isInteger(edge.reliability_score) ||
+      edge.reliability_score < 80 ||
+      !productionFacilityProvenanceKinds.includes(edge.provenance_kind) ||
+      edge.verification_status !== "VERIFIED" ||
+      !Number.isInteger(edge.last_verified_at) ||
+      edge.last_verified_at <= 0 ||
+      !sourceSupportsDomain(sourceById.get(edge.source_id), "accessibility_facilities")
+    ) {
+      continue;
+    }
+    adjacency.get(fromNode.id).add(toNode.id);
+    if (edge.bidirectional === 1) {
+      adjacency.get(toNode.id).add(fromNode.id);
+    }
+  }
+
+  const platformGroups = new Map();
+  for (const node of nodes) {
+    if (String(node.node_type ?? "").toUpperCase() !== "PLATFORM" || !node.line_id) {
+      continue;
+    }
+    const key = stationLineEvidenceKey(node.station_id, node.line_id);
+    const group = platformGroups.get(key) ?? [];
+    group.push(node.id);
+    platformGroups.set(key, group);
+  }
+  for (const [stationLineKey, platformNodeIds] of platformGroups) {
+    const [stationId, lineId] = stationLineKey.split("|");
+    const allowedNodeIds = new Set(
+      nodes
+        .filter((node) => node.station_id === stationId && (!node.line_id || node.line_id === lineId))
+        .map((node) => node.id),
+    );
+    const surfaceNodeIds = nodes
+      .filter(
+        (node) =>
+          allowedNodeIds.has(node.id) &&
+          ["ENTRANCE", "EXIT"].includes(String(node.node_type ?? "").toUpperCase()),
+      )
+      .map((node) => node.id);
+    if (pathwayReachable(surfaceNodeIds, new Set(platformNodeIds), adjacency, allowedNodeIds)) {
+      approvedEntryMovementStationLines.add(stationLineKey);
+    }
+    if (pathwayReachable(platformNodeIds, new Set(surfaceNodeIds), adjacency, allowedNodeIds)) {
+      approvedExitMovementStationLines.add(stationLineKey);
+    }
+  }
+
+  return { approvedEntryMovementStationLines, approvedExitMovementStationLines };
+}
+
+function pathwayReachable(startNodeIds, targetNodeIds, adjacency, allowedNodeIds) {
+  const queue = [...startNodeIds];
+  const visited = new Set(queue);
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    if (targetNodeIds.has(nodeId)) {
+      return true;
+    }
+    for (const nextNodeId of adjacency.get(nodeId) ?? []) {
+      if (allowedNodeIds.has(nextNodeId) && !visited.has(nextNodeId)) {
+        visited.add(nextNodeId);
+        queue.push(nextNodeId);
+      }
+    }
+  }
+  return false;
+}
+
+function validateAvailableAccessEdgeEvidence(edge, accessibilityEvidence, pack) {
+  const edgeType = normalizedEdgeType(edge.edge_type);
+  if (!["ENTRY", "EXIT"].includes(edgeType) || String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE") {
+    return;
+  }
+  if (!sourceSupportsDomain(accessibilityEvidence.sourceById.get(edge.source_id), "accessibility_facilities")) {
+    throw new Error(`${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires accessibility_facilities source: ${edge.id}`);
+  }
+  const stationLineKey = accessibilityEdgeStationLineKey(edge, edgeType);
+  if (!accessibilityEvidence.strictFacilityStationLines.has(stationLineKey)) {
+    throw new Error(
+      `${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires strict-eligible operational facility evidence: ${edge.id}:${stationLineKey}`,
+    );
+  }
+  const approvedMovementStationLines =
+    edgeType === "ENTRY"
+      ? accessibilityEvidence.approvedEntryMovementStationLines
+      : accessibilityEvidence.approvedExitMovementStationLines;
+  if (!approvedMovementStationLines.has(stationLineKey)) {
+    throw new Error(
+      `${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires approved movement pathway: ${edge.id}:${stationLineKey}`,
+    );
+  }
+}
+
+function hasAvailableAccessEdgeEvidence(edge, accessibilityEvidence) {
+  const edgeType = normalizedEdgeType(edge.edge_type);
+  if (!["ENTRY", "EXIT"].includes(edgeType)) {
+    return true;
+  }
+  const stationLineKey = accessibilityEdgeStationLineKey(edge, edgeType);
+  const approvedMovementStationLines =
+    edgeType === "ENTRY"
+      ? accessibilityEvidence.approvedEntryMovementStationLines
+      : accessibilityEvidence.approvedExitMovementStationLines;
+  return (
+    sourceSupportsDomain(accessibilityEvidence.sourceById.get(edge.source_id), "accessibility_facilities") &&
+    accessibilityEvidence.strictFacilityStationLines.has(stationLineKey) &&
+    approvedMovementStationLines.has(stationLineKey)
+  );
+}
+
+function accessibilityEdgeStationLineKey(edge, edgeType) {
+  const stationLineNodeId = edgeType === "ENTRY" ? edge.to_node_id : edge.from_node_id;
+  const [stationId, lineId] = stationLineNodeId.split(":");
+  return stationLineEvidenceKey(stationId, lineId);
+}
+
+function stationLineEvidenceKey(stationId, lineId) {
+  return `${stationId}|${lineId}`;
+}
+
+function sourceSupportsDomain(source, domain) {
+  return source?.coverageScope?.sourceDomains?.includes(domain) === true;
 }
 
 function edgePairKey(fromNodeId, toNodeId) {

@@ -300,11 +300,11 @@
     },
     "sourceCandidateAdmission": {
       "sourceCandidatesPath": "tools/datapack/source-candidates.json",
-      "p0CandidateCount": 14,
+      "p0CandidateCount": 16,
       "requiredAdmissionStatusBeforeProductionClaim": "admitted_to_production_inventory",
       "admittedCandidateCount": 4,
       "currentOpenAdmissionStatus": "evidence_recorded_admin_review_required",
-      "productionClaimImpactKo": "P0 source candidate 14건 중 4건이 production inventory 승격 증거를 가진다. schedule_timetable은 kric-subway-timetable 4호선 pilot 범위에 한해 승인됐고, TOPIS realtime production use는 quota/terms 승인 전이라 모든 expansionRoadmap stage는 계속 NO-GO다."
+      "productionClaimImpactKo": "P0 source candidate 16건 중 4건이 production inventory 승격 증거를 가진다. 서울교통공사 접근성 source 2건은 live sample·관리자 승인 전 candidate 상태이며, schedule_timetable은 kric-subway-timetable 4호선 pilot 범위에 한해 승인됐다. TOPIS realtime production use는 quota/terms 승인 전이라 모든 expansionRoadmap stage는 계속 NO-GO다."
     },
     "gapEscalationRuleKo": "지원 claim을 깨는 P1/P2 gap은 P0 release blocker로 승격하고 release gate에서 실패시킨다."
   }

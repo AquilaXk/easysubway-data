@@ -45,6 +45,13 @@ function buildFixture(inventory, input) {
     mappingBySourceKey,
     isProductionPack,
   );
+  validateProductionAccessibilityCoverageEdges(
+    networkEdges,
+    selectedSources,
+    stationFacilityEvidence,
+    movementCandidates,
+    isProductionPack,
+  );
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   const transitSchedule = transitScheduleRows(input);
   validateTransitStopTimesFollowLineSequence(transitSchedule.transitStopTimes, stationLines, input.lines ?? []);
@@ -972,6 +979,7 @@ function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey, isPr
   return rows.map((row) => {
     requiredKnownSource(row.sourceId, allowedSourceIds, "movementPathCandidates.sourceId");
     const id = requiredString(row.id, "movementPathCandidates.id");
+    const stationMapping = mappingForEndpoint(row.station, allowedSourceIds, mappingBySourceKey);
     return {
       id,
       sourceId: requiredString(row.sourceId, "movementPathCandidates.sourceId"),
@@ -983,7 +991,8 @@ function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey, isPr
         "movementPathCandidates.providerRecordHash",
       ),
       evidenceHash: productionEvidenceHash(row.evidenceHash, isProductionPack, id, "movementPathCandidates.evidenceHash"),
-      stationId: stationIdForEndpoint(row.station, allowedSourceIds, mappingBySourceKey),
+      stationId: stationMapping.stationId,
+      lineId: stationMapping.lineId,
       facilityType: requiredString(row.facilityType, "movementPathCandidates.facilityType"),
       fromLabel: requiredString(row.fromLabel, "movementPathCandidates.fromLabel"),
       toLabel: requiredString(row.toLabel, "movementPathCandidates.toLabel"),
@@ -993,6 +1002,67 @@ function movementPathCandidates(rows, allowedSourceIds, mappingBySourceKey, isPr
       reviewStatus: "PENDING_ADMIN_REVIEW",
     };
   });
+}
+
+function validateProductionAccessibilityCoverageEdges(
+  networkEdges,
+  selectedSources,
+  stationFacilityEvidence,
+  movementCandidates,
+  isProductionPack,
+) {
+  if (!isProductionPack) {
+    return;
+  }
+  const sourceById = new Map(selectedSources.map((source) => [source.id, source]));
+  const strictFacilityStationLines = new Set(
+    stationFacilityEvidence
+      .filter((row) => row.strictRouteEligible === true)
+      .filter((row) => sourceSupportsDomain(sourceById.get(row.sourceId), "accessibility_facilities"))
+      .map((row) => stationLineEvidenceKey(row.stationId, row.lineId)),
+  );
+  const approvedMovementStationLines = new Set(
+    movementCandidates
+      .filter((row) => row.reviewStatus === "APPROVED")
+      .filter((row) => sourceSupportsDomain(sourceById.get(row.sourceId), "accessibility_facilities"))
+      .map((row) => stationLineEvidenceKey(row.stationId, row.lineId)),
+  );
+
+  for (const edge of networkEdges) {
+    const edgeType = String(edge.edgeType ?? "").toUpperCase();
+    if (
+      !["ENTRY", "EXIT"].includes(edgeType) ||
+      String(edge.accessibilityStatus ?? "").toUpperCase() !== "AVAILABLE"
+    ) {
+      continue;
+    }
+    if (!sourceSupportsDomain(sourceById.get(edge.sourceId), "accessibility_facilities")) {
+      throw new Error(`AVAILABLE ENTRY/EXIT edge requires accessibility_facilities source: ${edge.id}`);
+    }
+    const stationLineKey = accessibilityEdgeStationLineKey(edge, edgeType);
+    if (!strictFacilityStationLines.has(stationLineKey)) {
+      throw new Error(
+        `AVAILABLE ENTRY/EXIT edge requires strict-eligible operational facility evidence: ${edge.id}:${stationLineKey}`,
+      );
+    }
+    if (!approvedMovementStationLines.has(stationLineKey)) {
+      throw new Error(`AVAILABLE ENTRY/EXIT edge requires approved movement pathway: ${edge.id}:${stationLineKey}`);
+    }
+  }
+}
+
+function sourceSupportsDomain(source, domain) {
+  return source?.coverageScope?.sourceDomains?.includes(domain) === true;
+}
+
+function accessibilityEdgeStationLineKey(edge, edgeType) {
+  const stationLineNodeId = edgeType === "ENTRY" ? edge.toNodeId : edge.fromNodeId;
+  const [stationId, lineId] = stationLineNodeId.split(":");
+  return stationLineEvidenceKey(stationId, lineId);
+}
+
+function stationLineEvidenceKey(stationId, lineId) {
+  return `${stationId}|${lineId}`;
 }
 
 function routeMapPositionRows(rows, allowedSourceIds, mappingBySourceKey) {
@@ -1219,10 +1289,6 @@ function nodeIdForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey) {
   }
   const suffix = endpoint.nodeSuffix ? `:${requiredString(endpoint.nodeSuffix, "endpoint.nodeSuffix")}` : "";
   return `${mapping.stationId}:${mapping.lineId}${suffix}`;
-}
-
-function stationIdForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey) {
-  return mappingForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey).stationId;
 }
 
 function mappingForEndpoint(endpoint, allowedSourceIds, mappingBySourceKey) {
