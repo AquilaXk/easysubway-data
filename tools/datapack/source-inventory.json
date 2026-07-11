@@ -67,6 +67,36 @@
           "updateFrequency": "irregular-on-change",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "seoulmetro-station-line-info",
+        "sourceId": "seoulmetro-station-line-info",
+        "snapshotId": "seoulmetro-station-line-info-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "078a9303f601b4f478cf9e5664da8bca164602a565658afd41f6233fdb18bbf0",
+        "rawSha256": "e6664cf8c7ba22d983534b9c38f62550f0b675c0e0b32127e7e8476ce43a0fd3",
+        "schemaFingerprint": "8826ff26d7eb0edc39e2232e144917777a8829edf6574cb2c07292915f1fa1a7",
+        "sourceSnapshotSetHash": "7cd9209bd79399731bc3f5d4aa34b1467755a38072eafbfd6a5f172ad99bcda5",
+        "sourceInventorySha256": "3d71bb065a0ad2886bd3c310012d4f417424749b1542578c1bfcb7ae9d882171",
+        "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
+        "licenseEvidenceHash": "6925923cc0f86eb151280da6f7d5a08c3ab3cc8588aecdb12fab003cd6252e2b",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "서울교통공사 공식 배포",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "not_required",
+          "productionUseAllowed": false
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -344,6 +374,36 @@
           "updateFrequency": "irregular-on-change",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "seoulmetro-cyberstation-route-map",
+        "sourceId": "seoulmetro-cyberstation-route-map",
+        "snapshotId": "seoulmetro-cyberstation-route-map-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "0a495c65c45d834fcba9b287d48016aa1483f7ee23720de6aacf45d9f9960776",
+        "rawSha256": "738a8bc8523a1ff408a78ea5777577b9daa8cc556a8522d864e99953ab650608",
+        "schemaFingerprint": "3ef53470a34e1d44db931b0bc2b7ac333fb2640f3e297902c4ee554688ef9052",
+        "sourceSnapshotSetHash": "f66882ed69618b8c7e0d3e3746d914ef122ce7889c0ae015730b92bc6e51e19b",
+        "sourceInventorySha256": "2e8d77f997089f12d026dd343b64dd927e3c2126983d2d2d0e5affbadcdb3b0f",
+        "adminReviewRecordHash": "4ea77265d144baa6b06e8f10152743420006f7581b24ffd68b21367341aa1b6c",
+        "licenseEvidenceHash": "846453610a0713353caad62ce8eea88648e7dbe8f73acfcb8e2f70a369a59c2c",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "서울교통공사 공식 배포",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "not_required",
+          "productionUseAllowed": false
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -487,6 +547,36 @@
           "updateFrequency": "annual",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "molit-urban-rail-full-route",
+        "sourceId": "molit-urban-rail-full-route",
+        "snapshotId": "molit-urban-rail-full-route-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "7e3b5118e4df1ef31205062c38ecd548e4cd41d68ba0cecc075a58848b7c01d4",
+        "rawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+        "sourceSnapshotSetHash": "6810d86ce484465d9e6c23e29b827228a48cd08a00fea61aa7545b88b9466a38",
+        "sourceInventorySha256": "9c5f4b1ab41a9be2341fd369a7c48a852e16ff47397281d6af27d97c38706b08",
+        "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
+        "licenseEvidenceHash": "2d0f88d855cf96413c17a412cb8197f1fb7d1e904b4ee0d42f99ead4fa558d53",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "not_required",
+          "productionUseAllowed": false
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -744,6 +834,36 @@
           "updateFrequency": "realtime",
           "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-elevator",
+        "sourceId": "kric-station-elevator",
+        "snapshotId": "kric-station-elevator-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "998b792eab4af3e40d26323b2a7ed40be0a6f3889afb675b770f7091311175ba",
+        "rawSha256": "cf7d7edbbd7506e64bbbedabb91ff4f0aec09a68c6726cb59cd72bf25c633ef5",
+        "schemaFingerprint": "bfe60d61b70e445dde6db20ccf986356907eafa29db6556f5e4b60a5c5985ca5",
+        "sourceSnapshotSetHash": "71994ba4a3e140ef32bfbaf12cf17e40cbc1e800a0e83dc6c79e6c84df56c93f",
+        "sourceInventorySha256": "2330c139fdec23e374808baa660ec646a1731721f9a83cf1e1720ff4b40a3bd4",
+        "adminReviewRecordHash": "71e7c6bbe0269005c84c665e85b43b7d0e79146589cc33ac715f82e76f81c47f",
+        "licenseEvidenceHash": "08892ea7773d84a351e1f9f3ea208501fada4d062350b0f588c972af75c1c859",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "approved",
+          "productionUseAllowed": true
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -824,6 +944,36 @@
           "updateFrequency": "realtime",
           "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-elevator-movement",
+        "sourceId": "kric-station-elevator-movement",
+        "snapshotId": "kric-station-elevator-movement-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "13a9bb4a48c15b22a80a22263b9487f1b3c0608e9b375ba912a90d9a795eed20",
+        "rawSha256": "2bd91dfc08bf3157f7259524e6f1f923dbb94fdee24a80db684ff9321d59ab90",
+        "schemaFingerprint": "d5946746d486d093a2338fe5f1ddc20f7d9cdac689a81d5ff4c070b6be9b1e9c",
+        "sourceSnapshotSetHash": "65025a9eb71ce233cad72231cbf7286b199649287e64df3e862b5b7124a5b2ad",
+        "sourceInventorySha256": "9ab9b9169c6cb17e8bdfbd16f904edab4daf5201117923a636856c5a58d02154",
+        "adminReviewRecordHash": "045aad6dd616b4c408ba3addbfd208adcb5c7ffd92dacd1cf1ccbb2d362da6c0",
+        "licenseEvidenceHash": "084ab0ae620b74c4ac6633cecd46fae4d91cfc831582beeb84bfe5b2222cd280",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "approved",
+          "productionUseAllowed": true
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -902,6 +1052,36 @@
           "updateFrequency": "realtime",
           "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-escalator",
+        "sourceId": "kric-station-escalator",
+        "snapshotId": "kric-station-escalator-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "f07b23d77b7b0ec1b907ba4522e349133e97c2aeb6bc5d877707e9e092e31e22",
+        "rawSha256": "f681344a09a43a5bd15ddcd7c0c0294e60a6525437a511689fd8983dd2c1510c",
+        "schemaFingerprint": "aa610fb76671b5fe85671c2f25daf4f6684576f55d5e578fc8aa096ee35024a1",
+        "sourceSnapshotSetHash": "825be87a524ab56dd56bcef74b663151062e1daeb1eeb7a81e979fc2520c1e9c",
+        "sourceInventorySha256": "38f5588f797774a0e4544f5412a70ebb0a5f6e13bbea3d51c67c8f5a61affe41",
+        "adminReviewRecordHash": "7fe82686e278449f48d69d15957f48024130c096d24af65213c5a7c95ba1fceb",
+        "licenseEvidenceHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "approved",
+          "productionUseAllowed": true
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -979,6 +1159,36 @@
           "updateFrequency": "realtime",
           "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-wheelchair-lift-location",
+        "sourceId": "kric-wheelchair-lift-location",
+        "snapshotId": "kric-wheelchair-lift-location-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "a795e516722bcdbcd3814afb7271af87960cbe7b282901cb99973999e89c22c3",
+        "rawSha256": "bbf95722f5807be93ca96957bccf826fb3354e8c2c21c123c80449610ec22e22",
+        "schemaFingerprint": "dda0094ba74ae95fd6a5743737fd02dc3d4f43af123d3fe0807088ef254532cc",
+        "sourceSnapshotSetHash": "c4af7c7d56dd0502c58ab4308bce4dc29dad658a1ad65fcedf5d1c04c0ff5716",
+        "sourceInventorySha256": "65ffcc558ef2d42baad3f58fbe46d3c9ac800b3990c2ed964b965e08c09d47f8",
+        "adminReviewRecordHash": "5eb37360a6cac4113c486cbf5a9c955b04bcd377f168a4e3ad9db6d76fb2e094",
+        "licenseEvidenceHash": "1148013f21d3b4e66095ae428518b8e69c315bd624c2c09391d60584532e41b1",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "approved",
+          "productionUseAllowed": true
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {
@@ -1059,6 +1269,36 @@
           "updateFrequency": "realtime",
           "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
         }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-wheelchair-lift-movement",
+        "sourceId": "kric-wheelchair-lift-movement",
+        "snapshotId": "kric-wheelchair-lift-movement-capital-admission-20260712",
+        "decision": "APPROVED",
+        "approvedBy": "aquilaXk10",
+        "approvedAt": "2026-07-12T00:00:00+09:00",
+        "sampleEvidenceHash": "421a2eb97a9331ab43e5515670847cf17d62d607393190f8f95f0b02e0d055a4",
+        "rawSha256": "695ae39f9624f262cda0a79411fd2c0bd69573c02353114a0b6ecc78f232ada7",
+        "schemaFingerprint": "d5946746d486d093a2338fe5f1ddc20f7d9cdac689a81d5ff4c070b6be9b1e9c",
+        "sourceSnapshotSetHash": "9fa79f9d6f8fa5922994405eaccd60102787a24da5c334bd806e91f3c599527c",
+        "sourceInventorySha256": "c8d407ee54b653c6e8bcf77a044c22cb7129232c3f7e842b3f0e40cd7524af6e",
+        "adminReviewRecordHash": "8309bcbe21eb1f153db99f33ad4c332c1475e23a0ff0dcfda89044efa87701ba",
+        "licenseEvidenceHash": "8363159b325e09fbce4084c635e443db60272d8f973136e927d1348649001803",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "portal": "공공데이터포털",
+          "defaultDailyLimit": "unlimited",
+          "unlockStatus": "approved",
+          "productionUseAllowed": true
+        },
+        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
     },
     {

@@ -1200,6 +1200,578 @@
           "unsupportedNotes": "candidate does not provide accessibility facility records"
         }
       }
+    },
+    {
+      "id": "molit-urban-rail-full-route",
+      "priority": "P0",
+      "domain": "station_line_membership",
+      "displayName": "국토교통부_도시철도 전체노선",
+      "detailUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+      "requestUrl": "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "line_name",
+          "operator_name",
+          "region",
+          "station_name",
+          "station_sequence"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 5,
+        "liveSampleRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "liveSampleSchemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+        "liveSampleEvidenceHash": "7e3b5118e4df1ef31205062c38ecd548e4cd41d68ba0cecc075a58848b7c01d4",
+        "liveSampleFields": [
+          "line_name",
+          "operator_name",
+          "region",
+          "station_name",
+          "station_sequence"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility data for production"
+        }
+      },
+      "productionInventoryReferenceId": "molit-urban-rail-full-route",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "seoulmetro-station-line-info",
+      "priority": "P0",
+      "domain": "station_line_membership",
+      "displayName": "서울교통공사_노선별 지하철역 정보",
+      "detailUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
+      "requestUrl": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
+        "retrievedAt": "2026-06-21",
+        "endpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
+        "usePermissionRange": "공공누리 1유형",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "line",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 5,
+        "liveSampleRawSha256": "e6664cf8c7ba22d983534b9c38f62550f0b675c0e0b32127e7e8476ce43a0fd3",
+        "liveSampleSchemaFingerprint": "8826ff26d7eb0edc39e2232e144917777a8829edf6574cb2c07292915f1fa1a7",
+        "liveSampleEvidenceHash": "078a9303f601b4f478cf9e5664da8bca164602a565658afd41f6233fdb18bbf0",
+        "liveSampleFields": [
+          "line",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility data for production"
+        }
+      },
+      "productionInventoryReferenceId": "seoulmetro-station-line-info",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "seoulmetro-cyberstation-route-map",
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "displayName": "서울교통공사 사이버스테이션 노선도",
+      "detailUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "requestUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+        "retrievedAt": "2026-06-28",
+        "endpoint": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+        "usePermissionRange": "공공누리 1유형",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "line",
+          "route_map_label_polygon",
+          "route_map_position",
+          "station_name"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 5,
+        "liveSampleRawSha256": "738a8bc8523a1ff408a78ea5777577b9daa8cc556a8522d864e99953ab650608",
+        "liveSampleSchemaFingerprint": "3ef53470a34e1d44db931b0bc2b7ac333fb2640f3e297902c4ee554688ef9052",
+        "liveSampleEvidenceHash": "0a495c65c45d834fcba9b287d48016aa1483f7ee23720de6aacf45d9f9960776",
+        "liveSampleFields": [
+          "line",
+          "route_map_label_polygon",
+          "route_map_position",
+          "station_name"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide accessibility facility data for production"
+        }
+      },
+      "productionInventoryReferenceId": "seoulmetro-cyberstation-route-map",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "kric-station-elevator",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "국가철도공단_역사별 엘리베이터 현황",
+      "detailUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551181/stationElevatorInfo/getStationElevatorList",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://apis.data.go.kr/B551181/stationElevatorInfo/getStationElevatorList",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "capacity",
+          "exit_no",
+          "floor_from",
+          "floor_to",
+          "location",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 2,
+        "liveSampleRawSha256": "cf7d7edbbd7506e64bbbedabb91ff4f0aec09a68c6726cb59cd72bf25c633ef5",
+        "liveSampleSchemaFingerprint": "bfe60d61b70e445dde6db20ccf986356907eafa29db6556f5e4b60a5c5985ca5",
+        "liveSampleEvidenceHash": "998b792eab4af3e40d26323b2a7ed40be0a6f3889afb675b770f7091311175ba",
+        "liveSampleFields": [
+          "capacity",
+          "exit_no",
+          "floor_from",
+          "floor_to",
+          "location",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "PROVIDER_DOCUMENTED_CAPITAL_PILOT",
+          "updateFrequency": "provider documented; production cadence admitted for capital pilot",
+          "unsupportedNotes": "production use admitted for capital pilot facility records"
+        }
+      },
+      "productionInventoryReferenceId": "kric-station-elevator",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "kric-station-elevator-movement",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "국가철도공단_역사별 엘리베이터 이동동선",
+      "detailUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551181/stationElevatorMovement/getStationElevatorMovementList",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://apis.data.go.kr/B551181/stationElevatorMovement/getStationElevatorMovementList",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "facility_type",
+          "from_location",
+          "image_path",
+          "instruction",
+          "movement_order",
+          "station_code",
+          "station_name",
+          "to_location"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 1,
+        "liveSampleRawSha256": "2bd91dfc08bf3157f7259524e6f1f923dbb94fdee24a80db684ff9321d59ab90",
+        "liveSampleSchemaFingerprint": "d5946746d486d093a2338fe5f1ddc20f7d9cdac689a81d5ff4c070b6be9b1e9c",
+        "liveSampleEvidenceHash": "13a9bb4a48c15b22a80a22263b9487f1b3c0608e9b375ba912a90d9a795eed20",
+        "liveSampleFields": [
+          "facility_type",
+          "from_location",
+          "image_path",
+          "instruction",
+          "movement_order",
+          "station_code",
+          "station_name",
+          "to_location"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "PROVIDER_DOCUMENTED_CAPITAL_PILOT",
+          "updateFrequency": "provider documented; production cadence admitted for capital pilot",
+          "unsupportedNotes": "production use admitted for capital pilot facility records"
+        }
+      },
+      "productionInventoryReferenceId": "kric-station-elevator-movement",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "kric-station-escalator",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "국가철도공단_역사별 에스컬레이터 현황",
+      "detailUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551181/stationEscalatorInfo/getStationEscalatorList",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://apis.data.go.kr/B551181/stationEscalatorInfo/getStationEscalatorList",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "direction",
+          "floor_from",
+          "floor_to",
+          "location",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 2,
+        "liveSampleRawSha256": "f681344a09a43a5bd15ddcd7c0c0294e60a6525437a511689fd8983dd2c1510c",
+        "liveSampleSchemaFingerprint": "aa610fb76671b5fe85671c2f25daf4f6684576f55d5e578fc8aa096ee35024a1",
+        "liveSampleEvidenceHash": "f07b23d77b7b0ec1b907ba4522e349133e97c2aeb6bc5d877707e9e092e31e22",
+        "liveSampleFields": [
+          "direction",
+          "floor_from",
+          "floor_to",
+          "location",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "PROVIDER_DOCUMENTED_CAPITAL_PILOT",
+          "updateFrequency": "provider documented; production cadence admitted for capital pilot",
+          "unsupportedNotes": "production use admitted for capital pilot facility records"
+        }
+      },
+      "productionInventoryReferenceId": "kric-station-escalator",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "kric-wheelchair-lift-location",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "국가철도공단_역사별 휠체어리프트 위치",
+      "detailUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551181/wheelchairLiftLocation/getWheelchairLiftLocationList",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://apis.data.go.kr/B551181/wheelchairLiftLocation/getWheelchairLiftLocationList",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "floor_from",
+          "floor_to",
+          "location",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 2,
+        "liveSampleRawSha256": "bbf95722f5807be93ca96957bccf826fb3354e8c2c21c123c80449610ec22e22",
+        "liveSampleSchemaFingerprint": "dda0094ba74ae95fd6a5743737fd02dc3d4f43af123d3fe0807088ef254532cc",
+        "liveSampleEvidenceHash": "a795e516722bcdbcd3814afb7271af87960cbe7b282901cb99973999e89c22c3",
+        "liveSampleFields": [
+          "floor_from",
+          "floor_to",
+          "location",
+          "station_code",
+          "station_name"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "PROVIDER_DOCUMENTED_CAPITAL_PILOT",
+          "updateFrequency": "provider documented; production cadence admitted for capital pilot",
+          "unsupportedNotes": "production use admitted for capital pilot facility records"
+        }
+      },
+      "productionInventoryReferenceId": "kric-wheelchair-lift-location",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "kric-wheelchair-lift-movement",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "displayName": "국가철도공단_역사별 휠체어리프트 이동동선",
+      "detailUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551181/wheelchairLiftMovement/getWheelchairLiftMovementList",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+        "retrievedAt": "2026-06-22",
+        "endpoint": "https://apis.data.go.kr/B551181/wheelchairLiftMovement/getWheelchairLiftMovementList",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON"
+        ],
+        "outputFields": [
+          "facility_type",
+          "from_location",
+          "image_path",
+          "instruction",
+          "movement_order",
+          "station_code",
+          "station_name",
+          "to_location"
+        ],
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 1,
+        "liveSampleRawSha256": "695ae39f9624f262cda0a79411fd2c0bd69573c02353114a0b6ecc78f232ada7",
+        "liveSampleSchemaFingerprint": "d5946746d486d093a2338fe5f1ddc20f7d9cdac689a81d5ff4c070b6be9b1e9c",
+        "liveSampleEvidenceHash": "421a2eb97a9331ab43e5515670847cf17d62d607393190f8f95f0b02e0d055a4",
+        "liveSampleFields": [
+          "facility_type",
+          "from_location",
+          "image_path",
+          "instruction",
+          "movement_order",
+          "station_code",
+          "station_name",
+          "to_location"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source)에서 산출한 sanitized sample evidence 해시. 원본은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
+      },
+      "nextAction": "capital 팩 production inventory 소비 대상으로 유지한다.",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide schedule data for production"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime data for production",
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "PROVIDER_DOCUMENTED_CAPITAL_PILOT",
+          "updateFrequency": "provider documented; production cadence admitted for capital pilot",
+          "unsupportedNotes": "production use admitted for capital pilot facility records"
+        }
+      },
+      "productionInventoryReferenceId": "kric-wheelchair-lift-movement",
+      "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
     }
   ]
 }
