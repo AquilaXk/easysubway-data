@@ -70,6 +70,13 @@ function findCredentialLeak(value, pathParts = []) {
   return null;
 }
 
+function renderFieldName(fieldName) {
+  return JSON.stringify(fieldName).replace(
+    /[\u007f-\u009f\u2028\u2029]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 function validateSample({ candidate, candidateId, sample }) {
   if (sample.candidateId !== candidateId) {
     throw new Error(`sample candidateId mismatch: expected ${candidateId}`);
@@ -91,7 +98,24 @@ function validateSample({ candidate, candidateId, sample }) {
   const sampleFields = new Set(sample.fields);
   const missingFields = candidate.evidence.outputFields.filter((field) => !sampleFields.has(field));
   if (missingFields.length > 0) {
-    throw new Error(`output field missing: ${missingFields.join(", ")}`);
+    if (findCredentialLeak(sample.fields)) {
+      throw new Error("sample field names must not contain credentials");
+    }
+    const availableFields = [...sampleFields]
+      .filter((field) => typeof field === "string")
+      .sort((left, right) => left < right ? -1 : Number(left !== right));
+    const expectedField = missingFields[0];
+    const caseInsensitiveMatches = availableFields.filter(
+      (actualField) => actualField.toLowerCase() === expectedField.toLowerCase(),
+    );
+    if (caseInsensitiveMatches.length === 1) {
+      throw new Error(
+        `output field case mismatch: expected ${renderFieldName(expectedField)}; actual ${renderFieldName(caseInsensitiveMatches[0])}`,
+      );
+    }
+    throw new Error(
+      `output field missing: ${renderFieldName(expectedField)}; available fields: ${availableFields.map(renderFieldName).join(", ")}`,
+    );
   }
 
   const missingEdgeFields = candidate.evidence.missingConfirmedEdgeFields ?? [];

@@ -129,7 +129,7 @@ test("KRIC evidence collector는 실패 단계와 무관하게 raw와 uploadable
       fetchImpl: async () => new Response(JSON.stringify([
         { railOprIsttCd: "S1" },
       ]), { status: 200 }),
-      expectedError: /output field missing: railOprIsttNm/,
+      expectedError: /output field missing: "railOprIsttNm"/,
     },
   ];
 
