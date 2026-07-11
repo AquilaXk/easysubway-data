@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-build-spec-hash-evidence",
+  "issue": 1950,
+  "builderGitSha": "ec8dde5431ff4c2d3b1d94a7a7a6a904feb0b6b8",
+  "productionScopeId": "capital_pilot_android_v1",
+  "truthfulnessRule": "모든 값은 (a) 커밋 데이터에서 결정적 재산출, 또는 (b) #1992 admission 실행 산출물의 byte-exact 재생성·검증본에서만 채웠다. 임의 합성값 없음.",
+  "ledgerHashes": {
+    "note": "export-ledger-hashes.mjs 산출값 == #1992 admissionEvidence 기록값(완전 일치 검증 PASS).",
+    "approvedAliasLedgerHash": {
+      "value": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+      "exporterKind": "alias",
+      "ledgerSource": "tools/datapack/fixtures/catalog-fixture.json#packs[].stationAliases"
+    },
+    "facilityEvidenceLedgerHash": {
+      "value": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+      "exporterKind": "facility-evidence",
+      "ledgerSource": "catalog-fixture.json#packs[].facilities"
+    },
+    "routeEvidenceLedgerHash": {
+      "value": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+      "exporterKind": "route-evidence",
+      "ledgerSource": "catalog-fixture.json#packs[].networkEdges"
+    },
+    "approvedOverrideSetHash": {
+      "value": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+      "exporterKind": "override",
+      "ledgerSource": "tools/datapack/fixtures/admin-review-overrides.json"
+    },
+    "reproductionCommands": [
+      "node tools/datapack/export-ledger-hashes.mjs --kind alias --fixture tools/datapack/fixtures/catalog-fixture.json",
+      "node tools/datapack/export-ledger-hashes.mjs --kind facility-evidence --fixture tools/datapack/fixtures/catalog-fixture.json",
+      "node tools/datapack/export-ledger-hashes.mjs --kind route-evidence --fixture tools/datapack/fixtures/catalog-fixture.json",
+      "node tools/datapack/export-ledger-hashes.mjs --kind override --overrides tools/datapack/fixtures/admin-review-overrides.json"
+    ]
+  },
+  "sourceSnapshots": {
+    "note": "source-snapshots.json은 #1992 admission 실행(8종, snapshot -capital-admission-20260712)의 snapshot 객체를 커밋 원천 데이터(molit CSV·cyberstation JS·capital-pilot input)에서 byte-exact 재생성한 것. 재생성본 검증: 각 snapshot에 대해 sha256(JSON.stringify([snapshot])) == 해당 source의 admissionEvidence.sourceSnapshotSetHash (8/8 PASS — snapshot 객체 완전 동일성 증명), raw 바이트 sha256 == admissionEvidence.rawSha256 == source-candidates.json liveSampleRawSha256 (8/8 PASS).",
+    "order": "admission chain 확정 순서(#1992 fix ebad6bff, source-candidates.json 순): molit-urban-rail-full-route → seoulmetro-station-line-info → seoulmetro-cyberstation-route-map → kric-station-elevator → kric-station-elevator-movement → kric-station-escalator → kric-wheelchair-lift-location → kric-wheelchair-lift-movement",
+    "committedVerificationCommand": "node -e \"const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),i=require('./tools/datapack/source-inventory.json');for(const n of s){const e=i.sources.find(x=>x.id===n.sourceId).admissionEvidence;console.log(n.sourceId,c.createHash('sha256').update(JSON.stringify([n])).digest('hex')===e.sourceSnapshotSetHash)}\"",
+    "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨."
+  },
+  "sourceSnapshotSetHash": {
+    "value": "bc138f2cea9023737b76a75bca5acb2362b2500b84022492828c2daef286ff5b",
+    "contract": "run-source-admission-pipeline.mjs 60행 공식 sha256(JSON.stringify([snapshot...]))을 8-snapshot 배열로 일반화(배열=source-snapshots.json 그대로, 위 order). build-datapack·워크플로는 이 값을 재계산하지 않고 build-spec↔release-request 상호 일치만 강제(workflow 187행) — 조합 규격의 리포 정의가 단일 스냅샷 케이스뿐이라 일반화 근거를 여기 명기.",
+    "reproductionCommand": "node -e \"const c=require('crypto');console.log(c.createHash('sha256').update(JSON.stringify(require('./tools/datapack/release/source-snapshots.json'))).digest('hex'))\""
+  },
+  "sourceInventorySha256": {
+    "value": "35b7bff6d43dea84895df4d737d940908b9526a9014b64f056178fbf35d2af32",
+    "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1992 병합 후 현행 main의 tools/datapack/source-inventory.json이 곧 최종 admitted inventory(순차 admit 체인 종료 상태, fix ebad6bff)이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
+    "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
+  },
+  "fixturePath": {
+    "value": "tools/datapack/release/capital-production-reviewed-pack.json",
+    "contract": "워크플로 production 게이트 체인(330~337행: import-official-sources --inventory source-inventory.json --input capital-pilot-production-source-input.json → apply-admin-review-overrides --overrides fixtures/admin-review-overrides.json)을 현행 main에서 그대로 실행한 산출물을 커밋. 경로는 marker(fixture|debug|demo|sample) 미포함·fixtures/ 밖(workflow 147·175행 통과). pack.artifactKind=production, 소비 소스 9종(8종+kric-subway-timetable)."
+  },
+  "identifiers": {
+    "candidateId": {
+      "value": "capital-pilot-candidate-20260712",
+      "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
+    },
+    "approvalId": {
+      "value": "release-request-2026-07-12-01",
+      "note": "파일 기반 경로 임의 고유 문자열 허용(workflow 183행은 modeArgs.releaseRequestId와 일치만 강제). 선행 조사 문서의 날짜+연번 관례."
+    }
+  },
+  "perSourceEvidence": [
+    {
+      "sourceId": "molit-urban-rail-full-route",
+      "snapshotId": "molit-urban-rail-full-route-capital-admission-20260712",
+      "rawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
+      "perSourceSnapshotSetHash": "6810d86ce484465d9e6c23e29b827228a48cd08a00fea61aa7545b88b9466a38"
+    },
+    {
+      "sourceId": "seoulmetro-station-line-info",
+      "snapshotId": "seoulmetro-station-line-info-capital-admission-20260712",
+      "rawSha256": "e6664cf8c7ba22d983534b9c38f62550f0b675c0e0b32127e7e8476ce43a0fd3",
+      "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
+      "perSourceSnapshotSetHash": "7cd9209bd79399731bc3f5d4aa34b1467755a38072eafbfd6a5f172ad99bcda5"
+    },
+    {
+      "sourceId": "seoulmetro-cyberstation-route-map",
+      "snapshotId": "seoulmetro-cyberstation-route-map-capital-admission-20260712",
+      "rawSha256": "738a8bc8523a1ff408a78ea5777577b9daa8cc556a8522d864e99953ab650608",
+      "adminReviewRecordHash": "4ea77265d144baa6b06e8f10152743420006f7581b24ffd68b21367341aa1b6c",
+      "perSourceSnapshotSetHash": "f66882ed69618b8c7e0d3e3746d914ef122ce7889c0ae015730b92bc6e51e19b"
+    },
+    {
+      "sourceId": "kric-station-elevator",
+      "snapshotId": "kric-station-elevator-capital-admission-20260712",
+      "rawSha256": "cf7d7edbbd7506e64bbbedabb91ff4f0aec09a68c6726cb59cd72bf25c633ef5",
+      "adminReviewRecordHash": "71e7c6bbe0269005c84c665e85b43b7d0e79146589cc33ac715f82e76f81c47f",
+      "perSourceSnapshotSetHash": "71994ba4a3e140ef32bfbaf12cf17e40cbc1e800a0e83dc6c79e6c84df56c93f"
+    },
+    {
+      "sourceId": "kric-station-elevator-movement",
+      "snapshotId": "kric-station-elevator-movement-capital-admission-20260712",
+      "rawSha256": "2bd91dfc08bf3157f7259524e6f1f923dbb94fdee24a80db684ff9321d59ab90",
+      "adminReviewRecordHash": "045aad6dd616b4c408ba3addbfd208adcb5c7ffd92dacd1cf1ccbb2d362da6c0",
+      "perSourceSnapshotSetHash": "65025a9eb71ce233cad72231cbf7286b199649287e64df3e862b5b7124a5b2ad"
+    },
+    {
+      "sourceId": "kric-station-escalator",
+      "snapshotId": "kric-station-escalator-capital-admission-20260712",
+      "rawSha256": "f681344a09a43a5bd15ddcd7c0c0294e60a6525437a511689fd8983dd2c1510c",
+      "adminReviewRecordHash": "7fe82686e278449f48d69d15957f48024130c096d24af65213c5a7c95ba1fceb",
+      "perSourceSnapshotSetHash": "825be87a524ab56dd56bcef74b663151062e1daeb1eeb7a81e979fc2520c1e9c"
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-location",
+      "snapshotId": "kric-wheelchair-lift-location-capital-admission-20260712",
+      "rawSha256": "bbf95722f5807be93ca96957bccf826fb3354e8c2c21c123c80449610ec22e22",
+      "adminReviewRecordHash": "5eb37360a6cac4113c486cbf5a9c955b04bcd377f168a4e3ad9db6d76fb2e094",
+      "perSourceSnapshotSetHash": "c4af7c7d56dd0502c58ab4308bce4dc29dad658a1ad65fcedf5d1c04c0ff5716"
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-movement",
+      "snapshotId": "kric-wheelchair-lift-movement-capital-admission-20260712",
+      "rawSha256": "695ae39f9624f262cda0a79411fd2c0bd69573c02353114a0b6ecc78f232ada7",
+      "adminReviewRecordHash": "8309bcbe21eb1f153db99f33ad4c332c1475e23a0ff0dcfda89044efa87701ba",
+      "perSourceSnapshotSetHash": "9fa79f9d6f8fa5922994405eaccd60102787a24da5c334bd806e91f3c599527c"
+    }
+  ],
+  "buildDryRun": {
+    "result": "PASS — build-datapack --build-spec가 이 spec을 그대로 소비해 capital@1(artifactKind=production) pack 생성, provenance.candidateBuild에 6종 해시·buildSpecSha256 복사 확인(테스트 서명키 로컬 dry-run).",
+    "knownGateBlocker": "validate-datapack --require-production은 verified ENTRY/EXIT coverage gap(edge-entry/exit-sadang·sangnoksu-seoul-4, 4개 edge 미검증)으로 exit 1 — production-publish 워크플로의 release fixture 게이트(352~354행)가 이 상태로는 실패한다. 해소는 capital-pilot-production-source-input.json routeEdges의 해당 edge에 실측 접근성 검증 증거(accessibilityStatus=AVAILABLE + evidence/providerRecordHash + lastVerifiedAt)를 기입해야 하며 이는 현장 검증 산출물이라 오너 공급."
+  }
+}

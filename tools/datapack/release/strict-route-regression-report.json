@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "strict-route-regression-report",
+  "issue": 1950,
+  "productionScopeId": "capital_pilot_android_v1",
+  "generatedBy": {
+    "fixtureBuilder": "tools/datapack/build-molit-nationwide-fixture.mjs",
+    "auditor": "tools/route-map/audit-route-map.mjs",
+    "reviewedAmbiguities": "tools/route-map/fixtures/reviewed-ambiguities.json",
+    "failOn": [
+      "BLOCKER",
+      "HIGH"
+    ],
+    "builderGitSha": "ec8dde5431ff4c2d3b1d94a7a7a6a904feb0b6b8",
+    "generatedAtUtc": "2026-07-11T19:53:01Z"
+  },
+  "regionScope": "전국 5권역(수도권·부산권·대구권·광주권·대전권)",
+  "auditExitCode": 0,
+  "summary": {
+    "packCount": 1,
+    "findingsBySeverity": {
+      "BLOCKER": 0,
+      "HIGH": 0,
+      "MEDIUM": 0,
+      "LOW": 0,
+      "INFO": 7
+    }
+  },
+  "regions": [
+    {
+      "region": "광주권",
+      "stationLineCount": 20,
+      "coverageRatio": 1
+    },
+    {
+      "region": "대구권",
+      "stationLineCount": 101,
+      "coverageRatio": 1
+    },
+    {
+      "region": "대전권",
+      "stationLineCount": 22,
+      "coverageRatio": 1
+    },
+    {
+      "region": "부산권",
+      "stationLineCount": 158,
+      "coverageRatio": 1
+    },
+    {
+      "region": "수도권",
+      "stationLineCount": 802,
+      "coverageRatio": 1
+    }
+  ],
+  "findings": [
+    {
+      "severity": "INFO",
+      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "",
+      "stationId": "",
+      "message": "802 station-line routeMapPositions across 25 lines do not include labelPolygon metadata."
+    },
+    {
+      "severity": "INFO",
+      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대구권",
+      "lineId": "",
+      "stationId": "",
+      "message": "101 station-line routeMapPositions across 4 lines do not include labelPolygon metadata."
+    },
+    {
+      "severity": "INFO",
+      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "대전권",
+      "lineId": "",
+      "stationId": "",
+      "message": "22 station-line routeMapPositions across 1 lines do not include labelPolygon metadata."
+    },
+    {
+      "severity": "INFO",
+      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "부산권",
+      "lineId": "",
+      "stationId": "",
+      "message": "158 station-line routeMapPositions across 6 lines do not include labelPolygon metadata."
+    },
+    {
+      "severity": "INFO",
+      "code": "MISSING_ROUTE_MAP_LABEL_POLYGON",
+      "packId": "capital",
+      "region": "광주권",
+      "lineId": "",
+      "stationId": "",
+      "message": "20 station-line routeMapPositions across 1 lines do not include labelPolygon metadata."
+    },
+    {
+      "severity": "INFO",
+      "code": "REVIEWED_AMBIGUITY",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-42b5805f3b5a",
+      "stationId": "station-423d71b94cdc,station-be0bc5f41d9b",
+      "message": "Reviewed duplicate source coordinate: 인천2호선 인천시청/석천사거리 source 좌표가 공식 사이버스테이션 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리 (2026-06-26T00:00:00.000Z, QA, https://github.com/AquilaXk/easysubway/issues/836)."
+    },
+    {
+      "severity": "INFO",
+      "code": "REVIEWED_AMBIGUITY",
+      "packId": "capital",
+      "region": "수도권",
+      "lineId": "line-cbe75f5287a1",
+      "stationId": "station-04529af2869a,station-bdd848e7e432",
+      "message": "Reviewed duplicate source coordinate: 수도권 자기부상 워터파크/용유 source 좌표가 공식 SVG선지도 추출에서 동일하게 제공되는 현 상태를 후속 수동 보정 대상으로 분리 (2026-06-26T00:00:00.000Z, QA, https://github.com/AquilaXk/easysubway/issues/891)."
+    }
+  ]
+}
