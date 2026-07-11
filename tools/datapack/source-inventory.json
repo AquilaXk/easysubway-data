@@ -1475,8 +1475,8 @@
       },
       "requiredForProductionPack": false,
       "updateFrequency": "annual",
-      "observedDataUpdatedAt": "2025-12-05",
-      "retrievedAt": "2026-06-22",
+      "observedDataUpdatedAt": "2026-06-30",
+      "retrievedAt": "2026-07-11",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
