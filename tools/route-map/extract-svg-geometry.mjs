@@ -11,7 +11,12 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 // v2: <text> 라벨에 더해 노선 track geometry(line/polyline/polygon/path)를
 // root 좌표 정점 목록 + 확정 stroke 색(getComputedStyle)으로 함께 추출한다.
-const extractorVersion = "route-map-svg-geometry-v2";
+// v3(#1950): 오너 자작 8선형 도식(easy-subway-sma-v*)의 역 노드
+// (data-station/data-line/data-node-role를 가진 circle/g/path)를 조상 transform
+// 체인을 브라우저 CTM으로 정규화한 root 좌표 중심으로 함께 추출한다. transfer/edge
+// 역의 그룹 로컬 transform(rotate/translate/matrix)까지 정확히 합성되도록
+// getScreenCTM+getBBox를 쓴다(결정적: 폰트 무관, CTM 산술은 정확).
+const extractorVersion = "route-map-svg-geometry-v3";
 
 // 이 길이(root 좌표) 미만인 stroke는 노선이 아니라 역 마커 틱/장식으로 보고 버린다.
 // seoul SVG의 <line class="SDI">(≈20px 대각선 장식)를 걸러내는 하한이다.
@@ -52,6 +57,11 @@ function parseArgs(argv) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+// 로케일 비의존 결정적 정렬용 코드 유닛 비교. localeCompare(ICU/로케일 의존) 대체.
+function codeUnitCompare(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function findBrowser(explicitBrowser) {
@@ -187,6 +197,98 @@ function browserExtractorExpression(svg) {
       if (tag === "polygon" && vertices.length > 1) vertices.push({ ...vertices[0] });
       return vertices;
     }
+    // SVG path d에서 on-path 정점(각 명령의 도착점)만 절대 좌표로 뽑는다. 곡선의
+    // 제어점은 버리고 끝점만 취해 8선형 직선 꼭짓점을 보존한다. 지원: M/m L/l H/h
+    // V/v C/c S/s Q/q T/t A/a Z/z. 결정적 파서.
+    function pathEndpointVertices(d) {
+      const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || [];
+      const out = [];
+      let i = 0;
+      let cx = 0;
+      let cy = 0;
+      let startX = 0;
+      let startY = 0;
+      let cmd = "";
+      const num = () => Number.parseFloat(tokens[i++]);
+      const push = () => out.push({ x: cx, y: cy });
+      while (i < tokens.length) {
+        if (/[a-zA-Z]/.test(tokens[i])) {
+          cmd = tokens[i++];
+        }
+        const rel = cmd === cmd.toLowerCase();
+        const c = cmd.toUpperCase();
+        if (c === "M") {
+          cx = (rel ? cx : 0) + num(); cy = (rel ? cy : 0) + num();
+          startX = cx; startY = cy; push();
+          cmd = rel ? "l" : "L"; // 후속 좌표쌍은 lineto
+        } else if (c === "L") {
+          cx = (rel ? cx : 0) + num(); cy = (rel ? cy : 0) + num(); push();
+        } else if (c === "H") {
+          cx = (rel ? cx : 0) + num(); push();
+        } else if (c === "V") {
+          cy = (rel ? cy : 0) + num(); push();
+        } else if (c === "C") {
+          num(); num(); num(); num(); // 제어점 2개 폐기
+          cx = (rel ? cx : 0) + num(); cy = (rel ? cy : 0) + num(); push();
+        } else if (c === "S" || c === "Q") {
+          num(); num(); // 제어점 1개 폐기
+          cx = (rel ? cx : 0) + num(); cy = (rel ? cy : 0) + num(); push();
+        } else if (c === "T") {
+          cx = (rel ? cx : 0) + num(); cy = (rel ? cy : 0) + num(); push();
+        } else if (c === "A") {
+          num(); num(); num(); num(); num(); // rx ry rot large sweep
+          cx = (rel ? cx : 0) + num(); cy = (rel ? cy : 0) + num(); push();
+        } else if (c === "Z") {
+          cx = startX; cy = startY; push();
+        } else {
+          i++; // 알 수 없는 토큰 방어
+        }
+      }
+      return out;
+    }
+    // 폴리라인을 8선형으로 정리한다. 각 세그먼트 방향을 최근접 8방향으로 양자화하고,
+    // 각 세그먼트 방향을 최근접 8방향으로 양자화하고, 같은 방향 run은 이전 정점을
+    // 투영점으로 연장 병합한다. 인접 두 run 방향이 다르면 그 교점을 코너 정점으로 둔다.
+    function octolinearizePolyline(points) {
+      if (points.length < 3) return points;
+      const DIRS = [
+        { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: -1, y: 1 },
+        { x: -1, y: 0 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: 1, y: -1 },
+      ].map((d) => ({ x: d.x / Math.hypot(d.x, d.y), y: d.y / Math.hypot(d.x, d.y) }));
+      const snapDir = (dx, dy) => {
+        let best = DIRS[0];
+        let bestDot = -Infinity;
+        for (const d of DIRS) {
+          const dot = dx * d.x + dy * d.y;
+          if (dot > bestDot) { bestDot = dot; best = d; }
+        }
+        return best;
+      };
+      // run 목록: (방향, 시작점). 짧은 세그먼트는 흡수.
+      const out = [{ x: number(points[0].x), y: number(points[0].y) }];
+      let curDir = null;
+      for (let i = 1; i < points.length; i += 1) {
+        const prev = out[out.length - 1];
+        let dx = points[i].x - prev.x;
+        let dy = points[i].y - prev.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-6) continue;
+        const dir = snapDir(dx, dy);
+        if (curDir && Math.abs(dir.x - curDir.x) < 1e-9 && Math.abs(dir.y - curDir.y) < 1e-9) {
+          // 같은 방향 연장: 이전 정점을 이 투영점으로 이동.
+          const t = dx * dir.x + dy * dir.y;
+          prev.x = number(prev.x + dir.x * t);
+          prev.y = number(prev.y + dir.y * t);
+          continue;
+        }
+        // 방향 전환: 축 투영 길이만큼 새 run 정점을 추가한다. 짧은 코너 브리지든
+        // 아니든 동일 처리 — 다음 정점이 같은 방향이면 위 분기가 이 정점을 흡수한다.
+        const t = dx * dir.x + dy * dir.y;
+        out.push({ x: number(prev.x + dir.x * t), y: number(prev.y + dir.y * t) });
+        curDir = dir;
+      }
+      return out;
+    }
     function isVisibleText(element, root) {
       if (element.closest("defs")) return false;
       for (let current = element; current; current = current.parentElement) {
@@ -273,22 +375,33 @@ function browserExtractorExpression(svg) {
 
       let vertices;
       if (tag === "path") {
-        const totalLength = element.getTotalLength();
-        if (!(totalLength > 0)) continue;
-        // root 좌표 기준 등간격이 되도록 로컬 길이를 스케일로 환산해 샘플 수를 정한다.
-        const rootLength = totalLength * matrixScale(matrix);
-        const samples = Math.max(2, Math.min(600, Math.ceil(rootLength / config.pathSampleSpacing)));
-        vertices = [];
-        for (let step = 0; step <= samples; step += 1) {
-          const point = element.getPointAtLength((totalLength * step) / samples);
-          vertices.push({ x: point.x, y: point.y });
+        // 오너 도식의 route 경로는 8선형 직선(l/h/v)을 짧은 코너 곡선(c/s)으로 이은
+        // 형태다. 등간격 재샘플은 코너 각도를 뭉갠다 → 원본 d의 on-path 정점(직선
+        // 끝점·곡선 끝점)만 뽑아 정확한 8선형 꼭짓점을 보존한다(코너 곡선은 두
+        // 정점으로 근사). d 파싱 실패 시 arc-length 재샘플로 폴백한다.
+        const raw = element.getAttribute("d") || "";
+        vertices = pathEndpointVertices(raw);
+        if (vertices.length < 2) {
+          const totalLength = element.getTotalLength();
+          if (!(totalLength > 0)) continue;
+          const rootLength = totalLength * matrixScale(matrix);
+          const samples = Math.max(2, Math.min(600, Math.ceil(rootLength / config.pathSampleSpacing)));
+          vertices = [];
+          for (let step = 0; step <= samples; step += 1) {
+            const point = element.getPointAtLength((totalLength * step) / samples);
+            vertices.push({ x: point.x, y: point.y });
+          }
         }
       } else {
         vertices = localVertices(element, tag);
       }
       if (vertices.length < 2) continue;
 
-      const points = vertices.map((vertex) => matrixPoint(matrix, vertex.x, vertex.y));
+      let points = vertices.map((vertex) => matrixPoint(matrix, vertex.x, vertex.y));
+      // 8선형 정리: 코너 곡선 끝점이 만드는 짧은 비축 세그먼트를 인접 8방향 run에
+      // 흡수시켜 track 세그먼트를 0/45/90/135°로 정렬한다(오너 도식은 직선 run이
+      // 이미 8선형이고, 어긋남은 곡선 근사에서만 온다). path stroke에만 적용.
+      if (tag === "path") points = octolinearizePolyline(points);
       let length = 0;
       for (let index = 1; index < points.length; index += 1) {
         length += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
@@ -308,7 +421,59 @@ function browserExtractorExpression(svg) {
       });
     }
 
-    return { sourceViewBox: sourceViewBox(root), labels, strokes };
+    // 역 노드: data-station + data-node-role를 가진 요소(circle/g/path)의 root 좌표
+    // 중심을 조상 transform 체인(scaled-layer + 그룹 로컬 rotate/translate/matrix)까지
+    // 합성해 산출한다. circle은 cx/cy를, 그 외는 getBBox 중심을 로컬 기준점으로 쓴다.
+    // 상위 요소가 이미 data-station을 들고 있으면 자식은 건너뛴다(그룹 대표 1노드).
+    function nodeCenterLocal(element) {
+      const tag = element.tagName.toLowerCase();
+      if (tag === "circle") {
+        return {
+          x: Number.parseFloat(element.getAttribute("cx") || "0"),
+          y: Number.parseFloat(element.getAttribute("cy") || "0"),
+        };
+      }
+      let bbox;
+      try {
+        bbox = element.getBBox();
+      } catch {
+        return null;
+      }
+      if (!(bbox.width >= 0) || !(bbox.height >= 0)) return null;
+      return { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 };
+    }
+    const stationNodes = [];
+    for (const element of root.querySelectorAll("[data-node-role][data-station]")) {
+      if (element.closest("defs")) continue;
+      // 조상 중 이미 data-station 노드가 있으면(예: transfer-symbol g 내부의 circle)
+      // 대표는 최상위 그 하나뿐 — 자식 중복은 배제한다.
+      const owner = element.parentElement?.closest("[data-node-role][data-station]");
+      if (owner) continue;
+      const local = nodeCenterLocal(element);
+      if (!local) continue;
+      const elementMatrix = element.getScreenCTM();
+      if (!elementMatrix) continue;
+      const matrix = rootInverse.multiply(elementMatrix);
+      const center = matrixPoint(matrix, local.x, local.y);
+      const dataStation = element.getAttribute("data-station") || "";
+      const dataName = element.getAttribute("data-name") || dataStation;
+      stationNodes.push({
+        dataStation,
+        dataName,
+        dataStationName: element.getAttribute("data-station-name") || dataName,
+        dataLine: element.getAttribute("data-line") || "",
+        dataLineName: element.getAttribute("data-line-name") || "",
+        dataLineColor: element.getAttribute("data-line-color") || "",
+        nodeRole: element.getAttribute("data-node-role") || "",
+        transferLines: element.getAttribute("data-transfer-lines") || "",
+        tag: element.tagName.toLowerCase(),
+        id: element.id || "",
+        x: center.x,
+        y: center.y,
+      });
+    }
+
+    return { sourceViewBox: sourceViewBox(root), labels, strokes, stationNodes };
   }})(${JSON.stringify(svgBase64)}, ${JSON.stringify({
     minStrokeLength: MIN_STROKE_LENGTH,
     pathSampleSpacing: PATH_SAMPLE_SPACING,
@@ -465,6 +630,21 @@ async function extractSvgGeometry({ svgFile, region, browser }) {
         const { descriptor: _descriptor, ...publicStroke } = stroke;
         return { ...publicStroke, strokeIndex, sourceElementKey };
       }),
+      // 결정적 출력: (data-line, data-station, id)로 코드 유닛 비교 안정 정렬한다.
+      // localeCompare는 ICU/로케일 의존이라 환경별로 순서가 흔들리므로 쓰지 않는다.
+      stationNodes: (extracted.stationNodes ?? [])
+        .slice()
+        .sort((a, b) =>
+          codeUnitCompare(a.dataLine, b.dataLine) ||
+          codeUnitCompare(a.dataStation, b.dataStation) ||
+          codeUnitCompare(a.id, b.id),
+        )
+        .map((node, nodeIndex) => {
+          const sourceElementKey = sha256(
+            JSON.stringify({ id: node.id, dataStation: node.dataStation, dataLine: node.dataLine, sourceSvgSha256 }),
+          );
+          return { ...node, nodeIndex, sourceElementKey };
+        }),
     };
   } finally {
     await rm(tempDir, { recursive: true, force: true });

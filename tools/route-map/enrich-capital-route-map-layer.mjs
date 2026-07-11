@@ -11,7 +11,8 @@ import { DatabaseSync } from "node:sqlite";
 // 여기에 등록해야 exact-count 검증이 동작한다. (segment path 수는 positions-lines로
 // region 무관하게 파생된다.)
 export const expectedCountsByRegion = {
-  "수도권": { positions: 796, lines: 24 },
+  // #1950: 오너 자작 8선형 도식 채택 + #1954 검단연장 3역·서해선 원종 좌표행 신설로 796→800.
+  "수도권": { positions: 800, lines: 24 },
   "부산권": { positions: 158, lines: 6 },
   "대구권": { positions: 101, lines: 4 },
   "광주권": { positions: 20, lines: 1 },

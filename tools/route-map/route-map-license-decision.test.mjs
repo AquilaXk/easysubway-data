@@ -59,11 +59,12 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
     );
   }
 
-  // 수도권은 public domain official-svg, 상용 준비 완료.
+  // 수도권은 #1950으로 오너 자작 8선형 도식(self-drawn) 정본 채택, 상용 준비 완료.
   const seoul = decisionById.get("seoul");
-  assert.equal(seoul.renderingStrategy, "official-svg");
+  assert.equal(seoul.renderingStrategy, "self-drawn-schematic");
   assert.equal(seoul.commercialProductionReady, true);
   assert.equal(seoul.attributionRequired, false);
+  assert.equal(seoul.licenseStatus, "self-drawn-confirmed");
 
   // 부산·대구·대전·광주 모두 self-drawn-schematic 전환(원본 SVG는 좌표 검수 참조만).
   for (const id of ["busan", "daegu", "daejeon", "gwangju"]) {

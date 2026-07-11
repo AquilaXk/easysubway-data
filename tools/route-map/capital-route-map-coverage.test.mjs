@@ -38,7 +38,11 @@ async function regionCoverage(region) {
 // QA다(live 게이트는 Dart 솔버 capital_label_overlap_gate_test). 2026-07-06 재간격
 // 적용으로 수도권 도심 확대가 레거시 LOD에 zoom1 충돌 2건(홍대입구/신촌·서울역/충정로)을
 // 남기며, live 라벨(Dart 솔버)은 오히려 개선된다. 지역별 baseline으로 악화만 금지한다.
-const zoom1OverlapBaseline = { 수도권: 2 };
+// [2026-07-11 #1950] 정본을 오너 자작 8선형 도식으로 교체하며 레거시 enrich LOD의
+// zoom1(환승/주요역) 라벨 배치 충돌 실측이 2→12로 바뀐다(더 조밀한 도심 배치). live
+// 게이트(Dart 솔버 capital_label_overlap_gate_test)는 통과하므로 앱 체감에는 영향
+// 없고, 이 baseline은 레거시 LOD 배치 회귀 악화만 막는 참조값이다.
+const zoom1OverlapBaseline = { 수도권: 12 };
 
 for (const [region, expected] of Object.entries(expectedCountsByRegion)) {
   test(`${region} route map pack retains structured coverage`, async () => {

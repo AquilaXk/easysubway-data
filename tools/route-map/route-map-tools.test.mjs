@@ -373,7 +373,7 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
 
   assert.equal(output.schemaVersion, 1);
   assert.equal(output.region, "fixture");
-  assert.equal(output.extractorVersion, "route-map-svg-geometry-v2");
+  assert.equal(output.extractorVersion, "route-map-svg-geometry-v3");
   assert.equal(output.sourceSvgSha256, createHash("sha256").update(source).digest("hex"));
   assert.deepEqual(output.sourceViewBox, [0, 0, 200, 120]);
   assert.match(output.browser.version, /Chrome|Chromium/i);
@@ -399,6 +399,24 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
   const rotated = output.labels.find((label) => label.sourceText === "회전역");
   assert.notEqual(rotated.polygon[0].y, rotated.polygon[1].y);
   assert.notEqual(rotated.polygon[0].x, rotated.polygon[3].x);
+
+  // v3: 역 노드(data-station+data-node-role)를 조상 transform 체인 정규화한 root 중심으로.
+  const nodesByName = new Map(output.stationNodes.map((node) => [node.dataStation, node]));
+  assert.equal(output.stationNodes.length, 2);
+  const ordinary = nodesByName.get("노드역");
+  assert.equal(ordinary.nodeRole, "ordinary");
+  assert.equal(ordinary.dataLine, "1");
+  // scaled-nodes transform translate(4 6) scale(2): cx10,cy20 → (4+20, 6+40)=(24,46).
+  assert.equal(ordinary.x, 24);
+  assert.equal(ordinary.y, 46);
+  assert.match(ordinary.sourceElementKey, /^[a-f0-9]{64}$/);
+  const transfer = nodesByName.get("환승노드");
+  assert.equal(transfer.nodeRole, "transfer");
+  assert.equal(transfer.dataLine, "2");
+  // 회전 그룹 중심(30,30)은 회전 pivot이라 root에서 (4+60, 6+60)=(64,66) 근처.
+  assert.ok(Math.abs(transfer.x - 64) < 2 && Math.abs(transfer.y - 66) < 2);
+  // 결정적 정렬: dataLine 사전순(1 < 2).
+  assert.deepEqual(output.stationNodes.map((node) => node.dataLine), ["1", "2"]);
 });
 
 test("SVG label polygon join applies only unambiguous station labels", async () => {

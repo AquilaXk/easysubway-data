@@ -17,16 +17,20 @@
     {
       "id": "seoul",
       "region": "수도권",
-      "operator": "Wikimedia Commons",
-      "sourceUrl": "https://commons.wikimedia.org/wiki/File:Seoul_subway_linemap_ko.svg",
-      "retrievedAt": "2026-06-24",
-      "originalLicenseSpdx": "Public-Domain",
+      "operator": "오너 자작(self-drawn)",
+      "sourceUrl": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v1.svg",
+      "retrievedAt": "2026-07-11",
+      "originalLicenseSpdx": "LicenseRef-Self-Drawn",
       "originalCommercialUseAllowed": true,
-      "renderingStrategy": "official-svg",
+      "renderingStrategy": "self-drawn-schematic",
       "bundledSvgRole": "review-reference-only",
       "attributionRequired": false,
       "commercialProductionReady": true,
-      "notes": "Public domain(IRTC1015). 상용 가능. [2026-07-05 #1789 정정] SVG 번들은 #1715에서 제거되어 앱은 SVG를 직접 렌더하지 않는다. 렌더 정본은 PD SVG에서 파생한 구조화 데이터(track stroke 기하 + 투영 좌표)다 — PD는 창작적 표현의 파생·개변·상용이 모두 허용되므로 부산 등에 적용되는 'SVG 표현 파생 금지' 규칙의 예외이며, 좌표·기하 provenance = qa-wikimedia-seoul-svg-coordinate. GO SEOUL(서울시 2023) 노선도는 공공누리 제4유형(상업 금지·변경 금지)이라 레이아웃 트레이스를 렌더 소스로 쓰지 않고 비교 QA 기준 이미지로만 쓴다."
+      "licenseStatus": "self-drawn-confirmed",
+      "selfDrawnSource": "easy-subway-sma-v1.svg",
+      "lineColorSource": "서울시 공식 노선 색상값 PDF(공식 지하철 노선도 디자인 페이지 다운로드); GTX-A는 PDF에 없어 원본 SVG 값 유지",
+      "provenanceVerifiedAt": "2026-07-11",
+      "notes": "[2026-07-11 #1950] 수도권 렌더 정본을 오너 자작 8선형 완성 도식(easy-subway-sma-v1)으로 교체. 오너가 직접 제작한 창작물이므로 self-drawn 확정 — 상용 허용·attribution 불필요. 앱은 SVG 원본을 통째 렌더하지 않고(#1635 유지) 도식에서 파생한 구조화 좌표(route_map_positions)만 렌더한다. 노선색은 서울시 공식 노선 색상값 PDF 근거(GTX-A만 원본 SVG 유지). 이전 정본은 Wikimedia PD SVG 좌표 감사(qa-wikimedia-seoul-svg-coordinate)였고, 도라산 1역은 오너 도식 미수록으로 카탈로그 유지·위상 보존 명시 예외다."
     },
     {
       "id": "busan",
