@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "route-map-license-decision",
   "issue": 1637,
-  "decidedAt": "2026-07-11",
+  "decidedAt": "2026-07-12",
   "summary": "부산·대구·대전·광주 노선도는 원본 SVG 이미지를 앱 렌더링 source of truth로 쓰지 않고, 역 좌표·노선 위상(사실 데이터) 기반 자체 schematic layout으로 그린다(대안 A). 원본 SVG는 좌표 검수 기준으로만 사용한다.",
   "renderingSourceOfTruth": "structured-data",
   "reviewStatusValues": [
@@ -74,7 +74,7 @@
       "commercialProductionReady": true,
       "redistributionAllowed": true,
       "reviewStatus": "self-drawn-fact-based",
-      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다. [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격. [2026-07-11 #1958] 자체 도식 산출물은 SVG 표현 파생이 아니므로 재배포 허용(redistributionAllowed=true), 사실 데이터 재검증 완료 상태로 reviewStatus=self-drawn-fact-based. 두 필드를 정본에 명시해 manifest와 교차 검증한다.",
+      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다. [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격. [2026-07-11 #1958] 자체 도식 산출물은 SVG 표현 파생이 아니므로 재배포 허용(redistributionAllowed=true), 사실 데이터 재검증 완료 상태로 reviewStatus=self-drawn-fact-based. 두 필드를 정본에 명시해 manifest와 교차 검증한다. [2026-07-12 #1951] admission evidence로 대구교통공사 역별 승하차 현황 데이터셋 공공데이터포털 페이지(https://www.data.go.kr/data/15002503/fileData.do)에서 \"이용허락범위: 제한 없음\"(상업 이용 허용) 표기 확인(확인일 2026-07-11). 단, 해당 데이터셋은 승하차 현황이며 노선도 데이터셋이 아니므로 노선도 evidence로는 대상이 어긋나는 한계가 있다 — 이 한계를 명기한 채 오너 결정(2026-07-12, 선택지 ①: 공공데이터포털 정식 개방 지정 표기를 admission evidence로 인정)에 따라 보조 evidence로만 인용한다. 현행 플래그(self-drawn-fact-based 등)의 1차 근거는 여전히 #1759 사실 데이터 법리(역 좌표·노선 위상 사실 데이터 기반 자체 도식)이며, 이번 evidence 첨부는 그 근거를 대체하지 않는다. 임시 evidence 전제: 출시 후 오너 자작 도식(self-drawn) 전환 시 evidence는 자작 기록으로 대체 예정(수도권 #1950 선례와 동일 경로). 플래그 변경 없음.",
       "licenseStatus": "self-drawn-fact-based",
       "provenanceVerifiedAt": "2026-07-05"
     },
@@ -93,7 +93,7 @@
       "commercialProductionReady": true,
       "redistributionAllowed": true,
       "reviewStatus": "self-drawn-fact-based",
-      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다. [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격. [2026-07-11 #1958] 자체 도식 산출물은 SVG 표현 파생이 아니므로 재배포 허용(redistributionAllowed=true), 사실 데이터 재검증 완료 상태로 reviewStatus=self-drawn-fact-based. 두 필드를 정본에 명시해 manifest와 교차 검증한다.",
+      "notes": "원본 SVG는 재배포 권한 미확인(permission-required). 앱 렌더링은 자체 schematic으로 전환, 원본 SVG는 좌표 검수 참조로만 쓴다. SVG 번들 유지 중에는 attribution 유지, 자체 도식 전환 후 해제 가능. 상용 준비 완료는 #1640 좌표·#1641 렌더러에서 판정한다. [2026-07-05 #1639/#1640] 좌표 provenance(qa-official-svg-coordinate=역 좌표·위상 사실 데이터, Feist/OSM 선례) 재검증 완료. line_tracks를 SVG stroke(표현)에서 down_path(역-역 위상=사실)로 재빌드해 SVG 표현 파생 제거. SVG 번들 제거(#1715)·자체 도식 전환 완료 → commercial_use_allowed=1·attribution 해제 승격. [2026-07-11 #1958] 자체 도식 산출물은 SVG 표현 파생이 아니므로 재배포 허용(redistributionAllowed=true), 사실 데이터 재검증 완료 상태로 reviewStatus=self-drawn-fact-based. 두 필드를 정본에 명시해 manifest와 교차 검증한다. [2026-07-12 #1951] admission evidence로 대전교통공사 노선도 파일데이터 공공데이터포털 페이지(https://www.data.go.kr/data/15050368/fileData.do)에서 \"이용허락범위: 제한 없음\"(상업 이용 허용) 표기 확인(확인일 2026-07-11), 오너 결정(2026-07-12, 선택지 ①: 공공데이터포털 정식 개방 지정 표기를 admission evidence로 인정)에 따라 admission evidence로 인정한다. 임시 evidence 전제: 출시 후 오너 자작 도식(self-drawn) 전환 시 evidence는 자작 기록으로 대체 예정(수도권 #1950 선례와 동일 경로). 기존 플래그(self-drawn-fact-based·commercial_use_allowed=1 등) 변경 없음 — #1759 사실 데이터 법리가 여전히 1차 근거다.",
       "licenseStatus": "self-drawn-fact-based",
       "provenanceVerifiedAt": "2026-07-05"
     },
