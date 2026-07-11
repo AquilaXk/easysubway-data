@@ -511,7 +511,11 @@ function operatorIdsForNodes(nodeIds, stationLineOperatorIds) {
     ...new Set(
       nodeIds.map((nodeId) => stationLineOperatorIds.get(canonicalStationLineNodeId(nodeId))).filter(Boolean),
     ),
-  ].sort();
+  ].sort((left, right) => {
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  });
 }
 
 function canonicalStationLineNodeId(nodeId) {
