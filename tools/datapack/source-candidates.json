@@ -287,8 +287,9 @@
           "sfFotExt",
           "stinCd",
           "stinFlor",
-          "updnDvcd"
+          "updnDvCd"
         ],
+        "liveSampleNote": "KRIC 공식 stPlf 문서는 updnDvcd로 표기하지만, 2026-07-11 workflow run 29151697392의 live JSON은 updnDvCd를 반환했다. 검증은 live wire 표기 updnDvCd를 따른다.",
         "missingEvidence": [
           "sampleResponse"
         ]

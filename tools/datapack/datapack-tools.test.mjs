@@ -6782,46 +6782,20 @@ test("source candidate sample 검증기는 ambiguous 첫 field에서 missing 진
 
 test("source candidate sample 검증기는 output field 대소문자 불일치를 field name만으로 진단한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-candidate-field-${Date.now()}`);
-  const samplePath = path.join(outputDir, "sample.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(
-    samplePath,
-    `${JSON.stringify(
-      {
-        candidateId: "kric-station-platform",
-        endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
-        format: "json",
-        fields: [
-          "stinFlor",
-          "updnDvCd",
-          "plfNo",
-          "grndDvCd",
-          "lnCd",
-          "plfCplFlg",
-          "plfTpCd",
-          "plfTpNm",
-          "railOprIsttCd",
-          "runDirTmnStinCd",
-          "scrCharExt",
-          "sfFotExt",
-          "stinCd",
-        ],
-        providerSample: { updnDvCd: "SENTINEL_SAMPLE_VALUE" },
-        observedUrl: "https://provider.invalid/sample?serviceKey=credential-like-secret",
-      },
-      null,
-      2,
-    )}\n`,
-  );
+  const { candidatesPath, samplePath } = await writeFieldDiagnosticFixture(outputDir, {
+    outputFields: ["updnDvcd"],
+    fields: ["updnDvCd"],
+  });
 
   await assert.rejects(
     execFileAsync(
       process.execPath,
       [
         "tools/datapack/validate-source-candidate-sample.mjs",
+        "--candidates",
+        candidatesPath,
         "--candidate",
-        "kric-station-platform",
+        "field-diagnostic-test",
         "--sample",
         samplePath,
       ],
@@ -6832,8 +6806,6 @@ test("source candidate sample 검증기는 output field 대소문자 불일치�
         error.stderr.trim(),
         "output field case mismatch: expected \"updnDvcd\"; actual \"updnDvCd\"",
       );
-      assert.doesNotMatch(error.stderr, /SENTINEL_SAMPLE_VALUE/);
-      assert.doesNotMatch(error.stderr, /credential-like-secret/);
       return true;
     },
   );
@@ -6890,7 +6862,7 @@ test("source candidate sample 검증기는 true missing field를 sorted field na
     (error) => {
       assert.equal(
         error.stderr.trim(),
-        "output field missing: \"updnDvcd\"; available fields: \"aProviderField\", \"grndDvCd\", \"lnCd\", \"plfCplFlg\", \"plfNo\", \"plfTpCd\", \"plfTpNm\", \"railOprIsttCd\", \"runDirTmnStinCd\", \"scrCharExt\", \"sfFotExt\", \"stinCd\", \"stinFlor\", \"zProviderField\"",
+        "output field missing: \"updnDvCd\"; available fields: \"aProviderField\", \"grndDvCd\", \"lnCd\", \"plfCplFlg\", \"plfNo\", \"plfTpCd\", \"plfTpNm\", \"railOprIsttCd\", \"runDirTmnStinCd\", \"scrCharExt\", \"sfFotExt\", \"stinCd\", \"stinFlor\", \"zProviderField\"",
       );
       assert.doesNotMatch(error.stderr, /SENTINEL_SAMPLE_VALUE/);
       assert.doesNotMatch(error.stderr, /credential-like-secret/);
@@ -7081,6 +7053,60 @@ test("source candidate sample evidence builder는 raw JSON response를 validator
       "tools/datapack/validate-source-candidate-sample.mjs",
       "--candidate",
       "kric-train-operation-organ",
+      "--sample",
+      evidencePath,
+    ],
+    { cwd: root },
+  );
+});
+
+test("KRIC 역사별 승강장 live JSON은 tracked candidate metadata로 builder와 validator를 통과한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-kric-station-platform-live-${Date.now()}`);
+  const responsePath = path.join(outputDir, "response.json");
+  const evidencePath = path.join(outputDir, "evidence.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    responsePath,
+    `${JSON.stringify([{
+      grndDvCd: "G",
+      lnCd: "1",
+      plfCplFlg: "Y",
+      plfNo: "1",
+      plfTpCd: "1",
+      plfTpNm: "상대식",
+      railOprIsttCd: "S1",
+      runDirTmnStinCd: "0152",
+      scrCharExt: "10",
+      sfFotExt: "200",
+      stinCd: "0152",
+      stinFlor: "B2",
+      updnDvCd: "U",
+    }])}\n`,
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-source-candidate-sample-evidence.mjs",
+      "--candidate",
+      "kric-station-platform",
+      "--response",
+      responsePath,
+    ],
+    { cwd: root },
+  );
+  await writeFile(evidencePath, stdout);
+  const evidence = JSON.parse(stdout);
+  assert.ok(evidence.fields.includes("updnDvCd"));
+  assert.ok(!evidence.fields.includes("updnDvcd"));
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-candidate-sample.mjs",
+      "--candidate",
+      "kric-station-platform",
       "--sample",
       evidencePath,
     ],
