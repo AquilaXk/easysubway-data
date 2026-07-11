@@ -6876,6 +6876,61 @@ test("source candidate sample evidence builder는 raw JSON response를 validator
   );
 });
 
+test("source candidate sample builder와 validator는 code-unit field 정렬을 공유한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-candidate-field-sort-${Date.now()}`);
+  const responsePath = path.join(outputDir, "response.json");
+  const evidencePath = path.join(outputDir, "evidence.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    responsePath,
+    `${JSON.stringify([{
+      stinCd: "312",
+      stLocCont: "3호선 승강장",
+      railOprIsttCd: "S1",
+      lnCd: "3",
+      clsLocCont: "환승 통로",
+      chtnLn: "4",
+      chtnDst: "120",
+    }])}\n`,
+  );
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-source-candidate-sample-evidence.mjs",
+      "--candidate",
+      "kric-station-transfer-info",
+      "--response",
+      responsePath,
+    ],
+    { cwd: root },
+  );
+  await writeFile(evidencePath, stdout);
+  const evidence = JSON.parse(stdout);
+  assert.deepEqual(evidence.fields, [
+    "chtnDst",
+    "chtnLn",
+    "clsLocCont",
+    "lnCd",
+    "railOprIsttCd",
+    "stLocCont",
+    "stinCd",
+  ]);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-source-candidate-sample.mjs",
+      "--candidate",
+      "kric-station-transfer-info",
+      "--sample",
+      evidencePath,
+    ],
+    { cwd: root },
+  );
+});
+
 test("source candidate sample evidence builder는 raw XML response를 validator 입력으로 변환한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-candidate-xml-evidence-${Date.now()}`);
   const responsePath = path.join(outputDir, "response.xml");
