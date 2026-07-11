@@ -329,6 +329,46 @@
               "distanceMeters": 5000,
               "cardFare": 100,
               "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 5000,
+              "cardFare": 100,
+              "cashFare": 100
+            },
+            {
+              "distanceMeters": 8000,
+              "cardFare": 100,
+              "cashFare": 100
             }
           ]
         }

@@ -263,7 +263,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
         base_card_fare: 1550,
         base_cash_fare: 1650,
         base_distance_meters: 10000,
-        additional_steps_json: '[{"distanceMeters":5000,"cardFare":100,"cashFare":100}]',
+        additional_steps_json: '[{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":5000,"cardFare":100,"cashFare":100},{"distanceMeters":8000,"cardFare":100,"cashFare":100}]',
       },
     );
     assert.deepEqual(
