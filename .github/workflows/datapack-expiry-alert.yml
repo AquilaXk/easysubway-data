@@ -73,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}")"
-          curl -fsS "${EASYSUBWAY_DATA_PACK_BASE_URL}/catalog/current.json" -o "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}"
+          curl -fsS --connect-timeout 10 --max-time 30 "${EASYSUBWAY_DATA_PACK_BASE_URL}/catalog/current.json" -o "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}"
 
       - name: Data Pack Expiry Alert / Check expiry alert
         if: ${{ steps.restore-env.outputs.enabled == 'true' }}
