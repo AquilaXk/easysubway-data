@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { sortJson, compareStrings } from "./lib/ledger-admission-cli.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -222,7 +223,7 @@ function validateQuotaEvidence(quotaEvidence, label) {
   if (!quotaEvidence || typeof quotaEvidence !== "object" || Array.isArray(quotaEvidence)) {
     throw new Error(`${label} must be an object`);
   }
-  const keys = Object.keys(quotaEvidence).sort((left, right) => left.localeCompare(right));
+  const keys = Object.keys(quotaEvidence).sort(compareStrings);
   if (JSON.stringify(keys) !== JSON.stringify(quotaEvidenceKeys)) {
     throw new Error(`${label} must only include ${quotaEvidenceKeys.join(", ")}`);
   }
@@ -242,7 +243,7 @@ function validateQuotaEvidence(quotaEvidence, label) {
 function admitSource({ inventory, productionSource }) {
   const sources = inventory.sources.filter((source) => source.id !== productionSource.id);
   sources.push(productionSource);
-  sources.sort((left, right) => left.id.localeCompare(right.id));
+  sources.sort((left, right) => compareStrings(left.id, right.id));
   return { ...inventory, sources };
 }
 
@@ -279,15 +280,6 @@ function requiredText(value, label) {
 
 function requireArg(args, name) {
   return requiredText(args[name], `--${name}`);
-}
-
-function sortJson(value) {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [
-    key,
-    sortJson(entry),
-  ]));
 }
 
 function sha256(value) {
