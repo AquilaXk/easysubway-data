@@ -57,6 +57,27 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
       region.attributionRequired,
       `${region.id} attributionRequired가 manifest license와 일치해야 함`,
     );
+    // [#1958] redistributionAllowed·reviewStatus 교차 검증(drift 방지, 모든 지역).
+    // 정본에 두 필드가 존재하고, 허용 enum 안이며, manifest license와 정확히 일치한다.
+    assert.equal(
+      typeof region.redistributionAllowed,
+      "boolean",
+      `${region.id} 정본 redistributionAllowed는 boolean이어야 함`,
+    );
+    assert.ok(
+      decision.reviewStatusValues.includes(region.reviewStatus),
+      `${region.id} 정본 reviewStatus 값이 허용 목록에 있어야 함`,
+    );
+    assert.equal(
+      map.license.redistributionAllowed,
+      region.redistributionAllowed,
+      `${region.id} redistributionAllowed가 manifest license와 일치해야 함`,
+    );
+    assert.equal(
+      map.license.reviewStatus,
+      region.reviewStatus,
+      `${region.id} reviewStatus가 manifest license와 일치해야 함`,
+    );
   }
 
   // 수도권은 #1950으로 오너 자작 8선형 도식(self-drawn) 정본 채택, 상용 준비 완료.
