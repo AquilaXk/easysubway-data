@@ -28,6 +28,7 @@
     "headwayReportSha256",
     "strictRouteRegressionSha256",
     "androidEvidenceSha256",
+    "routeGraphTopologyViolationCount",
     "validatorStatus",
     "coverageStatus",
     "routeMapPositionCoverageStatus",
@@ -66,7 +67,8 @@
     "validatorStatus": { "$ref": "#/$defs/gateStatus" },
     "coverageStatus": { "$ref": "#/$defs/gateStatus" },
     "routeMapPositionCoverageStatus": { "$ref": "#/$defs/gateStatus" },
-    "routeGraphTopologyStatus": { "$ref": "#/$defs/gateStatus" },
+    "routeGraphTopologyStatus": { "$ref": "#/$defs/routeGraphGateStatus" },
+    "routeGraphTopologyViolationCount": { "type": "integer", "minimum": 0 },
     "headwayReportStatus": { "$ref": "#/$defs/headwayGateStatus" },
     "strictRouteRegressionStatus": { "$ref": "#/$defs/gateStatus" },
     "manifestSignatureStatus": { "$ref": "#/$defs/gateStatus" },
@@ -83,6 +85,9 @@
       "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL"]
     },
     "headwayGateStatus": {
+      "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL", "DEFERRED"]
+    },
+    "routeGraphGateStatus": {
       "enum": ["PASS", "FAIL", "BLOCKED_EXTERNAL", "DEFERRED"]
     }
   }

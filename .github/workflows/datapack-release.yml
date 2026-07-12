@@ -523,9 +523,33 @@ jobs:
             "disconnectedNodeCount",
             "unreachableDirectedPairCount",
           ].reduce((sum, field) => sum + Number(topologyReport.summary?.[field] ?? 0), 0);
+          // route_graph_topology는 capital pilot의 deferred domain이다(pilot targets의 knownSourceDomains에만
+          // 존재하고 requiredSourceDomains에는 없음 — #1999 coverage 게이트 scope 정합과 동일 원리). 파일럿 게시 범위는
+          // 상록수·사당 2역(seoul-4의 비인접 stop)으로 route graph를 게시 계약에서 defer한다. deferred domain의 topology
+          // 위반은 게시를 하드 차단하지 않고 DEFERRED로 정직 기록하되, 위반 수치(routeGraphTopologyViolationCount)와
+          // topology report SHA로 evidence에 전량 남긴다(은폐 금지). nationwide/deferred 아닌 scope에서는 종전대로 FAIL.
+          // deferred scope 판정은 releaseLike일 때만 의미가 있으므로 pilot targets 파일 읽기도 releaseLike로 게이트한다.
+          // exploratory(상시 푸시 트리거) 경로는 이 파일 존재에 커플링되지 않는다(파일 이동/개명이 전 푸시 CI를 깨지 않음).
+          const routeGraphTopologyDeferredForScope = releaseLike
+            ? (() => {
+                const pilotCoverageTargets = JSON.parse(
+                  fs.readFileSync("tools/datapack/capital-pilot-coverage-targets.json", "utf8"),
+                );
+                const pilotRequiredDomains = new Set(
+                  (pilotCoverageTargets.requiredSourceDomains ?? []).map((domain) => domain.id),
+                );
+                const pilotKnownDomains = new Set(pilotCoverageTargets.knownSourceDomains ?? []);
+                return (
+                  !pilotRequiredDomains.has("route_graph_topology") &&
+                  pilotKnownDomains.has("route_graph_topology")
+                );
+              })()
+            : false;
           const routeGraphTopologyStatus = routeGraphTopologyViolationCount === 0
             ? "PASS"
-            : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
+            : routeGraphTopologyDeferredForScope
+              ? "DEFERRED"
+              : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
           const headwayEvidenceCount =
             Number(headwayReport.summary?.observedHeadwayGroupCount ?? 0) +
             Number(headwayReport.summary?.declaredFrequencyCount ?? 0);
@@ -559,6 +583,7 @@ jobs:
             coverageStatus: releaseLike ? "PASS" : "BLOCKED_EXTERNAL",
             routeMapPositionCoverageStatus: "PASS",
             routeGraphTopologyStatus,
+            routeGraphTopologyViolationCount,
             headwayReportStatus,
             strictRouteRegressionStatus: externalStatus(strictEvidence),
             manifestSignatureStatus: "PASS",
