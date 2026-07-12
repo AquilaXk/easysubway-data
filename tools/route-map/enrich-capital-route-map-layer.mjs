@@ -14,7 +14,8 @@ export const expectedCountsByRegion = {
   // #1950: 오너 자작 8선형 도식 채택 + #1954 검단연장 3역·서해선 원종 좌표행 신설로 796→800.
   "수도권": { positions: 800, lines: 24 },
   "부산권": { positions: 158, lines: 6 },
-  "대구권": { positions: 101, lines: 4 },
+  // #2019: 대경선 북삼역(왜관↔사곡) 카탈로그 신설로 101→102.
+  "대구권": { positions: 102, lines: 4 },
   "광주권": { positions: 20, lines: 1 },
   "대전권": { positions: 22, lines: 1 },
 };
