@@ -46,8 +46,8 @@
     "reproductionCommand": "node -e \"const c=require('crypto');console.log(c.createHash('sha256').update(JSON.stringify(require('./tools/datapack/release/source-snapshots.json'))).digest('hex'))\""
   },
   "sourceInventorySha256": {
-    "value": "13e69f5d392066a44420c60a112b37208fb3c888d59ed5fbc1945889b92d1f66",
-    "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1996 seoul-metro-accessibility admit 후 현행 브랜치의 tools/datapack/source-inventory.json이 곧 최종 admitted inventory(순차 admit 체인 종료 상태)이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
+    "value": "61eddcd3a086938b3992fa69418da6e7dd026fc4cc486ae65b80c384613c33b5",
+    "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1769 official OD fare source admit 후 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
@@ -129,6 +129,18 @@
       "perSourceSnapshotSetHash": "3f10026a5a7cc98b870073d9f795540be21e654f13e17a890c7a472849e3d7b3"
     }
   ],
+  "officialOdFareEvidence": {
+    "sourceId": "seoul-metro-official-od-fares",
+    "snapshotId": "seoul-metro-official-od-fares-20260712",
+    "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
+    "admissionHash": "dd7c2614921b2f1018bdb13d0fdbba70c72e2bfe145eac4a68e5dd07344c5cce",
+    "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
+    "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+    "quotes": [
+      { "originStationId": "station-sangnoksu", "destinationStationId": "station-sadang", "sourceId": "seoul-metro-official-od-fares", "snapshotId": "seoul-metro-official-od-fares-20260712", "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a", "gnrlCardFare": 1950, "gnrlCashFare": 2050, "yungCardFare": 1220, "yungCashFare": 2050, "childCardFare": 750, "childCashFare": 750 },
+      { "originStationId": "station-sadang", "destinationStationId": "station-sangnoksu", "sourceId": "seoul-metro-official-od-fares", "snapshotId": "seoul-metro-official-od-fares-20260712", "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a", "gnrlCardFare": 1950, "gnrlCashFare": 2050, "yungCardFare": 1220, "yungCashFare": 2050, "childCardFare": 750, "childCashFare": 750 }
+    ]
+  },
   "buildDryRun": {
     "result": "PASS — build-datapack --build-spec가 이 spec을 소비해 capital@1(artifactKind=production) pack 생성, validate-datapack --require-production exit 0(테스트 서명키 로컬 dry-run). verified ENTRY 2/2·EXIT 2/2, 미검증 edge 0.",
     "gateResolution": "#1996 게이트 재설계로 verified coverage를 \"AVAILABLE 고정\"에서 \"실측 검증된 상태(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) 기록\"으로 재정의. 사당 4호선 지상연결 EV 실측 보수중(oprtngSitu=S) → UNDER_MAINTENANCE, 상록수 4호선 코레일 안산선 공식 상태 피드 부재 → NO_OFFICIAL_FEED. 미검증(UNKNOWN)만 차단 유지. strict route 보장(#1394)은 AVAILABLE 전용으로 불변, 두 상태 edge는 strict_route_eligible=0."

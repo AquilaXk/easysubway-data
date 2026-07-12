@@ -33,10 +33,20 @@ import {
   requiredString,
   sortJson,
 } from "./lib/ledger-admission-cli.mjs";
+import { validateOfficialOdFareEvidence } from "./lib/official-od-fare-evidence.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
-const ledgerKinds = new Set(["alias", "operator-mapping", "facility-evidence", "route-evidence", "override", "license"]);
+const ledgerKinds = new Set([
+  "alias",
+  "operator-mapping",
+  "facility-evidence",
+  "route-evidence",
+  "override",
+  "license",
+  "fare-station-line-mapping",
+]);
+const FARE_PROVIDER_ID = "data-go-kr-b553766-fare2";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -50,6 +60,9 @@ async function main() {
 }
 
 async function exportLedgerHash(kind, args) {
+  if (kind === "fare-station-line-mapping") {
+    return exportFareStationLineMappingHash(args);
+  }
   if (kind === "license") {
     return exportLicenseEvidenceHash(args);
   }
@@ -57,6 +70,38 @@ async function exportLedgerHash(kind, args) {
     return exportOverrideHash(args);
   }
   return exportFixtureLedgerHash(kind, args);
+}
+
+async function exportFareStationLineMappingHash(args) {
+  const evidencePath = path.resolve(root, requireArg(args, "evidence"));
+  const evidence = await readJsonFile(evidencePath);
+  return buildFareStationLineMappingLedger(evidence, requireArg(args, "source-id"));
+}
+
+function buildFareStationLineMappingLedger(evidence, sourceId) {
+  const { mappings } = validateOfficialOdFareEvidence(evidence);
+  requiredString(sourceId, "sourceId");
+  const rows = mappings.map((mapping) => {
+    const stationId = requiredString(mapping.stationId, "providerMappings.stationId");
+    const lineId = requiredString(mapping.lineId, "providerMappings.lineId");
+    const providerStationCode = requiredString(mapping.fareStationCode, "providerMappings.fareStationCode");
+    return {
+      sourceId,
+      providerId: FARE_PROVIDER_ID,
+      stationId,
+      lineId,
+      stationName: requiredString(mapping.stationName, "providerMappings.stationName"),
+      providerStationCode,
+    };
+  });
+  const canonicalRows = canonicalizeRows(rows);
+  return {
+    schemaVersion: 1,
+    artifactKind: "datapack-fare-station-line-mapping-ledger-hash",
+    kind: "fare-station-line-mapping",
+    rowCount: canonicalRows.length,
+    ledgerHash: sha256(JSON.stringify(canonicalRows)),
+  };
 }
 
 // fixture pack에서 원장 레코드 집합을 뽑아 canonical 해시를 낸다.
@@ -235,4 +280,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 }
 
-export { exportLedgerHash, canonicalizeRows, sortJson, sha256 };
+export { exportLedgerHash, buildFareStationLineMappingLedger, canonicalizeRows, sortJson, sha256 };

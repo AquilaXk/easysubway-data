@@ -92,7 +92,9 @@
               "facility": { "type": "object" }
             }
           },
-          "admissionEvidence": { "type": "object" }
+          "admissionEvidence": { "type": "object" },
+          "officialOdFareAdmissionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "fareStationLineMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
         }
       }
     }

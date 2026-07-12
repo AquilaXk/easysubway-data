@@ -2284,6 +2284,77 @@
         },
         "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
+    },
+    {
+      "id": "seoul-metro-official-od-fares",
+      "displayName": "서울교통공사_실시간운임정보",
+      "owner": "서울특별시",
+      "provider": "서울교통공사",
+      "providerDepartment": "데이터팀",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15143846/openapi.do",
+      "datasetKind": "open-api-offline-snapshot",
+      "coverage": "상록수-사당 두 방향의 승인된 공식 OD 운임 snapshot",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "korail"
+        ],
+        "sourceDomains": [
+          "official_od_fares"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "updateFrequency": "approved-snapshot-only",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15143846/openapi.do"
+      },
+      "fieldsProvided": [
+        "childCardFare",
+        "childCashFare",
+        "gnrlCardFare",
+        "gnrlCashFare",
+        "yungCardFare",
+        "yungCashFare"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FARE_SNAPSHOT_ONLY",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "mobile runtime provider calls are not admitted"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "officialOdFareAdmissionHash": "dd7c2614921b2f1018bdb13d0fdbba70c72e2bfe145eac4a68e5dd07344c5cce",
+      "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a"
     }
   ]
 }

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "official-od-fare-admission",
+  "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
+  "decision": "APPROVED",
+  "approvedBy": "aquilaXk10",
+  "approvedAt": "2026-07-13T00:33:32+09:00",
+  "sourceId": "seoul-metro-official-od-fares",
+  "snapshotId": "seoul-metro-official-od-fares-20260712",
+  "quoteCount": 2,
+  "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
+  "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a"
+}

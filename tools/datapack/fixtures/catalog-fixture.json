@@ -38,6 +38,7 @@
             "fare_rules",
             "fare_discounts",
             "station_fare_zones",
+            "official_od_fare_quotes",
             "transfer_rules",
             "station_pathway_nodes",
             "station_pathway_edges",
@@ -48,6 +49,36 @@
             "facilities",
             "internal_routes"
           ]
+        },
+        {
+          "id": "seoul-metro-official-od-fares",
+          "owner": "서울특별시",
+          "url": "https://www.data.go.kr/data/15143846/openapi.do",
+          "license": "공공데이터포털 이용허락범위 제한 없음",
+          "licenseStatus": "redistributable",
+          "redistributionAllowed": true,
+          "updateFrequency": "approved-snapshot-only",
+          "updatedAt": "2026-07-12T00:00:00.000Z",
+          "fields": [
+            "childCardFare",
+            "childCashFare",
+            "gnrlCardFare",
+            "gnrlCashFare",
+            "yungCardFare",
+            "yungCashFare"
+          ],
+          "coverageScope": {
+            "regionIds": [
+              "capital"
+            ],
+            "operatorIds": [
+              "seoul-metro",
+              "korail"
+            ],
+            "sourceDomains": [
+              "official_od_fares"
+            ]
+          }
         }
       ],
       "requiredTables": [
@@ -66,6 +97,7 @@
         "fare_rules",
         "fare_discounts",
         "station_fare_zones",
+        "official_od_fare_quotes",
         "transfer_rules",
         "station_pathway_nodes",
         "station_pathway_edges",
@@ -92,6 +124,7 @@
         "fare_rules": 1,
         "fare_discounts": 3,
         "station_fare_zones": 9,
+        "official_od_fare_quotes": 2,
         "transfer_rules": 1,
         "station_pathway_nodes": 6,
         "station_pathway_edges": 5,
@@ -443,6 +476,34 @@
           "stationId": "station-sinseoldong",
           "lineId": "seoul-2-branch",
           "zoneId": "capital-integrated"
+        }
+      ],
+      "officialOdFareQuotes": [
+        {
+          "originStationId": "station-sangnoksu",
+          "destinationStationId": "station-sadang",
+          "sourceId": "seoul-metro-official-od-fares",
+          "snapshotId": "seoul-metro-official-od-fares-20260712",
+          "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+          "gnrlCardFare": 1950,
+          "gnrlCashFare": 2050,
+          "yungCardFare": 1220,
+          "yungCashFare": 2050,
+          "childCardFare": 750,
+          "childCashFare": 750
+        },
+        {
+          "originStationId": "station-sadang",
+          "destinationStationId": "station-sangnoksu",
+          "sourceId": "seoul-metro-official-od-fares",
+          "snapshotId": "seoul-metro-official-od-fares-20260712",
+          "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+          "gnrlCardFare": 1950,
+          "gnrlCashFare": 2050,
+          "yungCardFare": 1220,
+          "yungCashFare": 2050,
+          "childCardFare": 750,
+          "childCashFare": 750
         }
       ],
       "serviceCalendars": [

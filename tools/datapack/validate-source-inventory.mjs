@@ -1,19 +1,33 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
 const candidatesPath = optionValue("--candidates") ?? "tools/datapack/source-candidates.json";
+const officialOdFareAdmissionPath = optionValue("--official-od-fare-admission")
+  ?? "tools/datapack/official-od-fare-admission.json";
 const scopePath = optionValue("--scope");
 const compareStrings = (left, right) => left.localeCompare(right);
+const officialOdFareFields = new Set([
+  "childCardFare",
+  "childCashFare",
+  "gnrlCardFare",
+  "gnrlCashFare",
+  "yungCardFare",
+  "yungCashFare",
+]);
 
 try {
   const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
   const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
   const scope = scopePath ? JSON.parse(await readFile(scopePath, "utf8")) : null;
   validateInventory(inventory);
-  validateAdmittedCandidateEvidence(inventory, candidates);
+  const officialOdFareAdmissionBytes = inventory.sources.some(
+    (source) => source.officialOdFareAdmissionHash != null || source.fareStationLineMappingLedgerHash != null,
+  ) ? await readFile(officialOdFareAdmissionPath) : null;
+  validateAdmittedCandidateEvidence(inventory, candidates, officialOdFareAdmissionBytes);
   if (scope) {
     validateProductionScope(inventory, scope);
   }
@@ -84,6 +98,19 @@ function validateSource(source, label) {
   for (const field of source.fieldsProvided) {
     assertString(field, `${id}.fieldsProvided[]`);
   }
+  validateOfficialOdFareReferences(source, id);
+}
+
+function validateOfficialOdFareReferences(source, sourceId) {
+  const declaredFareFields = new Set(source.fieldsProvided.filter((field) => officialOdFareFields.has(field)));
+  const declaresReference = source.officialOdFareAdmissionHash != null
+    || source.fareStationLineMappingLedgerHash != null;
+  if (declaredFareFields.size === 0 && !declaresReference) return;
+  if (declaredFareFields.size !== officialOdFareFields.size) {
+    throw new Error(`${sourceId} official OD fare references require all six official fare fields`);
+  }
+  assertSha256(source.officialOdFareAdmissionHash, `${sourceId}.officialOdFareAdmissionHash`);
+  assertSha256(source.fareStationLineMappingLedgerHash, `${sourceId}.fareStationLineMappingLedgerHash`);
 }
 
 function validateCapabilities(capabilities, source, sourceId) {
@@ -191,7 +218,7 @@ function validateProductionScope(inventory, scope) {
   }
 }
 
-function validateAdmittedCandidateEvidence(inventory, candidates) {
+function validateAdmittedCandidateEvidence(inventory, candidates, officialOdFareAdmissionBytes) {
   if (!candidates || typeof candidates !== "object" || Array.isArray(candidates)) {
     throw new Error("source candidates must be an object");
   }
@@ -202,7 +229,18 @@ function validateAdmittedCandidateEvidence(inventory, candidates) {
   }
 
   const sources = new Map(inventory.sources.map((source) => [source.id, source]));
+  const unmatchedFareSourceIds = new Set(inventory.sources
+    .filter((source) => source.officialOdFareAdmissionHash != null || source.fareStationLineMappingLedgerHash != null)
+    .map((source) => source.id));
   for (const candidate of candidates.candidates) {
+    if (candidate?.admissionStatus === "official_od_fare_admitted_to_production_inventory") {
+      validateOfficialOdFareCandidate(candidate, sources, officialOdFareAdmissionBytes);
+      const sourceId = candidate.productionInventoryReferenceId ?? candidate.id;
+      if (!unmatchedFareSourceIds.delete(sourceId)) {
+        throw new Error(`${sourceId} official OD fare source must have exactly one admitted candidate`);
+      }
+      continue;
+    }
     if (candidate?.admissionStatus !== "admitted_to_production_inventory") {
       continue;
     }
@@ -216,6 +254,81 @@ function validateAdmittedCandidateEvidence(inventory, candidates) {
     }
     validateAdmissionEvidence(source.admissionEvidence, candidate, source, sourceId);
   }
+  if (unmatchedFareSourceIds.size !== 0) {
+    throw new Error(`${[...unmatchedFareSourceIds][0]} official OD fare source requires an admitted candidate`);
+  }
+}
+
+function validateOfficialOdFareCandidate(candidate, sources, admissionBytes) {
+  const sourceId = assertString(
+    candidate.productionInventoryReferenceId ?? candidate.id,
+    `${candidate.id}.productionInventoryReferenceId`,
+  );
+  const source = sources.get(sourceId);
+  if (!source) {
+    throw new Error(`${candidate.id} admitted candidate missing production inventory source: ${sourceId}`);
+  }
+  assertEqual(candidate.domain, "official_od_fares", `${candidate.id}.candidate domain`);
+  if (JSON.stringify(source.coverageScope.sourceDomains) !== JSON.stringify(["official_od_fares"])) {
+    throw new Error(`${sourceId}.source domain must be official_od_fares`);
+  }
+  const evidenceHash = assertSha256(
+    candidate.evidence?.liveSampleEvidenceHash,
+    `${candidate.id}.evidence.liveSampleEvidenceHash`,
+  );
+  const snapshotId = assertString(candidate.evidence?.snapshotId, `${candidate.id}.evidence.snapshotId`);
+  for (const field of ["officialOdFareAdmissionHash", "fareStationLineMappingLedgerHash"]) {
+    assertSha256(candidate.evidence?.[field], `${candidate.id}.evidence.${field}`);
+    assertEqual(candidate.evidence[field], source[field], `${candidate.id}.evidence.${field} must match production inventory`);
+  }
+  if (!admissionBytes) throw new Error("official OD fare admission artifact is required");
+  const admission = JSON.parse(admissionBytes);
+  assertExactKeys(admission, [
+    "approvedAt",
+    "approvedBy",
+    "artifactKind",
+    "decision",
+    "evidenceHash",
+    "fareStationLineMappingLedgerHash",
+    "quoteCount",
+    "quoteSetHash",
+    "schemaVersion",
+    "snapshotId",
+    "sourceId",
+  ], "official OD fare admission");
+  assertEqual(admission.schemaVersion, 1, "official OD fare admission schemaVersion");
+  assertEqual(admission.artifactKind, "official-od-fare-admission", "official OD fare admission artifactKind");
+  assertEqual(admission.decision, "APPROVED", "admission decision");
+  assertEqual(admission.sourceId, sourceId, "admission sourceId");
+  assertEqual(admission.snapshotId, snapshotId, "admission snapshotId");
+  assertEqual(admission.evidenceHash, evidenceHash, "admission evidenceHash");
+  assertEqual(admission.quoteCount, 2, "admission quoteCount");
+  assertSha256(admission.quoteSetHash, "admission quoteSetHash");
+  assertString(admission.approvedBy, "admission approvedBy");
+  assertString(admission.approvedAt, "admission approvedAt");
+  assertEqual(
+    admission.fareStationLineMappingLedgerHash,
+    source.fareStationLineMappingLedgerHash,
+    "admission fareStationLineMappingLedgerHash",
+  );
+  assertEqual(
+    sha256(admissionBytes),
+    source.officialOdFareAdmissionHash,
+    "admission artifact hash",
+  );
+}
+
+function assertExactKeys(value, expectedKeys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  if (JSON.stringify(Object.keys(value).sort(compareStrings)) !== JSON.stringify([...expectedKeys].sort(compareStrings))) {
+    throw new Error(`${label} must contain only approved fields`);
+  }
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function validateAdmissionEvidence(evidence, candidate, source, sourceId) {
@@ -351,6 +464,7 @@ function assertSha256(value, label) {
   if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
     throw new Error(`${label} must be a sha256 hex string`);
   }
+  return value;
 }
 
 function assertHttpsUrl(value, label) {

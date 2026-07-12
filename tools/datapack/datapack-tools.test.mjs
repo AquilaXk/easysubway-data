@@ -84,10 +84,14 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.version, "1");
   assert.equal(pack.artifactKind, "fixture");
   assert.equal(pack.url, "catalog/capital-v1.sqlite.gz");
-  assert.equal(pack.sourceInventory.length, 1);
+  assert.deepEqual(pack.sourceInventory.map((source) => source.id), [
+    "fixture-capital-catalog",
+    "seoul-metro-official-od-fares",
+  ]);
   assert.equal(pack.sourceInventory[0].id, "fixture-capital-catalog");
   assert.equal(pack.sourceInventory[0].licenseStatus, "fixture-only");
   assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-19T00:00:00.000Z");
+  assert.deepEqual(pack.sourceInventory[1].coverageScope.sourceDomains, ["official_od_fares"]);
   assert.equal(pack.regionalQualityMetrics.stationCount, 6);
   assert.equal(pack.regionalQualityMetrics.facilityCoverageRatio, 0.3333);
   assert.equal(pack.regionalQualityMetrics.requiredFacilityEvidenceCoverageRatio, 0.1852);
@@ -138,6 +142,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     "fare_rules",
     "fare_discounts",
     "station_fare_zones",
+    "official_od_fare_quotes",
     "transfer_rules",
     "station_pathway_nodes",
     "station_pathway_edges",
@@ -13096,6 +13101,9 @@ function completeCoverageProvenance(inventory) {
 
 function markFixturePackProduction(fixture) {
   const pack = fixture.packs[0];
+  const officialOdFareSource = pack.sourceInventory.find(
+    (source) => source.id === "seoul-metro-official-od-fares",
+  );
   pack.artifactKind = "production";
   pack.url = "https://datapack.example.com/easysubway/catalog/capital-v1.sqlite.gz";
   pack.sourceInventory = [
@@ -13111,6 +13119,7 @@ function markFixturePackProduction(fixture) {
       fields: ["stations", "station_lines", "network_edges", "out_of_station_transfer_links", "facilities"],
       coverageScope: productionSourceCoverageScope(),
     },
+    ...(officialOdFareSource ? [officialOdFareSource] : []),
   ];
   for (const edge of pack.networkEdges) {
     if (edge.edgeType === "RIDE" && edge.distanceMeters > 0 && edge.durationSeconds > 0) {
@@ -13926,6 +13935,685 @@ async function runAdminReviewBuilder(args) {
 
 const catalogFixtureArg = "tools/datapack/fixtures/catalog-fixture.json";
 const overrideLedgerArg = "tools/datapack/fixtures/admin-review-overrides.json";
+
+async function runOfficialOdFareAdmissionBuilder(args) {
+  return execFileAsync(process.execPath, ["tools/datapack/build-official-od-fare-admission.mjs", ...args], { cwd: root });
+}
+
+function officialOdFareEvidenceFixture() {
+  const fares = {
+    childCardFare: 750,
+    childCashFare: 750,
+    gnrlCardFare: 1950,
+    gnrlCashFare: 2050,
+    yungCardFare: 1220,
+    yungCashFare: 2050,
+  };
+  return {
+    schemaVersion: 1,
+    artifactKind: "official-od-fare-probe-evidence",
+    mappingAvailability: "AVAILABLE",
+    mappingField: "dptreStnCd/arvlStnCd",
+    equivalence: {
+      cityHallLine1: { fareResponseStationCode: "0151", fareCode: "0151", verified: true },
+      seoulStationLine4: { fareResponseStationCode: "0150", fareCode: "0150", verified: true },
+    },
+    providerMappings: [
+      { stationId: "station-sangnoksu", lineId: "seoul-4", stationName: "상록수", fareStationCode: "1754" },
+      { stationId: "station-sadang", lineId: "seoul-4", stationName: "사당", fareStationCode: "0433" },
+    ],
+    quotes: [
+      { originStationId: "station-sangnoksu", destinationStationId: "station-sadang", fares },
+      { originStationId: "station-sadang", destinationStationId: "station-sangnoksu", fares },
+    ],
+    fieldNames: Object.keys(fares).sort(),
+    attemptCounts: {
+      "station-sadang→station-sangnoksu": 1,
+      "station-sangnoksu→station-sadang": 1,
+    },
+  };
+}
+
+test("fare station-line mapping 원장은 probe mapping만 canonical hash로 산출한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "fare-station-line-ledger-"));
+  try {
+    const evidence = officialOdFareEvidenceFixture();
+    const evidencePath = path.join(workspace, "evidence.json");
+    await writeFile(evidencePath, JSON.stringify(evidence));
+    const args = [
+      "--kind", "fare-station-line-mapping",
+      "--evidence", path.relative(root, evidencePath),
+      "--source-id", "seoul-metro-official-od-fares",
+    ];
+    const baseline = JSON.parse((await runLedgerExporter(args)).stdout);
+    const operator = JSON.parse((await runLedgerExporter([
+      "--kind", "operator-mapping", "--fixture", catalogFixtureArg,
+    ])).stdout);
+    assert.equal(baseline.kind, "fare-station-line-mapping");
+    assert.equal(baseline.rowCount, 2);
+    assert.notEqual(baseline.ledgerHash, operator.ledgerHash);
+
+    const reordered = structuredClone(evidence);
+    reordered.providerMappings.reverse();
+    const reorderedPath = path.join(workspace, "reordered.json");
+    await writeFile(reorderedPath, JSON.stringify(reordered));
+    const reorderedHash = JSON.parse((await runLedgerExporter([
+      "--kind", "fare-station-line-mapping",
+      "--evidence", path.relative(root, reorderedPath),
+      "--source-id", "seoul-metro-official-od-fares",
+    ])).stdout);
+    assert.equal(reorderedHash.ledgerHash, baseline.ledgerHash);
+
+    const changed = structuredClone(evidence);
+    changed.providerMappings[0].fareStationCode = "1755";
+    const changedPath = path.join(workspace, "changed.json");
+    await writeFile(changedPath, JSON.stringify(changed));
+    const changedHash = JSON.parse((await runLedgerExporter([
+      "--kind", "fare-station-line-mapping",
+      "--evidence", path.relative(root, changedPath),
+      "--source-id", "seoul-metro-official-od-fares",
+    ])).stdout);
+    assert.notEqual(changedHash.ledgerHash, baseline.ledgerHash);
+
+    const duplicate = structuredClone(evidence);
+    duplicate.providerMappings[1].fareStationCode = duplicate.providerMappings[0].fareStationCode;
+    const duplicatePath = path.join(workspace, "duplicate.json");
+    await writeFile(duplicatePath, JSON.stringify(duplicate));
+    await assert.rejects(
+      runLedgerExporter([
+        "--kind", "fare-station-line-mapping",
+        "--evidence", path.relative(root, duplicatePath),
+        "--source-id", "seoul-metro-official-od-fares",
+      ]),
+      /duplicate provider station code/,
+    );
+
+    const duplicateStation = structuredClone(evidence);
+    duplicateStation.providerMappings[1].stationId = duplicateStation.providerMappings[0].stationId;
+    const duplicateStationPath = path.join(workspace, "duplicate-station.json");
+    await writeFile(duplicateStationPath, JSON.stringify(duplicateStation));
+    await assert.rejects(
+      runLedgerExporter([
+        "--kind", "fare-station-line-mapping",
+        "--evidence", path.relative(root, duplicateStationPath),
+        "--source-id", "seoul-metro-official-od-fares",
+      ]),
+      /duplicate station and line mapping/,
+    );
+
+    const wrongLine = structuredClone(evidence);
+    wrongLine.providerMappings[0].lineId = "seoul-2";
+    const wrongLinePath = path.join(workspace, "wrong-line.json");
+    await writeFile(wrongLinePath, JSON.stringify(wrongLine));
+    await assert.rejects(
+      runLedgerExporter([
+        "--kind", "fare-station-line-mapping",
+        "--evidence", path.relative(root, wrongLinePath),
+        "--source-id", "seoul-metro-official-od-fares",
+      ]),
+      /lineId must be seoul-4/,
+    );
+
+    const unsafeEvidence = structuredClone(evidence);
+    unsafeEvidence.providerMappings[0].rawPath = "/tmp/provider.json";
+    const unsafeEvidencePath = path.join(workspace, "unsafe-evidence.json");
+    await writeFile(unsafeEvidencePath, JSON.stringify(unsafeEvidence));
+    await assert.rejects(
+      runLedgerExporter([
+        "--kind", "fare-station-line-mapping",
+        "--evidence", path.relative(root, unsafeEvidencePath),
+        "--source-id", "seoul-metro-official-od-fares",
+      ]),
+      /rawPath is not allowed/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("fare station-line mapping admission은 이미 읽은 evidence 객체로 ledger를 계산한다", async () => {
+  const { buildFareStationLineMappingLedger } = await import("./export-ledger-hashes.mjs");
+  assert.equal(typeof buildFareStationLineMappingLedger, "function");
+  const evidence = officialOdFareEvidenceFixture();
+  const ledger = buildFareStationLineMappingLedger(evidence, "seoul-metro-official-od-fares");
+  assert.equal(ledger.kind, "fare-station-line-mapping");
+  assert.equal(ledger.rowCount, 2);
+  assert.match(ledger.ledgerHash, /^[0-9a-f]{64}$/);
+});
+
+test("official OD fare admin review는 sanitized admission만 생성한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-admission-"));
+  try {
+    const evidence = officialOdFareEvidenceFixture();
+    const evidencePath = path.join(workspace, "evidence.json");
+    const evidenceBytes = JSON.stringify(evidence);
+    await writeFile(evidencePath, evidenceBytes);
+    const review = {
+      schemaVersion: 1,
+      artifactKind: "official-od-fare-admin-review",
+      evidenceHash: sha256(evidenceBytes),
+      decision: "APPROVED",
+      approvedBy: "owner",
+      approvedAt: "2026-07-12T00:00:00.000Z",
+      sourceId: "seoul-metro-official-od-fares",
+      snapshotId: "seoul-metro-official-od-fares-20260712",
+    };
+    const reviewPath = path.join(workspace, "review.json");
+    await writeFile(reviewPath, JSON.stringify(review));
+    const { stdout } = await runOfficialOdFareAdmissionBuilder([
+      "--evidence", path.relative(root, evidencePath),
+      "--admin-review", path.relative(root, reviewPath),
+    ]);
+    const admission = JSON.parse(stdout);
+    assert.deepEqual(Object.keys(admission).sort(), [
+      "approvedAt", "approvedBy", "artifactKind", "decision", "evidenceHash",
+      "fareStationLineMappingLedgerHash", "quoteCount", "quoteSetHash", "schemaVersion", "snapshotId", "sourceId",
+    ].sort());
+    assert.equal(admission.artifactKind, "official-od-fare-admission");
+    assert.equal(admission.quoteCount, 2);
+    assert.match(admission.quoteSetHash, /^[0-9a-f]{64}$/);
+    assert.match(admission.fareStationLineMappingLedgerHash, /^[0-9a-f]{64}$/);
+
+    const unsafeReview = { ...review, rawPath: "/tmp/provider.json" };
+    const unsafeReviewPath = path.join(workspace, "unsafe-review.json");
+    await writeFile(unsafeReviewPath, JSON.stringify(unsafeReview));
+    await assert.rejects(
+      runOfficialOdFareAdmissionBuilder([
+        "--evidence", path.relative(root, evidencePath),
+        "--admin-review", path.relative(root, unsafeReviewPath),
+      ]),
+      /raw.*not allowed/,
+    );
+
+    const mismatchedEvidence = structuredClone(evidence);
+    mismatchedEvidence.quotes[0].destinationStationId = "station-unknown";
+    const mismatchedPath = path.join(workspace, "mismatched-evidence.json");
+    await writeFile(mismatchedPath, JSON.stringify(mismatchedEvidence));
+    const mismatchedReview = { ...review, evidenceHash: sha256(JSON.stringify(mismatchedEvidence)) };
+    const mismatchedReviewPath = path.join(workspace, "mismatched-review.json");
+    await writeFile(mismatchedReviewPath, JSON.stringify(mismatchedReview));
+    await assert.rejects(
+      runOfficialOdFareAdmissionBuilder([
+        "--evidence", path.relative(root, mismatchedPath),
+        "--admin-review", path.relative(root, mismatchedReviewPath),
+      ]),
+      /quote endpoints must match provider mappings/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare admission은 probe 내부 계약과 hash binding을 강제한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-contract-"));
+  try {
+    const writeCase = async (name, evidence, reviewOverrides = {}) => {
+      const evidencePath = path.join(workspace, `${name}-evidence.json`);
+      const evidenceBytes = JSON.stringify(evidence);
+      await writeFile(evidencePath, evidenceBytes);
+      const review = {
+        schemaVersion: 1,
+        artifactKind: "official-od-fare-admin-review",
+        evidenceHash: sha256(evidenceBytes),
+        decision: "APPROVED",
+        approvedBy: "owner",
+        approvedAt: "2026-07-12T00:00:00.000Z",
+        sourceId: "seoul-metro-official-od-fares",
+        snapshotId: "seoul-metro-official-od-fares-20260712",
+        ...reviewOverrides,
+      };
+      const reviewPath = path.join(workspace, `${name}-review.json`);
+      await writeFile(reviewPath, JSON.stringify(review));
+      return [
+        "--evidence", path.relative(root, evidencePath),
+        "--admin-review", path.relative(root, reviewPath),
+      ];
+    };
+
+    for (const key of ["payload", "raw", "rawObjectUri", "rawPath", "requestUrl"]) {
+      const evidence = officialOdFareEvidenceFixture();
+      evidence.providerMappings[0][key] = "unsafe";
+      await assert.rejects(
+        runOfficialOdFareAdmissionBuilder(await writeCase(`unsafe-${key}`, evidence)),
+        new RegExp(`${key} is not allowed`),
+      );
+    }
+
+    const invalidEquivalence = officialOdFareEvidenceFixture();
+    invalidEquivalence.equivalence.seoulStationLine4.verified = false;
+    await assert.rejects(
+      runOfficialOdFareAdmissionBuilder(await writeCase("invalid-equivalence", invalidEquivalence)),
+      /equivalence/,
+    );
+
+    const invalidAttempts = officialOdFareEvidenceFixture();
+    invalidAttempts.attemptCounts["station-sangnoksu→station-sadang"] = 3;
+    await assert.rejects(
+      runOfficialOdFareAdmissionBuilder(await writeCase("invalid-attempts", invalidAttempts)),
+      /attemptCounts/,
+    );
+
+    const wrongTarget = officialOdFareEvidenceFixture();
+    wrongTarget.providerMappings[0].stationId = "station-unknown";
+    wrongTarget.providerMappings[0].stationName = "미확인역";
+    wrongTarget.quotes[0].originStationId = "station-unknown";
+    wrongTarget.quotes[1].destinationStationId = "station-unknown";
+    delete wrongTarget.attemptCounts["station-sangnoksu→station-sadang"];
+    delete wrongTarget.attemptCounts["station-sadang→station-sangnoksu"];
+    wrongTarget.attemptCounts["station-unknown→station-sadang"] = 1;
+    wrongTarget.attemptCounts["station-sadang→station-unknown"] = 1;
+    await assert.rejects(
+      runOfficialOdFareAdmissionBuilder(await writeCase("wrong-target", wrongTarget)),
+      /providerMappings must match fixed targets/,
+    );
+
+    const hashMismatch = officialOdFareEvidenceFixture();
+    await assert.rejects(
+      runOfficialOdFareAdmissionBuilder(await writeCase("hash-mismatch", hashMismatch, {
+        evidenceHash: "f".repeat(64),
+      })),
+      /evidenceHash must match/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("source inventory는 official OD fare admission hash 쌍을 함께 요구한다", async () => {
+  const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const validInventory = structuredClone(sourceInventory);
+  const fareSource = validInventory.sources.find(({ id }) => id === "seoul-metro-official-od-fares");
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-inventory-"));
+  try {
+    const validPath = path.join(workspace, "valid.json");
+    await writeFile(validPath, JSON.stringify(validInventory));
+    await execFileAsync(process.execPath, [
+      "tools/datapack/validate-source-inventory.mjs", "--inventory", validPath,
+    ], { cwd: root });
+
+    const invalidInventory = structuredClone(validInventory);
+    delete invalidInventory.sources.find(({ id }) => id === fareSource.id).fareStationLineMappingLedgerHash;
+    const invalidPath = path.join(workspace, "invalid.json");
+    await writeFile(invalidPath, JSON.stringify(invalidInventory));
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/validate-source-inventory.mjs", "--inventory", invalidPath,
+      ], { cwd: root }),
+      /fareStationLineMappingLedgerHash must be a sha256 hex string/,
+    );
+
+    const nonFareInventory = structuredClone(sourceInventory);
+    nonFareInventory.sources[0].officialOdFareAdmissionHash = "a".repeat(64);
+    nonFareInventory.sources[0].fareStationLineMappingLedgerHash = "b".repeat(64);
+    const nonFarePath = path.join(workspace, "non-fare.json");
+    await writeFile(nonFarePath, JSON.stringify(nonFareInventory));
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/validate-source-inventory.mjs", "--inventory", nonFarePath,
+      ], { cwd: root }),
+      /official OD fare references require all six official fare fields/,
+    );
+
+    const partialFareInventory = structuredClone(nonFareInventory);
+    partialFareInventory.sources[0].fieldsProvided.push("gnrlCardFare");
+    const partialFarePath = path.join(workspace, "partial-fare.json");
+    await writeFile(partialFarePath, JSON.stringify(partialFareInventory));
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/validate-source-inventory.mjs", "--inventory", partialFarePath,
+      ], { cwd: root }),
+      /official OD fare references require all six official fare fields/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare candidate admission은 inventory hash 쌍과 일치해야 한다", async () => {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const candidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
+  const source = inventory.sources.find(({ id }) => id === "seoul-metro-official-od-fares");
+  const candidate = candidates.candidates.find(({ id }) => id === "seoul-metro-official-od-fares");
+  const admission = JSON.parse(await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"));
+
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-candidate-"));
+  try {
+    const inventoryPath = path.join(workspace, "inventory.json");
+    const candidatesPath = path.join(workspace, "candidates.json");
+    const admissionPath = path.join(workspace, "admission.json");
+    const validate = () => execFileAsync(process.execPath, [
+      "tools/datapack/validate-source-inventory.mjs",
+      "--inventory", inventoryPath,
+      "--candidates", candidatesPath,
+      "--official-od-fare-admission", admissionPath,
+    ], { cwd: root });
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    await writeFile(candidatesPath, JSON.stringify(candidates));
+    await writeFile(admissionPath, JSON.stringify(admission, null, 2) + "\n");
+    await validate();
+
+    candidate.evidence.fareStationLineMappingLedgerHash = "c".repeat(64);
+    await writeFile(candidatesPath, JSON.stringify(candidates));
+    await assert.rejects(validate(), /fareStationLineMappingLedgerHash must match/);
+
+    candidate.evidence.fareStationLineMappingLedgerHash = source.fareStationLineMappingLedgerHash;
+    candidate.domain = "accessibility_facilities";
+    await writeFile(candidatesPath, JSON.stringify(candidates));
+    await assert.rejects(validate(), /candidate domain must be "official_od_fares"/);
+
+    candidate.domain = "official_od_fares";
+    source.coverageScope.sourceDomains = ["accessibility_facilities"];
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    await writeFile(candidatesPath, JSON.stringify(candidates));
+    await assert.rejects(validate(), /source domain must be official_od_fares/);
+
+    source.coverageScope.sourceDomains = ["official_od_fares"];
+    candidate.admissionStatus = "evidence_recorded_admin_review_required";
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    await writeFile(candidatesPath, JSON.stringify(candidates));
+    await assert.rejects(validate(), /official OD fare source requires an admitted candidate/);
+
+    candidate.admissionStatus = "official_od_fare_admitted_to_production_inventory";
+    admission.decision = "REJECTED";
+    const rejectedBytes = JSON.stringify(admission, null, 2) + "\n";
+    source.officialOdFareAdmissionHash = sha256(rejectedBytes);
+    candidate.evidence.officialOdFareAdmissionHash = source.officialOdFareAdmissionHash;
+    await writeFile(inventoryPath, JSON.stringify(inventory));
+    await writeFile(candidatesPath, JSON.stringify(candidates));
+    await writeFile(admissionPath, rejectedBytes);
+    await assert.rejects(validate(), /admission decision must be "APPROVED"/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare 두 방향은 승인 artifact와 일치하는 SQLite row로 저장된다", async () => {
+  const fixture = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
+  const admission = JSON.parse(await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"));
+  const quotes = fixture.packs[0].officialOdFareQuotes;
+  assert.equal(quotes?.length, 2);
+  assert.ok(quotes.every((quote) => quote.sourceId === admission.sourceId));
+  assert.ok(quotes.every((quote) => quote.snapshotId === admission.snapshotId));
+  assert.ok(quotes.every((quote) => quote.mappingLedgerHash === admission.fareStationLineMappingLedgerHash));
+
+  const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-pack-"));
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture", "tools/datapack/fixtures/catalog-fixture.json",
+        "--output", outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+    const compressed = await readFile(path.join(outputDir, "catalog/capital-v1.sqlite.gz"));
+    const databasePath = path.join(outputDir, "capital-v1.sqlite");
+    await writeFile(databasePath, gunzipSync(compressed));
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const rows = database.prepare(`
+        SELECT origin_station_id AS originStationId,
+               destination_station_id AS destinationStationId,
+               source_id AS sourceId,
+               snapshot_id AS snapshotId,
+               mapping_ledger_hash AS mappingLedgerHash,
+               gnrl_card_fare AS gnrlCardFare,
+               gnrl_cash_fare AS gnrlCashFare,
+               yung_card_fare AS yungCardFare,
+               yung_cash_fare AS yungCashFare,
+               child_card_fare AS childCardFare,
+               child_cash_fare AS childCashFare
+        FROM official_od_fare_quotes
+        ORDER BY origin_station_id, destination_station_id
+      `).all();
+      assert.deepEqual(rows.map((row) => ({ ...row })), [...quotes].sort((left, right) =>
+        left.originStationId.localeCompare(right.originStationId)
+          || left.destinationStationId.localeCompare(right.destinationStationId)));
+    } finally {
+      database.close();
+    }
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest", path.join(outputDir, "current.json"),
+        "--root", outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare builder는 malformed·미승인·formula-shaped row를 거부한다", async () => {
+  const baseline = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
+  const cases = [
+    ["missing-fare", (quote) => delete quote.gnrlCardFare, /officialOdFareQuotes.*gnrlCardFare/],
+    ["wrong-hash", (quote) => { quote.mappingLedgerHash = "f".repeat(64); }, /mappingLedgerHash must match/],
+    ["same-endpoint", (quote) => { quote.destinationStationId = quote.originStationId; }, /endpoints must be distinct/],
+    ["formula-shaped", (quote) => { quote.baseCardFare = 1550; }, /baseCardFare is not allowed/],
+    ["changed-approved-fare", (quote) => { quote.gnrlCardFare += 1; }, /quote set hash must match admission/],
+    ["unsafe-integer", (quote) => { quote.gnrlCardFare = Number.MAX_SAFE_INTEGER + 1; }, /safe integer/],
+  ];
+
+  for (const [name, mutate, expected] of cases) {
+    const workspace = await mkdtemp(path.join(tmpdir(), `official-od-fare-${name}-`));
+    try {
+      const fixture = structuredClone(baseline);
+      mutate(fixture.packs[0].officialOdFareQuotes[0]);
+      const fixturePath = path.join(workspace, "fixture.json");
+      await writeFile(fixturePath, JSON.stringify(fixture));
+      await assert.rejects(
+        execFileAsync(
+          process.execPath,
+          ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", path.join(workspace, "out")],
+          { cwd: root, env: productionEnv },
+        ),
+        expected,
+      );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  }
+});
+
+test("official OD fare validator는 signed pack 내부의 admission hash 변조를 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-tampered-pack-"));
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture", "tools/datapack/fixtures/catalog-fixture.json",
+        "--output", outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+    const manifestPath = path.join(outputDir, "current.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const pack = manifest.packs[0];
+    const sqlitePath = path.join(outputDir, "catalog/capital-v1.sqlite");
+    const database = new DatabaseSync(sqlitePath);
+    try {
+      database.prepare("UPDATE official_od_fare_quotes SET mapping_ledger_hash = ?").run("f".repeat(64));
+    } finally {
+      database.close();
+    }
+    const sqliteBytes = await readFile(sqlitePath);
+    const compressedBytes = gzipSync(sqliteBytes);
+    await writeFile(path.join(outputDir, "catalog/capital-v1.sqlite.gz"), compressedBytes);
+    pack.sizeBytes = compressedBytes.length;
+    pack.sha256 = sha256(compressedBytes);
+    pack.sqliteSha256 = sha256(sqliteBytes);
+    const fixturePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+    pack.signature.value = sha256(Buffer.from(fixturePayload));
+    pack.representativeRouteRegressionSignature.value = sha256(
+      Buffer.from(`${fixturePayload}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`),
+    );
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", outputDir],
+        { cwd: root, env: productionEnv },
+      ),
+      /official OD fare mapping_ledger_hash must match admission/,
+    );
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare validator는 signed pack 내부의 승인 요금 변조를 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-tampered-value-pack-"));
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture", "tools/datapack/fixtures/catalog-fixture.json",
+        "--output", outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+    const manifestPath = path.join(outputDir, "current.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const pack = manifest.packs[0];
+    const sqlitePath = path.join(outputDir, "catalog/capital-v1.sqlite");
+    const database = new DatabaseSync(sqlitePath);
+    try {
+      database.prepare("UPDATE official_od_fare_quotes SET gnrl_card_fare = gnrl_card_fare + 1").run();
+    } finally {
+      database.close();
+    }
+    const sqliteBytes = await readFile(sqlitePath);
+    const compressedBytes = gzipSync(sqliteBytes);
+    await writeFile(path.join(outputDir, "catalog/capital-v1.sqlite.gz"), compressedBytes);
+    pack.sizeBytes = compressedBytes.length;
+    pack.sha256 = sha256(compressedBytes);
+    pack.sqliteSha256 = sha256(sqliteBytes);
+    const fixturePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+    pack.signature.value = sha256(Buffer.from(fixturePayload));
+    pack.representativeRouteRegressionSignature.value = sha256(
+      Buffer.from(`${fixturePayload}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`),
+    );
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", outputDir],
+        { cwd: root, env: productionEnv },
+      ),
+      /official OD fare quote set hash must match admission/,
+    );
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare validator는 pack inventory에 없는 source를 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-missing-source-"));
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture", "tools/datapack/fixtures/catalog-fixture.json",
+        "--output", outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+    const manifestPath = path.join(outputDir, "current.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.packs[0].sourceInventory = manifest.packs[0].sourceInventory.filter(
+      (source) => source.id !== "seoul-metro-official-od-fares",
+    );
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", outputDir],
+        { cwd: root, env: productionEnv },
+      ),
+      /official OD fare source_id is not in sourceInventory/,
+    );
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare release candidate는 승인된 두 방향 quote와 provenance를 SQLite에 남긴다", async () => {
+  const approvedEvidence = JSON.parse(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"), "utf8")).officialOdFareEvidence;
+  const candidateFixture = JSON.parse(await readFile(path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json"), "utf8"));
+  assert.deepEqual(candidateFixture.packs[0].officialOdFareQuotes, approvedEvidence.quotes);
+  assert.equal(candidateFixture.packs[0].officialOdFareQuotes.length, 2);
+  assert.ok(candidateFixture.packs[0].sourceInventory.some(
+    (source) => source.id === approvedEvidence.sourceId
+      && source.coverageScope.sourceDomains.includes("official_od_fares"),
+  ));
+
+  const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-candidate-"));
+  try {
+    await execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--build-spec", "tools/datapack/release/candidate-build-spec.json", "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    );
+    const database = new DatabaseSync(path.join(outputDir, "catalog/capital-v1.sqlite"));
+    let rows;
+    try {
+      rows = database.prepare(`SELECT origin_station_id AS originStationId,
+                                      destination_station_id AS destinationStationId,
+                                      source_id AS sourceId,
+                                      snapshot_id AS snapshotId,
+                                      mapping_ledger_hash AS mappingLedgerHash,
+                                      gnrl_card_fare AS gnrlCardFare,
+                                      gnrl_cash_fare AS gnrlCashFare,
+                                      yung_card_fare AS yungCardFare,
+                                      yung_cash_fare AS yungCashFare,
+                                      child_card_fare AS childCardFare,
+                                      child_cash_fare AS childCashFare
+                               FROM official_od_fare_quotes
+                               ORDER BY rowid`).all();
+    } finally {
+      database.close();
+    }
+    assert.deepEqual(rows.map((row) => ({ ...row })), approvedEvidence.quotes);
+    const manifest = JSON.parse(await readFile(path.join(outputDir, "current.json"), "utf8"));
+    assert.ok(manifest.packs[0].sourceInventory.some(
+      (source) => source.id === approvedEvidence.sourceId,
+    ));
+    const provenance = JSON.parse(await readFile(path.join(outputDir, "current.provenance.json"), "utf8"));
+    assert.deepEqual(provenance.candidateBuild.officialOdFareEvidence, approvedEvidence);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("official OD fare release candidate는 admission과 다른 quote set evidence를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-mismatch-"));
+  try {
+    const buildSpec = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+    buildSpec.officialOdFareEvidence.quoteSetHash = "f".repeat(64);
+    const buildSpecPath = path.join(workspace, "candidate-build-spec.json");
+    await writeFile(buildSpecPath, JSON.stringify(buildSpec));
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["tools/datapack/build-datapack.mjs", "--build-spec", buildSpecPath, "--output", path.join(workspace, "output")],
+        { cwd: root, env: productionEnv },
+      ),
+      /officialOdFareEvidence.quoteSetHash must match admission/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("원장 해시 exporter는 fixture 원장 5종 + license를 sha256으로 산출한다", async () => {
   const kinds = [

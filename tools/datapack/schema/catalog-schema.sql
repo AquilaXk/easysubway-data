@@ -176,6 +176,31 @@ CREATE TABLE station_fare_zones (
   FOREIGN KEY (zone_id) REFERENCES fare_zones(id)
 );
 
+CREATE TABLE official_od_fare_quotes (
+  origin_station_id TEXT NOT NULL,
+  destination_station_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  mapping_ledger_hash TEXT NOT NULL,
+  gnrl_card_fare INTEGER NOT NULL,
+  gnrl_cash_fare INTEGER NOT NULL,
+  yung_card_fare INTEGER NOT NULL,
+  yung_cash_fare INTEGER NOT NULL,
+  child_card_fare INTEGER NOT NULL,
+  child_cash_fare INTEGER NOT NULL,
+  PRIMARY KEY (origin_station_id, destination_station_id),
+  FOREIGN KEY (origin_station_id) REFERENCES stations(id),
+  FOREIGN KEY (destination_station_id) REFERENCES stations(id),
+  CHECK (origin_station_id <> destination_station_id),
+  CHECK (length(mapping_ledger_hash) = 64 AND mapping_ledger_hash NOT GLOB '*[^0-9a-f]*'),
+  CHECK (gnrl_card_fare >= 0),
+  CHECK (gnrl_cash_fare >= 0),
+  CHECK (yung_card_fare >= 0),
+  CHECK (yung_cash_fare >= 0),
+  CHECK (child_card_fare >= 0),
+  CHECK (child_cash_fare >= 0)
+);
+
 -- GTFS feed_info.feed_end_date (시간표 개정 유효 종료일). 단일 행(검증기가 강제). 요청 service date가
 -- 이 날짜를 지나면 planner가 PLANNED 대신 STALE_TIMETABLE로 강등한다.
 CREATE TABLE transit_feed_info (

@@ -2205,6 +2205,77 @@
           "unsupportedNotes": "candidate requires credential-free snapshot hashes and admin admission evidence before production use"
         }
       }
+    },
+    {
+      "id": "seoul-metro-official-od-fares",
+      "priority": "P0",
+      "domain": "official_od_fares",
+      "displayName": "서울교통공사_실시간운임정보",
+      "detailUrl": "https://www.data.go.kr/data/15143846/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "sanitized_live_probe_admitted",
+      "admissionStatus": "official_od_fare_admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "productionInventoryReferenceId": "seoul-metro-official-od-fares",
+      "productionInventoryRelationship": "sanitized_fare_admission_to_production_inventory",
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15143846/openapi.do",
+        "retrievedAt": "2026-07-12",
+        "endpoint": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "outputFields": [
+          "dptreStnCd",
+          "arvlStnCd",
+          "gnrlCardFare",
+          "gnrlCashFare",
+          "yungCardFare",
+          "yungCashFare",
+          "childCardFare",
+          "childCashFare"
+        ],
+        "liveSampleRowCount": 2,
+        "liveSampleEvidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
+        "snapshotId": "seoul-metro-official-od-fares-20260712",
+        "officialOdFareAdmissionHash": "dd7c2614921b2f1018bdb13d0fdbba70c72e2bfe145eac4a68e5dd07344c5cce",
+        "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+        "coverageLimitations": [
+          "상록수→사당 및 사당→상록수 두 방향의 승인된 2026-07-12 offline snapshot만 사용",
+          "개발계정 트래픽 10,000회이며 운영계정은 활용사례 등록 시 증액 신청 가능",
+          "앱 runtime API 호출과 승인되지 않은 OD 조합은 지원하지 않음"
+        ]
+      },
+      "nextAction": "승인된 두 방향 snapshot만 datapack에 포함하고 다른 OD 조합은 별도 probe와 admission 후 추가한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; approved offline snapshot only",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FARE_SNAPSHOT_ONLY",
+          "updateFrequency": "provider realtime; approved offline snapshot only",
+          "unsupportedNotes": "mobile runtime provider calls are not admitted"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; approved offline snapshot only",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      }
     }
   ]
 }

@@ -16,6 +16,7 @@ import {
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
+import { officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const productionMinimumTableRowNames = [
@@ -39,8 +40,10 @@ const sourceSnapshotStatuses = new Set(["LOCKED"]);
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const outputDir = path.resolve(root, requireArg(args, "output"));
-  const { fixture, candidateBuild } = await loadBuildInput(args);
   const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
+  const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
+  const officialOdFareAdmission = JSON.parse(officialOdFareAdmissionBytes);
+  const { fixture, candidateBuild } = await loadBuildInput(args, officialOdFareAdmission, officialOdFareAdmissionBytes);
 
   validateFixture(fixture);
   await mkdir(outputDir, { recursive: true });
@@ -63,7 +66,7 @@ async function main() {
     await rm(sqlitePath, { force: true });
     await rm(compressedPath, { force: true });
 
-    buildSqlitePack(sqlitePath, schema, pack);
+    buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmission);
 
     const sqliteBytes = await readFile(sqlitePath);
     const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
@@ -158,7 +161,7 @@ async function main() {
   );
 }
 
-async function loadBuildInput(args) {
+async function loadBuildInput(args, officialOdFareAdmission, officialOdFareAdmissionBytes) {
   const fixtureArg = args.fixture;
   const buildSpecArg = args["build-spec"];
   if ((fixtureArg == null) === (buildSpecArg == null)) {
@@ -174,14 +177,20 @@ async function loadBuildInput(args) {
   const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec");
   const buildSpecBytes = await readFile(buildSpecPath);
   const buildSpec = JSON.parse(buildSpecBytes);
-  await validateCandidateBuildSpec(buildSpec);
+  const fixture = JSON.parse(await readFile(await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath"), "utf8"));
+  const officialOdFareEvidence = await validateCandidateBuildSpec(
+    buildSpec,
+    fixture,
+    officialOdFareAdmission,
+    officialOdFareAdmissionBytes,
+  );
   return {
-    fixture: JSON.parse(await readFile(await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath"), "utf8")),
-    candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes)),
+    fixture,
+    candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence),
   };
 }
 
-async function validateCandidateBuildSpec(buildSpec) {
+async function validateCandidateBuildSpec(buildSpec, fixture, admission, admissionBytes) {
   if (!buildSpec || typeof buildSpec !== "object" || Array.isArray(buildSpec)) {
     throw new Error("buildSpec must be an object");
   }
@@ -205,9 +214,10 @@ async function validateCandidateBuildSpec(buildSpec) {
     throw new Error("buildSpec.builderGitSha must be a git sha");
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
+  return validateOfficialOdFareEvidence(buildSpec.officialOdFareEvidence, fixture, admission, admissionBytes);
 }
 
-function candidateBuildProvenance(buildSpec, buildSpecSha256) {
+function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence) {
   const normalizedHashes = Object.fromEntries(candidateBuildSpecHashFields.map((field) => [
     field,
     sha256HexString(buildSpec[field], `buildSpec.${field}`),
@@ -228,7 +238,46 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256) {
     sourceInventorySha256: normalizedHashes.sourceInventorySha256,
     builderGitSha: requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha"),
     builderVersion: requiredString(buildSpec.builderVersion, "buildSpec.builderVersion"),
+    ...(officialOdFareEvidence ? { officialOdFareEvidence } : {}),
   };
+}
+
+function validateOfficialOdFareEvidence(evidence, fixture, admission, admissionBytes) {
+  const candidateQuotes = fixture?.packs?.flatMap((pack) => pack.officialOdFareQuotes ?? []) ?? [];
+  if (evidence == null && candidateQuotes.length === 0) return null;
+  const label = "officialOdFareEvidence";
+  const keys = ["sourceId", "snapshotId", "evidenceHash", "admissionHash", "quoteSetHash", "mappingLedgerHash", "quotes"];
+  assertExactKeys(evidence, keys, label);
+  if (admission?.decision !== "APPROVED") throw new Error(`${label} requires an approved admission`);
+  if (requiredString(evidence.sourceId, `${label}.sourceId`) !== admission.sourceId) {
+    throw new Error(`${label}.sourceId must match admission`);
+  }
+  if (requiredString(evidence.snapshotId, `${label}.snapshotId`) !== admission.snapshotId) {
+    throw new Error(`${label}.snapshotId must match admission`);
+  }
+  if (sha256HexString(evidence.evidenceHash, `${label}.evidenceHash`) !== admission.evidenceHash) {
+    throw new Error(`${label}.evidenceHash must match admission`);
+  }
+  if (sha256HexString(evidence.admissionHash, `${label}.admissionHash`) !== sha256(admissionBytes)) {
+    throw new Error(`${label}.admissionHash must match tracked admission bytes`);
+  }
+  if (sha256HexString(evidence.quoteSetHash, `${label}.quoteSetHash`) !== admission.quoteSetHash) {
+    throw new Error(`${label}.quoteSetHash must match admission`);
+  }
+  if (sha256HexString(evidence.mappingLedgerHash, `${label}.mappingLedgerHash`) !== admission.fareStationLineMappingLedgerHash) {
+    throw new Error(`${label}.mappingLedgerHash must match admission`);
+  }
+  if (!Array.isArray(evidence.quotes) || evidence.quotes.length !== admission.quoteCount) {
+    throw new Error(`${label}.quotes count must match admission`);
+  }
+  for (const quote of evidence.quotes) officialOdFareQuoteValues(quote, admission);
+  if (officialOdFareQuoteSetHash(evidence.quotes) !== admission.quoteSetHash) {
+    throw new Error(`${label}.quotes must match admission quote set`);
+  }
+  if (JSON.stringify(candidateQuotes) !== JSON.stringify(evidence.quotes)) {
+    throw new Error(`${label}.quotes must exactly match candidate fixture quotes`);
+  }
+  return evidence;
 }
 
 function requiredSourceSnapshots(value, label) {
@@ -780,7 +829,7 @@ function outOfStationTransferNetworkEdge(link) {
   };
 }
 
-function buildSqlitePack(sqlitePath, schema, pack) {
+function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmission) {
   const database = new DatabaseSync(sqlitePath);
   const isProductionPack = pack.artifactKind === "production";
   const networkEdges = routeGraphNetworkEdges(pack);
@@ -902,6 +951,37 @@ function buildSqlitePack(sqlitePath, schema, pack) {
           requiredString(row.lineId, "stationFareZones.lineId"),
           requiredString(row.zoneId, "stationFareZones.zoneId"),
         ],
+      );
+      const officialOdFareQuotes = (pack.officialOdFareQuotes ?? []).map((row) => ({
+        row,
+        values: officialOdFareQuoteValues(row, officialOdFareAdmission),
+      }));
+      if (officialOdFareQuotes.length > 0) {
+        if (officialOdFareQuotes.length !== officialOdFareAdmission.quoteCount) {
+          throw new Error("officialOdFareQuotes count must match admission");
+        }
+        if (officialOdFareQuoteSetHash(officialOdFareQuotes.map(({ row }) => row)) !== officialOdFareAdmission.quoteSetHash) {
+          throw new Error("officialOdFareQuotes quote set hash must match admission");
+        }
+      }
+      insertRows(
+        database,
+        "official_od_fare_quotes",
+        [
+          "origin_station_id",
+          "destination_station_id",
+          "source_id",
+          "snapshot_id",
+          "mapping_ledger_hash",
+          "gnrl_card_fare",
+          "gnrl_cash_fare",
+          "yung_card_fare",
+          "yung_cash_fare",
+          "child_card_fare",
+          "child_cash_fare",
+        ],
+        officialOdFareQuotes,
+        ({ values }) => values,
       );
       insertRows(
         database,
@@ -2011,6 +2091,73 @@ function requiredNonNegativeInteger(value, label) {
     throw new Error(`${label} must be a non-negative integer`);
   }
   return integer;
+}
+
+function officialOdFareQuoteValues(row, admission) {
+  const label = "officialOdFareQuotes";
+  const keys = [
+    "originStationId",
+    "destinationStationId",
+    "sourceId",
+    "snapshotId",
+    "mappingLedgerHash",
+    "gnrlCardFare",
+    "gnrlCashFare",
+    "yungCardFare",
+    "yungCashFare",
+    "childCardFare",
+    "childCashFare",
+  ];
+  assertExactKeys(row, keys, label);
+  if (admission?.decision !== "APPROVED") {
+    throw new Error(`${label} requires an approved admission`);
+  }
+  const originStationId = requiredString(row.originStationId, `${label}.originStationId`);
+  const destinationStationId = requiredString(row.destinationStationId, `${label}.destinationStationId`);
+  if (originStationId === destinationStationId) {
+    throw new Error(`${label} endpoints must be distinct`);
+  }
+  const sourceId = requiredString(row.sourceId, `${label}.sourceId`);
+  const snapshotId = requiredString(row.snapshotId, `${label}.snapshotId`);
+  const mappingLedgerHash = sha256HexString(row.mappingLedgerHash, `${label}.mappingLedgerHash`);
+  if (sourceId !== admission.sourceId) throw new Error(`${label}.sourceId must match admission`);
+  if (snapshotId !== admission.snapshotId) throw new Error(`${label}.snapshotId must match admission`);
+  if (mappingLedgerHash !== admission.fareStationLineMappingLedgerHash) {
+    throw new Error(`${label}.mappingLedgerHash must match admission`);
+  }
+  return [
+    originStationId,
+    destinationStationId,
+    sourceId,
+    snapshotId,
+    mappingLedgerHash,
+    requiredNonNegativeSafeInteger(row.gnrlCardFare, `${label}.gnrlCardFare`),
+    requiredNonNegativeSafeInteger(row.gnrlCashFare, `${label}.gnrlCashFare`),
+    requiredNonNegativeSafeInteger(row.yungCardFare, `${label}.yungCardFare`),
+    requiredNonNegativeSafeInteger(row.yungCashFare, `${label}.yungCashFare`),
+    requiredNonNegativeSafeInteger(row.childCardFare, `${label}.childCardFare`),
+    requiredNonNegativeSafeInteger(row.childCashFare, `${label}.childCashFare`),
+  ];
+}
+
+function requiredNonNegativeSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function assertExactKeys(value, expectedKeys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  const expected = new Set(expectedKeys);
+  for (const key of Object.keys(value)) {
+    if (!expected.has(key)) throw new Error(`${label}.${key} is not allowed`);
+  }
+  for (const key of expected) {
+    if (!(key in value)) throw new Error(`${label}.${key} is required`);
+  }
 }
 
 function optionalNonNegativeInteger(value, label) {

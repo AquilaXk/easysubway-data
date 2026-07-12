@@ -18,6 +18,7 @@
     "daejeon-transportation"
   ],
   "knownSourceDomains": [
+    "official_od_fares",
     "route_graph_topology",
     "realtime_arrivals",
     "realtime_train_positions",
