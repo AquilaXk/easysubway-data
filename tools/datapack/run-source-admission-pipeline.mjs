@@ -6,10 +6,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { sortJson, compareStrings } from "./lib/ledger-admission-cli.mjs";
+import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const quotaEvidenceKeys = ["defaultDailyLimit", "portal", "productionUseAllowed", "unlockStatus"];
 
 async function main() {
   const startedAt = Date.now();
@@ -217,27 +217,6 @@ function validateAdminReview({ adminReview, candidateId, sample, snapshot, args 
     }
   }
   return sha256(JSON.stringify(sortJson(adminReview)));
-}
-
-function validateQuotaEvidence(quotaEvidence, label) {
-  if (!quotaEvidence || typeof quotaEvidence !== "object" || Array.isArray(quotaEvidence)) {
-    throw new Error(`${label} must be an object`);
-  }
-  const keys = Object.keys(quotaEvidence).sort(compareStrings);
-  if (JSON.stringify(keys) !== JSON.stringify(quotaEvidenceKeys)) {
-    throw new Error(`${label} must only include ${quotaEvidenceKeys.join(", ")}`);
-  }
-  requiredText(quotaEvidence.portal, `${label}.portal`);
-  if (
-    quotaEvidence.defaultDailyLimit !== "unlimited" &&
-    (!Number.isInteger(quotaEvidence.defaultDailyLimit) || quotaEvidence.defaultDailyLimit < 0)
-  ) {
-    throw new Error(`${label}.defaultDailyLimit must be a non-negative integer or unlimited`);
-  }
-  requiredText(quotaEvidence.unlockStatus, `${label}.unlockStatus`);
-  if (typeof quotaEvidence.productionUseAllowed !== "boolean") {
-    throw new Error(`${label}.productionUseAllowed must be a boolean`);
-  }
 }
 
 function admitSource({ inventory, productionSource }) {

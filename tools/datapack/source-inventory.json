@@ -971,6 +971,106 @@
       }
     },
     {
+      "id": "kric-transfer-movement-detailed",
+      "displayName": "환승 이동경로",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=307&service=vulnerableUserInfo&operation=transferMovement&page=1",
+      "datasetKind": "open-api",
+      "coverage": "역사 환승 이동경로 단계별 시작·종료 위치, 이동 유형 순서, 승강기 상태·유형, 안내 이미지 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "indoor_movement_paths"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=307&service=vulnerableUserInfo&operation=transferMovement&page=1"
+      },
+      "fieldsProvided": [
+        "chtnMvTpOrdr",
+        "edMovePath",
+        "elvtSttCd",
+        "elvtTpCd",
+        "imgPath",
+        "mvContDtl",
+        "mvPathMgNo",
+        "stMovePath"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "backend-only indoor transfer movement source admitted for inventory provenance; distance/duration edges unconfirmed so route graph edge auto-admission stays blocked and it is not wired into production consumption or mobile pack"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1701,
+        "candidateId": "kric-transfer-movement-detailed",
+        "sourceId": "kric-transfer-movement-detailed",
+        "snapshotId": "kric-transfer-movement-detailed-admission-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T00:00:00+09:00",
+        "sampleEvidenceHash": "055cda38e2a297d53f3fb7dd0a8c0a6069fd4517d33557bfdf97637728a22743",
+        "rawSha256": "93f75d6049655663ee0f14ca88347b9645781feaf5085cbf5a0013e4d7156a66",
+        "schemaFingerprint": "47ec5fc575c71e57ae8dac56891097c3e3392103fc7b5b1c385e04518e9fa3f8",
+        "sourceSnapshotSetHash": "87e0e81bd8e9cfe36ec18d4dafaa266e44527e37ad57b892f74120949b3f47dc",
+        "sourceInventorySha256": "64e991d9129da955f9c077a4383217d73d51963589ccdcaa4358e6fe8f5e9c2f",
+        "adminReviewRecordHash": "9c0b9fcd6b17a955a799802e3eda4f47974cf15dac247d0d3880423e0a49ca5f",
+        "licenseEvidenceHash": "18ce2865beab3901a429da67ad82aec92be978528807a15685cd56d8aeadc6c1",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 세션 승인(2026-07-13)으로 backend-only production inventory 소비 대상으로 승격한다. 모바일/offline pack에는 포함하지 않는다."
+      }
+    },
+    {
       "id": "kric-wheelchair-lift-location",
       "displayName": "국가철도공단_역사별 휠체어리프트 위치",
       "owner": "국가철도공단",
@@ -1510,6 +1610,211 @@
           "productionUseAllowed": true
         },
         "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격(교통약자 승강기 실시간 운행상황). strict route 보장은 별도 계약으로 유지."
+      }
+    },
+    {
+      "id": "seoul-metro-fast-exit-car-door",
+      "displayName": "서울교통공사_빠른하차정보",
+      "owner": "서울교통공사",
+      "provider": "서울교통공사",
+      "providerDepartment": "공공데이터 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15143840/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "하차역 기준 계단·엘리베이터 등 이동설비와 가장 가까운 열차 칸 출입문 위치 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "station_car_door_hints"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "updateFrequency": "provider realtime API; sampled records dated 2024-12-31; production cadence not admitted",
+      "observedDataUpdatedAt": "2024-12-31",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15143840/openapi.do"
+      },
+      "fieldsProvided": [
+        "crtrYmd",
+        "drtnInfo",
+        "elvtrNo",
+        "facNo",
+        "facPstnNm",
+        "fwkPstnNm",
+        "lineNm",
+        "plfmCmgFac",
+        "qckgffMngNo",
+        "qckgffVhclDoorNo",
+        "stnCd",
+        "stnNm",
+        "stnNo",
+        "upbdnbSe"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "backend-only fast exit car door hint source admitted for inventory provenance; not yet wired into production consumption or mobile pack"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1701,
+        "candidateId": "seoul-metro-fast-exit-car-door",
+        "sourceId": "seoul-metro-fast-exit-car-door",
+        "snapshotId": "seoul-metro-fast-exit-car-door-admission-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T00:00:00+09:00",
+        "sampleEvidenceHash": "534a6609a788311967aa0dc3c7bc565f51da248fab0e6094b4e3fb60b174672b",
+        "rawSha256": "d6a81c0da9ae5cc430a788bd0fc1ed6bb269cc6761a822b32c7484649e4586a5",
+        "schemaFingerprint": "1b670fa8b0f1f51afb989d172c9824378b09b714bb5ce768dc3a02820931ad47",
+        "sourceSnapshotSetHash": "114e9a8333b1df9245b878f3e079f476c18babf49abe8242cb49cb708557ba4b",
+        "sourceInventorySha256": "82519d1314d6dda31ff4edd1216dd33d6e2cac1ac5ee03ee1337b09b88428e84",
+        "adminReviewRecordHash": "e97a24a12ee5ebda3777eeb0a497450e2f18f2a438948a131bf0ce62fa275f71",
+        "licenseEvidenceHash": "dc4c835f6bac2adf0f6aa70a64f9076bd917a067d68e70d7b1a84bb2aba17c82",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": null,
+          "documentedMonthlyLimit": 10000,
+          "portal": "공공데이터포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 세션 승인(2026-07-13)으로 backend-only production inventory 소비 대상으로 승격한다. 모바일/offline pack에는 포함하지 않는다."
+      }
+    },
+    {
+      "id": "seoul-metro-transfer-distance-duration",
+      "displayName": "서울교통공사_환승역거리 소요시간",
+      "owner": "서울교통공사",
+      "provider": "서울교통공사",
+      "providerDepartment": "공공데이터 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15044419/fileData.do",
+      "datasetKind": "file-and-converted-rest-api",
+      "coverage": "서울교통공사 환승역별 환승거리(m)와 일반인 보행 기준 환승소요시간(초) 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "transfer_walk_duration"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "updateFrequency": "annual file snapshot",
+      "observedDataUpdatedAt": "2025-12-31",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15044419/fileData.do"
+      },
+      "fieldsProvided": [
+        "연번",
+        "호선",
+        "환승거리",
+        "환승노선",
+        "환승소요시간",
+        "환승역명"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "backend-only transfer walk duration source admitted for inventory provenance; not yet wired into production consumption or mobile pack"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1701,
+        "candidateId": "seoul-metro-transfer-distance-duration",
+        "sourceId": "seoul-metro-transfer-distance-duration",
+        "snapshotId": "seoul-metro-transfer-distance-duration-admission-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T00:00:00+09:00",
+        "sampleEvidenceHash": "9a7f68c544e0de77f14d1274bb3a7b640af221b7443372505702de237bed86ca",
+        "rawSha256": "5efffaa748cd7c87859cf8979db96c009c85dc44cca58929015a708e8c0634fd",
+        "schemaFingerprint": "39a46ae2842d5031062c768b27ae5a9853278e8caf0c1b0fc1e64e04689a300b",
+        "sourceSnapshotSetHash": "1699e81cff9b71758d4dc3aa6d719783c4bee06f3ea1e89e60c1547f8fb758ec",
+        "sourceInventorySha256": "509a2bb694c68dd9e4a4aa9cba8528ac6609a2a58a1843a95d89b378d0d7aefb",
+        "adminReviewRecordHash": "f1636fbd2b36b2687fc8d728290158ca934461276936036606bc03a3156d594e",
+        "licenseEvidenceHash": "c64b8a890c1576368566e89b5a70fdbaa88292f1b87fd44462d9a0a2bd33b4b0",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "공공데이터포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 세션 승인(2026-07-13)으로 backend-only production inventory 소비 대상으로 승격한다. 모바일/offline pack에는 포함하지 않는다."
       }
     },
     {

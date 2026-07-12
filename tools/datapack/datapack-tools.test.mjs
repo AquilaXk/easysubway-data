@@ -7736,7 +7736,7 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
       ],
       { cwd: root },
     ),
-    /adminReview\.quotaEvidence must only include defaultDailyLimit, portal, productionUseAllowed, unlockStatus/,
+    /adminReview\.quotaEvidence must include defaultDailyLimit, portal, productionUseAllowed, unlockStatus and only optional documentedMonthlyLimit/,
   );
 });
 

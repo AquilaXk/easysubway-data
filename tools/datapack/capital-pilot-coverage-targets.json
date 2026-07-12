@@ -23,7 +23,10 @@
     "realtime_train_positions",
     "schedule_timetable",
     "route_map_positions",
-    "demand_reference"
+    "demand_reference",
+    "transfer_walk_duration",
+    "station_car_door_hints",
+    "indoor_movement_paths"
   ],
   "requiredSourceDomains": [
     {
