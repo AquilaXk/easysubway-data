@@ -471,7 +471,8 @@
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=428&service=handicapped&operation=transferMovement&page=2",
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
-        "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=331&prevStinCd=422&chthTgtLn=4&chtnNextStinCd=424",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=331&prevStinCd=132&chthTgtLn=4&chtnNextStinCd=425",
+        "liveSampleNote": "2026-07-11 workflow run 29155976812 (head 3bbb27594a38ef26f04aad5c5c5f6a423fcf1b5f)은 기존 tuple prevStinCd=422, chtnNextStinCd=424로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0을 확인했다. 이는 sampleResponse evidence가 아님. 다음 tuple prevStinCd=132, chtnNextStinCd=425는 KRIC 공식 요청변수 표에서 가져온 미검증 tuple이다.",
         "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
@@ -495,7 +496,7 @@
           "durationSeconds"
         ]
       },
-      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists",
+      "nextAction": "run the table-derived tuple and retain admin review with automatic route graph edge disabled until row-bearing evidence plus distance and duration evidence exists",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
