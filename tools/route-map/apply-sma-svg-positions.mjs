@@ -23,7 +23,7 @@ export const SVG_SOURCE = {
   sourceId: "owner-self-drawn-sma-schematic",
   sourceName: "오너 자작 수도권 8선형 정본 도식",
   // 앱 렌더 정본은 SVG 원본이 아니라 이 도식에서 파생한 구조화 좌표다(#1635 유지).
-  sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v1.svg",
+  sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
   license: "self-drawn",
   licenseStatus: "confirmed",
   commercialUseAllowed: true,
