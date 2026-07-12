@@ -1856,6 +1856,133 @@
       },
       "productionInventoryReferenceId": "kric-wheelchair-lift-movement",
       "productionInventoryRelationship": "same_dataset_inventory_entry_admitted_for_capital_pack"
+    },
+    {
+      "id": "seoul-metro-transfer-distance-duration",
+      "priority": "P0",
+      "domain": "transfer_walk_duration",
+      "displayName": "서울교통공사_환승역거리 소요시간",
+      "detailUrl": "https://www.data.go.kr/data/15044419/fileData.do",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "serviceKeyHandling": "offline_collection_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15044419/fileData.do",
+        "retrievedAt": "2026-07-12",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV",
+          "JSON",
+          "XML"
+        ],
+        "outputFields": [
+          "연번",
+          "호선",
+          "환승역명",
+          "환승노선",
+          "환승거리",
+          "환승소요시간"
+        ],
+        "coverageLimitations": [
+          "환승소요시간은 일반인 보행속도 1.2 m/s 기준 산정(환승거리 단위 m, 환승소요시간 단위 초)",
+          "outputFields는 CSV 원본 한국어 컬럼명이며 romanization은 미확정",
+          "145개 환승역(2025-12-31 기준) 커버",
+          "파일데이터(CSV) 원본과 오픈 API(XML/JSON)로 제공되나 정확한 odcloud uddi endpoint는 미확정"
+        ],
+        "missingEvidence": [
+          "sampleResponse",
+          "endpointConfirmation",
+          "credentialFreeSnapshotHash",
+          "adminAdmissionEvidence"
+        ]
+      },
+      "nextAction": "data.go.kr odcloud endpoint와 출력 필드를 확정하고, credential-free snapshot 해시와 admin admission 증거를 확보한 뒤 production inventory admission을 진행한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate requires credential-free snapshot hashes and admin admission evidence before production use"
+        }
+      }
+    },
+    {
+      "id": "seoul-metro-fast-exit-car-door",
+      "priority": "P0",
+      "domain": "station_car_door_hints",
+      "displayName": "서울교통공사_빠른하차정보",
+      "detailUrl": "https://www.data.go.kr/data/15143840/openapi.do",
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "admissionStatus": "evidence_recorded_admin_review_required",
+      "serviceKeyHandling": "offline_collection_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://www.data.go.kr/data/15143840/openapi.do",
+        "retrievedAt": "2026-07-12",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "JSON",
+          "XML"
+        ],
+        "coverageLimitations": [
+          "하차역 기준 계단·엘리베이터 등 이동설비와 가장 가까운 열차 칸 출입문 위치를 조회하며, 하차칸(문) 번호와 연결된 이동설비 위치를 제공한다",
+          "정확한 API operation path와 output 필드명은 미확인(Swagger UI 비공개)",
+          "실시간 제공, 개발계정 트래픽 10,000회/월"
+        ],
+        "missingEvidence": [
+          "sampleResponse",
+          "endpointConfirmation",
+          "outputFieldsConfirmation",
+          "credentialFreeSnapshotHash",
+          "adminAdmissionEvidence"
+        ]
+      },
+      "nextAction": "data.go.kr API operation path와 output 필드명을 확정하고, credential-free snapshot 해시와 admin admission 증거를 확보한 뒤 production inventory admission을 진행한다",
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate does not provide realtime arrival data for production live ETA"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider realtime; production cadence not admitted",
+          "unsupportedNotes": "candidate requires credential-free snapshot hashes and admin admission evidence before production use"
+        }
+      }
     }
   ]
 }

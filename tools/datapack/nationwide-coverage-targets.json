@@ -300,11 +300,11 @@
     },
     "sourceCandidateAdmission": {
       "sourceCandidatesPath": "tools/datapack/source-candidates.json",
-      "p0CandidateCount": 23,
+      "p0CandidateCount": 25,
       "requiredAdmissionStatusBeforeProductionClaim": "admitted_to_production_inventory",
       "admittedCandidateCount": 12,
       "currentOpenAdmissionStatus": "evidence_recorded_admin_review_required",
-      "productionClaimImpactKo": "admittedCandidateCount는 P0 후보 전용 카운트로, P0 source candidate 23건 중 12건이 production inventory 승격 증거를 가진다. #1397 capital admission으로 station_line_membership(molit 전체노선·서울교통공사 노선별 역 정보)과 accessibility_facilities(엘리베이터·에스컬레이터·휠체어리프트 위치/이동동선 KRIC 5종)이 승격됐고, schedule_timetable은 kric-subway-timetable 4호선 pilot 범위에 한해 승인됐다. #1996에서 seoul-metro-accessibility(교통약자 승강기 실시간 운행상황, accessibility_facilities)를 추가 승격해 사당·상록수 4호선 ENTRY/EXIT edge의 검증된 접근성 상태(UNDER_MAINTENANCE/NO_OFFICIAL_FEED)를 게시 가능하게 했다. P0 카운트와 별개로 admitted P1 후보인 seoulmetro-cyberstation-route-map(route_map_positions — capital pilot deferred domain)도 함께 승격됐다. seoul-metro-facility-location 등 잔여 P0 후보와 TOPIS realtime production use는 quota/terms 승인 전이라 관련 expansionRoadmap stage는 계속 NO-GO다."
+      "productionClaimImpactKo": "admittedCandidateCount는 P0 후보 전용 카운트로, P0 source candidate 25건 중 12건이 production inventory 승격 증거를 가진다. #1397 capital admission으로 station_line_membership(molit 전체노선·서울교통공사 노선별 역 정보)과 accessibility_facilities(엘리베이터·에스컬레이터·휠체어리프트 위치/이동동선 KRIC 5종)이 승격됐고, schedule_timetable은 kric-subway-timetable 4호선 pilot 범위에 한해 승인됐다. #1996에서 seoul-metro-accessibility(교통약자 승강기 실시간 운행상황, accessibility_facilities)를 추가 승격해 사당·상록수 4호선 ENTRY/EXIT edge의 검증된 접근성 상태(UNDER_MAINTENANCE/NO_OFFICIAL_FEED)를 게시 가능하게 했다. P0 카운트와 별개로 admitted P1 후보인 seoulmetro-cyberstation-route-map(route_map_positions — capital pilot deferred domain)도 함께 승격됐다. seoul-metro-facility-location 등 잔여 P0 후보와 TOPIS realtime production use는 quota/terms 승인 전이라 관련 expansionRoadmap stage는 계속 NO-GO다."
     },
     "gapEscalationRuleKo": "지원 claim을 깨는 P1/P2 gap은 P0 release blocker로 승격하고 release gate에서 실패시킨다."
   }

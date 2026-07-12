@@ -10,32 +10,27 @@ import {
   sanitizeErrorMessage,
 } from "./lib/source-candidate-evidence-collector.mjs";
 
-export const KRIC_SOURCE_CANDIDATE_IDS = Object.freeze([
-  "kric-subway-route-info",
-  "kric-station-info",
-  "kric-train-operation-organ",
-  "kric-station-transfer-info",
-  "kric-station-platform",
-  "kric-station-movement-standard",
-  "kric-station-movement-detailed",
-  "kric-transfer-movement-standard",
-  "kric-transfer-movement-detailed",
-  "kric-station-convenience-standard",
+export const DATAGO_SOURCE_CANDIDATE_IDS = Object.freeze([
+  "seoul-metro-transfer-distance-duration",
+  "seoul-metro-fast-exit-car-door",
 ]);
 
-const KRIC_ORIGIN = "https://openapi.kric.go.kr";
+const DATAGO_REST_ORIGIN = "https://apis.data.go.kr";
+const DATAGO_FILE_ORIGINS = new Set(["https://api.odcloud.kr", "https://www.data.go.kr"]);
 
-function assertKricUrl(url, label) {
-  if (url.origin !== KRIC_ORIGIN) {
-    throw new Error(`${label} provider origin must be ${KRIC_ORIGIN}`);
+function assertDatagoUrl(url, label) {
+  const isRest = url.origin === DATAGO_REST_ORIGIN;
+  const isFile = DATAGO_FILE_ORIGINS.has(url.origin);
+  if (!isRest && !isFile) {
+    throw new Error(`${label} provider origin must be a data.go.kr origin`);
   }
-  if (!url.pathname.startsWith("/openapi/") || url.username || url.password || url.hash) {
-    throw new Error(`${label} must be a credential-free KRIC OpenAPI URL`);
+  if (url.username || url.password || url.hash) {
+    throw new Error(`${label} must be a credential-free data.go.kr URL`);
   }
 }
 
-export function resolveKricCandidateRequest(candidatesDocument, candidateId) {
-  if (!KRIC_SOURCE_CANDIDATE_IDS.includes(candidateId)) {
+export function resolveDatagoCandidateRequest(candidatesDocument, candidateId) {
+  if (!DATAGO_SOURCE_CANDIDATE_IDS.includes(candidateId)) {
     throw new Error(`candidate is not allowed: ${candidateId}`);
   }
 
@@ -50,12 +45,16 @@ export function resolveKricCandidateRequest(candidatesDocument, candidateId) {
     throw new Error(`${candidateId} admission status no longer requires admin review`);
   }
 
+  if (!candidate.evidence?.sampleUrl || !candidate.evidence?.endpoint || !candidate.requestUrl) {
+    throw new Error(`${candidateId} endpoint not yet confirmed; cannot collect until data.go.kr endpoint is documented`);
+  }
+
   const endpoint = new URL(requiredText(candidate.evidence?.endpoint, `${candidateId}.evidence.endpoint`));
   const requestUrl = new URL(requiredText(candidate.requestUrl, `${candidateId}.requestUrl`));
   const sampleUrl = new URL(requiredText(candidate.evidence?.sampleUrl, `${candidateId}.evidence.sampleUrl`));
-  assertKricUrl(endpoint, `${candidateId}.evidence.endpoint`);
-  assertKricUrl(requestUrl, `${candidateId}.requestUrl`);
-  assertKricUrl(sampleUrl, `${candidateId}.evidence.sampleUrl`);
+  assertDatagoUrl(endpoint, `${candidateId}.evidence.endpoint`);
+  assertDatagoUrl(requestUrl, `${candidateId}.requestUrl`);
+  assertDatagoUrl(sampleUrl, `${candidateId}.evidence.sampleUrl`);
 
   if (requestUrl.href !== endpoint.href) {
     throw new Error(`${candidateId} requestUrl must match evidence endpoint`);
@@ -69,7 +68,13 @@ export function resolveKricCandidateRequest(candidatesDocument, candidateId) {
     throw new Error(`${candidateId} sampleUrl must contain exactly one redacted serviceKey`);
   }
 
-  const format = requiredText(sampleUrl.searchParams.get("format"), `${candidateId} sample format`).toLowerCase();
+  const formatParam = ["format", "dataType", "_type"]
+    .map((name) => sampleUrl.searchParams.get(name))
+    .find((value) => value !== null);
+  const format = requiredText(formatParam, `${candidateId} sample format`).toLowerCase();
+  if (format === "csv") {
+    throw new Error(`${candidateId} csv sample collection not yet supported`);
+  }
   const supportedFormats = new Set((candidate.evidence?.formats ?? []).map((value) => String(value).toLowerCase()));
   if (!new Set(["json", "xml"]).has(format) || !supportedFormats.has(format)) {
     throw new Error(`${candidateId} sample format is not supported: ${format}`);
@@ -83,45 +88,45 @@ export function resolveKricCandidateRequest(candidatesDocument, candidateId) {
   };
 }
 
-export async function collectKricSourceCandidateEvidence({
+export async function collectDatagoSourceCandidateEvidence({
   candidateId,
   candidatesDocument,
   fetchImpl = fetch,
   runnerTemp = process.env.RUNNER_TEMP,
-  serviceKey = process.env.KRIC_SERVICE_KEY,
+  serviceKey = process.env.DATA_GO_KR_SERVICE_KEY,
 } = {}) {
-  requiredText(serviceKey, "KRIC_SERVICE_KEY");
+  requiredText(serviceKey, "DATA_GO_KR_SERVICE_KEY");
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
   const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
-  const request = resolveKricCandidateRequest(document, candidateId);
+  const request = resolveDatagoCandidateRequest(document, candidateId);
   return collectSourceCandidateEvidence({
     candidateId,
     candidatesDocument,
     fetchImpl,
     runnerTemp,
     serviceKey,
-    serviceKeyLabel: "KRIC_SERVICE_KEY",
-    directoryPrefix: "kric-source-candidate",
+    serviceKeyLabel: "DATA_GO_KR_SERVICE_KEY",
+    directoryPrefix: "datago-source-candidate",
     request,
-    requestFailureLabel: "KRIC request failed with HTTP",
-    diagnosticLabel: "KRIC XML diagnostic:",
-    writeStagedCandidates: false,
+    requestFailureLabel: "data.go.kr request failed with HTTP",
+    diagnosticLabel: "Data.go.kr XML diagnostic:",
+    writeStagedCandidates: Boolean(candidatesDocument),
     buildScriptName: "build-source-candidate-sample-evidence.mjs",
     validateScriptName: "validate-source-candidate-sample.mjs",
   });
 }
 
 async function main() {
-  const { candidateId } = parseCli(process.argv.slice(2), "collect-kric-source-candidate-evidence.mjs");
-  await collectKricSourceCandidateEvidence({ candidateId });
-  console.log(`sanitized KRIC source candidate evidence ready: ${candidateId}`);
+  const { candidateId } = parseCli(process.argv.slice(2), "collect-datago-source-candidate-evidence.mjs");
+  await collectDatagoSourceCandidateEvidence({ candidateId });
+  console.log(`sanitized data.go.kr source candidate evidence ready: ${candidateId}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main().catch((error) => {
-    console.error(sanitizeErrorMessage(error, process.env.KRIC_SERVICE_KEY ?? ""));
+    console.error(sanitizeErrorMessage(error, process.env.DATA_GO_KR_SERVICE_KEY ?? ""));
     process.exitCode = 1;
   });
 }
