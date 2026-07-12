@@ -89,7 +89,11 @@ export function buildKricMovementContext({ sourceCandidates, sourceInventory }) 
   if (!candidate) throw new Error(`${KRIC_MOVEMENT_SOURCE_ID} source candidate missing`);
   if (!inventorySource) throw new Error(`${KRIC_MOVEMENT_SOURCE_ID} source inventory entry missing`);
 
-  const sampleUrl = new URL(candidate.evidence?.sampleUrl ?? "");
+  const sampleUrlRaw = candidate.evidence?.sampleUrl;
+  if (typeof sampleUrlRaw !== "string" || sampleUrlRaw.trim() === "") {
+    throw new Error(`${KRIC_MOVEMENT_SOURCE_ID} candidate evidence.sampleUrl missing`);
+  }
+  const sampleUrl = new URL(sampleUrlRaw.trim());
   const requestTuple = Object.fromEntries(
     Object.keys(KRIC_CHUNGMURO_REQUEST_TUPLE).map((key) => [key, sampleUrl.searchParams.get(key)]),
   );

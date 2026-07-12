@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   buildBaselineIngestionGateReport,
   buildGateTimeSourceDistinction,
+  buildKricMovementContext,
   buildRosterFromPack,
 } from "./build-baseline-ingestion-gate-report.mjs";
 
@@ -131,6 +132,20 @@ test("buildRosterFromPack: 짧은 lineNameKo 도출('수도권 2호선'→'2호�
   assert.equal(branch.lineNameKo, "2호선 지선");
   const shinbundang = roster.find((r) => r.lineId === "shinbundang");
   assert.equal(shinbundang.lineNameKo, "신분당선");
+});
+
+test("buildKricMovementContext: candidate sampleUrl 누락을 명확히 거부한다", () => {
+  for (const sampleUrl of [undefined, " \t", null, 42]) {
+    const evidence = sampleUrl === undefined ? {} : { sampleUrl };
+    assert.throws(
+      () =>
+        buildKricMovementContext({
+          sourceCandidates: { candidates: [{ id: "kric-transfer-movement-detailed", evidence }] },
+          sourceInventory: { sources: [{ id: "kric-transfer-movement-detailed" }] },
+        }),
+      /kric-transfer-movement-detailed candidate evidence\.sampleUrl missing/,
+    );
+  }
 });
 
 test("게이트③: generated baseline edge도 matching rule과 duration을 대조한다", () => {
@@ -261,6 +276,26 @@ test("게이트①: 양방향 환승 시간이 다르면 secondsMismatch를 기�
 
   assert.equal(sadangPair.hasReverse, true);
   assert.equal(sadangPair.secondsMismatch, true);
+});
+
+test("게이트①: 동일 역·노선 방향의 중복 행을 duplicateReport에 기록한다", () => {
+  const report = buildBaselineIngestionGateReport({
+    roster: buildRosterFromPack(pack),
+    transferRows: [
+      { 연번: 1, 호선: 2, 환승거리: 74, 환승노선: "4호선", 환승소요시간: "01:02", 환승역명: "사당" },
+      { 연번: 2, 호선: 2, 환승거리: 74, 환승노선: "4호선", 환승소요시간: "01:03", 환승역명: "사당" },
+    ],
+    carDoorRows: [],
+    kricMovement: null,
+  });
+  const duplicates = report.gateInternalConsistency.duplicateReport;
+  assert.equal(duplicates.length, 1);
+  const duplicate = duplicates[0];
+  assert.equal(duplicate.stationId, "station-sadang");
+  assert.equal(duplicate.fromLineId, "seoul-2");
+  assert.equal(duplicate.toLineId, "seoul-4");
+  assert.equal(duplicate.firstMinTransferSeconds, 62);
+  assert.equal(duplicate.duplicateMinTransferSeconds, 63);
 });
 
 test("리포트: 객체가 아닌 transfer row를 malformed로 계측하고 중단하지 않는다", () => {

@@ -24,6 +24,7 @@
 //   --rows <in.json> --output <out.json>
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { parseArgs, readJsonFile, requireArg, requiredArray, sortJson } from "./lib/ledger-admission-cli.mjs";
 
@@ -104,7 +105,7 @@ function parseMinuteSecond(value) {
   return { value: minutes * MINUTE_SECONDS + seconds };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     await main();
   } catch (error) {

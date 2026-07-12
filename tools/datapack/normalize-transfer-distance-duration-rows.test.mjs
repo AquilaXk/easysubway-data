@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -165,6 +165,26 @@ test("CLI 상대경로 실행은 --output 파일을 생성한다", async () => {
       ["tools/datapack/normalize-transfer-distance-duration-rows.mjs", "--rows", rowsPath, "--output", outputPath],
       { cwd: process.cwd() },
     );
+    const result = JSON.parse(await readFile(outputPath, "utf8"));
+    assert.equal(result.normalizedRows[0].환승소요시간, 62);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("CLI URL 인코딩 경로 실행도 --output 파일을 생성한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "transfer normalizer-"));
+  const scriptDir = path.join(outputDir, "script path");
+  const scriptPath = path.join(scriptDir, "normalize rows.mjs");
+  const rowsPath = path.join(outputDir, "rows.json");
+  const outputPath = path.join(outputDir, "normalized.json");
+  try {
+    await mkdir(path.join(scriptDir, "lib"), { recursive: true });
+    await copyFile("tools/datapack/normalize-transfer-distance-duration-rows.mjs", scriptPath);
+    await copyFile("tools/datapack/lib/ledger-admission-cli.mjs", path.join(scriptDir, "lib/ledger-admission-cli.mjs"));
+    await writeFile(rowsPath, `${JSON.stringify([transferRow()])}\n`);
+    const canonicalScriptPath = await realpath(scriptPath);
+    await execFileAsync(process.execPath, [canonicalScriptPath, "--rows", rowsPath, "--output", outputPath]);
     const result = JSON.parse(await readFile(outputPath, "utf8"));
     assert.equal(result.normalizedRows[0].환승소요시간, 62);
   } finally {
