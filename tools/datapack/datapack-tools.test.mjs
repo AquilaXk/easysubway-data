@@ -197,7 +197,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 15);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 16);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
@@ -647,7 +647,7 @@ test("데이터팩 검증기는 공개 채널 user_version 상한을 넘는 pack
       ],
       { cwd: root, env: productionEnv },
     ),
-    /capital@1 catalog user_version 15 exceeds public compatibility maximum 14/,
+    /capital@1 catalog user_version 16 exceeds public compatibility maximum 14/,
   );
 });
 
@@ -674,7 +674,7 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 15);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 16);
     assert.equal(
       database.prepare("SELECT feed_end_date FROM transit_feed_info").get().feed_end_date,
       "20261231",
@@ -2744,7 +2744,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 15);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 16);
     assert.deepEqual(
       {
         ...database
@@ -14350,4 +14350,140 @@ test("build-admin-review-record 산출물은 run-source-admission-pipeline을 �
   assert.equal(summary.aliasLedgerHash, JSON.parse(await readFile(ledgerFiles.alias, "utf8")).ledgerHash);
   assert.equal(summary.overrideHash, JSON.parse(await readFile(ledgerFiles.override, "utf8")).ledgerHash);
   assert.equal(summary.licenseEvidenceHash, JSON.parse(await readFile(ledgerFiles.license, "utf8")).ledgerHash);
+});
+
+// station_car_door_hints(빠른하차 칸/문 힌트) 범위·enum·FK negative gate.
+// 유효한 station-line은 fixture의 station-sadang/seoul-4를 사용한다.
+function baseCarDoorHint(overrides = {}) {
+  return {
+    id: "car-door-hint-sadang-seoul-4-stair",
+    stationId: "station-sadang",
+    lineId: "seoul-4",
+    direction: "UP",
+    targetFacilityType: "STAIR",
+    carNumber: 3,
+    doorNumber: 2,
+    ...overrides,
+  };
+}
+
+async function prepareCarDoorHintFixture(label, hintOverrides) {
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-${label}-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  fixture.packs[0].stationCarDoorHints = [baseCarDoorHint(hintOverrides)];
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  return { outputDir, fixturePath };
+}
+
+test("데이터팩 생성기·검증기는 유효한 station_car_door_hints를 적재하고 통과시킨다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-valid", {});
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+    { cwd: root, env: productionEnv },
+  );
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/validate-datapack.mjs", "--manifest", path.join(outputDir, "current.json"), "--root", outputDir],
+    { cwd: root, env: productionEnv },
+  );
+
+  const packBytes = await readFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"));
+  const sqlitePath = path.join(outputDir, "capital-v1.sqlite");
+  await writeFile(sqlitePath, gunzipSync(packBytes));
+  const readback = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const row = readback
+      .prepare("SELECT car_number, door_number, target_facility_type FROM station_car_door_hints")
+      .get();
+    assert.equal(row.car_number, 3);
+    assert.equal(row.door_number, 2);
+    assert.equal(row.target_facility_type, "STAIR");
+  } finally {
+    readback.close();
+  }
+});
+
+test("데이터팩 생성기는 car_number 0을 CHECK 위반으로 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-car0", { carNumber: 0 });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /CHECK constraint failed|car_number/,
+  );
+});
+
+test("데이터팩 생성기는 car_number 11을 CHECK 위반으로 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-car11", { carNumber: 11 });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /CHECK constraint failed|car_number/,
+  );
+});
+
+test("데이터팩 생성기는 door_number 0을 CHECK 위반으로 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-door0", { doorNumber: 0 });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /CHECK constraint failed|door_number/,
+  );
+});
+
+test("데이터팩 생성기는 door_number 5를 CHECK 위반으로 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-door5", { doorNumber: 5 });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /CHECK constraint failed|door_number/,
+  );
+});
+
+test("데이터팩 생성기는 허용 밖 target_facility_type을 CHECK 위반으로 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-facility", {
+    targetFacilityType: "ESCALATOR_BROKEN",
+  });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /CHECK constraint failed|target_facility_type/,
+  );
+});
+
+test("데이터팩 생성기는 station_lines에 없는 station_car_door_hints FK를 거부한다", async () => {
+  // build-datapack.mjs는 PRAGMA foreign_keys=ON으로 적재하므로 station_lines에 없는
+  // (station_id, line_id) 참조는 build 단계에서 이미 거부된다(validator의 방어적 FK
+  // 검증까지 도달하지 못한다).
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-fk", {
+    stationId: "station-does-not-exist",
+  });
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /FOREIGN KEY constraint failed/,
+  );
 });

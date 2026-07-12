@@ -190,6 +190,7 @@ function validateSqlite(
     validateTransitSchedule(database, pack);
     validateFareTables(database, pack);
     validateStationPathways(database, pack);
+    validateStationCarDoorHints(database, pack);
     const productionCoverageError = validateProductionNetworkEdgeProvenance(database, pack);
     validateProductionInternalRouteEdgeProvenance(database, pack);
     validateProductionStationPathwayEdgeProvenance(database, pack);
@@ -480,6 +481,74 @@ function validateStationPathways(database, pack) {
     const strictAccessibilityStatus = String(strictEdge?.accessibility_status ?? "").toUpperCase();
     if (strictEdge && strictAccessibilityStatus !== "AVAILABLE") {
       throw new Error(`${pack.id}@${pack.version} transfer_rules strict step-free edge is unavailable: ${rule.id}`);
+    }
+  }
+}
+
+// 빠른하차 칸/문 힌트(station_car_door_hints)의 애플리케이션 레벨 방어 검증.
+// station_car_door_hints는 데이터 적재가 후속 PR로 예정되어 있어 아직 required table로
+// 편입하지 않는다 — 테이블이 없으면(적재 전 pack) 스킵한다.
+const CAR_DOOR_HINT_FACILITY_TYPES = new Set(["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"]);
+// 노선별 열차 편성 길이(칸수) 자료가 리포에 존재하지 않으므로(2026-07 저장소 전반 실측:
+// consist length/편성 길이 테이블 없음) car_number는 전역 상한
+// 1~10, door_number는 1~4를 사용한다. 이 상한은 스키마 CHECK 제약이 1차 방어선이며, 여기서는
+// 스키마를 우회하는 경로(예: 향후 다른 삽입 경로)에 대비한 방어적 2차 검증이다. 노선별 편성
+// 자료가 리포에 편입되면 그 자료로 노선별 상한 대조로 강화한다.
+const CAR_DOOR_HINT_MAX_CAR_NUMBER = 10;
+const CAR_DOOR_HINT_MAX_DOOR_NUMBER = 4;
+
+function validateStationCarDoorHints(database, pack) {
+  if (!hasTable(database, "station_car_door_hints")) {
+    return;
+  }
+
+  const hints = database
+    .prepare(
+      `
+      SELECT id, station_id, line_id, target_facility_type, car_number, door_number
+      FROM station_car_door_hints
+      ORDER BY id
+    `,
+    )
+    .all();
+
+  const stationLineKeys = new Set(
+    database
+      .prepare("SELECT station_id, line_id FROM station_lines")
+      .all()
+      .map((row) => `${row.station_id} ${row.line_id}`),
+  );
+
+  for (const hint of hints) {
+    if (!CAR_DOOR_HINT_FACILITY_TYPES.has(hint.target_facility_type)) {
+      throw new Error(
+        `${pack.id}@${pack.version} station_car_door_hints target_facility_type is invalid: ${hint.id}`,
+      );
+    }
+    if (
+      !Number.isInteger(hint.car_number) ||
+      hint.car_number < 1 ||
+      hint.car_number > CAR_DOOR_HINT_MAX_CAR_NUMBER
+    ) {
+      throw new Error(
+        `${pack.id}@${pack.version} station_car_door_hints car_number out of range: ${hint.id}`,
+      );
+    }
+    if (
+      !Number.isInteger(hint.door_number) ||
+      hint.door_number < 1 ||
+      hint.door_number > CAR_DOOR_HINT_MAX_DOOR_NUMBER
+    ) {
+      throw new Error(
+        `${pack.id}@${pack.version} station_car_door_hints door_number out of range: ${hint.id}`,
+      );
+    }
+    // FK 정합은 PRAGMA foreign_key_check가 1차로 잡지만, station-line 참조 정합을
+    // 명시적으로 재확인한다(방어적 계층 원칙).
+    if (!stationLineKeys.has(`${hint.station_id} ${hint.line_id}`)) {
+      throw new Error(
+        `${pack.id}@${pack.version} station_car_door_hints references missing station-line: ${hint.id}`,
+      );
     }
   }
 }

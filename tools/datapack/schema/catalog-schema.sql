@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 15;
+PRAGMA user_version = 16;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -461,6 +461,25 @@ CREATE TABLE transfer_rules (
   FOREIGN KEY (strict_step_free_pathway_edge_id) REFERENCES station_pathway_edges(id)
 );
 
+CREATE TABLE station_car_door_hints (
+  id TEXT NOT NULL PRIMARY KEY,
+  station_id TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  direction TEXT NOT NULL DEFAULT '',
+  target_facility_type TEXT NOT NULL,
+  car_number INTEGER NOT NULL CHECK (car_number >= 1 AND car_number <= 10),
+  door_number INTEGER NOT NULL CHECK (door_number >= 1 AND door_number <= 4),
+  source_id TEXT NOT NULL DEFAULT '',
+  source_snapshot_id TEXT NOT NULL DEFAULT '',
+  provider_record_hash TEXT NOT NULL DEFAULT '',
+  provenance_kind TEXT NOT NULL DEFAULT 'UNKNOWN',
+  verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+  last_verified_at INTEGER NOT NULL DEFAULT 0,
+  evidence_hash TEXT NOT NULL DEFAULT '',
+  CHECK (target_facility_type IN ('STAIR', 'ELEVATOR', 'ESCALATOR', 'TRANSFER')),
+  FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
+);
+
 CREATE TABLE data_quality_records (
   id TEXT NOT NULL PRIMARY KEY,
   target_type TEXT NOT NULL,
@@ -511,3 +530,4 @@ CREATE INDEX idx_internal_route_edges_from ON internal_route_edges(from_node_id)
 CREATE INDEX idx_station_pathway_nodes_station ON station_pathway_nodes(station_id, line_id, node_type);
 CREATE INDEX idx_station_pathway_edges_from ON station_pathway_edges(from_node_id);
 CREATE INDEX idx_transfer_rules_from_line ON transfer_rules(from_station_id, from_line_id);
+CREATE INDEX idx_station_car_door_hints_station ON station_car_door_hints(station_id, line_id);
