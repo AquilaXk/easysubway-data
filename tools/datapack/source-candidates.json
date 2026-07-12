@@ -12,8 +12,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo&page=2",
@@ -35,11 +38,33 @@
           "stinConsOrdr",
           "stinNm"
         ],
+        "liveSampleRetrievedAt": "2026-07-11T09:58:45Z",
+        "liveSampleFormat": "xml",
+        "liveSampleRowCount": 14,
+        "liveSampleRawSha256": "b886b7652cc9be69efb6a8acbdfdcb12f8110f15cdc2dcc5481455abb7fe8e9f",
+        "liveSampleSchemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
+        "liveSampleEvidenceHash": "bf0d324018c6d2353bfe4da8c7385ef867aacb27a26dcda311a259641a35aa03",
+        "liveSampleFields": [
+          "lnCd",
+          "mreaWideCd",
+          "railOprIsttCd",
+          "routCd",
+          "routNm",
+          "stinCd",
+          "stinConsOrdr",
+          "stinNm"
+        ],
+        "liveSampleNote": "2026-07-11 workflow run 29148603270 (head 6d8e4f8f3fc8398f981555e99bb37ba34e7afcd1)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=14인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다. raw/provider-record 독립 재계산은 수행하지 않음. raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않음. sample tuple mreaWideCd=01, lnCd=A1은 4호선 coverage가 아님.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "licenseCommercialRedistributionEvidence",
+          "line4RouteStationOrderCoverage",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ]
       },
-      "nextAction": "verify live sample response and route station order coverage before production inventory admission",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and 4호선 route station order coverage before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -74,8 +99,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=183&service=convenientInfo&operation=stationInfo&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=183&service=convenientInfo&operation=stationInfo&page=2",
@@ -105,11 +133,42 @@
           "stinNmTradcina",
           "strkZone"
         ],
+        "liveSampleRetrievedAt": "2026-07-11T10:02:54Z",
+        "liveSampleFormat": "xml",
+        "liveSampleRowCount": 1,
+        "liveSampleRawSha256": "dcccbf5c08a51c453264f8b56d3135e0a44a92acc6e4d9ca588f5dfa0c568297",
+        "liveSampleSchemaFingerprint": "b33b608e3cdcc3610e3a41ab789d10294745fef124321887089291b62ee709f9",
+        "liveSampleEvidenceHash": "cf5b877a765f5d84b48450b6aa5ef5fe9fea5776ca856dba7dafccada9a6d2de",
+        "liveSampleFields": [
+          "lnCd",
+          "lonmAdr",
+          "mapCordX",
+          "mapCordY",
+          "railOprIsttCd",
+          "roadNmAdr",
+          "stinCd",
+          "stinLocLat",
+          "stinLocLon",
+          "stinNm",
+          "stinNmEng",
+          "stinNmJpn",
+          "stinNmRom",
+          "stinNmSimpcina",
+          "stinNmTradcina",
+          "strkZone"
+        ],
+        "liveSampleNote": "2026-07-11 workflow run 29148721533 (head 6d8e4f8f3fc8398f981555e99bb37ba34e7afcd1)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=1인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다. raw/provider-record 독립 재계산은 수행하지 않음. raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않음. sample tuple railOprIsttCd=KR, lnCd=1, stinCd=135, stinNm=용산은 4호선 coverage가 아님.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "licenseCommercialRedistributionEvidence",
+          "kricStandardStationFileComparison",
+          "line4StationCoverage",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ]
       },
-      "nextAction": "verify live sample response and compare with KRIC standard station file before production inventory admission",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, KRIC standard station file comparison, and 4호선 station coverage before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
