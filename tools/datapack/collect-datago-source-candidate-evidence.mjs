@@ -68,7 +68,7 @@ export function resolveDatagoCandidateRequest(candidatesDocument, candidateId) {
     throw new Error(`${candidateId} sampleUrl must contain exactly one redacted serviceKey`);
   }
 
-  const formatParam = ["format", "dataType", "_type"]
+  const formatParam = ["format", "dataType", "_type", "returnType"]
     .map((name) => sampleUrl.searchParams.get(name))
     .find((value) => value !== null);
   const format = requiredText(formatParam, `${candidateId} sample format`).toLowerCase();

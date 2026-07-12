@@ -130,6 +130,18 @@ test("Data.go.kr evidence collector는 dataType/_type 쿼리 파라미터도 sam
   );
 });
 
+test("Data.go.kr evidence collector는 odcloud returnType 쿼리 파라미터도 sample format으로 인식한다", () => {
+  const returnTypeCandidate = {
+    ...candidate,
+    evidence: {
+      ...candidate.evidence,
+      sampleUrl: candidate.evidence.sampleUrl.replace("format=json", "returnType=JSON"),
+    },
+  };
+  const request = resolveDatagoCandidateRequest({ candidates: [returnTypeCandidate] }, returnTypeCandidate.id);
+  assert.equal(request.format, "json");
+});
+
 test("Data.go.kr evidence collector는 endpoint 미확정 후보를 수집 전에 게이트한다", () => {
   // 실제 source-candidates.json 신규 2건 형태: evidence에 endpoint/sampleUrl 없음, 최상위 requestUrl 없음.
   const unconfirmed = {
