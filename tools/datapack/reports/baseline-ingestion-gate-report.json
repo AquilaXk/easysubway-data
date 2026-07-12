@@ -1,0 +1,172 @@
+{
+  "artifactKind": "baseline-ingestion-gate-report",
+  "coverage": {
+    "carDoor": {
+      "admittedByStation": {
+        "station-gangnam": 10,
+        "station-sadang": 21,
+        "station-seongsu": 4
+      },
+      "admittedHints": 35,
+      "duplicateRows": 0,
+      "quarantineReasonCounts": {
+        "line roster match failed": 6,
+        "station roster match failed": 2317
+      },
+      "quarantinedRows": 2323,
+      "totalRows": 2358
+    },
+    "transfer": {
+      "admittedRules": 3,
+      "admittedStations": [
+        "station-gangnam",
+        "station-sadang"
+      ],
+      "description": "admittedRules는 station·line 매칭으로 rule을 생성한 행 수이고, quarantinedRows에는 이후 pathway edge 생성 실패도 포함하므로 두 집계는 서로 배타적이지 않다. 따라서 각 분류의 합계가 totalRows를 초과할 수 있다.",
+      "fixtureReflectedRules": {
+        "count": 2,
+        "note": "importer는 사당 양방향(2→4/4→2)을 각각 rule로 산출하지만(admittedRules에 2건 포함), 팩에는 사당 방향쌍을 기존 수기 정본 rule(transfer-sadang-seoul-4-to-seoul-2, 공식 62초로 갱신) 1건으로 유지한다. 따라서 catalog-fixture.transferRules는 사당 1건 + 강남 1건 = 2건이다."
+      },
+      "malformedRows": 0,
+      "quarantineReasonCounts": {
+        "line roster match failed": 4,
+        "platform node missing for baseline pathway edge": 2,
+        "station roster match failed": 137
+      },
+      "quarantinedRows": 143,
+      "selfLoopExcludedRules": [
+        {
+          "fromLineId": "seoul-2",
+          "reason": "from_line_id == to_line_id (무의미한 자기루프 — 적재 제외)",
+          "stationId": "station-seongsu",
+          "toLineId": "seoul-2"
+        }
+      ],
+      "totalRows": 145,
+      "uniqueStationNames": 74
+    }
+  },
+  "gateInternalConsistency": {
+    "admittedRuleCount": 3,
+    "description": "적재 대상(capital roster 매칭 성공분)의 방향쌍 존재/소요시간 불일치·중복을 리포트한다. capital 6역 스코프 한정이라 전량 내부 정합은 roster 확장이 필요하며(비범위), 매칭 실패 전량 행은 coverage.quarantine으로 집계된다.",
+    "directionPairReport": [
+      {
+        "forwardMinTransferSeconds": 178,
+        "fromLineId": "seoul-2",
+        "hasReverse": false,
+        "reverseMinTransferSeconds": null,
+        "secondsMismatch": false,
+        "stationId": "station-gangnam",
+        "toLineId": "shinbundang"
+      },
+      {
+        "forwardMinTransferSeconds": 62,
+        "fromLineId": "seoul-2",
+        "hasReverse": true,
+        "reverseMinTransferSeconds": 62,
+        "secondsMismatch": false,
+        "stationId": "station-sadang",
+        "toLineId": "seoul-4"
+      }
+    ],
+    "duplicateReport": [],
+    "selfLoopExcluded": [
+      {
+        "fromLineId": "seoul-2",
+        "stationId": "station-seongsu",
+        "toLineId": "seoul-2"
+      }
+    ]
+  },
+  "gateKricStructuralAlignment": {
+    "description": "충무로역 KRIC 동선(3호선↔4호선 detailed tuple) 존재와 환승소요시간 baseline 충무로(3↔4, 17m/00:14) 존재의 구조 정합을 명시 기록한다.",
+    "kricMovementDetailed": {
+      "admitted": true,
+      "evidenceValidation": {
+        "evidenceHash": "055cda38e2a297d53f3fb7dd0a8c0a6069fd4517d33557bfdf97637728a22743",
+        "failures": [],
+        "rawSha256": "93f75d6049655663ee0f14ca88347b9645781feaf5085cbf5a0013e4d7156a66",
+        "status": "PASS"
+      },
+      "requestContext": {
+        "admissionSnapshotId": "kric-transfer-movement-detailed-admission-20260713",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/transferMovement",
+        "tuple": {
+          "chthTgtLn": "4",
+          "chtnNextStinCd": "424",
+          "lnCd": "3",
+          "prevStinCd": "422",
+          "railOprIsttCd": "S1",
+          "stinCd": "321"
+        }
+      },
+      "resultCode": "00",
+      "sourceId": "kric-transfer-movement-detailed",
+      "station": "충무로(3호선↔4호선)",
+      "stepCount": 8
+    },
+    "kricStandardResult": {
+      "reason": "row-bearing standard response artifact가 제공되지 않아 resultCode를 추정하지 않고 SKIPPED 처리한다.",
+      "resultCode": null,
+      "sourceId": "kric-transfer-movement-standard",
+      "status": "SKIPPED",
+      "stepCount": 0
+    },
+    "note": "충무로 baseline은 capital 6역에 없으므로 팩에는 적재되지 않는다 — 전량 기준 교차검증 근거로만 리포트에 남긴다.",
+    "structurallyAligned": true,
+    "transferBaselineChungmuro": [
+      {
+        "호선": "3호선",
+        "환승거리": 17,
+        "환승노선": "4호선",
+        "환승소요시간": 14
+      },
+      {
+        "호선": "4호선",
+        "환승거리": 17,
+        "환승노선": "3호선",
+        "환승소요시간": 14
+      }
+    ]
+  },
+  "gateTimeSourceDistinction": {
+    "baselineEdgeCount": 1,
+    "baselineEdgeProvenanceKinds": [
+      "OFFICIAL_SOURCE"
+    ],
+    "description": "station_pathway_edges 스키마의 provenance_kind가 OFFICIAL_SOURCE(공식 baseline)와 거리기반 추정류를 구분하는 축이다. importer가 baseline edge에 provenanceKind:OFFICIAL_SOURCE를 고정하는 것을 node --test로 고정했다 (import-transfer-baseline.test.mjs).",
+    "edgeChecks": [
+      {
+        "edgeId": "path-edge-sadang-4-to-2-fast",
+        "failures": [],
+        "provenanceKind": "OFFICIAL_SOURCE",
+        "ruleId": "transfer-sadang-seoul-4-to-seoul-2"
+      }
+    ],
+    "edgeMissing": [
+      {
+        "reason": "이 rule이 연결하는 역에 플랫폼 노드가 없어 pathway edge가 생성되지 않는 기지의 한계다 — edge 실검증 대상에서 제외하고 이 사실만 명시 기록한다(조용히 빼지 않는다).",
+        "ruleId": "transfer-station-gangnam-seoul-2-shinbundang"
+      }
+    ],
+    "note": "신규 생성 edge와 공식 baseline rule이 참조하는 기존 pathway edge를 함께 검사한다. pathwayEdgeId가 없는 공식 rule은 edgeMissing에 명시 기록하고 edge 실검증에서는 제외한다(조용히 빼지 않는다). 연결 edge와 edgeMissing이 모두 없으면 SKIPPED, 모든 연결 edge의 source·snapshot·OFFICIAL_SOURCE provenance가 유효하고 edgeMissing으로 명시된 rule 외에 빠진 rule이 없으면 PASS, 연결 edge 중 하나라도 검증에 실패하면 FAIL이다.",
+    "provenanceKindAxis": "OFFICIAL_SOURCE",
+    "status": "PASS"
+  },
+  "metadata": {
+    "countingBasis": "coverage와 desk 게이트 수치는 수집 전량(환승역거리 소요시간 145행, 빠른하차 2358행) 기준으로 계산한다. 팩 적재 매칭은 capital 6역(상록수·사당·강남·정자·성수·신설동) roster 스코프로 한정되어 대부분의 전량 행은 roster 밖이라 quarantine된다 — 이 한정 사유를 정직하게 계측한다.",
+    "issue": "#1701",
+    "officialSources": {
+      "carDoor": "seoul-metro-fast-exit-car-door",
+      "kricMovement": "kric-transfer-movement-detailed",
+      "transfer": "seoul-metro-transfer-distance-duration"
+    },
+    "reproducibility": "tracked snapshot; regenerated only from local-only raw inputs (.codex/evidence/1701/, gitignored)",
+    "scopeDecision": "프로덕션 pilot 팩 적재는 이 PR의 비범위이며 #1702/#1414 트랙 후속이다. 이 리포트의 팩 적재 대상은 capital 참조 팩(tools/datapack/fixtures/catalog-fixture.json)뿐이며, tools/datapack/release/의 프로덕션 pilot 팩·tools/datapack/inputs/*·release gate는 건드리지 않았다."
+  },
+  "pilotFieldDeviation": {
+    "reason": "상록수·사당 pilot 실측 편차 검증은 2026-07-06 field-work 트랙으로 이관됐다(#1394 실측이 field-work 트랙 이관 결정). 이 PR에서는 SKIPPED로 정직 기록한다.",
+    "status": "SKIPPED"
+  },
+  "schemaVersion": 1
+}

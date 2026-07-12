@@ -84,14 +84,18 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.version, "1");
   assert.equal(pack.artifactKind, "fixture");
   assert.equal(pack.url, "catalog/capital-v1.sqlite.gz");
-  assert.deepEqual(pack.sourceInventory.map((source) => source.id), [
-    "fixture-capital-catalog",
-    "seoul-metro-official-od-fares",
-  ]);
+  assert.equal(pack.sourceInventory.length, 4);
   assert.equal(pack.sourceInventory[0].id, "fixture-capital-catalog");
   assert.equal(pack.sourceInventory[0].licenseStatus, "fixture-only");
   assert.equal(pack.sourceInventory[0].updatedAt, "2026-06-19T00:00:00.000Z");
-  assert.deepEqual(pack.sourceInventory[1].coverageScope.sourceDomains, ["official_od_fares"]);
+  const sourceIds = pack.sourceInventory.map((source) => source.id);
+  assert.ok(sourceIds.includes("seoul-metro-transfer-distance-duration"));
+  assert.ok(sourceIds.includes("seoul-metro-fast-exit-car-door"));
+  assert.ok(sourceIds.includes("seoul-metro-official-od-fares"));
+  const officialOdFareSource = pack.sourceInventory.find(
+    (source) => source.id === "seoul-metro-official-od-fares",
+  );
+  assert.deepEqual(officialOdFareSource.coverageScope.sourceDomains, ["official_od_fares"]);
   assert.equal(pack.regionalQualityMetrics.stationCount, 6);
   assert.equal(pack.regionalQualityMetrics.facilityCoverageRatio, 0.3333);
   assert.equal(pack.regionalQualityMetrics.requiredFacilityEvidenceCoverageRatio, 0.1852);
@@ -152,6 +156,8 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
     "station_exits",
     "facilities",
     "data_quality_records",
+    // #1701: 빠른하차 칸/문 힌트 테이블을 required-table 계약에 편입.
+    "station_car_door_hints",
   ]);
   assert.equal(pack.minimumTableRows.stations, 6);
   assert.equal(pack.minimumTableRows.service_calendar_dates, 1);
@@ -163,12 +169,15 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   assert.equal(pack.minimumTableRows.fare_rules, 1);
   assert.equal(pack.minimumTableRows.fare_discounts, 3);
   assert.equal(pack.minimumTableRows.station_fare_zones, 9);
-  assert.equal(pack.minimumTableRows.transfer_rules, 1);
+  // #1701: 사당(공식 62초 갱신) + 강남(신분당선 178초 baseline)으로 transfer_rules 2행.
+  assert.equal(pack.minimumTableRows.transfer_rules, 2);
   assert.equal(pack.minimumTableRows.station_pathway_nodes, 6);
   assert.equal(pack.minimumTableRows.station_pathway_edges, 5);
   assert.equal(pack.minimumTableRows.out_of_station_transfer_links, 1);
   assert.equal(pack.minimumTableRows.route_map_positions, 9);
   assert.equal(pack.minimumTableRows.data_quality_records, 5);
+  // #1701: 빠른하차 칸/문 힌트 admitted 35행을 최소 계약으로 고정한다.
+  assert.equal(pack.minimumTableRows.station_car_door_hints, 35);
   assert.match(pack.sha256, /^[a-f0-9]{64}$/);
   assert.match(pack.sqliteSha256, /^[a-f0-9]{64}$/);
 
@@ -229,6 +238,45 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
         source_id: "fixture-capital-catalog",
         source_snapshot_id: "fixture-capital-catalog-20260619",
       },
+    );
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+              SELECT duration_seconds, distance_meters, source_id, source_snapshot_id, provenance_kind
+              FROM station_pathway_edges
+              WHERE id = ?
+            `,
+          )
+          .get("path-edge-sadang-4-to-2-fast"),
+      },
+      {
+        duration_seconds: 62,
+        distance_meters: 74,
+        source_id: "seoul-metro-transfer-distance-duration",
+        source_snapshot_id: "seoul-metro-transfer-distance-duration-admission-20260713",
+        provenance_kind: "OFFICIAL_SOURCE",
+      },
+    );
+    assert.deepEqual(
+      {
+        ...database
+          .prepare(
+            `
+              SELECT COUNT(*) AS count
+              FROM station_car_door_hints
+              WHERE provenance_kind = 'OFFICIAL'
+                AND source_id = ?
+                AND source_snapshot_id = ?
+            `,
+          )
+          .get(
+            "seoul-metro-fast-exit-car-door",
+            "seoul-metro-fast-exit-car-door-admission-20260713",
+          ),
+      },
+      { count: 35 },
     );
     assert.deepEqual(
       database
@@ -407,7 +455,9 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
           .get("station-sadang", "seoul-4", "station-sadang", "seoul-2"),
       },
       {
-        min_transfer_seconds: 210,
+        // #1701: 사당 환승소요시간을 서울교통공사 공식 baseline(환승역거리 소요시간, 74m/01:02=62초)으로
+        // 교체했다. 기존 수기값 210초는 공식값 62초로 갱신됨(공식값 우선). pathway edge 리치 구조는 보존.
+        min_transfer_seconds: 62,
         pathway_edge_id: "path-edge-sadang-4-to-2-fast",
         strict_step_free_pathway_edge_id: "path-edge-sadang-4-to-2-step-free",
       },
@@ -565,8 +615,26 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
         id: "edge-sadang-line4-line2-transfer",
         from_node_id: "station-sadang:seoul-4",
         to_node_id: "station-sadang:seoul-2",
-        duration_seconds: 140,
-        distance_meters: 80,
+        duration_seconds: 62,
+        distance_meters: 74,
+        edge_type: "IN_STATION_TRANSFER",
+        service_pattern: "LOCAL",
+        includes_stairs: 0,
+        stair_access_state: "STEP_FREE",
+        accessibility_status: "AVAILABLE",
+        reliability_score: 90,
+        facility_id: null,
+        last_verified_at: 1781827200,
+      },
+    );
+    assert.deepEqual(
+      networkEdges.find((row) => row.id === "edge-gangnam-line2-shinbundang-transfer"),
+      {
+        id: "edge-gangnam-line2-shinbundang-transfer",
+        from_node_id: "station-gangnam:seoul-2",
+        to_node_id: "station-gangnam:shinbundang",
+        duration_seconds: 178,
+        distance_meters: 110,
         edge_type: "IN_STATION_TRANSFER",
         service_pattern: "LOCAL",
         includes_stairs: 0,
@@ -15062,6 +15130,7 @@ async function prepareCarDoorHintFixture(label, hintOverrides) {
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   fixture.packs[0].stationCarDoorHints = [baseCarDoorHint(hintOverrides)];
+  fixture.packs[0].minimumTableRows.station_car_door_hints = 1;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   return { outputDir, fixturePath };
 }
@@ -15105,6 +15174,55 @@ test("데이터팩 생성기는 car_number 0을 CHECK 위반으로 거부한다"
       { cwd: root, env: productionEnv },
     ),
     /CHECK constraint failed|car_number/,
+  );
+});
+
+test("데이터팩 생성기는 OFFICIAL car-door hint의 빈 sourceSnapshotId를 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-official-snapshot", {
+    provenanceKind: "OFFICIAL",
+    sourceId: "official-source",
+    sourceSnapshotId: "",
+  });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /stationCarDoorHints\.sourceSnapshotId/,
+  );
+});
+
+test("데이터팩 생성기는 공백 포함 OFFICIAL provenance를 정규화하고 빈 sourceId를 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-official-source", {
+    provenanceKind: " OFFICIAL ",
+    sourceId: " ",
+    sourceSnapshotId: "snapshot",
+  });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /stationCarDoorHints\.sourceId/,
+  );
+});
+
+test("데이터팩 생성기는 OFFICIAL car-door hint의 빈 providerRecordHash를 거부한다", async () => {
+  const { outputDir, fixturePath } = await prepareCarDoorHintFixture("car-door-official-provider-hash", {
+    provenanceKind: "OFFICIAL",
+    sourceId: "official-source",
+    sourceSnapshotId: "official-snapshot",
+    providerRecordHash: "",
+  });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", outputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /stationCarDoorHints\.providerRecordHash/,
   );
 });
 

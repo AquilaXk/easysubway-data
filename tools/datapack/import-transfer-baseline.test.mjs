@@ -232,3 +232,22 @@ test("distanceMeters 형식 오류 → quarantine", () => {
   assert.equal(result.quarantine.length, 1);
   assert.match(result.quarantine[0].reason, /환승거리/);
 });
+
+// #1701 desk 게이트 ③ (timeSource 구분): baseline pathway edge는 항상 provenance_kind =
+// OFFICIAL_SOURCE로 고정된다. 이 축이 OFFICIAL_SOURCE(공식 baseline)와 거리기반 추정(DISTANCE_ESTIMATE)류를
+// 구분하는 기준이며, importer가 공식 소요시간 데이터에서 만든 edge는 항상 공식 provenance로 태깅됨을 고정한다.
+test("게이트③ timeSource 구분: baseline edge provenance_kind는 OFFICIAL_SOURCE로 고정", () => {
+  const result = buildTransferBaseline({
+    roster,
+    rows: [transferRow(), transferRow({ 호선: "4호선", 환승노선: "2호선", 환승소요시간: 62 })],
+    existingNodes: sadangPlatformNodes,
+    sourceId: "seoul-metro-transfer-distance-duration",
+    verificationStatus: "VERIFIED",
+  });
+  assert.equal(result.stationPathwayEdges.length, 2);
+  for (const edge of result.stationPathwayEdges) {
+    assert.equal(edge.provenanceKind, "OFFICIAL_SOURCE");
+    assert.equal(edge.sourceId, "seoul-metro-transfer-distance-duration");
+    assert.equal(edge.verificationStatus, "VERIFIED");
+  }
+});

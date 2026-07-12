@@ -1655,22 +1655,33 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmission) {
           "evidence_hash",
         ],
         pack.stationCarDoorHints ?? [],
-        (row) => [
-          requiredString(row.id, "stationCarDoorHints.id"),
-          requiredString(row.stationId, "stationCarDoorHints.stationId"),
-          requiredString(row.lineId, "stationCarDoorHints.lineId"),
-          row.direction ?? "",
-          requiredString(row.targetFacilityType, "stationCarDoorHints.targetFacilityType"),
-          requiredInteger(row.carNumber, "stationCarDoorHints.carNumber"),
-          requiredInteger(row.doorNumber, "stationCarDoorHints.doorNumber"),
-          row.sourceId ?? "",
-          row.sourceSnapshotId ?? "",
-          row.providerRecordHash ?? "",
-          row.provenanceKind ?? "UNKNOWN",
-          row.verificationStatus ?? "UNKNOWN",
-          timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
-          row.evidenceHash ?? "",
-        ],
+        (row) => {
+          const provenanceKind =
+            row.provenanceKind == null
+              ? "UNKNOWN"
+              : requiredString(row.provenanceKind, "stationCarDoorHints.provenanceKind");
+          const isOfficial = provenanceKind === "OFFICIAL";
+          return [
+            requiredString(row.id, "stationCarDoorHints.id"),
+            requiredString(row.stationId, "stationCarDoorHints.stationId"),
+            requiredString(row.lineId, "stationCarDoorHints.lineId"),
+            row.direction ?? "",
+            requiredString(row.targetFacilityType, "stationCarDoorHints.targetFacilityType"),
+            requiredInteger(row.carNumber, "stationCarDoorHints.carNumber"),
+            requiredInteger(row.doorNumber, "stationCarDoorHints.doorNumber"),
+            isOfficial ? requiredString(row.sourceId, "stationCarDoorHints.sourceId") : row.sourceId ?? "",
+            isOfficial
+              ? requiredString(row.sourceSnapshotId, "stationCarDoorHints.sourceSnapshotId")
+              : row.sourceSnapshotId ?? "",
+            isOfficial
+              ? requiredString(row.providerRecordHash, "stationCarDoorHints.providerRecordHash")
+              : row.providerRecordHash ?? "",
+            provenanceKind,
+            row.verificationStatus ?? "UNKNOWN",
+            timestamp(row.verifiedAt ?? row.lastVerifiedAt) ?? 0,
+            row.evidenceHash ?? "",
+          ];
+        },
       );
       insertRows(
         database,
