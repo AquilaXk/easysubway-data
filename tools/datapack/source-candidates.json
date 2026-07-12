@@ -203,8 +203,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=3",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
@@ -220,11 +223,27 @@
           "railOprIsttCd",
           "railOprIsttNm"
         ],
+        "liveSampleRetrievedAt": "2026-07-12T17:04:26Z",
+        "liveSampleFormat": "xml",
+        "liveSampleRowCount": 1,
+        "liveSampleRawSha256": "78bfb7aac85ad6e2a032caa3e13c1981f1a5b477f1d471d11925d38f8eedda05",
+        "liveSampleSchemaFingerprint": "71679e88d954cea55f5c5b3d31b285588d356dca59c670c65bb18c193bfcb2c5",
+        "liveSampleEvidenceHash": "58c2bccb1270f7e0b81eea7dc3777aed4ddad6d88dc7d20e315e520e5b1586ce",
+        "liveSampleFields": [
+          "railOprIsttCd",
+          "railOprIsttNm"
+        ],
+        "liveSampleNote": "2026-07-12 workflow run 29201302750 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=1인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "licenseCommercialRedistributionEvidence",
+          "operatorCoverageEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ]
       },
-      "nextAction": "verify operator coverage for airport rail, GTX, and light rail before production inventory admission",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and operator coverage for airport rail, GTX, and light rail before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -259,8 +278,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=181&service=convenientInfo&operation=stationTransferInfo&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTransferInfo",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=181&service=convenientInfo&operation=stationTransferInfo&page=2",
@@ -281,11 +303,32 @@
           "stLocCont",
           "stinCd"
         ],
+        "liveSampleRetrievedAt": "2026-07-12T17:05:28Z",
+        "liveSampleFormat": "json",
+        "liveSampleRowCount": 4,
+        "liveSampleRawSha256": "4f6e82f8c4965cc358506be8f8d74252f2307807e65490da82a53d301f7f3dc0",
+        "liveSampleSchemaFingerprint": "4a7de9cfd32f958089da12bdc3ae80a00fd9ad13ab0fe2c35ae7b6a7c4b7fa00",
+        "liveSampleEvidenceHash": "86413bce43f163b7be74d75ba7cd1aa8b475f828f5bf23823115ef8cdc73fabd",
+        "liveSampleFields": [
+          "chtnDst",
+          "chtnLn",
+          "clsLocCont",
+          "lnCd",
+          "railOprIsttCd",
+          "stLocCont",
+          "stinCd"
+        ],
+        "liveSampleNote": "2026-07-12 workflow run 29201337952 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=4인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "licenseCommercialRedistributionEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri",
+          "stepFreeMovementSeparationEvidence"
         ]
       },
-      "nextAction": "verify live sample response and keep transfer relationship evidence separate from step-free movement evidence before production inventory admission",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and keep transfer relationship evidence separate from step-free movement evidence before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -306,9 +349,9 @@
         "facility": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "ADMISSION_EVIDENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+          "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
       }
     },
@@ -320,8 +363,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=433&service=convenientInfo&operation=stPlf&page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=433&service=convenientInfo&operation=stPlf&page=1",
@@ -348,12 +394,38 @@
           "stinFlor",
           "updnDvCd"
         ],
-        "liveSampleNote": "KRIC 공식 stPlf 문서는 updnDvcd로 표기하지만, 2026-07-11 workflow run 29151697392의 live JSON은 updnDvCd를 반환했다. 검증은 live wire 표기 updnDvCd를 따른다.",
+        "liveSampleRetrievedAt": "2026-07-12T17:05:33Z",
+        "liveSampleFormat": "json",
+        "liveSampleRowCount": 2,
+        "liveSampleRawSha256": "825099e3ee85505bb41f3af214c18ca8a01f421046f31dd9abc564e3911def81",
+        "liveSampleSchemaFingerprint": "764d4c96d2b8fe056c12621fb485587bd83d6aee3e99a5174f1fbf9a20d2a41f",
+        "liveSampleEvidenceHash": "f2d81fef2d1bd7bed85a36f27adde74c5b7033282a7fca50d98358d862a0e61a",
+        "liveSampleFields": [
+          "grndDvCd",
+          "lnCd",
+          "plfCplFlg",
+          "plfNo",
+          "plfTpCd",
+          "plfTpNm",
+          "railOprIsttCd",
+          "runDirTmnStinCd",
+          "scrCharExt",
+          "sfFotExt",
+          "stinCd",
+          "stinFlor",
+          "updnDvCd"
+        ],
+        "liveSampleNote": "KRIC 공식 stPlf 문서는 updnDvcd로 표기하지만 live wire는 updnDvCd를 반환한다. 2026-07-12 workflow run 29201338889 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=2인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "licenseCommercialRedistributionEvidence",
+          "operatorFieldCompletenessEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ]
       },
-      "nextAction": "verify live sample response and operator field completeness before production inventory admission",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and operator field completeness before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -374,9 +446,9 @@
         "facility": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "ADMISSION_EVIDENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+          "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
       }
     },
@@ -388,9 +460,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=429&service=handicapped&operation=stationMovement&page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationMovement",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
       "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=429&service=handicapped&operation=stationMovement&page=1",
@@ -412,15 +486,37 @@
           "mvPathMgNo",
           "stMovePath"
         ],
+        "liveSampleRetrievedAt": "2026-07-12T17:05:35Z",
+        "liveSampleFormat": "xml",
+        "liveSampleRowCount": 6,
+        "liveSampleRawSha256": "0608042eb039c664ac9e9a6fa0dba016fa82c15d06fc449ce0a975d3fc45c463",
+        "liveSampleSchemaFingerprint": "5c70f856c3ee0b18b8117c058766d46a0a3be9e9b6143a8613411d644f682ef0",
+        "liveSampleEvidenceHash": "cfa233eee0dbeaf4a8db7eb5798d081c1ce7e7e5a1dfae3d7bf8222902e1f365",
+        "liveSampleFields": [
+          "edMovePath",
+          "elvtSttCd",
+          "elvtTpCd",
+          "exitMvTpOrdr",
+          "imgPath",
+          "mvContDtl",
+          "mvPathMgNo",
+          "stMovePath"
+        ],
+        "liveSampleNote": "2026-07-12 workflow run 29201339728 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=6인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "distanceDurationEdgeEvidence",
+          "licenseCommercialRedistributionEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ],
         "missingConfirmedEdgeFields": [
           "distanceMeters",
           "durationSeconds"
         ]
       },
-      "nextAction": "verify live sample response and keep as admin review candidate until distance and duration evidence exists",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and distance and duration edge evidence before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -441,9 +537,9 @@
         "facility": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "ADMISSION_EVIDENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+          "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
       }
     },
@@ -455,9 +551,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=306&service=vulnerableUserInfo&operation=stationMovement&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationMovement",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
       "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=306&service=vulnerableUserInfo&operation=stationMovement&page=2",
@@ -479,15 +577,38 @@
           "mvPathMgNo",
           "stMovePath"
         ],
+        "liveSampleRetrievedAt": "2026-07-12T17:05:37Z",
+        "liveSampleFormat": "xml",
+        "liveSampleRowCount": 6,
+        "liveSampleRawSha256": "0608042eb039c664ac9e9a6fa0dba016fa82c15d06fc449ce0a975d3fc45c463",
+        "liveSampleSchemaFingerprint": "5c70f856c3ee0b18b8117c058766d46a0a3be9e9b6143a8613411d644f682ef0",
+        "liveSampleEvidenceHash": "b65952f44c16eceb3a4a6bf8f9ee3d22dca2246590678271e85f446eb862ac47",
+        "liveSampleFields": [
+          "edMovePath",
+          "elvtSttCd",
+          "elvtTpCd",
+          "exitMvTpOrdr",
+          "imgPath",
+          "mvContDtl",
+          "mvPathMgNo",
+          "stMovePath"
+        ],
+        "liveSampleNote": "2026-07-12 workflow run 29201340572 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=6인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingConfirmedEdgeFields": [
           "distanceMeters",
           "durationSeconds"
         ],
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "distanceDurationEdgeEvidence",
+          "licenseCommercialRedistributionEvidence",
+          "primarySourceDecisionEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ]
       },
-      "nextAction": "compare with standard movement API before choosing a primary source",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, distance and duration edge evidence, and compare with the standard movement API before choosing a primary source for production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -508,9 +629,9 @@
         "facility": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "ADMISSION_EVIDENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+          "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
       }
     },
@@ -531,7 +652,7 @@
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=331&prevStinCd=132&chthTgtLn=4&chtnNextStinCd=425",
-        "liveSampleNote": "KRIC 공식 상세 페이지 sample URL tuple 422/424와 요청변수 표 tuple 132/425는 불일치한다. 132/425는 KRIC 공식 요청변수 표에서 가져온 미검증 tuple이었다. 2026-07-11 workflow run 29155976812 (head 3bbb27594a38ef26f04aad5c5c5f6a423fcf1b5f)은 기존 tuple prevStinCd=422, chtnNextStinCd=424로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0을 확인했다. 이는 sampleResponse evidence가 아님. 2026-07-12 workflow run 29177451688 (head 3c3567b524a14f39a0bbe20a774259b7ba405694)은 요청변수 표 tuple prevStinCd=132, chtnNextStinCd=425로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0, artifactCount=0을 확인했고 sanitized sample artifact가 생성되지 않음. 2026-07-12 workflow run 29190982462 (head 93afed60a027c215af80039a11e8ee58d8178088)은 요청변수 표 tuple prevStinCd=132, chtnNextStinCd=425로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0, artifactCount=0을 확인했고 sanitized sample artifact가 생성되지 않음. resultCode=03의 공식 의미 매핑은 공개 문서에서 확인되지 않음.",
+        "liveSampleNote": "KRIC 공식 상세 페이지 sample URL tuple 422/424와 요청변수 표 tuple 132/425는 불일치한다. 132/425는 KRIC 공식 요청변수 표에서 가져온 미검증 tuple이었다. 2026-07-11 workflow run 29155976812 (head 3bbb27594a38ef26f04aad5c5c5f6a423fcf1b5f)은 기존 tuple prevStinCd=422, chtnNextStinCd=424로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0을 확인했다. 이는 sampleResponse evidence가 아님. 2026-07-12 workflow run 29177451688 (head 3c3567b524a14f39a0bbe20a774259b7ba405694)은 요청변수 표 tuple prevStinCd=132, chtnNextStinCd=425로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0, artifactCount=0을 확인했고 sanitized sample artifact가 생성되지 않음. 2026-07-12 workflow run 29190982462 (head 93afed60a027c215af80039a11e8ee58d8178088)은 요청변수 표 tuple prevStinCd=132, chtnNextStinCd=425로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0, artifactCount=0을 확인했고 sanitized sample artifact가 생성되지 않음. 2026-07-13 workflow run 29201341520 (head e451fbdf352fef74dc376c9f16d476aca287b492)도 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0, artifactCount=0을 재현했고 sanitized sample artifact가 생성되지 않음. resultCode=03의 공식 의미 매핑은 공개 문서에서 확인되지 않음.",
         "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
@@ -555,7 +676,7 @@
           "durationSeconds"
         ]
       },
-      "nextAction": "the table-derived tuple (prevStinCd=132, chtnNextStinCd=425) has been executed twice (runs 29177451688, 29190982462) and repeatedly returned no-data (resultCode=03) with unconfirmed public documentation for that code; next step is provider inquiry or confirming an alternate access path, while retaining admin review with automatic route graph edge disabled until row-bearing evidence plus distance and duration evidence exists",
+      "nextAction": "the table-derived tuple (prevStinCd=132, chtnNextStinCd=425) has been executed three times (runs 29177451688, 29190982462, 29201341520) and repeatedly returned no-data (resultCode=03) with unconfirmed public documentation for that code; next step is provider inquiry or confirming an alternate access path, while retaining admin review with automatic route graph edge disabled until row-bearing evidence plus distance and duration evidence exists",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -679,8 +800,11 @@
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
+      "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "evidence_recorded_admin_review_required",
+      "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=1",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
@@ -701,11 +825,32 @@
           "stinFlor",
           "trfcWeakDvCd"
         ],
+        "liveSampleRetrievedAt": "2026-07-12T17:05:39Z",
+        "liveSampleFormat": "json",
+        "liveSampleRowCount": 9,
+        "liveSampleRawSha256": "70ed3faa95bd937dfc6a777bb0f7ac3c0c0ea310372f830ff041f14b12bcdcfb",
+        "liveSampleSchemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+        "liveSampleEvidenceHash": "561610c243d8e4abf9a8760073eb0d49b403423471c623eb310f3419d06c8ce3",
+        "liveSampleFields": [
+          "dtlLoc",
+          "grndDvCd",
+          "gubun",
+          "imgPath",
+          "mlFmlDvCd",
+          "stinFlor",
+          "trfcWeakDvCd"
+        ],
+        "liveSampleNote": "2026-07-12 workflow run 29201342431 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=9인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "sampleResponse"
+          "adminAdmissionEvidence",
+          "credentialFreeRawArchive",
+          "licenseCommercialRedistributionEvidence",
+          "primarySourceDecisionEvidence",
+          "providerTermsOrQuotaApproval",
+          "rawObjectUri"
         ]
       },
-      "nextAction": "verify live sample response and decide primary or secondary role against detailed facility APIs before production inventory admission",
+      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and decide the primary or secondary role against detailed facility APIs before production inventory admission",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -726,9 +871,9 @@
         "facility": {
           "status": "CANDIDATE",
           "productionUseAllowed": false,
-          "coverageStatus": "SAMPLE_EVIDENCE_REQUIRED",
+          "coverageStatus": "ADMISSION_EVIDENCE_REQUIRED",
           "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
+          "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
       }
     },
