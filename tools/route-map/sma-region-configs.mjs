@@ -138,7 +138,184 @@ const BUSAN = {
   contentBand: { minY: 300, maxY: 2700 },
 };
 
-const REGION_CONFIGS = { seoul: SEOUL, busan: BUSAN };
+// ── 대구(daegu): #2011 3단계. 오너 자작 easy-subway-daegu-v1. ─────────────────
+// 문법 차이(수도권 대비): viewBox 2400×1800, route-line은 노선당 단일 <path>
+// (route-line-1/2/3/daegyeong 그룹), data-line 슬러그가 line1..line3/daegyeong,
+// lines.name_ko 접두가 "대구"이나 route_map_positions.region은 "대구권"(불일치),
+// 역 노드는 부산과 동일하게 [data-node-role][data-station] g(circle/g)로 마킹되고
+// 환승역은 data-line 빈값(멤버십 broadcast), 범례 노드(data-station="범례") 1개 존재.
+// 색↔슬러그는 도식 data-line-color 실측(line1=#ee265b·line2=#00b794·line3=#ffc513·
+// daegyeong=#0066b3). 대경선은 #1951 확정 4노선의 하나.
+const DAEGU = {
+  id: "daegu",
+  regionKey: "대구권",
+  lineNamePrefix: "대구",
+  svgSource: {
+    sourceId: "owner-self-drawn-sma-schematic",
+    sourceName: "오너 자작 대구 8선형 정본 도식",
+    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-daegu-v1.svg",
+    license: "self-drawn",
+    licenseStatus: "confirmed",
+    commercialUseAllowed: true,
+    attributionRequired: false,
+  },
+  slugToSuffix: {
+    line1: "1호선", line2: "2호선", line3: "3호선",
+    daegyeong: "대경선",
+  },
+  colorToSlug: {
+    "#ee265b": "line1", "#00b794": "line2", "#ffc513": "line3", "#0066b3": "daegyeong",
+  },
+  // 대구 도식은 data-line 없는 환승역을 멤버십으로 해소하므로 힌트 불필요.
+  missingLineHint: {},
+  markerlessFallback: [],
+  // 대구 카탈로그는 도식과 위상 일치(누락 없음). 예외 없음.
+  topologyExceptions: [],
+  // 정합 대상에서 제외할 SVG data-station:
+  //   범례(비역 노드),
+  //   북삼(실제 개통역이나 현행 카탈로그 미반영 — 비역 오인 아님. fail-closed로
+  //   억지 매핑하지 않고 명시 제외하며, 카탈로그 확장으로 정식 매핑은 추적 이슈 #2019에서
+  //   별도 진행한다. 이 PR 범위 밖).
+  excludedStations: ["범례", "북삼"],
+  // canonical 정합 규칙(대구 카탈로그 실측): 괄호 부제 제거(부호(경일대·호산대)→부호,
+  // 하양(대구가톨릭대)→하양), 서대구→서대구역.
+  canonicalRules: (svgName) => {
+    let name = svgName.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    if (name === "서대구") name = "서대구역";
+    return { name };
+  },
+  // 범례 노선 swatch(medY≈166, len 42px)를 콘텐츠 밴드 밖으로 배제한다. 실 노선
+  // path의 medY는 820~1193이므로 minY 300이면 범례 swatch만 걸러진다.
+  contentBand: { minY: 300, maxY: 1800 },
+};
+
+// ── 대전(daejeon): #2011 3단계. 오너 자작 easy-subway-daejeon-v1. ─────────────
+// 문법 차이(수도권·부산·대구 대비): 역 마커 g(station-symbol)는 data-node-role
+// 없이 data-line·data-station-code만 들고, 역 정체(이름)와 노드 좌표는 <text>
+// station-label의 data-full-official-name·data-node-x·data-node-y에 실린다.
+// 추출기의 라벨 앵커 노드 소스(data-node-x/y+data-full-official-name)가 이를
+// stationNodes로 승격한다. 도식은 카탈로그 밖 노선까지 그린다: 대전 2호선(도시철도
+// 순환2호선, data-line="2", 전부 construction), 충청권 광역철도(regional,
+// construction), 미개통 라벨(construction/planned). 카탈로그는 대전 1호선 1개
+// (22역)뿐이므로 nodeFilter로 1호선 실역만 남긴다.
+// 1호선 역은 두 갈래로 실린다: (a) data-line="1"·active 라벨 17개, (b) 환승역은
+// data-line="transfer"·active 라벨로 그려지며 이름이 "1호선 <역명> | 2호선 …"
+// 복합 표기다(5개: 대전역·대동·서대전네거리·정부청사·유성온천). canonicalRules가
+// 복합 표기에서 1호선 역명을 뽑고 카탈로그 표기로 정규화(대전역→대전 등).
+const DAEJEON = {
+  id: "daejeon",
+  regionKey: "대전권",
+  lineNamePrefix: "대전",
+  svgSource: {
+    sourceId: "owner-self-drawn-sma-schematic",
+    sourceName: "오너 자작 대전 8선형 정본 도식",
+    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+    license: "self-drawn",
+    licenseStatus: "confirmed",
+    commercialUseAllowed: true,
+    attributionRequired: false,
+  },
+  slugToSuffix: {
+    "1": "1호선",
+  },
+  // 대전 1호선 색(#00975a)만 카탈로그 대상. 2호선·광역철도 색은 배제(build-sma-tracks
+  // 는 colorToSlug 미등록 stroke를 자연 배제한다).
+  colorToSlug: {
+    "#00975a": "1",
+  },
+  missingLineHint: {},
+  markerlessFallback: [],
+  topologyExceptions: [],
+  excludedStations: [],
+  // 1호선 실역만 정합 대상으로 남긴다. (a) data-line=1·active, (b) data-line=transfer·
+  // active이며 이름이 "1호선 "으로 시작(1호선 환승역). 나머지(2호선·광역철도·미개통·
+  // 1호선 미개통 식장산)는 fail-closed로 배제한다(카탈로그 미수록).
+  nodeFilter: (node) => {
+    const status = node.dataStatus || "";
+    const line = node.dataLine || "";
+    const name = node.dataStation || "";
+    if (status !== "active") return false;
+    if (line === "1") return true;
+    if (line === "transfer" && /^1호선\s/.test(name)) return true;
+    return false;
+  },
+  // canonical 정합 규칙(대전 카탈로그 실측):
+  //   - 환승 복합 표기 "1호선 대전역 | 2호선 …" → 파이프 앞의 "1호선 " 뒤 토큰만.
+  //   - 괄호 부제 제거, 대전역→대전.
+  canonicalRules: (svgName) => {
+    let name = svgName;
+    // 환승 복합 표기: 파이프 이전 segment에서 "1호선 " 접두 제거.
+    const pipe = name.indexOf("|");
+    if (pipe >= 0) name = name.slice(0, pipe).trim();
+    name = name.replace(/^1호선\s+/, "").trim();
+    // 괄호 부제 제거.
+    name = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    // 역 접미 정규화(대전역→대전). 카탈로그는 접미 없는 표기.
+    if (name.length > 1 && name.endsWith("역")) name = name.slice(0, -1);
+    return { name };
+  },
+  // 대전 도식 노드 좌표(data-node-x/y)는 콘텐츠 밴드 제약이 track 추출에만 적용된다.
+  // 1호선 stroke의 medY 범위를 포함하도록 넉넉히 둔다.
+  contentBand: { minY: 0, maxY: 1800 },
+};
+
+// ── 광주(gwangju): #2011 3단계. 오너 자작 easy-subway-gwangju-v1. ─────────────
+// 문법 차이(수도권·부산·대구·대전 대비): 역 정체(코드+이름)가 label group
+// <g id="station-label-group-NNN" data-label-role data-station(코드) data-station-name(이름)>에
+// 실리고, 마커 dot(circle.station-node)은 정체 없이 stroke 색만 든다. 추출기의
+// 라벨 그룹 노드 소스(g[data-label-role])가 라벨 그룹 bbox 중심을 노드 좌표로
+// 승격한다(광주에만 존재하는 선택자라 타 권역 무영향). 코드 1xx=1호선, 2xx=2호선.
+// 카탈로그는 광주 1호선 1개(20역)뿐이라 nodeFilter로 코드 1xx(또는 1호선-2호선
+// 복합 코드 1xx-2xx 환승)만 남긴다. 라이선스 특례: 기존 CC BY-SA 2.0 KR(attribution
+// 필수) 데이터가 자작 도식으로 대체되므로 attribution을 자작 기준으로 전환한다.
+const GWANGJU = {
+  id: "gwangju",
+  regionKey: "광주권",
+  lineNamePrefix: "광주",
+  svgSource: {
+    sourceId: "owner-self-drawn-sma-schematic",
+    sourceName: "오너 자작 광주 8선형 정본 도식",
+    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-gwangju-v1.svg",
+    license: "self-drawn",
+    licenseStatus: "confirmed",
+    commercialUseAllowed: true,
+    attributionRequired: false,
+  },
+  slugToSuffix: {
+    "1": "1호선",
+  },
+  // 광주 1호선 색(#009088)만 카탈로그 대상. 2호선(phase1/2/3) 색은 배제.
+  colorToSlug: {
+    "#009088": "1",
+  },
+  missingLineHint: {},
+  markerlessFallback: [],
+  topologyExceptions: [],
+  excludedStations: [],
+  // 1호선 실역만 정합 대상으로 남긴다: label group 코드가 1xx(순수 1호선) 또는
+  // 1xx-2xx(1호선-2호선 복합 코드 환승: 남광주 103-214·상무 113-203)인 노드.
+  // 2xx(2호선 전용)·transfer-capsule(모두 2xx)은 fail-closed로 배제(카탈로그 미수록).
+  nodeFilter: (node) => {
+    const code = node.dataStationCode || "";
+    return /^1\d\d($|-)/.test(code);
+  },
+  // canonical 정합 규칙(광주 카탈로그 실측):
+  //   가운뎃점(·) 제거(학동·증심사입구→학동증심사입구·금남로4가 등 그대로),
+  //   광주송정→광주송정역, 괄호 부제 제거.
+  canonicalRules: (svgName) => {
+    let name = svgName.replace(/·/g, "").trim();
+    if (name === "광주송정") name = "광주송정역";
+    name = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    return { name };
+  },
+  // 범례("노선 색상 안내") 스와치가 1호선 색(#009088) horizontal stroke(medY≈158)이라
+  // minY:0이면 buildTracksDoc이 범례를 1호선 track에 섞는다(실측: 스와치 M 260 158 L 302 158이
+  // 별도 track으로 산출됨). 범례 카드는 y=[136,240], 실역 콘텐츠는 y=[930,1210]이므로
+  // minY를 340으로 올려 범례를 배제한다(수도권과 동일 하한).
+  contentBand: { minY: 340, maxY: 1800 },
+};
+
+const REGION_CONFIGS = { seoul: SEOUL, busan: BUSAN, daegu: DAEGU, daejeon: DAEJEON, gwangju: GWANGJU };
 // regionKey(예: "부산권")로도 조회 가능.
 const BY_REGION_KEY = new Map(Object.values(REGION_CONFIGS).map((c) => [c.regionKey, c]));
 
@@ -151,4 +328,4 @@ export function getRegionConfig(idOrRegionKey) {
   return config;
 }
 
-export { SEOUL, BUSAN, REGION_CONFIGS };
+export { SEOUL, BUSAN, DAEGU, DAEJEON, GWANGJU, REGION_CONFIGS };

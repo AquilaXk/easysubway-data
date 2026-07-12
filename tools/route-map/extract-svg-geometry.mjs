@@ -473,6 +473,86 @@ function browserExtractorExpression(svg) {
       });
     }
 
+    // 라벨 앵커 노드(#2011 3단계 대전 문법): 역 마커 g가 data-node-role 없이
+    // data-station-code만 들고, 역 정체(이름)와 노드 좌표가 <text> 라벨의
+    // data-full-official-name/data-node-x/data-node-y에 실려 있는 도식을 위한
+    // 두 번째 노드 소스. data-node-x·data-node-y·data-full-official-name을 모두
+    // 가진 요소만 노드로 승격하므로 그 attr가 없는 도식(수도권·부산·대구)에는
+    // 아무 영향이 없다(추가만·회귀 0). 좌표는 라벨 bbox가 아니라 명시된 노드
+    // 좌표(마커 중심)를 root 좌표로 변환해 쓴다.
+    for (const element of root.querySelectorAll("[data-node-x][data-node-y][data-full-official-name]")) {
+      if (element.closest("defs")) continue;
+      const rawX = element.getAttribute("data-node-x");
+      const rawY = element.getAttribute("data-node-y");
+      const officialName = element.getAttribute("data-full-official-name") || "";
+      const nx = Number.parseFloat(rawX);
+      const ny = Number.parseFloat(rawY);
+      if (!Number.isFinite(nx) || !Number.isFinite(ny) || !officialName) continue;
+      const elementMatrix = element.getScreenCTM();
+      if (!elementMatrix) continue;
+      const matrix = rootInverse.multiply(elementMatrix);
+      const center = matrixPoint(matrix, nx, ny);
+      stationNodes.push({
+        dataStation: officialName,
+        dataName: officialName,
+        dataStationName: officialName,
+        dataLine: element.getAttribute("data-line") || "",
+        dataLineName: element.getAttribute("data-line-name") || "",
+        dataLineColor: element.getAttribute("data-line-color") || "",
+        nodeRole: element.getAttribute("data-label-role") || element.getAttribute("data-node-role") || "",
+        transferLines: element.getAttribute("data-transfer-lines") || "",
+        dataStationCode: element.getAttribute("data-station-code") || "",
+        dataStatus: element.getAttribute("data-status") || "",
+        nodeSource: "label-anchor",
+        tag: element.tagName.toLowerCase(),
+        id: element.id || "",
+        x: center.x,
+        y: center.y,
+      });
+    }
+
+    // 라벨 그룹 노드(#2011 3단계 광주 문법): 역 정체(코드+이름)가 label group
+    // <g data-label-role data-station(코드) data-station-name(이름)>에 실리고,
+    // 마커 dot(circle.station-node)은 정체 없이 stroke 색만 든다. 명시 노드 좌표가
+    // 없으므로 라벨 그룹의 bbox 중심을 노드 좌표 대체값으로 쓴다(수도권 markerless
+    // fallback과 동일 발상 — 후속 respace·8선형 스냅이 line_sequence 위상으로
+    // 좌표를 정규화한다). 선택자 g[data-label-role]는 광주에만 존재하므로
+    // (수도권·부산·대구는 <g>에 data-label-role 0) 다른 권역에 영향이 없다.
+    for (const element of root.querySelectorAll("g[data-label-role][data-station-name][data-station]")) {
+      if (element.closest("defs")) continue;
+      const name = element.getAttribute("data-station-name") || "";
+      const code = element.getAttribute("data-station") || "";
+      if (!name) continue;
+      let bbox;
+      try {
+        bbox = element.getBBox();
+      } catch {
+        continue;
+      }
+      if (!(bbox.width >= 0) || !(bbox.height >= 0)) continue;
+      const elementMatrix = element.getScreenCTM();
+      if (!elementMatrix) continue;
+      const matrix = rootInverse.multiply(elementMatrix);
+      const center = matrixPoint(matrix, bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
+      stationNodes.push({
+        dataStation: name,
+        dataName: name,
+        dataStationName: name,
+        dataLine: element.getAttribute("data-line") || "",
+        dataLineName: element.getAttribute("data-line-name") || "",
+        dataLineColor: element.getAttribute("data-line-color") || "",
+        nodeRole: element.getAttribute("data-label-role") || "",
+        transferLines: element.getAttribute("data-transfer-lines") || "",
+        dataStationCode: code,
+        dataStatus: element.getAttribute("data-status") || "",
+        nodeSource: "label-group",
+        tag: element.tagName.toLowerCase(),
+        id: element.id || "",
+        x: center.x,
+        y: center.y,
+      });
+    }
+
     return { sourceViewBox: sourceViewBox(root), labels, strokes, stationNodes };
   }})(${JSON.stringify(svgBase64)}, ${JSON.stringify({
     minStrokeLength: MIN_STROKE_LENGTH,

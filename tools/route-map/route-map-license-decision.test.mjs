@@ -80,6 +80,42 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
     );
   }
 
+  // [#2017] 스키마 정합(키 누락 회귀 방지 — gwangju에 licenseStatus/lineColorSource/
+  // provenanceVerifiedAt가 빠졌던 회귀). 두 축으로 검증한다:
+  //   (1) provenance 3필드는 4권역+수도권 전부에 존재하고 비어있지 않다.
+  //   (2) 4권역(busan/daegu/daejeon/gwangju)은 동일 키 집합을 갖는다(수도권은
+  //       attributionDropTargetAfterSelfDrawn 부재 등 연혁이 달라 4권역끼리만 대조).
+  const allRegionIds = ["seoul", "busan", "daegu", "daejeon", "gwangju"];
+  for (const id of allRegionIds) {
+    assert.ok(decisionById.get(id), `${id} 결정 항목이 존재해야 함`);
+  }
+  const provenanceKeys = ["licenseStatus", "lineColorSource", "provenanceVerifiedAt"];
+  for (const id of allRegionIds) {
+    const region = decisionById.get(id);
+    for (const key of provenanceKeys) {
+      assert.equal(
+        typeof region[key],
+        "string",
+        `${id} 항목에 ${key} 문자열 필드가 있어야 함`,
+      );
+      assert.ok(region[key].length > 0, `${id} 항목 ${key}가 비어있지 않아야 함`);
+    }
+    assert.match(
+      region.provenanceVerifiedAt,
+      /^\d{4}-\d{2}-\d{2}$/,
+      `${id} provenanceVerifiedAt는 YYYY-MM-DD 형식이어야 함`,
+    );
+  }
+  const nonCapitalIds = ["busan", "daegu", "daejeon", "gwangju"];
+  const nonCapitalRefKeys = Object.keys(decisionById.get("busan")).sort();
+  for (const id of nonCapitalIds) {
+    assert.deepEqual(
+      Object.keys(decisionById.get(id)).sort(),
+      nonCapitalRefKeys,
+      `${id} 항목 키 집합이 부산과 동일해야 함(4권역 스키마 정합)`,
+    );
+  }
+
   // 수도권은 #1950으로 오너 자작 8선형 도식(self-drawn) 정본 채택, 상용 준비 완료.
   const seoul = decisionById.get("seoul");
   assert.equal(seoul.renderingStrategy, "self-drawn-schematic");
@@ -98,9 +134,10 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
     assert.equal(region.bundledSvgRole, "review-reference-only");
   }
 
-  // 부산·대구·대전: #1639/#1640 좌표 provenance(사실 데이터) 재검증 + line_tracks를
-  // down_path(위상=사실)로 재빌드 + SVG 번들 제거(#1715) 완료 → 상용 승격·attribution 해제.
-  for (const id of ["busan", "daegu", "daejeon"]) {
+  // 부산·대구·대전·광주: #2011 오너 자작 도식 정본 반입으로 self-drawn 확정 승격 →
+  // 상용 승격·attribution 해제. 광주는 이전 CC-BY-SA 유지 상태에서 자작 전환으로
+  // 함께 해제됐다(attribution 제거가 아니라 계약 전환 — regions[].notes 참조).
+  for (const id of ["busan", "daegu", "daejeon", "gwangju"]) {
     const region = decisionById.get(id);
     assert.equal(
       region.commercialProductionReady,
@@ -119,13 +156,14 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
     );
   }
 
-  // 광주: CC-BY-SA 2.0 KR ShareAlike라 사실 재구성에도 보수적으로 미승격·attribution 유지.
+  // 광주: [연혁] CC-BY-SA 2.0 KR ShareAlike라 보수적으로 attribution을 유지했으나,
+  // #2011 오너 자작 도식 반입으로 배포 렌더링이 CC-BY-SA SVG(kiwitree) 파생이
+  // 아니게 되어 attribution을 해제하고 상용 승격했다(위 self-drawn 루프에 포함).
   const gwangjuRegion = decisionById.get("gwangju");
-  assert.equal(gwangjuRegion.commercialProductionReady, false);
-  assert.equal(gwangjuRegion.attributionRequired, true);
-  assert.equal(manifestById.get("gwangju").license.commercialUseAllowed, false);
+  assert.equal(gwangjuRegion.reviewStatus, "self-drawn-confirmed");
+  assert.equal(gwangjuRegion.selfDrawnSource, "easy-subway-gwangju-v1.svg");
 
-  // 광주 ShareAlike 결론이 사실≠저작물 근거와 함께 기록된다.
+  // 광주 ShareAlike 결론이 사실≠저작물 근거와 함께 기록된다(연혁 근거로 보존).
   const gwangju = decision.gwangjuShareAlikeConclusion;
   assert.ok(/ShareAlike/.test(gwangju.conclusion));
   assert.ok(/파생물이 아니/.test(gwangju.conclusion));
@@ -134,8 +172,8 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
 
   // attribution 필요 지역 목록이 #1641로 전달 가능한 형태로 확정된다.
   const handoff = decision.attributionHandoffTo1641;
-  // #1639/#1640: 부산·대구·대전 attribution 해제, 광주(CC-BY-SA)만 유지.
-  assert.deepEqual(handoff.attributionRequiredRegions, ["광주"]);
+  // #2011: 4권역 전부 self-drawn 전환으로 attribution 해제 — 요구 지역 목록은 빈다.
+  assert.deepEqual(handoff.attributionRequiredRegions, []);
   // handoff 목록이 per-region attributionRequired 플래그와 정합한다.
   const requiredKoreanNames = decision.regions
     .filter((region) => region.attributionRequired)

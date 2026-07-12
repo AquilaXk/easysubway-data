@@ -1,0 +1,2169 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="2400"
+   height="1800"
+   viewBox="0 0 2400 1800"
+   version="1.1"
+   role="img"
+   aria-labelledby="map-title map-description"
+   preserveAspectRatio="xMidYMid meet"
+   id="gwangju-metro-sma-v1-family-map"
+   style="font-family: Pretendard;"
+   data-base-template="easy-subway-sma-v1.svg"
+   data-design-family="sma-v1"
+   data-base-unit-u="8px"
+   data-line-width="1u"
+   data-grid="3u"
+   data-corner-radius="2.5u"
+   data-parallel-gap="0.25u"
+   data-octolinear="true"
+   data-district-labels="removed"
+   data-revision="sma-v1-cultural-center-separation-phase3-status-rail-logos-v5"
+   data-station-data-verified="2026-07-12"
+   data-station-data-basis="GRTC-current-line1-and-official-line2-plan"
+   data-line2-name-status="phase1-citizen-preference;phase2-3-provisional"
+   data-route-shape="octolinear-rounded-ring"
+   data-left-ring-smoothing="237-238-201-202-203"
+   data-font-policy="Pretendard-only"
+   sodipodi:docname="easy_subway_gwangju_v1.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   data-phase3-status="planned-unbuilt-separate-project-review"
+   data-cultural-center-overlap="resolved"
+   data-rail-logo-format="inline-svg-paths"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview91"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.31992548"
+     inkscape:cx="1169.0222"
+     inkscape:cy="967.41279"
+     inkscape:window-width="1477"
+     inkscape:window-height="1022"
+     inkscape:window-x="0"
+     inkscape:window-y="30"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="rail-chip-gwangju-songjeong-highspeed" />
+  <title
+     id="map-title">광주 도시철도 통합 노선도 — SMA-v1 패밀리룩 · 운행상태 구분본</title>
+  <desc
+     id="map-description">SMA-v1 패밀리룩을 적용한 광주 도시철도 통합 8방향 노선도. 문화전당 인근에서 1호선과 2호선 1단계가 겹쳐 보이던 선형을 분리했고, 2호선 3단계는 계획·미착공 및 별도 재검토 상태로 명시했다. 광주송정역의 KTX와 SRT 표시는 외부 링크가 아닌 인라인 SVG 벡터 경로로 내장했다.</desc>
+  <metadata
+     id="production-metadata">
+{
+  &quot;design_reference&quot;: &quot;easy-subway-sma-v1.svg&quot;,
+  &quot;geometry&quot;: &quot;Validated octolinear coordinates retained except 237–238–201–202–203, which was redrawn as a continuous horizontal-to-45-degree lower-left arc.&quot;,
+  &quot;family_tokens&quot;: {
+    &quot;u&quot;: &quot;8px&quot;,
+    &quot;route_width&quot;: &quot;8px&quot;,
+    &quot;grid&quot;: &quot;24px&quot;,
+    &quot;corner_radius&quot;: &quot;20px&quot;,
+    &quot;header&quot;: &quot;x40 y30 w2320 h82 r30&quot;,
+    &quot;map_card&quot;: &quot;x40 y126 w2320 h1630 r34&quot;,
+    &quot;legend_card&quot;: &quot;x70 y136 w2260 h104 r18&quot;,
+    &quot;font_preference&quot;: &quot;Pretendard&quot;
+  },
+  &quot;district_labels&quot;: &quot;All district-name background labels removed.&quot;,
+  &quot;station_number_policy&quot;: &quot;Station numbers remain in data-station attributes but are not rendered, matching SMA-v1 label hierarchy.&quot;,
+  &quot;reference_date&quot;: &quot;2026-07-12&quot;,
+  &quot;transfer_capsule_update&quot;: {
+    &quot;stations&quot;: [
+      &quot;238 유덕&quot;,
+      &quot;219 광주역&quot;,
+      &quot;211 백운광장&quot;
+    ],
+    &quot;geometry_reference&quot;: &quot;Existing Sangmu/Namgwangju SMA-v1 transfer capsules&quot;,
+    &quot;phase_badges&quot;: {
+      &quot;238 유덕&quot;: [
+        &quot;1단계&quot;,
+        &quot;2단계&quot;
+      ],
+      &quot;219 광주역&quot;: [
+        &quot;1단계&quot;,
+        &quot;2단계&quot;
+      ],
+      &quot;211 백운광장&quot;: [
+        &quot;1단계&quot;,
+        &quot;3단계&quot;
+      ]
+    },
+    &quot;rail_chip_at_gwangju_station&quot;: &quot;retained&quot;,
+    &quot;redundant_rail_halo_at_gwangju_station&quot;: &quot;removed&quot;
+  },
+  &quot;revision&quot;: &quot;SMA-v1 v5; cultural-center overlap resolved; phase 3 status clarified; KTX/SRT vector logos embedded&quot;,
+  &quot;station_data_audit&quot;: {
+    &quot;line1&quot;: &quot;20 current stations checked against GRTC cyber station&quot;,
+    &quot;line2&quot;: &quot;44 planned station IDs checked against GRTC official plan&quot;,
+    &quot;phase_counts&quot;: {
+      &quot;phase1&quot;: 20,
+      &quot;phase2&quot;: 18,
+      &quot;phase3&quot;: 6
+    },
+    &quot;name_status&quot;: &quot;Phase 1 uses 2026 citizen-preference names except existing transfer names; phases 2 and 3 use provisional location labels; final naming pending.&quot;
+  },
+  &quot;sma_v1_conformance_pass&quot;: {
+    &quot;canvas&quot;: &quot;2400x1800&quot;,
+    &quot;header&quot;: &quot;x40 y30 w2320 h82 r30&quot;,
+    &quot;map_card&quot;: &quot;x40 y126 w2320 h1630 r34&quot;,
+    &quot;legend_card&quot;: &quot;x70 y136 w2260 h104 r18&quot;,
+    &quot;font_policy&quot;: &quot;Pretendard-only&quot;,
+    &quot;route_caps_joins&quot;: &quot;round&quot;,
+    &quot;label_halo&quot;: &quot;4px white&quot;,
+    &quot;octolinear&quot;: true
+  },
+  &quot;left_ring_smoothing&quot;: {
+    &quot;station_order&quot;: [
+      &quot;237 운남&quot;,
+      &quot;238 유덕&quot;,
+      &quot;201 시청&quot;,
+      &quot;202 치평&quot;,
+      &quot;203 상무&quot;
+    ],
+    &quot;coordinates&quot;: {
+      &quot;237&quot;: [
+        500,
+        850
+      ],
+      &quot;238&quot;: [
+        580,
+        850
+      ],
+      &quot;201&quot;: [
+        660,
+        850
+      ],
+      &quot;202&quot;: [
+        740,
+        850
+      ],
+      &quot;203&quot;: [
+        820,
+        930
+      ]
+    },
+    &quot;shape&quot;: &quot;horizontal lower-left arc transitioning once to a 45-degree segment&quot;,
+    &quot;purpose&quot;: &quot;remove the former inward cusp at Yudeok and strengthen the circular loop silhouette&quot;
+  },
+  &quot;cultural_center_route_fix&quot;: {
+    &quot;before&quot;: &quot;2호선 1단계가 1호선 y=930 구간을 120px 공유&quot;,
+    &quot;after&quot;: &quot;방림 이후 y=990 수평 구간에서 남광주로 45도 진입&quot;,
+    &quot;octolinear&quot;: true,
+    &quot;shared_segment_length_after&quot;: 0
+  },
+  &quot;phase3_operational_status&quot;: {
+    &quot;display&quot;: &quot;계획·미착공&quot;,
+    &quot;review&quot;: &quot;1·2단계 이후 별도사업 재검토&quot;,
+    &quot;opening_date&quot;: null,
+    &quot;route_style&quot;: &quot;purple dashed&quot;
+  },
+  &quot;rail_logo_assets&quot;: {
+    &quot;KTX&quot;: &quot;Wikimedia Commons KTX_logo.svg preview, converted to inline SVG paths&quot;,
+    &quot;SRT&quot;: &quot;Wikimedia Commons SRT_logo.svg preview, converted to inline SVG paths&quot;,
+    &quot;external_image_dependencies&quot;: false
+  }
+}
+</metadata>
+  <defs
+     id="ui-card-background-definitions">
+    <clipPath
+       id="rounded-map-card-clip-area">
+      <rect
+         x="40"
+         y="126"
+         width="2320"
+         height="1630"
+         rx="34"
+         ry="34"
+         id="rect1" />
+    </clipPath>
+    <style
+       id="sma-v1-family-style"
+       type="text/css">
+#gwangju-metro-sma-v1-family-map { font-family:Pretendard; }
+#gwangju-metro-sma-v1-family-map text,
+#gwangju-metro-sma-v1-family-map tspan { font-family:Pretendard; }
+.ui-title { fill:#FFFFFF; font-size:32px; font-weight:900; letter-spacing:-1px; }
+.ui-chip-label { fill:#FFFFFF; font-size:10.5px; font-weight:900; text-anchor:middle; dominant-baseline:middle; }
+.ui-note { fill:#6E7F8B; font-size:12px; font-weight:650; letter-spacing:-0.2px; }
+.route { fill:none; stroke-width:8px; stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1; shape-rendering:geometricPrecision; }
+.route-phase3 { stroke-width:6px; stroke-dasharray:16 10; }
+.station-node { fill:#FFFFFF; stroke-width:2px; vector-effect:non-scaling-stroke; shape-rendering:geometricPrecision; }
+.station-node-terminal { stroke-width:3px; }
+.station-label { paint-order:stroke; stroke:#FFFFFF; stroke-width:4px; stroke-linecap:round; stroke-linejoin:round; text-rendering:geometricPrecision; }
+.station-label-ordinary { fill:#666666; font-size:14px; font-weight:400; }
+.station-label-small { font-size:13px; }
+.station-label-transfer { fill:#111111; font-size:15px; font-weight:600; }
+.station-label-terminal { fill:#111111; font-size:15px; font-weight:700; }
+.transfer-badge-label { fill:#FFFFFF; font-size:6.5px; font-weight:900; text-anchor:middle; dominant-baseline:central; alignment-baseline:middle; pointer-events:none; }
+.legend-title { fill:#344258; font-size:15px; font-weight:900; dominant-baseline:central; }
+.legend-name { fill:#344258; font-size:12.5px; font-weight:760; dominant-baseline:central; }
+.legend-sub { fill:#6E7F8B; font-size:11.5px; font-weight:600; dominant-baseline:central; }
+.rail-chip-text { fill:#5E6C78; font-size:10.5px; font-weight:800; text-anchor:middle; dominant-baseline:central; }
+
+.phase-status-chip-text { fill:#75478F; font-size:12.5px; font-weight:800; text-anchor:middle; dominant-baseline:central; }
+</style>
+  </defs>
+  <rect
+     x="0"
+     y="0"
+     width="2400"
+     height="1800"
+     id="page-background"
+     fill="#FFFFFF" />
+  <g
+     id="header-title-legend-and-status-layer">
+    <rect
+       x="40"
+       y="30"
+       width="2320"
+       height="82"
+       rx="30"
+       ry="30"
+       id="header-background-pill"
+       fill="#102133" />
+    <text
+       x="84"
+       y="79.267"
+       id="header-title-text"
+       class="ui-title">광주 도시철도 통합 노선도</text>
+    <g
+       id="header-route-badge-1"
+       class="header-route-badge"
+       data-line="1"
+       data-line-color="#009088">
+      <rect
+         x="2052"
+         y="59.5"
+         width="30"
+         height="23"
+         rx="11.5"
+         ry="11.5"
+         fill="#009088"
+         id="rect2" />
+      <text
+         x="2067.0"
+         y="71.0"
+         class="ui-chip-label"
+         id="text2">1</text>
+    </g>
+    <g
+       id="header-route-badge-2-phase1"
+       class="header-route-badge"
+       data-line="2-phase1"
+       data-line-color="#E63332">
+      <rect
+         x="2090"
+         y="59.5"
+         width="42"
+         height="23"
+         rx="11.5"
+         ry="11.5"
+         fill="#E63332"
+         id="rect3" />
+      <text
+         x="2111.0"
+         y="71.0"
+         class="ui-chip-label"
+         id="text3">2·1</text>
+    </g>
+    <g
+       id="header-route-badge-2-phase2"
+       class="header-route-badge"
+       data-line="2-phase2"
+       data-line-color="#1085D1">
+      <rect
+         x="2140"
+         y="59.5"
+         width="42"
+         height="23"
+         rx="11.5"
+         ry="11.5"
+         fill="#1085D1"
+         id="rect4" />
+      <text
+         x="2161.0"
+         y="71.0"
+         class="ui-chip-label"
+         id="text4">2·2</text>
+    </g>
+    <g
+       id="header-route-badge-2-phase3"
+       class="header-route-badge"
+       data-line="2-phase3"
+       data-line-color="#8A5AA8"
+       data-status="planned-unbuilt">
+      <rect
+         x="2190"
+         y="59.5"
+         width="42"
+         height="23"
+         rx="11.5"
+         ry="11.5"
+         fill="#8A5AA8"
+         id="rect5"
+         fill-opacity="0.28"
+         stroke="#D4B7E3"
+         stroke-width="1.6"
+         stroke-dasharray="4 3" />
+      <text
+         x="2211.0"
+         y="71.0"
+         class="ui-chip-label"
+         id="text5"
+         style="fill:#F0E5F5">2·3</text>
+    </g>
+  </g>
+  <rect
+     x="40"
+     y="126"
+     width="2320"
+     height="1630"
+     rx="34"
+     ry="34"
+     id="main-map-card-background"
+     fill="#FFFFFF"
+     stroke="#D7E5EE"
+     stroke-width="1.4" />
+  <g
+     id="top-route-line-explanation-layer"
+     data-name="상단 노선 색상 안내">
+    <rect
+       x="70"
+       y="136"
+       width="2260"
+       height="104"
+       rx="18"
+       ry="18"
+       id="top-route-line-explanation-background"
+       fill="#FFFFFF"
+       stroke="#D7E5EE"
+       stroke-width="1.1"
+       opacity="0.96" />
+    <text
+       x="94"
+       y="162"
+       id="top-route-line-explanation-title"
+       class="legend-title">노선 색상 안내</text>
+    <path
+       d="M 260 158 L 302 158"
+       fill="none"
+       stroke="#009088"
+       stroke-width="8"
+       stroke-linecap="round"
+       id="path5" />
+    <rect
+       x="307"
+       y="149"
+       width="18"
+       height="18"
+       rx="9"
+       ry="9"
+       fill="#009088"
+       id="rect6" />
+    <text
+       x="316.0"
+       y="158.4"
+       fill="#FFFFFF"
+       font-size="10.2"
+       font-weight="900"
+       text-anchor="middle"
+       dominant-baseline="central"
+       alignment-baseline="middle"
+       id="text6">1</text>
+    <text
+       x="342"
+       y="158.4"
+       class="legend-name"
+       text-anchor="start"
+       id="text7">1호선</text>
+    <path
+       d="M 760 158 L 802 158"
+       fill="none"
+       stroke="#E63332"
+       stroke-width="8"
+       stroke-linecap="round"
+       id="path7" />
+    <rect
+       x="807"
+       y="149"
+       width="30"
+       height="18"
+       rx="9"
+       ry="9"
+       fill="#E63332"
+       id="rect7" />
+    <text
+       x="822.0"
+       y="158.4"
+       fill="#FFFFFF"
+       font-size="8.8"
+       font-weight="900"
+       text-anchor="middle"
+       dominant-baseline="central"
+       alignment-baseline="middle"
+       id="text8">2·1</text>
+    <text
+       x="854"
+       y="158.4"
+       class="legend-name"
+       text-anchor="start"
+       id="text9">2호선 1단계</text>
+    <path
+       d="M 1260 158 L 1302 158"
+       fill="none"
+       stroke="#1085D1"
+       stroke-width="8"
+       stroke-linecap="round"
+       id="path9" />
+    <rect
+       x="1307"
+       y="149"
+       width="30"
+       height="18"
+       rx="9"
+       ry="9"
+       fill="#1085D1"
+       id="rect9" />
+    <text
+       x="1322.0"
+       y="158.4"
+       fill="#FFFFFF"
+       font-size="8.8"
+       font-weight="900"
+       text-anchor="middle"
+       dominant-baseline="central"
+       alignment-baseline="middle"
+       id="text10">2·2</text>
+    <text
+       x="1354"
+       y="158.4"
+       class="legend-name"
+       text-anchor="start"
+       id="text11">2호선 2단계</text>
+    <path
+       d="M 1760 158 L 1802 158"
+       fill="none"
+       stroke="#8A5AA8"
+       stroke-width="8"
+       stroke-linecap="round"
+       stroke-dasharray="12 8"
+       id="path11"
+       stroke-opacity="0.82" />
+    <rect
+       x="1807"
+       y="149"
+       width="30"
+       height="18"
+       rx="9"
+       ry="9"
+       fill="#8A5AA8"
+       id="rect11" />
+    <text
+       x="1822.0"
+       y="158.4"
+       fill="#FFFFFF"
+       font-size="8.8"
+       font-weight="900"
+       text-anchor="middle"
+       dominant-baseline="central"
+       alignment-baseline="middle"
+       id="text12">2·3</text>
+    <text
+       x="1854"
+       y="158.4"
+       class="legend-name"
+       text-anchor="start"
+       id="text13">2호선 3단계 계획(미착공)</text>
+    <g
+       id="legend-transfer-capsule"
+       class="ourclass-transfer-symbol">
+      <path
+         d="M 263.7 204 L 276.3 204"
+         fill="none"
+         stroke="#3F4A5C"
+         stroke-width="18.0"
+         stroke-linecap="round"
+         stroke-linejoin="round"
+         id="path13" />
+      <path
+         d="M 263.7 204 L 276.3 204"
+         fill="none"
+         stroke="#FFFFFF"
+         stroke-width="12.6"
+         stroke-linecap="round"
+         stroke-linejoin="round"
+         id="path14" />
+      <circle
+         cx="264.6"
+         cy="204"
+         r="4.680000000000001"
+         fill="#009088"
+         id="circle14" />
+      <text
+         x="264.6"
+         y="204.18"
+         class="transfer-badge-label"
+         font-size="5.8500000000000005"
+         id="text14">1</text>
+      <circle
+         cx="275.4"
+         cy="204"
+         r="4.680000000000001"
+         fill="#E63332"
+         id="circle15" />
+      <text
+         x="275.4"
+         y="204.18"
+         class="transfer-badge-label"
+         font-size="5.8500000000000005"
+         id="text15">2</text>
+    </g>
+    <text
+       x="300"
+       y="204.4"
+       class="legend-name"
+       id="text16">환승역</text>
+    <circle
+       cx="770"
+       cy="204"
+       r="8.5"
+       fill="#FFFFFF"
+       stroke="#7A8895"
+       stroke-width="1.4"
+       id="circle16" />
+    <circle
+       cx="770"
+       cy="204"
+       r="5.1"
+       fill="#FFFFFF"
+       stroke="#009088"
+       stroke-width="2"
+       id="circle17" />
+    <text
+       x="792"
+       y="204.4"
+       class="legend-name"
+       id="text17">일반철도 환승</text>
+    <path
+       d="M 1260 204 L 1302 204"
+       fill="none"
+       stroke="#8A5AA8"
+       stroke-width="6"
+       stroke-linecap="round"
+       stroke-dasharray="12 8"
+       id="path17" />
+    <text
+       x="1322"
+       y="204.4"
+       class="legend-name"
+       id="text18">계획 구간</text>
+  </g>
+  <g
+     id="map-card-clipped-content-layer"
+     clip-path="url(#rounded-map-card-clip-area)">
+    <g
+       id="main-map-layer">
+      <g
+         id="route-lines-layer"
+         data-name="노선"
+         class="render-layer route-layer">
+        <polyline
+           points="110,930 210,930 330,930 450,930 570,930 690,930 820,930 940,930 1060,930 1180,930 1300,930 1420,930 1540,930 1660,930 1780,930 1880,930 1980,930 2060,1010 2140,1090 2140,1210"
+           id="route-line1"
+           class="route"
+           stroke="#009088"
+           data-line="line1"
+           data-line-color="#009088" />
+        <polyline
+           points="580,850 660,850 740,850 820,930 900,1010 980,1090 1060,1170 1180,1170 1280,1270 1400,1270 1520,1150 1640,1150 1720,1070 1800,990 1920,990 1980,930 2040,870 2040,750 1980,690 1900,610 1800,510"
+           id="route-line2-phase1"
+           class="route"
+           stroke="#E63332"
+           data-line="line2-phase1"
+           data-line-color="#E63332"
+           data-bend-smoothing="round-cap-round-join-global-pass"
+           data-direction-system="octolinear"
+           data-cultural-center-separation="1800,990-1920,990-1980,930" />
+        <polyline
+           points="1800,510 1680,390 1560,390 1440,390 1320,390 1200,390 1080,390 960,510 840,510 720,510 600,510 480,510 360,510 260,610 180,690 180,770 260,850 380,850 500,850 580,850"
+           id="route-line2-phase2"
+           class="route"
+           stroke="#1085D1"
+           data-line="line2-phase2"
+           data-line-color="#1085D1"
+           data-bend-smoothing="round-cap-round-join-global-pass"
+           data-direction-system="octolinear" />
+        <polyline
+           points="1640,1150 1640,1270 1640,1370 1560,1450 1460,1550 1340,1550 1220,1550"
+           id="route-line2-phase3"
+           class="route route-phase3"
+           stroke="#8A5AA8"
+           data-line="line2-phase3"
+           data-line-color="#8A5AA8"
+           data-status="planned-unbuilt"
+           data-project-review="separate-project-after-phase1-2"
+           stroke-opacity="0.82" />
+      </g>
+      <g
+         id="phase3-planning-status-chip"
+         data-status="planned-unbuilt"
+         data-name="2호선 3단계 상태">
+        <rect
+           x="1662"
+           y="1172"
+           width="124"
+           height="26"
+           rx="13"
+           ry="13"
+           fill="#F7F2FA"
+           stroke="#8A5AA8"
+           stroke-width="1.2"
+           stroke-dasharray="5 3"
+           id="rect8" />
+        <text
+           x="1724"
+           y="1185.5"
+           class="phase-status-chip-text"
+           id="text19">계획·미착공</text>
+      </g>
+      <g
+         id="station-symbols-layer"
+         data-name="역"
+         class="render-layer station-layer">
+        <circle
+           cx="110"
+           cy="930"
+           r="6.5"
+           class="station-node station-node-terminal"
+           stroke="#009088"
+           id="circle19" />
+        <circle
+           cx="210"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle20" />
+        <circle
+           cx="450"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle21" />
+        <circle
+           cx="570"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle22" />
+        <circle
+           cx="690"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle23" />
+        <circle
+           cx="940"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle24" />
+        <circle
+           cx="1060"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle25" />
+        <circle
+           cx="1180"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle26" />
+        <circle
+           cx="1300"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle27" />
+        <circle
+           cx="1420"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle28" />
+        <circle
+           cx="1540"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle29" />
+        <circle
+           cx="1660"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle30" />
+        <circle
+           cx="1780"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle31" />
+        <circle
+           cx="1880"
+           cy="930"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle32" />
+        <circle
+           cx="2060"
+           cy="1010"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle33" />
+        <circle
+           cx="2140"
+           cy="1090"
+           r="5.8"
+           class="station-node"
+           stroke="#009088"
+           id="circle34" />
+        <circle
+           cx="2140"
+           cy="1210"
+           r="6.5"
+           class="station-node station-node-terminal"
+           stroke="#009088"
+           id="circle35" />
+        <circle
+           cx="660"
+           cy="850"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           data-station="201"
+           data-station-name="시청"
+           id="circle36" />
+        <circle
+           cx="740"
+           cy="850"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           data-station="202"
+           data-station-name="치평"
+           id="circle37" />
+        <circle
+           cx="900"
+           cy="1010"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle38" />
+        <circle
+           cx="980"
+           cy="1090"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle39" />
+        <circle
+           cx="1060"
+           cy="1170"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle40" />
+        <circle
+           cx="1180"
+           cy="1170"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle41" />
+        <circle
+           cx="1280"
+           cy="1270"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle42" />
+        <circle
+           cx="1400"
+           cy="1270"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle43" />
+        <circle
+           cx="1520"
+           cy="1150"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle44" />
+        <circle
+           cx="1720"
+           cy="1070"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle45" />
+        <circle
+           cx="1800"
+           cy="990"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle46" />
+        <circle
+           cx="2040"
+           cy="870"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle47" />
+        <circle
+           cx="2040"
+           cy="750"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle48" />
+        <circle
+           cx="1980"
+           cy="690"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle49" />
+        <circle
+           cx="1900"
+           cy="610"
+           r="5.8"
+           class="station-node"
+           stroke="#E63332"
+           id="circle50" />
+        <circle
+           cx="1680"
+           cy="390"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle51" />
+        <circle
+           cx="1560"
+           cy="390"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle52" />
+        <circle
+           cx="1440"
+           cy="390"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle53" />
+        <circle
+           cx="1320"
+           cy="390"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle54" />
+        <circle
+           cx="1200"
+           cy="390"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle55" />
+        <circle
+           cx="1080"
+           cy="390"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle56" />
+        <circle
+           cx="960"
+           cy="510"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle57" />
+        <circle
+           cx="840"
+           cy="510"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle58" />
+        <circle
+           cx="720"
+           cy="510"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle59" />
+        <circle
+           cx="600"
+           cy="510"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle60" />
+        <circle
+           cx="480"
+           cy="510"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle61" />
+        <circle
+           cx="360"
+           cy="510"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle62" />
+        <circle
+           cx="260"
+           cy="610"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle63" />
+        <circle
+           cx="180"
+           cy="690"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle64" />
+        <circle
+           cx="180"
+           cy="770"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle65" />
+        <circle
+           cx="260"
+           cy="850"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle66" />
+        <circle
+           cx="380"
+           cy="850"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle67" />
+        <circle
+           cx="500"
+           cy="850"
+           r="5.8"
+           class="station-node"
+           stroke="#1085D1"
+           id="circle68" />
+        <circle
+           cx="1640"
+           cy="1270"
+           r="5.8"
+           class="station-node"
+           stroke="#8A5AA8"
+           id="circle69" />
+        <circle
+           cx="1640"
+           cy="1370"
+           r="5.8"
+           class="station-node"
+           stroke="#8A5AA8"
+           id="circle70" />
+        <circle
+           cx="1560"
+           cy="1450"
+           r="5.8"
+           class="station-node"
+           stroke="#8A5AA8"
+           id="circle71" />
+        <circle
+           cx="1460"
+           cy="1550"
+           r="5.8"
+           class="station-node"
+           stroke="#8A5AA8"
+           id="circle72" />
+        <circle
+           cx="1340"
+           cy="1550"
+           r="5.8"
+           class="station-node"
+           stroke="#8A5AA8"
+           id="circle73" />
+        <circle
+           cx="330"
+           cy="930"
+           r="5.5"
+           fill="#FFFFFF"
+           stroke="#009088"
+           stroke-width="2.2"
+           data-station="117"
+           id="circle74" />
+        <circle
+           cx="1220"
+           cy="1550"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#8A5AA8"
+           stroke-width="2.6"
+           data-station="244"
+           id="circle75" />
+      </g>
+      <g
+         id="rail-transfer-symbols-layer">
+        <circle
+           cx="1220"
+           cy="1550"
+           r="9.5"
+           fill="#FFFFFF"
+           stroke="#7A8895"
+           stroke-width="1.4"
+           data-role="rail-transfer"
+           id="circle76" />
+        <circle
+           cx="330"
+           cy="930"
+           r="9.5"
+           fill="#FFFFFF"
+           stroke="#7A8895"
+           stroke-width="1.4"
+           data-role="rail-transfer"
+           id="circle77" />
+      </g>
+      <g
+         id="transfer-station-symbols-layer"
+         data-name="환승역 캡슐"
+         class="render-layer transfer-layer">
+        <g
+           id="transfer-station-symbol-상무"
+           class="ourclass-transfer-symbol">
+          <path
+             d="M 813.0 930 L 827.0 930"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="20.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path77" />
+          <path
+             d="M 813.0 930 L 827.0 930"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path78" />
+          <circle
+             cx="814.0"
+             cy="930"
+             r="5.2"
+             fill="#009088"
+             id="circle78" />
+          <text
+             x="814.0"
+             y="930.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text78">1</text>
+          <circle
+             cx="826.0"
+             cy="930"
+             r="5.2"
+             fill="#E63332"
+             id="circle79" />
+          <text
+             x="826.0"
+             y="930.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text79">2</text>
+        </g>
+        <g
+           id="transfer-station-symbol-남광주"
+           class="ourclass-transfer-symbol">
+          <path
+             d="M 1973.0 930 L 1987.0 930"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="20.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path79" />
+          <path
+             d="M 1973.0 930 L 1987.0 930"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path80" />
+          <circle
+             cx="1974.0"
+             cy="930"
+             r="5.2"
+             fill="#009088"
+             id="circle80" />
+          <text
+             x="1974.0"
+             y="930.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text80">1</text>
+          <circle
+             cx="1986.0"
+             cy="930"
+             r="5.2"
+             fill="#E63332"
+             id="circle81" />
+          <text
+             x="1986.0"
+             y="930.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text81">2</text>
+        </g>
+        <g
+           id="transfer-station-symbol-유덕"
+           class="ourclass-transfer-symbol"
+           data-station="238"
+           data-station-name="유덕"
+           data-node-role="transfer-capsule"
+           data-transfer-type="phase"
+           data-center-x="580"
+           data-center-y="850">
+          <path
+             d="M 573.0 850 L 587.0 850"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="20.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path81" />
+          <path
+             d="M 573.0 850 L 587.0 850"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path82" />
+          <circle
+             cx="586.80786"
+             cy="850"
+             r="5.1999998"
+             fill="#e63332"
+             id="circle82" />
+          <text
+             x="586.80786"
+             y="850.20001"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text82">1</text>
+          <circle
+             cx="572.95496"
+             cy="850"
+             r="5.1999998"
+             fill="#1085d1"
+             id="circle83" />
+          <text
+             x="572.95496"
+             y="850.20001"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text83">2</text>
+        </g>
+        <g
+           id="transfer-station-symbol-광주역"
+           class="ourclass-transfer-symbol"
+           data-station="219"
+           data-station-name="광주역"
+           data-node-role="transfer-capsule"
+           data-transfer-type="phase"
+           data-rail-transfer="true">
+          <path
+             d="M 1793.0 510 L 1807.0 510"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="20.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path83" />
+          <path
+             d="M 1793.0 510 L 1807.0 510"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path84" />
+          <circle
+             cx="1794.0"
+             cy="510"
+             r="5.2"
+             fill="#E63332"
+             id="circle84" />
+          <text
+             x="1794.0"
+             y="510.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text84">1</text>
+          <circle
+             cx="1806.0"
+             cy="510"
+             r="5.2"
+             fill="#1085D1"
+             id="circle85" />
+          <text
+             x="1806.0"
+             y="510.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text85">2</text>
+        </g>
+        <g
+           id="transfer-station-symbol-백운광장"
+           class="ourclass-transfer-symbol"
+           data-station="211"
+           data-station-name="백운광장"
+           data-node-role="transfer-capsule"
+           data-transfer-type="phase">
+          <path
+             d="M 1633.0 1150 L 1647.0 1150"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="20.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path85" />
+          <path
+             d="M 1633.0 1150 L 1647.0 1150"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.0"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             id="path86" />
+          <circle
+             cx="1634.0"
+             cy="1150"
+             r="5.2"
+             fill="#E63332"
+             id="circle86" />
+          <text
+             x="1634.0"
+             y="1150.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text86">1</text>
+          <circle
+             cx="1646.0"
+             cy="1150"
+             r="5.2"
+             fill="#8A5AA8"
+             id="circle87" />
+          <text
+             x="1646.0"
+             y="1150.2"
+             class="transfer-badge-label"
+             font-size="6.5"
+             id="text87">3</text>
+        </g>
+      </g>
+      <g
+         id="station-name-labels-layer"
+         data-name="역명"
+         class="render-layer label-layer">
+        <g
+           id="station-label-group-119"
+           data-station="119"
+           data-station-name="평동"
+           data-label-role="terminal"
+           transform="translate(3.0637434,55.147382)">
+          <text
+             x="110"
+             y="918"
+             id="station-label-119"
+             class="station-label station-label-terminal"
+             text-anchor="middle">평동</text>
+        </g>
+        <g
+           id="station-label-group-118"
+           data-station="118"
+           data-station-name="도산"
+           data-label-role="ordinary"
+           transform="translate(0.5106239,-9.7018542)">
+          <text
+             x="210"
+             y="984"
+             id="station-label-118"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">도산</text>
+        </g>
+        <g
+           id="station-label-group-117"
+           data-station="117"
+           data-station-name="광주송정"
+           data-label-role="transfer"
+           transform="translate(2.5531195,54.24062)">
+          <text
+             x="330"
+             y="918"
+             id="station-label-117"
+             class="station-label station-label-transfer"
+             text-anchor="middle">광주송정</text>
+        </g>
+        <g
+           id="station-label-group-116"
+           data-station="116"
+           data-station-name="송정공원"
+           data-label-role="ordinary"
+           inkscape:transform-center-x="-0.46894988"
+           inkscape:transform-center-y="10.316897"
+           transform="translate(0.93789976,-10.316897)">
+          <text
+             x="450"
+             y="984"
+             id="station-label-116"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">송정공원</text>
+        </g>
+        <g
+           id="station-label-group-115"
+           data-station="115"
+           data-station-name="공항"
+           data-label-role="ordinary"
+           transform="translate(-0.5106239,51.603221)">
+          <text
+             x="570"
+             y="918"
+             id="station-label-115"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">공항</text>
+        </g>
+        <g
+           id="station-label-group-114"
+           data-station="114"
+           data-station-name="김대중컨벤션센터 (마륵)"
+           data-label-role="ordinary">
+          <text
+             x="690"
+             y="976"
+             id="station-label-114"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">김대중컨벤션센터</text>
+          <text
+             x="690"
+             y="992"
+             id="station-label-114-2"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">(마륵)</text>
+        </g>
+        <g
+           id="station-label-group-112"
+           data-station="112"
+           data-station-name="운천"
+           data-label-role="ordinary"
+           transform="translate(1.1646325,-78.739688)">
+          <text
+             x="940"
+             y="984"
+             id="station-label-112"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">운천</text>
+        </g>
+        <g
+           id="station-label-group-111"
+           data-station="111"
+           data-station-name="쌍촌"
+           data-label-role="ordinary"
+           transform="translate(0,-14.235529)">
+          <text
+             x="1060"
+             y="918"
+             id="station-label-111"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">쌍촌</text>
+        </g>
+        <g
+           id="station-label-group-110"
+           data-station="110"
+           data-station-name="화정"
+           data-label-role="ordinary"
+           transform="translate(3.5276623e-8,-81.458861)">
+          <text
+             x="1180"
+             y="984"
+             id="station-label-110"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">화정</text>
+        </g>
+        <g
+           id="station-label-group-109"
+           data-station="109"
+           data-station-name="농성"
+           data-label-role="ordinary"
+           transform="translate(0,-12.653804)">
+          <text
+             x="1300"
+             y="918"
+             id="station-label-109"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">농성</text>
+        </g>
+        <g
+           id="station-label-group-108"
+           data-station="108"
+           data-station-name="돌고개"
+           data-label-role="ordinary"
+           transform="translate(-0.79086273,-79.877136)">
+          <text
+             x="1420"
+             y="984"
+             id="station-label-108"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">돌고개</text>
+        </g>
+        <g
+           id="station-label-group-107"
+           data-station="107"
+           data-station-name="양동시장"
+           data-label-role="ordinary"
+           transform="translate(0,-12.653804)">
+          <text
+             x="1540"
+             y="918"
+             id="station-label-107"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">양동시장</text>
+        </g>
+        <g
+           id="station-label-group-106"
+           data-station="106"
+           data-station-name="금남로5가"
+           data-label-role="ordinary">
+          <text
+             x="1662.3726"
+             y="907.28632"
+             id="station-label-106"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">금남로5가</text>
+        </g>
+        <g
+           id="station-label-group-105"
+           data-station="105"
+           data-station-name="금남로4가"
+           data-label-role="ordinary"
+           transform="translate(-0.79086273,-11.072078)">
+          <text
+             x="1780"
+             y="918"
+             id="station-label-105"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">금남로4가</text>
+        </g>
+        <g
+           id="station-label-group-104"
+           data-station="104"
+           data-station-name="문화전당 (구도청)"
+           data-label-role="ordinary"
+           transform="translate(-1.4903063,-77.992697)">
+          <text
+             x="1880"
+             y="976"
+             id="station-label-104"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">문화전당</text>
+          <text
+             x="1880"
+             y="992"
+             id="station-label-104-2"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">(구도청)</text>
+        </g>
+        <g
+           id="station-label-group-102"
+           data-station="102"
+           data-station-name="학동·증심사입구"
+           data-label-role="ordinary">
+          <text
+             x="2080"
+             y="1014"
+             id="station-label-102"
+             class="station-label station-label-ordinary"
+             text-anchor="start">학동·증심사입구</text>
+        </g>
+        <g
+           id="station-label-group-101"
+           data-station="101"
+           data-station-name="소태"
+           data-label-role="ordinary">
+          <text
+             x="2160"
+             y="1094"
+             id="station-label-101"
+             class="station-label station-label-ordinary"
+             text-anchor="start">소태</text>
+        </g>
+        <g
+           id="station-label-group-100"
+           data-station="100"
+           data-station-name="녹동"
+           data-label-role="terminal">
+          <text
+             x="2160"
+             y="1214"
+             id="station-label-100"
+             class="station-label station-label-terminal"
+             text-anchor="start">녹동</text>
+        </g>
+        <g
+           id="station-label-group-238"
+           data-station="238"
+           data-station-name="유덕"
+           data-label-role="transfer"
+           data-geometry-zone="left-ring-smoothing">
+          <text
+             x="580"
+             y="822"
+             id="station-label-238"
+             class="station-label station-label-transfer"
+             text-anchor="middle">유덕</text>
+        </g>
+        <g
+           id="station-label-group-201"
+           data-station="201"
+           data-station-name="시청"
+           data-label-role="ordinary"
+           data-geometry-zone="left-ring-smoothing"
+           transform="translate(-1.5817255,-65.641607)">
+          <text
+             x="660"
+             y="884"
+             id="station-label-201"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">시청</text>
+        </g>
+        <g
+           id="station-label-group-202"
+           data-station="202"
+           data-station-name="치평"
+           data-label-role="ordinary"
+           data-geometry-zone="left-ring-smoothing">
+          <text
+             x="740"
+             y="822"
+             id="station-label-202"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">치평</text>
+        </g>
+        <g
+           id="station-label-group-204"
+           data-station="204"
+           data-station-name="운천저수지"
+           data-label-role="ordinary">
+          <text
+             x="900.88715"
+             y="1036.9849"
+             id="station-label-204"
+             class="station-label station-label-ordinary"
+             text-anchor="end">운천저수지</text>
+        </g>
+        <g
+           id="station-label-group-205"
+           data-station="205"
+           data-station-name="금호"
+           data-label-role="ordinary"
+           transform="translate(-10.281216,-18.980706)">
+          <text
+             x="1000"
+             y="1094"
+             id="station-label-205"
+             class="station-label station-label-ordinary"
+             text-anchor="start">금호</text>
+        </g>
+        <g
+           id="station-label-group-206"
+           data-station="206"
+           data-station-name="풍금사거리"
+           data-label-role="ordinary"
+           transform="translate(0,-18.189843)">
+          <text
+             x="1060"
+             y="1224"
+             id="station-label-206"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">풍금사거리</text>
+        </g>
+        <g
+           id="station-label-group-207"
+           data-station="207"
+           data-station-name="월드컵경기장"
+           data-label-role="ordinary"
+           transform="translate(0,-11.862941)">
+          <text
+             x="1180"
+             y="1158"
+             id="station-label-207"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">월드컵경기장</text>
+        </g>
+        <g
+           id="station-label-group-208"
+           data-station="208"
+           data-station-name="풍암호수공원"
+           data-label-role="ordinary"
+           transform="translate(22.935019,-27.680195)">
+          <text
+             x="1270"
+             y="1338"
+             id="station-label-208"
+             class="station-label station-label-ordinary"
+             text-anchor="end">풍암호수공원</text>
+        </g>
+        <g
+           id="station-label-group-209"
+           data-station="209"
+           data-station-name="풍암생활체육공원"
+           data-label-role="ordinary"
+           transform="translate(-0.79086273,-28.471058)">
+          <text
+             x="1375.202"
+             y="1338"
+             id="station-label-209"
+             class="station-label station-label-ordinary"
+             text-anchor="start">풍암생활체육공원</text>
+        </g>
+        <g
+           id="station-label-group-210"
+           data-station="210"
+           data-station-name="무등시장"
+           data-label-role="ordinary"
+           transform="translate(0,-8.6994901)">
+          <text
+             x="1520"
+             y="1138"
+             id="station-label-210"
+             class="station-label station-label-ordinary"
+             text-anchor="middle">무등시장</text>
+        </g>
+        <g
+           id="station-label-group-212"
+           data-station="212"
+           data-station-name="광주기독병원"
+           data-label-role="ordinary">
+          <text
+             x="1748"
+             y="1114"
+             id="station-label-212"
+             class="station-label station-label-ordinary"
+             text-anchor="start">광주기독병원</text>
+        </g>
+        <g
+           id="station-label-group-213"
+           data-station="213"
+           data-station-name="방림"
+           data-label-role="ordinary">
+          <text
+             x="1828"
+             y="1034"
+             id="station-label-213"
+             class="station-label station-label-ordinary"
+             text-anchor="start">방림</text>
+        </g>
+        <g
+           id="station-label-group-215"
+           data-station="215"
+           data-station-name="조선대"
+           data-label-role="ordinary">
+          <text
+             x="2060"
+             y="874"
+             id="station-label-215"
+             class="station-label station-label-ordinary"
+             text-anchor="start">조선대</text>
+        </g>
+        <g
+           id="station-label-group-216"
+           data-station="216"
+           data-station-name="광주법원·검찰청"
+           data-label-role="ordinary">
+          <text
+             x="2060"
+             y="754"
+             id="station-label-216"
+             class="station-label station-label-ordinary"
+             text-anchor="start">광주법원·검찰청</text>
+        </g>
+        <g
+           id="station-label-group-217"
+           data-station="217"
+           data-station-name="두암사거리"
+           data-label-role="ordinary">
+          <text
+             x="2000"
+             y="694"
+             id="station-label-217"
+             class="station-label station-label-ordinary"
+             text-anchor="start">두암사거리</text>
+        </g>
+        <g
+           id="station-label-group-218"
+           data-station="218"
+           data-station-name="광주교대"
+           data-label-role="ordinary">
+          <text
+             x="1918"
+             y="588"
+             id="station-label-218"
+             class="station-label station-label-ordinary"
+             text-anchor="start">광주교대</text>
+        </g>
+        <g
+           id="station-label-group-219"
+           data-station="219"
+           data-station-name="광주역"
+           data-label-role="transfer">
+          <text
+             x="1820"
+             y="486"
+             id="station-label-219"
+             class="station-label station-label-transfer"
+             text-anchor="start">광주역</text>
+        </g>
+        <g
+           id="station-label-group-220"
+           data-station="220"
+           data-station-name="전남대후문"
+           data-label-role="ordinary"
+           transform="translate(0,-8.6994901)">
+          <text
+             x="1680"
+             y="378"
+             id="station-label-220"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">전남대후문</text>
+        </g>
+        <g
+           id="station-label-group-221"
+           data-station="221"
+           data-station-name="전남대북문"
+           data-label-role="ordinary"
+           transform="translate(-0.79086273,-73.550234)">
+          <text
+             x="1560"
+             y="444"
+             id="station-label-221"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">전남대북문</text>
+        </g>
+        <g
+           id="station-label-group-222"
+           data-station="222"
+           data-station-name="오치주공"
+           data-label-role="ordinary"
+           transform="translate(0,-7.1177646)">
+          <text
+             x="1440"
+             y="378"
+             id="station-label-222"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">오치주공</text>
+        </g>
+        <g
+           id="station-label-group-223"
+           data-station="223"
+           data-station-name="광주공고"
+           data-label-role="ordinary"
+           transform="translate(1.5817255,-72.759371)">
+          <text
+             x="1320"
+             y="444"
+             id="station-label-223"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">광주공고</text>
+        </g>
+        <g
+           id="station-label-group-224"
+           data-station="224"
+           data-station-name="삼각"
+           data-label-role="ordinary"
+           transform="translate(0,-7.1177646)">
+          <text
+             x="1200"
+             y="378"
+             id="station-label-224"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">삼각</text>
+        </g>
+        <g
+           id="station-label-group-225"
+           data-station="225"
+           data-station-name="일곡"
+           data-label-role="ordinary"
+           transform="translate(-1.5817255,-76.713685)">
+          <text
+             x="1080"
+             y="444"
+             id="station-label-225"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">일곡</text>
+        </g>
+        <g
+           id="station-label-group-226"
+           data-station="226"
+           data-station-name="본촌산단"
+           data-label-role="ordinary"
+           transform="translate(-0.79086273,52.19694)">
+          <text
+             x="960"
+             y="498"
+             id="station-label-226"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">본촌산단</text>
+        </g>
+        <g
+           id="station-label-group-227"
+           data-station="227"
+           data-station-name="양산산단"
+           data-label-role="ordinary"
+           transform="translate(0,-12.653804)">
+          <text
+             x="840"
+             y="564"
+             id="station-label-227"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">양산산단</text>
+        </g>
+        <g
+           id="station-label-group-228"
+           data-station="228"
+           data-station-name="양산우체국"
+           data-label-role="ordinary"
+           transform="translate(-1.5817255,53.778666)">
+          <text
+             x="720"
+             y="498"
+             id="station-label-228"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">양산우체국</text>
+        </g>
+        <g
+           id="station-label-group-229"
+           data-station="229"
+           data-station-name="용두"
+           data-label-role="ordinary"
+           transform="translate(-0.79086273,-9.4903528)">
+          <text
+             x="600"
+             y="564"
+             id="station-label-229"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">용두</text>
+        </g>
+        <g
+           id="station-label-group-230"
+           data-station="230"
+           data-station-name="신용"
+           data-label-role="ordinary"
+           transform="translate(-3.1634509,55.360391)">
+          <text
+             x="480"
+             y="498"
+             id="station-label-230"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">신용</text>
+        </g>
+        <g
+           id="station-label-group-231"
+           data-station="231"
+           data-station-name="쌍암"
+           data-label-role="ordinary"
+           transform="translate(-3.1634509,-77.504548)">
+          <text
+             x="360"
+             y="564"
+             id="station-label-231"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">쌍암</text>
+        </g>
+        <g
+           id="station-label-group-232"
+           data-station="232"
+           data-station-name="첨단"
+           data-label-role="ordinary">
+          <text
+             x="244"
+             y="594"
+             id="station-label-232"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="end">첨단</text>
+        </g>
+        <g
+           id="station-label-group-233"
+           data-station="233"
+           data-station-name="응암공원"
+           data-label-role="ordinary">
+          <text
+             x="160"
+             y="694"
+             id="station-label-233"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="end">응암공원</text>
+        </g>
+        <g
+           id="station-label-group-234"
+           data-station="234"
+           data-station-name="장덕"
+           data-label-role="ordinary">
+          <text
+             x="160"
+             y="774"
+             id="station-label-234"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="end">장덕</text>
+        </g>
+        <g
+           id="station-label-group-235"
+           data-station="235"
+           data-station-name="수완"
+           data-label-role="ordinary">
+          <text
+             x="280"
+             y="828"
+             id="station-label-235"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="start">수완</text>
+        </g>
+        <g
+           id="station-label-group-236"
+           data-station="236"
+           data-station-name="신가"
+           data-label-role="ordinary"
+           transform="translate(-2.1977123,-77.22616)">
+          <text
+             x="380"
+             y="904"
+             id="station-label-236"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">신가</text>
+        </g>
+        <g
+           id="station-label-group-237"
+           data-station="237"
+           data-station-name="운남"
+           data-label-role="ordinary"
+           data-geometry-zone="left-ring-smoothing">
+          <text
+             x="500"
+             y="824"
+             id="station-label-237"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">운남</text>
+        </g>
+        <g
+           id="station-label-group-239"
+           data-station="239"
+           data-station-name="대광여고"
+           data-label-role="ordinary">
+          <text
+             x="1660"
+             y="1274"
+             id="station-label-239"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="start">대광여고</text>
+        </g>
+        <g
+           id="station-label-group-240"
+           data-station="240"
+           data-station-name="진월"
+           data-label-role="ordinary">
+          <text
+             x="1660"
+             y="1374"
+             id="station-label-240"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="start">진월</text>
+        </g>
+        <g
+           id="station-label-group-241"
+           data-station="241"
+           data-station-name="진월초교"
+           data-label-role="ordinary">
+          <text
+             x="1588"
+             y="1492"
+             id="station-label-241"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="start">진월초교</text>
+        </g>
+        <g
+           id="station-label-group-242"
+           data-station="242"
+           data-station-name="광주대"
+           data-label-role="ordinary">
+          <text
+             x="1484"
+             y="1600"
+             id="station-label-242"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="start">광주대</text>
+        </g>
+        <g
+           id="station-label-group-243"
+           data-station="243"
+           data-station-name="송암공단"
+           data-label-role="ordinary">
+          <text
+             x="1340"
+             y="1604"
+             id="station-label-243"
+             class="station-label station-label-ordinary station-label-small"
+             text-anchor="middle">송암공단</text>
+        </g>
+        <g
+           id="station-label-group-244"
+           data-station="244"
+           data-station-name="효천"
+           data-label-role="transfer">
+          <text
+             x="1202"
+             y="1522"
+             id="station-label-244"
+             class="station-label station-label-transfer station-label-small"
+             text-anchor="end">효천</text>
+        </g>
+        <g
+           id="station-label-group-113-203"
+           data-station="113-203"
+           data-station-name="상무"
+           data-label-role="transfer"
+           transform="translate(-29.115813,6.9877951)">
+          <text
+             x="848"
+             y="899"
+             id="station-label-113-203"
+             class="station-label station-label-transfer"
+             text-anchor="start">상무</text>
+        </g>
+        <g
+           id="station-label-group-103-214"
+           data-station="103-214"
+           data-station-name="남광주"
+           data-label-role="transfer"
+           transform="translate(40.735039,1.9870751)">
+          <text
+             x="1956"
+             y="895"
+             id="station-label-103-214"
+             class="station-label station-label-transfer"
+             text-anchor="end">남광주</text>
+        </g>
+        <g
+           id="station-label-group-211"
+           data-station="211"
+           data-station-name="백운광장"
+           data-label-role="transfer">
+          <text
+             x="1640"
+             y="1123"
+             id="station-label-211"
+             class="station-label station-label-transfer"
+             text-anchor="middle">백운광장</text>
+        </g>
+      </g>
+      <g
+         id="rail-transfer-layer">
+        <g
+           id="rail-chip-gwangju-songjeong-highspeed"
+           data-station="117"
+           data-station-name="광주송정"
+           data-services="KTX,SRT"
+           data-logo-mode="inline-svg-paths"
+           data-logo-source="Wikimedia-Commons-KTX_logo.svg-and-SRT_logo.svg"
+           transform="translate(0.5106239,102.12478)">
+          <title
+             id="rail-chip-gwangju-songjeong-title">광주송정역 KTX·SRT 환승</title>
+          <g
+             id="logo-ktx-inline-vector"
+             transform="matrix(0.03276338,0,0,0.03161,317.13162,875.5116)"
+             aria-label="KTX">
+            <path
+               d="m 660,175 -36,37 -28,32 32,71 h 93 z m -522,-40 1,-1 1,1 -1,1 z M 0,315 h 93 l 15,-50 v -3 l 3,-7 2,-10 3,-7 4,-17 2,-3 11,-7 2,1 21,58 18,45 h 92 l -2,-8 -2,-3 -1,-5 -2,-3 -1,-5 -2,-3 -1,-5 -10,-24 -1,-5 -2,-3 -1,-5 -2,-3 -30,-81 76,-49 h 73 l 1,1 -7,21 -4,17 -3,7 -6,24 -3,7 -4,17 -3,7 -6,24 -3,7 v 3 l -20,67 h 93 l 9,-29 v -3 l 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 v -3 l 2,-2 h 85 l 4,6 24,56 25,-23 23,-19 6,-9 9,-10 2,-5 -24,-55 H 255 l -115,81 -1,-2 11,-13 19,-66 H 76 Z"
+               fill="#000055"
+               fill-rule="evenodd"
+               id="logo-ktx-blue-path" />
+            <path
+               d="m 958,0 h -9 l -1,1 -15,1 -1,1 -38,5 -25,5 -9,3 h -4 l -40,11 -43,15 -36,15 -39,19 -19,11 -30,20 -28,21 -50,43 -69,69 -46,51 -20,24 h 102 l 55,-69 46,-51 61,-59 46,-38 25,-18 28,-18 48,-25 42,-17 h 3 l 6,-3 22,-7 z"
+               fill="#e00024"
+               fill-rule="evenodd"
+               id="logo-ktx-red-path" />
+          </g>
+          <g
+             id="logo-srt-inline-vector"
+             transform="matrix(0.0358837,0,0,0.03462048,315.11394,887.28947)"
+             aria-label="SRT">
+            <path
+               d="m 473,82 h -68 l -61,170 h 67 z M 1,252 h 187 l 1,-1 h 9 l 1,-1 12,-1 17,-4 12,-4 18,-10 14,-14 6,-9 6,-13 3,-13 v -21 l -1,-1 -1,-10 -7,-19 -13,-26 -6,-20 V 70 l 5,-11 9,-8 13,-5 18,-1 1,-1 224,1 7,2 9,5 5,5 6,12 1,8 -1,1 -1,10 -8,15 -12,12 -15,10 -35,15 -21,7 h -4 l 5,13 39,80 6,6 7,4 7,2 h 199 l 4,1 1,-1 13,-1 9,-3 16,-9 12,-12 6,-9 8,-18 3,-11 2,-3 3,-11 2,-3 2,-8 2,-3 2,-8 2,-3 3,-11 2,-3 32,-90 1,-1 h 78 l 6,-2 7,-7 20,-36 H 751 l -1,1 -20,2 -18,5 -15,7 -13,9 -11,11 -7,10 -8,19 h 37 l 11,-10 8,-4 14,-4 h 10 l 1,-1 h 39 l 1,1 -61,169 -5,5 -12,4 H 565 l -7,-13 v -2 l -6,-11 v -2 l -6,-11 -13,-30 4,-3 10,-3 25,-12 24,-15 10,-8 11,-11 7,-9 6,-11 3,-9 1,-20 -5,-16 -9,-13 -6,-5 L 602,13 586,7 574,4 557,2 556,1 H 545 L 544,0 H 281 l -1,1 -16,1 -18,4 -14,5 -12,6 -13,10 -8,10 -5,10 -3,12 v 22 l 4,18 8,21 11,22 5,18 v 17 l -2,6 -5,8 -9,8 -10,5 -10,3 -12,1 -1,1 H 33 l -8,3 -6,6 z"
+               fill="#4c2f48"
+               fill-rule="evenodd"
+               id="logo-srt-path" />
+          </g>
+        </g>
+        <rect
+           x="1191.0"
+           y="1592"
+           width="58"
+           height="20"
+           rx="10"
+           ry="10"
+           fill="#F8FAFC"
+           stroke="#CDD7DF"
+           stroke-width="1"
+           id="rect89" />
+        <text
+           x="1220"
+           y="1602.5"
+           class="rail-chip-text"
+           id="text90">경전선</text>
+      </g>
+    </g>
+  </g>
+</svg>

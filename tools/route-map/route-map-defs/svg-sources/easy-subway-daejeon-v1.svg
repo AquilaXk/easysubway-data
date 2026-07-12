@@ -1,0 +1,5699 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="2400"
+   height="1800"
+   viewBox="0 0 2400 1800"
+   role="img"
+   aria-labelledby="map-title map-description"
+   preserveAspectRatio="xMidYMid meet"
+   id="daejeon-metro-sma-v1-family"
+   data-family="easy-subway-sma-v1"
+   data-design-goal-version="v2.1"
+   data-base-unit-u="8px"
+   data-line-width="1u"
+   data-grid="3u"
+   data-corner-radius="2.5u"
+   data-parallel-gap="0.25u"
+   data-octolinear="true"
+   data-octolinear-angles="0,45,90,135,180,225,270,315"
+   data-font-policy="Pretendard-only"
+   data-state-policy="class-toggle-not-delete"
+   data-data-checked-at="2026-07-12"
+   version="1.1"
+   sodipodi:docname="easy_subway_daejeon_v1_official_station_corrected.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   data-transfer-node-pass="v14-badge-labels-restored"
+   data-transfer-node-rule="sma-v1 shell 40/32, r12 badges and internal route labels; rendered at source scale 0.455"
+   data-transfer-node-visual-size="outline=18.2px;fill=14.56px;r=5.46px;gap=10.92px"
+   data-revision="sma-v1-construction-status-and-rail-logos-v2"
+   data-construction-status-verified="2026-07-12"
+   data-construction-visual="ghost-solid-plus-dashed-route-and-orange-station-halo"
+   data-rail-logo-format="inline-svg-paths"
+   data-rail-logo-source="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview223"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.41861997"
+     inkscape:cx="1436.8641"
+     inkscape:cy="1045.1006"
+     inkscape:window-width="1920"
+     inkscape:window-height="1022"
+     inkscape:window-x="0"
+     inkscape:window-y="30"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="legend-highspeed-rail-chip" />
+  <title
+     id="map-title">대전 도시철도 통합 노선도 — SMA-v1 공사상태·고속철도 표기본</title>
+  <desc
+     id="map-description">SMA-v1 패밀리룩의 편집 가능한 벡터 노선도. 대전시 최종 고시 기준으로 도시철도 2호선 206 대전역(중앙시장)과 207 대전역(혁신도시)을 별도 정거장으로 표시한다. 206은 도시철도 1호선 대전역 환승, 207은 국철 대전역·KTX·SRT·BRT 연결 역할로 구분했으며, 1호선 선형과 환승 노드를 이에 맞게 바로잡았다. 1호선 22개 운영역, 2호선 45개 정거장, 충청권 광역철도 1단계 12개 역과 용두·식장산 신설사업역을 공식 자료와 전수 대조했다.</desc>
+  <metadata
+     id="metadata1">{&quot;family_reference&quot;:&quot;easy-subway-sma-v1&quot;,&quot;unit_basis&quot;:{&quot;u&quot;:&quot;8px&quot;,&quot;line_width&quot;:&quot;1u&quot;,&quot;grid&quot;:&quot;3u&quot;,&quot;corner_radius&quot;:&quot;2.5u&quot;,&quot;parallel_gap&quot;:&quot;0.25u&quot;},&quot;geometry&quot;:&quot;octolinear&quot;,&quot;checked_at&quot;:&quot;2026-07-12&quot;,&quot;station_counts&quot;:{&quot;line1_active&quot;:22,&quot;line1_new_projects&quot;:2,&quot;line2_final&quot;:45,&quot;regional_phase1&quot;:12,&quot;network_records_total&quot;:81,&quot;shared_station_records&quot;:9,&quot;physical_labels_total&quot;:72},&quot;collision_check&quot;:{&quot;label_label&quot;:0,&quot;label_route&quot;:0,&quot;out_of_bounds&quot;:0},&quot;sources&quot;:{&quot;line1&quot;:&quot;https://www.djtc.kr/&quot;,&quot;line2&quot;:&quot;https://www.daejeon.go.kr/drh/drhStoryDaejeonView.do?boardId=blog_0001&amp;categorySeq=294&amp;menuSeq=1627&amp;ntatcSeq=1500779309&quot;,&quot;regional&quot;:&quot;https://www.daejeon.go.kr/tra/TraContentsHtmlView.do?menuSeq=7677&quot;,&quot;line1-planned&quot;:&quot;https://www.daejeon.go.kr/drh/earthWorkInfoList.do&quot;,&quot;line2-final-names&quot;:&quot;https://www.daejeon.go.kr/drh/depart/board/boardNormalView.do?boardId=blog_0001&amp;menuSeq=1625&amp;ntatcSeq=1500779309&amp;pageIndex=1&quot;,&quot;line2-location-detail&quot;:&quot;https://daejeon.go.kr/data/djTram/tram_station.pdf&quot;,&quot;regional-phase1&quot;:&quot;https://www.kr.or.kr/sub/info.do?m=05010402&quot;,&quot;yongdu-project&quot;:&quot;https://www.daejeon.go.kr/tram/TramContentsHtmlView.do?menuSeq=5998&quot;},&quot;revision&quot;:&quot;official-station-audit-and-daejeon-206-207-topology-fix-v3&quot;,&quot;construction_status&quot;:{&quot;line2_tram&quot;:&quot;construction-all-main-sections&quot;,&quot;regional_phase1&quot;:&quot;construction-31.2pct-as-of-2026-03&quot;,&quot;line1_sikjangsan_extension&quot;:&quot;construction-2025-12-26-to-2027-10-16&quot;,&quot;yongdu_line1_transfer&quot;:&quot;planned-project; regional-rail-part-under-construction&quot;},&quot;construction_visual_grammar&quot;:{&quot;route&quot;:&quot;faint continuous route-color guide plus full-opacity rounded dash&quot;,&quot;station&quot;:&quot;orange dashed outer halo plus line-color station node&quot;,&quot;transfer&quot;:&quot;orange dashed halo only around badges of construction lines&quot;,&quot;status_panel&quot;:&quot;on-map 3-row construction summary&quot;},&quot;rail_logo_assets&quot;:{&quot;source_family_file&quot;:&quot;gwangju_metro_map_sma_v1_family_transfer_v5.svg&quot;,&quot;KTX&quot;:&quot;inline SVG paths; dark-blue and red&quot;,&quot;SRT&quot;:&quot;inline SVG path; burgundy&quot;,&quot;external_dependencies&quot;:false},&quot;rail_service_markers&quot;:{&quot;대전역&quot;:[&quot;KTX&quot;,&quot;SRT&quot;],&quot;서대전역&quot;:[&quot;KTX&quot;]},&quot;data_snapshot&quot;:{&quot;line1_active&quot;:&quot;Daejeon Transportation Corporation official station list&quot;,&quot;line2_final_names&quot;:&quot;Daejeon Metropolitan City final notice, 2025-10-27&quot;,&quot;regional_phase1&quot;:&quot;Korea National Railway / Daejeon official project data, checked 2026-07-12&quot;},&quot;daejeon_station_disambiguation&quot;:{&quot;206&quot;:{&quot;official_name&quot;:&quot;대전역(중앙시장)&quot;,&quot;role&quot;:&quot;도시철도 1호선 대전역 환승&quot;,&quot;svg_coordinate&quot;:[2112,1320]},&quot;207&quot;:{&quot;official_name&quot;:&quot;대전역(혁신도시)&quot;,&quot;role&quot;:&quot;국철 대전역·KTX·SRT·BRT 환승&quot;,&quot;svg_coordinate&quot;:[2160,1272]},&quot;previous_svg_error&quot;:&quot;1호선·2호선 환승 노드를 207에 연결하고 1호선 선형이 205·207을 통과한 오류&quot;,&quot;corrected&quot;:true}}</metadata>
+  <defs
+     id="defs1">
+    <pattern
+       id="subtle-background-grid-pattern"
+       width="44"
+       height="44"
+       patternUnits="userSpaceOnUse">
+      <path
+         d="M 44 0 L 0 0 0 44"
+         fill="none"
+         stroke="#E9F1F6"
+         stroke-width="0.72"
+         id="path1" />
+    </pattern>
+    <clipPath
+       id="rounded-map-card-clip-area">
+      <rect
+         x="40"
+         y="126"
+         width="2320"
+         height="1630"
+         rx="34"
+         ry="34"
+         id="rect1" />
+    </clipPath>
+    <style
+       id="style1">
+    #daejeon-metro-sma-v1-family { font-family:Pretendard, &quot;Noto Sans CJK KR&quot;, sans-serif; }
+    #daejeon-metro-sma-v1-family text,
+    #daejeon-metro-sma-v1-family tspan { font-family:Pretendard, &quot;Noto Sans CJK KR&quot;, sans-serif; }
+    .ui-title { fill:#FFFFFF; font-size:32px; font-weight:900; letter-spacing:-1px; }
+    .ui-note { fill:#6E7F8B; font-size:12px; font-weight:650; letter-spacing:-.2px; }
+    #route-lines-layer path, #route-lines-layer line, #route-lines-layer polyline,
+    .route-line { stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1; shape-rendering:geometricPrecision; }
+    #station-name-labels-layer text { paint-order:stroke; stroke:#FFFFFF; stroke-width:4px; stroke-linecap:round; stroke-linejoin:round; }
+    .station-label { letter-spacing:-.22px; }
+    .station-label.ordinary { font-weight:400; }
+    .station-label.transfer { font-weight:600; }
+    .station-label.terminal, .station-label.planned { font-weight:700; }
+    .station-label.regional { font-weight:500; }
+    .station-sub { font-weight:400; letter-spacing:-.18px; }
+    .ourclass-transfer-symbol { isolation:isolate; pointer-events:none; }
+    .ourclass-transfer-dot { stroke:none; shape-rendering:geometricPrecision; }
+    [data-state=&quot;inactive&quot;], .is-inactive { opacity:.28; }
+
+
+    /* sma-v1 transfer capsule parity pass */
+    .ourclass-transfer-symbol { isolation:isolate; pointer-events:none; }
+    .ourclass-transfer-shell-outline,
+    .ourclass-transfer-shell-fill {
+      fill:none; stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1;
+      vector-effect:none; shape-rendering:geometricPrecision;
+    }
+    .ourclass-transfer-badge-circle { stroke:none; vector-effect:none; shape-rendering:geometricPrecision; }
+    .ourclass-transfer-badge-label {
+      font-family:Pretendard, &quot;Noto Sans CJK KR&quot;, sans-serif;
+      font-weight:900; text-anchor:middle; dominant-baseline:central; alignment-baseline:middle;
+      fill:#FFFFFF; stroke:none; paint-order:normal; text-rendering:geometricPrecision;
+      letter-spacing:-0.08px;
+    }
+
+
+    /* Construction-state visual grammar — SMA-v1 family extension */
+    .construction-route-base {
+      fill:none; stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1;
+      stroke-opacity:.20; pointer-events:none; shape-rendering:geometricPrecision;
+    }
+    .construction-route-foreground {
+      fill:none; stroke-linecap:round; stroke-linejoin:round; stroke-miterlimit:1;
+      pointer-events:none; shape-rendering:geometricPrecision;
+    }
+    .construction-station-halo,
+    .construction-transfer-halo {
+      fill:#FFFFFF; fill-opacity:.94; stroke:#F29A2E; stroke-width:1.25px;
+      stroke-dasharray:3 2; vector-effect:none; shape-rendering:geometricPrecision;
+    }
+    .construction-transfer-halo { fill:none; stroke-width:1.1px; stroke-dasharray:2.4 1.7; }
+    .construction-label { font-weight:500; }
+    .construction-panel-title { fill:#344258; font-size:14px; font-weight:850; letter-spacing:-.25px; }
+    .construction-panel-label { fill:#344258; font-size:12.4px; font-weight:720; letter-spacing:-.2px; }
+    .construction-panel-badge { fill:#FFFFFF; font-size:10.5px; font-weight:850; text-anchor:middle; dominant-baseline:central; alignment-baseline:middle; }
+    .rail-chip-label { fill:#5E6C78; font-size:11px; font-weight:750; dominant-baseline:central; alignment-baseline:middle; }
+</style>
+  </defs>
+  <rect
+     id="page-background"
+     x="0"
+     y="0"
+     width="2400"
+     height="1800"
+     fill="#FFFFFF" />
+  <rect
+     id="background-grid-overlay"
+     x="0"
+     y="0"
+     width="2400"
+     height="1800"
+     fill="url(#subtle-background-grid-pattern)"
+     opacity="0.52" />
+  <rect
+     id="header-background-pill"
+     x="40"
+     y="30"
+     width="2320"
+     height="82"
+     rx="30"
+     ry="30"
+     fill="#102133" />
+  <text
+     id="header-title-text"
+     x="84"
+     y="79.267"
+     class="ui-title"
+     fill="#FFFFFF"
+     font-size="32"
+     font-weight="900"
+     letter-spacing="-1">대전 도시철도 통합 노선도</text>
+  <g
+     class="ui-chip"
+     id="g2">
+    <rect
+       x="1988"
+       y="40.5"
+       width="30"
+       height="23"
+       rx="11.5"
+       fill="#00975A"
+       id="rect2" />
+    <text
+       x="2003.0"
+       y="52.3"
+       fill="#FFFFFF"
+       font-size="10.5"
+       font-weight="850"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text2">1</text>
+  </g>
+  <g
+     class="ui-chip"
+     id="g3">
+    <rect
+       x="2026"
+       y="40.5"
+       width="30"
+       height="23"
+       rx="11.5"
+       fill="#E72B35"
+       id="rect3" />
+    <text
+       x="2041.0"
+       y="52.3"
+       fill="#FFFFFF"
+       font-size="10.5"
+       font-weight="850"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text3">2</text>
+  </g>
+  <g
+     class="ui-chip"
+     id="g4">
+    <rect
+       x="2064"
+       y="40.5"
+       width="46"
+       height="23"
+       rx="11.5"
+       fill="#2F67C7"
+       id="rect4" />
+    <text
+       x="2087.0"
+       y="52.3"
+       fill="#FFFFFF"
+       font-size="10.5"
+       font-weight="850"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text4">광역</text>
+  </g>
+  <g
+     class="ui-chip"
+     id="g5">
+    <rect
+       x="1988"
+       y="72.5"
+       width="46"
+       height="23"
+       rx="11.5"
+       fill="#00975A"
+       id="rect5" />
+    <text
+       x="2011.0"
+       y="84.3"
+       fill="#FFFFFF"
+       font-size="10.5"
+       font-weight="850"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text5">운영</text>
+  </g>
+  <g
+     class="ui-chip"
+     id="g6">
+    <rect
+       x="2042"
+       y="72.5"
+       width="66"
+       height="23"
+       rx="11.5"
+       fill="#F29A2E"
+       id="rect6" />
+    <text
+       x="2075.0"
+       y="84.3"
+       fill="#FFFFFF"
+       font-size="10.5"
+       font-weight="850"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text6">공사 중</text>
+  </g>
+  <g
+     class="ui-chip"
+     id="g7">
+    <rect
+       x="2116"
+       y="72.5"
+       width="66"
+       height="23"
+       rx="11.5"
+       fill="#F29A2E"
+       id="rect7" />
+    <text
+       x="2149.0"
+       y="84.3"
+       fill="#FFFFFF"
+       font-size="10.5"
+       font-weight="850"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text7">연장 공사</text>
+  </g>
+  <rect
+     id="main-map-card-background"
+     x="39.621593"
+     y="125.6216"
+     width="2320"
+     height="1630"
+     rx="34"
+     ry="34"
+     fill="#ffffff"
+     stroke="#d7e5ee"
+     stroke-width="1.4" />
+  <text
+     x="1033.1628"
+     y="1580.5552"
+     fill="#344258"
+     font-size="12.2px"
+     font-weight="700"
+     dominant-baseline="central"
+     id="text215-8-8"
+     style="font-family:Pretendard, 'Noto Sans CJK KR', sans-serif"
+     data-state="construction">충청권 광역철도 · 공사 중</text>
+  <text
+     x="1458.8746"
+     y="1320.0735"
+     fill="#344258"
+     font-size="12.2px"
+     font-weight="700"
+     dominant-baseline="central"
+     id="text215-8-91"
+     style="font-family:Pretendard, 'Noto Sans CJK KR', sans-serif"
+     data-state="construction">충청권 광역철도 · 공사 중</text>
+  <text
+     x="187.98978"
+     y="1575.9155"
+     fill="#344258"
+     font-size="12.2px"
+     font-weight="700"
+     dominant-baseline="central"
+     id="text215-8-9"
+     style="font-family:Pretendard, 'Noto Sans CJK KR', sans-serif"
+     data-state="construction">충청권 광역철도 · 공사 중</text>
+  <g
+     class="route-line-explanation-item"
+     id="g215-1"
+     transform="translate(990.02256,188.91679)">
+    <text
+       x="1172"
+       y="158.5"
+       fill="#ffffff"
+       font-size="8.5px"
+       font-weight="900"
+       text-anchor="middle"
+       dominant-baseline="central"
+       id="text214-8"
+       style="font-family:Pretendard, 'Noto Sans CJK KR', sans-serif">광역</text>
+    <text
+       x="1151.171"
+       y="169.63899"
+       fill="#344258"
+       font-size="12.2px"
+       font-weight="700"
+       dominant-baseline="central"
+       id="text215-8"
+       style="font-family:Pretendard, 'Noto Sans CJK KR', sans-serif"
+       data-state="construction">충청권 광역철도 · 공사 중</text>
+  </g>
+  <g
+     id="map-card-clipped-content-layer"
+     clip-path="url(#rounded-map-card-clip-area)">
+    <g
+       id="route-lines-layer">
+      <g
+         id="route-line-2-loop"
+         class="route-group"
+         data-state="construction"
+         data-status-label="공사중"
+         data-construction-style="ghost-solid-plus-dashed">
+        <path
+           d="M 1680 1464 L 1776 1368 L 1872 1464 L 1968 1464 L 2064 1368 L 2112 1320 L 2160 1272 L 2160 1176 L 2160 1080 L 2160 984 L 2160 888 L 2160 792 L 2088 720 L 1992 624 L 1872 624 L 1752 624 L 1632 624 L 1512 624 L 1392 624 L 1272 624 L 1152 624 L 1032 624 L 912 624 L 816 720 L 744 792 L 672 864 L 600 936 L 600 1032 L 600 1128 L 600 1224 L 672 1296 L 744 1368 L 840 1464 L 960 1464 L 1080 1464 L 1200 1464 L 1320 1464 L 1440 1464 L 1536 1464 L 1608 1464 L 1680 1464"
+           class="route-line construction-route-base"
+           fill="none"
+           stroke="#E72B35"
+           stroke-width="8"
+           id="path7-construction-guide"
+           stroke-opacity="0.20" />
+        <path
+           d="M 1680 1464 L 1776 1368 L 1872 1464 L 1968 1464 L 2064 1368 L 2112 1320 L 2160 1272 L 2160 1176 L 2160 1080 L 2160 984 L 2160 888 L 2160 792 L 2088 720 L 1992 624 L 1872 624 L 1752 624 L 1632 624 L 1512 624 L 1392 624 L 1272 624 L 1152 624 L 1032 624 L 912 624 L 816 720 L 744 792 L 672 864 L 600 936 L 600 1032 L 600 1128 L 600 1224 L 672 1296 L 744 1368 L 840 1464 L 960 1464 L 1080 1464 L 1200 1464 L 1320 1464 L 1440 1464 L 1536 1464 L 1608 1464 L 1680 1464"
+           class="route-line construction-route-foreground"
+           fill="none"
+           stroke="#E72B35"
+           stroke-width="8"
+           id="path7"
+           stroke-dasharray="18 8"
+           stroke-opacity="1"
+           data-state="construction" />
+      </g>
+      <g
+         id="route-line-2-north-branch"
+         class="route-group"
+         data-state="construction"
+         data-status-label="공사중"
+         data-construction-style="ghost-solid-plus-dashed">
+        <path
+           d="M 2160 792 L 2208 744 L 2304 744 L 2304 648 L 2304 552 L 2304 456"
+           class="route-line construction-route-base"
+           fill="none"
+           stroke="#E72B35"
+           stroke-width="8"
+           id="path8-construction-guide"
+           stroke-opacity="0.20" />
+        <path
+           d="M 2160 792 L 2208 744 L 2304 744 L 2304 648 L 2304 552 L 2304 456"
+           class="route-line construction-route-foreground"
+           fill="none"
+           stroke="#E72B35"
+           stroke-width="8"
+           id="path8"
+           stroke-dasharray="18 8"
+           stroke-opacity="1"
+           data-state="construction" />
+      </g>
+      <g
+         id="route-line-2-south-branch"
+         class="route-group"
+         data-state="construction"
+         data-status-label="공사중"
+         data-construction-style="ghost-solid-plus-dashed">
+        <path
+           d="M 840 1464 L 744 1560"
+           class="route-line construction-route-base"
+           fill="none"
+           stroke="#E72B35"
+           stroke-width="8"
+           id="path9-construction-guide"
+           stroke-opacity="0.20" />
+        <path
+           d="M 840 1464 L 744 1560"
+           class="route-line construction-route-foreground"
+           fill="none"
+           stroke="#E72B35"
+           stroke-width="8"
+           id="path9"
+           stroke-dasharray="18 8"
+           stroke-opacity="1"
+           data-state="construction" />
+      </g>
+      <g
+         id="route-line-regional-1"
+         class="route-group"
+         data-state="construction"
+         data-status-label="공사중"
+         data-construction-style="ghost-solid-plus-dashed">
+        <path
+           d="M 240 1608 L 384 1608 L 528 1608 L 1176 1608 L 1320 1464 L 1440 1344 L 1560 1344 L 1680 1464 L 1680 1272 L 1512 1104 L 1752 864 L 1992 624 L 2064 552 L 2136 480 L 2208 408"
+           class="route-line construction-route-base"
+           fill="none"
+           stroke="#2F67C7"
+           stroke-width="8"
+           id="path10-construction-guide"
+           stroke-opacity="0.20" />
+        <path
+           d="M 240 1608 L 384 1608 L 528 1608 L 1176 1608 L 1320 1464 L 1440 1344 L 1560 1344 L 1680 1464 L 1680 1272 L 1512 1104 L 1752 864 L 1992 624 L 2064 552 L 2136 480 L 2208 408"
+           class="route-line construction-route-foreground"
+           fill="none"
+           stroke="#2F67C7"
+           stroke-width="8"
+           stroke-dasharray="16 9"
+           id="path10"
+           stroke-opacity="1"
+           data-state="construction" />
+      </g>
+      <g
+         id="route-line-1"
+         class="route-group"
+         data-state="active">
+        <path
+           d="M 216 384 L 288 456 L 360 528 L 432 600 L 504 672 L 576 744 L 624 792 L 744 792 L 864 792 L 984 792 L 1104 792 L 1248 792 L 1416 624 L 1512 624 L 1512 744 L 1512 864 L 1512 984 L 1512 1104 L 1512 1224 L 1632 1224 L 1776 1368 L 1872 1368 L 1968 1368 L 2016 1368 L 2064 1320 L 2112 1320 L 2112 1224 L 2160 1176 L 2232 1248 L 2232 1344"
+           class="route-line"
+           fill="none"
+           stroke="#00975A"
+           stroke-width="8"
+           id="path11"
+           data-topology-revision="104-transfer-at-line2-206" />
+      </g>
+      <g
+         id="route-line-1-sikjangsan-extension"
+         class="route-group"
+         data-state="construction"
+         data-status-label="공사중"
+         data-construction-style="ghost-solid-plus-dashed">
+        <path
+           d="M 2232 1344 L 2232 1440"
+           class="route-line construction-route-base"
+           fill="none"
+           stroke="#00975A"
+           stroke-width="8"
+           id="path12-construction-guide"
+           stroke-opacity="0.20" />
+        <path
+           d="M 2232 1344 L 2232 1440"
+           class="route-line construction-route-foreground"
+           fill="none"
+           stroke="#00975A"
+           stroke-width="8"
+           stroke-dasharray="12 8"
+           id="path12"
+           stroke-opacity="1"
+           data-state="construction" />
+      </g>
+    </g>
+    <g
+       id="station-symbols-layer">
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="122"
+         data-state="active"
+         id="g12">
+        <circle
+           cx="216"
+           cy="384"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="2.4"
+           id="circle12" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="121"
+         data-state="active"
+         id="g13">
+        <circle
+           cx="288"
+           cy="456"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle13" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="120"
+         data-state="active"
+         id="g14">
+        <circle
+           cx="360"
+           cy="528"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle14" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="119"
+         data-state="active"
+         id="g15">
+        <circle
+           cx="432"
+           cy="600"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle15" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="118"
+         data-state="active"
+         id="g16">
+        <circle
+           cx="504"
+           cy="672"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle16" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="117"
+         data-state="active"
+         id="g17">
+        <circle
+           cx="576"
+           cy="744"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle17" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="115"
+         data-state="active"
+         id="g18">
+        <circle
+           cx="864"
+           cy="792"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle18" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="114"
+         data-state="active"
+         id="g19">
+        <circle
+           cx="984"
+           cy="792"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle19" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="113"
+         data-state="active"
+         id="g20">
+        <circle
+           cx="1104"
+           cy="792"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle20" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="111"
+         data-state="active"
+         id="g21">
+        <circle
+           cx="1512"
+           cy="744"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle21" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="110"
+         data-state="active"
+         id="g22">
+        <circle
+           cx="1512"
+           cy="864"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle22" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="109"
+         data-state="active"
+         id="g23">
+        <circle
+           cx="1512"
+           cy="984"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle23" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="108"
+         data-state="active"
+         id="g24">
+        <circle
+           cx="1512"
+           cy="1224"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle24" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="106"
+         data-state="active"
+         id="g25">
+        <circle
+           cx="1872"
+           cy="1368"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle25" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="105"
+         data-state="active"
+         id="g26">
+        <circle
+           cx="1968"
+           cy="1368"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle26" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="102"
+         data-state="active"
+         id="g27">
+        <circle
+           cx="2232"
+           cy="1248"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="1.8"
+           id="circle27" />
+      </g>
+      <g
+         class="station-symbol"
+         data-line="1"
+         data-station-code="101"
+         data-state="active"
+         id="g28">
+        <circle
+           cx="2232"
+           cy="1344"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="2.4"
+           id="circle28" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="1"
+         data-station-code="SX"
+         data-state="construction"
+         id="g30"
+         data-status="construction">
+        <circle
+           cx="2232"
+           cy="1440"
+           r="9.2"
+           fill="#FFFFFF"
+           stroke="#F29A2E"
+           stroke-width="1.4"
+           stroke-dasharray="3 2"
+           id="circle29"
+           class="construction-station-halo"
+           fill-opacity="0.94" />
+        <circle
+           cx="2232"
+           cy="1440"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#00975A"
+           stroke-width="2.4"
+           id="circle30"
+           class="construction-station-node" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="203"
+         data-state="construction"
+         id="g31"
+         data-status="construction"
+         data-official-station-name="대사(충남대병원)">
+        <circle
+           id="construction-halo-203"
+           cx="1872"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1872"
+           cy="1464"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle31"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="204"
+         data-state="construction"
+         id="g32"
+         data-status="construction"
+         data-official-station-name="보문산공원(대전한화생명볼파크)">
+        <circle
+           id="construction-halo-204"
+           cx="1968"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1968"
+           cy="1464"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle32"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="205"
+         data-state="construction"
+         id="g33"
+         data-status="construction"
+         data-official-station-name="인동(동부경찰서)">
+        <circle
+           id="construction-halo-205"
+           cx="2064"
+           cy="1368"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2064"
+           cy="1368"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle33"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="207"
+         data-state="construction"
+         id="g34"
+         data-status="construction"
+         data-official-station-name="대전역(혁신도시)"
+         data-transfer-role="national-rail-brt"
+         aria-label="207 대전역(혁신도시), 2호선 공사 중, KTX·SRT·일반철도·BRT 환승">
+        <circle
+           id="construction-halo-207"
+           cx="2160"
+           cy="1272"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2160"
+           cy="1272"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="station-node-line2-207"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="209"
+         data-state="construction"
+         id="g35"
+         data-status="construction"
+         data-official-station-name="자양(우송대·대전대)">
+        <circle
+           id="construction-halo-209"
+           cx="2160"
+           cy="1080"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2160"
+           cy="1080"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle35"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="210"
+         data-state="construction"
+         id="g36"
+         data-status="construction"
+         data-official-station-name="가양(동대전도서관·대전보건대·한국폴리텍대)">
+        <circle
+           id="construction-halo-210"
+           cx="2160"
+           cy="984"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2160"
+           cy="984"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle36"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="211"
+         data-state="construction"
+         id="g37"
+         data-status="construction"
+         data-official-station-name="대전복합터미널">
+        <circle
+           id="construction-halo-211"
+           cx="2160"
+           cy="888"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2160"
+           cy="888"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle37"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="212"
+         data-state="construction"
+         id="g38"
+         data-status="construction"
+         data-official-station-name="용전(대전문학관)">
+        <circle
+           id="construction-halo-212"
+           cx="2160"
+           cy="792"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2160"
+           cy="792"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle38"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="213"
+         data-state="construction"
+         id="g39"
+         data-status="construction"
+         data-official-station-name="중리(중리시장)">
+        <circle
+           id="construction-halo-213"
+           cx="2088"
+           cy="720"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2088"
+           cy="720"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle39"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="215"
+         data-state="construction"
+         id="g40"
+         data-status="construction"
+         data-official-station-name="오정농수산물시장">
+        <circle
+           id="construction-halo-215"
+           cx="1872"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1872"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle40"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="216"
+         data-state="construction"
+         id="g41"
+         data-status="construction"
+         data-official-station-name="둔산">
+        <circle
+           id="construction-halo-216"
+           cx="1752"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1752"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle41"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="217"
+         data-state="construction"
+         id="g42"
+         data-status="construction"
+         data-official-station-name="샘머리공원(법원·검찰청·경찰청)">
+        <circle
+           id="construction-halo-217"
+           cx="1632"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1632"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle42"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="219"
+         data-state="construction"
+         id="g43"
+         data-status="construction"
+         data-official-station-name="둔산선사유적지(방위사업청)">
+        <circle
+           id="construction-halo-219"
+           cx="1392"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1392"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle43"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="220"
+         data-state="construction"
+         id="g44"
+         data-status="construction"
+         data-official-station-name="만년(한밭수목원·예술의전당)">
+        <circle
+           id="construction-halo-220"
+           cx="1272"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1272"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle44"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="221"
+         data-state="construction"
+         id="g45"
+         data-status="construction"
+         data-official-station-name="국립중앙과학관(엑스포과학공원)">
+        <circle
+           id="construction-halo-221"
+           cx="1152"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1152"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle45"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="222"
+         data-state="construction"
+         id="g46"
+         data-status="construction"
+         data-official-station-name="구성(카이스트)">
+        <circle
+           id="construction-halo-222"
+           cx="1032"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1032"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle46"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="223"
+         data-state="construction"
+         id="g47"
+         data-status="construction"
+         data-official-station-name="유성구청(유림공원)">
+        <circle
+           id="construction-halo-223"
+           cx="912"
+           cy="624"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="912"
+           cy="624"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle47"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="224"
+         data-state="construction"
+         id="g48"
+         data-status="construction"
+         data-official-station-name="궁동(충남대)">
+        <circle
+           id="construction-halo-224"
+           cx="816"
+           cy="720"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="816"
+           cy="720"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle48"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="226"
+         data-state="construction"
+         id="g49"
+         data-status="construction"
+         data-official-station-name="상대">
+        <circle
+           id="construction-halo-226"
+           cx="672"
+           cy="864"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="672"
+           cy="864"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle49"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="227"
+         data-state="construction"
+         id="g50"
+         data-status="construction"
+         data-official-station-name="원골">
+        <circle
+           id="construction-halo-227"
+           cx="600"
+           cy="936"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="600"
+           cy="936"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle50"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="228"
+         data-state="construction"
+         id="g51"
+         data-status="construction"
+         data-official-station-name="대전시립박물관">
+        <circle
+           id="construction-halo-228"
+           cx="600"
+           cy="1032"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="600"
+           cy="1032"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle51"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="229"
+         data-state="construction"
+         id="g52"
+         data-status="construction"
+         data-official-station-name="도안(목원대)">
+        <circle
+           id="construction-halo-229"
+           cx="600"
+           cy="1128"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="600"
+           cy="1128"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle52"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="230"
+         data-state="construction"
+         id="g53"
+         data-status="construction"
+         data-official-station-name="용계">
+        <circle
+           id="construction-halo-230"
+           cx="600"
+           cy="1224"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="600"
+           cy="1224"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle53"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="231"
+         data-state="construction"
+         id="g54"
+         data-status="construction"
+         data-official-station-name="대정">
+        <circle
+           id="construction-halo-231"
+           cx="672"
+           cy="1296"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="672"
+           cy="1296"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle54"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="232"
+         data-state="construction"
+         id="g55"
+         data-status="construction"
+         data-official-station-name="원앙네거리(어린이재활병원)">
+        <circle
+           id="construction-halo-232"
+           cx="744"
+           cy="1368"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="744"
+           cy="1368"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle55"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="233"
+         data-state="construction"
+         id="g56"
+         data-status="construction"
+         data-official-station-name="관저네거리">
+        <circle
+           id="construction-halo-233"
+           cx="840"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="840"
+           cy="1464"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle56"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="234"
+         data-state="construction"
+         id="g57"
+         data-status="construction"
+         data-official-station-name="관저(건양대병원)">
+        <circle
+           id="construction-halo-234"
+           cx="960"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="960"
+           cy="1464"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle57"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="235"
+         data-state="construction"
+         id="g58"
+         data-status="construction"
+         data-official-station-name="가수원네거리">
+        <circle
+           id="construction-halo-235"
+           cx="1080"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1080"
+           cy="1464"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle58"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="236"
+         data-state="construction"
+         id="g59"
+         transform="translate(-17.284089)"
+         data-status="construction"
+         data-official-station-name="정림삼거리(정림공원)">
+        <circle
+           id="construction-halo-236"
+           cx="1200"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1200"
+           cy="1464"
+           r="4.8000002"
+           fill="#ffffff"
+           stroke="#e72b35"
+           stroke-width="1.8"
+           id="circle59"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="238"
+         data-state="construction"
+         id="g60"
+         transform="translate(-41.928428)"
+         data-status="construction"
+         data-official-station-name="도마네거리(도마큰시장)">
+        <circle
+           id="construction-halo-238"
+           cx="1440"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1440"
+           cy="1464"
+           r="4.8000002"
+           fill="#ffffff"
+           stroke="#e72b35"
+           stroke-width="1.8"
+           id="circle60"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="239"
+         data-state="construction"
+         id="g61"
+         transform="translate(-36.290993)"
+         data-status="construction"
+         data-official-station-name="버드내네거리">
+        <circle
+           id="construction-halo-239"
+           cx="1536"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1536"
+           cy="1464"
+           r="4.8000002"
+           fill="#ffffff"
+           stroke="#e72b35"
+           stroke-width="1.8"
+           id="circle61"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="240"
+         data-state="construction"
+         id="g62"
+         data-status="construction"
+         data-official-station-name="유천(유천시장)">
+        <circle
+           id="construction-halo-240"
+           cx="1577.6987"
+           cy="1464"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1577.6987"
+           cy="1464"
+           r="4.8000002"
+           fill="#ffffff"
+           stroke="#e72b35"
+           stroke-width="1.8"
+           id="circle62"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="241"
+         data-state="construction"
+         id="g63"
+         data-status="construction"
+         data-official-station-name="동춘당(법동시장·근로복지공단대전병원)">
+        <circle
+           id="construction-halo-241"
+           cx="2304"
+           cy="744"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2304"
+           cy="744"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle63"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="242"
+         data-state="construction"
+         id="g64"
+         data-status="construction"
+         data-official-station-name="법동(대전지방국세청·대덕경찰서)">
+        <circle
+           id="construction-halo-242"
+           cx="2304"
+           cy="648"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2304"
+           cy="648"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle64"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="243"
+         data-state="construction"
+         id="g65"
+         data-status="construction"
+         data-official-station-name="읍내(계족산)">
+        <circle
+           id="construction-halo-243"
+           cx="2304"
+           cy="552"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2304"
+           cy="552"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="1.8"
+           id="circle65"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="244"
+         data-state="construction"
+         id="g66"
+         data-status="construction"
+         data-official-station-name="연축(대덕구청·수자원공사)">
+        <circle
+           id="construction-halo-244"
+           cx="2304"
+           cy="456"
+           r="9.2"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2304"
+           cy="456"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="2.4"
+           id="circle66"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="2"
+         data-station-code="245"
+         data-state="construction"
+         id="g67"
+         data-status="construction"
+         data-official-station-name="진잠네거리(구봉산)">
+        <circle
+           id="construction-halo-245"
+           cx="744"
+           cy="1560"
+           r="9.2"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="744"
+           cy="1560"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#E72B35"
+           stroke-width="2.4"
+           id="circle67"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R01"
+         data-state="construction"
+         id="g68"
+         data-status="construction">
+        <circle
+           id="construction-halo-R01"
+           cx="240"
+           cy="1608"
+           r="9.2"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="240"
+           cy="1608"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="2.4"
+           id="circle68"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R02"
+         data-state="construction"
+         id="g69"
+         data-status="construction">
+        <circle
+           id="construction-halo-R02"
+           cx="384"
+           cy="1608"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="384"
+           cy="1608"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="1.8"
+           id="circle69"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R03"
+         data-state="construction"
+         id="g70"
+         data-status="construction">
+        <circle
+           id="construction-halo-R03"
+           cx="528"
+           cy="1608"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="528"
+           cy="1608"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="1.8"
+           id="circle70"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R05"
+         data-state="construction"
+         id="g71"
+         data-status="construction">
+        <circle
+           id="construction-halo-R05"
+           cx="1440"
+           cy="1344"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1440"
+           cy="1344"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="1.8"
+           id="circle71"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R08"
+         data-state="construction"
+         id="g72"
+         data-status="construction">
+        <circle
+           id="construction-halo-R08"
+           cx="1752"
+           cy="864"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="1752"
+           cy="864"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="1.8"
+           id="circle72"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R10"
+         data-state="construction"
+         id="g73"
+         data-status="construction">
+        <circle
+           id="construction-halo-R10"
+           cx="2064"
+           cy="552"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2064"
+           cy="552"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="1.8"
+           id="circle73"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R11"
+         data-state="construction"
+         id="g74"
+         data-status="construction">
+        <circle
+           id="construction-halo-R11"
+           cx="2136"
+           cy="480"
+           r="7.8"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2136"
+           cy="480"
+           r="4.8"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="1.8"
+           id="circle74"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+      <g
+         class="station-symbol construction-station"
+         data-line="regional"
+         data-station-code="R12"
+         data-state="construction"
+         id="g75"
+         data-status="construction">
+        <circle
+           id="construction-halo-R12"
+           cx="2208"
+           cy="408"
+           r="9.2"
+           fill="#FFFFFF"
+           fill-opacity="0.94"
+           stroke="#F29A2E"
+           stroke-width="1.25"
+           stroke-dasharray="3 2"
+           class="construction-station-halo"
+           data-state="construction" />
+        <circle
+           cx="2208"
+           cy="408"
+           r="6.2"
+           fill="#FFFFFF"
+           stroke="#2F67C7"
+           stroke-width="2.4"
+           id="circle75"
+           class="construction-station-node"
+           data-state="construction" />
+      </g>
+    </g>
+    <g
+       id="transfer-station-symbols-layer">
+      <g
+         id="transfer-유성온천"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="유성온천"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="유성온천 환승역: 1호선, 2호선"
+         data-construction-lines="2"
+         data-station-codes="116,225"
+         data-official-station-names="1호선 유성온천 | 2호선 유성온천(유성온천공원)">
+        <title
+           id="title-transfer-station-유성온천">유성온천 환승 노드: 1호선 / 2호선 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-유성온천"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-유성온천"
+             d="M 738.54 792 L 749.46 792"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-유성온천"
+             d="M 738.54 792 L 749.46 792"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-유성온천"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-유성온천-1호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-station-badge-circle-유성온천-1호선-1"
+               cx="738.54"
+               cy="792"
+               r="5.46"
+               fill="#00975A"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision" />
+            <text
+               id="transfer-station-badge-label-유성온천-1호선-1"
+               x="738.54"
+               y="792"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">1</text>
+          </g>
+          <g
+             id="transfer-station-badge-유성온천-2호선-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-유성온천-construction-badge-halo-2"
+               cx="749.46"
+               cy="792"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-유성온천-2호선-2"
+               cx="749.46"
+               cy="792"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-유성온천-2호선-2"
+               x="749.46"
+               y="792"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-정부청사"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="정부청사"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="정부청사 환승역: 1호선, 2호선"
+         data-construction-lines="2"
+         data-station-codes="112,218"
+         data-official-station-names="1호선 정부청사 | 2호선 정부청사(서구청·둔산경찰서·을지대병원)">
+        <title
+           id="title-transfer-station-정부청사">정부청사 환승 노드: 1호선 / 2호선 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-정부청사"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-정부청사"
+             d="M 1506.54 624 L 1517.46 624"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-정부청사"
+             d="M 1506.54 624 L 1517.46 624"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-정부청사"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-정부청사-1호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-station-badge-circle-정부청사-1호선-1"
+               cx="1506.54"
+               cy="624"
+               r="5.46"
+               fill="#00975A"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision" />
+            <text
+               id="transfer-station-badge-label-정부청사-1호선-1"
+               x="1506.54"
+               y="624"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">1</text>
+          </g>
+          <g
+             id="transfer-station-badge-정부청사-2호선-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-정부청사-construction-badge-halo-2"
+               cx="1517.46"
+               cy="624"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-정부청사-2호선-2"
+               cx="1517.46"
+               cy="624"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-정부청사-2호선-2"
+               x="1517.46"
+               y="624"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-서대전네거리"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="서대전네거리"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="서대전네거리 환승역: 1호선, 2호선"
+         data-construction-lines="2"
+         data-station-codes="107,202"
+         data-official-station-names="1호선 서대전네거리 | 2호선 서대전네거리(서대전공원)">
+        <title
+           id="title-transfer-station-서대전네거리">서대전네거리 환승 노드: 1호선 / 2호선 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-서대전네거리"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-서대전네거리"
+             d="M 1770.54 1368 L 1781.46 1368"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-서대전네거리"
+             d="M 1770.54 1368 L 1781.46 1368"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-서대전네거리"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-서대전네거리-1호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-station-badge-circle-서대전네거리-1호선-1"
+               cx="1770.54"
+               cy="1368"
+               r="5.46"
+               fill="#00975A"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision" />
+            <text
+               id="transfer-station-badge-label-서대전네거리-1호선-1"
+               x="1770.54"
+               y="1368"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">1</text>
+          </g>
+          <g
+             id="transfer-station-badge-서대전네거리-2호선-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-서대전네거리-construction-badge-halo-2"
+               cx="1781.46"
+               cy="1368"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-서대전네거리-2호선-2"
+               cx="1781.46"
+               cy="1368"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-서대전네거리-2호선-2"
+               x="1781.46"
+               y="1368"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-대전역"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="대전역(중앙시장)"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="206 대전역(중앙시장) 환승역: 도시철도 1호선, 도시철도 2호선"
+         data-construction-lines="2"
+         data-station-codes="104,206"
+         data-official-station-names="1호선 대전역 | 2호선 대전역(중앙시장)"
+         data-transfer-role="metro-line1-line2">
+        <title
+           id="title-transfer-station-대전역">206 대전역(중앙시장): 도시철도 1호선·2호선 환승 노드</title>
+        <g
+           id="transfer-station-shell-network-대전역"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-대전역"
+             d="M 2106.54 1320 L 2117.46 1320"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-대전역"
+             d="M 2106.54 1320 L 2117.46 1320"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-대전역"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-대전역-1호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-station-badge-circle-대전역-1호선-1"
+               cx="2106.54"
+               cy="1320"
+               r="5.46"
+               fill="#00975A"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision" />
+            <text
+               id="transfer-station-badge-label-대전역-1호선-1"
+               x="2106.54"
+               y="1320"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">1</text>
+          </g>
+          <g
+             id="transfer-station-badge-대전역-2호선-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-대전역-construction-badge-halo-2"
+               cx="2117.46"
+               cy="1320"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-대전역-2호선-2"
+               cx="2117.46"
+               cy="1320"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-대전역-2호선-2"
+               x="2117.46"
+               y="1320"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-대동"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="대동"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="대동 환승역: 1호선, 2호선"
+         data-construction-lines="2"
+         data-station-codes="103,208"
+         data-official-station-names="1호선 대동 | 2호선 대동(하늘공원)">
+        <title
+           id="title-transfer-station-대동">대동 환승 노드: 1호선 / 2호선 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-대동"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-대동"
+             d="M 2149.142 1180.5676 L 2160.062 1180.5676"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-대동"
+             d="M 2149.142 1180.5676 L 2160.062 1180.5676"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-대동"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-대동-1호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-station-badge-circle-대동-1호선-1"
+               cx="2149.142"
+               cy="1180.5676"
+               r="5.46"
+               fill="#00975A"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision" />
+            <text
+               id="transfer-station-badge-label-대동-1호선-1"
+               x="2149.142"
+               y="1180.5676"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">1</text>
+          </g>
+          <g
+             id="transfer-station-badge-대동-2호선-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-대동-construction-badge-halo-2"
+               cx="2160.062"
+               cy="1180.5676"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-대동-2호선-2"
+               cx="2160.062"
+               cy="1180.5676"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-대동-2호선-2"
+               x="2160.062"
+               y="1180.5676"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-용두"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="용두"
+         data-state="planned"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="용두 환승역: 1호선, 충청권 광역철도"
+         data-construction-lines="regional"
+         data-station-codes="Y,R07"
+         data-official-station-names="1호선 신설 용두 | 충청권 광역철도 용두">
+        <title
+           id="title-transfer-station-용두">용두 환승 노드: 1호선 / 충청권 광역철도 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-용두"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-용두"
+             d="M 1506.54 1104 L 1517.46 1104"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision"
+             stroke-dasharray="2.73 2.73"
+             opacity="0.88" />
+          <path
+             id="transfer-station-shell-fill-용두"
+             d="M 1506.54 1104 L 1517.46 1104"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-용두"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-용두-1호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-station-badge-circle-용두-1호선-1"
+               cx="1506.54"
+               cy="1104"
+               r="5.46"
+               fill="#00975A"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision" />
+            <text
+               id="transfer-station-badge-label-용두-1호선-1"
+               x="1506.54"
+               y="1104"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">1</text>
+          </g>
+          <g
+             id="transfer-station-badge-용두-충청권-광역철도-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-용두-construction-badge-halo-2"
+               cx="1517.46"
+               cy="1104"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-용두-충청권-광역철도-2"
+               cx="1517.46"
+               cy="1104"
+               r="5.46"
+               fill="#2F67C7"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-용두-충청권-광역철도-2"
+               x="1517.46"
+               y="1104"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="4.6865"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">광역</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-서대전역"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="서대전역"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="서대전역 환승역: 2호선, 충청권 광역철도"
+         data-construction-lines="2,regional"
+         data-rail-services="KTX"
+         data-station-codes="201,R06"
+         data-official-station-names="2호선 서대전역 | 충청권 광역철도 서대전">
+        <title
+           id="title-transfer-station-서대전역">서대전역 환승 노드: 2호선 / 충청권 광역철도 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-서대전역"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-서대전역"
+             d="M 1674.54 1464 L 1685.46 1464"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-서대전역"
+             d="M 1674.54 1464 L 1685.46 1464"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-서대전역"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-서대전역-2호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-서대전역-construction-badge-halo-1"
+               cx="1674.54"
+               cy="1464"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-서대전역-2호선-1"
+               cx="1674.54"
+               cy="1464"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-서대전역-2호선-1"
+               x="1674.54"
+               y="1464"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+          <g
+             id="transfer-station-badge-서대전역-충청권-광역철도-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-서대전역-construction-badge-halo-2"
+               cx="1685.46"
+               cy="1464"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-서대전역-충청권-광역철도-2"
+               cx="1685.46"
+               cy="1464"
+               r="5.46"
+               fill="#2F67C7"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-서대전역-충청권-광역철도-2"
+               x="1685.46"
+               y="1464"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="4.6865"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">광역</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-오정"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="오정"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="오정 환승역: 2호선, 충청권 광역철도"
+         data-construction-lines="2,regional"
+         data-station-codes="214,R09"
+         data-official-station-names="2호선 오정(한남대) | 충청권 광역철도 오정">
+        <title
+           id="title-transfer-station-오정">오정 환승 노드: 2호선 / 충청권 광역철도 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-오정"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-오정"
+             d="M 1986.54 624 L 1997.46 624"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-오정"
+             d="M 1986.54 624 L 1997.46 624"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-오정"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-오정-2호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-오정-construction-badge-halo-1"
+               cx="1986.54"
+               cy="624"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-오정-2호선-1"
+               cx="1986.54"
+               cy="624"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-오정-2호선-1"
+               x="1986.54"
+               y="624"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+          <g
+             id="transfer-station-badge-오정-충청권-광역철도-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-오정-construction-badge-halo-2"
+               cx="1997.46"
+               cy="624"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-오정-충청권-광역철도-2"
+               cx="1997.46"
+               cy="624"
+               r="5.46"
+               fill="#2F67C7"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-오정-충청권-광역철도-2"
+               x="1997.46"
+               y="624"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="4.6865"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">광역</text>
+          </g>
+        </g>
+      </g>
+      <g
+         id="transfer-도마-복수"
+         class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+         data-station="도마-복수"
+         data-state="active"
+         data-family-component="sma-v1-transfer-capsule"
+         data-source-scale="0.455"
+         data-badge-radius="5.46"
+         data-shell-outline-width="18.2"
+         data-shell-fill-width="14.56"
+         aria-label="도마-복수 환승역: 2호선, 충청권 광역철도"
+         data-construction-lines="2,regional"
+         data-station-codes="237,R04"
+         data-official-station-names="2호선 도마·복수(서부경찰서·대전과기대·배재대) | 충청권 광역철도 도마">
+        <title
+           id="title-transfer-station-도마-복수">도마-복수 환승 노드: 2호선 / 충청권 광역철도 — sma-v1 직선형 캡슐</title>
+        <g
+           id="transfer-station-shell-network-도마-복수"
+           class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+          <path
+             id="transfer-station-shell-outline-도마-복수"
+             d="M 1314.54 1464 L 1325.46 1464"
+             fill="none"
+             stroke="#3F4A5C"
+             stroke-width="18.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-outline"
+             shape-rendering="geometricPrecision" />
+          <path
+             id="transfer-station-shell-fill-도마-복수"
+             d="M 1314.54 1464 L 1325.46 1464"
+             fill="none"
+             stroke="#FFFFFF"
+             stroke-width="14.56"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             class="ourclass-transfer-shell-fill"
+             shape-rendering="geometricPrecision" />
+        </g>
+        <g
+           id="transfer-station-route-badges-도마-복수"
+           class="ourclass-transfer-route-badges">
+          <g
+             id="transfer-station-badge-도마-복수-2호선-1"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-도마-복수-construction-badge-halo-1"
+               cx="1314.54"
+               cy="1464"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-도마-복수-2호선-1"
+               cx="1314.54"
+               cy="1464"
+               r="5.46"
+               fill="#E72B35"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-도마-복수-2호선-1"
+               x="1314.54"
+               y="1464"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="8.19"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">2</text>
+          </g>
+          <g
+             id="transfer-station-badge-도마-복수-충청권-광역철도-2"
+             class="ourclass-transfer-badge">
+            <circle
+               id="transfer-도마-복수-construction-badge-halo-2"
+               cx="1325.46"
+               cy="1464"
+               r="6.82"
+               fill="none"
+               stroke="#F29A2E"
+               stroke-width="1.1"
+               stroke-dasharray="2.4 1.7"
+               class="construction-transfer-halo"
+               data-state="construction" />
+            <circle
+               id="transfer-station-badge-circle-도마-복수-충청권-광역철도-2"
+               cx="1325.46"
+               cy="1464"
+               r="5.46"
+               fill="#2F67C7"
+               class="ourclass-transfer-badge-circle"
+               shape-rendering="geometricPrecision"
+               data-state="construction" />
+            <text
+               id="transfer-station-badge-label-도마-복수-충청권-광역철도-2"
+               x="1325.46"
+               y="1464"
+               fill="#FFFFFF"
+               class="ourclass-transfer-badge-label"
+               font-size="4.6865"
+               font-weight="900"
+               text-anchor="middle"
+               dominant-baseline="central"
+               alignment-baseline="middle"
+               stroke="none">광역</text>
+          </g>
+        </g>
+      </g>
+    </g>
+    <g
+       id="station-name-labels-layer">
+      <text
+         id="station-label-line1-101"
+         class="station-label terminal"
+         x="2216.00"
+         y="1350.00"
+         text-anchor="end"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="terminal"
+         data-line="1"
+         data-station-code="101"
+         data-full-official-name="판암"
+         data-label-side="W"
+         data-node-x="2232"
+         data-node-y="1344"
+         data-status="active"><tspan
+           class="station-main"
+           x="2216.00"
+           dy="0"
+           id="tspan93">판암</tspan></text>
+      <text
+         id="station-label-line1-102"
+         class="station-label ordinary"
+         x="2216.00"
+         y="1266.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="102"
+         data-full-official-name="신흥"
+         data-label-side="W"
+         data-node-x="2232"
+         data-node-y="1248"
+         data-status="active"><tspan
+           class="station-main"
+           x="2216.00"
+           dy="0"
+           id="tspan94">신흥</tspan></text>
+      <text
+         id="station-label-line1-105"
+         class="station-label ordinary"
+         x="1968.3828"
+         y="1397.3199"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="105"
+         data-full-official-name="중앙로"
+         data-label-side="S"
+         data-node-x="1968"
+         data-node-y="1368"
+         data-status="active"><tspan
+           class="station-main"
+           x="1968.3828"
+           dy="0"
+           id="tspan95">중앙로</tspan></text>
+      <text
+         id="station-label-line1-106"
+         class="station-label ordinary"
+         x="1873.2795"
+         y="1397.3906"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="106"
+         data-full-official-name="중구청"
+         data-label-side="N"
+         data-node-x="1872"
+         data-node-y="1368"
+         data-status="active"><tspan
+           class="station-main"
+           x="1873.2795"
+           dy="0"
+           id="tspan96">중구청</tspan></text>
+      <text
+         id="station-label-line1-108"
+         class="station-label ordinary"
+         x="1528.00"
+         y="1206.00"
+         text-anchor="start"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="108"
+         data-full-official-name="오룡"
+         data-label-side="E"
+         data-node-x="1512"
+         data-node-y="1224"
+         data-status="active"><tspan
+           class="station-main"
+           x="1528.00"
+           dy="0"
+           id="tspan97">오룡</tspan></text>
+      <text
+         id="station-label-line1-109"
+         class="station-label ordinary"
+         x="1528.00"
+         y="990.00"
+         text-anchor="start"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="109"
+         data-full-official-name="용문"
+         data-label-side="E"
+         data-node-x="1512"
+         data-node-y="984"
+         data-status="active"><tspan
+           class="station-main"
+           x="1528.00"
+           dy="0"
+           id="tspan98">용문</tspan></text>
+      <text
+         id="station-label-line1-110"
+         class="station-label ordinary"
+         x="1528.00"
+         y="870.00"
+         text-anchor="start"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="110"
+         data-full-official-name="탄방"
+         data-label-side="E"
+         data-node-x="1512"
+         data-node-y="864"
+         data-status="active"><tspan
+           class="station-main"
+           x="1528.00"
+           dy="0"
+           id="tspan99">탄방</tspan></text>
+      <text
+         id="station-label-line1-111"
+         class="station-label ordinary"
+         x="1528.00"
+         y="750.00"
+         text-anchor="start"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="111"
+         data-full-official-name="시청"
+         data-label-side="E"
+         data-node-x="1512"
+         data-node-y="744"
+         data-status="active"><tspan
+           class="station-main"
+           x="1528.00"
+           dy="0"
+           id="tspan100">시청</tspan></text>
+      <text
+         id="station-label-line1-113"
+         class="station-label ordinary"
+         x="1104.00"
+         y="824.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="113"
+         data-full-official-name="갈마"
+         data-label-side="S"
+         data-node-x="1104"
+         data-node-y="792"
+         data-status="active"><tspan
+           class="station-main"
+           x="1104.00"
+           dy="0"
+           id="tspan101">갈마</tspan></text>
+      <text
+         id="station-label-line1-114"
+         class="station-label ordinary"
+         x="984.00"
+         y="824.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="114"
+         data-full-official-name="월평"
+         data-label-side="S"
+         data-node-x="984"
+         data-node-y="792"
+         data-status="active"><tspan
+           class="station-main"
+           x="984.00"
+           dy="0"
+           id="tspan102">월평</tspan></text>
+      <text
+         id="station-label-line1-115"
+         class="station-label ordinary"
+         x="864.00"
+         y="824.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="115"
+         data-full-official-name="갑천"
+         data-label-side="S"
+         data-node-x="864"
+         data-node-y="792"
+         data-status="active"><tspan
+           class="station-main"
+           x="864.00"
+           dy="0"
+           id="tspan103">갑천</tspan></text>
+      <text
+         id="station-label-line1-117"
+         class="station-label ordinary"
+         x="560.00"
+         y="762.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="117"
+         data-full-official-name="구암"
+         data-label-side="W"
+         data-node-x="576"
+         data-node-y="744"
+         data-status="active"><tspan
+           class="station-main"
+           x="560.00"
+           dy="0"
+           id="tspan104">구암</tspan></text>
+      <text
+         id="station-label-line1-118"
+         class="station-label ordinary"
+         x="488.00"
+         y="690.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="118"
+         data-full-official-name="현충원"
+         data-label-side="W"
+         data-node-x="504"
+         data-node-y="672"
+         data-status="active"><tspan
+           class="station-main"
+           x="488.00"
+           dy="0"
+           id="tspan105">현충원</tspan></text>
+      <text
+         id="station-label-line1-119"
+         class="station-label ordinary"
+         x="416.00"
+         y="618.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="119"
+         data-full-official-name="월드컵경기장"
+         data-label-side="W"
+         data-node-x="432"
+         data-node-y="600"
+         data-status="active"><tspan
+           class="station-main"
+           x="416.00"
+           dy="0"
+           id="tspan106">월드컵경기장</tspan></text>
+      <text
+         id="station-label-line1-120"
+         class="station-label ordinary"
+         x="344.00"
+         y="546.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="120"
+         data-full-official-name="노은"
+         data-label-side="W"
+         data-node-x="360"
+         data-node-y="528"
+         data-status="active"><tspan
+           class="station-main"
+           x="344.00"
+           dy="0"
+           id="tspan107">노은</tspan></text>
+      <text
+         id="station-label-line1-121"
+         class="station-label ordinary"
+         x="272.00"
+         y="474.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="1"
+         data-station-code="121"
+         data-full-official-name="지족"
+         data-label-side="W"
+         data-node-x="288"
+         data-node-y="456"
+         data-status="active"><tspan
+           class="station-main"
+           x="272.00"
+           dy="0"
+           id="tspan108">지족</tspan></text>
+      <text
+         id="station-label-line1-122"
+         class="station-label terminal"
+         x="216.00"
+         y="363.00"
+         text-anchor="middle"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="terminal"
+         data-line="1"
+         data-station-code="122"
+         data-full-official-name="반석"
+         data-label-side="N"
+         data-node-x="216"
+         data-node-y="384"
+         data-status="active"><tspan
+           class="station-main"
+           x="216.00"
+           dy="0"
+           id="tspan109">반석</tspan></text>
+      <text
+         id="station-label-line1-SX"
+         class="station-label planned construction-label"
+         x="2215.00"
+         y="1440.60"
+         text-anchor="end"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="planned"
+         data-line="1"
+         data-station-code="SX"
+         data-full-official-name="식장산"
+         data-label-side="W"
+         data-node-x="2232"
+         data-node-y="1440"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2215.00"
+           dy="0"
+           id="tspan110">식장산</tspan><tspan
+           class="station-sub"
+           x="2215.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#F29A2E"
+           id="tspan111">연장 공사 중</tspan></text>
+      <text
+         id="station-label-line2-203"
+         class="station-label ordinary construction-label"
+         x="1872.00"
+         y="1498.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="203"
+         data-full-official-name="대사(충남대병원)"
+         data-label-side="S"
+         data-node-x="1872"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1872.00"
+           dy="0"
+           id="tspan112">대사</tspan><tspan
+           class="station-sub"
+           x="1872.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan113">충남대병원</tspan></text>
+      <text
+         id="station-label-line2-204"
+         class="station-label ordinary construction-label"
+         x="1972.5336"
+         y="1496.7474"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="204"
+         data-full-official-name="보문산공원(대전한화생명볼파크)"
+         data-label-side="S"
+         data-node-x="1968"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1972.5336"
+           dy="0"
+           id="tspan114">보문산공원</tspan><tspan
+           class="station-sub"
+           x="1972.5336"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan115">대전한화생명볼파크</tspan></text>
+      <text
+         id="station-label-line2-205"
+         class="station-label ordinary construction-label"
+         x="2079"
+         y="1385"
+         text-anchor="start"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="205"
+         data-full-official-name="인동(동부경찰서)"
+         data-label-side="SE"
+         data-node-x="2064"
+         data-node-y="1368"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2079"
+           dy="0"
+           id="tspan116">인동</tspan><tspan
+           class="station-sub"
+           x="2079"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan117">동부경찰서</tspan></text>
+      <text
+         id="station-label-transfer-104-206"
+         class="station-label transfer"
+         x="2102.5352"
+         y="1302.1578"
+         text-anchor="end"
+         font-size="14.2px"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="104/206"
+         data-full-official-name="1호선 대전역 | 2호선 206 대전역(중앙시장)"
+         data-label-side="NW"
+         data-node-x="2112"
+         data-node-y="1320"
+         data-status="active"
+         data-construction-lines="2"><tspan
+           class="station-main"
+           x="2102.5352"
+           id="station-label-transfer-104-206-main">대전역</tspan><tspan
+           class="station-sub"
+           x="2102.5352"
+           font-size="9.2px"
+           fill="#687681"
+           id="station-label-transfer-104-206-sub1" /></text>
+      <text
+         id="station-label-line2-209"
+         class="station-label ordinary construction-label"
+         x="2143.00"
+         y="1080.60"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="209"
+         data-full-official-name="자양(우송대·대전대)"
+         data-label-side="W"
+         data-node-x="2160"
+         data-node-y="1080"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2143.00"
+           dy="0"
+           id="tspan120">자양</tspan><tspan
+           class="station-sub"
+           x="2143.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan121">우송대·대전대</tspan></text>
+      <text
+         id="station-label-line2-210"
+         class="station-label ordinary construction-label"
+         x="2143.00"
+         y="979.20"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="210"
+         data-full-official-name="가양(동대전도서관·대전보건대·한국폴리텍대)"
+         data-label-side="W"
+         data-node-x="2160"
+         data-node-y="984"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2143.00"
+           dy="0"
+           id="tspan122">가양</tspan><tspan
+           class="station-sub"
+           x="2143.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan123">동대전도서관·대전보건대</tspan><tspan
+           class="station-sub"
+           x="2143.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan124">한국폴리텍대</tspan></text>
+      <text
+         id="station-label-line2-211"
+         class="station-label ordinary construction-label"
+         x="2145.00"
+         y="894.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="211"
+         data-full-official-name="대전복합터미널"
+         data-label-side="W"
+         data-node-x="2160"
+         data-node-y="888"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2145.00"
+           dy="0"
+           id="tspan125">대전복합터미널</tspan></text>
+      <text
+         id="station-label-line2-212"
+         class="station-label ordinary construction-label"
+         x="2143.00"
+         y="816.60"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="212"
+         data-full-official-name="용전(대전문학관)"
+         data-label-side="W"
+         data-node-x="2160"
+         data-node-y="792"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2143.00"
+           dy="0"
+           id="tspan126">용전</tspan><tspan
+           class="station-sub"
+           x="2143.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan127">대전문학관</tspan></text>
+      <text
+         id="station-label-line2-213"
+         class="station-label ordinary construction-label"
+         x="2112.00"
+         y="688.20"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="213"
+         data-full-official-name="중리(중리시장)"
+         data-label-side="N"
+         data-node-x="2088"
+         data-node-y="720"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2112.00"
+           dy="0"
+           id="tspan128">중리</tspan><tspan
+           class="station-sub"
+           x="2112.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan129">중리시장</tspan></text>
+      <text
+         id="station-label-line2-215"
+         class="station-label ordinary construction-label"
+         x="1872.00"
+         y="660.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="215"
+         data-full-official-name="오정농수산물시장"
+         data-label-side="S"
+         data-node-x="1872"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1872.00"
+           dy="0"
+           id="tspan130">오정농수산물시장</tspan></text>
+      <text
+         id="station-label-line2-216"
+         class="station-label ordinary construction-label"
+         x="1752.00"
+         y="600.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="216"
+         data-full-official-name="둔산"
+         data-label-side="N"
+         data-node-x="1752"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1752.00"
+           dy="0"
+           id="tspan131">둔산</tspan></text>
+      <text
+         id="station-label-line2-217"
+         class="station-label ordinary construction-label"
+         x="1632.00"
+         y="662.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="217"
+         data-full-official-name="샘머리공원(법원·검찰청·경찰청)"
+         data-label-side="S"
+         data-node-x="1632"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1632.00"
+           dy="0"
+           id="tspan132">샘머리공원</tspan><tspan
+           class="station-sub"
+           x="1632.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan133">법원·검찰청·경찰청</tspan></text>
+      <text
+         id="station-label-line2-219"
+         class="station-label ordinary construction-label"
+         x="1397.5181"
+         y="590.27173"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="219"
+         data-full-official-name="둔산선사유적지(방위사업청)"
+         data-label-side="S"
+         data-node-x="1392"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1397.5181"
+           dy="0"
+           id="tspan134">둔산선사유적지</tspan><tspan
+           class="station-sub"
+           x="1397.5181"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan135">방위사업청</tspan></text>
+      <text
+         id="station-label-line2-220"
+         class="station-label ordinary construction-label"
+         x="1273.9735"
+         y="655.2038"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="220"
+         data-full-official-name="만년(한밭수목원·예술의전당)"
+         data-label-side="N"
+         data-node-x="1272"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1273.9735"
+           dy="0"
+           id="tspan136">만년</tspan><tspan
+           class="station-sub"
+           x="1273.9735"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan137">한밭수목원·예술의전당</tspan></text>
+      <text
+         id="station-label-line2-221"
+         class="station-label ordinary construction-label"
+         x="1151.0621"
+         y="592.12616"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="221"
+         data-full-official-name="국립중앙과학관(엑스포과학공원)"
+         data-label-side="S"
+         data-node-x="1152"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1151.0621"
+           dy="0"
+           id="tspan138">국립중앙과학관</tspan><tspan
+           class="station-sub"
+           x="1151.0621"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan139">엑스포과학공원</tspan></text>
+      <text
+         id="station-label-line2-222"
+         class="station-label ordinary construction-label"
+         x="1033.4069"
+         y="654.92047"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="222"
+         data-full-official-name="구성(카이스트)"
+         data-label-side="N"
+         data-node-x="1032"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1033.4069"
+           dy="0"
+           id="tspan140">구성</tspan><tspan
+           class="station-sub"
+           x="1033.4069"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan141">카이스트</tspan></text>
+      <text
+         id="station-label-line2-223"
+         class="station-label ordinary construction-label"
+         x="911.14557"
+         y="592.75354"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="223"
+         data-full-official-name="유성구청(유림공원)"
+         data-label-side="S"
+         data-node-x="912"
+         data-node-y="624"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="911.14557"
+           dy="0"
+           id="tspan142">유성구청</tspan><tspan
+           class="station-sub"
+           x="911.14557"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan143">유림공원</tspan></text>
+      <text
+         id="station-label-line2-224"
+         class="station-label ordinary construction-label"
+         x="820.06335"
+         y="686.06836"
+         text-anchor="end"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="224"
+         data-full-official-name="궁동(충남대)"
+         data-label-side="W"
+         data-node-x="816"
+         data-node-y="720"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="820.06335"
+           dy="0"
+           id="tspan144">궁동</tspan><tspan
+           class="station-sub"
+           x="820.06335"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan145">충남대</tspan></text>
+      <text
+         id="station-label-line2-226"
+         class="station-label ordinary construction-label"
+         x="687.00"
+         y="882.00"
+         text-anchor="start"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="226"
+         data-full-official-name="상대"
+         data-label-side="E"
+         data-node-x="672"
+         data-node-y="864"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="687.00"
+           dy="0"
+           id="tspan146">상대</tspan></text>
+      <text
+         id="station-label-line2-227"
+         class="station-label ordinary construction-label"
+         x="585.00"
+         y="942.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="227"
+         data-full-official-name="원골"
+         data-label-side="W"
+         data-node-x="600"
+         data-node-y="936"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="585.00"
+           dy="0"
+           id="tspan147">원골</tspan></text>
+      <text
+         id="station-label-line2-228"
+         class="station-label ordinary construction-label"
+         x="585.00"
+         y="1038.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="228"
+         data-full-official-name="대전시립박물관"
+         data-label-side="W"
+         data-node-x="600"
+         data-node-y="1032"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="585.00"
+           dy="0"
+           id="tspan148">대전시립박물관</tspan></text>
+      <text
+         id="station-label-line2-229"
+         class="station-label ordinary construction-label"
+         x="583.00"
+         y="1128.60"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="229"
+         data-full-official-name="도안(목원대)"
+         data-label-side="W"
+         data-node-x="600"
+         data-node-y="1128"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="583.00"
+           dy="0"
+           id="tspan149">도안</tspan><tspan
+           class="station-sub"
+           x="583.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan150">목원대</tspan></text>
+      <text
+         id="station-label-line2-230"
+         class="station-label ordinary construction-label"
+         x="585.00"
+         y="1230.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="230"
+         data-full-official-name="용계"
+         data-label-side="W"
+         data-node-x="600"
+         data-node-y="1224"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="585.00"
+           dy="0"
+           id="tspan151">용계</tspan></text>
+      <text
+         id="station-label-line2-231"
+         class="station-label ordinary construction-label"
+         x="657.00"
+         y="1314.00"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="231"
+         data-full-official-name="대정"
+         data-label-side="W"
+         data-node-x="672"
+         data-node-y="1296"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="657.00"
+           dy="0"
+           id="tspan152">대정</tspan></text>
+      <text
+         id="station-label-line2-232"
+         class="station-label ordinary construction-label"
+         x="727.00"
+         y="1392.60"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="232"
+         data-full-official-name="원앙네거리(어린이재활병원)"
+         data-label-side="W"
+         data-node-x="744"
+         data-node-y="1368"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="727.00"
+           dy="0"
+           id="tspan153">원앙네거리</tspan><tspan
+           class="station-sub"
+           x="727.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan154">어린이재활병원</tspan></text>
+      <text
+         id="station-label-line2-233"
+         class="station-label ordinary construction-label"
+         x="876.00"
+         y="1445.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="233"
+         data-full-official-name="관저네거리"
+         data-label-side="N"
+         data-node-x="840"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="876.00"
+           dy="0"
+           id="tspan155">관저네거리</tspan></text>
+      <text
+         id="station-label-line2-234"
+         class="station-label ordinary construction-label"
+         x="961.57129"
+         y="1435.6537"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="234"
+         data-full-official-name="관저(건양대병원)"
+         data-label-side="N"
+         data-node-x="960"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="961.57129"
+           dy="0"
+           id="tspan156">관저</tspan><tspan
+           class="station-sub"
+           x="961.57129"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan157">건양대병원</tspan></text>
+      <text
+         id="station-label-line2-235"
+         class="station-label ordinary construction-label"
+         x="1080.00"
+         y="1440.00"
+         text-anchor="middle"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="235"
+         data-full-official-name="가수원네거리"
+         data-label-side="N"
+         data-node-x="1080"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1080.00"
+           dy="0"
+           id="tspan158">가수원네거리</tspan></text>
+      <text
+         id="station-label-line2-236"
+         class="station-label ordinary construction-label"
+         x="1182.9182"
+         y="1427.9285"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="236"
+         data-full-official-name="정림삼거리(정림공원)"
+         data-label-side="N"
+         data-node-x="1200"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1182.9182"
+           dy="0"
+           id="tspan159">정림삼거리</tspan><tspan
+           class="station-sub"
+           x="1182.9182"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan160">정림공원</tspan></text>
+      <text
+         id="station-label-line2-238"
+         class="station-label ordinary construction-label"
+         x="1397.3669"
+         y="1494.5641"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="238"
+         data-full-official-name="도마네거리(도마큰시장)"
+         data-label-side="N"
+         data-node-x="1440"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1397.3669"
+           dy="0"
+           id="tspan161">도마네거리</tspan><tspan
+           class="station-sub"
+           x="1397.3669"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan162">도마큰시장</tspan></text>
+      <text
+         id="station-label-line2-239"
+         class="station-label ordinary construction-label"
+         x="1496.8903"
+         y="1443.5234"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="239"
+         data-full-official-name="버드내네거리"
+         data-label-side="N"
+         data-node-x="1536"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1496.8903"
+           dy="0"
+           id="tspan163">버드내네거리</tspan></text>
+      <text
+         id="station-label-line2-240"
+         class="station-label ordinary construction-label"
+         x="1579.4401"
+         y="1491.7454"
+         text-anchor="middle"
+         font-size="13.2px"
+         font-weight="400"
+         fill="#4f5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="240"
+         data-full-official-name="유천(유천시장)"
+         data-label-side="N"
+         data-node-x="1608"
+         data-node-y="1464"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1579.4401"
+           dy="0"
+           id="tspan164">유천</tspan><tspan
+           class="station-sub"
+           x="1579.4401"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan165">유천시장</tspan></text>
+      <text
+         id="station-label-line2-241"
+         class="station-label ordinary construction-label"
+         x="2287.00"
+         y="703.20"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="241"
+         data-full-official-name="동춘당(법동시장·근로복지공단대전병원)"
+         data-label-side="W"
+         data-node-x="2304"
+         data-node-y="744"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2287.00"
+           dy="0"
+           id="tspan166">동춘당</tspan><tspan
+           class="station-sub"
+           x="2287.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan167">법동시장·근로복지공단</tspan><tspan
+           class="station-sub"
+           x="2287.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan168">대전병원</tspan></text>
+      <text
+         id="station-label-line2-242"
+         class="station-label ordinary construction-label"
+         x="2286.00"
+         y="643.20"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="242"
+         data-full-official-name="법동(대전지방국세청·대덕경찰서)"
+         data-label-side="W"
+         data-node-x="2304"
+         data-node-y="648"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2286.00"
+           dy="0"
+           id="tspan169">법동</tspan><tspan
+           class="station-sub"
+           x="2286.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan170">대전지방국세청</tspan><tspan
+           class="station-sub"
+           x="2286.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan171">대덕경찰서</tspan></text>
+      <text
+         id="station-label-line2-243"
+         class="station-label ordinary construction-label"
+         x="2286.00"
+         y="552.60"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="243"
+         data-full-official-name="읍내(계족산)"
+         data-label-side="W"
+         data-node-x="2304"
+         data-node-y="552"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2286.00"
+           dy="0"
+           id="tspan172">읍내</tspan><tspan
+           class="station-sub"
+           x="2286.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan173">계족산</tspan></text>
+      <text
+         id="station-label-line2-244"
+         class="station-label terminal construction-label"
+         x="2286.00"
+         y="456.60"
+         text-anchor="end"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="terminal"
+         data-line="2"
+         data-station-code="244"
+         data-full-official-name="연축(대덕구청·수자원공사)"
+         data-label-side="W"
+         data-node-x="2304"
+         data-node-y="456"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2286.00"
+           dy="0"
+           id="tspan174">연축</tspan><tspan
+           class="station-sub"
+           x="2286.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan175">대덕구청·수자원공사</tspan></text>
+      <text
+         id="station-label-line2-245"
+         class="station-label terminal construction-label"
+         x="727.00"
+         y="1560.60"
+         text-anchor="end"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="terminal"
+         data-line="2"
+         data-station-code="245"
+         data-full-official-name="진잠네거리(구봉산)"
+         data-label-side="W"
+         data-node-x="744"
+         data-node-y="1560"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="727.00"
+           dy="0"
+           id="tspan176">진잠네거리</tspan><tspan
+           class="station-sub"
+           x="727.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan177">구봉산</tspan></text>
+      <text
+         id="station-label-regional-R01"
+         class="station-label terminal construction-label"
+         x="240.00"
+         y="1640.00"
+         text-anchor="middle"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="terminal"
+         data-line="regional"
+         data-station-code="R01"
+         data-full-official-name="계룡"
+         data-label-side="S"
+         data-node-x="240"
+         data-node-y="1608"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="240.00"
+           dy="0"
+           id="tspan178">계룡</tspan></text>
+      <text
+         id="station-label-regional-R02"
+         class="station-label regional construction-label"
+         x="384.00"
+         y="1639.00"
+         text-anchor="middle"
+         font-size="12.8"
+         font-weight="500"
+         fill="#2F67C7"
+         data-label-role="regional"
+         data-line="regional"
+         data-station-code="R02"
+         data-full-official-name="흑석리"
+         data-label-side="S"
+         data-node-x="384"
+         data-node-y="1608"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="384.00"
+           dy="0"
+           id="tspan179">흑석리</tspan></text>
+      <text
+         id="station-label-regional-R03"
+         class="station-label regional construction-label"
+         x="528.00"
+         y="1639.00"
+         text-anchor="middle"
+         font-size="12.8"
+         font-weight="500"
+         fill="#2F67C7"
+         data-label-role="regional"
+         data-line="regional"
+         data-station-code="R03"
+         data-full-official-name="가수원"
+         data-label-side="S"
+         data-node-x="528"
+         data-node-y="1608"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="528.00"
+           dy="0"
+           id="tspan180">가수원</tspan></text>
+      <text
+         id="station-label-regional-R05"
+         class="station-label regional construction-label"
+         x="1447.0403"
+         y="1325.4673"
+         text-anchor="end"
+         font-size="12.8px"
+         font-weight="500"
+         fill="#2f67c7"
+         data-label-role="regional"
+         data-line="regional"
+         data-station-code="R05"
+         data-full-official-name="문화"
+         data-label-side="W"
+         data-node-x="1440"
+         data-node-y="1344"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1447.0403"
+           dy="0"
+           id="tspan181">문화</tspan></text>
+      <text
+         id="station-label-regional-R08"
+         class="station-label regional construction-label"
+         x="1767.00"
+         y="882.00"
+         text-anchor="start"
+         font-size="12.8"
+         font-weight="500"
+         fill="#2F67C7"
+         data-label-role="regional"
+         data-line="regional"
+         data-station-code="R08"
+         data-full-official-name="중촌"
+         data-label-side="E"
+         data-node-x="1752"
+         data-node-y="864"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="1767.00"
+           dy="0"
+           id="tspan182">중촌</tspan></text>
+      <text
+         id="station-label-regional-R10"
+         class="station-label regional construction-label"
+         x="2049.00"
+         y="546.00"
+         text-anchor="end"
+         font-size="12.8"
+         font-weight="500"
+         fill="#2F67C7"
+         data-label-role="regional"
+         data-line="regional"
+         data-station-code="R10"
+         data-full-official-name="회덕"
+         data-label-side="W"
+         data-node-x="2064"
+         data-node-y="552"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2049.00"
+           dy="0"
+           id="tspan183">회덕</tspan></text>
+      <text
+         id="station-label-regional-R11"
+         class="station-label regional construction-label"
+         x="2121.00"
+         y="474.00"
+         text-anchor="end"
+         font-size="12.8"
+         font-weight="500"
+         fill="#2F67C7"
+         data-label-role="regional"
+         data-line="regional"
+         data-station-code="R11"
+         data-full-official-name="덕암"
+         data-label-side="W"
+         data-node-x="2136"
+         data-node-y="480"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2121.00"
+           dy="0"
+           id="tspan184">덕암</tspan></text>
+      <text
+         id="station-label-regional-R12"
+         class="station-label terminal construction-label"
+         x="2201.1555"
+         y="391.51419"
+         text-anchor="end"
+         font-size="14px"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="terminal"
+         data-line="regional"
+         data-station-code="R12"
+         data-full-official-name="신탄진"
+         data-label-side="W"
+         data-node-x="2208"
+         data-node-y="408"
+         data-status="construction"
+         data-state="construction"><tspan
+           class="station-main"
+           x="2201.1555"
+           dy="0"
+           id="tspan185">신탄진</tspan></text>
+      <text
+         id="station-label-transfer-103-208"
+         class="station-label transfer"
+         x="2131.7888"
+         y="1167.1332"
+         text-anchor="end"
+         font-size="14.2px"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="103/208"
+         data-full-official-name="1호선 대동 | 2호선 208 대동(하늘공원)"
+         data-label-side="W"
+         data-node-x="2160"
+         data-node-y="1176"
+         data-status="active"
+         data-construction-lines="2"><tspan
+           class="station-main"
+           x="2131.7888"
+           dy="0"
+           id="tspan186">대동</tspan><tspan
+           class="station-sub"
+           x="2131.7888"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan187">하늘공원</tspan></text>
+      <text
+         id="station-label-line2-207"
+         class="station-label ordinary construction-label"
+         x="2090"
+         y="1208.8"
+         text-anchor="end"
+         font-size="13.2"
+         font-weight="400"
+         fill="#4F5964"
+         data-label-role="ordinary"
+         data-line="2"
+         data-station-code="207"
+         data-full-official-name="대전역(혁신도시)"
+         data-label-side="NW"
+         data-node-x="2160"
+         data-node-y="1272"
+         data-status="construction"
+         data-rail-services="KTX,SRT"
+         data-state="construction"
+         data-brt-transfer="true"><tspan
+           class="station-main"
+           x="2090"
+           dy="0"
+           id="station-label-line2-207-main">207 대전역</tspan><tspan
+           class="station-sub"
+           x="2090"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="station-label-line2-207-sub1">혁신도시 · 철도/BRT 환승</tspan></text>
+      <text
+         id="station-label-transfer-107-202"
+         class="station-label transfer"
+         x="1806.7554"
+         y="1336.8792"
+         text-anchor="middle"
+         font-size="14.2px"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="107/202"
+         data-full-official-name="1호선 서대전네거리 | 2호선 202 서대전네거리(서대전공원)"
+         data-label-side="N"
+         data-node-x="1776"
+         data-node-y="1368"
+         data-status="active"
+         data-construction-lines="2"><tspan
+           class="station-main"
+           x="1806.7554"
+           dy="0"
+           id="tspan191">서대전네거리</tspan><tspan
+           class="station-sub"
+           x="1806.7554"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan192">서대전공원</tspan></text>
+      <text
+         id="station-label-transfer-112-218"
+         class="station-label transfer"
+         x="1512"
+         y="584.15161"
+         text-anchor="middle"
+         font-size="14.2px"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="112/218"
+         data-full-official-name="1호선 정부청사 | 2호선 218 정부청사(서구청·둔산경찰서·을지대병원)"
+         data-label-side="N"
+         data-node-x="1512"
+         data-node-y="624"
+         data-status="active"
+         data-construction-lines="2"><tspan
+           class="station-main"
+           x="1512"
+           dy="0"
+           id="tspan193">정부청사</tspan><tspan
+           class="station-sub"
+           x="1512"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan194">서구청·둔산경찰서</tspan><tspan
+           class="station-sub"
+           x="1512"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan195">을지대병원</tspan></text>
+      <text
+         id="station-label-transfer-116-225"
+         class="station-label transfer"
+         x="743.5498"
+         y="757.6955"
+         text-anchor="end"
+         font-size="14.2px"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="116/225"
+         data-full-official-name="1호선 유성온천 | 2호선 225 유성온천(유성온천공원)"
+         data-label-side="NW"
+         data-node-x="744"
+         data-node-y="792"
+         data-status="active"
+         data-construction-lines="2"><tspan
+           class="station-main"
+           x="743.5498"
+           dy="0"
+           id="tspan196">유성온천</tspan><tspan
+           class="station-sub"
+           x="743.5498"
+           dy="10.8"
+           font-size="9.2px"
+           fill="#687681"
+           id="tspan197">유성온천공원</tspan></text>
+      <text
+         id="station-label-transfer-201-R06"
+         class="station-label transfer"
+         x="1680"
+         y="1498"
+         text-anchor="middle"
+         font-size="14.2px"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="201/R06"
+         data-full-official-name="2호선 201 서대전역 | 충청권 광역철도 서대전"
+         data-label-side="S"
+         data-node-x="1680"
+         data-node-y="1464"
+         data-status="active"
+         data-construction-lines="2,regional"><tspan
+           class="station-main"
+           x="1680"
+           dy="0"
+           id="tspan198">서대전역 </tspan></text>
+      <text
+         id="station-label-transfer-214-R09"
+         class="station-label transfer"
+         x="1980.00"
+         y="591.20"
+         text-anchor="middle"
+         font-size="14.2"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="214/R09"
+         data-full-official-name="2호선 214 오정(한남대) | 충청권 광역철도 오정"
+         data-label-side="N"
+         data-node-x="1992"
+         data-node-y="624"
+         data-status="active"
+         data-construction-lines="2,regional"><tspan
+           class="station-main"
+           x="1980.00"
+           dy="0"
+           id="tspan200">오정</tspan><tspan
+           class="station-sub"
+           x="1980.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan201">한남대</tspan></text>
+      <text
+         id="station-label-transfer-237-R04"
+         class="station-label transfer"
+         x="1284.00"
+         y="1412.40"
+         text-anchor="middle"
+         font-size="14.2"
+         font-weight="600"
+         fill="#111111"
+         data-label-role="transfer"
+         data-line="transfer"
+         data-station-code="237/R04"
+         data-full-official-name="2호선 237 도마·복수(서부경찰서·대전과기대·배재대) | 충청권 광역철도 도마"
+         data-label-side="N"
+         data-node-x="1320"
+         data-node-y="1464"
+         data-status="active"
+         data-construction-lines="2,regional"><tspan
+           class="station-main"
+           x="1284.00"
+           dy="0"
+           id="tspan202">도마·복수</tspan><tspan
+           class="station-sub"
+           x="1284.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan203">서부경찰서·대전과기대</tspan><tspan
+           class="station-sub"
+           x="1284.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#687681"
+           id="tspan204">배재대 · 광역철도: 도마</tspan></text>
+      <text
+         id="station-label-transfer-Y-R07"
+         class="station-label planned"
+         x="1545.00"
+         y="1104.60"
+         text-anchor="start"
+         font-size="14"
+         font-weight="700"
+         fill="#111111"
+         data-label-role="planned"
+         data-line="transfer"
+         data-station-code="Y/R07"
+         data-full-official-name="1호선 신설 용두 | 충청권 광역철도 용두"
+         data-label-side="E"
+         data-node-x="1512"
+         data-node-y="1104"
+         data-status="planned"
+         data-construction-lines="regional"
+         data-status-detail="regional-construction-line1-transfer-planned"><tspan
+           class="station-main"
+           x="1545.00"
+           dy="0"
+           id="tspan205">용두</tspan><tspan
+           class="station-sub"
+           x="1545.00"
+           dy="10.8"
+           font-size="9.2"
+           fill="#B96A00"
+           id="tspan206">광역철도 공사중</tspan><tspan
+           id="station-label-transfer-Y-R07-sub2"
+           x="1545.00"
+           dy="10.8"
+           class="station-sub"
+           font-size="9.2"
+           fill="#687681">1호선 환승 예정</tspan></text>
+    </g>
+    <g
+       id="construction-status-panel"
+       data-status="construction"
+       data-verified-at="2026-07-12">
+      <rect
+         id="construction-status-panel-background"
+         x="872.0473"
+         y="948.0473"
+         width="429.9054"
+         height="158.32191"
+         rx="17.99604"
+         ry="20.95437"
+         fill="#fffdf8"
+         stroke="#ebcb9f"
+         stroke-width="1.2" />
+      <text
+         x="896"
+         y="974"
+         id="construction-status-panel-title"
+         class="construction-panel-title"
+         dominant-baseline="central"
+         alignment-baseline="middle">현재 공사 구간</text>
+      <path
+         id="construction-panel-line2-base"
+         d="M 896 1008 L 940 1008"
+         fill="none"
+         stroke="#E72B35"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-opacity="0.20" />
+      <path
+         id="construction-panel-line2-dash"
+         d="M 896 1008 L 940 1008"
+         fill="none"
+         stroke="#E72B35"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-dasharray="18 8" />
+      <text
+         x="956"
+         y="1008.3"
+         id="construction-panel-line2-label"
+         class="construction-panel-label"
+         dominant-baseline="central"
+         alignment-baseline="middle">2호선 트램 전 구간</text>
+      <rect
+         id="construction-panel-line2-badge"
+         x="1204"
+         y="997"
+         width="72"
+         height="22"
+         rx="11"
+         ry="11"
+         fill="#F29A2E" />
+      <text
+         x="1240"
+         y="1008.2"
+         id="construction-panel-line2-badge-label"
+         class="construction-panel-badge"
+         fill="#FFFFFF"
+         font-size="10.5"
+         font-weight="850"
+         text-anchor="middle"
+         dominant-baseline="central"
+         alignment-baseline="middle">공사중</text>
+      <path
+         id="construction-panel-regional-base"
+         d="M 896 1042 L 940 1042"
+         fill="none"
+         stroke="#2F67C7"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-opacity="0.20" />
+      <path
+         id="construction-panel-regional-dash"
+         d="M 896 1042 L 940 1042"
+         fill="none"
+         stroke="#2F67C7"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-dasharray="16 9" />
+      <text
+         x="956"
+         y="1042.3"
+         id="construction-panel-regional-label"
+         class="construction-panel-label"
+         dominant-baseline="central"
+         alignment-baseline="middle">충청권 광역철도 1단계</text>
+      <rect
+         id="construction-panel-regional-badge"
+         x="1204"
+         y="1031"
+         width="72"
+         height="22"
+         rx="11"
+         ry="11"
+         fill="#F29A2E" />
+      <text
+         x="1240"
+         y="1042.2"
+         id="construction-panel-regional-badge-label"
+         class="construction-panel-badge"
+         fill="#FFFFFF"
+         font-size="10.5"
+         font-weight="850"
+         text-anchor="middle"
+         dominant-baseline="central"
+         alignment-baseline="middle">공사중</text>
+      <path
+         id="construction-panel-sikjangsan-base"
+         d="M 896 1076 L 940 1076"
+         fill="none"
+         stroke="#00975A"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-opacity="0.20" />
+      <path
+         id="construction-panel-sikjangsan-dash"
+         d="M 896 1076 L 940 1076"
+         fill="none"
+         stroke="#00975A"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-dasharray="12 8" />
+      <text
+         x="956"
+         y="1076.3"
+         id="construction-panel-sikjangsan-label"
+         class="construction-panel-label"
+         dominant-baseline="central"
+         alignment-baseline="middle">1호선 식장산 연장</text>
+      <rect
+         id="construction-panel-sikjangsan-badge"
+         x="1204"
+         y="1065"
+         width="72"
+         height="22"
+         rx="11"
+         ry="11"
+         fill="#F29A2E" />
+      <text
+         x="1240"
+         y="1076.2"
+         id="construction-panel-sikjangsan-badge-label"
+         class="construction-panel-badge"
+         fill="#FFFFFF"
+         font-size="10.5"
+         font-weight="850"
+         text-anchor="middle"
+         dominant-baseline="central"
+         alignment-baseline="middle">공사중</text>
+    </g>
+    <g
+       id="rail-transfer-layer"
+       data-logo-mode="inline-svg-paths"
+       data-source-family-file="gwangju_metro_map_sma_v1_family_transfer_v5.svg">
+      <g
+         id="daejeon-station-highspeed-rail-chip"
+         data-station-name="대전역(혁신도시)"
+         data-services="KTX,SRT"
+         data-logo-mode="inline-svg-paths"
+         data-logo-source="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
+         data-family-component="sma-v1-rail-transfer-chip"
+         data-station-code="207"
+         data-official-stop-name="대전역(혁신도시)"
+         data-transfer-targets="KTX,SRT,일반철도,BRT"
+         aria-label="207 대전역(혁신도시): KTX, SRT, 일반철도 및 BRT 환승"
+         transform="translate(-59.850751,-38.866494)">
+        <title
+           id="daejeon-station-highspeed-rail-chip-title">207 대전역(혁신도시) KTX·SRT·일반철도·BRT 환승</title>
+        <g
+           id="daejeon-station-highspeed-ktx-inline-vector"
+           transform="matrix(0.02966339,0,0,0.02719337,2130.783,1316.5274)"
+           aria-label="KTX"
+           data-logo="KTX">
+          <path
+             id="daejeon-station-highspeed-ktx-blue-path"
+             d="m 660,175 -36,37 -28,32 32,71 h 93 z m -522,-40 1,-1 1,1 -1,1 z M 0,315 h 93 l 15,-50 v -3 l 3,-7 2,-10 3,-7 4,-17 2,-3 11,-7 2,1 21,58 18,45 h 92 l -2,-8 -2,-3 -1,-5 -2,-3 -1,-5 -2,-3 -1,-5 -10,-24 -1,-5 -2,-3 -1,-5 -2,-3 -30,-81 76,-49 h 73 l 1,1 -7,21 -4,17 -3,7 -6,24 -3,7 -4,17 -3,7 -6,24 -3,7 v 3 l -20,67 h 93 l 9,-29 v -3 l 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 v -3 l 2,-2 h 85 l 4,6 24,56 25,-23 23,-19 6,-9 9,-10 2,-5 -24,-55 H 255 l -115,81 -1,-2 11,-13 19,-66 H 76 Z"
+             fill="#000055"
+             fill-rule="evenodd" />
+          <path
+             id="daejeon-station-highspeed-ktx-red-path"
+             d="m 958,0 h -9 l -1,1 -15,1 -1,1 -38,5 -25,5 -9,3 h -4 l -40,11 -43,15 -36,15 -39,19 -19,11 -30,20 -28,21 -50,43 -69,69 -46,51 -20,24 h 102 l 55,-69 46,-51 61,-59 46,-38 25,-18 28,-18 48,-25 42,-17 h 3 l 6,-3 22,-7 z"
+             fill="#e00024"
+             fill-rule="evenodd" />
+        </g>
+        <g
+           id="daejeon-station-highspeed-srt-inline-vector"
+           transform="matrix(0.0479167,0,0,0.0479167,2055.7306,1285.3187)"
+           aria-label="SRT"
+           data-logo="SRT">
+          <path
+             id="daejeon-station-highspeed-srt-path"
+             d="m 1836.6513,530.78932 h -46.1054 l -41.3592,105.66567 h 45.4273 z m -320.0256,105.66567 h 126.7898 l 0.678,-0.62157 h 6.1022 l 0.678,-0.62156 8.1363,-0.62157 11.5263,-2.48624 8.1362,-2.48626 12.2044,-6.21563 9.4923,-8.70188 4.0681,-5.59406 4.0682,-8.08032 2.034,-8.08031 v -13.05282 l -0.678,-0.62156 -0.6781,-6.21562 -4.7461,-11.8097 -8.8142,-16.16063 -4.0682,-12.43125 v -9.32344 l 3.3901,-6.8372 6.1022,-4.9725 8.8143,-3.10781 12.2043,-0.62157 0.6781,-0.62156 151.8765,0.62156 4.7461,1.24313 6.1023,3.10781 3.3901,3.10782 4.0681,7.45875 0.678,4.97251 -0.678,0.62156 -0.6781,6.21562 -5.4241,9.32344 -8.1362,7.45876 -10.1703,6.21562 -23.7307,9.32345 -14.2385,4.35093 h -2.7121 l 3.3901,8.08032 26.4429,49.72502 4.068,3.72937 4.7462,2.48626 4.7461,1.24313 h 134.9261 l 2.7121,0.62155 0.678,-0.62155 8.8142,-0.62157 6.1022,-1.86469 10.8484,-5.59407 8.1362,-7.45875 4.0681,-5.59406 5.4242,-11.18813 2.034,-6.83719 1.3561,-1.86469 2.0341,-6.83719 1.356,-1.86468 1.3561,-4.97251 1.356,-1.86469 1.356,-4.9725 1.356,-1.86468 2.0341,-6.8372 1.3561,-1.86468 21.6966,-55.94065 0.678,-0.62157 h 52.8857 l 4.068,-1.24311 4.7462,-4.35095 13.5604,-22.37626 H 2025.141 l -0.6781,0.62156 -13.5604,1.24313 -12.2043,3.10781 -10.1703,4.35094 -8.8143,5.59407 -7.4583,6.83719 -4.7461,6.21562 -5.4242,11.8097 h 25.0868 l 7.4583,-6.21563 5.4241,-2.48625 9.4923,-2.48625 h 6.7802 l 0.678,-0.62157 h 26.4428 l 0.678,0.62157 -41.3593,105.0441 -3.39,3.10781 -8.1362,2.48625 h -92.2108 l -4.7462,-8.08031 v -1.24312 l -4.0681,-6.8372 v -1.24312 l -4.0681,-6.83719 -8.8143,-18.64688 2.7121,-1.86469 6.7802,-1.86469 16.9505,-7.45875 16.2725,-9.32344 6.7802,-4.9725 7.4582,-6.8372 4.7462,-5.59406 4.0681,-6.83719 2.0341,-5.59407 0.678,-12.43125 -3.3901,-9.945 -6.1022,-8.08032 -4.0681,-3.10781 -8.1363,-4.35094 -10.8483,-3.72938 -8.1363,-1.86468 -11.5263,-1.24313 -0.678,-0.62157 h -7.4582 l -0.6781,-0.62156 h -178.3194 l -0.6779,0.62156 -10.8484,0.62157 -12.2043,2.48625 -9.4923,3.10781 -8.1363,3.72938 -8.8142,6.21563 -5.4242,6.21562 -3.3901,6.21563 -2.0341,7.45875 v 13.67438 l 2.7121,11.18814 5.4242,13.05281 7.4582,13.67438 3.3901,11.18813 v 10.56657 l -1.356,3.72937 -3.3901,4.97251 -6.1022,4.9725 -6.7802,3.10781 -6.7802,1.86469 -8.1363,0.62156 -0.6779,0.62157 h -92.8888 l -5.4242,1.86468 -4.0682,3.72938 z"
+             fill="#4c2f48"
+             fill-rule="evenodd"
+             style="stroke-width:0.649178" />
+        </g>
+      </g>
+      <g
+         id="seodaejeon-station-ktx-rail-chip"
+         data-station-name="서대전역"
+         data-services="KTX"
+         data-logo-mode="inline-svg-paths"
+         data-logo-source="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
+         data-family-component="sma-v1-rail-transfer-chip"
+         transform="matrix(0.78008405,0,0,0.71336125,311.95588,426.57611)">
+        <title
+           id="seodaejeon-station-ktx-rail-chip-title">서대전역 KTX 환승</title>
+        <g
+           id="seodaejeon-station-ktx-ktx-inline-vector"
+           transform="matrix(0.04375,0,0,0.04375,1737.0582,1509.3324)"
+           aria-label="KTX"
+           data-logo="KTX">
+          <path
+             id="seodaejeon-station-ktx-ktx-blue-path"
+             d="m 660,175 -36,37 -28,32 32,71 h 93 z m -522,-40 1,-1 1,1 -1,1 z M 0,315 h 93 l 15,-50 v -3 l 3,-7 2,-10 3,-7 4,-17 2,-3 11,-7 2,1 21,58 18,45 h 92 l -2,-8 -2,-3 -1,-5 -2,-3 -1,-5 -2,-3 -1,-5 -10,-24 -1,-5 -2,-3 -1,-5 -2,-3 -30,-81 76,-49 h 73 l 1,1 -7,21 -4,17 -3,7 -6,24 -3,7 -4,17 -3,7 -6,24 -3,7 v 3 l -20,67 h 93 l 9,-29 v -3 l 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 v -3 l 2,-2 h 85 l 4,6 24,56 25,-23 23,-19 6,-9 9,-10 2,-5 -24,-55 H 255 l -115,81 -1,-2 11,-13 19,-66 H 76 Z"
+             fill="#000055"
+             fill-rule="evenodd" />
+          <path
+             id="seodaejeon-station-ktx-ktx-red-path"
+             d="m 958,0 h -9 l -1,1 -15,1 -1,1 -38,5 -25,5 -9,3 h -4 l -40,11 -43,15 -36,15 -39,19 -19,11 -30,20 -28,21 -50,43 -69,69 -46,51 -20,24 h 102 l 55,-69 46,-51 61,-59 46,-38 25,-18 28,-18 48,-25 42,-17 h 3 l 6,-3 22,-7 z"
+             fill="#e00024"
+             fill-rule="evenodd" />
+        </g>
+      </g>
+    </g>
+    <g
+       id="route-number-badges-layer">
+      <g
+         class="map-line-number-badge"
+         aria-label="1"
+         id="g206">
+        <rect
+           x="1239.0"
+           y="781"
+           width="22"
+           height="22"
+           rx="11"
+           fill="#00975A"
+           stroke="#FFFFFF"
+           stroke-width="3"
+           id="rect206" />
+        <text
+           x="1250"
+           y="792.5"
+           fill="#FFFFFF"
+           font-size="11"
+           font-weight="900"
+           text-anchor="middle"
+           dominant-baseline="central"
+           id="text206">1</text>
+      </g>
+      <g
+         class="map-line-number-badge"
+         aria-label="2"
+         id="g207">
+        <rect
+           x="1321.0"
+           y="613"
+           width="22"
+           height="22"
+           rx="11"
+           fill="#E72B35"
+           stroke="#FFFFFF"
+           stroke-width="3"
+           id="rect207" />
+        <text
+           x="1332"
+           y="624.5"
+           fill="#FFFFFF"
+           font-size="11"
+           font-weight="900"
+           text-anchor="middle"
+           dominant-baseline="central"
+           id="text207">2</text>
+      </g>
+      <g
+         class="map-line-number-badge"
+         aria-label="광역"
+         id="g208">
+        <rect
+           x="1625.0"
+           y="961"
+           width="38"
+           height="22"
+           rx="11"
+           fill="#2F67C7"
+           stroke="#FFFFFF"
+           stroke-width="3"
+           id="rect208" />
+        <text
+           x="1644"
+           y="972.5"
+           fill="#FFFFFF"
+           font-size="9"
+           font-weight="900"
+           text-anchor="middle"
+           dominant-baseline="central"
+           id="text208">광역</text>
+      </g>
+    </g>
+  </g>
+  <g
+     id="top-route-line-explanation-layer">
+    <rect
+       x="70"
+       y="136"
+       width="2260"
+       height="104"
+       rx="18"
+       ry="18"
+       fill="#FFFFFF"
+       stroke="#D7E5EE"
+       stroke-width="1.1"
+       id="rect209" />
+    <text
+       x="94"
+       y="162"
+       fill="#344258"
+       font-size="13"
+       font-weight="850"
+       id="text209">노선 색상 안내</text>
+    <g
+       class="route-line-explanation-item"
+       id="g211">
+      <path
+         d="M 260 158 L 302 158"
+         fill="none"
+         stroke="#00975A"
+         stroke-width="8"
+         stroke-linecap="round"
+         id="path209" />
+      <rect
+         x="307"
+         y="149"
+         width="20"
+         height="18"
+         rx="9"
+         fill="#00975A"
+         id="rect210" />
+      <text
+         x="317.0"
+         y="158.5"
+         fill="#FFFFFF"
+         font-size="10.5"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         id="text210">1</text>
+      <text
+         x="337"
+         y="158.5"
+         fill="#344258"
+         font-size="12.2"
+         font-weight="700"
+         dominant-baseline="central"
+         id="text211">1호선 · 운영</text>
+    </g>
+    <g
+       class="route-line-explanation-item"
+       id="g213">
+      <path
+         d="M 650 158 L 692 158"
+         fill="none"
+         stroke="#E72B35"
+         stroke-width="8"
+         stroke-linecap="round"
+         id="path211-construction-guide"
+         stroke-opacity="0.20" />
+      <path
+         d="M 650 158 L 692 158"
+         fill="none"
+         stroke="#E72B35"
+         stroke-width="8"
+         stroke-linecap="round"
+         id="path211"
+         stroke-dasharray="18 8"
+         data-state="construction" />
+      <rect
+         x="697"
+         y="149"
+         width="20"
+         height="18"
+         rx="9"
+         fill="#E72B35"
+         id="rect211" />
+      <text
+         x="707.0"
+         y="158.5"
+         fill="#FFFFFF"
+         font-size="10.5"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         id="text212">2</text>
+      <text
+         x="727"
+         y="158.5"
+         fill="#344258"
+         font-size="12.2"
+         font-weight="700"
+         dominant-baseline="central"
+         id="text213">2호선 트램 · 공사 중</text>
+    </g>
+    <g
+       class="route-line-explanation-item"
+       id="g215">
+      <path
+         d="M 1110 158 L 1152 158"
+         fill="none"
+         stroke="#2F67C7"
+         stroke-width="8"
+         stroke-linecap="round"
+         id="path213-construction-guide"
+         stroke-opacity="0.20" />
+      <path
+         d="M 1110 158 L 1152 158"
+         fill="none"
+         stroke="#2F67C7"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-dasharray="16 9"
+         id="path213"
+         data-state="construction" />
+      <rect
+         x="1157"
+         y="149"
+         width="30"
+         height="18"
+         rx="9"
+         fill="#2F67C7"
+         id="rect213" />
+      <text
+         x="1172.0"
+         y="158.5"
+         fill="#FFFFFF"
+         font-size="8.5"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         id="text214">광역</text>
+      <text
+         x="1197"
+         y="158.5"
+         fill="#344258"
+         font-size="12.2"
+         font-weight="700"
+         dominant-baseline="central"
+         id="text215">충청권 광역철도 · 공사 중</text>
+    </g>
+    <g
+       class="route-line-explanation-item"
+       id="g217">
+      <path
+         d="M 1680 158 L 1722 158"
+         fill="none"
+         stroke="#00975A"
+         stroke-width="8"
+         stroke-linecap="round"
+         id="path215-construction-guide"
+         stroke-opacity="0.20" />
+      <path
+         d="M 1680 158 L 1722 158"
+         fill="none"
+         stroke="#00975A"
+         stroke-width="8"
+         stroke-linecap="round"
+         stroke-dasharray="12 8"
+         id="path215"
+         data-state="construction" />
+      <rect
+         x="1727"
+         y="149"
+         width="20"
+         height="18"
+         rx="9"
+         fill="#00975A"
+         id="rect215" />
+      <text
+         x="1737.0"
+         y="158.5"
+         fill="#FFFFFF"
+         font-size="10.5"
+         font-weight="900"
+         text-anchor="middle"
+         dominant-baseline="central"
+         id="text216">1</text>
+      <text
+         x="1757"
+         y="158.5"
+         fill="#344258"
+         font-size="12.2"
+         font-weight="700"
+         dominant-baseline="central"
+         id="text217">식장산 연장 · 공사 중</text>
+    </g>
+    <circle
+       cx="260"
+       cy="188"
+       r="4.8"
+       fill="#FFFFFF"
+       stroke="#00975A"
+       stroke-width="1.8"
+       id="circle217" />
+    <text
+       x="302"
+       y="188.5"
+       fill="#344258"
+       font-size="12.2"
+       font-weight="700"
+       dominant-baseline="central"
+       id="text218">일반역</text>
+    <g
+       id="transfer-legend-transfer"
+       class="ourclass-transfer-symbol ourclass-transfer-node-style ourclass-transfer-symbol-straight-v14"
+       data-station="legend-transfer"
+       data-state="active"
+       data-family-component="sma-v1-transfer-capsule"
+       data-source-scale="0.455"
+       data-badge-radius="5.46"
+       data-shell-outline-width="18.2"
+       data-shell-fill-width="14.56"
+       aria-label="legend-transfer 환승역: 1호선, 2호선">
+      <title
+         id="title-transfer-station-legend-transfer">legend-transfer 환승 노드: 1호선 / 2호선 — sma-v1 직선형 캡슐</title>
+      <g
+         id="transfer-station-shell-network-legend-transfer"
+         class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
+        <path
+           id="transfer-station-shell-outline-legend-transfer"
+           d="M 644.54 188 L 655.46 188"
+           fill="none"
+           stroke="#3F4A5C"
+           stroke-width="18.2"
+           stroke-linecap="round"
+           stroke-linejoin="round"
+           class="ourclass-transfer-shell-outline"
+           shape-rendering="geometricPrecision" />
+        <path
+           id="transfer-station-shell-fill-legend-transfer"
+           d="M 644.54 188 L 655.46 188"
+           fill="none"
+           stroke="#FFFFFF"
+           stroke-width="14.56"
+           stroke-linecap="round"
+           stroke-linejoin="round"
+           class="ourclass-transfer-shell-fill"
+           shape-rendering="geometricPrecision" />
+      </g>
+      <g
+         id="transfer-station-route-badges-legend-transfer"
+         class="ourclass-transfer-route-badges">
+        <g
+           id="transfer-station-badge-legend-transfer-1호선-1"
+           class="ourclass-transfer-badge">
+          <circle
+             id="transfer-station-badge-circle-legend-transfer-1호선-1"
+             cx="644.54"
+             cy="188"
+             r="5.46"
+             fill="#00975A"
+             class="ourclass-transfer-badge-circle"
+             shape-rendering="geometricPrecision" />
+          <text
+             id="transfer-station-badge-label-legend-transfer-1호선-1"
+             x="644.54"
+             y="188"
+             fill="#FFFFFF"
+             class="ourclass-transfer-badge-label"
+             font-size="8.19"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             stroke="none">1</text>
+        </g>
+        <g
+           id="transfer-station-badge-legend-transfer-2호선-2"
+           class="ourclass-transfer-badge">
+          <circle
+             id="transfer-station-badge-circle-legend-transfer-2호선-2"
+             cx="655.46"
+             cy="188"
+             r="5.46"
+             fill="#E72B35"
+             class="ourclass-transfer-badge-circle"
+             shape-rendering="geometricPrecision" />
+          <text
+             id="transfer-station-badge-label-legend-transfer-2호선-2"
+             x="655.46"
+             y="188"
+             fill="#FFFFFF"
+             class="ourclass-transfer-badge-label"
+             font-size="8.19"
+             font-weight="900"
+             text-anchor="middle"
+             dominant-baseline="central"
+             alignment-baseline="middle"
+             stroke="none">2</text>
+        </g>
+      </g>
+    </g>
+    <text
+       x="692"
+       y="188.5"
+       fill="#344258"
+       font-size="12.2"
+       font-weight="700"
+       dominant-baseline="central"
+       id="text219">환승역</text>
+    <circle
+       cx="1110"
+       cy="188"
+       r="6.2"
+       fill="#FFFFFF"
+       stroke="#E72B35"
+       stroke-width="2.4"
+       id="circle220" />
+    <text
+       x="1152"
+       y="188.5"
+       fill="#344258"
+       font-size="12.2"
+       font-weight="700"
+       dominant-baseline="central"
+       id="text220">기·종점</text>
+    <circle
+       cx="1680"
+       cy="188"
+       r="7.8"
+       fill="#FFFFFF"
+       stroke="#F29A2E"
+       stroke-width="1.4"
+       stroke-dasharray="3 2"
+       id="circle221" />
+    <circle
+       cx="1680"
+       cy="188"
+       r="4.8"
+       fill="#FFFFFF"
+       stroke="#00975A"
+       stroke-width="1.8"
+       id="circle222" />
+    <text
+       x="1722"
+       y="188.5"
+       fill="#344258"
+       font-size="12.2"
+       font-weight="700"
+       dominant-baseline="central"
+       id="text222">공사 중 역·연장</text>
+    <g
+       id="legend-highspeed-rail-chip"
+       data-station-name="고속철도"
+       data-services="KTX,SRT"
+       data-logo-mode="inline-svg-paths"
+       data-logo-source="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
+       data-family-component="sma-v1-rail-transfer-chip"
+       data-role="legend"
+       transform="translate(-311.50515,29.138566)">
+      <title
+         id="legend-highspeed-rail-chip-title">고속철도 KTX·SRT 환승</title>
+      <g
+         id="legend-highspeed-ktx-inline-vector"
+         transform="matrix(0.04375,0,0,0.04375,1989,181.08)"
+         aria-label="KTX"
+         data-logo="KTX">
+        <path
+           id="legend-highspeed-ktx-blue-path"
+           d="m 660,175 -36,37 -28,32 32,71 h 93 z m -522,-40 1,-1 1,1 -1,1 z M 0,315 h 93 l 15,-50 v -3 l 3,-7 2,-10 3,-7 4,-17 2,-3 11,-7 2,1 21,58 18,45 h 92 l -2,-8 -2,-3 -1,-5 -2,-3 -1,-5 -2,-3 -1,-5 -10,-24 -1,-5 -2,-3 -1,-5 -2,-3 -30,-81 76,-49 h 73 l 1,1 -7,21 -4,17 -3,7 -6,24 -3,7 -4,17 -3,7 -6,24 -3,7 v 3 l -20,67 h 93 l 9,-29 v -3 l 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 v -3 l 2,-2 h 85 l 4,6 24,56 25,-23 23,-19 6,-9 9,-10 2,-5 -24,-55 H 255 l -115,81 -1,-2 11,-13 19,-66 H 76 Z"
+           fill="#000055"
+           fill-rule="evenodd" />
+        <path
+           id="legend-highspeed-ktx-red-path"
+           d="m 958,0 h -9 l -1,1 -15,1 -1,1 -38,5 -25,5 -9,3 h -4 l -40,11 -43,15 -36,15 -39,19 -19,11 -30,20 -28,21 -50,43 -69,69 -46,51 -20,24 h 102 l 55,-69 46,-51 61,-59 46,-38 25,-18 28,-18 48,-25 42,-17 h 3 l 6,-3 22,-7 z"
+           fill="#e00024"
+           fill-rule="evenodd" />
+      </g>
+      <g
+         id="legend-highspeed-srt-inline-vector"
+         transform="matrix(0.0479167,0,0,0.0479167,2040,181.91)"
+         aria-label="SRT"
+         data-logo="SRT">
+        <path
+           id="legend-highspeed-srt-path"
+           d="m 473,82 h -68 l -61,170 h 67 z M 1,252 h 187 l 1,-1 h 9 l 1,-1 12,-1 17,-4 12,-4 18,-10 14,-14 6,-9 6,-13 3,-13 v -21 l -1,-1 -1,-10 -7,-19 -13,-26 -6,-20 V 70 l 5,-11 9,-8 13,-5 18,-1 1,-1 224,1 7,2 9,5 5,5 6,12 1,8 -1,1 -1,10 -8,15 -12,12 -15,10 -35,15 -21,7 h -4 l 5,13 39,80 6,6 7,4 7,2 h 199 l 4,1 1,-1 13,-1 9,-3 16,-9 12,-12 6,-9 8,-18 3,-11 2,-3 3,-11 2,-3 2,-8 2,-3 2,-8 2,-3 3,-11 2,-3 32,-90 1,-1 h 78 l 6,-2 7,-7 20,-36 H 751 l -1,1 -20,2 -18,5 -15,7 -13,9 -11,11 -7,10 -8,19 h 37 l 11,-10 8,-4 14,-4 h 10 l 1,-1 h 39 l 1,1 -61,169 -5,5 -12,4 H 565 l -7,-13 v -2 l -6,-11 v -2 l -6,-11 -13,-30 4,-3 10,-3 25,-12 24,-15 10,-8 11,-11 7,-9 6,-11 3,-9 1,-20 -5,-16 -9,-13 -6,-5 L 602,13 586,7 574,4 557,2 556,1 H 545 L 544,0 H 281 l -1,1 -16,1 -18,4 -14,5 -12,6 -13,10 -8,10 -5,10 -3,12 v 22 l 4,18 8,21 11,22 5,18 v 17 l -2,6 -5,8 -9,8 -10,5 -10,3 -12,1 -1,1 H 33 l -8,3 -6,6 z"
+           fill="#4c2f48"
+           fill-rule="evenodd" />
+      </g>
+    </g>
+    <text
+       x="1798.4949"
+       y="217.63857"
+       id="legend-highspeed-label"
+       class="rail-chip-label"
+       fill="#344258"
+       font-size="11"
+       font-weight="750"
+       dominant-baseline="central"
+       alignment-baseline="middle">고속철도 환승</text>
+  </g>
+</svg>

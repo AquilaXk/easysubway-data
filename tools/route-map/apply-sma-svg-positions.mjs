@@ -127,6 +127,10 @@ export function buildAssignments(db, extraction, config = SEOUL) {
   // 1) 노드 마커: 결정적 순서(추출기 안정 정렬)로 순회.
   for (const node of extraction.stationNodes) {
     if (excluded.has(node.dataStation)) continue; // 범례 등 비역 노드
+    // 권역 nodeFilter(선택): 도식이 카탈로그 밖 노선/미개통 노드까지 그리는 경우
+    // (대전 2호선·충청권 광역철도·미개통 라벨) 그 노드를 정합 대상에서 배제한다.
+    // 정의되지 않은 권역(수도권·부산·대구)에는 영향이 없다.
+    if (config.nodeFilter && !config.nodeFilter(node)) continue;
     const slug = node.dataLine || config.missingLineHint[node.dataStation] || "";
     const lineId = slug ? slugToLineId.get(slug) : null;
     const canon = config.canonicalRules(node.dataStation);
@@ -173,6 +177,26 @@ export function reconcile(db, assignments, config = SEOUL) {
     if (exceptionNames.has(row.nameKo)) continue; // 명시 예외(수도권 도라산)
     unmappedPackRows.push(row);
   }
+  // 권역 카탈로그 역 수(배정과 별도 축): 권역 노선(lines.name_ko LIKE '<prefix> %')에
+  // 걸린 distinct 역에서 명시 예외·제외역을 뺀 수. nodeFilter가 (버그 등으로) 전 노드를
+  // 배제하면 assignments가 비고 unresolvedNodes도 0이라 미매핑 게이트를 공허 통과할 수
+  // 있다. 이 카탈로그 대비 배정 게이트가 그 축을 별도로 막는다.
+  const excluded = new Set(config.excludedStations ?? []);
+  const catalogStationIds = new Set(
+    db
+      .prepare(
+        `SELECT DISTINCT sl.station_id AS stationId, s.name_ko AS nameKo
+         FROM station_lines sl
+         JOIN lines l ON l.id = sl.line_id
+         JOIN stations s ON s.id = sl.station_id
+         WHERE l.name_ko LIKE ?`,
+      )
+      .all(`${config.lineNamePrefix} %`)
+      .filter((r) => !exceptionNames.has(r.nameKo) && !excluded.has(r.nameKo))
+      .map((r) => r.stationId),
+  );
+  const catalogStationCount = catalogStationIds.size;
+
   const packStations = new Set(packRows.map((r) => r.stationId));
   // 팩 rmp에 없는 배정 = 카탈로그에는 있으나 좌표행이 없는 역. 권역 station_lines가
   // 있으면 신규 rmp 행 대상(#1954 검단연장·원종). 그 외는 정합 오류.
@@ -192,9 +216,15 @@ export function reconcile(db, assignments, config = SEOUL) {
       trulyOrphan.push(a);
     }
   }
+  // 카탈로그 역 중 배정 안 된 역(nodeFilter 공허 통과·과잉 배제 탐지용).
+  const unassignedCatalogStations = [...catalogStationIds].filter(
+    (id) => !assignedStations.has(id),
+  );
   return {
     packRowCount: packRows.length,
     assignedStationCount: assignments.length,
+    catalogStationCount,
+    unassignedCatalogCount: unassignedCatalogStations.length,
     unmappedPackRows,
     insertableAssignments: insertable,
     orphanAssignments: trulyOrphan,
@@ -290,6 +320,8 @@ async function main() {
       region: config.regionKey,
       svgNodeCount: extraction.stationNodes.length,
       assignedStationCount: assignments.length,
+      catalogStationCount: summary.catalogStationCount,
+      unassignedCatalogCount: summary.unassignedCatalogCount,
       unresolvedNodeCount: unresolvedNodes.length,
       unresolvedNodes: unresolvedNodes.slice(0, 20),
       packRowCount: summary.packRowCount,
@@ -303,6 +335,15 @@ async function main() {
     };
     console.log(JSON.stringify(report, null, 2));
 
+    // nodeFilter 공허 통과 방지(미매핑 0 게이트와 별도 축): nodeFilter를 쓰는 권역
+    // (대전·광주)은 필터가 (버그 등으로) 전 노드를 배제해도 unresolved 0으로 통과할 수
+    // 있다 — 배정이 비면 미매핑 게이트가 잡지만, 이 카탈로그 대조 게이트가 그 축을
+    // 독립적으로 막는다. 카탈로그 역(명시 예외·제외역 제외)이 하나라도 미배정이면 실패.
+    if (config.nodeFilter && summary.catalogStationCount > 0 && summary.unassignedCatalogCount > 0) {
+      throw new Error(
+        `카탈로그 역 ${summary.unassignedCatalogCount}/${summary.catalogStationCount}건 미배정(예외·제외 제외) — nodeFilter 공허/과잉 배제 의심`,
+      );
+    }
     if (unresolvedNodes.length > 0) {
       throw new Error(`미해소 SVG 노드 ${unresolvedNodes.length}건 — 매핑 규칙 확인`);
     }
