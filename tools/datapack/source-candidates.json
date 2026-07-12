@@ -472,7 +472,7 @@
         "retrievedAt": "2026-06-23",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement?serviceKey=[서비스키값]&format=xml&railOprIsttCd=S1&lnCd=3&stinCd=331&prevStinCd=132&chthTgtLn=4&chtnNextStinCd=425",
-        "liveSampleNote": "2026-07-11 workflow run 29155976812 (head 3bbb27594a38ef26f04aad5c5c5f6a423fcf1b5f)은 기존 tuple prevStinCd=422, chtnNextStinCd=424로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0을 확인했다. 이는 sampleResponse evidence가 아님. 다음 tuple prevStinCd=132, chtnNextStinCd=425는 KRIC 공식 요청변수 표에서 가져온 미검증 tuple이다.",
+        "liveSampleNote": "KRIC 공식 상세 페이지 sample URL tuple 422/424와 요청변수 표 tuple 132/425는 불일치한다. 132/425는 KRIC 공식 요청변수 표에서 가져온 미검증 tuple이었다. 2026-07-11 workflow run 29155976812 (head 3bbb27594a38ef26f04aad5c5c5f6a423fcf1b5f)은 기존 tuple prevStinCd=422, chtnNextStinCd=424로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0을 확인했다. 이는 sampleResponse evidence가 아님. 2026-07-12 workflow run 29177451688 (head 3c3567b524a14f39a0bbe20a774259b7ba405694)은 요청변수 표 tuple prevStinCd=132, chtnNextStinCd=425로 HTTP 200, content type application/xml, resultCode=03, classification=no-data, itemCount=0, artifactCount=0을 확인했고 sanitized sample artifact가 생성되지 않음. resultCode=03의 공식 의미 매핑은 공개 문서에서 확인되지 않음.",
         "usePermissionRange": "저작권표시",
         "formats": [
           "JSON",
