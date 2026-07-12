@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "strict-route-regression-report",
-  "issue": 1950,
+  "issue": 1996,
   "productionScopeId": "capital_pilot_android_v1",
   "generatedBy": {
     "fixtureBuilder": "tools/datapack/build-molit-nationwide-fixture.mjs",
@@ -11,9 +11,10 @@
       "BLOCKER",
       "HIGH"
     ],
-    "builderGitSha": "ec8dde5431ff4c2d3b1d94a7a7a6a904feb0b6b8",
-    "generatedAtUtc": "2026-07-11T19:53:01Z"
+    "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
+    "generatedAtUtc": "2026-07-12T01:00:00Z"
   },
+  "accessibilityGateNote": "#1996 게이트 재설계는 route-map 좌표 감사를 바꾸지 않는다(전국 5권역 nationwide fixture 기준, 좌표·라벨 폴리곤 findings 불변). 사당·상록수 4호선 접근성 상태 검증(UNDER_MAINTENANCE/NO_OFFICIAL_FEED)은 capital 게시 게이트(validate-datapack --require-production)에서 exit 0로 통과하며 strict route 보장(AVAILABLE 전용)은 불변이다.",
   "regionScope": "전국 5권역(수도권·부산권·대구권·광주권·대전권)",
   "auditExitCode": 0,
   "summary": {

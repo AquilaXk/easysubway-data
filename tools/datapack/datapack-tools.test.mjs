@@ -3672,7 +3672,10 @@ test("데이터팩 검증기는 production pathway edge 증거 누락을 거부�
   );
 });
 
-test("데이터팩 검증기는 UNKNOWN accessibility edge provenance를 검증한다", async () => {
+test("데이터팩 검증기는 검증된 상태 accessibility edge의 미검증 provenance를 거부한다", async () => {
+  // #1996: 검증된 상태(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) edge는 provenance 요건(VERIFIED 등)을
+  // 여전히 강제한다. verification_status가 PENDING이면 거부한다. (UNKNOWN은 provenance 후보가 아니라 coverage
+  // gap 경로로 차단된다.)
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-unknown-provenance-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   await rm(outputDir, { recursive: true, force: true });
@@ -3684,7 +3687,7 @@ test("데이터팩 검증기는 UNKNOWN accessibility edge provenance를 검증�
   fixture.packs[0].networkEdges.push({
     ...entry,
     id: "entry-sangnoksu-seoul-4-unknown-duplicate",
-    accessibilityStatus: "UNKNOWN",
+    accessibilityStatus: "UNDER_MAINTENANCE",
     verificationStatus: "PENDING_ADMIN_REVIEW",
   });
   fixture.packs[0].minimumTableRows.network_edges += 1;
@@ -9751,7 +9754,11 @@ test("공식 source ingest adapter는 stationLineRows 없는 facility evidence m
 test("AVAILABLE ENTRY edge rejects station-line source provenance", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-station-source-${Date.now()}`);
   const input = await capitalPilotProductionSourceInput();
-  input.routeEdges.find((edge) => edge.id === "edge-entry-sadang-seoul-4").accessibilityStatus = "AVAILABLE";
+  // AVAILABLE ENTRY edge가 accessibility_facilities 미지원 source(역-노선 정보)면 거부된다.
+  const availableEntry = input.routeEdges.find((edge) => edge.id === "edge-entry-sadang-seoul-4");
+  availableEntry.accessibilityStatus = "AVAILABLE";
+  availableEntry.sourceId = "seoulmetro-station-line-info";
+  availableEntry.sourceSnapshotId = "seoulmetro-station-line-info-snapshot-20260621";
 
   await assert.rejects(
     importOfficialSourceInput(outputDir, input),
@@ -9790,9 +9797,11 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line sou
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutputDir = path.join(outputDir, "pack");
   const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput());
-  fixture.packs[0].networkEdges.find(
-    (edge) => edge.id === "edge-entry-sadang-seoul-4",
-  ).accessibilityStatus = "AVAILABLE";
+  // 빌드 후 edge를 AVAILABLE로 바꾸고 source를 accessibility_facilities 미지원(역-노선)으로 우회 → validator 거부.
+  const builtEntry = fixture.packs[0].networkEdges.find((edge) => edge.id === "edge-entry-sadang-seoul-4");
+  builtEntry.accessibilityStatus = "AVAILABLE";
+  builtEntry.sourceId = "seoulmetro-station-line-info";
+  builtEntry.sourceSnapshotId = "seoulmetro-station-line-info-snapshot-20260621";
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await execFileAsync(
     process.execPath,
@@ -9851,6 +9860,83 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line ope
     ),
     /AVAILABLE ENTRY\/EXIT edge requires strict-eligible operational facility evidence/,
   );
+});
+
+test("UNDER_MAINTENANCE ENTRY edge는 실측 보수중 시설 증거 없이는 거부된다 (#1996)", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-accessibility-maintenance-missing-${Date.now()}`);
+  const input = await capitalPilotProductionSourceInput();
+  // 사당 UNDER_MAINTENANCE edge는 유지되나 보수중 상태 증거(probe)를 제거 → 검증 실패.
+  input.accessibilityStatusEvidence = input.accessibilityStatusEvidence.filter(
+    (row) => row.stationId !== "station-sadang",
+  );
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /UNDER_MAINTENANCE ENTRY\/EXIT edge requires field-verified maintenance facility evidence/,
+  );
+});
+
+test("NO_OFFICIAL_FEED ENTRY edge는 피드 부재 기록 증거 없이는 거부된다 (#1996)", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-accessibility-nofeed-missing-${Date.now()}`);
+  const input = await capitalPilotProductionSourceInput();
+  // 상록수 NO_OFFICIAL_FEED edge는 유지되나 부재 기록(NOT_EXISTS probe)을 제거 → 검증 실패.
+  input.accessibilityStatusEvidence = input.accessibilityStatusEvidence.filter(
+    (row) => row.stationId !== "station-sangnoksu",
+  );
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /NO_OFFICIAL_FEED ENTRY\/EXIT edge requires recorded absence-of-feed evidence/,
+  );
+});
+
+test("NO_OFFICIAL_FEED ENTRY edge는 NOT_EXISTS이나 statusMeaning이 FEED_ABSENCE_RECORD가 아니면 거부된다 (#1998)", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-accessibility-nofeed-statusmeaning-${Date.now()}`);
+  const input = await capitalPilotProductionSourceInput();
+  // 상록수 NO_OFFICIAL_FEED probe는 NOT_EXISTS로 남기되 statusMeaning을 피드 부재 기록이 아닌 값(시설 물리
+  // 부재)으로 변조 → 임의 NOT_EXISTS로는 피드 부재 커버리지를 채울 수 없어야 하므로 검증 실패해야 한다.
+  const probe = input.accessibilityStatusEvidence.find((row) => row.stationId === "station-sangnoksu");
+  assert.equal(probe.evidenceKind, "NOT_EXISTS");
+  probe.statusMeaning = "FACILITY_PHYSICALLY_ABSENT";
+  probe.operationalStatus = "NOT_INSTALLED";
+
+  await assert.rejects(
+    importOfficialSourceInput(outputDir, input),
+    /NO_OFFICIAL_FEED ENTRY\/EXIT edge requires recorded absence-of-feed evidence/,
+  );
+});
+
+test("검증된 상태 3분류(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) edge는 게시 게이트를 통과하고 UNKNOWN만 unverified로 남는다 (#1996)", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-accessibility-verified-states-${Date.now()}`);
+  const packOutputDir = path.join(outputDir, "pack");
+  const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput());
+  const fixturePath = path.join(outputDir, "fixture.json");
+  // 사당 UNDER_MAINTENANCE·상록수 NO_OFFICIAL_FEED edge는 strict_route_eligible 대상이 아니다.
+  const sadangEntry = fixture.packs[0].networkEdges.find((e) => e.id === "edge-entry-sadang-seoul-4");
+  const sangnoksuEntry = fixture.packs[0].networkEdges.find((e) => e.id === "edge-entry-sangnoksu-seoul-4");
+  assert.equal(sadangEntry.accessibilityStatus, "UNDER_MAINTENANCE");
+  assert.equal(sangnoksuEntry.accessibilityStatus, "NO_OFFICIAL_FEED");
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+    { cwd: root, env: productionEnv },
+  );
+  const gate = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+      "--require-production",
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  const report = JSON.parse(gate.stdout.trim().split("\n").at(-1));
+  assert.deepEqual(report.unverifiedAccessibilityCoverageEdges, []);
+  assert.equal(report.generatedConnectorGapCount, 0);
 });
 
 test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동 경로 누락을 거부한다", async () => {
@@ -9919,7 +10005,7 @@ test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경�
   );
 });
 
-test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 노출한다", async () => {
+test("수도권 pilot production source input은 검증된 접근성 상태로 게시 게이트를 통과한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-capital-pilot-production-source-${Date.now()}`);
   const inputPath = "tools/datapack/inputs/capital-pilot-production-source-input.json";
   const importedFixturePath = path.join(outputDir, "capital-pilot-production.json");
@@ -10370,33 +10456,27 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
     [],
   );
 
-  let validationFailure;
-  try {
-    await execFileAsync(
-      process.execPath,
-      [
-        "tools/datapack/validate-datapack.mjs",
-        "--manifest",
-        path.join(packOutputDir, "current.json"),
-        "--root",
-        packOutputDir,
-        "--require-production",
-      ],
-      { cwd: root, env: productionEnv },
-    );
-  } catch (error) {
-    validationFailure = error;
-  }
-
-  assert(validationFailure);
-  assert.match(validationFailure.message, /capital@1 verified ENTRY coverage gap: 2\/2/);
-  const strictCoverageReport = JSON.parse(validationFailure.stdout.trim().split("\n").at(-1));
-  assert.deepEqual(strictCoverageReport.unverifiedAccessibilityCoverageEdges, [
-    "edge-entry-sadang-seoul-4",
-    "edge-entry-sangnoksu-seoul-4",
-    "edge-exit-sadang-seoul-4",
-    "edge-exit-sangnoksu-seoul-4",
-  ]);
+  // #1996: 게이트 재설계 후 사당·상록수 4호선 ENTRY/EXIT edge는 검증된 상태(UNDER_MAINTENANCE/NO_OFFICIAL_FEED)로
+  // 실측 기록돼 게시 게이트를 exit 0으로 통과한다. 미검증(UNKNOWN) edge가 남아있지 않으므로 coverage gap이 없다.
+  const productionGate = await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
+      "--root",
+      packOutputDir,
+      "--require-production",
+    ],
+    { cwd: root, env: productionEnv },
+  );
+  const strictCoverageReport = JSON.parse(productionGate.stdout.trim().split("\n").at(-1));
+  assert.deepEqual(strictCoverageReport.unverifiedAccessibilityCoverageEdges, []);
+  assert.equal(strictCoverageReport.entry.missingCount, 0);
+  assert.equal(strictCoverageReport.exit.missingCount, 0);
+  assert.equal(strictCoverageReport.entry.verified, 2);
+  assert.equal(strictCoverageReport.exit.verified, 2);
+  assert.equal(strictCoverageReport.generatedConnectorGapCount, 0);
 
   const coverageReportPath = path.join(outputDir, "capital-pilot-coverage-summary.json");
   await execFileAsync(
@@ -10453,19 +10533,19 @@ test("수도권 pilot production source input은 UNKNOWN strict coverage gap을 
       [
         {
           id: "edge-entry-sadang-seoul-4",
-          accessibility_status: "UNKNOWN",
+          accessibility_status: "UNDER_MAINTENANCE",
         },
         {
           id: "edge-entry-sangnoksu-seoul-4",
-          accessibility_status: "UNKNOWN",
+          accessibility_status: "NO_OFFICIAL_FEED",
         },
         {
           id: "edge-exit-sadang-seoul-4",
-          accessibility_status: "UNKNOWN",
+          accessibility_status: "UNDER_MAINTENANCE",
         },
         {
           id: "edge-exit-sangnoksu-seoul-4",
-          accessibility_status: "UNKNOWN",
+          accessibility_status: "NO_OFFICIAL_FEED",
         },
       ],
     );

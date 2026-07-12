@@ -339,6 +339,47 @@
               "schedule_timetable"
             ]
           }
+        },
+        {
+          "id": "seoul-metro-accessibility",
+          "owner": "서울특별시",
+          "url": "https://www.data.go.kr/data/15143843/openapi.do",
+          "license": "공공데이터포털 이용허락범위 제한 없음",
+          "licenseStatus": "redistributable",
+          "redistributionAllowed": true,
+          "updateFrequency": "realtime",
+          "updatedAt": "2026-07-12T00:00:00.000Z",
+          "fields": [
+            "bgngFlr",
+            "bgngFlrGrndUdgdSe",
+            "crtrYmd",
+            "dtlPstn",
+            "elvtrSn",
+            "endFlr",
+            "endFlrGrndUdgdSe",
+            "fcltNm",
+            "fcltNo",
+            "lineNm",
+            "mngNo",
+            "oprtngSitu",
+            "pscpNope",
+            "pscpWht",
+            "stnCd",
+            "stnNm",
+            "stnNo",
+            "vcntEntrcNo"
+          ],
+          "coverageScope": {
+            "regionIds": [
+              "capital"
+            ],
+            "operatorIds": [
+              "seoul-metro"
+            ],
+            "sourceDomains": [
+              "accessibility_facilities"
+            ]
+          }
         }
       ],
       "requiredTables": [
@@ -373,7 +414,7 @@
         "transit_stop_times": 932,
         "transit_feed_info": 1,
         "facilities": 6,
-        "station_facility_evidence": 6
+        "station_facility_evidence": 8
       },
       "metadata": {
         "activePack": "capital",
@@ -472,15 +513,15 @@
           "servicePattern": "",
           "includesStairs": false,
           "stairAccessState": "STEP_FREE",
-          "accessibilityStatus": "UNKNOWN",
+          "accessibilityStatus": "NO_OFFICIAL_FEED",
           "reliabilityScore": 90,
-          "sourceId": "seoulmetro-station-line-info",
-          "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-          "providerRecordHash": "ee6ab5a5882a1e9c81f919fcb05f6bfe02ec5607c51853f3a4f3ce53d8a058bf",
+          "sourceId": "seoul-metro-accessibility",
+          "sourceSnapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+          "providerRecordHash": "fb0d1a6b98a8658be90ab4f7dc7d685f993061dad1b70da64cc803a3db75d0f3",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "VERIFIED",
-          "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-          "evidenceHash": "41f4363d98aa42f92789af27296c14d98ee971c5625186c8cba5460916568b11"
+          "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+          "evidenceHash": "4d1d62df3b6f944714e752635f051f984012388dafad4873518938c239d9f291"
         },
         {
           "id": "edge-exit-sangnoksu-seoul-4",
@@ -492,15 +533,15 @@
           "servicePattern": "",
           "includesStairs": false,
           "stairAccessState": "STEP_FREE",
-          "accessibilityStatus": "UNKNOWN",
+          "accessibilityStatus": "NO_OFFICIAL_FEED",
           "reliabilityScore": 90,
-          "sourceId": "seoulmetro-station-line-info",
-          "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-          "providerRecordHash": "27ed1e1be5e2aeb83f1a1e86ad2dcaf4da1a3b3abdcda508ad02ab949082f7e5",
+          "sourceId": "seoul-metro-accessibility",
+          "sourceSnapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+          "providerRecordHash": "a3c52fe580d85f186abf21597ce58a1153d0d3a91954a56dd709a4e0f9343085",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "VERIFIED",
-          "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-          "evidenceHash": "17e5c458684e7db1fc91170b4bca993ef2b4765ed63f12dcec866e4c34fbb372"
+          "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+          "evidenceHash": "1c165a33386ef2edd04035168f00fa9bd72e481d14bb396546aadda1c86dfd81"
         },
         {
           "id": "edge-entry-sadang-seoul-4",
@@ -512,15 +553,15 @@
           "servicePattern": "",
           "includesStairs": false,
           "stairAccessState": "STEP_FREE",
-          "accessibilityStatus": "UNKNOWN",
+          "accessibilityStatus": "UNDER_MAINTENANCE",
           "reliabilityScore": 90,
-          "sourceId": "seoulmetro-station-line-info",
-          "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-          "providerRecordHash": "d0f9b22a6ade2e8f29246adbe77d1d132114160a0662cedf155d37e7538c67a8",
+          "sourceId": "seoul-metro-accessibility",
+          "sourceSnapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+          "providerRecordHash": "4049749cb51d657f0d79a1dae951b92415cae901d591965689fd38f6a9021f40",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "VERIFIED",
-          "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-          "evidenceHash": "88507607bb4524312d3bb9c0d3a159310fec1e046a84a2a4ba0e8011ed0e1b90"
+          "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+          "evidenceHash": "093fab1bd0eff34bba7ffd0e9d74be45b7bfefe38f0299b557daab0d2651dc53"
         },
         {
           "id": "edge-exit-sadang-seoul-4",
@@ -532,15 +573,15 @@
           "servicePattern": "",
           "includesStairs": false,
           "stairAccessState": "STEP_FREE",
-          "accessibilityStatus": "UNKNOWN",
+          "accessibilityStatus": "UNDER_MAINTENANCE",
           "reliabilityScore": 90,
-          "sourceId": "seoulmetro-station-line-info",
-          "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-          "providerRecordHash": "242aa0ae45f7589ced7818c3e8d0e77d7de27cec77765b914e055c4ca7605a0f",
+          "sourceId": "seoul-metro-accessibility",
+          "sourceSnapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+          "providerRecordHash": "233560d76fa2ff8e76c9c96a5d53375b8643441476be9e4e79aca2835fd7bc61",
           "provenanceKind": "OFFICIAL_SOURCE",
           "verificationStatus": "VERIFIED",
-          "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-          "evidenceHash": "a3b03c2cd0fc3fb8445cb2e4946329380db7a50d8b153ba7701674d991a72343"
+          "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+          "evidenceHash": "35a55a21fb0b66dc3738b1aee94ef7df081435f860acef9518a7a76f1c81ba96"
         }
       ],
       "routeMapPositions": [
@@ -900,6 +941,44 @@
           "retrievedAt": "2026-06-22T00:00:00.000Z",
           "strictRouteEligible": false,
           "strictRouteEligibleReason": "OPERATION_STATUS_UNKNOWN"
+        },
+        {
+          "stationId": "station-sadang",
+          "lineId": "seoul-4",
+          "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+          "evidenceKind": "EXISTS",
+          "sourceId": "seoul-metro-accessibility",
+          "sourceSnapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+          "providerRecordHash": "9c356b2c6ebc1cbea783d6304b604b681b4e54f98d62e62c347197be49491aca",
+          "evidenceHash": "2cb7298facf46d9caea7f0a1fe9dd22130969db596defa35a79f3b48a78a78dd",
+          "provenanceKind": "OFFICIAL_SOURCE",
+          "installationStatus": "INSTALLED",
+          "operationalStatus": "UNDER_MAINTENANCE",
+          "statusMeaning": "REALTIME_OPERATION",
+          "confidence": 90,
+          "verifiedAt": "2026-07-12T00:00:00.000Z",
+          "retrievedAt": "2026-07-12T00:00:00.000Z",
+          "strictRouteEligible": false,
+          "strictRouteEligibleReason": "OPERATION_STATUS_NOT_AVAILABLE"
+        },
+        {
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4",
+          "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+          "evidenceKind": "NOT_EXISTS",
+          "sourceId": "seoul-metro-accessibility",
+          "sourceSnapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+          "providerRecordHash": "d6c89d39c0d5ce52b6ade9828b50c3a90e494175b89fda91d9ab673ad5fa3ccc",
+          "evidenceHash": "65ef174df50fbe1d016e361dd16e0b0d32894c689e18e830bb3b5a81564cf732",
+          "provenanceKind": "OFFICIAL_SOURCE",
+          "installationStatus": "NOT_COVERED",
+          "operationalStatus": "NOT_COVERED",
+          "statusMeaning": "FEED_ABSENCE_RECORD",
+          "confidence": 90,
+          "verifiedAt": "2026-07-12T00:00:00.000Z",
+          "retrievedAt": "2026-07-12T00:00:00.000Z",
+          "strictRouteEligible": false,
+          "strictRouteEligibleReason": "NO_OFFICIAL_STATUS_FEED"
         }
       ],
       "serviceCalendars": [

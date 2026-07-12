@@ -29,6 +29,20 @@ const facilityEvidenceProvenanceColumns = [
 ];
 const productionFacilityProvenanceKinds = ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"];
 const positiveFacilityStatuses = new Set(["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"]);
+// #1996: 게시 coverage는 "가용 보장"이 아니라 "실측 증거로 검증된 상태의 정직한 기록"이다.
+// AVAILABLE(실측 가동), UNDER_MAINTENANCE(실측 비가용: 보수/점검/중지/공사), NO_OFFICIAL_FEED(공식 상태 피드
+// 구조적 부재의 명시 기록) 셋은 모두 "검증된 상태"로 게시 가능하다. 증거 없는 UNKNOWN만 게시를 차단한다.
+// 단 strict route guarantee(#1394 휠체어 이용 보장)는 AVAILABLE 전용으로 불변이며, UNDER_MAINTENANCE/
+// NO_OFFICIAL_FEED edge는 strict_route_eligible=0 이어야 한다.
+const verifiedAccessibilityStatuses = new Set(["AVAILABLE", "UNDER_MAINTENANCE", "NO_OFFICIAL_FEED"]);
+const maintenanceOperationalStatuses = new Set([
+  "UNDER_MAINTENANCE",
+  "MAINTENANCE",
+  "OUT_OF_SERVICE",
+  "SUSPENDED",
+  "INSPECTION",
+  "UNDER_CONSTRUCTION",
+]);
 const allowedRealtimeDatapackTables = new Set([
   "realtime_provider_line_mappings",
   "realtime_provider_station_mappings",
@@ -1558,7 +1572,7 @@ function validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, 
   if (!Number.isInteger(edge.reliability_score) || edge.reliability_score < 80) {
     throw new Error(`${pack.id}@${pack.version} network_edges accessibility edge reliability_score is below 80: ${edge.id}`);
   }
-  validateAvailableAccessEdgeEvidence(edge, accessibilityEvidence, pack);
+  validateVerifiedAccessEdgeEvidence(edge, accessibilityEvidence, pack);
 }
 
 function validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence) {
@@ -1644,31 +1658,31 @@ function isPositiveAccessibilityEdge(edge) {
   );
 }
 
-function isAccessibilityCoverageCandidate(edge) {
+function isAccessibilityCoverageEdgeType(edge) {
   const edgeType = normalizedEdgeType(edge.edge_type);
   return (
     (edgeType === "ENTRY" || edgeType === "EXIT" || isNetworkTransferEdgeType(edgeType)) &&
-    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
-    String(edge.accessibility_status ?? "").toUpperCase() === "AVAILABLE"
+    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE"
+  );
+}
+
+function isAccessibilityCoverageCandidate(edge) {
+  return (
+    isAccessibilityCoverageEdgeType(edge) &&
+    verifiedAccessibilityStatuses.has(String(edge.accessibility_status ?? "").toUpperCase())
   );
 }
 
 function isAccessibilityProvenanceCandidate(edge) {
-  const edgeType = normalizedEdgeType(edge.edge_type);
-  const accessibilityStatus = String(edge.accessibility_status ?? "").toUpperCase();
-  return (
-    (edgeType === "ENTRY" || edgeType === "EXIT" || isNetworkTransferEdgeType(edgeType)) &&
-    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
-    ["AVAILABLE", "UNKNOWN"].includes(accessibilityStatus)
-  );
+  // 검증된 상태 3분류(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) edge는 provenance 요건을 강제한다.
+  return isAccessibilityCoverageCandidate(edge);
 }
 
 function isUnverifiedAccessibilityCoverageEdge(edge) {
-  const edgeType = normalizedEdgeType(edge.edge_type);
+  // 게시 차단 대상은 오직 미검증(증거 없는 UNKNOWN)이다.
   return (
-    (edgeType === "ENTRY" || edgeType === "EXIT" || isNetworkTransferEdgeType(edgeType)) &&
-    String(edge.stair_access_state ?? "").toUpperCase() === "STEP_FREE" &&
-    String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE"
+    isAccessibilityCoverageEdgeType(edge) &&
+    !verifiedAccessibilityStatuses.has(String(edge.accessibility_status ?? "").toUpperCase())
   );
 }
 
@@ -1682,36 +1696,69 @@ function isVerifiedAccessibilityCoverageEdge(edge, accessibilityEvidence) {
     edge.last_verified_at > 0 &&
     Number.isInteger(edge.reliability_score) &&
     edge.reliability_score >= 80 &&
-    hasAvailableAccessEdgeEvidence(edge, accessibilityEvidence)
+    hasVerifiedAccessEdgeEvidence(edge, accessibilityEvidence)
   );
 }
 
 function productionAccessibilityEvidence(database, pack) {
   const sourceById = new Map(pack.sourceInventory.map((source) => [source.id, source]));
   const strictFacilityStationLines = new Set();
+  const maintenanceFacilityStationLines = new Set();
+  const noOfficialFeedStationLines = new Set();
   if (hasTable(database, "station_facility_evidence")) {
     const rows = database
       .prepare(`
-        SELECT station_id, line_id, source_id, evidence_kind, operational_status, strict_route_eligible
+        SELECT station_id, line_id, source_id, evidence_kind, operational_status,
+               status_meaning, strict_route_eligible
         FROM station_facility_evidence
         ORDER BY station_id, line_id, facility_type
       `)
       .all();
     for (const row of rows) {
+      const operationalStatus = String(row.operational_status ?? "").toUpperCase();
+      const statusMeaning = String(row.status_meaning ?? "").toUpperCase();
+      const accessibilitySource = sourceSupportsDomain(sourceById.get(row.source_id), "accessibility_facilities");
       if (
         row.strict_route_eligible === 1 &&
         row.evidence_kind === "EXISTS" &&
-        ["NORMAL", "AVAILABLE", "IN_SERVICE", "OPERATING", "OPEN", "ADMIN_VERIFIED"].includes(
-          String(row.operational_status ?? "").toUpperCase(),
-        ) &&
-        sourceSupportsDomain(sourceById.get(row.source_id), "accessibility_facilities")
+        positiveFacilityStatuses.has(operationalStatus) &&
+        accessibilitySource
       ) {
         strictFacilityStationLines.add(stationLineEvidenceKey(row.station_id, row.line_id));
+      }
+      // UNDER_MAINTENANCE edge 증거: 실측 비가용 상태(보수/점검/중지/공사)가 실시간·현장 조사로 확인된 시설 증거.
+      // strict_route_eligible=0 이어야 하며 movement pathway 가용 증거는 요구하지 않는다.
+      if (
+        row.evidence_kind === "EXISTS" &&
+        row.strict_route_eligible !== 1 &&
+        maintenanceOperationalStatuses.has(operationalStatus) &&
+        ["REALTIME_OPERATION", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(statusMeaning) &&
+        accessibilitySource
+      ) {
+        maintenanceFacilityStationLines.add(stationLineEvidenceKey(row.station_id, row.line_id));
+      }
+      // NO_OFFICIAL_FEED edge 증거: 해당 station-line을 공식 상태 피드가 구조적으로 커버하지 않음을 명시 기록한
+      // 부재 증거(evidence_kind=NOT_EXISTS). 실측 근거는 "이 API가 그 구간을 커버하지 않는다"는 기록이다.
+      // statusMeaning=FEED_ABSENCE_RECORD + operationalStatus=NOT_COVERED를 강제해 임의 NOT_EXISTS(예: 시설
+      // 물리 부재)가 피드 부재 커버리지를 채우지 못하게 한다(UNDER_MAINTENANCE 분기의 statusMeaning 강제와 대칭).
+      if (
+        row.evidence_kind === "NOT_EXISTS" &&
+        statusMeaning === "FEED_ABSENCE_RECORD" &&
+        operationalStatus === "NOT_COVERED" &&
+        accessibilitySource
+      ) {
+        noOfficialFeedStationLines.add(stationLineEvidenceKey(row.station_id, row.line_id));
       }
     }
   }
   const approvedMovementPathways = approvedMovementPathwayStationLines(database, sourceById);
-  return { sourceById, strictFacilityStationLines, ...approvedMovementPathways };
+  return {
+    sourceById,
+    strictFacilityStationLines,
+    maintenanceFacilityStationLines,
+    noOfficialFeedStationLines,
+    ...approvedMovementPathways,
+  };
 }
 
 function approvedMovementPathwayStationLines(database, sourceById) {
@@ -1817,46 +1864,79 @@ function pathwayReachable(startNodeIds, targetNodeIds, adjacency, allowedNodeIds
   return false;
 }
 
-function validateAvailableAccessEdgeEvidence(edge, accessibilityEvidence, pack) {
+function validateVerifiedAccessEdgeEvidence(edge, accessibilityEvidence, pack) {
   const edgeType = normalizedEdgeType(edge.edge_type);
-  if (!["ENTRY", "EXIT"].includes(edgeType) || String(edge.accessibility_status ?? "").toUpperCase() !== "AVAILABLE") {
+  if (!["ENTRY", "EXIT"].includes(edgeType)) {
     return;
   }
+  const status = String(edge.accessibility_status ?? "").toUpperCase();
   if (!sourceSupportsDomain(accessibilityEvidence.sourceById.get(edge.source_id), "accessibility_facilities")) {
-    throw new Error(`${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires accessibility_facilities source: ${edge.id}`);
+    throw new Error(`${pack.id}@${pack.version} ${status} ENTRY/EXIT edge requires accessibility_facilities source: ${edge.id}`);
   }
   const stationLineKey = accessibilityEdgeStationLineKey(edge, edgeType);
-  if (!accessibilityEvidence.strictFacilityStationLines.has(stationLineKey)) {
-    throw new Error(
-      `${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires strict-eligible operational facility evidence: ${edge.id}:${stationLineKey}`,
-    );
+  if (status === "AVAILABLE") {
+    if (!accessibilityEvidence.strictFacilityStationLines.has(stationLineKey)) {
+      throw new Error(
+        `${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires strict-eligible operational facility evidence: ${edge.id}:${stationLineKey}`,
+      );
+    }
+    const approvedMovementStationLines =
+      edgeType === "ENTRY"
+        ? accessibilityEvidence.approvedEntryMovementStationLines
+        : accessibilityEvidence.approvedExitMovementStationLines;
+    if (!approvedMovementStationLines.has(stationLineKey)) {
+      throw new Error(
+        `${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires approved movement pathway: ${edge.id}:${stationLineKey}`,
+      );
+    }
+    return;
   }
-  const approvedMovementStationLines =
-    edgeType === "ENTRY"
-      ? accessibilityEvidence.approvedEntryMovementStationLines
-      : accessibilityEvidence.approvedExitMovementStationLines;
-  if (!approvedMovementStationLines.has(stationLineKey)) {
-    throw new Error(
-      `${pack.id}@${pack.version} AVAILABLE ENTRY/EXIT edge requires approved movement pathway: ${edge.id}:${stationLineKey}`,
-    );
+  if (status === "UNDER_MAINTENANCE") {
+    if (!accessibilityEvidence.maintenanceFacilityStationLines.has(stationLineKey)) {
+      throw new Error(
+        `${pack.id}@${pack.version} UNDER_MAINTENANCE ENTRY/EXIT edge requires field-verified maintenance facility evidence: ${edge.id}:${stationLineKey}`,
+      );
+    }
+    return;
   }
+  if (status === "NO_OFFICIAL_FEED") {
+    if (!accessibilityEvidence.noOfficialFeedStationLines.has(stationLineKey)) {
+      throw new Error(
+        `${pack.id}@${pack.version} NO_OFFICIAL_FEED ENTRY/EXIT edge requires recorded absence-of-feed evidence: ${edge.id}:${stationLineKey}`,
+      );
+    }
+    return;
+  }
+  throw new Error(`${pack.id}@${pack.version} ENTRY/EXIT edge accessibility_status is not a verified status: ${edge.id}:${status}`);
 }
 
-function hasAvailableAccessEdgeEvidence(edge, accessibilityEvidence) {
+function hasVerifiedAccessEdgeEvidence(edge, accessibilityEvidence) {
   const edgeType = normalizedEdgeType(edge.edge_type);
   if (!["ENTRY", "EXIT"].includes(edgeType)) {
     return true;
   }
+  const status = String(edge.accessibility_status ?? "").toUpperCase();
+  if (!sourceSupportsDomain(accessibilityEvidence.sourceById.get(edge.source_id), "accessibility_facilities")) {
+    return false;
+  }
   const stationLineKey = accessibilityEdgeStationLineKey(edge, edgeType);
-  const approvedMovementStationLines =
-    edgeType === "ENTRY"
-      ? accessibilityEvidence.approvedEntryMovementStationLines
-      : accessibilityEvidence.approvedExitMovementStationLines;
-  return (
-    sourceSupportsDomain(accessibilityEvidence.sourceById.get(edge.source_id), "accessibility_facilities") &&
-    accessibilityEvidence.strictFacilityStationLines.has(stationLineKey) &&
-    approvedMovementStationLines.has(stationLineKey)
-  );
+  if (status === "AVAILABLE") {
+    const approvedMovementStationLines =
+      edgeType === "ENTRY"
+        ? accessibilityEvidence.approvedEntryMovementStationLines
+        : accessibilityEvidence.approvedExitMovementStationLines;
+    return (
+      accessibilityEvidence.strictFacilityStationLines.has(stationLineKey) &&
+      approvedMovementStationLines.has(stationLineKey)
+    );
+  }
+  if (status === "UNDER_MAINTENANCE") {
+    return accessibilityEvidence.maintenanceFacilityStationLines.has(stationLineKey);
+  }
+  if (status === "NO_OFFICIAL_FEED") {
+    return accessibilityEvidence.noOfficialFeedStationLines.has(stationLineKey);
+  }
+  return false;
 }
 
 function accessibilityEdgeStationLineKey(edge, edgeType) {

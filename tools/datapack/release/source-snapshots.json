@@ -229,5 +229,32 @@
     "providerRecordHashes": [
       "31e4f4e15542344ead2947382db72bab4224c4c159e5021f7b54ae989dad4a4d"
     ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "snapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+    "sourceId": "seoul-metro-accessibility",
+    "provider": "서울교통공사",
+    "retrievedAt": "2026-07-12T00:00:00Z",
+    "sourceUpdatedAt": "2026-07-12T00:00:00Z",
+    "rowCount": 1,
+    "rawSha256": "2d5499b371c6b6cecbbcd44d6549928883670f39968407950bc66983c2d0af1d",
+    "rawObjectUri": "s3://easysubway-datapack-sources/seoul-metro-accessibility/20260712.json",
+    "redactedRequestFingerprint": "57e7d275b103eb14ee1320eb947da5d4120c2b296b9b32b00593b2eb2b7529e8",
+    "schemaFingerprint": "d26d4f55806083f067207948ce977e0ae3d5e84df796d58441909de2c247c170",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "previousSnapshotId": null,
+    "diffSummary": null,
+    "freshnessExpiresAt": "2099-08-01T00:00:00Z",
+    "rawRetentionExpiresAt": "2099-10-01T00:00:00Z",
+    "providerRecordHashes": [
+      "45ee2683691482c7bc86ba0af3111474babfbeff7cb7b219bce2a75a4133e6d9"
+    ]
   }
 ]

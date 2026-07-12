@@ -12,30 +12,55 @@ const INVALID_RESPONSE = "Seoul accessibility API response invalid";
 const INVALID_OUTPUT_PATH = "output path must stay within allowed root";
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
+// 공식 oprtngSitu 코드(서울교통공사 wksnElvtr): M 사용가능 / D 삭제 / S 보수중 / T 중지 / I 점검중 / B 공사중.
+// M만 실측 가동, S/T/I/B는 실측 비가동(검증된 비가용), D는 폐기 행이므로 증거에서 제외한다.
+const OPERATION_SITUATION_STATES = new Map([
+  ["M", { operational: true, situationCode: "M", situation: "사용가능" }],
+  ["S", { operational: false, situationCode: "S", situation: "보수중" }],
+  ["T", { operational: false, situationCode: "T", situation: "중지" }],
+  ["I", { operational: false, situationCode: "I", situation: "점검중" }],
+  ["B", { operational: false, situationCode: "B", situation: "공사중" }],
+]);
+const REMOVED_OPERATION_SITUATION = "D";
+
 export function normalizeAccessibilityRows(rows) {
   if (!Array.isArray(rows)) {
     throw new Error(INVALID_RESPONSE);
   }
-  return rows.map((row) => {
+  const normalized = [];
+  for (const row of rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       throw new Error(INVALID_RESPONSE);
     }
-    const { lineNm, stnNm, oprYn, instlPstn, oprtngSitu, dtlPstn } = row;
-    const status = oprYn ?? oprtngSitu;
-    const pathDescription = instlPstn ?? dtlPstn;
+    const { lineNm, stnNm, oprtngSitu, dtlPstn } = row;
     if (
       typeof stnNm !== "string" ||
       stnNm.trim() === "" ||
       typeof lineNm !== "string" ||
       lineNm.trim() === "" ||
-      typeof pathDescription !== "string" ||
-      pathDescription.trim() === "" ||
-      status !== "Y"
+      typeof dtlPstn !== "string" ||
+      dtlPstn.trim() === "" ||
+      typeof oprtngSitu !== "string"
     ) {
       throw new Error(INVALID_RESPONSE);
     }
-    return { stationName: stnNm, lineName: lineNm, operational: true, pathDescription };
-  });
+    if (oprtngSitu === REMOVED_OPERATION_SITUATION) {
+      continue;
+    }
+    const state = OPERATION_SITUATION_STATES.get(oprtngSitu);
+    if (!state) {
+      throw new Error(INVALID_RESPONSE);
+    }
+    normalized.push({
+      stationName: stnNm,
+      lineName: lineNm,
+      operational: state.operational,
+      situationCode: state.situationCode,
+      situation: state.situation,
+      pathDescription: dtlPstn,
+    });
+  }
+  return normalized;
 }
 
 export function buildAccessibilitySnapshot(rows, retrievedAt) {
@@ -49,6 +74,10 @@ export function buildAccessibilitySnapshot(rows, retrievedAt) {
         typeof row.lineName !== "string" ||
         row.lineName.trim() === "" ||
         typeof row.operational !== "boolean" ||
+        typeof row.situationCode !== "string" ||
+        !OPERATION_SITUATION_STATES.has(row.situationCode) ||
+        typeof row.situation !== "string" ||
+        row.situation.trim() === "" ||
         typeof row.pathDescription !== "string" ||
         row.pathDescription.trim() === "",
     )
@@ -60,7 +89,12 @@ export function buildAccessibilitySnapshot(rows, retrievedAt) {
     lineName: PILOT_LINE_NAME,
     facilities: rows
       .filter((row) => row.stationName === stationName && row.lineName === PILOT_LINE_NAME)
-      .map(({ operational, pathDescription }) => ({ operational, pathDescription })),
+      .map(({ operational, situationCode, situation, pathDescription }) => ({
+        operational,
+        situationCode,
+        situation,
+        pathDescription,
+      })),
   }));
   const missing = stations.find(({ facilities }) => facilities.length === 0);
   if (missing) {

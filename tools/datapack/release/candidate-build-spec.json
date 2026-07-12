@@ -12,7 +12,8 @@
     "kric-station-elevator-movement-capital-admission-20260712",
     "kric-station-escalator-capital-admission-20260712",
     "kric-wheelchair-lift-location-capital-admission-20260712",
-    "kric-wheelchair-lift-movement-capital-admission-20260712"
+    "kric-wheelchair-lift-movement-capital-admission-20260712",
+    "seoul-metro-accessibility-capital-admission-20260712"
   ],
   "sourceSnapshots": [
     {
@@ -126,14 +127,28 @@
       "snapshotStatus": "LOCKED",
       "credentialRedacted": true,
       "freshnessExpiresAt": "2099-08-01T00:00:00Z"
+    },
+    {
+      "snapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+      "sourceId": "seoul-metro-accessibility",
+      "rawObjectUri": "s3://easysubway-datapack-sources/seoul-metro-accessibility/20260712.json",
+      "rawSha256": "8a1fbdfbc55f2cd4bc8f54e616f515133f00ee528d078ab21cdd0c1de7ad6814",
+      "redactedRequestFingerprint": "57e7d275b103eb14ee1320eb947da5d4120c2b296b9b32b00593b2eb2b7529e8",
+      "schemaFingerprint": "4f0066bdb9b24d5be35b39c1f15b5dce5e84bd5087773301542efc04156f7a99",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2099-08-01T00:00:00Z"
     }
   ],
-  "sourceSnapshotSetHash": "bc138f2cea9023737b76a75bca5acb2362b2500b84022492828c2daef286ff5b",
+  "sourceSnapshotSetHash": "845b5a8f54f5c09277c2e7e6468fd8baab4da74210512f3b83be12d3bdcad75e",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "35b7bff6d43dea84895df4d737d940908b9526a9014b64f056178fbf35d2af32",
-  "builderGitSha": "ec8dde5431ff4c2d3b1d94a7a7a6a904feb0b6b8",
+  "sourceInventorySha256": "13e69f5d392066a44420c60a112b37208fb3c888d59ed5fbc1945889b92d1f66",
+  "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
   "builderVersion": "build-datapack.mjs@1"
 }

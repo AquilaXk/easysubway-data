@@ -27,7 +27,8 @@
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
     "kric-wheelchair-lift-movement",
-    "kric-subway-timetable"
+    "kric-subway-timetable",
+    "seoul-metro-accessibility"
   ],
   "supportedV1Scope": {
     "scopeId": "capital_pilot_android_v1",
@@ -280,7 +281,7 @@
   "routeEdges": [
     {
       "id": "edge-entry-sangnoksu-seoul-4",
-      "sourceId": "seoulmetro-station-line-info",
+      "sourceId": "seoul-metro-accessibility",
       "from": {
         "sourceId": "seoulmetro-station-line-info",
         "sourceStationCode": "448",
@@ -298,18 +299,18 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "UNKNOWN",
+      "accessibilityStatus": "NO_OFFICIAL_FEED",
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "VERIFIED",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-      "providerRecordHash": "ee6ab5a5882a1e9c81f919fcb05f6bfe02ec5607c51853f3a4f3ce53d8a058bf",
-      "evidenceHash": "41f4363d98aa42f92789af27296c14d98ee971c5625186c8cba5460916568b11"
+      "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-snapshot-20260712",
+      "providerRecordHash": "fb0d1a6b98a8658be90ab4f7dc7d685f993061dad1b70da64cc803a3db75d0f3",
+      "evidenceHash": "4d1d62df3b6f944714e752635f051f984012388dafad4873518938c239d9f291"
     },
     {
       "id": "edge-exit-sangnoksu-seoul-4",
-      "sourceId": "seoulmetro-station-line-info",
+      "sourceId": "seoul-metro-accessibility",
       "from": {
         "sourceId": "seoulmetro-station-line-info",
         "sourceStationCode": "448",
@@ -327,18 +328,18 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "UNKNOWN",
+      "accessibilityStatus": "NO_OFFICIAL_FEED",
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "VERIFIED",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-      "providerRecordHash": "27ed1e1be5e2aeb83f1a1e86ad2dcaf4da1a3b3abdcda508ad02ab949082f7e5",
-      "evidenceHash": "17e5c458684e7db1fc91170b4bca993ef2b4765ed63f12dcec866e4c34fbb372"
+      "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-snapshot-20260712",
+      "providerRecordHash": "a3c52fe580d85f186abf21597ce58a1153d0d3a91954a56dd709a4e0f9343085",
+      "evidenceHash": "1c165a33386ef2edd04035168f00fa9bd72e481d14bb396546aadda1c86dfd81"
     },
     {
       "id": "edge-entry-sadang-seoul-4",
-      "sourceId": "seoulmetro-station-line-info",
+      "sourceId": "seoul-metro-accessibility",
       "from": {
         "sourceId": "seoulmetro-station-line-info",
         "sourceStationCode": "433",
@@ -356,18 +357,18 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "UNKNOWN",
+      "accessibilityStatus": "UNDER_MAINTENANCE",
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "VERIFIED",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-      "providerRecordHash": "d0f9b22a6ade2e8f29246adbe77d1d132114160a0662cedf155d37e7538c67a8",
-      "evidenceHash": "88507607bb4524312d3bb9c0d3a159310fec1e046a84a2a4ba0e8011ed0e1b90"
+      "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-snapshot-20260712",
+      "providerRecordHash": "4049749cb51d657f0d79a1dae951b92415cae901d591965689fd38f6a9021f40",
+      "evidenceHash": "093fab1bd0eff34bba7ffd0e9d74be45b7bfefe38f0299b557daab0d2651dc53"
     },
     {
       "id": "edge-exit-sadang-seoul-4",
-      "sourceId": "seoulmetro-station-line-info",
+      "sourceId": "seoul-metro-accessibility",
       "from": {
         "sourceId": "seoulmetro-station-line-info",
         "sourceStationCode": "433",
@@ -385,14 +386,14 @@
       "servicePattern": "",
       "includesStairs": false,
       "stairAccessState": "STEP_FREE",
-      "accessibilityStatus": "UNKNOWN",
+      "accessibilityStatus": "UNDER_MAINTENANCE",
       "reliabilityScore": 90,
       "provenanceKind": "OFFICIAL_SOURCE",
       "verificationStatus": "VERIFIED",
-      "lastVerifiedAt": "2026-06-21T00:00:00.000Z",
-      "sourceSnapshotId": "seoulmetro-station-line-info-snapshot-20260621",
-      "providerRecordHash": "242aa0ae45f7589ced7818c3e8d0e77d7de27cec77765b914e055c4ca7605a0f",
-      "evidenceHash": "a3b03c2cd0fc3fb8445cb2e4946329380db7a50d8b153ba7701674d991a72343"
+      "lastVerifiedAt": "2026-07-12T00:00:00.000Z",
+      "sourceSnapshotId": "seoul-metro-accessibility-snapshot-20260712",
+      "providerRecordHash": "233560d76fa2ff8e76c9c96a5d53375b8643441476be9e4e79aca2835fd7bc61",
+      "evidenceHash": "35a55a21fb0b66dc3738b1aee94ef7df081435f860acef9518a7a76f1c81ba96"
     }
   ],
   "routeMapPositions": [
@@ -635,6 +636,44 @@
       "providerRecordHash": "dd48d0d4c29eec180120bcc3eae4ab2eec1b7b5220e097c9622d4228987b56f5",
       "evidenceHash": "8a6b6a9f1b53e799f494436c23f08cf82b69c0725a2bbe7d118e4a1775987a60",
       "confidence": 80
+    }
+  ],
+  "accessibilityStatusEvidence": [
+    {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-snapshot-20260712",
+      "providerRecordHash": "9c356b2c6ebc1cbea783d6304b604b681b4e54f98d62e62c347197be49491aca",
+      "evidenceHash": "2cb7298facf46d9caea7f0a1fe9dd22130969db596defa35a79f3b48a78a78dd",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "INSTALLED",
+      "operationalStatus": "UNDER_MAINTENANCE",
+      "statusMeaning": "REALTIME_OPERATION",
+      "confidence": 90,
+      "verifiedAt": "2026-07-12T00:00:00.000Z",
+      "retrievedAt": "2026-07-12T00:00:00.000Z",
+      "note": "사당 4호선 지상연결 승강기 외부#1 실측 oprtngSitu=S(보수중). 내부#1=M(가동)이나 지상연결 EV 보수중이라 step-free 진출입 비가용 — UNDER_MAINTENANCE로 정직 기록. strict route 부적격."
+    },
+    {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "facilityType": "ACCESSIBILITY_STATUS_PROBE",
+      "evidenceKind": "NOT_EXISTS",
+      "sourceId": "seoul-metro-accessibility",
+      "sourceSnapshotId": "seoul-metro-accessibility-snapshot-20260712",
+      "providerRecordHash": "d6c89d39c0d5ce52b6ade9828b50c3a90e494175b89fda91d9ab673ad5fa3ccc",
+      "evidenceHash": "65ef174df50fbe1d016e361dd16e0b0d32894c689e18e830bb3b5a81564cf732",
+      "provenanceKind": "OFFICIAL_SOURCE",
+      "installationStatus": "NOT_COVERED",
+      "operationalStatus": "NOT_COVERED",
+      "statusMeaning": "FEED_ABSENCE_RECORD",
+      "confidence": 90,
+      "verifiedAt": "2026-07-12T00:00:00.000Z",
+      "retrievedAt": "2026-07-12T00:00:00.000Z",
+      "note": "상록수 4호선은 코레일 안산선 구간으로 서울교통공사 승강기 운행상황 API가 구조적으로 미커버(실측 조회 시 해당 역-노선 항목 0건). 공식 상태 피드 부재를 명시 기록 — NO_OFFICIAL_FEED 경로."
     }
   ],
   "movementPathCandidates": [

@@ -115,7 +115,7 @@ test("collector rejects API-level error envelopes without exposing the provider 
             header: { resultCode: "99", resultMsg: "serviceKey=secret raw provider message" },
             body: {
               items: {
-                item: [{ stnNm: "사당", oprYn: "Y", instlPstn: "대합실-승강장" }],
+                item: [{ lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" }],
               },
             },
           },
@@ -172,7 +172,7 @@ test("collector accepts only the documented success schema", async () => {
                   {
                     lineNm: "4호선",
                     stnNm: stationName,
-                    oprtngSitu: "Y",
+                    oprtngSitu: stationName === "상록수" ? "S" : "M",
                     dtlPstn: stationName === "상록수" ? "1번 출구-대합실" : "대합실-승강장",
                   },
                 ],
@@ -185,8 +185,8 @@ test("collector accepts only the documented success schema", async () => {
   });
 
   assert.deepEqual(rows, [
-    { stationName: "상록수", lineName: "4호선", operational: true, pathDescription: "1번 출구-대합실" },
-    { stationName: "사당", lineName: "4호선", operational: true, pathDescription: "대합실-승강장" },
+    { stationName: "상록수", lineName: "4호선", operational: false, situationCode: "S", situation: "보수중", pathDescription: "1번 출구-대합실" },
+    { stationName: "사당", lineName: "4호선", operational: true, situationCode: "M", situation: "사용가능", pathDescription: "대합실-승강장" },
   ]);
   assert.deepEqual(
     requestUrls.map((url) => ({
@@ -204,12 +204,49 @@ test("collector accepts only the documented success schema", async () => {
 
 test("collector keeps only station, location and operation evidence", () => {
   const snapshot = normalizeAccessibilityRows([
-    { lineNm: "4호선", stnNm: "사당", oprtngSitu: "Y", dtlPstn: "대합실-승강장" },
+    { lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" },
   ]);
   assert.deepEqual(snapshot, [
-    { stationName: "사당", lineName: "4호선", operational: true, pathDescription: "대합실-승강장" },
+    { stationName: "사당", lineName: "4호선", operational: true, situationCode: "M", situation: "사용가능", pathDescription: "대합실-승강장" },
   ]);
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey/);
+});
+
+test("normalizer records verified non-available maintenance states", () => {
+  assert.deepEqual(
+    normalizeAccessibilityRows([
+      { lineNm: "4호선", stnNm: "사당", oprtngSitu: "S", dtlPstn: "9,10번 출입구 사이" },
+    ]),
+    [
+      {
+        stationName: "사당",
+        lineName: "4호선",
+        operational: false,
+        situationCode: "S",
+        situation: "보수중",
+        pathDescription: "9,10번 출입구 사이",
+      },
+    ],
+  );
+});
+
+test("normalizer drops deleted (D) facility rows without failing", () => {
+  assert.deepEqual(
+    normalizeAccessibilityRows([
+      { lineNm: "4호선", stnNm: "사당", oprtngSitu: "D", dtlPstn: "폐기 승강기" },
+      { lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" },
+    ]),
+    [
+      {
+        stationName: "사당",
+        lineName: "4호선",
+        operational: true,
+        situationCode: "M",
+        situation: "사용가능",
+        pathDescription: "대합실-승강장",
+      },
+    ],
+  );
 });
 
 test("collector rejects rows outside the requested pilot station-line", async () => {
@@ -224,7 +261,7 @@ test("collector rejects rows outside the requested pilot station-line", async ()
             header: { resultCode: "00" },
             body: {
               items: {
-                item: [{ lineNm: "2호선", stnNm: "상록수", oprtngSitu: "Y", dtlPstn: "출입구-대합실" }],
+                item: [{ lineNm: "2호선", stnNm: "상록수", oprtngSitu: "M", dtlPstn: "출입구-대합실" }],
               },
             },
           },
@@ -239,24 +276,24 @@ test("normalizer rejects undocumented operation codes", () => {
   assert.throws(
     () =>
       normalizeAccessibilityRows([
-        { lineNm: "4호선", stnNm: "상록수", oprtngSitu: "M", dtlPstn: "1번 출구-대합실" },
+        { lineNm: "4호선", stnNm: "상록수", oprtngSitu: "Y", dtlPstn: "1번 출구-대합실" },
       ]),
     /Seoul accessibility API response invalid/,
   );
 });
 
 test("normalizer rejects malformed and incomplete evidence rows", () => {
-  const valid = { lineNm: "4호선", stnNm: "사당", oprYn: "Y", instlPstn: "대합실-승강장" };
+  const valid = { lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" };
   for (const row of [
     null,
     { ...valid, lineNm: undefined },
     { ...valid, lineNm: 4 },
     { ...valid, stnNm: undefined },
     { ...valid, stnNm: 123 },
-    { ...valid, instlPstn: undefined },
-    { ...valid, instlPstn: 123 },
-    { ...valid, oprYn: undefined },
-    { ...valid, oprYn: 123 },
+    { ...valid, dtlPstn: undefined },
+    { ...valid, dtlPstn: 123 },
+    { ...valid, oprtngSitu: undefined },
+    { ...valid, oprtngSitu: 123 },
   ]) {
     assert.throws(() => normalizeAccessibilityRows([row]), /Seoul accessibility API response invalid/);
   }
@@ -265,8 +302,8 @@ test("normalizer rejects malformed and incomplete evidence rows", () => {
 test("snapshot contains sanitized evidence for both pilot stations", () => {
   const snapshot = buildAccessibilitySnapshot(
     [
-      { stationName: "사당", lineName: "4호선", operational: true, pathDescription: "대합실-승강장" },
-      { stationName: "상록수", lineName: "4호선", operational: false, pathDescription: "1번 출구-대합실" },
+      { stationName: "사당", lineName: "4호선", operational: true, situationCode: "M", situation: "사용가능", pathDescription: "대합실-승강장" },
+      { stationName: "상록수", lineName: "4호선", operational: false, situationCode: "S", situation: "보수중", pathDescription: "1번 출구-대합실" },
     ],
     "2026-07-10T00:00:00.000Z",
   );
@@ -278,12 +315,12 @@ test("snapshot contains sanitized evidence for both pilot stations", () => {
       {
         stationName: "상록수",
         lineName: "4호선",
-        facilities: [{ operational: false, pathDescription: "1번 출구-대합실" }],
+        facilities: [{ operational: false, situationCode: "S", situation: "보수중", pathDescription: "1번 출구-대합실" }],
       },
       {
         stationName: "사당",
         lineName: "4호선",
-        facilities: [{ operational: true, pathDescription: "대합실-승강장" }],
+        facilities: [{ operational: true, situationCode: "M", situation: "사용가능", pathDescription: "대합실-승강장" }],
       },
     ],
   });
@@ -294,26 +331,39 @@ test("snapshot rejects missing pilot station evidence", () => {
   assert.throws(
     () =>
       buildAccessibilitySnapshot(
-        [{ stationName: "사당", lineName: "4호선", operational: true, pathDescription: "대합실-승강장" }],
+        [{ stationName: "사당", lineName: "4호선", operational: true, situationCode: "M", situation: "사용가능", pathDescription: "대합실-승강장" }],
         "2026-07-10T00:00:00.000Z",
       ),
     /accessibility evidence missing for 상록수/,
   );
 });
 
-test("snapshot rejects pilot facilities without a boolean status and path", () => {
+test("snapshot rejects pilot facilities without a boolean status, situation code and path", () => {
   const validSadang = {
     stationName: "사당",
     lineName: "4호선",
     operational: true,
+    situationCode: "M",
+    situation: "사용가능",
     pathDescription: "대합실-승강장",
   };
+  const validSangnoksu = {
+    stationName: "상록수",
+    lineName: "4호선",
+    operational: false,
+    situationCode: "S",
+    situation: "보수중",
+    pathDescription: "1번 출구-대합실",
+  };
   for (const sangnoksu of [
-    { stationName: "상록수", lineName: "4호선", pathDescription: "1번 출구-대합실" },
-    { stationName: "상록수", lineName: "4호선", operational: "Y", pathDescription: "1번 출구-대합실" },
-    { stationName: "상록수", lineName: "4호선", operational: true },
-    { stationName: "상록수", lineName: "4호선", operational: true, pathDescription: 123 },
-    { stationName: "상록수", operational: true, pathDescription: "1번 출구-대합실" },
+    { ...validSangnoksu, operational: undefined },
+    { ...validSangnoksu, operational: "Y" },
+    { ...validSangnoksu, situationCode: undefined },
+    { ...validSangnoksu, situationCode: "Y" },
+    { ...validSangnoksu, situation: undefined },
+    { ...validSangnoksu, pathDescription: undefined },
+    { ...validSangnoksu, pathDescription: 123 },
+    { ...validSangnoksu, stationName: undefined },
   ]) {
     assert.throws(
       () => buildAccessibilitySnapshot([sangnoksu, validSadang], "2026-07-10T00:00:00.000Z"),
@@ -324,7 +374,7 @@ test("snapshot rejects pilot facilities without a boolean status and path", () =
 
 test("invalid provider evidence never reaches the output write", async () => {
   const outputDir = await mkdtemp(join(tmpdir(), "easysubway-accessibility-"));
-  const valid = { lineNm: "4호선", stnNm: "사당", oprYn: "Y", instlPstn: "대합실-승강장" };
+  const valid = { lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" };
   const jsonResponse = (item, resultCode = "00") => async () => ({
     ok: true,
     json: async () => ({ response: { header: { resultCode }, body: { items: { item } } } }),
@@ -345,11 +395,11 @@ test("invalid provider evidence never reaches the output write", async () => {
       { ...valid, lineNm: 4 },
       { ...valid, stnNm: undefined },
       { ...valid, stnNm: 123 },
-      { ...valid, instlPstn: undefined },
-      { ...valid, instlPstn: 123 },
-      { ...valid, oprYn: undefined },
-      { ...valid, oprYn: 123 },
-      { ...valid, oprYn: "M" },
+      { ...valid, dtlPstn: undefined },
+      { ...valid, dtlPstn: 123 },
+      { ...valid, oprtngSitu: undefined },
+      { ...valid, oprtngSitu: 123 },
+      { ...valid, oprtngSitu: "Y" },
     ].map((row) => jsonResponse([row])),
   ];
 
@@ -465,44 +515,57 @@ test("CLI requires the service key before collection", async () => {
   );
 });
 
-test("official endpoints remain pending candidates until admission evidence exists", async () => {
+test("seoul-metro-accessibility is admitted while sibling facility-location stays pending", async () => {
   const candidatesDocument = JSON.parse(
     await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"),
   );
-  const ids = ["seoul-metro-accessibility", "seoul-metro-facility-location"];
-  const candidates = ids.map((id) => candidatesDocument.candidates.find((candidate) => candidate.id === id));
+  const admitted = candidatesDocument.candidates.find((candidate) => candidate.id === "seoul-metro-accessibility");
   assert.deepEqual(
-    candidates.map((candidate) => ({
-      id: candidate?.id,
-      domain: candidate?.domain,
-      requestUrl: candidate?.requestUrl,
-      admissionStatus: candidate?.admissionStatus,
-      retrievedAt: candidate?.evidence?.retrievedAt,
-      usePermissionRange: candidate?.evidence?.usePermissionRange,
-    })),
-    [
-      {
-        id: "seoul-metro-accessibility",
-        domain: "accessibility_facilities",
-        requestUrl: "https://apis.data.go.kr/B553766/wksn/getWksnElvtr",
-        admissionStatus: "evidence_recorded_admin_review_required",
-        retrievedAt: "2026-07-10",
-        usePermissionRange: "이용허락범위 제한 없음",
-      },
-      {
-        id: "seoul-metro-facility-location",
-        domain: "accessibility_facilities",
-        requestUrl: "https://apis.data.go.kr/B553766/facility/getFcElvtr",
-        admissionStatus: "evidence_recorded_admin_review_required",
-        retrievedAt: "2026-07-10",
-        usePermissionRange: "이용허락범위 제한 없음",
-      },
-    ],
+    {
+      id: admitted?.id,
+      domain: admitted?.domain,
+      requestUrl: admitted?.requestUrl,
+      admissionStatus: admitted?.admissionStatus,
+      retrievedAt: admitted?.evidence?.retrievedAt,
+      usePermissionRange: admitted?.evidence?.usePermissionRange,
+    },
+    {
+      id: "seoul-metro-accessibility",
+      domain: "accessibility_facilities",
+      requestUrl: "https://apis.data.go.kr/B553766/wksn/getWksnElvtr",
+      admissionStatus: "admitted_to_production_inventory",
+      retrievedAt: "2026-07-10",
+      usePermissionRange: "이용허락범위 제한 없음",
+    },
+  );
+
+  const pending = candidatesDocument.candidates.find((candidate) => candidate.id === "seoul-metro-facility-location");
+  assert.deepEqual(
+    {
+      id: pending?.id,
+      domain: pending?.domain,
+      requestUrl: pending?.requestUrl,
+      admissionStatus: pending?.admissionStatus,
+      retrievedAt: pending?.evidence?.retrievedAt,
+      usePermissionRange: pending?.evidence?.usePermissionRange,
+    },
+    {
+      id: "seoul-metro-facility-location",
+      domain: "accessibility_facilities",
+      requestUrl: "https://apis.data.go.kr/B553766/facility/getFcElvtr",
+      admissionStatus: "evidence_recorded_admin_review_required",
+      retrievedAt: "2026-07-10",
+      usePermissionRange: "이용허락범위 제한 없음",
+    },
   );
 
   const inventory = JSON.parse(await readFile(new URL("./source-inventory.json", import.meta.url), "utf8"));
+  assert.ok(
+    inventory.sources.some(({ id }) => id === "seoul-metro-accessibility"),
+    "seoul-metro-accessibility must be admitted to the production source inventory",
+  );
   assert.deepEqual(
-    inventory.sources.filter(({ id }) => ids.includes(id)),
+    inventory.sources.filter(({ id }) => id === "seoul-metro-facility-location"),
     [],
   );
   assert.doesNotMatch(

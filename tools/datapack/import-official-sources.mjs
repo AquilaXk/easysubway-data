@@ -3,6 +3,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const SUMMARY_RIDE_EDGE_PRODUCTION_POLICY = "fixture-only";
+// #1996: 게시 가능한 검증된 상태 3분류. AVAILABLE(실측 가동), UNDER_MAINTENANCE(실측 비가용),
+// NO_OFFICIAL_FEED(공식 상태 피드 부재 기록). UNKNOWN만 게시 차단 대상이다.
+const verifiedAccessibilityStatuses = ["AVAILABLE", "UNDER_MAINTENANCE", "NO_OFFICIAL_FEED"];
+const maintenanceOperationalStatuses = [
+  "UNDER_MAINTENANCE",
+  "MAINTENANCE",
+  "OUT_OF_SERVICE",
+  "SUSPENDED",
+  "INSPECTION",
+  "UNDER_CONSTRUCTION",
+];
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -918,7 +929,60 @@ function stationFacilityEvidenceRows(input, stationRows, facilities, isProductio
       }
     }
   }
+  rows.push(...accessibilityStatusEvidenceRows(input, stationLineKeys, isProductionPack));
   return rows;
+}
+
+// #1996: ENTRY/EXIT edge의 검증된 상태(UNDER_MAINTENANCE/NO_OFFICIAL_FEED/AVAILABLE) 근거를 남기는
+// 실측 상태 증거 행. required facility 물리 존재(EXISTS 커버리지)와 별도로, accessibility 상태 피드의 실측
+// 결과(보수중 실측/피드 부재 기록 등)를 station_facility_evidence로 기입한다. required facility 커버리지와
+// 충돌하지 않도록 전용 facilityType(ACCESSIBILITY_STATUS_PROBE)을 쓴다.
+function accessibilityStatusEvidenceRows(input, stationLineKeys, isProductionPack) {
+  const evidenceInput = input.accessibilityStatusEvidence ?? [];
+  if (evidenceInput.length === 0) {
+    return [];
+  }
+  return evidenceInput.map((row) => {
+    const stationId = requiredString(row.stationId, "accessibilityStatusEvidence.stationId");
+    const lineId = requiredString(row.lineId, "accessibilityStatusEvidence.lineId");
+    if (!stationLineKeys.has(`${stationId}:${lineId}`)) {
+      throw new Error(`accessibilityStatusEvidence station-line missing: ${stationId}:${lineId}`);
+    }
+    const evidenceKind = requiredString(row.evidenceKind, "accessibilityStatusEvidence.evidenceKind");
+    if (!["EXISTS", "NOT_EXISTS"].includes(evidenceKind)) {
+      throw new Error(`accessibilityStatusEvidence.evidenceKind is not allowed: ${stationId}:${lineId}:${evidenceKind}`);
+    }
+    return {
+      stationId,
+      lineId,
+      facilityType: requiredString(row.facilityType, "accessibilityStatusEvidence.facilityType"),
+      evidenceKind,
+      sourceId: requiredString(row.sourceId, "accessibilityStatusEvidence.sourceId"),
+      sourceSnapshotId: productionString(row.sourceSnapshotId, isProductionPack, "accessibilityStatusEvidence.sourceSnapshotId"),
+      providerRecordHash: productionEvidenceHash(
+        row.providerRecordHash,
+        isProductionPack,
+        `${stationId}:${lineId}`,
+        "accessibilityStatusEvidence.providerRecordHash",
+      ),
+      evidenceHash: productionEvidenceHash(
+        row.evidenceHash,
+        isProductionPack,
+        `${stationId}:${lineId}`,
+        "accessibilityStatusEvidence.evidenceHash",
+      ),
+      provenanceKind: productionString(row.provenanceKind, isProductionPack, "accessibilityStatusEvidence.provenanceKind") ?? "OFFICIAL_SOURCE",
+      installationStatus: row.installationStatus ?? "UNKNOWN",
+      operationalStatus: productionString(row.operationalStatus, isProductionPack, "accessibilityStatusEvidence.operationalStatus") ?? "UNKNOWN",
+      statusMeaning: productionString(row.statusMeaning, isProductionPack, "accessibilityStatusEvidence.statusMeaning") ?? "",
+      confidence: productionPercentageInteger(row.confidence, isProductionPack, "accessibilityStatusEvidence.confidence"),
+      verifiedAt: productionString(row.verifiedAt, isProductionPack, "accessibilityStatusEvidence.verifiedAt") ?? row.lastVerifiedAt,
+      retrievedAt: productionString(row.retrievedAt, isProductionPack, "accessibilityStatusEvidence.retrievedAt"),
+      // 검증된 비가용/부재 상태는 strict route(보장) 대상이 아니다 — 항상 ineligible.
+      strictRouteEligible: false,
+      strictRouteEligibleReason: evidenceKind === "NOT_EXISTS" ? "NO_OFFICIAL_STATUS_FEED" : "OPERATION_STATUS_NOT_AVAILABLE",
+    };
+  });
 }
 
 function facilityStrictRouteEligibility(facility) {
@@ -1015,10 +1079,33 @@ function validateProductionAccessibilityCoverageEdges(
     return;
   }
   const sourceById = new Map(selectedSources.map((source) => [source.id, source]));
+  const accessibilityFacilityRows = stationFacilityEvidence.filter((row) =>
+    sourceSupportsDomain(sourceById.get(row.sourceId), "accessibility_facilities"),
+  );
   const strictFacilityStationLines = new Set(
-    stationFacilityEvidence
+    accessibilityFacilityRows
       .filter((row) => row.strictRouteEligible === true)
-      .filter((row) => sourceSupportsDomain(sourceById.get(row.sourceId), "accessibility_facilities"))
+      .map((row) => stationLineEvidenceKey(row.stationId, row.lineId)),
+  );
+  const maintenanceFacilityStationLines = new Set(
+    accessibilityFacilityRows
+      .filter(
+        (row) =>
+          row.strictRouteEligible !== true &&
+          row.evidenceKind === "EXISTS" &&
+          maintenanceOperationalStatuses.includes(String(row.operationalStatus ?? "").toUpperCase()) &&
+          ["REALTIME_OPERATION", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(String(row.statusMeaning ?? "").toUpperCase()),
+      )
+      .map((row) => stationLineEvidenceKey(row.stationId, row.lineId)),
+  );
+  const noOfficialFeedStationLines = new Set(
+    accessibilityFacilityRows
+      .filter(
+        (row) =>
+          row.evidenceKind === "NOT_EXISTS" &&
+          String(row.statusMeaning ?? "").toUpperCase() === "FEED_ABSENCE_RECORD" &&
+          String(row.operationalStatus ?? "").toUpperCase() === "NOT_COVERED",
+      )
       .map((row) => stationLineEvidenceKey(row.stationId, row.lineId)),
   );
   const approvedMovementStationLines = new Set(
@@ -1030,23 +1117,38 @@ function validateProductionAccessibilityCoverageEdges(
 
   for (const edge of networkEdges) {
     const edgeType = String(edge.edgeType ?? "").toUpperCase();
-    if (
-      !["ENTRY", "EXIT"].includes(edgeType) ||
-      String(edge.accessibilityStatus ?? "").toUpperCase() !== "AVAILABLE"
-    ) {
+    if (!["ENTRY", "EXIT"].includes(edgeType)) {
+      continue;
+    }
+    const status = String(edge.accessibilityStatus ?? "").toUpperCase();
+    if (!verifiedAccessibilityStatuses.includes(status)) {
       continue;
     }
     if (!sourceSupportsDomain(sourceById.get(edge.sourceId), "accessibility_facilities")) {
-      throw new Error(`AVAILABLE ENTRY/EXIT edge requires accessibility_facilities source: ${edge.id}`);
+      throw new Error(`${status} ENTRY/EXIT edge requires accessibility_facilities source: ${edge.id}`);
     }
     const stationLineKey = accessibilityEdgeStationLineKey(edge, edgeType);
-    if (!strictFacilityStationLines.has(stationLineKey)) {
-      throw new Error(
-        `AVAILABLE ENTRY/EXIT edge requires strict-eligible operational facility evidence: ${edge.id}:${stationLineKey}`,
-      );
-    }
-    if (!approvedMovementStationLines.has(stationLineKey)) {
-      throw new Error(`AVAILABLE ENTRY/EXIT edge requires approved movement pathway: ${edge.id}:${stationLineKey}`);
+    if (status === "AVAILABLE") {
+      if (!strictFacilityStationLines.has(stationLineKey)) {
+        throw new Error(
+          `AVAILABLE ENTRY/EXIT edge requires strict-eligible operational facility evidence: ${edge.id}:${stationLineKey}`,
+        );
+      }
+      if (!approvedMovementStationLines.has(stationLineKey)) {
+        throw new Error(`AVAILABLE ENTRY/EXIT edge requires approved movement pathway: ${edge.id}:${stationLineKey}`);
+      }
+    } else if (status === "UNDER_MAINTENANCE") {
+      if (!maintenanceFacilityStationLines.has(stationLineKey)) {
+        throw new Error(
+          `UNDER_MAINTENANCE ENTRY/EXIT edge requires field-verified maintenance facility evidence: ${edge.id}:${stationLineKey}`,
+        );
+      }
+    } else if (status === "NO_OFFICIAL_FEED") {
+      if (!noOfficialFeedStationLines.has(stationLineKey)) {
+        throw new Error(
+          `NO_OFFICIAL_FEED ENTRY/EXIT edge requires recorded absence-of-feed evidence: ${edge.id}:${stationLineKey}`,
+        );
+      }
     }
   }
 }

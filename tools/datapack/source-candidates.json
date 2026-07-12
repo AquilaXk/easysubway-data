@@ -657,10 +657,12 @@
       "detailUrl": "https://www.data.go.kr/data/15143843/openapi.do",
       "requestUrl": "https://apis.data.go.kr/B553766/wksn/getWksnElvtr",
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "sample_url_documented_key_required",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "sampleEvidenceStatus": "credential_free_snapshot_recorded",
+      "admissionStatus": "admitted_to_production_inventory",
       "serviceKeyHandling": "offline_collection_secret_only",
       "mobileEmbeddingAllowed": false,
+      "productionInventoryReferenceId": "seoul-metro-accessibility",
+      "productionInventoryRelationship": "candidate_admitted_to_production_inventory",
       "evidence": {
         "detailPageUrl": "https://www.data.go.kr/data/15143843/openapi.do",
         "retrievedAt": "2026-07-10",
@@ -678,15 +680,37 @@
           "dtlPstn"
         ],
         "coverageLimitations": [
-          "운영계정 활용은 공공데이터포털 심의승인이 필요함"
+          "운영계정 활용은 공공데이터포털 심의승인이 필요함",
+          "서울교통공사 자사 운영구간만 커버(코레일 안산선 등 타 운영사 구간은 미커버)"
         ],
-        "missingEvidence": [
-          "sampleResponse",
-          "credentialFreeSnapshotHash",
-          "adminAdmissionEvidence"
-        ]
+        "liveSampleRetrievedAt": "2026-07-12T00:00:00Z",
+        "liveSampleRowCount": 82,
+        "liveSampleRawSha256": "8a1fbdfbc55f2cd4bc8f54e616f515133f00ee528d078ab21cdd0c1de7ad6814",
+        "liveSampleSchemaFingerprint": "4f0066bdb9b24d5be35b39c1f15b5dce5e84bd5087773301542efc04156f7a99",
+        "liveSampleEvidenceHash": "e682142970dd883385c9e087b31513045efe13fdf231c6855b9529e8ba0a2214",
+        "liveSampleFields": [
+          "bgngFlr",
+          "bgngFlrGrndUdgdSe",
+          "crtrYmd",
+          "dtlPstn",
+          "elvtrSn",
+          "endFlr",
+          "endFlrGrndUdgdSe",
+          "fcltNm",
+          "fcltNo",
+          "lineNm",
+          "mngNo",
+          "oprtngSitu",
+          "pscpNope",
+          "pscpWht",
+          "stnCd",
+          "stnNm",
+          "stnNo",
+          "vcntEntrcNo"
+        ],
+        "liveSampleNote": "리포 내장 raw(공식 source, 상록수·사당 포함 4호선 전량)에서 산출한 sanitized sample evidence 해시. 원본 스냅샷은 .codex/evidence 로컬 전용, 커밋하지 않음 — 해시로 재현 검증."
       },
-      "nextAction": "collect a credential-free 상록수·사당 snapshot and require admin admission evidence before production inventory admission",
+      "nextAction": "admitted to production inventory; monitor freshness and re-collect credential-free snapshot on schema/coverage change",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",

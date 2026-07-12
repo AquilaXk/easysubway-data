@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
-  "issue": 1950,
-  "builderGitSha": "ec8dde5431ff4c2d3b1d94a7a7a6a904feb0b6b8",
+  "issue": 1996,
+  "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
   "productionScopeId": "capital_pilot_android_v1",
-  "truthfulnessRule": "모든 값은 (a) 커밋 데이터에서 결정적 재산출, 또는 (b) #1992 admission 실행 산출물의 byte-exact 재생성·검증본에서만 채웠다. 임의 합성값 없음.",
+  "truthfulnessRule": "모든 값은 (a) 커밋 데이터에서 결정적 재산출, 또는 (b) #1992·#1996 admission 실행 산출물의 byte-exact 재생성·검증본에서만 채웠다. 임의 합성값 없음. 사당·상록수 4호선 접근성 상태는 실측 그대로(UNDER_MAINTENANCE/NO_OFFICIAL_FEED) 기록 — 거짓 AVAILABLE 위장 없음.",
   "ledgerHashes": {
     "note": "export-ledger-hashes.mjs 산출값 == #1992 admissionEvidence 기록값(완전 일치 검증 PASS).",
     "approvedAliasLedgerHash": {
@@ -35,24 +35,24 @@
     ]
   },
   "sourceSnapshots": {
-    "note": "source-snapshots.json은 #1992 admission 실행(8종, snapshot -capital-admission-20260712)의 snapshot 객체를 커밋 원천 데이터(molit CSV·cyberstation JS·capital-pilot input)에서 byte-exact 재생성한 것. 재생성본 검증: 각 snapshot에 대해 sha256(JSON.stringify([snapshot])) == 해당 source의 admissionEvidence.sourceSnapshotSetHash (8/8 PASS — snapshot 객체 완전 동일성 증명), raw 바이트 sha256 == admissionEvidence.rawSha256 == source-candidates.json liveSampleRawSha256 (8/8 PASS).",
-    "order": "admission chain 확정 순서(#1992 fix ebad6bff, source-candidates.json 순): molit-urban-rail-full-route → seoulmetro-station-line-info → seoulmetro-cyberstation-route-map → kric-station-elevator → kric-station-elevator-movement → kric-station-escalator → kric-wheelchair-lift-location → kric-wheelchair-lift-movement",
+    "note": "source-snapshots.json은 admission 실행(9종, snapshot -capital-admission-20260712)의 snapshot 객체를 커밋 원천 데이터에서 byte-exact 재생성한 것. #1996에서 seoul-metro-accessibility(P0 accessibility_facilities)를 9번째로 추가 admit. 재생성본 검증: 각 snapshot에 대해 sha256(JSON.stringify([snapshot])) == 해당 source의 admissionEvidence.sourceSnapshotSetHash (9/9 PASS).",
+    "order": "admission chain 순서(source-candidates.json 순): molit-urban-rail-full-route → seoulmetro-station-line-info → seoulmetro-cyberstation-route-map → kric-station-elevator → kric-station-elevator-movement → kric-station-escalator → kric-wheelchair-lift-location → kric-wheelchair-lift-movement → seoul-metro-accessibility",
     "committedVerificationCommand": "node -e \"const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),i=require('./tools/datapack/source-inventory.json');for(const n of s){const e=i.sources.find(x=>x.id===n.sourceId).admissionEvidence;console.log(n.sourceId,c.createHash('sha256').update(JSON.stringify([n])).digest('hex')===e.sourceSnapshotSetHash)}\"",
     "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨."
   },
   "sourceSnapshotSetHash": {
-    "value": "bc138f2cea9023737b76a75bca5acb2362b2500b84022492828c2daef286ff5b",
-    "contract": "run-source-admission-pipeline.mjs 60행 공식 sha256(JSON.stringify([snapshot...]))을 8-snapshot 배열로 일반화(배열=source-snapshots.json 그대로, 위 order). build-datapack·워크플로는 이 값을 재계산하지 않고 build-spec↔release-request 상호 일치만 강제(workflow 187행) — 조합 규격의 리포 정의가 단일 스냅샷 케이스뿐이라 일반화 근거를 여기 명기.",
+    "value": "845b5a8f54f5c09277c2e7e6468fd8baab4da74210512f3b83be12d3bdcad75e",
+    "contract": "run-source-admission-pipeline.mjs 60행 공식 sha256(JSON.stringify([snapshot...]))을 9-snapshot 배열로 일반화(배열=source-snapshots.json 그대로, 위 order). build-datapack·워크플로는 이 값을 재계산하지 않고 build-spec↔release-request 상호 일치만 강제(workflow 187행).",
     "reproductionCommand": "node -e \"const c=require('crypto');console.log(c.createHash('sha256').update(JSON.stringify(require('./tools/datapack/release/source-snapshots.json'))).digest('hex'))\""
   },
   "sourceInventorySha256": {
-    "value": "35b7bff6d43dea84895df4d737d940908b9526a9014b64f056178fbf35d2af32",
-    "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1992 병합 후 현행 main의 tools/datapack/source-inventory.json이 곧 최종 admitted inventory(순차 admit 체인 종료 상태, fix ebad6bff)이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
+    "value": "13e69f5d392066a44420c60a112b37208fb3c888d59ed5fbc1945889b92d1f66",
+    "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1996 seoul-metro-accessibility admit 후 현행 브랜치의 tools/datapack/source-inventory.json이 곧 최종 admitted inventory(순차 admit 체인 종료 상태)이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-reviewed-pack.json",
-    "contract": "워크플로 production 게이트 체인(330~337행: import-official-sources --inventory source-inventory.json --input capital-pilot-production-source-input.json → apply-admin-review-overrides --overrides fixtures/admin-review-overrides.json)을 현행 main에서 그대로 실행한 산출물을 커밋. 경로는 marker(fixture|debug|demo|sample) 미포함·fixtures/ 밖(workflow 147·175행 통과). pack.artifactKind=production, 소비 소스 9종(8종+kric-subway-timetable)."
+    "contract": "워크플로 production 게이트 체인(330~337행)을 현행 브랜치에서 그대로 실행한 산출물을 커밋. pack.artifactKind=production, 소비 소스 10종(9종+seoul-metro-accessibility). 사당 UNDER_MAINTENANCE·상록수 NO_OFFICIAL_FEED edge 포함."
   },
   "identifiers": {
     "candidateId": {
@@ -120,10 +120,17 @@
       "rawSha256": "695ae39f9624f262cda0a79411fd2c0bd69573c02353114a0b6ecc78f232ada7",
       "adminReviewRecordHash": "8309bcbe21eb1f153db99f33ad4c332c1475e23a0ff0dcfda89044efa87701ba",
       "perSourceSnapshotSetHash": "9fa79f9d6f8fa5922994405eaccd60102787a24da5c334bd806e91f3c599527c"
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "snapshotId": "seoul-metro-accessibility-capital-admission-20260712",
+      "rawSha256": "8a1fbdfbc55f2cd4bc8f54e616f515133f00ee528d078ab21cdd0c1de7ad6814",
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "perSourceSnapshotSetHash": "3f10026a5a7cc98b870073d9f795540be21e654f13e17a890c7a472849e3d7b3"
     }
   ],
   "buildDryRun": {
-    "result": "PASS — build-datapack --build-spec가 이 spec을 그대로 소비해 capital@1(artifactKind=production) pack 생성, provenance.candidateBuild에 6종 해시·buildSpecSha256 복사 확인(테스트 서명키 로컬 dry-run).",
-    "knownGateBlocker": "validate-datapack --require-production은 verified ENTRY/EXIT coverage gap(edge-entry/exit-sadang·sangnoksu-seoul-4, 4개 edge 미검증)으로 exit 1 — production-publish 워크플로의 release fixture 게이트(352~354행)가 이 상태로는 실패한다. 해소는 capital-pilot-production-source-input.json routeEdges의 해당 edge에 실측 접근성 검증 증거(accessibilityStatus=AVAILABLE + evidence/providerRecordHash + lastVerifiedAt)를 기입해야 하며 이는 현장 검증 산출물이라 오너 공급."
+    "result": "PASS — build-datapack --build-spec가 이 spec을 소비해 capital@1(artifactKind=production) pack 생성, validate-datapack --require-production exit 0(테스트 서명키 로컬 dry-run). verified ENTRY 2/2·EXIT 2/2, 미검증 edge 0.",
+    "gateResolution": "#1996 게이트 재설계로 verified coverage를 \"AVAILABLE 고정\"에서 \"실측 검증된 상태(AVAILABLE/UNDER_MAINTENANCE/NO_OFFICIAL_FEED) 기록\"으로 재정의. 사당 4호선 지상연결 EV 실측 보수중(oprtngSitu=S) → UNDER_MAINTENANCE, 상록수 4호선 코레일 안산선 공식 상태 피드 부재 → NO_OFFICIAL_FEED. 미검증(UNKNOWN)만 차단 유지. strict route 보장(#1394)은 AVAILABLE 전용으로 불변, 두 상태 edge는 strict_route_eligible=0."
   }
 }
