@@ -291,6 +291,69 @@ test("Data.go.kr evidence collector는 URLSearchParams form key와 string-start 
   }
 });
 
+test("Data.go.kr evidence collector는 URL 인코딩된 service key를 fetch URL에서 1회만 인코딩한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-encoded-key-"));
+  const encodedServiceKey = "abc%2Bdef%3D%3D";
+  try {
+    let capturedServiceKeyParam;
+    let capturedUrl;
+    const outputs = await collectDatagoSourceCandidateEvidence({
+      candidateId: candidate.id,
+      candidatesDocument: { candidates: [candidate] },
+      runnerTemp,
+      serviceKey: encodedServiceKey,
+      fetchImpl: async (url) => {
+        capturedUrl = url;
+        capturedServiceKeyParam = url.searchParams.get("serviceKey");
+        return new Response(JSON.stringify([
+          { stnNm: "사당", carNo: "3-2" },
+        ]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(capturedServiceKeyParam, "abc+def==");
+    assert.match(capturedUrl.toString(), /serviceKey=abc%2Bdef%3D%3D(&|$)/);
+    assert.doesNotMatch(capturedUrl.toString(), /serviceKey=abc%252Bdef/);
+    assert.ok(outputs.sample);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("Data.go.kr evidence collector는 이미 디코딩된 service key도 동일하게 1회 인코딩되도록 멱등 처리한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-decoded-key-"));
+  const decodedServiceKeyValue = "abc+def==";
+  try {
+    let capturedServiceKeyParam;
+    let capturedUrl;
+    await collectDatagoSourceCandidateEvidence({
+      candidateId: candidate.id,
+      candidatesDocument: { candidates: [candidate] },
+      runnerTemp,
+      serviceKey: decodedServiceKeyValue,
+      fetchImpl: async (url) => {
+        capturedUrl = url;
+        capturedServiceKeyParam = url.searchParams.get("serviceKey");
+        return new Response(JSON.stringify([
+          { stnNm: "사당", carNo: "3-2" },
+        ]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(capturedServiceKeyParam, "abc+def==");
+    assert.match(capturedUrl.toString(), /serviceKey=abc%2Bdef%3D%3D(&|$)/);
+    assert.doesNotMatch(capturedUrl.toString(), /serviceKey=abc%252Bdef/);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
 test("Data.go.kr evidence collector는 HTTP 200 XML application error를 고정된 안전 진단으로 분류한다", async () => {
   const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-envelope-"));
   const serviceKey = "credential-sentinel-application-error";
