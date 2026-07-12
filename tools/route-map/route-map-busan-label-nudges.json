@@ -1,0 +1,17 @@
+{
+  "artifactKind": "busan-label-line-nudges",
+  "region": "부산권",
+  "note": "라벨-선 겹침 게이트(regional_label_overlap_gate_test 부산권)를 0으로 만들기 위한 결정적 좌표 미세조정. 라벨 solver의 gap 사다리 확장으로도 못 푸는 케이스만 대상: 폭이 매우 넓은 라벨이 45° 대각 위에 놓여 어떤 anchor·gap에서도 선을 벗어나지 못하는 역을, 인접 두 정점 사이에서 축정렬 L-굴절(수평+수직) 코너로 옮겨 라벨이 축과 나란한 쪽으로 깨끗이 빠지게 한다. 코너 좌표는 인접 두 역 좌표에서 결정적으로 도출(=축정렬)되므로 8선형이 보존되고, 토폴로지(158쌍)·간격 분포는 보존된다. 좌표는 직접 두지 않고 prev/next 인접역 id만 선언해 파이프라인에서 corner=(prev.x, next.y)로 도출한다.",
+  "nudges": [
+    {
+      "stationId": "station-080c154ce646",
+      "lineId": "line-eb7b47920390",
+      "name": "국제금융센터.부산은행",
+      "prevStationId": "station-61f6dbfb5d4b",
+      "nextStationId": "station-f2046c4a2f21",
+      "cornerX": "prev",
+      "cornerY": "next",
+      "note": "부산 2호선 단독역. 폭 143px 라벨이 전포(prev)↔문현(next) 45° 대각 위. corner=(전포.x, 문현.y) → 전포·node 수직, node·문현 수평 L-굴절. 라벨이 왼쪽/아래로 선-clear."
+    }
+  ]
+}

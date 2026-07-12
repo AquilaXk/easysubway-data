@@ -17,73 +17,33 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openPack, writePack, cleanupPackDir } from "./pack-io.mjs";
 import { assertReferentialIntegrity } from "./station-surgery.mjs";
+import { getRegionConfig, SEOUL } from "./sma-region-configs.mjs";
 
-export const REGION = "수도권";
-export const SVG_SOURCE = {
-  sourceId: "owner-self-drawn-sma-schematic",
-  sourceName: "오너 자작 수도권 8선형 정본 도식",
-  // 앱 렌더 정본은 SVG 원본이 아니라 이 도식에서 파생한 구조화 좌표다(#1635 유지).
-  sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
-  license: "self-drawn",
-  licenseStatus: "confirmed",
-  commercialUseAllowed: true,
-  attributionRequired: false,
-};
+// #2011 2단계: 권역 파라미터화. 아래 상수들은 수도권(seoul) 기본값을 재노출해
+// 기존 sma-pipeline.test.mjs·소비자의 하위호환을 보장한다. 실제 처리 함수는
+// region config를 인자로 받아 여러 권역을 공통 코드로 처리한다.
+export const REGION = SEOUL.regionKey;
+export const SVG_SOURCE = SEOUL.svgSource;
+export const LINE_SLUG_TO_SUFFIX = SEOUL.slugToSuffix;
+export const MISSING_LINE_STATION_HINT = SEOUL.missingLineHint;
 
-// SVG data-line 슬러그 → canonical lines.name_ko 접미(수도권 <접미>).
-export const LINE_SLUG_TO_SUFFIX = {
-  "1": "1호선", "2": "2호선", "3": "3호선", "4": "4호선", "5": "5호선",
-  "6": "6호선", "7": "7호선", "8": "8호선", "9": "9호선",
-  "airport-railroad": "공항",
-  "gyeongui-jungang": "경의중앙",
-  "gyeongchun": "경춘",
-  "suin-bundang": "수인분당",
-  "shinbundang": "신분당",
-  "gyeonggang": "경강",
-  "seohae": "서해선",
-  "incheon-1": "인천1호선",
-  "incheon-2": "인천2호선",
-  "uijeongbu-lrt": "의정부",
-  "everline": "에버라인",
-  "ui-sinseol": "우이신설",
-  "gimpo-goldline": "김포골드라인",
-  "sillim": "신림선",
-  "gtx-a": "GTX-A",
-};
-
-// data-line 없는 노드(SVG 소스 누락)의 노선 보정 — station→line 멤버십으로 확정 가능.
-// 영종·운서·청라국제도시는 공항철도 전용역이다.
-export const MISSING_LINE_STATION_HINT = {
-  "영종": "airport-railroad",
-  "운서": "airport-railroad",
-  "청라국제도시": "airport-railroad",
-};
-
-// canonical 정합 규칙 8건(#1950 대조표). 반환: {name, byLineSuffix?} — byLineSuffix가
-// 있으면 동명이역을 노선으로 disambiguate.
+// canonical 정합 규칙(수도권 기본). region config의 canonicalRules로 위임.
 export function canonicalStationName(svgName) {
-  // 콜론 동명이역: "신촌:2호선"/"양평:경의중앙선" → 이름은 콜론 앞, 노선으로 구분.
-  const colon = svgName.indexOf(":");
-  if (colon >= 0) {
-    return { name: svgName.slice(0, colon), disambiguateByLine: true };
-  }
-  if (svgName === "하남검단산") return { name: "하남검단산역" };
-  if (svgName === "이수") return { name: "총신대입구" }; // 이수↔총신대입구 별칭
-  return { name: svgName };
+  return SEOUL.canonicalRules(svgName);
 }
 
-function suffixFromLineName(nameKo) {
-  return nameKo.startsWith(`${REGION} `) ? nameKo.slice(REGION.length + 1) : nameKo;
+function suffixFromLineName(nameKo, prefix) {
+  return nameKo.startsWith(`${prefix} `) ? nameKo.slice(prefix.length + 1) : nameKo;
 }
 
-export function resolveLineMap(db) {
-  const rows = db.prepare("SELECT id, name_ko FROM lines WHERE name_ko LIKE ?").all(`${REGION}%`);
+export function resolveLineMap(db, config = SEOUL) {
+  const rows = db.prepare("SELECT id, name_ko FROM lines WHERE name_ko LIKE ?").all(`${config.lineNamePrefix}%`);
   const bySuffix = new Map();
-  for (const row of rows) bySuffix.set(suffixFromLineName(row.name_ko), row.id);
+  for (const row of rows) bySuffix.set(suffixFromLineName(row.name_ko, config.lineNamePrefix), row.id);
   const slugToId = new Map();
-  for (const [slug, suffix] of Object.entries(LINE_SLUG_TO_SUFFIX)) {
+  for (const [slug, suffix] of Object.entries(config.slugToSuffix)) {
     const id = bySuffix.get(suffix);
-    if (!id) throw new Error(`슬러그 ${slug} → "${REGION} ${suffix}" 노선을 카탈로그에서 못 찾음`);
+    if (!id) throw new Error(`슬러그 ${slug} → "${config.lineNamePrefix} ${suffix}" 노선을 카탈로그에서 못 찾음`);
     slugToId.set(slug, id);
   }
   return slugToId;
@@ -94,7 +54,7 @@ export function resolveLineMap(db) {
 //  - 노선 힌트(콜론 동명이역)로 유일 해소 → [id]
 //  - 힌트 없이 수도권 후보가 여럿 → 전부 반환(오분리된 한 물리역의 여러 id).
 //    도식은 이런 역을 단일 dot으로 그리므로 모든 id에 같은 좌표를 준다.
-export function resolveStationIds(db, name, lineId, { disambiguateByLine = false } = {}) {
+export function resolveStationIds(db, name, lineId, { disambiguateByLine = false, config = SEOUL } = {}) {
   const rows = db.prepare("SELECT id FROM stations WHERE name_ko = ?").all(name);
   if (rows.length === 0) return [];
   if (rows.length === 1) return [rows[0].id];
@@ -105,17 +65,17 @@ export function resolveStationIds(db, name, lineId, { disambiguateByLine = false
     );
     return byLine ? [byLine.id] : [];
   }
-  // 그 외 동명(콜론 아님): 오분리된 한 물리역이므로 수도권 노선 멤버 후보 전부에
-  // 같은 좌표를 broadcast한다(상봉·석남·이매: 7호선 id와 타 노선 id가 별개 행).
-  const capital = rows.filter((r) =>
+  // 그 외 동명(콜론 아님): 오분리된 한 물리역이므로 해당 권역 노선 멤버 후보 전부에
+  // 같은 좌표를 broadcast한다(수도권 상봉·석남·이매, 부산 벡스코·부전).
+  const regional = rows.filter((r) =>
     db
       .prepare(
         `SELECT 1 FROM station_lines sl JOIN lines l ON l.id=sl.line_id
          WHERE sl.station_id=? AND l.name_ko LIKE ? LIMIT 1`,
       )
-      .get(r.id, `${REGION} %`),
+      .get(r.id, `${config.lineNamePrefix} %`),
   );
-  return capital.map((r) => r.id);
+  return regional.map((r) => r.id);
 }
 
 // SVG root 좌표(2400×1800 viewBox, 전부 양수)를 그대로 정수로 반올림한다. 이 프레임을
@@ -133,8 +93,8 @@ export function computeNormalizer(_nodes) {
 // 도식이 노드 마커를 빠뜨린 역(라벨만 존재)의 이름 → 라벨을 좌표 대체값으로 쓴다.
 // v1에서 4호선 안산선 꼬리 4역이 라벨만 있고 dot이 없다(오너 도식 누락). 라벨 중심을
 // 노드 좌표 대체값으로 쓴다(같은 8선형 라인에 놓임).
-// 4호선/수인분당 안산선 꼬리 역들 — v1 도식이 라벨만 두고 dot을 뺐다.
-export const MARKERLESS_STATION_FALLBACK = ["안산", "고잔", "신길온천", "오이도", "중앙"];
+// 4호선/수인분당 안산선 꼬리 역들 — v1 도식이 라벨만 두고 dot을 뺐다(수도권 기본값).
+export const MARKERLESS_STATION_FALLBACK = SEOUL.markerlessFallback;
 
 function labelCenterByName(extraction) {
   const byName = new Map();
@@ -147,10 +107,11 @@ function labelCenterByName(extraction) {
   return byName;
 }
 
-export function buildAssignments(db, extraction) {
-  const slugToLineId = resolveLineMap(db);
+export function buildAssignments(db, extraction, config = SEOUL) {
+  const slugToLineId = resolveLineMap(db, config);
   const normalize = computeNormalizer(extraction.stationNodes);
   const labelCenters = labelCenterByName(extraction);
+  const excluded = new Set(config.excludedStations ?? []);
 
   const byStation = new Map(); // stationId -> {stationId,x,y,svgName,svgLine}
   const unresolvedNodes = [];
@@ -165,11 +126,13 @@ export function buildAssignments(db, extraction) {
 
   // 1) 노드 마커: 결정적 순서(추출기 안정 정렬)로 순회.
   for (const node of extraction.stationNodes) {
-    const slug = node.dataLine || MISSING_LINE_STATION_HINT[node.dataStation] || "";
+    if (excluded.has(node.dataStation)) continue; // 범례 등 비역 노드
+    const slug = node.dataLine || config.missingLineHint[node.dataStation] || "";
     const lineId = slug ? slugToLineId.get(slug) : null;
-    const canon = canonicalStationName(node.dataStation);
+    const canon = config.canonicalRules(node.dataStation);
     const ids = resolveStationIds(db, canon.name, lineId, {
       disambiguateByLine: canon.disambiguateByLine === true,
+      config,
     });
     if (ids.length === 0) {
       unresolvedNodes.push({ ...node, reason: `역 "${canon.name}"(노선 ${slug || "빈값"}) 미해소` });
@@ -179,10 +142,10 @@ export function buildAssignments(db, extraction) {
   }
 
   // 2) 라벨 대체: 마커 없는 역을 라벨 중심으로 배정(도식 누락 보정).
-  for (const name of MARKERLESS_STATION_FALLBACK) {
+  for (const name of config.markerlessFallback) {
     const center = labelCenters.get(name);
     if (!center) continue;
-    const ids = resolveStationIds(db, name, null);
+    const ids = resolveStationIds(db, name, null, { config });
     if (ids.length === 0) continue;
     assignOne(ids, center.x, center.y, name, "label-fallback");
   }
@@ -190,43 +153,41 @@ export function buildAssignments(db, extraction) {
   return { assignments: [...byStation.values()], unresolvedNodes };
 }
 
-// 도식 미수록이지만 카탈로그에는 유지되는 명시 예외(위상 보존 게이트).
-export const TOPOLOGY_EXCEPTIONS = [
-  { name: "도라산", reason: "오너 도식이 임진강까지 수록·도라산 제외(설계 결정). 카탈로그 유지(역 검색 가능)." },
-];
+// 도식 미수록이지만 카탈로그에는 유지되는 명시 예외(수도권 기본값 — 도라산).
+export const TOPOLOGY_EXCEPTIONS = SEOUL.topologyExceptions;
 
-export function reconcile(db, assignments) {
+export function reconcile(db, assignments, config = SEOUL) {
   const packRows = db
     .prepare(
       `SELECT rmp.station_id AS stationId, rmp.line_id AS lineId, s.name_ko AS nameKo
        FROM route_map_positions rmp JOIN stations s ON s.id = rmp.station_id
        WHERE rmp.region = ?`,
     )
-    .all(REGION);
+    .all(config.regionKey);
   const assignedStations = new Set(assignments.map((a) => a.stationId));
-  const exceptionNames = new Set(TOPOLOGY_EXCEPTIONS.map((e) => e.name));
+  const exceptionNames = new Set(config.topologyExceptions.map((e) => e.name));
 
   const unmappedPackRows = [];
   for (const row of packRows) {
     if (assignedStations.has(row.stationId)) continue;
-    if (exceptionNames.has(row.nameKo)) continue; // 명시 예외(도라산)
+    if (exceptionNames.has(row.nameKo)) continue; // 명시 예외(수도권 도라산)
     unmappedPackRows.push(row);
   }
   const packStations = new Set(packRows.map((r) => r.stationId));
-  // 팩 rmp에 없는 배정 = 카탈로그에는 있으나 좌표행이 없는 역. 수도권 station_lines가
+  // 팩 rmp에 없는 배정 = 카탈로그에는 있으나 좌표행이 없는 역. 권역 station_lines가
   // 있으면 신규 rmp 행 대상(#1954 검단연장·원종). 그 외는 정합 오류.
   const insertable = [];
   const trulyOrphan = [];
   for (const a of assignments) {
     if (packStations.has(a.stationId)) continue;
-    const capitalLines = db
+    const regionalLines = db
       .prepare(
         `SELECT sl.line_id AS lineId FROM station_lines sl JOIN lines l ON l.id=sl.line_id
          WHERE sl.station_id=? AND l.name_ko LIKE ?`,
       )
-      .all(a.stationId, `${REGION} %`);
-    if (capitalLines.length > 0) {
-      insertable.push({ ...a, lineIds: capitalLines.map((r) => r.lineId) });
+      .all(a.stationId, `${config.lineNamePrefix} %`);
+    if (regionalLines.length > 0) {
+      insertable.push({ ...a, lineIds: regionalLines.map((r) => r.lineId) });
     } else {
       trulyOrphan.push(a);
     }
@@ -237,13 +198,13 @@ export function reconcile(db, assignments) {
     unmappedPackRows,
     insertableAssignments: insertable,
     orphanAssignments: trulyOrphan,
-    exceptions: TOPOLOGY_EXCEPTIONS,
+    exceptions: config.topologyExceptions,
   };
 }
 
 const APPLY_NOW = "2026-07-11T00:00:00.000Z";
 
-export function applyAssignments(db, assignments, insertableAssignments = []) {
+export function applyAssignments(db, assignments, insertableAssignments = [], config = SEOUL) {
   // 한 역의 모든 노선 행에 그 역의 도식 좌표를 적용(환승역 단일 dot 수렴).
   const update = db.prepare(
     `UPDATE route_map_positions
@@ -261,7 +222,7 @@ export function applyAssignments(db, assignments, insertableAssignments = []) {
         license_status, commercial_use_allowed, attribution_required, reviewed_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 0, 0, '', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  const src = SVG_SOURCE;
+  const src = config.svgSource;
   db.exec("BEGIN");
   try {
     for (const a of assignments) {
@@ -270,13 +231,13 @@ export function applyAssignments(db, assignments, insertableAssignments = []) {
         src.sourceId, src.sourceName, src.sourceUrl, src.license,
         src.licenseStatus, src.commercialUseAllowed ? 1 : 0,
         src.attributionRequired ? 1 : 0, APPLY_NOW,
-        REGION, a.stationId,
+        config.regionKey, a.stationId,
       );
     }
     for (const a of insertableAssignments) {
       for (const lineId of a.lineIds) {
         insert.run(
-          a.stationId, lineId, REGION, a.x, a.y,
+          a.stationId, lineId, config.regionKey, a.x, a.y,
           src.sourceId, src.sourceName, src.sourceUrl, src.license,
           src.licenseStatus, src.commercialUseAllowed ? 1 : 0,
           src.attributionRequired ? 1 : 0, APPLY_NOW, APPLY_NOW,
@@ -295,6 +256,7 @@ function parseArgs(argv) {
     extraction: null,
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
     index: "apps/mobile/assets/datapacks/index.json",
+    region: "seoul",
     check: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -302,9 +264,10 @@ function parseArgs(argv) {
       case "--extraction": o.extraction = argv[++i]; break;
       case "--pack": o.pack = argv[++i]; break;
       case "--index": o.index = argv[++i]; break;
+      case "--region": o.region = argv[++i]; break;
       case "--check": o.check = true; break;
       case "--help": case "-h":
-        console.log("Usage: apply-sma-svg-positions.mjs --extraction <json> [--pack ..] [--index ..] [--check]");
+        console.log("Usage: apply-sma-svg-positions.mjs --extraction <json> [--region seoul|busan|<regionKey>] [--pack ..] [--index ..] [--check]");
         process.exit(0);
     }
   }
@@ -314,16 +277,17 @@ function parseArgs(argv) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
+  const config = getRegionConfig(o.region);
   const extraction = JSON.parse(await readFile(path.resolve(o.extraction), "utf8"));
   if (!Array.isArray(extraction.stationNodes) || extraction.stationNodes.length === 0) {
     throw new Error("extraction JSON에 stationNodes가 없음 — extractor v3 출력을 쓰세요");
   }
   const { db, dir, sqlitePath, packPath } = openPack(o.pack, "apply-sma-");
   try {
-    const { assignments, unresolvedNodes } = buildAssignments(db, extraction);
-    const summary = reconcile(db, assignments);
+    const { assignments, unresolvedNodes } = buildAssignments(db, extraction, config);
+    const summary = reconcile(db, assignments, config);
     const report = {
-      region: REGION,
+      region: config.regionKey,
       svgNodeCount: extraction.stationNodes.length,
       assignedStationCount: assignments.length,
       unresolvedNodeCount: unresolvedNodes.length,
@@ -343,17 +307,17 @@ async function main() {
       throw new Error(`미해소 SVG 노드 ${unresolvedNodes.length}건 — 매핑 규칙 확인`);
     }
     if (summary.unmappedPackRows.length > 0) {
-      throw new Error(`미매핑 팩 행 ${summary.unmappedPackRows.length}건(도라산 예외 제외) — 미매핑 0 실패`);
+      throw new Error(`미매핑 팩 행 ${summary.unmappedPackRows.length}건(위상 예외 제외) — 미매핑 0 실패`);
     }
     if (summary.orphanAssignments.length > 0) {
-      throw new Error(`카탈로그에 수도권 노선 없는 SVG 배정 ${summary.orphanAssignments.length}건 — 정합 확인`);
+      throw new Error(`카탈로그에 ${config.lineNamePrefix} 노선 없는 SVG 배정 ${summary.orphanAssignments.length}건 — 정합 확인`);
     }
 
     if (o.check) {
       console.log("(--check) 검증만 수행, 팩 미기록");
       return;
     }
-    applyAssignments(db, assignments, summary.insertableAssignments);
+    applyAssignments(db, assignments, summary.insertableAssignments, config);
     assertReferentialIntegrity(db);
     db.close();
     const { byteSize } = writePack({ sqlitePath, packPath, packRelPath: o.pack, indexRelPath: o.index });

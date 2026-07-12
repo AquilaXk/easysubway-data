@@ -16,28 +16,22 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { LINE_SLUG_TO_SUFFIX, REGION } from "./apply-sma-svg-positions.mjs";
+import { getRegionConfig, SEOUL } from "./sma-region-configs.mjs";
 
+export const REGION = SEOUL.regionKey;
 // SVG line_colors 메타데이터(대문자 hex, 소문자로 비교). 색 → 슬러그(1:1).
-export const SVG_COLOR_TO_SLUG = {
-  "#004a85": "1", "#00a23f": "2", "#ed6c00": "3", "#009bce": "4", "#794698": "5",
-  "#7c4932": "6", "#6e7e31": "7", "#d11d70": "8", "#a49d87": "9",
-  "#6ac2b3": "gyeongui-jungang", "#eca300": "suin-bundang", "#b81b30": "shinbundang",
-  "#b4c7e7": "incheon-1", "#0079ac": "airport-railroad", "#bacc50": "ui-sinseol",
-  "#5e7dbb": "sillim", "#f0831e": "uijeongbu-lrt", "#44a436": "everline",
-  "#f4a462": "incheon-2", "#957326": "gimpo-goldline", "#007a62": "gyeongchun",
-  "#0b318f": "gyeonggang", "#5eac41": "seohae", "#9a6292": "gtx-a",
-};
+// 수도권 기본값 재노출(하위호환·sma-pipeline.test.mjs). 처리 함수는 config로 위임.
+export const SVG_COLOR_TO_SLUG = SEOUL.colorToSlug;
 
-function suffixFromLineName(nameKo) {
-  return nameKo.startsWith(`${REGION} `) ? nameKo.slice(REGION.length + 1) : nameKo;
+function suffixFromLineName(nameKo, prefix) {
+  return nameKo.startsWith(`${prefix} `) ? nameKo.slice(prefix.length + 1) : nameKo;
 }
 
-export function resolveSlugToLineId(db) {
-  const rows = db.prepare("SELECT id, name_ko FROM lines WHERE name_ko LIKE ?").all(`${REGION}%`);
-  const bySuffix = new Map(rows.map((r) => [suffixFromLineName(r.name_ko), r.id]));
+export function resolveSlugToLineId(db, config = SEOUL) {
+  const rows = db.prepare("SELECT id, name_ko FROM lines WHERE name_ko LIKE ?").all(`${config.lineNamePrefix}%`);
+  const bySuffix = new Map(rows.map((r) => [suffixFromLineName(r.name_ko, config.lineNamePrefix), r.id]));
   const map = new Map();
-  for (const [slug, suffix] of Object.entries(LINE_SLUG_TO_SUFFIX)) {
+  for (const [slug, suffix] of Object.entries(config.slugToSuffix)) {
     const id = bySuffix.get(suffix);
     if (id) map.set(slug, id);
   }
@@ -128,12 +122,13 @@ function round(n) {
   return Math.round(n * 1000) / 1000;
 }
 
-export function buildTracksDoc(geom, db, { stitchTolerance, contentMinY, contentMaxY }) {
-  const slugToLineId = resolveSlugToLineId(db);
+export function buildTracksDoc(geom, db, { stitchTolerance, contentMinY, contentMaxY, config = SEOUL }) {
+  const slugToLineId = resolveSlugToLineId(db, config);
+  const colorToSlug = config.colorToSlug;
   const byLineId = new Map();
   for (const stroke of geom.strokes ?? []) {
     if (stroke.tag === "line" || stroke.dashed) continue;
-    const slug = SVG_COLOR_TO_SLUG[(stroke.stroke || "").toLowerCase()];
+    const slug = colorToSlug[(stroke.stroke || "").toLowerCase()];
     if (!slug) continue; // 비노선색(장식·환승 캡슐·무채색)
     const ys = stroke.points.map((p) => p.y).sort((a, b) => a - b);
     const medY = ys[Math.floor(ys.length / 2)];
@@ -158,7 +153,7 @@ export function buildTracksDoc(geom, db, { stitchTolerance, contentMinY, content
   }
   return {
     schemaVersion: 1,
-    region: geom.region ?? REGION,
+    region: geom.region ?? config.regionKey,
     source: "sma-svg-color-slug",
     stitchTolerance,
     sourceExtractorVersion: geom.extractorVersion ?? null,
@@ -171,7 +166,7 @@ export function buildTracksDoc(geom, db, { stitchTolerance, contentMinY, content
 function parseArgs(argv) {
   const o = {
     geometry: null, pack: null, region: REGION, out: null,
-    stitchTolerance: 6, contentMinY: 340, contentMaxY: 1720,
+    stitchTolerance: 6, contentMinY: null, contentMaxY: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     switch (argv[i]) {
@@ -185,6 +180,10 @@ function parseArgs(argv) {
     }
   }
   if (!o.geometry || !o.pack) throw new Error("--geometry and --pack are required");
+  o.config = getRegionConfig(o.region);
+  // content y 밴드는 명시 인자 우선, 없으면 권역 config 기본값(범례 stroke 배제).
+  if (o.contentMinY === null) o.contentMinY = o.config.contentBand.minY;
+  if (o.contentMaxY === null) o.contentMaxY = o.config.contentBand.maxY;
   return o;
 }
 
