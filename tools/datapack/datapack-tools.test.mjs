@@ -10604,6 +10604,125 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
   );
   assert.equal(capitalRouteMapCoverage.status, "covered");
   assert.deepEqual(capitalRouteMapCoverage.missingFields, []);
+
+  // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
+  // 기준으로 판정한다. 현행 인벤토리는 전국 gap 다수 + scope 내 gap 0이므로, --allow-gaps 없이도 exit 0으로 통과하되
+  // 전국 gap 수치는 은폐 없이 그대로 기록해야 한다.
+  const releaseScopeReportPath = path.join(outputDir, "release-scope-coverage-gap-report.json");
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets",
+      "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory",
+      "tools/datapack/source-inventory.json",
+      "--provenance",
+      path.join(packOutputDir, "current.provenance.json"),
+      "--release-scope",
+      "apps/mobile/release/production-datapack-scope.json",
+      "--output",
+      releaseScopeReportPath,
+    ],
+    { cwd: root },
+  );
+  const releaseScopeReport = JSON.parse(await readFile(releaseScopeReportPath, "utf8"));
+  // 게시 범위(in-scope) gap은 0 → 게시 게이트 통과.
+  assert.equal(releaseScopeReport.summary.releaseScope.coverageComplete, true);
+  assert.equal(releaseScopeReport.summary.releaseScope.missingRequirements, 0);
+  assert.equal(releaseScopeReport.summary.releaseScope.scopeId, "capital_pilot_android_v1");
+  assert.deepEqual(releaseScopeReport.summary.releaseScope.regionIds, ["capital"]);
+  assert.deepEqual(releaseScopeReport.summary.releaseScope.operatorIds, ["seoul-metro"]);
+  assert.deepEqual(releaseScopeReport.summary.releaseScope.sourceDomains, [
+    "accessibility_facilities",
+    "schedule_timetable",
+    "station_line_membership",
+  ]);
+  // 전국 gap은 은폐 금지 — nationwide 수치가 그대로 기록되고 여전히 다수의 gap이 존재한다.
+  assert.ok(releaseScopeReport.summary.missingRequirements > 0);
+  assert.equal(
+    releaseScopeReport.summary.nationwide.missingRequirements,
+    releaseScopeReport.summary.missingRequirements,
+  );
+  // in-scope requirement는 정확히 3개(capital·seoul-metro × 3 pilot domain)로 태깅된다.
+  const inScopeRequirements = releaseScopeReport.releaseScopeRequirements;
+  assert.equal(inScopeRequirements.length, 3);
+  assert.ok(inScopeRequirements.every((entry) => entry.inReleaseScope === true));
+  assert.ok(inScopeRequirements.every((entry) => entry.status === "covered"));
+
+  // Negative 증명: 워크플로와 동일하게 provenance-backed 상태에서 scope 내 gap을 주입한다. 게시 pack의 provenance에서
+  // station_line_membership OFFICIAL 레코드를 제거하면 in-scope gap이 생겨 release-scope 게이트가 exit 1로 실패한다.
+  const scopeGapProvenance = JSON.parse(
+    await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"),
+  );
+  for (const pack of scopeGapProvenance.packs) {
+    pack.records = pack.records.filter(
+      (record) => !["line", "station_name", "station_code"].includes(record.field),
+    );
+  }
+  const scopeGapProvenancePath = path.join(outputDir, "scope-gap-provenance.json");
+  await writeFile(scopeGapProvenancePath, `${JSON.stringify(scopeGapProvenance, null, 2)}\n`);
+  const scopeGapReportPath = path.join(outputDir, "scope-gap-coverage-gap-report.json");
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--provenance",
+        scopeGapProvenancePath,
+        "--release-scope",
+        "apps/mobile/release/production-datapack-scope.json",
+        "--output",
+        scopeGapReportPath,
+      ],
+      { cwd: root },
+    ),
+    /in-scope coverage gaps remain/,
+  );
+  const scopeGapReport = JSON.parse(await readFile(scopeGapReportPath, "utf8"));
+  assert.ok(scopeGapReport.summary.releaseScope.missingRequirements > 0);
+  assert.equal(scopeGapReport.summary.releaseScope.coverageComplete, false);
+  // 주입한 station_line_membership gap이 in-scope requirement로 정확히 missing 처리된다.
+  const injectedGap = scopeGapReport.releaseScopeRequirements.find(
+    (entry) =>
+      entry.regionId === "capital" &&
+      entry.operatorId === "seoul-metro" &&
+      entry.sourceDomain === "station_line_membership",
+  );
+  assert.equal(injectedGap.inReleaseScope, true);
+  assert.equal(injectedGap.status, "missing");
+
+  // #2000: scope의 region/operator id가 pilot targets와 하나도 매칭되지 않으면 in-scope requirement가 0개가 되어
+  // missingRequirements === 0으로 공허 통과할 위험이 있다. fail closed — 존재하지 않는 regionId scope는 exit 1로 실패한다.
+  const emptyScope = JSON.parse(await readFile("apps/mobile/release/production-datapack-scope.json", "utf8"));
+  emptyScope.supportScope.regionIds = ["nonexistent-region"];
+  const emptyScopePath = path.join(outputDir, "empty-release-scope.json");
+  await writeFile(emptyScopePath, `${JSON.stringify(emptyScope, null, 2)}\n`);
+  const emptyScopeReportPath = path.join(outputDir, "empty-scope-coverage-gap-report.json");
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets",
+        "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory",
+        "tools/datapack/source-inventory.json",
+        "--provenance",
+        path.join(packOutputDir, "current.provenance.json"),
+        "--release-scope",
+        emptyScopePath,
+        "--output",
+        emptyScopeReportPath,
+      ],
+      { cwd: root },
+    ),
+    /release scope matched zero coverage requirements/,
+  );
 });
 
 test("관리자 검수 NORMAL override는 production 시설 provenance와 validator를 통과한다", async () => {

@@ -420,6 +420,13 @@ jobs:
             --provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json"
             --output "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
           )
+          # release 모드(release-candidate/production-publish)는 게시 차단 판정을 게시 범위(production-datapack-scope.json의
+          # pilot region/operator × capitalPilotTargets.requiredSourceDomains) 내 gap만 대상으로 한다. 전국 gap은 전량
+          # 산출·evidence 기록(은폐 금지 — nationwide/in-scope 분리 수치). --allow-gaps 금지(release 모드)는 불변이며
+          # scope 내 gap은 여전히 하드 차단한다. exploratory 모드는 기존 nationwide 전량 평가 동작을 유지한다.
+          if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
+            coverage_args+=(--release-scope apps/mobile/release/production-datapack-scope.json)
+          fi
           if [[ "${EASYSUBWAY_DATAPACK_ALLOW_GAPS}" == "true" ]]; then
             coverage_args+=(--allow-gaps)
           fi

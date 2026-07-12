@@ -59,6 +59,20 @@ test("production-publish는 release request 조회 스텝과 !cancelled() 콜백
   assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
 });
 
+test("coverage gap 스텝은 release 모드에서만 release-scope 평가를 배선하고 --allow-gaps 금지를 유지한다", () => {
+  // release-scope 게이트는 게시 범위(pilot region/operator × capitalPilotTargets domains) 내 gap만 차단한다(#1999).
+  assert.match(yml, /--release-scope apps\/mobile\/release\/production-datapack-scope\.json/);
+  // release 모드에서만 --release-scope를 붙인다 — exploratory는 nationwide 전량 평가 유지.
+  assert.match(
+    yml,
+    /EASYSUBWAY_DATAPACK_RELEASE_MODE\}" =~ \^\(release-candidate\|production-publish\)\$ \]\]; then\s*\n\s*coverage_args\+=\(--release-scope/,
+  );
+  // 전국 gap 산출은 유지 — nationwide-coverage-targets.json을 계속 targets로 쓴다.
+  assert.match(yml, /--targets tools\/datapack\/nationwide-coverage-targets\.json/);
+  // release 모드 --allow-gaps 금지 로직은 불변이어야 한다.
+  assert.match(yml, /release mode cannot use --allow-gaps/);
+});
+
 test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고 빌드 스텝을 pointer-only로 게이트한다", () => {
   assert.match(yml, /rollout-update/);
   assert.match(yml, /publish-rollout\.mjs/);

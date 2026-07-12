@@ -1,31 +1,128 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { compareStrings } from "./lib/ledger-admission-cli.mjs";
+
+// 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
+const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const targets = JSON.parse(await readFile(requireArg(args, "targets"), "utf8"));
   const inventory = JSON.parse(await readFile(requireArg(args, "inventory"), "utf8"));
   const provenance = args.provenance ? JSON.parse(await readFile(args.provenance, "utf8")) : null;
+  const releaseScope = args.releaseScope ? JSON.parse(await readFile(args.releaseScope, "utf8")) : null;
+  // 게시 범위 domain/field 계약은 capital pilot targets가 정본이다. --release-scope가 켜지면 pilot targets를 로드해
+  // scope 내 gap을 pilot field 계약으로 평가한다(전국 계약보다 좁은 pilot deferred domain·field가 반영됨).
+  const releaseScopeTargets = args.releaseScope
+    ? JSON.parse(await readFile(args.releaseTargets ?? DEFAULT_RELEASE_SCOPE_TARGETS, "utf8"))
+    : null;
   const outputPath = requireArg(args, "output");
-  const report = buildCoverageGapReport(targets, inventory, provenance);
+  const report = buildCoverageGapReport(targets, inventory, provenance, releaseScope, releaseScopeTargets);
 
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+
+  // release-scope 평가: 전국 gap은 전량 산출·기록하되 게시 차단 판정은 게시 범위(pilot region/operator ×
+  // capitalPilotTargets.requiredSourceDomains) 내 gap만 대상으로 한다. 전국 gap 은폐 금지 — summary에 양쪽 수치를 남긴다.
+  if (releaseScope) {
+    // scope의 region/operator id가 pilot targets와 하나도 매칭되지 않으면 in-scope requirement가 0개가 되어
+    // missingRequirements === 0으로 공허 통과(게이트 무력화)한다. fail closed — 0 매칭은 scope/targets id 불일치로 본다.
+    if (report.summary.releaseScope.totalRequirements === 0) {
+      throw new Error(
+        "release scope matched zero coverage requirements — scope/targets id 불일치 의심 " +
+          `(scopeId: ${report.summary.releaseScope.scopeId}, ` +
+          `regionIds: ${report.summary.releaseScope.regionIds.join(",") || "-"}, ` +
+          `operatorIds: ${report.summary.releaseScope.operatorIds.join(",") || "-"})`,
+      );
+    }
+    if (!args.allowGaps && report.summary.releaseScope.missingRequirements > 0) {
+      throw new Error(
+        `in-scope coverage gaps remain: ${report.summary.releaseScope.missingRequirements} missing requirements ` +
+          `(nationwide gaps recorded: ${report.summary.missingRequirements})`,
+      );
+    }
+    return;
+  }
 
   if (!args.allowGaps && !report.summary.coverageComplete) {
     throw new Error(`nationwide coverage gaps remain: ${report.summary.missingRequirements} missing requirements`);
   }
 }
 
-function buildCoverageGapReport(targets, inventory, provenance = null) {
+function buildCoverageGapReport(targets, inventory, provenance = null, releaseScope = null, releaseScopeTargets = null) {
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
   const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
   const provenanceIndex = provenance ? provenanceFieldIndex(provenance) : null;
-  const requirements = [];
 
+  // 전국 requirement는 nationwide targets 전량으로 산출한다(은폐 금지 — 전국 gap은 그대로 기록).
+  const requirements = evaluateRequirements(targets, sources, provenanceIndex);
+  const coveredRequirements = requirements.filter((entry) => entry.status === "covered").length;
+  const totalRequirements = requirements.length;
+  const missingRequirements = totalRequirements - coveredRequirements;
+  const summary = {
+    totalRequirements,
+    coveredRequirements,
+    missingRequirements,
+    coverageRatio: totalRequirements === 0 ? 0 : Number((coveredRequirements / totalRequirements).toFixed(4)),
+    coverageComplete: missingRequirements === 0,
+  };
+
+  const report = {
+    schemaVersion: 1,
+    artifactKind: "nationwide-coverage-gap-report",
+    targetVersion: targets.targetVersion,
+    inventoryRetrievedAt: inventory.retrievedAt,
+    candidate: provenanceIndex?.candidate ?? null,
+    summary,
+    requirements,
+  };
+
+  if (releaseScope) {
+    const scopeFilter = resolveReleaseScope(releaseScope);
+    // 게시 범위 gap은 pilot targets(capital-pilot-coverage-targets.json)의 domain/field 계약으로 별도 평가한다.
+    // pilot 계약은 전국 계약보다 좁다(예: accessibility_facilities에서 status 필드 제외, route_graph 등 deferred domain 제외).
+    const pilotTargets = releaseScopeTargets ?? targets;
+    validateTargets(pilotTargets);
+    const pilotTargetIndex = coverageTargetIndex(pilotTargets);
+    const pilotSources = inventory.sources.map((source) => normalizeSource(source, pilotTargetIndex));
+    const scopeRequirements = evaluateRequirements(pilotTargets, pilotSources, provenanceIndex).filter(
+      (entry) => scopeFilter.regionIds.has(entry.regionId) && scopeFilter.operatorIds.has(entry.operatorId),
+    );
+    for (const entry of scopeRequirements) {
+      entry.inReleaseScope = true;
+    }
+    const inScopeCovered = scopeRequirements.filter((entry) => entry.status === "covered").length;
+    const inScopeTotal = scopeRequirements.length;
+    const inScopeMissing = inScopeTotal - inScopeCovered;
+    // 전국 gap은 은폐 금지 — nationwide/in-scope 수치를 분리 기록한다. 게시 차단은 releaseScope.missingRequirements만 본다.
+    summary.nationwide = {
+      totalRequirements,
+      coveredRequirements,
+      missingRequirements,
+    };
+    summary.releaseScope = {
+      scopeId: scopeFilter.scopeId,
+      targetVersion: pilotTargets.targetVersion,
+      regionIds: [...scopeFilter.regionIds].sort(compareStrings),
+      operatorIds: [...scopeFilter.operatorIds].sort(compareStrings),
+      sourceDomains: [...new Set(scopeRequirements.map((entry) => entry.sourceDomain))].sort(compareStrings),
+      totalRequirements: inScopeTotal,
+      coveredRequirements: inScopeCovered,
+      missingRequirements: inScopeMissing,
+      coverageRatio: inScopeTotal === 0 ? 0 : Number((inScopeCovered / inScopeTotal).toFixed(4)),
+      coverageComplete: inScopeMissing === 0,
+    };
+    report.releaseScopeRequirements = scopeRequirements;
+  }
+
+  return report;
+}
+
+function evaluateRequirements(targets, sources, provenanceIndex) {
+  const requirements = [];
   for (const region of targets.regions) {
     for (const operatorId of region.operatorIds) {
       for (const domain of targets.requiredSourceDomains) {
@@ -58,24 +155,27 @@ function buildCoverageGapReport(targets, inventory, provenance = null) {
       }
     }
   }
+  return requirements;
+}
 
-  const coveredRequirements = requirements.filter((entry) => entry.status === "covered").length;
-  const totalRequirements = requirements.length;
-  const missingRequirements = totalRequirements - coveredRequirements;
+function resolveReleaseScope(releaseScope) {
+  if (!releaseScope || typeof releaseScope !== "object" || Array.isArray(releaseScope)) {
+    throw new Error("release scope must be an object");
+  }
+  const supportScope = releaseScope.supportScope;
+  if (!supportScope || typeof supportScope !== "object" || Array.isArray(supportScope)) {
+    throw new Error("release scope supportScope must be an object");
+  }
+  const scopeId = requiredString(supportScope.id, "release scope supportScope.id");
+  const regionIds = requiredStringArray(supportScope.regionIds, "release scope supportScope.regionIds");
+  const operatorIds = requiredStringArray(
+    supportScope.includedOperatorIds,
+    "release scope supportScope.includedOperatorIds",
+  );
   return {
-    schemaVersion: 1,
-    artifactKind: "nationwide-coverage-gap-report",
-    targetVersion: targets.targetVersion,
-    inventoryRetrievedAt: inventory.retrievedAt,
-    candidate: provenanceIndex?.candidate ?? null,
-    summary: {
-      totalRequirements,
-      coveredRequirements,
-      missingRequirements,
-      coverageRatio: totalRequirements === 0 ? 0 : Number((coveredRequirements / totalRequirements).toFixed(4)),
-      coverageComplete: missingRequirements === 0,
-    },
-    requirements,
+    scopeId,
+    regionIds: new Set(regionIds),
+    operatorIds: new Set(operatorIds),
   };
 }
 
@@ -323,10 +423,10 @@ function parseArgs(argv) {
     if (!arg.startsWith("--")) {
       throw new Error(`unexpected argument: ${arg}`);
     }
-    const key = arg.slice(2);
+    const key = arg.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) {
-      throw new Error(`missing value for --${key}`);
+      throw new Error(`missing value for --${arg.slice(2)}`);
     }
     args[key] = value;
     index += 1;
