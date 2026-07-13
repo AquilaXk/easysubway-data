@@ -18,7 +18,14 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   assert.equal(decision.schemaVersion, 1);
   assert.equal(decision.artifactKind, "route-map-license-decision");
   assert.equal(decision.issue, 1637);
+  // [2026-07-13 #2068] 하이브리드 렌더링(자작 SVG 바탕층) 전환 후에도
+  // renderingSourceOfTruth는 인터랙션(히트·카메라·팝오버·경로 강조)의 진실 출처를
+  // 가리키므로 바탕 paint 소스와 무관하게 structured-data로 고정된다.
   assert.equal(decision.renderingSourceOfTruth, "structured-data");
+  assert.equal(typeof decision.renderingSourceOfTruthNote, "string");
+  assert.ok(decision.renderingSourceOfTruthNote.length > 0);
+  assert.ok(decision.strategyValues.includes("self-drawn-hybrid-basemap"));
+  assert.ok(decision.bundledSvgRoleValues.includes("hybrid-basemap-source"));
 
   const decisionById = new Map(decision.regions.map((r) => [r.id, r]));
   const manifestById = new Map(manifest.maps.map((m) => [m.id, m]));
@@ -117,21 +124,25 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   }
 
   // 수도권은 #1950으로 오너 자작 8선형 도식(self-drawn) 정본 채택, 상용 준비 완료.
+  // [2026-07-13 #2068] 자작 SVG를 빌드타임 컴파일한 바탕층 + 구조화 좌표 인터랙션의
+  // 하이브리드 렌더링으로 전환.
   const seoul = decisionById.get("seoul");
-  assert.equal(seoul.renderingStrategy, "self-drawn-schematic");
+  assert.equal(seoul.renderingStrategy, "self-drawn-hybrid-basemap");
+  assert.equal(seoul.bundledSvgRole, "hybrid-basemap-source");
   assert.equal(seoul.commercialProductionReady, true);
   assert.equal(seoul.attributionRequired, false);
   assert.equal(seoul.licenseStatus, "self-drawn-confirmed");
 
-  // 부산·대구·대전·광주 모두 self-drawn-schematic 전환(원본 SVG는 좌표 검수 참조만).
+  // 부산·대구·대전·광주 모두 [2026-07-13 #2068] 하이브리드 렌더링(자작 SVG를
+  // 빌드타임 컴파일한 바탕층 + 구조화 좌표 인터랙션)으로 전환됨.
   for (const id of ["busan", "daegu", "daejeon", "gwangju"]) {
     const region = decisionById.get(id);
     assert.equal(
       region.renderingStrategy,
-      "self-drawn-schematic",
-      `${id}는 self-drawn-schematic으로 전환되어야 함`,
+      "self-drawn-hybrid-basemap",
+      `${id}는 self-drawn-hybrid-basemap으로 전환되어야 함`,
     );
-    assert.equal(region.bundledSvgRole, "review-reference-only");
+    assert.equal(region.bundledSvgRole, "hybrid-basemap-source");
   }
 
   // 부산·대구·대전·광주: #2011 오너 자작 도식 정본 반입으로 self-drawn 확정 승격 →
