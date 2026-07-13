@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: datapack-expiry-alert-${{ github.workflow }}-${{ github.ref }}
+  group: datapack-expiry-alert-${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || github.event_name }}
   cancel-in-progress: true
 
 permissions:
