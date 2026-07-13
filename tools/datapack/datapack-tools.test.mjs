@@ -8351,6 +8351,34 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
     .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
     .sort(compareCoverageLineScopes);
   assert.equal(targets.schemaVersion, 2);
+  assert.deepEqual(targets.railProductScope, {
+    routeMapAndRouting: [
+      {
+        serviceId: "GTX_A",
+        lineId: "line-8604048b6430",
+        servicePattern: "LOCAL",
+        representation: "ACTIVE_CAPITAL_LINE",
+      },
+      {
+        serviceId: "ITX_CHEONGCHUN",
+        lineId: "line-54a7b980b7c3",
+        servicePattern: "EXPRESS",
+        representation: "SERVICE_PATTERN_ON_EXISTING_LINE",
+        coverageContract: "tools/datapack/itx-cheongchun-coverage-contract.json",
+        coverageStates: {
+          station_line_membership: "SUPPORTED",
+          route_graph_topology: "MISSING",
+          schedule_timetable: "MISSING",
+        },
+        supportClaimAllowed: false,
+      },
+    ],
+    trainSearchOnly: {
+      trackingIssue: 2094,
+      routeMapProvided: false,
+      services: ["KTX", "KTX_SANCHEON", "SRT", "ITX_MAUM", "ITX_SAEMAEUL", "SAEMAEUL", "MUGUNGHWA", "NURIRO"],
+    },
+  });
   assert.ok(Array.isArray(targets.activeLineScopes));
   const actual = targets.activeLineScopes
     .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
@@ -8360,6 +8388,28 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
   assert.equal(new Set(actual.map(({ lineId }) => lineId)).size, 36);
   assert.equal(actual.length, 45);
   assert.deepEqual(actual, expected);
+});
+
+test("전국 coverage target은 train-search-only 열차를 route scope에 섞으면 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-rail-product-scope-"));
+  const targetsPath = path.join(outputDir, "targets.json");
+  const reportPath = path.join(outputDir, "report.json");
+  const targets = JSON.parse(await readFile("tools/datapack/nationwide-coverage-targets.json", "utf8"));
+  targets.railProductScope.routeMapAndRouting.push({
+    serviceId: "KTX",
+    lineId: "line-54a7b980b7c3",
+    servicePattern: "EXPRESS",
+    representation: "SERVICE_PATTERN_ON_EXISTING_LINE",
+  });
+  await writeFile(targetsPath, `${JSON.stringify(targets, null, 2)}\n`);
+
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/report-coverage-gaps.mjs",
+    "--targets", targetsPath,
+    "--inventory", "tools/datapack/source-inventory.json",
+    "--output", reportPath,
+    "--allow-gaps",
+  ], { cwd: root }), /routeMapAndRouting must contain GTX-A and ITX-청춘 only/);
 });
 
 test("데이터팩 생성기는 top-level 노선 scope를 여러 pack scope의 합집합으로 검증한다", async () => {
@@ -8457,6 +8507,246 @@ test("전국 coverage report는 운행 노선 launch와 enhancement 분모를 �
   assert.ok(report.requirements.every(({ effectiveFrom }) => effectiveFrom === "2026-04-02"));
   assert.ok(report.requirements.every(({ verifiedAt }) => verifiedAt === "2026-07-13T00:00:00.000Z"));
   assert.ok(report.requirements.every(({ evidenceRef }) => evidenceRef === "source:molit-urban-rail-full-route"));
+});
+
+function coverageResolutionSearchPlan(entry, publicApiQueries) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "nationwide-public-api-coverage-search-plan",
+    targetVersion: "2026-07-13",
+    entries: [{
+      regionId: entry.regionId,
+      operatorId: entry.operatorId,
+      lineId: entry.lineId,
+      sourceDomain: entry.sourceDomain,
+      fallback: entry.fallback,
+      userMessageKo: entry.userMessageKo,
+      queries: publicApiQueries.map(({ providerId, endpoint, operation, query, matchAnyTerms, matchTermGroups, captureFields }) => ({
+        providerId,
+        endpoint,
+        operation,
+        query,
+        ...(matchAnyTerms ? { matchAnyTerms } : {}),
+        ...(matchTermGroups ? { matchTermGroups } : {}),
+        ...(captureFields ? { captureFields } : {}),
+      })),
+    }],
+  };
+}
+
+test("전국 coverage report는 공공기관 API 실제 부재만 공식 미지원 terminal 상태로 집계한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-resolution-${Date.now()}`);
+  const resolutionsPath = path.join(outputDir, "nationwide-coverage-resolutions.json");
+  const resolutionPlanPath = path.join(outputDir, "nationwide-coverage-search-plan.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const publicApiQueries = [{
+    providerId: "kric",
+    endpoint: "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+    operation: "subwayTimetable",
+    query: { railOprIsttCd: "B1", lnCd: "1" },
+    httpStatus: 200,
+    providerResultCode: "00",
+    schemaStatus: "EXPECTED",
+    matchCount: 0,
+    responseSha256: "a".repeat(64),
+  }];
+  const resolutionEntry = {
+    regionId: "busan",
+    operatorId: "busan-transportation",
+    lineId: "line-ab1a041f6266",
+    sourceDomain: "schedule_timetable",
+    state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+    reasonCode: "PUBLIC_API_NO_DATA",
+    userMessageKo: "공공기관 API에서 시간표 데이터를 제공하지 않습니다.",
+    fallback: "STATIC_LOCAL",
+    checkedAt: "2026-07-13T00:00:00.000Z",
+    reviewedAt: "2026-07-13T00:00:00.000Z",
+    reviewerRole: "DATA_STEWARD",
+    nextReviewAt: "2099-07-13T00:00:00.000Z",
+    requiredProviderIds: ["kric"],
+    publicApiQueries,
+    evidenceHash: sha256(JSON.stringify(publicApiQueries)),
+  };
+  const resolutionPlan = coverageResolutionSearchPlan(resolutionEntry, publicApiQueries);
+  await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan, null, 2)}\n`);
+  await writeFile(resolutionsPath, `${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "nationwide-coverage-resolutions",
+    targetVersion: "2026-07-13",
+    searchPlanSha256: sha256(JSON.stringify(resolutionPlan)),
+    entries: [resolutionEntry],
+  }, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--resolutions", resolutionsPath,
+      "--resolution-plan", resolutionPlanPath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const requirement = report.requirements.find((entry) =>
+    entry.regionId === "busan" &&
+    entry.operatorId === "busan-transportation" &&
+    entry.lineId === "line-ab1a041f6266" &&
+    entry.sourceDomain === "schedule_timetable");
+  assert.equal(requirement.status, "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE");
+  assert.equal(requirement.capabilityFallback, "STATIC_LOCAL");
+  assert.equal(report.summary.launchRequired.supportedCount, 0);
+  assert.equal(report.summary.launchRequired.explicitlyUnsupportedCount, 1);
+  assert.equal(report.summary.launchRequired.missingCount, 269);
+  assert.equal(report.summary.launchRequired.supportedRatio, 0);
+  assert.equal(report.summary.launchRequired.terminalResolutionRatio, Number((1 / 270).toFixed(4)));
+  assert.equal(report.summary.launchRequired.completionReady, false);
+  assert.deepEqual(report.transitions, [{
+    requirementKey: "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+    before: "MISSING",
+    after: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+    reasonCode: "PUBLIC_API_NO_DATA",
+    evidenceHash: sha256(JSON.stringify(publicApiQueries)),
+    reviewedAt: "2026-07-13T00:00:00.000Z",
+  }]);
+});
+
+test("전국 coverage report는 불완전하거나 만료된 공공 API 미지원 evidence를 fail closed한다", async (context) => {
+  const publicApiQueries = [{
+    providerId: "kric",
+    endpoint: "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+    operation: "subwayTimetable",
+    query: { railOprIsttCd: "B1", lnCd: "1" },
+    httpStatus: 200,
+    providerResultCode: "00",
+    schemaStatus: "EXPECTED",
+    matchCount: 0,
+    responseSha256: "b".repeat(64),
+  }];
+  const baseEntry = {
+    regionId: "busan",
+    operatorId: "busan-transportation",
+    lineId: "line-ab1a041f6266",
+    sourceDomain: "schedule_timetable",
+    state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+    reasonCode: "PUBLIC_API_NO_DATA",
+    userMessageKo: "공공기관 API에서 시간표 데이터를 제공하지 않습니다.",
+    fallback: "STATIC_LOCAL",
+    checkedAt: "2026-07-13T00:00:00.000Z",
+    reviewedAt: "2026-07-13T00:00:00.000Z",
+    reviewerRole: "DATA_STEWARD",
+    nextReviewAt: "2099-07-13T00:00:00.000Z",
+    requiredProviderIds: ["kric"],
+    publicApiQueries,
+    evidenceHash: sha256(JSON.stringify(publicApiQueries)),
+  };
+  const resolutionPlan = coverageResolutionSearchPlan(baseEntry, publicApiQueries);
+  const cases = [
+    ["duplicate", [baseEntry, baseEntry], /duplicate coverage resolution/],
+    ["unknown key", [{ ...baseEntry, lineId: "unknown-line" }], /unknown coverage resolution requirement/],
+    ["unknown state", [{ ...baseEntry, state: "UNSUPPORTED" }], /coverage resolution state is invalid/],
+    ["non-public endpoint", [{
+      ...baseEntry,
+      publicApiQueries: [{ ...publicApiQueries[0], endpoint: "https://example.com/blog" }],
+      evidenceHash: sha256(JSON.stringify([{ ...publicApiQueries[0], endpoint: "https://example.com/blog" }])),
+    }], /public API origin is not allowed/],
+    ["credential query endpoint", [{
+      ...baseEntry,
+      publicApiQueries: [{ ...publicApiQueries[0], endpoint: `${publicApiQueries[0].endpoint}?serviceKey=secret` }],
+      evidenceHash: sha256(JSON.stringify([{
+        ...publicApiQueries[0], endpoint: `${publicApiQueries[0].endpoint}?serviceKey=secret`,
+      }])),
+    }], /endpoint must not contain credentials/],
+    ["provider failure", [{
+      ...baseEntry,
+      publicApiQueries: [{ ...publicApiQueries[0], providerResultCode: "99" }],
+      evidenceHash: sha256(JSON.stringify([{ ...publicApiQueries[0], providerResultCode: "99" }])),
+    }], /providerResultCode must be 00/],
+    ["schema mismatch", [{
+      ...baseEntry,
+      publicApiQueries: [{ ...publicApiQueries[0], schemaStatus: "MISMATCH" }],
+      evidenceHash: sha256(JSON.stringify([{ ...publicApiQueries[0], schemaStatus: "MISMATCH" }])),
+    }], /schemaStatus must be EXPECTED/],
+    ["different line query", [{
+      ...baseEntry,
+      publicApiQueries: [{ ...publicApiQueries[0], query: { railOprIsttCd: "B1", lnCd: "2" } }],
+      evidenceHash: sha256(JSON.stringify([{
+        ...publicApiQueries[0], query: { railOprIsttCd: "B1", lnCd: "2" },
+      }])),
+    }], /search plan query mismatch/],
+  ];
+
+  for (const [label, entries, expected] of cases) {
+    await context.test(label, async () => {
+      const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-resolution-invalid-"));
+      const resolutionsPath = path.join(outputDir, "resolutions.json");
+      const resolutionPlanPath = path.join(outputDir, "resolution-plan.json");
+      await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan)}\n`);
+      await writeFile(resolutionsPath, `${JSON.stringify({
+        schemaVersion: 1,
+        artifactKind: "nationwide-coverage-resolutions",
+        targetVersion: "2026-07-13",
+        searchPlanSha256: sha256(JSON.stringify(resolutionPlan)),
+        entries,
+      })}\n`);
+      await assert.rejects(execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/report-coverage-gaps.mjs",
+          "--targets", "tools/datapack/nationwide-coverage-targets.json",
+          "--inventory", "tools/datapack/source-inventory.json",
+          "--resolutions", resolutionsPath,
+          "--resolution-plan", resolutionPlanPath,
+          "--output", path.join(outputDir, "report.json"),
+          "--allow-gaps",
+        ],
+        { cwd: root },
+      ), expected);
+    });
+  }
+
+  await context.test("expired evidence returns to MISSING", async () => {
+    const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-resolution-expired-"));
+    const resolutionsPath = path.join(outputDir, "resolutions.json");
+    const resolutionPlanPath = path.join(outputDir, "resolution-plan.json");
+    const reportPath = path.join(outputDir, "report.json");
+    await writeFile(resolutionPlanPath, `${JSON.stringify(resolutionPlan)}\n`);
+    await writeFile(resolutionsPath, `${JSON.stringify({
+      schemaVersion: 1,
+      artifactKind: "nationwide-coverage-resolutions",
+      targetVersion: "2026-07-13",
+      searchPlanSha256: sha256(JSON.stringify(resolutionPlan)),
+      entries: [{ ...baseEntry, nextReviewAt: "2026-07-12T00:00:00.000Z" }],
+    })}\n`);
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", "tools/datapack/source-inventory.json",
+        "--resolutions", resolutionsPath,
+        "--resolution-plan", resolutionPlanPath,
+        "--output", reportPath,
+        "--allow-gaps",
+      ],
+      { cwd: root },
+    );
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const requirement = report.requirements.find((entry) =>
+      entry.regionId === baseEntry.regionId &&
+      entry.operatorId === baseEntry.operatorId &&
+      entry.lineId === baseEntry.lineId &&
+      entry.sourceDomain === baseEntry.sourceDomain);
+    assert.equal(requirement.status, "MISSING");
+    assert.equal(requirement.resolutionReviewStatus, "EXPIRED");
+  });
 });
 
 test("전국 coverage v2는 파일 경로를 공식 evidenceRef로 허용하지 않는다", async () => {

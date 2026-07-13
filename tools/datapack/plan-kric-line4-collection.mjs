@@ -9,6 +9,10 @@ const DAY_CODES = ["8", "7", "9"]; // 평일/토/휴일
 // subwayTimetableExp(급행 표시)는 subwayTimetable(일반)의 상위집합이다 — 같은 열차 전량 + row별 exptCd
 // (급행 표시). 따라서 이 endpoint 하나만 수집하면 일반·급행이 한 번에 잡히고 중복이 없다.
 const COLLECTION_OPERATION = "subwayTimetableExp";
+const OPERATION_SERVICE = Object.freeze({
+  subwayTimetableExp: "trainUseInfo",
+  stationTimetable: "convenientInfo",
+});
 
 export function buildKricLine4CollectionPlan(roster, options = {}) {
   const stations = roster?.stations;
@@ -18,12 +22,14 @@ export function buildKricLine4CollectionPlan(roster, options = {}) {
   const dayCds = options.dayCds ?? DAY_CODES;
   const lnCd = requireText(roster.lnCd, "roster.lnCd");
 
+  const operation = options.operation ?? COLLECTION_OPERATION;
+  if (!OPERATION_SERVICE[operation]) throw new Error(`plan-kric: unsupported operation ${operation}`);
   const requests = [];
   for (const station of stations) {
     const stinCd = requireText(station.stinCd, "station.stinCd");
     const railOprIsttCd = requireText(station.railOprIsttCd, "station.railOprIsttCd");
     for (const dayCd of dayCds) {
-      requests.push(request(COLLECTION_OPERATION, { railOprIsttCd, lnCd, stinCd, dayCd }));
+      requests.push(request(operation, { railOprIsttCd, lnCd, stinCd, dayCd }));
     }
   }
   return {
@@ -32,7 +38,7 @@ export function buildKricLine4CollectionPlan(roster, options = {}) {
     lnCd,
     stationCount: stations.length,
     dayCds,
-    operation: COLLECTION_OPERATION,
+    operation,
     requestCount: requests.length,
     requests,
   };
@@ -41,7 +47,7 @@ export function buildKricLine4CollectionPlan(roster, options = {}) {
 function request(operation, params) {
   return {
     operation,
-    endpoint: `https://openapi.kric.go.kr/openapi/trainUseInfo/${operation}`,
+    endpoint: `https://openapi.kric.go.kr/openapi/${OPERATION_SERVICE[operation]}/${operation}`,
     requestKey: `${operation}|${params.railOprIsttCd}|${params.stinCd}|${params.dayCd}`,
     params,
   };

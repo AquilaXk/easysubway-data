@@ -484,6 +484,10 @@ jobs:
             --output "${EASYSUBWAY_HEADWAY_REPORT}"
           test -s "${EASYSUBWAY_HEADWAY_REPORT}"
 
+      - name: Data Pack Release / Validate ITX-청춘 coverage contract
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
+        run: node --test tools/datapack/itx-cheongchun-coverage-contract.test.mjs
+
       - name: Data Pack Release / Write release evidence bundle
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         id: evidence-bundle
@@ -578,6 +582,7 @@ jobs:
             gzipSha256: gzipFile ? hashFile(path.join(catalogDir, gzipFile)) : zeroHash,
             manifestSha256: hashFile(manifestPath),
             coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
+            itxCheongchunCoverageSha256: hashFile("tools/datapack/itx-cheongchun-coverage-contract.json"),
             routeMapPositionCoverageSha256: hashFile(process.env.EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT),
             routeGraphTopologySha256: hashFile(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT),
             headwayReportSha256: hashFile(process.env.EASYSUBWAY_HEADWAY_REPORT),

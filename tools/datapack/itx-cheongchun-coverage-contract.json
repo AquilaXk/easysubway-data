@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "itx-cheongchun-coverage-contract",
+  "serviceId": "ITX_CHEONGCHUN",
+  "canonicalLineId": "line-54a7b980b7c3",
+  "representation": "SERVICE_PATTERN_ON_EXISTING_LINE",
+  "servicePattern": "EXPRESS",
+  "timezone": "Asia/Seoul",
+  "coverageStates": {
+    "station_line_membership": "SUPPORTED",
+    "route_graph_topology": "MISSING",
+    "schedule_timetable": "MISSING"
+  },
+  "officialEvidence": {
+    "kricRouteRoster": {
+      "provider": "KRIC",
+      "operation": "subwayRouteInfo",
+      "officialSourceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo",
+      "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+      "license": "저작권표시",
+      "query": { "mreaWideCd": "01", "lnCd": "K2", "format": "xml" },
+      "providerResultCode": "00",
+      "schemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
+      "rawResponseSha256": "1ba98e1225827c2022a8993e7a2947089b6759a8b8021dab6d688b10f0d6ecda",
+      "stationCount": 25,
+      "observedAt": "2026-07-13T13:41:42.775Z"
+    },
+    "tagoTrainOd": {
+      "provider": "TAGO",
+      "operation": "GetStrtpntAlocFndTrainInfo",
+      "officialSourceUrl": "https://www.data.go.kr/data/15098552/openapi.do",
+      "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo",
+      "license": "이용허락범위 제한 없음",
+      "developmentDailyQuota": 10000,
+      "query": {
+        "departureStationId": "NAT130126",
+        "arrivalStationId": "NAT140873",
+        "departureDate": "2026-07-14",
+        "kricServiceDayCode": "8",
+        "trainGradeCode": "09"
+      },
+      "canonicalStationMappings": [
+        { "providerStationId": "NAT130126", "canonicalStationId": "station-b819702fa7d9", "nameKo": "청량리" },
+        { "providerStationId": "NAT140873", "canonicalStationId": "station-dd14cfb89cbc", "nameKo": "춘천" }
+      ],
+      "trainGradeMapping": { "providerCode": "09", "providerName": "ITX-청춘", "serviceId": "ITX_CHEONGCHUN" },
+      "providerResultCode": "00",
+      "schemaStatus": "EXPECTED",
+      "rowCount": 18,
+      "trainNumberCount": 18,
+      "rawResponseSha256": "22e904e52c6e9896b617146bcba629751d539ed1c81a1de73dc7bb1462e88587",
+      "evidenceHash": "d59dd6cba2c3ab9ea7a3dff474cd903a2577e7e9b8c3274c41216285e3e50c0a",
+      "observedAt": "2026-07-13T13:45:39.505Z",
+      "fields": [
+        "trainno",
+        "traingradename",
+        "depplandtime",
+        "arrplandtime",
+        "depplacename",
+        "arrplacename",
+        "adultcharge"
+      ],
+      "pickupDropoff": {
+        "status": "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+        "reasonCode": "OFFICIAL_OPERATION_FIELD_NOT_PROVIDED"
+      },
+      "fare": { "status": "SUPPORTED", "field": "adultcharge", "unit": "KRW", "passenger": "ADULT_1" },
+      "limitation": "OD 결과는 완전한 trip stop sequence가 아니다."
+    },
+    "kricUrbanTimetable": {
+      "provider": "KRIC",
+      "operation": "subwayTimetableExp",
+      "officialSourceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp",
+      "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp",
+      "providerResultCode": "00",
+      "observedDate": "2026-07-13",
+      "kricTrainNumberRange": "K8001-K8405",
+      "tagoItxTrainNumberRange": "02001-02035",
+      "trainNumberJoinCount": 0,
+      "expressCodeRowCount": 0,
+      "disposition": "NOT_ITX_TIMETABLE"
+    },
+    "kricStationTimetable": {
+      "provider": "KRIC",
+      "operation": "stationTimetable",
+      "officialSourceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=182&operation=stationTimetable&service=convenientInfo",
+      "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTimetable",
+      "providerResultCode": "30",
+      "observedDate": "2026-07-13",
+      "status": "APPLICATION_COMPLETE_ACTIVATION_PENDING",
+      "expectedFields": ["arvTm", "dayCd", "dayNm", "dptTm", "lnCd", "orgStinCd", "railOprIsttCd", "stinCd", "tmnStinCd", "trnNo"]
+    }
+  },
+  "materialization": {
+    "algorithm": "provider train number + 호출자가 공휴일을 반영해 검증한 KRIC service day code로 station rows를 group하고 canonical lineSequence 단조성을 검증",
+    "deterministicKey": ["serviceId", "serviceDay", "providerTrainNumber"],
+    "reject": ["MISSING_STOP", "DUPLICATE_STOP", "NON_MONOTONE_STOP_ORDER", "ARRIVAL_AFTER_DEPARTURE", "OD_ONLY_AS_COMPLETE_TRIP"],
+    "status": "MISSING_STATION_LEVEL_ITX_ROWS"
+  },
+  "freshness": {
+    "status": "MISSING",
+    "nextReviewAt": "2026-07-20T00:00:00.000Z",
+    "eventTrigger": "KRIC stationTimetable 활성화 전파 또는 대체 공식 station-level timetable 발견"
+  },
+  "claimGate": {
+    "claim": "지하철 + 기차",
+    "requiredCoverageStates": {
+      "station_line_membership": "SUPPORTED",
+      "route_graph_topology": "SUPPORTED",
+      "schedule_timetable": "SUPPORTED"
+    },
+    "requiresFreshness": "FRESH",
+    "currentStatus": "NO_GO",
+    "supportClaimAllowed": false
+  }
+}

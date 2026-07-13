@@ -34,6 +34,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     gzipSha256: hash,
     manifestSha256: hash,
     coverageSummarySha256: hash,
+    itxCheongchunCoverageSha256: hash,
     routeMapPositionCoverageSha256: hash,
     routeGraphTopologySha256: hash,
     headwayReportSha256: hash,

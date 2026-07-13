@@ -346,6 +346,10 @@ export function operationSummary(candidate) {
   }
   return {
     id: requiredText(candidate.id, "candidate.id"),
+    displayName: candidate.displayName ?? null,
+    domain: candidate.domain ?? null,
+    detailUrl: candidate.detailUrl ?? null,
+    searchTerms: candidate.evidence?.searchTerms ?? [],
     status: candidate.admissionStatus ?? null,
     endpoint: requiredText(candidate.requestUrl, `${candidate.id}.requestUrl`),
     sampleUrl: candidate.evidence?.sampleUrl ?? null,

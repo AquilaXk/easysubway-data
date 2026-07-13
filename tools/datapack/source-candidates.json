@@ -12,6 +12,15 @@
       "displayName": "도시철도 전체노선정보",
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
+        "auth": { "env": "KRIC_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "format", "mreaWideCd", "lnCd"],
+        "responseEnvelope": "ROOT.header + ROOT.body.item",
+        "runner": { "command": "node tools/datapack/collect-kric-route-roster.mjs", "requiredEnv": ["KRIC_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "admitted_to_production_inventory",
@@ -22,6 +31,7 @@
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo&page=2",
         "retrievedAt": "2026-06-23",
+        "searchTerms": ["ITX-청춘", "ITX_CHEONGCHUN", "경춘선", "GTX-A"],
         "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo?serviceKey=[서비스키값]&format=xml&mreaWideCd=01&lnCd=A1",
         "usePermissionRange": "저작권표시",
@@ -1297,6 +1307,15 @@
       "displayName": "도시철도 열차운행시각표",
       "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
       "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+        "auth": { "env": "KRIC_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "format", "railOprIsttCd", "dayCd", "lnCd", "stinCd"],
+        "responseEnvelope": "{header:{resultCode,resultMsg},body:row[]}",
+        "runner": { "command": "node tools/datapack/collect-kric-line4-timetables.mjs", "requiredEnv": ["KRIC_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "admitted_to_production_inventory",
@@ -1306,6 +1325,7 @@
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
         "retrievedAt": "2026-07-06",
+        "searchTerms": ["ITX-청춘", "ITX_CHEONGCHUN", "경춘선", "열차운행시각표"],
         "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=4&stinCd=433&dayCd=8",
         "usePermissionRange": "저작권표시",
@@ -1424,6 +1444,11 @@
       "id": "seoul-topis-realtime-station-arrival",
       "priority": "P0",
       "domain": "realtime_arrivals",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ]
+      },
       "displayName": "서울시 지하철 실시간 도착정보",
       "detailUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
       "requestUrl": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival",
@@ -1680,6 +1705,11 @@
       "id": "seoulmetro-station-line-info",
       "priority": "P0",
       "domain": "station_line_membership",
+      "coverageScope": {
+        "operatorIds": [
+          "seoul-metro"
+        ]
+      },
       "displayName": "서울교통공사_노선별 지하철역 정보",
       "detailUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
       "requestUrl": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
@@ -2592,6 +2622,357 @@
         "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
         "fareStationLineMappingLedgerHash": "9c327840275be5c4583fc9e9cfdd16d2e4ecc06f660d08fd682bf9fe27d72390"
       }
+    },
+    {
+      "id": "kric-subway-timetable-exp",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "displayName": "KRIC 열차별 운행시각표(급행 표시)",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp",
+      "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetableExp",
+        "auth": { "env": "KRIC_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "format", "railOprIsttCd", "dayCd", "lnCd", "stinCd"],
+        "responseEnvelope": "{header:{resultCode,resultMsg},body:row[]}",
+        "runner": { "command": "node tools/datapack/collect-kric-line4-timetables.mjs", "requiredEnv": ["KRIC_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_for_validated_urban_rail_scopes_only",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "searchTerms": ["ITX-청춘", "ITX_CHEONGCHUN", "경춘선", "급행시각표"],
+        "outputFields": ["arvTm", "dayCd", "dayNm", "dptTm", "exptCd", "lnCd", "railOprIsttCd", "stinCd", "trnNo"],
+        "coverageLimitations": [
+          "2026-07-13 경춘선 K2 weekday live call은 K8001~K8405 도시철도 rows만 제공",
+          "TAGO ITX-청춘 02001~02035와 train number join 0건이고 exptCd도 모두 비어 ITX materialization에 사용 불가"
+        ]
+      },
+      "nextAction": "도시철도 scope에만 사용하고 ITX-청춘 schedule_timetable 지원 근거로 사용하지 않는다"
+    },
+    {
+      "id": "kric-station-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "displayName": "KRIC 역사별 운행시각표",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=182&operation=stationTimetable&service=convenientInfo",
+      "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTimetable",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTimetable",
+        "auth": { "env": "KRIC_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "format", "railOprIsttCd", "dayCd", "lnCd", "stinCd"],
+        "responseEnvelope": "{header:{resultCode,resultMsg},body:row[]}",
+        "runner": { "command": "node tools/datapack/collect-kric-line4-timetables.mjs", "requiredEnv": ["KRIC_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "application_complete_activation_pending",
+      "admissionStatus": "missing_live_schema_result_code_30",
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "searchTerms": ["ITX-청춘", "ITX_CHEONGCHUN", "경춘선", "역사별시각표"],
+        "outputFields": ["arvTm", "dayCd", "dayNm", "dptTm", "lnCd", "orgStinCd", "railOprIsttCd", "stinCd", "tmnStinCd", "trnNo"],
+        "coverageLimitations": [
+          "2026-07-13 K2 25역 credential-safe call은 provider resultCode 30으로 거절",
+          "활용신청 완료 후 provider 활성화와 live schema 확인 전 ITX-청춘 schedule_timetable은 MISSING"
+        ]
+      },
+      "nextAction": "KRIC 활용신청 활성화 전파 후 K2 25역을 재수집하고 TAGO ITX train number와 trip/stop join을 재검증한다"
+    },
+    {
+      "id": "tago-train-city-codes",
+      "priority": "P0",
+      "domain": "train_search_catalog",
+      "displayName": "TAGO 열차 도시코드 목록",
+      "detailUrl": "https://www.data.go.kr/data/15098552/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/1613000/TrainInfo/GetCtyCodeList",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetCtyCodeList",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "_type"],
+        "responseEnvelope": "response.header + response.body.items.item",
+        "runner": { "command": "node tools/datapack/collect-tago-itx-cheongchun-od.mjs", "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "provider_contract_validated",
+      "mobileEmbeddingAllowed": false,
+      "evidence": { "retrievedAt": "2026-07-13", "searchTerms": ["기차", "열차", "ITX-청춘", "ITX_CHEONGCHUN"], "outputFields": ["citycode", "cityname"] }
+    },
+    {
+      "id": "tago-train-stations",
+      "priority": "P0",
+      "domain": "station_line_membership",
+      "coverageScope": {
+        "regionIds": ["capital"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-54a7b980b7c3"]
+      },
+      "displayName": "TAGO 시도별 기차역 목록",
+      "detailUrl": "https://www.data.go.kr/data/15098552/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/1613000/TrainInfo/GetCtyAcctoTrainSttnList",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetCtyAcctoTrainSttnList",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "_type", "cityCode"],
+        "responseEnvelope": "response.header + response.body.items.item + totalCount",
+        "runner": { "command": "node tools/datapack/collect-tago-itx-cheongchun-od.mjs", "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "provider_contract_validated",
+      "mobileEmbeddingAllowed": false,
+      "evidence": { "retrievedAt": "2026-07-13", "searchTerms": ["기차역", "ITX-청춘", "ITX_CHEONGCHUN"], "outputFields": ["nodeid", "nodename"] }
+    },
+    {
+      "id": "tago-train-grades",
+      "priority": "P0",
+      "domain": "train_type_catalog",
+      "displayName": "TAGO 차량종류 목록",
+      "detailUrl": "https://www.data.go.kr/data/15098552/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/1613000/TrainInfo/GetVhcleKndList",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetVhcleKndList",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "_type"],
+        "responseEnvelope": "response.header + response.body.items.item",
+        "runner": { "command": "node tools/datapack/collect-tago-itx-cheongchun-od.mjs", "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "provider_contract_validated",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "searchTerms": ["ITX", "ITX-청춘", "ITX_CHEONGCHUN"],
+        "outputFields": ["vehiclekndid", "vehiclekndnm"],
+        "liveMapping": { "vehiclekndid": "09", "vehiclekndnm": "ITX-청춘", "serviceId": "ITX_CHEONGCHUN" }
+      }
+    },
+    {
+      "id": "tago-train-schedule-fares",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["capital"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-54a7b980b7c3"]
+      },
+      "displayName": "TAGO 출도착지 기반 열차 시간표·운임",
+      "detailUrl": "https://www.data.go.kr/data/15098552/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/1613000/TrainInfo/GetStrtpntAlocFndTrainInfo",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "_type", "depPlaceId", "arrPlaceId", "depPlandTime", "trainGradeCode"],
+        "responseEnvelope": "response.header + response.body.items.item + totalCount",
+        "runner": { "command": "node tools/datapack/collect-tago-itx-cheongchun-od.mjs", "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "od_search_supported_trip_stop_materialization_missing",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "searchTerms": ["ITX", "ITX-청춘", "ITX_CHEONGCHUN", "시간표", "운임"],
+        "outputFields": ["trainno", "traingradename", "depplandtime", "arrplandtime", "depplacename", "arrplacename", "adultcharge"],
+        "coverageLimitations": [
+          "2026-07-14 청량리 NAT130126 → 춘천 NAT140873, trainGradeCode 09에서 ITX-청춘 18편 resultCode 00",
+          "OD 결과는 중간 정차역·pickup/drop-off를 제공하지 않아 단독으로 trip stop sequence를 구성할 수 없음"
+        ]
+      },
+      "nextAction": "#2094 기차 검색에는 사용 가능하나 #2053 route timetable은 station-level source와 교차검증 전 MISSING 유지"
+    },
+    {
+      "id": "daejeon-train-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["daejeon"],
+        "operatorIds": ["daejeon-transportation"],
+        "lineIds": ["line-7051a9c2525c"]
+      },
+      "displayName": "대전교통공사_열차시각표 조회 서비스",
+      "detailUrl": "https://www.data.go.kr/data/15159278/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey"],
+        "responseEnvelope": "response.header + response.body.items.item",
+        "runner": {
+          "command": "node tools/datapack/probe-daejeon-coverage-api.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_API_PROBE_SOURCE_ID", "DAEJEON_API_PROBE_OUTPUT"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "application_complete_activation_pending",
+      "admissionStatus": "provider_activation_required_before_schema_admission",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "endpoint": "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["XML"],
+        "outputFields": ["dayType", "drctType", "stNum", "tmList", "tmZone"],
+        "officialSwaggerOperationId": "getAllTimeTable",
+        "coverageLimitations": [
+          "대전도시철도 1호선 계획 시각표이며 실시간 도착 정보가 아님",
+          "2026-07-13 credential-safe probe는 신규 활용신청 전파 대기 응답으로 종료되어 production schema admission 전 재검증 필요"
+        ]
+      },
+      "nextAction": "활용신청 전파 후 tracked probe를 재실행하고 provider resultCode 00·expected item schema를 확보한다"
+    },
+    {
+      "id": "daejeon-station-distance-fare",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": ["daejeon"],
+        "operatorIds": ["daejeon-transportation"],
+        "lineIds": ["line-7051a9c2525c"]
+      },
+      "displayName": "대전교통공사_대전도시철도 1호선 역간 소요시간·거리·요금",
+      "detailUrl": "https://www.data.go.kr/data/15082979/fileData.do",
+      "requestUrl": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
+        "responseEnvelope": "{currentCount,data[],matchCount,page,perPage,totalCount}",
+        "runner": {
+          "command": "node tools/datapack/probe-daejeon-coverage-api.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_API_PROBE_SOURCE_ID", "DAEJEON_API_PROBE_OUTPUT"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "application_complete_activation_pending",
+      "admissionStatus": "provider_activation_required_before_schema_admission",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "endpoint": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["JSON", "XML"],
+        "outputFields": [],
+        "coverageLimitations": [
+          "대전도시철도 1호선의 역간 소요시간·거리·요금 자료",
+          "2026-07-13 credential-safe probe HTTP 401로 실제 row field schema는 활성화 후 확정해야 함"
+        ]
+      },
+      "nextAction": "활용신청 전파 후 tracked probe로 실제 row field와 hash를 확보한 뒤 topology source admission을 진행한다"
+    },
+    {
+      "id": "daejeon-braille-guide-map",
+      "priority": "P1",
+      "domain": "accessibility_facilities",
+      "coverageScope": {
+        "regionIds": ["daejeon"],
+        "operatorIds": ["daejeon-transportation"],
+        "lineIds": ["line-7051a9c2525c"]
+      },
+      "displayName": "대전교통공사_역사 점자 안내도 현황",
+      "detailUrl": "https://www.data.go.kr/data/15044677/fileData.do",
+      "requestUrl": "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
+        "responseEnvelope": "{currentCount,data[],matchCount,page,perPage,totalCount}",
+        "runner": {
+          "command": "node tools/datapack/probe-daejeon-coverage-api.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_API_PROBE_SOURCE_ID", "DAEJEON_API_PROBE_OUTPUT"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "application_complete_activation_pending",
+      "admissionStatus": "provider_activation_required_before_schema_admission",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "endpoint": "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["JSON", "XML"],
+        "outputFields": [],
+        "coverageLimitations": [
+          "점자 안내도 현황만 제공하며 엘리베이터·에스컬레이터·휠체어리프트 전체 계약을 충족하지 않음",
+          "2026-07-13 credential-safe probe HTTP 401로 실제 row field schema는 활성화 후 확정해야 함"
+        ]
+      },
+      "nextAction": "활용신청 전파 후 tracked probe로 actual schema를 확정하고 점자 안내도 capability만 제한적으로 admission한다"
+    },
+    {
+      "id": "public-data-portal-search",
+      "priority": "P0",
+      "domain": "provider_discovery",
+      "displayName": "공공데이터포털 검색 서비스",
+      "detailUrl": "https://www.data.go.kr/data/15112888/openapi.do",
+      "requestUrl": "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
+      "operation": {
+        "method": "POST",
+        "endpoint": "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "header", "parameter": "Authorization" },
+        "requiredParameters": ["Authorization", "page", "size", "dataType", "organizations", "keyword"],
+        "responseEnvelope": "result[].{sum,dataCount,data[]}",
+        "runner": {
+          "command": "node tools/datapack/collect-nationwide-public-api-coverage.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_search",
+      "admissionStatus": "discovery_only_not_a_production_data_source",
+      "serviceKeyHandling": "offline_search_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-13",
+        "endpoint": "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["JSON"],
+        "outputFields": [
+          "sum",
+          "dataCount",
+          "dataName",
+          "dataDescription",
+          "organization",
+          "keywords",
+          "dataType",
+          "detailPageUrl"
+        ],
+        "paginationContract": "provider 실응답 기준 page=0 offset, size<=10000; totalCount 전량 수집 전 판정 금지",
+        "cacheContract": "동일 endpoint+body는 한 collection run에서 single-flight",
+        "coverageLimitations": [
+          "catalog metadata 검색은 발견 단계이며 production 지원 증거를 대신하지 않음",
+          "PUBLIC_API_NO_DATA는 HTTP/provider/schema/pagination이 모두 정상인 실제 0건에서만 허용"
+        ]
+      },
+      "nextAction": "90일마다 전국 ACTIVE line-domain 검색을 재실행하고 발견 후보는 source admission으로 전달한다"
     }
   ]
 }

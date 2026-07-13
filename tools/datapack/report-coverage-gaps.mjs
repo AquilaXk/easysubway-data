@@ -7,6 +7,13 @@ import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
 const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
 const DEFAULT_ACTIVE_PACK_ID = "capital";
+const PUBLIC_API_ORIGINS = new Set([
+  "https://api.odcloud.kr",
+  "https://apis.data.go.kr",
+  "https://openapi.kric.go.kr",
+  "https://openapi.seoul.go.kr",
+]);
+const COVERAGE_FALLBACKS = new Set(["PLANNED", "STATIC_LOCAL", "UNSUPPORTED_REGION"]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -26,6 +33,19 @@ async function main() {
   const releaseScopeTargets = args.releaseScope
     ? JSON.parse(await readFile(args.releaseTargets ?? DEFAULT_RELEASE_SCOPE_TARGETS, "utf8"))
     : null;
+  const resolutionBytes = args.resolutions ? await readFile(args.resolutions) : null;
+  if (args.resolutions && !args.resolutionPlan) {
+    throw new Error("--resolution-plan is required with --resolutions");
+  }
+  if (args.resolutionPlan && !args.resolutions) {
+    throw new Error("--resolutions is required with --resolution-plan");
+  }
+  const resolutionPlan = args.resolutionPlan
+    ? JSON.parse(await readFile(args.resolutionPlan, "utf8"))
+    : null;
+  const resolutions = resolutionBytes
+    ? { document: JSON.parse(resolutionBytes), sha256: sha256(resolutionBytes), searchPlan: resolutionPlan }
+    : null;
   const outputPath = requireArg(args, "output");
   const report = buildCoverageGapReport(
     targets,
@@ -34,6 +54,7 @@ async function main() {
     candidateManifest,
     releaseScope,
     releaseScopeTargets,
+    resolutions,
   );
 
   await mkdir(path.dirname(outputPath), { recursive: true });
@@ -73,6 +94,7 @@ function buildCoverageGapReport(
   candidateManifest = null,
   releaseScope = null,
   releaseScopeTargets = null,
+  resolutions = null,
 ) {
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
@@ -82,6 +104,12 @@ function buildCoverageGapReport(
 
   // 전국 requirement는 nationwide targets 전량으로 산출한다(은폐 금지 — 전국 gap은 그대로 기록).
   const requirements = evaluateRequirements(targets, sources, provenanceIndex);
+  const transitions = applyCoverageResolutions(
+    targets,
+    requirements,
+    resolutions?.document,
+    resolutions?.searchPlan,
+  );
   const summary = targets.schemaVersion === 2
     ? buildTierSummary(targets, requirements)
     : buildLegacySummary(requirements);
@@ -92,8 +120,13 @@ function buildCoverageGapReport(
     targetVersion: targets.targetVersion,
     inventoryRetrievedAt: inventory.retrievedAt,
     candidate: provenanceIndex?.candidate ?? null,
+    resolutions: resolutions ? {
+      sha256: resolutions.sha256,
+      searchPlanSha256: resolutions.document.searchPlanSha256,
+    } : null,
     summary,
     requirements,
+    transitions,
   };
 
   if (releaseScope) {
@@ -162,8 +195,6 @@ function buildLegacySummary(requirements) {
 function buildTierSummary(targets, requirements) {
   const launchRequired = summarizeTier(requirements, "LAUNCH_REQUIRED");
   const enhancement = summarizeTier(requirements, "ENHANCEMENT");
-  launchRequired.explicitlyUnsupportedCount = 0;
-  launchRequired.terminalResolutionRatio = launchRequired.supportedRatio;
   launchRequired.completionReady = launchRequired.missingCount === 0;
   enhancement.progressRatio = enhancement.supportedRatio;
   return {
@@ -172,7 +203,7 @@ function buildTierSummary(targets, requirements) {
     missingRequirements: launchRequired.missingCount,
     coverageRatio: launchRequired.supportedRatio,
     coverageComplete: launchRequired.completionReady,
-    launchRequiredCompletionRatio: launchRequired.supportedRatio,
+    launchRequiredCompletionRatio: launchRequired.terminalResolutionRatio,
     enhancementProgressRatio: enhancement.supportedRatio,
     activeScopeCount: targets.activeLineScopes.length,
     plannedScopeCount: targets.plannedLineScopes?.length ?? 0,
@@ -188,13 +219,241 @@ function buildTierSummary(targets, requirements) {
 function summarizeTier(requirements, releaseTier) {
   const tier = requirements.filter((entry) => entry.releaseTier === releaseTier);
   const supportedCount = tier.filter((entry) => entry.status === "SUPPORTED").length;
-  const missingCount = tier.length - supportedCount;
+  const explicitlyUnsupportedCount = tier.filter(
+    (entry) => entry.status === "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+  ).length;
+  const missingCount = tier.length - supportedCount - explicitlyUnsupportedCount;
   return {
     totalCount: tier.length,
     supportedCount,
+    explicitlyUnsupportedCount,
     missingCount,
     supportedRatio: tier.length === 0 ? 0 : Number((supportedCount / tier.length).toFixed(4)),
+    terminalResolutionRatio: tier.length === 0
+      ? 0
+      : Number(((supportedCount + explicitlyUnsupportedCount) / tier.length).toFixed(4)),
   };
+}
+
+function applyCoverageResolutions(targets, requirements, document, searchPlan) {
+  if (!document) return [];
+  if (!document || typeof document !== "object" || Array.isArray(document)) {
+    throw new Error("coverage resolutions must be an object");
+  }
+  if (document.schemaVersion !== 1) throw new Error("coverage resolutions schemaVersion must be 1");
+  if (document.artifactKind !== "nationwide-coverage-resolutions") {
+    throw new Error("coverage resolutions artifactKind must be nationwide-coverage-resolutions");
+  }
+  if (document.targetVersion !== targets.targetVersion) {
+    throw new Error("coverage resolutions targetVersion must match coverage targets");
+  }
+  if (!Array.isArray(document.entries)) throw new Error("coverage resolutions entries must be an array");
+  const planByKey = coverageResolutionPlanIndex(targets, document, searchPlan);
+
+  const byKey = new Map(requirements.map((entry) => [requirementKey(entry), entry]));
+  const seen = new Set();
+  const transitions = [];
+  for (const [index, resolution] of document.entries.entries()) {
+    const label = `coverage resolutions entries[${index}]`;
+    if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+      throw new Error(`${label} must be an object`);
+    }
+    const key = requirementKey({
+      regionId: requiredString(resolution.regionId, `${label}.regionId`),
+      operatorId: requiredString(resolution.operatorId, `${label}.operatorId`),
+      lineId: requiredString(resolution.lineId, `${label}.lineId`),
+      sourceDomain: requiredString(resolution.sourceDomain, `${label}.sourceDomain`),
+    });
+    if (seen.has(key)) throw new Error(`duplicate coverage resolution: ${key}`);
+    seen.add(key);
+    const requirement = byKey.get(key);
+    if (!requirement) throw new Error(`unknown coverage resolution requirement: ${key}`);
+    if (resolution.state !== "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE") {
+      throw new Error(`coverage resolution state is invalid: ${resolution.state ?? "missing"}`);
+    }
+    if (requirement.status === "SUPPORTED") {
+      throw new Error(`supported requirement must not have unsupported resolution: ${key}`);
+    }
+    const evidence = validateUnsupportedResolution(resolution, label);
+    validateResolutionSearchPlan(resolution, planByKey.get(key), label);
+    if (evidence.expired || resolution.supportStartedAt) {
+      requirement.resolutionReviewStatus = resolution.supportStartedAt ? "SUPPORT_STARTED" : "EXPIRED";
+      continue;
+    }
+    requirement.status = resolution.state;
+    requirement.capabilityFallback = resolution.fallback;
+    requirement.reasonCode = resolution.reasonCode;
+    requirement.userMessageKo = resolution.userMessageKo;
+    requirement.resolutionEvidenceHash = resolution.evidenceHash;
+    requirement.resolutionReviewStatus = "CURRENT";
+    requirement.publicApiQueries = resolution.publicApiQueries;
+    transitions.push({
+      requirementKey: key,
+      before: "MISSING",
+      after: resolution.state,
+      reasonCode: resolution.reasonCode,
+      evidenceHash: resolution.evidenceHash,
+      reviewedAt: resolution.reviewedAt,
+    });
+  }
+  return transitions;
+}
+
+function coverageResolutionPlanIndex(targets, resolutions, plan) {
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+    throw new Error("coverage resolution search plan must be an object");
+  }
+  if (plan.schemaVersion !== 1) throw new Error("coverage resolution search plan schemaVersion must be 1");
+  if (plan.artifactKind !== "nationwide-public-api-coverage-search-plan") {
+    throw new Error("coverage resolution search plan artifactKind is invalid");
+  }
+  if (plan.targetVersion !== targets.targetVersion) {
+    throw new Error("coverage resolution search plan targetVersion must match coverage targets");
+  }
+  const actualHash = sha256(JSON.stringify(plan));
+  if (requiredString(resolutions.searchPlanSha256, "coverage resolutions.searchPlanSha256") !== actualHash) {
+    throw new Error("coverage resolutions search plan hash mismatch");
+  }
+  if (!Array.isArray(plan.entries) || plan.entries.length === 0) {
+    throw new Error("coverage resolution search plan entries must be a non-empty array");
+  }
+  const byKey = new Map();
+  for (const [index, entry] of plan.entries.entries()) {
+    const label = `coverage resolution search plan entries[${index}]`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
+    const key = requirementKey({
+      regionId: requiredString(entry.regionId, `${label}.regionId`),
+      operatorId: requiredString(entry.operatorId, `${label}.operatorId`),
+      lineId: requiredString(entry.lineId, `${label}.lineId`),
+      sourceDomain: requiredString(entry.sourceDomain, `${label}.sourceDomain`),
+    });
+    if (byKey.has(key)) throw new Error(`duplicate coverage resolution search plan entry: ${key}`);
+    if (!Array.isArray(entry.queries) || entry.queries.length === 0) {
+      throw new Error(`${label}.queries must be a non-empty array`);
+    }
+    byKey.set(key, entry);
+  }
+  return byKey;
+}
+
+function validateResolutionSearchPlan(resolution, planEntry, label) {
+  if (!planEntry) throw new Error(`${label} has no matching search plan entry`);
+  if (resolution.fallback !== planEntry.fallback || resolution.userMessageKo !== planEntry.userMessageKo) {
+    throw new Error(`${label} search plan resolution contract mismatch`);
+  }
+  const actual = resolution.publicApiQueries.map(publicApiQueryContract).map(canonicalJson).sort(compareStrings);
+  const expected = planEntry.queries.map(publicApiQueryContract).map(canonicalJson).sort(compareStrings);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${label} search plan query mismatch`);
+  }
+}
+
+function publicApiQueryContract(query) {
+  if (!query || typeof query !== "object" || Array.isArray(query)) return query;
+  return Object.fromEntries([
+    "providerId",
+    "endpoint",
+    "operation",
+    "query",
+    "matchAnyTerms",
+    "matchTermGroups",
+    "captureFields",
+  ].flatMap((field) => query[field] === undefined ? [] : [[field, query[field]]]));
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalValue(value));
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort(compareStrings).map((key) => [key, canonicalValue(value[key])]));
+}
+
+function validateUnsupportedResolution(resolution, label) {
+  if (requiredString(resolution.reasonCode, `${label}.reasonCode`) !== "PUBLIC_API_NO_DATA") {
+    throw new Error(`${label}.reasonCode must be PUBLIC_API_NO_DATA`);
+  }
+  requiredString(resolution.userMessageKo, `${label}.userMessageKo`);
+  if (!COVERAGE_FALLBACKS.has(resolution.fallback)) {
+    throw new Error(`${label}.fallback is invalid: ${resolution.fallback ?? "missing"}`);
+  }
+  requiredDate(resolution.checkedAt, `${label}.checkedAt`);
+  requiredDate(resolution.reviewedAt, `${label}.reviewedAt`);
+  requiredString(resolution.reviewerRole, `${label}.reviewerRole`);
+  const nextReviewAt = requiredDate(resolution.nextReviewAt, `${label}.nextReviewAt`);
+  if (resolution.supportStartedAt !== undefined) {
+    requiredDate(resolution.supportStartedAt, `${label}.supportStartedAt`);
+  }
+  const requiredProviderIds = [...new Set(requiredStringArray(
+    resolution.requiredProviderIds,
+    `${label}.requiredProviderIds`,
+  ))].sort(compareStrings);
+  if (requiredProviderIds.length !== resolution.requiredProviderIds.length) {
+    throw new Error(`${label}.requiredProviderIds must not contain duplicates`);
+  }
+  if (!Array.isArray(resolution.publicApiQueries) || resolution.publicApiQueries.length === 0) {
+    throw new Error(`${label}.publicApiQueries must be a non-empty array`);
+  }
+  const queriedProviderIds = [...new Set(resolution.publicApiQueries.map((query, index) =>
+    validatePublicApiQuery(query, `${label}.publicApiQueries[${index}]`)))].sort(compareStrings);
+  if (JSON.stringify(requiredProviderIds) !== JSON.stringify(queriedProviderIds)) {
+    throw new Error(`${label}.publicApiQueries must cover every requiredProviderId`);
+  }
+  const evidenceHash = requiredString(resolution.evidenceHash, `${label}.evidenceHash`);
+  if (!/^[a-f0-9]{64}$/.test(evidenceHash)) throw new Error(`${label}.evidenceHash must be sha256 hex`);
+  if (evidenceHash !== sha256(JSON.stringify(resolution.publicApiQueries))) {
+    throw new Error(`${label}.evidenceHash mismatch`);
+  }
+  return { expired: nextReviewAt.getTime() <= Date.now() };
+}
+
+function validatePublicApiQuery(query, label) {
+  if (!query || typeof query !== "object" || Array.isArray(query)) throw new Error(`${label} must be an object`);
+  const providerId = requiredString(query.providerId, `${label}.providerId`);
+  const endpoint = new URL(requiredString(query.endpoint, `${label}.endpoint`));
+  if (!PUBLIC_API_ORIGINS.has(endpoint.origin)) throw new Error(`${label} public API origin is not allowed`);
+  if (endpoint.username || endpoint.password || endpoint.hash
+    || [...endpoint.searchParams.keys()].some(isCredentialName)) {
+    throw new Error(`${label}.endpoint must not contain credentials`);
+  }
+  requiredString(query.operation, `${label}.operation`);
+  if (!query.query || typeof query.query !== "object" || Array.isArray(query.query)) {
+    throw new Error(`${label}.query must be an object`);
+  }
+  for (const [name, value] of Object.entries(query.query)) {
+    if (isCredentialName(name)) throw new Error(`${label}.query must not contain credentials`);
+    requiredString(String(value), `${label}.query.${name}`);
+  }
+  if (!Number.isInteger(query.httpStatus) || query.httpStatus < 200 || query.httpStatus >= 300) {
+    throw new Error(`${label}.httpStatus must be successful`);
+  }
+  if (query.providerResultCode !== "00") throw new Error(`${label}.providerResultCode must be 00`);
+  if (query.schemaStatus !== "EXPECTED") throw new Error(`${label}.schemaStatus must be EXPECTED`);
+  if (query.matchCount !== 0) throw new Error(`${label}.matchCount must be 0`);
+  if (typeof query.responseSha256 !== "string" || !/^[a-f0-9]{64}$/.test(query.responseSha256)) {
+    throw new Error(`${label}.responseSha256 must be sha256 hex`);
+  }
+  return providerId;
+}
+
+function isCredentialName(name) {
+  return new Set(["apikey", "apitoken", "credential", "key", "secret", "servicekey", "token"])
+    .has(name.replace(/[^a-z]/gi, "").toLowerCase());
+}
+
+function requirementKey({ regionId, operatorId, lineId, sourceDomain }) {
+  return `${regionId}:${operatorId}:${lineId}:${sourceDomain}`;
+}
+
+function requiredDate(value, label) {
+  const text = requiredString(value, label);
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime()) || date.toISOString() !== text) {
+    throw new Error(`${label} must be an ISO timestamp`);
+  }
+  return date;
 }
 
 function evaluateRequirements(targets, sources, provenanceIndex, options = {}) {
@@ -543,6 +802,59 @@ function validateTargets(targets) {
         throw new Error(`inactive line appears in activeLineScopes: ${lineId}`);
       }
       lineScopeKeys.add(key);
+    }
+    validateRailProductScope(targets.railProductScope, lineScopeKeys);
+  }
+}
+
+function validateRailProductScope(scope, activeLineScopeKeys) {
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error("railProductScope must be an object");
+  }
+  if (!Array.isArray(scope.routeMapAndRouting) || scope.routeMapAndRouting.length !== 2) {
+    throw new Error("railProductScope.routeMapAndRouting must contain GTX-A and ITX-청춘 only");
+  }
+  const routeServices = new Map();
+  for (const entry of scope.routeMapAndRouting) {
+    const serviceId = requiredString(entry.serviceId, "railProductScope.routeMapAndRouting.serviceId");
+    if (routeServices.has(serviceId)) throw new Error(`duplicate route rail service: ${serviceId}`);
+    routeServices.set(serviceId, entry);
+    const lineId = requiredString(entry.lineId, `${serviceId}.lineId`);
+    if (![...activeLineScopeKeys].some((key) => key.endsWith(`:${lineId}`))) {
+      throw new Error(`${serviceId}.lineId must be an active line scope`);
+    }
+  }
+  const expected = {
+    GTX_A: ["line-8604048b6430", "LOCAL", "ACTIVE_CAPITAL_LINE"],
+    ITX_CHEONGCHUN: ["line-54a7b980b7c3", "EXPRESS", "SERVICE_PATTERN_ON_EXISTING_LINE"],
+  };
+  for (const [serviceId, [lineId, servicePattern, representation]] of Object.entries(expected)) {
+    const entry = routeServices.get(serviceId);
+    if (!entry || entry.lineId !== lineId || entry.servicePattern !== servicePattern
+      || entry.representation !== representation) {
+      throw new Error(`railProductScope route contract is invalid for ${serviceId}`);
+    }
+  }
+  const itx = routeServices.get("ITX_CHEONGCHUN");
+  const itxStates = itx.coverageStates;
+  const allowedStates = new Set(["SUPPORTED", "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE", "MISSING"]);
+  if (itx.coverageContract !== "tools/datapack/itx-cheongchun-coverage-contract.json"
+    || !itxStates || ["station_line_membership", "route_graph_topology", "schedule_timetable"]
+      .some((domain) => !allowedStates.has(itxStates[domain]))
+    || itx.supportClaimAllowed !== Object.values(itxStates).every((state) => state === "SUPPORTED")) {
+    throw new Error("ITX_CHEONGCHUN missing timetable must fail closed for route support claims");
+  }
+  const searchOnly = scope.trainSearchOnly;
+  if (!searchOnly || searchOnly.routeMapProvided !== false || searchOnly.trackingIssue !== 2094) {
+    throw new Error("railProductScope.trainSearchOnly contract is invalid");
+  }
+  const services = requiredStringArray(searchOnly.services, "railProductScope.trainSearchOnly.services");
+  if (new Set(services).size !== services.length) {
+    throw new Error("railProductScope.trainSearchOnly.services must not contain duplicates");
+  }
+  for (const serviceId of services) {
+    if (routeServices.has(serviceId)) {
+      throw new Error(`train-search-only service must not appear in route scope: ${serviceId}`);
     }
   }
 }

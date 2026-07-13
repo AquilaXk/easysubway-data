@@ -113,6 +113,7 @@ async function main() {
     "gzipSha256",
     "manifestSha256",
     "coverageSummarySha256",
+    "itxCheongchunCoverageSha256",
     "routeMapPositionCoverageSha256",
     "routeGraphTopologySha256",
     "headwayReportSha256",
