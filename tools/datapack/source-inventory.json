@@ -1877,13 +1877,13 @@
           "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
         },
         "realtime": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "liveEtaEligible": false,
-          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
-          "updateFrequency": "provider-realtime-api-and-irregular-file-snapshot",
-          "unsupportedNotes": "provider terms and rate limits are not approved for production live ETA"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "liveEtaEligible": true,
+          "rateLimitStatus": "GUARDED_DEFAULT_DAILY_LIMIT",
+          "coverageStatus": "SUPPORTED_WITHIN_PROVIDER_SCOPE",
+          "updateFrequency": "provider realtime API; guarded by 1/minute and 800/day runtime hard limits",
+          "unsupportedNotes": "서울 TOPIS 제공 범위 밖은 PLANNED로 강등하며 gallery 심사는 기본 quota 운영과 독립적인 capacity enhancement다"
         },
         "facility": {
           "status": "UNSUPPORTED",
@@ -1895,7 +1895,7 @@
       },
       "admissionEvidence": {
         "artifactKind": "source-admission-pipeline-evidence-summary",
-        "issue": 1397,
+        "issue": 1416,
         "candidateId": "seoul-topis-realtime-station-arrival",
         "sourceId": "seoul-realtime-arrival-station-info",
         "snapshotId": "seoul-topis-realtime-station-arrival-snapshot-20260704",
@@ -1918,10 +1918,13 @@
         "quotaEvidence": {
           "portal": "서울 열린데이터광장",
           "defaultDailyLimit": 1000,
-          "unlockStatus": "pending_gallery_review",
-          "productionUseAllowed": false
+          "runtimeDailyHardLimit": 800,
+          "runtimePerMinuteHardLimit": 1,
+          "sharedQuotaStore": "realtime_provider_call_quota_state",
+          "unlockStatus": "guarded_default_quota_gallery_review_pending",
+          "productionUseAllowed": true
         },
-        "productionUseNoteKo": "admin review는 통과했지만 TOPIS daily quota 해제와 provider terms 승인이 없어 realtime live ETA production use는 아직 차단한다."
+        "productionUseNoteKo": "공식 기본 1,000회/일 안에서 runtime을 1회/분·800회/일로 제한해 live realtime을 승인한다. gallery 심사는 별도 capacity enhancement다."
       }
     },
     {
@@ -2047,13 +2050,13 @@
           "unsupportedNotes": "source does not provide scheduled timetable data for production route ETA"
         },
         "realtime": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "liveEtaEligible": false,
-          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
-          "updateFrequency": "provider-realtime-api",
-          "unsupportedNotes": "provider terms and daily quota are not approved for production live ETA"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "liveEtaEligible": true,
+          "rateLimitStatus": "GUARDED_DEFAULT_DAILY_LIMIT",
+          "coverageStatus": "SUPPORTED_WITHIN_PROVIDER_SCOPE",
+          "updateFrequency": "provider realtime API; guarded by 1/minute and 800/day runtime hard limits",
+          "unsupportedNotes": "서울 TOPIS 제공 범위 밖은 PLANNED로 강등하며 gallery 심사는 기본 quota 운영과 독립적인 capacity enhancement다"
         },
         "facility": {
           "status": "UNSUPPORTED",
@@ -2065,7 +2068,7 @@
       },
       "admissionEvidence": {
         "artifactKind": "source-admission-pipeline-evidence-summary",
-        "issue": 1397,
+        "issue": 1416,
         "candidateId": "seoul-topis-realtime-train-position",
         "sourceId": "seoul-topis-realtime-train-position",
         "snapshotId": "seoul-topis-realtime-train-position-snapshot-20260704",
@@ -2088,10 +2091,13 @@
         "quotaEvidence": {
           "portal": "서울 열린데이터광장",
           "defaultDailyLimit": 1000,
-          "unlockStatus": "pending_gallery_review",
-          "productionUseAllowed": false
+          "runtimeDailyHardLimit": 800,
+          "runtimePerMinuteHardLimit": 1,
+          "sharedQuotaStore": "realtime_provider_call_quota_state",
+          "unlockStatus": "guarded_default_quota_gallery_review_pending",
+          "productionUseAllowed": true
         },
-        "productionUseNoteKo": "admin review는 통과했지만 TOPIS daily quota 해제와 provider terms 승인이 없어 realtime live ETA production use는 아직 차단한다."
+        "productionUseNoteKo": "공식 기본 1,000회/일 안에서 runtime을 1회/분·800회/일로 제한해 live realtime을 승인한다. gallery 심사는 별도 capacity enhancement다."
       }
     },
     {

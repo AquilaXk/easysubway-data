@@ -7904,7 +7904,7 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
       ],
       { cwd: root },
     ),
-    /adminReview\.quotaEvidence must include defaultDailyLimit, portal, productionUseAllowed, unlockStatus and only optional documentedMonthlyLimit/,
+    /adminReview\.quotaEvidence must include defaultDailyLimit, portal, productionUseAllowed, unlockStatus and only optional documentedMonthlyLimit, runtimeDailyHardLimit, runtimePerMinuteHardLimit, sharedQuotaStore/,
   );
 });
 
@@ -8100,6 +8100,48 @@ test("source inventory 검증기는 admitted candidate의 quota evidence 누락�
       { cwd: root },
     ),
     /molit-tago-subway-info\.admissionEvidence\.quotaEvidence\.productionUseAllowed must be true when source has production capability/,
+  );
+});
+
+test("source inventory 검증기는 같은 shared quota store의 hard limit 불일치를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-shared-quota-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const trainPosition = inventory.sources.find((entry) => entry.id === "seoul-topis-realtime-train-position");
+  trainPosition.admissionEvidence.quotaEvidence.runtimeDailyHardLimit = 799;
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath],
+      { cwd: root },
+    ),
+    /shared quota store realtime_provider_call_quota_state must use identical runtime hard limits/,
+  );
+});
+
+test("source inventory 검증기는 guarded realtime quota의 shared store 누락을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-guarded-quota-store-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  const arrival = inventory.sources.find((entry) => entry.id === "seoul-realtime-arrival-station-info");
+  delete arrival.admissionEvidence.quotaEvidence.sharedQuotaStore;
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath],
+      { cwd: root },
+    ),
+    /seoul-realtime-arrival-station-info\.guarded realtime requires sharedQuotaStore/,
   );
 });
 

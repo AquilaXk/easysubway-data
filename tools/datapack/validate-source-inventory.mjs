@@ -69,6 +69,21 @@ function validateInventory(inventory) {
     }
     ids.add(source.id);
   }
+  validateSharedQuotaStores(inventory.sources);
+}
+
+function validateSharedQuotaStores(sources) {
+  const limitsByStore = new Map();
+  for (const source of sources) {
+    const quota = source.admissionEvidence?.quotaEvidence;
+    if (!quota?.sharedQuotaStore) continue;
+    const limits = `${quota.runtimeDailyHardLimit}:${quota.runtimePerMinuteHardLimit}`;
+    const existing = limitsByStore.get(quota.sharedQuotaStore);
+    if (existing !== undefined && existing !== limits) {
+      throw new Error(`shared quota store ${quota.sharedQuotaStore} must use identical runtime hard limits`);
+    }
+    limitsByStore.set(quota.sharedQuotaStore, limits);
+  }
 }
 
 function validateSource(source, label) {
@@ -167,11 +182,26 @@ function validateCapability(capability, source, sourceId, name) {
     throw new TypeError(`${sourceId}.capabilities.realtime.liveEtaEligible must be boolean`);
   }
   const rateLimitStatus = assertString(capability.rateLimitStatus, `${sourceId}.capabilities.realtime.rateLimitStatus`);
+  const compatibleRateLimitStatuses = new Set(["COMPATIBLE", "GUARDED_DEFAULT_DAILY_LIMIT"]);
   if (
     capability.liveEtaEligible &&
-    (capability.productionUseAllowed !== true || rateLimitStatus !== "COMPATIBLE")
+    (capability.productionUseAllowed !== true || !compatibleRateLimitStatuses.has(rateLimitStatus))
   ) {
     throw new Error(`${sourceId}.capabilities.realtime live ETA requires compatible provider terms and rate limits`);
+  }
+  if (capability.liveEtaEligible && rateLimitStatus === "GUARDED_DEFAULT_DAILY_LIMIT") {
+    validateGuardedRealtimeQuota(source, sourceId);
+  }
+}
+
+function validateGuardedRealtimeQuota(source, sourceId) {
+  const quotaEvidence = source.admissionEvidence?.quotaEvidence;
+  validateQuotaEvidence(quotaEvidence, `${sourceId}.admissionEvidence.quotaEvidence`);
+  if (!Number.isInteger(quotaEvidence.runtimeDailyHardLimit) || !Number.isInteger(quotaEvidence.runtimePerMinuteHardLimit)) {
+    throw new TypeError(`${sourceId}.guarded realtime requires integer runtime daily and per-minute hard limits`);
+  }
+  if (typeof quotaEvidence.sharedQuotaStore !== "string" || quotaEvidence.sharedQuotaStore.trim() === "") {
+    throw new TypeError(`${sourceId}.guarded realtime requires sharedQuotaStore`);
   }
 }
 

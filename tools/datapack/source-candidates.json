@@ -1456,7 +1456,7 @@
       "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "admitted_to_production_inventory",
       "productionInventoryReferenceId": "seoul-realtime-arrival-station-info",
-      "productionInventoryRelationship": "same_dataset_station_reference_is_production_live_provider_contract_remains_candidate",
+      "productionInventoryRelationship": "same_dataset_inventory_and_live_provider_are_production_approved_with_guarded_default_quota",
       "serviceKeyHandling": "backend_secret_only",
       "mobileEmbeddingAllowed": false,
       "dataRetentionPolicy": "provider_does_not_offer_past_realtime_data",
@@ -1488,9 +1488,7 @@
           "trainLineNm",
           "updnLine"
         ],
-        "missingEvidence": [
-          "providerTermsOrQuotaApproval"
-        ],
+        "missingEvidence": [],
         "liveSampleRetrievedAt": "2026-07-03T15:37:21Z",
         "liveSampleRowCount": 5,
         "liveSampleRawSha256": "d07597c4936e4a5af61f465abf25851a6e4881c09781b034bed2696d4fd396a8",
@@ -1506,12 +1504,15 @@
           "quotaEvidence": {
             "portal": "서울 열린데이터광장",
             "defaultDailyLimit": 1000,
-            "unlockStatus": "pending_gallery_review",
-            "productionUseAllowed": false
+            "runtimeDailyHardLimit": 800,
+            "runtimePerMinuteHardLimit": 1,
+            "sharedQuotaStore": "realtime_provider_call_quota_state",
+            "unlockStatus": "guarded_default_quota_gallery_review_pending",
+            "productionUseAllowed": true
           }
         }
       },
-      "nextAction": "complete TOPIS provider terms/quota approval before production realtime ETA admission",
+      "nextAction": "gallery 심사는 기본 quota guarded production과 독립적인 capacity enhancement로 추적한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -1521,13 +1522,13 @@
           "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
         },
         "realtime": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "liveEtaEligible": false,
-          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-          "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
-          "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "live sample evidence and admin review are validated, but backend-only key terms and provider quota are still required before live ETA"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "liveEtaEligible": true,
+          "rateLimitStatus": "GUARDED_DEFAULT_DAILY_LIMIT",
+          "coverageStatus": "SUPPORTED_WITHIN_PROVIDER_SCOPE",
+          "updateFrequency": "provider realtime API; guarded by 1/minute and 800/day runtime hard limits",
+          "unsupportedNotes": "서울 TOPIS 제공 범위 밖은 PLANNED로 강등하며 gallery 심사는 기본 quota 운영과 독립적인 capacity enhancement다"
         },
         "facility": {
           "status": "UNSUPPORTED",
@@ -1549,7 +1550,7 @@
       "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "admitted_to_production_inventory",
       "productionInventoryReferenceId": "seoul-topis-realtime-train-position",
-      "productionInventoryRelationship": "same_dataset_inventory_entry_remains_realtime_candidate_until_provider_terms_or_quota_approval",
+      "productionInventoryRelationship": "same_dataset_inventory_and_live_provider_are_production_approved_with_guarded_default_quota",
       "serviceKeyHandling": "backend_secret_only",
       "mobileEmbeddingAllowed": false,
       "dataRetentionPolicy": "provider_does_not_offer_past_realtime_data",
@@ -1581,9 +1582,7 @@
           "trainSttus",
           "updnLine"
         ],
-        "missingEvidence": [
-          "providerTermsOrQuotaApproval"
-        ],
+        "missingEvidence": [],
         "liveSampleRetrievedAt": "2026-07-03T15:37:21Z",
         "liveSampleRowCount": 5,
         "liveSampleRawSha256": "c48be5d948394ff8af18617feee43c902a09e4a6237da76e6003b442aa6445b3",
@@ -1599,12 +1598,15 @@
           "quotaEvidence": {
             "portal": "서울 열린데이터광장",
             "defaultDailyLimit": 1000,
-            "unlockStatus": "pending_gallery_review",
-            "productionUseAllowed": false
+            "runtimeDailyHardLimit": 800,
+            "runtimePerMinuteHardLimit": 1,
+            "sharedQuotaStore": "realtime_provider_call_quota_state",
+            "unlockStatus": "guarded_default_quota_gallery_review_pending",
+            "productionUseAllowed": true
           }
         }
       },
-      "nextAction": "complete TOPIS provider terms/quota approval before using train position as realtime overlay evidence",
+      "nextAction": "gallery 심사는 기본 quota guarded production과 독립적인 capacity enhancement로 추적한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -1614,13 +1616,13 @@
           "unsupportedNotes": "candidate does not provide scheduled timetable data for production route ETA"
         },
         "realtime": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "liveEtaEligible": false,
-          "rateLimitStatus": "BLOCKED_PENDING_PROVIDER_TERMS_OR_QUOTA",
-          "coverageStatus": "PROVIDER_TERMS_OR_QUOTA_REQUIRED",
-          "updateFrequency": "provider realtime API; production quota not admitted",
-          "unsupportedNotes": "live sample evidence and admin review are validated, but backend-only key terms and provider quota are still required before live ETA"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "liveEtaEligible": true,
+          "rateLimitStatus": "GUARDED_DEFAULT_DAILY_LIMIT",
+          "coverageStatus": "SUPPORTED_WITHIN_PROVIDER_SCOPE",
+          "updateFrequency": "provider realtime API; guarded by 1/minute and 800/day runtime hard limits",
+          "unsupportedNotes": "서울 TOPIS 제공 범위 밖은 PLANNED로 강등하며 gallery 심사는 기본 quota 운영과 독립적인 capacity enhancement다"
         },
         "facility": {
           "status": "UNSUPPORTED",
