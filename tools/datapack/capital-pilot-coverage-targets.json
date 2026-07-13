@@ -10,6 +10,7 @@
     "daejeon"
   ],
   "knownOperatorIds": [
+    "airport-railroad",
     "korail",
     "incheon-transit",
     "busan-transportation",

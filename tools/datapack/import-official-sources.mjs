@@ -39,6 +39,7 @@ function buildFixture(inventory, input) {
     }
     return source;
   });
+  validateProductionSourceSelection(selectedSources, isProductionPack);
   const allowedSourceIds = new Set(sourceIds);
   const retiredStationIds = retiredStationIdSet(input.retiredStationIds ?? []);
   const mappingBySourceKey = stationMappingBySourceKey(input.stationMappings, allowedSourceIds, retiredStationIds);
@@ -267,6 +268,15 @@ function validateSelectedSourceRows(input, sourceIds) {
   for (const sourceId of sourceIds) {
     if ((counts.get(sourceId) ?? 0) === 0) {
       throw new Error(`selected production source has no row provenance: ${sourceId}`);
+    }
+  }
+}
+
+function validateProductionSourceSelection(selectedSources, isProductionPack) {
+  if (!isProductionPack) return;
+  for (const source of selectedSources) {
+    if (source.productionUseAllowed === false) {
+      throw new Error(`${source.id} source inventory is provenance-only and cannot be selected for production rows`);
     }
   }
 }

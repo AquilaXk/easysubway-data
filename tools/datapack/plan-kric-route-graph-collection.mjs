@@ -120,8 +120,14 @@ function requireCandidateState(candidate) {
   if (!candidate.id.startsWith("kric-")) {
     throw new Error(`candidate is not KRIC: ${candidate.id}`);
   }
-  if (candidate.admissionStatus !== "evidence_recorded_admin_review_required") {
-    throw new Error(`${candidate.id} admissionStatus must require admin review before production use`);
+  const pendingAdminReview = candidate.admissionStatus === "evidence_recorded_admin_review_required";
+  const provenanceOnlyAdmission = candidate.admissionStatus === "admitted_to_production_inventory"
+    && candidate.productionInventoryRelationship === "inventory_provenance_only_admin_reviewed_for_1397"
+    && candidate.evidence?.adminReview?.decision === "APPROVED"
+    && candidate.evidence.adminReview.scope === "INVENTORY_PROVENANCE_ONLY"
+    && candidate.evidence.adminReview.productionUseAllowed === false;
+  if (!pendingAdminReview && !provenanceOnlyAdmission) {
+    throw new Error(`${candidate.id} admissionStatus must be pending admin review or inventory provenance only`);
   }
   if (!["sample_url_documented_key_required", "validated_live_sample"].includes(candidate.sampleEvidenceStatus)) {
     throw new Error(`${candidate.id} sampleEvidenceStatus must be pending or validated live sample evidence`);

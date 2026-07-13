@@ -2367,9 +2367,15 @@
       "datasetKind": "open-api-offline-snapshot",
       "coverage": "서울역-시청 1개 방향의 공식 CI canary snapshot",
       "coverageScope": {
-        "regionIds": ["capital"],
-        "operatorIds": ["seoul-metro"],
-        "sourceDomains": ["official_od_fares"]
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "official_od_fares"
+        ]
       },
       "requiredForProductionPack": false,
       "updateFrequency": "approved-snapshot-only",
@@ -2384,11 +2390,38 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15143846/openapi.do"
       },
-      "fieldsProvided": ["childCardFare", "childCashFare", "gnrlCardFare", "gnrlCashFare", "yungCardFare", "yungCashFare"],
+      "fieldsProvided": [
+        "childCardFare",
+        "childCashFare",
+        "gnrlCardFare",
+        "gnrlCashFare",
+        "yungCardFare",
+        "yungCashFare"
+      ],
       "capabilities": {
-        "schedule": { "status": "UNSUPPORTED", "productionUseAllowed": false, "coverageStatus": "NOT_PROVIDED_BY_SOURCE", "updateFrequency": "approved-snapshot-only", "unsupportedNotes": "source does not provide scheduled timetable data" },
-        "realtime": { "status": "UNSUPPORTED", "productionUseAllowed": false, "liveEtaEligible": false, "rateLimitStatus": "NOT_APPLICABLE", "coverageStatus": "OFFLINE_FARE_SNAPSHOT_ONLY", "updateFrequency": "approved-snapshot-only", "unsupportedNotes": "mobile runtime provider calls are not admitted" },
-        "facility": { "status": "UNSUPPORTED", "productionUseAllowed": false, "coverageStatus": "NOT_PROVIDED_BY_SOURCE", "updateFrequency": "approved-snapshot-only", "unsupportedNotes": "source does not provide accessibility facility records" }
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FARE_SNAPSHOT_ONLY",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "mobile runtime provider calls are not admitted"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
       },
       "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
       "fareStationLineMappingLedgerHash": "58e795e03161e2100cffb2c777efcaa1d09a5e03abc7363676be5f26ae353541"
@@ -2404,9 +2437,15 @@
       "datasetKind": "official-web-offline-snapshot",
       "coverage": "하단-당리·하단-장산·서면-장산 3개 공식 OD 운임 snapshot",
       "coverageScope": {
-        "regionIds": ["busan"],
-        "operatorIds": ["busan-transportation"],
-        "sourceDomains": ["official_od_fares"]
+        "regionIds": [
+          "busan"
+        ],
+        "operatorIds": [
+          "busan-transportation"
+        ],
+        "sourceDomains": [
+          "official_od_fares"
+        ]
       },
       "requiredForProductionPack": false,
       "updateFrequency": "approved-snapshot-only",
@@ -2421,14 +2460,854 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/3057225/fileData.do"
       },
-      "fieldsProvided": ["childCardFare", "childCashFare", "gnrlCardFare", "gnrlCashFare", "yungCardFare", "yungCashFare"],
+      "fieldsProvided": [
+        "childCardFare",
+        "childCashFare",
+        "gnrlCardFare",
+        "gnrlCashFare",
+        "yungCardFare",
+        "yungCashFare"
+      ],
       "capabilities": {
-        "schedule": { "status": "UNSUPPORTED", "productionUseAllowed": false, "coverageStatus": "NOT_PROVIDED_BY_SOURCE", "updateFrequency": "approved-snapshot-only", "unsupportedNotes": "source does not provide scheduled timetable data" },
-        "realtime": { "status": "UNSUPPORTED", "productionUseAllowed": false, "liveEtaEligible": false, "rateLimitStatus": "NOT_APPLICABLE", "coverageStatus": "OFFLINE_FARE_SNAPSHOT_ONLY", "updateFrequency": "approved-snapshot-only", "unsupportedNotes": "mobile runtime provider calls are not admitted" },
-        "facility": { "status": "UNSUPPORTED", "productionUseAllowed": false, "coverageStatus": "NOT_PROVIDED_BY_SOURCE", "updateFrequency": "approved-snapshot-only", "unsupportedNotes": "source does not provide accessibility facility records" }
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FARE_SNAPSHOT_ONLY",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "mobile runtime provider calls are not admitted"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "approved-snapshot-only",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
       },
       "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
       "fareStationLineMappingLedgerHash": "9c327840275be5c4583fc9e9cfdd16d2e4ecc06f660d08fd682bf9fe27d72390"
+    },
+    {
+      "id": "kric-subway-route-info",
+      "displayName": "도시철도 전체노선정보",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo&page=2",
+      "datasetKind": "open-api",
+      "coverage": "도시철도 운영기관·노선·역 구성과 기본 역사정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "airport-railroad"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-11",
+      "retrievedAt": "2026-07-11",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo&page=2"
+      },
+      "fieldsProvided": [
+        "lnCd",
+        "mreaWideCd",
+        "railOprIsttCd",
+        "routCd",
+        "routNm",
+        "stinCd",
+        "stinConsOrdr",
+        "stinNm"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-subway-route-info",
+        "sourceId": "kric-subway-route-info",
+        "snapshotId": "kric-subway-route-info-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "bf0d324018c6d2353bfe4da8c7385ef867aacb27a26dcda311a259641a35aa03",
+        "rawSha256": "b886b7652cc9be69efb6a8acbdfdcb12f8110f15cdc2dcc5481455abb7fe8e9f",
+        "schemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
+        "sourceSnapshotSetHash": "2df0ae19ec2ee9e6eb708d6c2d44af1a5c5a735477a87149f6e936261c2cd2c8",
+        "adminReviewRecordHash": "6ab92b4f57903f5e1bc07068c7d8c2baffdf5c56bf08057af33daef8e9814cfa",
+        "licenseEvidenceHash": "5aa7c5ec4d4c7aa7762dfeb682f2dee1a8550e82b6e0d343657a40dde5f0b15f",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-station-info",
+      "displayName": "역사별 정보",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=183&service=convenientInfo&operation=stationInfo&page=2",
+      "datasetKind": "open-api",
+      "coverage": "도시철도 운영기관·노선·역 구성과 기본 역사정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "korail"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-11",
+      "retrievedAt": "2026-07-11",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=183&service=convenientInfo&operation=stationInfo&page=2"
+      },
+      "fieldsProvided": [
+        "lnCd",
+        "lonmAdr",
+        "mapCordX",
+        "mapCordY",
+        "railOprIsttCd",
+        "roadNmAdr",
+        "stinCd",
+        "stinLocLat",
+        "stinLocLon",
+        "stinNm",
+        "stinNmEng",
+        "stinNmJpn",
+        "stinNmRom",
+        "stinNmSimpcina",
+        "stinNmTradcina",
+        "strkZone"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-info",
+        "sourceId": "kric-station-info",
+        "snapshotId": "kric-station-info-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "cf5b877a765f5d84b48450b6aa5ef5fe9fea5776ca856dba7dafccada9a6d2de",
+        "rawSha256": "dcccbf5c08a51c453264f8b56d3135e0a44a92acc6e4d9ca588f5dfa0c568297",
+        "schemaFingerprint": "b33b608e3cdcc3610e3a41ab789d10294745fef124321887089291b62ee709f9",
+        "sourceSnapshotSetHash": "a6c8a081d58e2cf60cb491d97565552036ea71a38ada59b1ae6249df85a60071",
+        "adminReviewRecordHash": "0c4266199727cb5276edba70098e30e9ebd3ebed99d91844ca4030b4210fe79d",
+        "licenseEvidenceHash": "9a660dca1ef9c67a8389c42c381b934dbcc2ba9615927715f0145bf18e81fbdd",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-train-operation-organ",
+      "displayName": "열차운영기관정보",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+      "datasetKind": "open-api",
+      "coverage": "도시철도 운영기관·노선·역 구성과 기본 역사정보",
+      "coverageScope": {
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3"
+      },
+      "fieldsProvided": [
+        "railOprIsttCd",
+        "railOprIsttNm"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-train-operation-organ",
+        "sourceId": "kric-train-operation-organ",
+        "snapshotId": "kric-train-operation-organ-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "58c2bccb1270f7e0b81eea7dc3777aed4ddad6d88dc7d20e315e520e5b1586ce",
+        "rawSha256": "78bfb7aac85ad6e2a032caa3e13c1981f1a5b477f1d471d11925d38f8eedda05",
+        "schemaFingerprint": "71679e88d954cea55f5c5b3d31b285588d356dca59c670c65bb18c193bfcb2c5",
+        "sourceSnapshotSetHash": "5f7c39f1fc04a5c6269d78dd819eac8c7dbba261fef66c11069560a58540aa7a",
+        "adminReviewRecordHash": "80610e8f04d23b6140ee4c60b4581e5fb4e61bee4011f8dfa626b6c24e78b553",
+        "licenseEvidenceHash": "bd7b209e47aeb0996ccdd6d1913d8a732ae8539cb9e648a55cfbebb9a64d0fd8",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-station-transfer-info",
+      "displayName": "역사별 환승정보",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=181&service=convenientInfo&operation=stationTransferInfo&page=2",
+      "datasetKind": "open-api",
+      "coverage": "역사별 환승 노선과 환승 구조 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "route_graph_topology"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=181&service=convenientInfo&operation=stationTransferInfo&page=2"
+      },
+      "fieldsProvided": [
+        "chtnDst",
+        "chtnLn",
+        "clsLocCont",
+        "lnCd",
+        "railOprIsttCd",
+        "stLocCont",
+        "stinCd"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-transfer-info",
+        "sourceId": "kric-station-transfer-info",
+        "snapshotId": "kric-station-transfer-info-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "86413bce43f163b7be74d75ba7cd1aa8b475f828f5bf23823115ef8cdc73fabd",
+        "rawSha256": "4f6e82f8c4965cc358506be8f8d74252f2307807e65490da82a53d301f7f3dc0",
+        "schemaFingerprint": "4a7de9cfd32f958089da12bdc3ae80a00fd9ad13ab0fe2c35ae7b6a7c4b7fa00",
+        "sourceSnapshotSetHash": "607d8a91b46c7718d6283cd79b498ab796ab4c5e29fd35f1167fb570994e6a72",
+        "adminReviewRecordHash": "307335d28973df02515a20791f58a4e26e792dfcbac27110169e76d4ba0e785f",
+        "licenseEvidenceHash": "765226bc2d5a44bfbc5f4097b08ca632b1a39472501d6dccd4115d264992bb8e",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-station-platform",
+      "displayName": "역사별 승강장 정보",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=433&service=convenientInfo&operation=stPlf&page=1",
+      "datasetKind": "open-api",
+      "coverage": "승강장 유형·방향과 교통약자 이동 보조 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=433&service=convenientInfo&operation=stPlf&page=1"
+      },
+      "fieldsProvided": [
+        "grndDvCd",
+        "lnCd",
+        "plfCplFlg",
+        "plfNo",
+        "plfTpCd",
+        "plfTpNm",
+        "railOprIsttCd",
+        "runDirTmnStinCd",
+        "scrCharExt",
+        "sfFotExt",
+        "stinCd",
+        "stinFlor",
+        "updnDvCd"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-platform",
+        "sourceId": "kric-station-platform",
+        "snapshotId": "kric-station-platform-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "f2d81fef2d1bd7bed85a36f27adde74c5b7033282a7fca50d98358d862a0e61a",
+        "rawSha256": "825099e3ee85505bb41f3af214c18ca8a01f421046f31dd9abc564e3911def81",
+        "schemaFingerprint": "764d4c96d2b8fe056c12621fb485587bd83d6aee3e99a5174f1fbf9a20d2a41f",
+        "sourceSnapshotSetHash": "041ee64054c92022d1f69cb7ff958c359c0f48a423a1ec69039f3f2111f2abdc",
+        "adminReviewRecordHash": "b344fdfb56c209d80341515bf429bee230dc05cedf8437f64e239abdd95f5fe6",
+        "licenseEvidenceHash": "c9b7db4bf77fbeb68ef9baf504f8976bd118a68dc2d67b38d82a04300598591c",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-station-movement-standard",
+      "displayName": "출입구-승강장 이동경로(표준)",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=429&service=handicapped&operation=stationMovement&page=1",
+      "datasetKind": "open-api",
+      "coverage": "역사 출입구·승강장 이동경로 단계와 승강기 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "indoor_movement_paths"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=429&service=handicapped&operation=stationMovement&page=1"
+      },
+      "fieldsProvided": [
+        "edMovePath",
+        "elvtSttCd",
+        "elvtTpCd",
+        "exitMvTpOrdr",
+        "imgPath",
+        "mvContDtl",
+        "mvPathMgNo",
+        "stMovePath"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-movement-standard",
+        "sourceId": "kric-station-movement-standard",
+        "snapshotId": "kric-station-movement-standard-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "cfa233eee0dbeaf4a8db7eb5798d081c1ce7e7e5a1dfae3d7bf8222902e1f365",
+        "rawSha256": "0608042eb039c664ac9e9a6fa0dba016fa82c15d06fc449ce0a975d3fc45c463",
+        "schemaFingerprint": "5c70f856c3ee0b18b8117c058766d46a0a3be9e9b6143a8613411d644f682ef0",
+        "sourceSnapshotSetHash": "4145ca0dbf725fe2c1cfb6920be5970c7a8bbc061ca2a209f0e97bc158738a42",
+        "adminReviewRecordHash": "91d0e5fca8bd8529ebb1c9c4a296b8e6550f0a2182c9a67ce5730f413ede76fe",
+        "licenseEvidenceHash": "80555d4f86dfa1d51e0618df22b8392fc439a33daf80fed3a9c4f2a728fec9bb",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-station-movement-detailed",
+      "displayName": "출입구-승강장 이동경로",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=306&service=vulnerableUserInfo&operation=stationMovement&page=2",
+      "datasetKind": "open-api",
+      "coverage": "역사 출입구·승강장 이동경로 단계와 승강기 정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "indoor_movement_paths"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=306&service=vulnerableUserInfo&operation=stationMovement&page=2"
+      },
+      "fieldsProvided": [
+        "edMovePath",
+        "elvtSttCd",
+        "elvtTpCd",
+        "exitMvTpOrdr",
+        "imgPath",
+        "mvContDtl",
+        "mvPathMgNo",
+        "stMovePath"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-movement-detailed",
+        "sourceId": "kric-station-movement-detailed",
+        "snapshotId": "kric-station-movement-detailed-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "b65952f44c16eceb3a4a6bf8f9ee3d22dca2246590678271e85f446eb862ac47",
+        "rawSha256": "0608042eb039c664ac9e9a6fa0dba016fa82c15d06fc449ce0a975d3fc45c463",
+        "schemaFingerprint": "5c70f856c3ee0b18b8117c058766d46a0a3be9e9b6143a8613411d644f682ef0",
+        "sourceSnapshotSetHash": "72ca78c2eb97e7b4e6fbdebee2251b9d8279c7870dde78ce5fbd661211fadfd7",
+        "adminReviewRecordHash": "859ad16721a410f4102438a110a5e24905619c35c17b947b59f533d0a54ce9ed",
+        "licenseEvidenceHash": "dcb3ec75f3f0456df61723c8c5a809f3e59a2d62b15d282e0dbffccbc9c5415c",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
+    },
+    {
+      "id": "kric-station-convenience-standard",
+      "displayName": "편의정보(표준)",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "KRIC OpenAPI",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+      "datasetKind": "open-api",
+      "coverage": "역사·차량 편의시설과 교통약자 편의정보",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "provider documented; production cadence not admitted",
+      "observedDataUpdatedAt": "2026-07-12",
+      "retrievedAt": "2026-07-12",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 1유형",
+        "attribution": "공공누리 제1유형: 출처표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1"
+      },
+      "fieldsProvided": [
+        "dtlLoc",
+        "grndDvCd",
+        "gubun",
+        "imgPath",
+        "mlFmlDvCd",
+        "stinFlor",
+        "trfcWeakDvCd"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "source is not admitted as production realtime arrival data"
+        },
+        "facility": {
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+        }
+      },
+      "admissionEvidence": {
+        "artifactKind": "source-admission-pipeline-evidence-summary",
+        "issue": 1397,
+        "candidateId": "kric-station-convenience-standard",
+        "sourceId": "kric-station-convenience-standard",
+        "snapshotId": "kric-station-convenience-standard-admin-review-20260713",
+        "decision": "APPROVED",
+        "approvedBy": "AquilaXk",
+        "approvedAt": "2026-07-13T22:30:00+09:00",
+        "sampleEvidenceHash": "561610c243d8e4abf9a8760073eb0d49b403423471c623eb310f3419d06c8ce3",
+        "rawSha256": "70ed3faa95bd937dfc6a777bb0f7ac3c0c0ea310372f830ff041f14b12bcdcfb",
+        "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+        "sourceSnapshotSetHash": "79644ce84d854c7f56b4ed8c1f49da8ee8b4d1c28d12fd121b7c419f9bfb52e6",
+        "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+        "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
+        "aliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
+        "operatorMappingLedgerHash": "35875abc304e8aaa49cfab7b3c389cc45abde3dda82834634c80ea0f863704cf",
+        "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
+        "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
+        "overrideHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
+        "admissionDurationSeconds": 0,
+        "quotaEvidence": {
+          "defaultDailyLimit": "unlimited",
+          "portal": "KRIC 레일포털",
+          "productionUseAllowed": false,
+          "unlockStatus": "not_required"
+        },
+        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      }
     }
   ]
 }

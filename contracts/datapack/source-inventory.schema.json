@@ -57,6 +57,7 @@
             }
           },
           "requiredForProductionPack": { "type": "boolean" },
+          "productionUseAllowed": { "type": "boolean", "const": false },
           "updateFrequency": { "type": "string" },
           "observedDataUpdatedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
           "retrievedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },

@@ -14,7 +14,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -57,15 +57,24 @@
         ],
         "liveSampleNote": "2026-07-11 workflow run 29148603270 (head 6d8e4f8f3fc8398f981555e99bb37ba34e7afcd1)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=14인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다. raw/provider-record 독립 재계산은 수행하지 않음. raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않음. sample tuple mreaWideCd=01, lnCd=A1은 4호선 coverage가 아님.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",
           "line4RouteStationOrderCoverage",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "bf0d324018c6d2353bfe4da8c7385ef867aacb27a26dcda311a259641a35aa03",
+          "adminReviewRecordHash": "6ab92b4f57903f5e1bc07068c7d8c2baffdf5c56bf08057af33daef8e9814cfa"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and 4호선 route station order coverage before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1400에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -90,7 +99,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate does not provide accessibility facility records"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-subway-route-info",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-station-info",
@@ -101,7 +112,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationInfo",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -160,16 +171,25 @@
         ],
         "liveSampleNote": "2026-07-11 workflow run 29148721533 (head 6d8e4f8f3fc8398f981555e99bb37ba34e7afcd1)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=1인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다. raw/provider-record 독립 재계산은 수행하지 않음. raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않음. sample tuple railOprIsttCd=KR, lnCd=1, stinCd=135, stinNm=용산은 4호선 coverage가 아님.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",
           "kricStandardStationFileComparison",
           "line4StationCoverage",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "cf5b877a765f5d84b48450b6aa5ef5fe9fea5776ca856dba7dafccada9a6d2de",
+          "adminReviewRecordHash": "0c4266199727cb5276edba70098e30e9ebd3ebed99d91844ca4030b4210fe79d"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, KRIC standard station file comparison, and 4호선 station coverage before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1400에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -194,7 +214,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate does not provide accessibility facility records"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-station-info",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-train-operation-organ",
@@ -205,7 +227,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/trainOperationOrgan",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -236,15 +258,24 @@
         ],
         "liveSampleNote": "2026-07-12 workflow run 29201302750 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=1인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",
           "operatorCoverageEvidence",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "58c2bccb1270f7e0b81eea7dc3777aed4ddad6d88dc7d20e315e520e5b1586ce",
+          "adminReviewRecordHash": "80610e8f04d23b6140ee4c60b4581e5fb4e61bee4011f8dfa626b6c24e78b553"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and operator coverage for airport rail, GTX, and light rail before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1400에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -269,7 +300,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate does not provide accessibility facility records"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-train-operation-organ",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-station-transfer-info",
@@ -280,7 +313,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationTransferInfo",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -321,15 +354,24 @@
         ],
         "liveSampleNote": "2026-07-12 workflow run 29201337952 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=4인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",
           "providerTermsOrQuotaApproval",
           "rawObjectUri",
           "stepFreeMovementSeparationEvidence"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "86413bce43f163b7be74d75ba7cd1aa8b475f828f5bf23823115ef8cdc73fabd",
+          "adminReviewRecordHash": "307335d28973df02515a20791f58a4e26e792dfcbac27110169e76d4ba0e785f"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and keep transfer relationship evidence separate from step-free movement evidence before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1701에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -354,7 +396,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-station-transfer-info",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-station-platform",
@@ -365,7 +409,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stPlf",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -418,15 +462,24 @@
         ],
         "liveSampleNote": "KRIC 공식 stPlf 문서는 updnDvcd로 표기하지만 live wire는 updnDvCd를 반환한다. 2026-07-12 workflow run 29201338889 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=2인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",
           "operatorFieldCompletenessEvidence",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "f2d81fef2d1bd7bed85a36f27adde74c5b7033282a7fca50d98358d862a0e61a",
+          "adminReviewRecordHash": "b344fdfb56c209d80341515bf429bee230dc05cedf8437f64e239abdd95f5fe6"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and operator field completeness before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1701에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -451,7 +504,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-station-platform",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-station-movement-standard",
@@ -462,7 +517,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationMovement",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -505,7 +560,6 @@
         ],
         "liveSampleNote": "2026-07-12 workflow run 29201339728 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=xml, rowCount=6인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "distanceDurationEdgeEvidence",
           "licenseCommercialRedistributionEvidence",
@@ -515,9 +569,19 @@
         "missingConfirmedEdgeFields": [
           "distanceMeters",
           "durationSeconds"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "cfa233eee0dbeaf4a8db7eb5798d081c1ce7e7e5a1dfae3d7bf8222902e1f365",
+          "adminReviewRecordHash": "91d0e5fca8bd8529ebb1c9c4a296b8e6550f0a2182c9a67ce5730f413ede76fe"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and distance and duration edge evidence before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1701에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -542,7 +606,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-station-movement-standard",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-station-movement-detailed",
@@ -553,7 +619,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationMovement",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -600,16 +666,25 @@
           "durationSeconds"
         ],
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "distanceDurationEdgeEvidence",
           "licenseCommercialRedistributionEvidence",
           "primarySourceDecisionEvidence",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "b65952f44c16eceb3a4a6bf8f9ee3d22dca2246590678271e85f446eb862ac47",
+          "adminReviewRecordHash": "859ad16721a410f4102438a110a5e24905619c35c17b947b59f533d0a54ce9ed"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, distance and duration edge evidence, and compare with the standard movement API before choosing a primary source for production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1701에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -634,7 +709,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-station-movement-detailed",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "kric-transfer-movement-standard",
@@ -730,9 +807,18 @@
         "missingConfirmedEdgeFields": [
           "distanceMeters",
           "durationSeconds"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "REJECTED_NO_DATA",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "PRODUCTION_INVENTORY_ADMISSION",
+          "productionUseAllowed": false,
+          "reasonKo": "승인된 handicapped/transferMovement key 경로에서 공식 요청변수 표 tuple(run 29251592781)과 공식 sample URL tuple(run 29252661883)을 각각 Node process.env 경로로 호출했으나 모두 HTTP 200, XML, resultCode=03, itemCount=0을 반환했다. row-bearing evidence가 없어 production inventory admission을 거부한다."
+        }
       },
-      "nextAction": "execute the official documented tuple prevStinCd=422, chtnNextStinCd=424 through the tracked workflow with direct GitHub secret to Node process.env delivery; on row-bearing evidence, continue sanitized evidence and admin review, while retaining automatic route graph edge disabled until separate distance and duration evidence exists",
+      "nextAction": "admin review에서 no-data로 production inventory admission을 거부했다. KRIC가 row-bearing 공식 tuple 또는 데이터 정정을 제공할 때만 새 evidence로 재심사하며, 그 전에는 automaticRouteGraphEdgeAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -857,7 +943,7 @@
       "requestUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "evidence_recorded_admin_review_required",
+      "admissionStatus": "admitted_to_production_inventory",
       "automaticRouteGraphEdgeAllowed": false,
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
@@ -898,15 +984,24 @@
         ],
         "liveSampleNote": "2026-07-12 workflow run 29201342431 (head e451fbdf352fef74dc376c9f16d476aca287b492)은 backend-only secret 경로에서 credentialRedacted=true, format=json, rowCount=9인 sanitized sample artifact를 생성했고 sample↔hashes 정합과 validator를 통과했다(source candidate sample evidence valid). raw response와 credential은 artifact 또는 mobile/offline pack에 포함하지 않는다.",
         "missingEvidence": [
-          "adminAdmissionEvidence",
           "credentialFreeRawArchive",
           "licenseCommercialRedistributionEvidence",
           "primarySourceDecisionEvidence",
           "providerTermsOrQuotaApproval",
           "rawObjectUri"
-        ]
+        ],
+        "adminReview": {
+          "artifactKind": "source-admission-admin-review-summary",
+          "decision": "APPROVED",
+          "approvedBy": "AquilaXk",
+          "approvedAt": "2026-07-13T22:30:00+09:00",
+          "scope": "INVENTORY_PROVENANCE_ONLY",
+          "productionUseAllowed": false,
+          "sampleEvidenceHash": "561610c243d8e4abf9a8760073eb0d49b403423471c623eb310f3419d06c8ce3",
+          "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407"
+        }
       },
-      "nextAction": "complete credential-free raw archive and approved object URI, owner admin review, commercial/redistribution license evidence, provider terms/quota approval, and decide the primary or secondary role against detailed facility APIs before production inventory admission",
+      "nextAction": "source admin review와 inventory provenance 승격 완료(오너 승인 2026-07-13). #1701에서 coverage·품질·provider operation 승인 근거를 확인하기 전에는 productionUseAllowed=false를 유지한다",
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -931,7 +1026,9 @@
           "updateFrequency": "provider documented; production cadence not admitted",
           "unsupportedNotes": "candidate facility coverage has validated live sample provenance but requires remaining admission evidence before production use"
         }
-      }
+      },
+      "productionInventoryReferenceId": "kric-station-convenience-standard",
+      "productionInventoryRelationship": "inventory_provenance_only_admin_reviewed_for_1397"
     },
     {
       "id": "seoul-metro-accessibility",
@@ -2324,7 +2421,7 @@
         "liveSampleRowCount": 2,
         "liveSampleEvidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
         "snapshotId": "seoul-metro-official-od-fares-20260712",
-      "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
+        "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
         "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
         "coverageLimitations": [
           "상록수→사당 및 사당→상록수 두 방향의 승인된 2026-07-12 offline snapshot만 사용",
@@ -2369,10 +2466,27 @@
       "operation": {
         "method": "GET",
         "endpoint": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
-        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
-        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "dataType", "dptreStnNm", "arvlStnNm"],
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "pageNo",
+          "numOfRows",
+          "dataType",
+          "dptreStnNm",
+          "arvlStnNm"
+        ],
         "responseEnvelope": "response.body.items.item",
-        "runner": { "command": "node tools/datapack/probe-seoul-fare-api.mjs", "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "FARE_API_PROBE_OUTPUT"] },
+        "runner": {
+          "command": "node tools/datapack/probe-seoul-fare-api.mjs",
+          "requiredEnv": [
+            "DATA_GO_KR_SERVICE_KEY",
+            "FARE_API_PROBE_OUTPUT"
+          ]
+        },
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
@@ -2382,7 +2496,16 @@
       "mobileEmbeddingAllowed": false,
       "productionInventoryReferenceId": "seoul-metro-official-od-fare-canary",
       "evidence": {
-        "outputFields": ["dptreStnCd", "arvlStnCd", "gnrlCardFare", "gnrlCashFare", "yungCardFare", "yungCashFare", "childCardFare", "childCashFare"],
+        "outputFields": [
+          "dptreStnCd",
+          "arvlStnCd",
+          "gnrlCardFare",
+          "gnrlCashFare",
+          "yungCardFare",
+          "yungCashFare",
+          "childCardFare",
+          "childCashFare"
+        ],
         "liveSampleEvidenceHash": "a0d24e1e454f4165e879d74fdb352afd48e09c93af843aad97ddc0263031422d",
         "snapshotId": "seoul-metro-official-od-fare-canary-run-29085674167",
         "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
@@ -2399,10 +2522,19 @@
       "operation": {
         "method": "GET",
         "endpoint": "https://www2.humetro.busan.kr/homepage/chs/page/subLocation.do?menu_no=1001010501",
-        "auth": { "placement": "none" },
-        "requiredParameters": ["menu_no"],
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [
+          "menu_no"
+        ],
         "responseEnvelope": "HTML 운임표 tbody의 1구간·2구간 rows",
-        "runner": { "command": "node tools/datapack/probe-busan-fare-api.mjs", "requiredEnv": ["BUSAN_FARE_API_PROBE_OUTPUT"] },
+        "runner": {
+          "command": "node tools/datapack/probe-busan-fare-api.mjs",
+          "requiredEnv": [
+            "BUSAN_FARE_API_PROBE_OUTPUT"
+          ]
+        },
         "secretPolicy": "credential-free-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
@@ -2410,7 +2542,12 @@
       "admissionStatus": "evidence_recorded_linked_to_busan_official_od_fares",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "outputFields": ["1구간", "2구간", "교통카드", "QR승차권"]
+        "outputFields": [
+          "1구간",
+          "2구간",
+          "교통카드",
+          "QR승차권"
+        ]
       }
     },
     {
@@ -2423,10 +2560,21 @@
       "operation": {
         "method": "POST",
         "endpoint": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
-        "auth": { "placement": "none" },
-        "requiredParameters": ["mo_scode_s", "mo_scode_e", "cyber_kinds"],
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [
+          "mo_scode_s",
+          "mo_scode_e",
+          "cyber_kinds"
+        ],
         "responseEnvelope": "HTML .result-2 .discountCard/.discountMoney",
-        "runner": { "command": "node tools/datapack/probe-busan-fare-api.mjs", "requiredEnv": ["BUSAN_FARE_API_PROBE_OUTPUT"] },
+        "runner": {
+          "command": "node tools/datapack/probe-busan-fare-api.mjs",
+          "requiredEnv": [
+            "BUSAN_FARE_API_PROBE_OUTPUT"
+          ]
+        },
         "secretPolicy": "credential-free-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
@@ -2435,7 +2583,10 @@
       "mobileEmbeddingAllowed": false,
       "productionInventoryReferenceId": "busan-transportation-official-od-fares",
       "evidence": {
-        "outputFields": ["discountCard", "discountMoney"],
+        "outputFields": [
+          "discountCard",
+          "discountMoney"
+        ],
         "liveSampleEvidenceHash": "a4939a97b2c503ff2344f05f9928d71dee3414967bb284e28da48f754a04b6d4",
         "snapshotId": "busan-transportation-official-od-fares-20260713",
         "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
