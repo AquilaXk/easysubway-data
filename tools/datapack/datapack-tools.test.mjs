@@ -14813,6 +14813,103 @@ test("bundled 공식 OD quote no-op도 catalog user_version 16을 강제한다",
   }
 });
 
+test("수도권 bundled datapack은 빠른하차 차량·출입문 힌트 35건을 포함한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-"));
+  const databasePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      databasePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_car_door_hints").get().count, 35);
+      const distribution = database.prepare(`
+        SELECT station_id AS stationId, line_id AS lineId, COUNT(*) AS count
+        FROM station_car_door_hints
+        GROUP BY station_id, line_id
+        ORDER BY station_id, line_id
+      `).all().map((row) => ({ ...row }));
+      assert.deepEqual(distribution, [
+        { stationId: "station-gangnam", lineId: "seoul-2", count: 10 },
+        { stationId: "station-sadang", lineId: "seoul-2", count: 13 },
+        { stationId: "station-sadang", lineId: "seoul-4", count: 8 },
+        { stationId: "station-seongsu", lineId: "seoul-2", count: 4 },
+      ]);
+    } finally {
+      database.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 차량·출입문 힌트 재적용은 SQLite와 gzip hash를 변경하지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-idempotent-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  try {
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+    const apply = () => execFileAsync(process.execPath, [
+      "tools/datapack/apply-car-door-hints-to-bundled-pack.mjs",
+      "--pack", packPath,
+      "--index", indexPath,
+    ], { cwd: root });
+
+    await apply();
+    const firstPack = await readFile(packPath);
+    const firstIndex = await readFile(indexPath);
+    await apply();
+
+    assert.equal(sha256(await readFile(packPath)), sha256(firstPack));
+    assert.equal(sha256(await readFile(indexPath)), sha256(firstIndex));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 차량·출입문 힌트 check는 catalog user_version 16을 요구한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-check-version-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      sqlitePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(sqlitePath);
+    database.exec("PRAGMA user_version = 15");
+    database.close();
+    const sqliteBytes = await readFile(sqlitePath);
+    const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+    await writeFile(packPath, gzipBytes);
+    const index = JSON.parse(
+      await readFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"),
+    );
+    Object.assign(index.packs.find(({ id }) => id === "capital"), {
+      sha256: sha256(gzipBytes),
+      sqliteSha256: sha256(sqliteBytes),
+      byteSize: gzipBytes.length,
+    });
+    await writeFile(indexPath, JSON.stringify(index));
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/apply-car-door-hints-to-bundled-pack.mjs",
+        "--pack", packPath,
+        "--index", indexPath,
+        "--check",
+      ], { cwd: root }),
+      /bundled catalog user_version must be 16/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("official OD fare builder는 malformed·미승인·formula-shaped row를 거부한다", async () => {
   const baseline = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
   const cases = [
