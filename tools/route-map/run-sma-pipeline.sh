@@ -58,8 +58,8 @@ node tools/route-map/enrich-capital-route-map-layer.mjs --pack "$PACK" --index "
 echo "[7/7] 게이트 실측"
 spacing_out="$(node tools/route-map/audit-station-spacing.mjs)"
 printf '%s\n' "$spacing_out" | head -2
-transfer_out="$(node tools/route-map/audit-transfer-groups.mjs)"
-printf '%s\n' "$transfer_out" | head -2
+transfer_out="$(node tools/route-map/audit-transfer-groups.mjs --strict)"
+printf '%s\n' "$transfer_out"
 
 if [[ -n "$PREV_GEOM" ]]; then
   echo "[diff] v(N)↔v(N+1) 변경 리포트"

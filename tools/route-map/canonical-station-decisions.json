@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "canonical-station-decisions",
+  "region": "수도권",
+  "reviewedAt": "2026-07-13",
+  "decisions": [
+    {
+      "normalizedName": "상봉",
+      "status": "MERGE_CONFIRMED",
+      "canonicalStationId": "station-83bcb1eae340",
+      "absorbedStationIds": ["station-f4a450b35d91"],
+      "expectedLineIds": ["line-15b3b8a93259", "line-54a7b980b7c3", "line-6e39be0cb6e2"],
+      "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "reviewedAt": "2026-07-13",
+      "reason": "서울교통공사 노선도에서 7호선 2722와 경의중앙·경춘 1309가 동일 data-uid 2722 환승역이다. 노선 2개를 이미 가진 ID를 대표로 유지한다."
+    },
+    {
+      "normalizedName": "석남",
+      "status": "MERGE_CONFIRMED",
+      "canonicalStationId": "station-57db2f1fb4f6",
+      "absorbedStationIds": ["station-37866f28b417"],
+      "expectedLineIds": ["line-15b3b8a93259", "line-42b5805f3b5a"],
+      "evidenceUrl": "https://www.ictr.or.kr/main/railway/guidance/mobile_sn.jsp",
+      "reviewedAt": "2026-07-13",
+      "reason": "인천교통공사 공식 환승 지도는 석남역의 7호선↔인천2호선 환승 동선을 한 역사로 제공한다. 기존 7호선 ID를 대표로 유지한다."
+    },
+    {
+      "normalizedName": "이매",
+      "status": "MERGE_CONFIRMED",
+      "canonicalStationId": "station-ea48bd3f46f2",
+      "absorbedStationIds": ["station-7423a5270c95"],
+      "expectedLineIds": ["line-558d0bd8312d", "line-e4939a4b4713"],
+      "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "reviewedAt": "2026-07-13",
+      "reason": "서울교통공사 노선도에서 수인분당 1860과 경강 1502가 동일 data-uid 1860 환승역이다. 기존 수인분당 ID를 대표로 유지한다."
+    },
+    {
+      "normalizedName": "신촌",
+      "status": "DISTINCT_CONFIRMED",
+      "stationLines": {
+        "station-4e123a19a88f": ["seoul-2"],
+        "station-d6935359840d": ["line-6e39be0cb6e2"]
+      },
+      "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "reviewedAt": "2026-07-13",
+      "reason": "공식 노선도에서 2호선 신촌은 station-cd/data-uid 0240, 경의중앙 신촌은 1252로 서로 다르고 환승 표기가 없다."
+    },
+    {
+      "normalizedName": "양평",
+      "status": "DISTINCT_CONFIRMED",
+      "stationLines": {
+        "station-d5909895c7d7": ["line-80fc4d5350d4"],
+        "station-7bbe244e2071": ["line-6e39be0cb6e2"]
+      },
+      "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+      "reviewedAt": "2026-07-13",
+      "reason": "공식 노선도에서 5호선 양평은 station-cd/data-uid 2523, 경의중앙 양평은 1217로 서로 다르고 환승 표기가 없다."
+    }
+  ],
+  "controls": [
+    {
+      "normalizedName": "서울역",
+      "canonicalStationId": "station-2af75c3d707b",
+      "expectedLineIds": ["line-472a81add377", "line-6e39be0cb6e2", "line-8604048b6430", "line-e9e9a5b520a4", "seoul-4"],
+      "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do"
+    },
+    {
+      "normalizedName": "청량리",
+      "canonicalStationId": "station-b819702fa7d9",
+      "expectedLineIds": ["line-472a81add377", "line-54a7b980b7c3", "line-558d0bd8312d", "line-6e39be0cb6e2"],
+      "evidenceUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do"
+    }
+  ],
+  "changeEvidence": {
+    "basePackSha256": "46b5c5050dc27cad657bf5c99463d526e0b7bf83b563ff7a0a306c693ac98797",
+    "outputPackSha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    "rowCounts": {
+      "before": {
+        "stations": 949,
+        "station_lines": 1108,
+        "network_edges": 2144,
+        "route_map_positions": 1102,
+        "transit_stop_times": 932,
+        "station_aliases": 5
+      },
+      "after": {
+        "stations": 946,
+        "station_lines": 1108,
+        "network_edges": 2144,
+        "route_map_positions": 1102,
+        "transit_stop_times": 932,
+        "station_aliases": 17
+      }
+    },
+    "reparentedStations": [
+      {
+        "absorbedStationId": "station-f4a450b35d91",
+        "canonicalStationId": "station-83bcb1eae340",
+        "movedLineIds": ["line-15b3b8a93259"]
+      },
+      {
+        "absorbedStationId": "station-37866f28b417",
+        "canonicalStationId": "station-57db2f1fb4f6",
+        "movedLineIds": ["line-42b5805f3b5a"]
+      },
+      {
+        "absorbedStationId": "station-7423a5270c95",
+        "canonicalStationId": "station-ea48bd3f46f2",
+        "movedLineIds": ["line-e4939a4b4713"]
+      }
+    ],
+    "strictAudit": {
+      "splitSuspectCount": 0,
+      "mergeHintCount": 1,
+      "mergeHintDecision": "신촌 DISTINCT_CONFIRMED",
+      "identityViolationCount": 0,
+      "missingEvidenceCount": 0
+    },
+    "routeGraphTopology": {
+      "before": {
+        "stationLineNodeCount": 1108,
+        "networkEdgeCount": 2144,
+        "localRideAdjacencyViolationCount": 84,
+        "disconnectedNodeCount": 0,
+        "unreachableDirectedPairCount": 541776
+      },
+      "after": {
+        "stationLineNodeCount": 1108,
+        "networkEdgeCount": 2144,
+        "localRideAdjacencyViolationCount": 84,
+        "disconnectedNodeCount": 0,
+        "unreachableDirectedPairCount": 541776
+      }
+    }
+  }
+}

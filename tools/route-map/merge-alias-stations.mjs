@@ -18,7 +18,7 @@ import {
   mutatePack,
   parsePackArgs,
   reparentLine,
-  rehomeAllStationNodes,
+  reparentStation,
 } from "./station-surgery.mjs";
 
 /** 병합 대상(공식 근거 첨부). aliasId를 representativeId 그룹으로 흡수. */
@@ -71,7 +71,7 @@ function applyMerge(db, spec) {
         `${spec.name}: 이미 병합됐다고 보기엔 대표 멤버 수가 기대와 다름 (${current} ≠ ${spec.expectedMembers}) — id 확인 필요`,
       );
     }
-    rehomeAllStationNodes(db, spec.aliasId, spec.representativeId);
+    reparentStation(db, { fromStationId: spec.aliasId, toStationId: spec.representativeId });
     return { name: spec.name, skipped: "이미 병합됨(엣지 정합 확인)" };
   }
   const aliasLines = db
@@ -85,6 +85,7 @@ function applyMerge(db, spec) {
   for (const r of plan.reassignments) {
     reparentLine(db, { ...r, label: spec.name });
   }
+  reparentStation(db, { fromStationId: spec.aliasId, toStationId: spec.representativeId });
   db.prepare("DELETE FROM stations WHERE id=?").run(plan.deleteStationId);
   const memberCount = db
     .prepare("SELECT COUNT(*) c FROM station_lines WHERE station_id=?")

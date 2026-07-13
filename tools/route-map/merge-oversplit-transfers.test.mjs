@@ -9,13 +9,16 @@ test("reconcileNameSub는 대표의 부역명을 유지하고 없으면 흡수�
   assert.equal(reconcileNameSub("", ""), "");
 });
 
-test("MERGES는 부역명에 가려졌던 환승역 오분리 7건을 담는다", () => {
+test("MERGES는 공식 근거로 확정한 수도권 환승역 오분리를 담는다", () => {
   const names = MERGES.map((m) => m.name).sort();
   assert.deepEqual(names, [
     "별내",
     "복정",
+    "상봉",
+    "석남",
     "성신여대입구",
     "온수",
+    "이매",
     "이촌",
     "종로3가",
     "청량리",

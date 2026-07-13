@@ -42,7 +42,10 @@ async function regionCoverage(region) {
 // zoom1(환승/주요역) 라벨 배치 충돌 실측이 2→12로 바뀐다(더 조밀한 도심 배치). live
 // 게이트(Dart 솔버 capital_label_overlap_gate_test)는 통과하므로 앱 체감에는 영향
 // 없고, 이 baseline은 레거시 LOD 배치 회귀 악화만 막는 참조값이다.
-const zoom1OverlapBaseline = { 수도권: 12 };
+// [2026-07-13 #2097] 상봉의 7호선 node를 canonical 환승 그룹에 합치면서 레거시
+// QA가 line_id 정렬상 7호선 polygon을 대표로 골라 망우와 1건 겹친다. live 라벨
+// solver 게이트는 통과했으며 실제 앱 라벨 회귀는 없다.
+const zoom1OverlapBaseline = { 수도권: 13 };
 
 for (const [region, expected] of Object.entries(expectedCountsByRegion)) {
   test(`${region} route map pack retains structured coverage`, async () => {

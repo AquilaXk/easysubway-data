@@ -27,8 +27,14 @@ export function parsePackArgs(argv) {
 export function rehomeLineNode(db, fromStationId, toStationId, lineId) {
   const from = `${fromStationId}:${lineId}`;
   const to = `${toStationId}:${lineId}`;
-  db.prepare("UPDATE network_edges SET from_node_id=? WHERE from_node_id=?").run(to, from);
-  db.prepare("UPDATE network_edges SET to_node_id=? WHERE to_node_id=?").run(to, from);
+  const suffix = `${from}:%`;
+  const cut = from.length + 1;
+  db.prepare(
+    "UPDATE network_edges SET from_node_id = ? || substr(from_node_id, ?) WHERE from_node_id=? OR from_node_id LIKE ?",
+  ).run(to, cut, from, suffix);
+  db.prepare(
+    "UPDATE network_edges SET to_node_id = ? || substr(to_node_id, ?) WHERE to_node_id=? OR to_node_id LIKE ?",
+  ).run(to, cut, from, suffix);
 }
 
 /**
@@ -67,14 +73,130 @@ export function reparentLine(db, { fromStationId, toStationId, lineId, label = "
   db.prepare(
     `INSERT INTO station_lines (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`,
   ).run(...cols.map((c) => (c === "station_id" ? toStationId : sl[c])));
-  db.prepare(
-    "UPDATE route_map_positions SET station_id=? WHERE station_id=? AND line_id=?",
-  ).run(toStationId, fromStationId, lineId);
+  reparentForeignKeys(db, "station_lines", {
+    station_id: [fromStationId, toStationId],
+    line_id: [lineId, lineId],
+  });
+  reparentStationLineColumns(db, { fromStationId, toStationId, lineId });
   rehomeLineNode(db, fromStationId, toStationId, lineId);
   db.prepare("DELETE FROM station_lines WHERE station_id=? AND line_id=?").run(
     fromStationId,
     lineId,
   );
+}
+
+/** stations 직접 FK를 대표 id로 옮기고 흡수 id를 기존 station_aliases에 보존한다. */
+export function reparentStation(db, { fromStationId, toStationId }) {
+  reparentForeignKeys(db, "stations", { id: [fromStationId, toStationId] });
+  reparentStationColumns(db, { fromStationId, toStationId });
+  rehomeAllStationNodes(db, fromStationId, toStationId);
+  if (tableExists(db, "station_aliases")) {
+    const exists = db
+      .prepare("SELECT 1 FROM station_aliases WHERE station_id=? AND alias=?")
+      .get(toStationId, fromStationId);
+    if (!exists) {
+      db.prepare(
+        "INSERT INTO station_aliases (station_id, alias, normalized_alias) VALUES (?, ?, ?)",
+      ).run(toStationId, fromStationId, fromStationId);
+    }
+  }
+}
+
+function reparentStationLineColumns(db, { fromStationId, toStationId, lineId }) {
+  for (const table of tablesWithColumns(db, ["station_id", "line_id"])) {
+    if (table === "station_lines") continue;
+    db.prepare(
+      `UPDATE ${quoteIdentifier(table)} SET station_id=? WHERE station_id=? AND line_id=?`,
+    ).run(toStationId, fromStationId, lineId);
+  }
+}
+
+function reparentStationColumns(db, { fromStationId, toStationId }) {
+  const stationColumns = new Set([
+    "station_id",
+    "origin_station_id",
+    "destination_station_id",
+    "from_station_id",
+    "to_station_id",
+  ]);
+  for (const { name } of db
+    .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    .all()) {
+    if (name === "stations") continue;
+    for (const column of tableColumns(db, name)) {
+      if (!stationColumns.has(column)) continue;
+      db.prepare(
+        `UPDATE ${quoteIdentifier(name)} SET ${quoteIdentifier(column)}=? WHERE ${quoteIdentifier(column)}=?`,
+      ).run(toStationId, fromStationId);
+    }
+  }
+  if (tableExists(db, "data_quality_records")) {
+    db.prepare(
+      "UPDATE data_quality_records SET target_id=? WHERE target_id=? AND UPPER(target_type)='STATION'",
+    ).run(toStationId, fromStationId);
+  }
+}
+
+function tablesWithColumns(db, requiredColumns) {
+  const tables = [];
+  for (const { name } of db
+    .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    .all()) {
+    const columns = new Set(tableColumns(db, name));
+    if (requiredColumns.every((column) => columns.has(column))) tables.push(name);
+  }
+  return tables;
+}
+
+function tableColumns(db, table) {
+  return db
+    .prepare(`PRAGMA table_info(${quoteIdentifier(table)})`)
+    .all()
+    .map((column) => column.name);
+}
+
+function reparentForeignKeys(db, referencedTable, values) {
+  for (const { table, columns } of foreignKeysTo(db, referencedTable)) {
+    const mapped = columns.filter((column) => values[column.to]);
+    if (mapped.length !== columns.length) continue;
+    const setColumns = mapped.filter((column) => values[column.to][0] !== values[column.to][1]);
+    if (setColumns.length === 0) continue;
+    const sql = `UPDATE ${quoteIdentifier(table)} SET ${setColumns
+      .map((column) => `${quoteIdentifier(column.from)}=?`)
+      .join(",")} WHERE ${mapped
+      .map((column) => `${quoteIdentifier(column.from)}=?`)
+      .join(" AND ")}`;
+    db.prepare(sql).run(
+      ...setColumns.map((column) => values[column.to][1]),
+      ...mapped.map((column) => values[column.to][0]),
+    );
+  }
+}
+
+function foreignKeysTo(db, referencedTable) {
+  const result = [];
+  for (const { name } of db
+    .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    .all()) {
+    const groups = new Map();
+    for (const row of db.prepare(`PRAGMA foreign_key_list(${quoteIdentifier(name)})`).all()) {
+      if (row.table !== referencedTable) continue;
+      if (!groups.has(row.id)) groups.set(row.id, []);
+      groups.get(row.id).push(row);
+    }
+    for (const columns of groups.values()) result.push({ table: name, columns });
+  }
+  return result;
+}
+
+function tableExists(db, table) {
+  return Boolean(
+    db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table),
+  );
+}
+
+function quoteIdentifier(value) {
+  return `"${String(value).replaceAll('"', '""')}"`;
 }
 
 /**
@@ -97,14 +219,15 @@ export function assertReferentialIntegrity(db) {
       .all()
       .map((r) => r.node),
   );
-  const nodePattern = /^station-[0-9a-f]{12}:line-[0-9a-f]{12}$/;
+  const nodePattern = /^(station-[0-9a-f]{12}):((?:line-[0-9a-f]{12})|(?:seoul-[a-z0-9-]+))(?::.*)?$/;
   const dangling = new Set();
   for (const e of db
     .prepare("SELECT from_node_id, to_node_id FROM network_edges")
     .all()) {
     for (const n of [e.from_node_id, e.to_node_id]) {
       const node = String(n);
-      if (nodePattern.test(node) && !memberships.has(node)) dangling.add(node);
+      const match = nodePattern.exec(node);
+      if (match && !memberships.has(`${match[1]}:${match[2]}`)) dangling.add(node);
     }
   }
   if (dangling.size > 0) {

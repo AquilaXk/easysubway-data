@@ -17,7 +17,7 @@ import {
   mutatePack,
   parsePackArgs,
   reparentLine,
-  rehomeAllStationNodes,
+  reparentStation,
 } from "./station-surgery.mjs";
 import { planMerge } from "./merge-alias-stations.mjs";
 
@@ -30,6 +30,9 @@ export const MERGES = [
   { name: "종로3가", keepId: "station-1c24eb757f3c", dropId: "station-839e725421e8", expectedSub: "탑골공원", evidence: "1·3·5호선 환승역(탑골공원)" },
   { name: "청량리", keepId: "station-b819702fa7d9", dropId: "station-b3a9b7ff1478", expectedSub: "서울시립대입구", evidence: "1호선·경의중앙·경춘·수인분당 환승역(서울시립대입구)" },
   { name: "이촌", keepId: "station-b90e3daa23a1", dropId: "station-bef6478fc602", expectedSub: "국립중앙박물관", evidence: "4호선·경의중앙 환승역(국립중앙박물관)" },
+  { name: "상봉", keepId: "station-83bcb1eae340", dropId: "station-f4a450b35d91", expectedSub: "시외버스터미널", evidence: "서울교통공사 공식 노선도 data-uid 2722(7호선·경의중앙·경춘 환승)" },
+  { name: "석남", keepId: "station-57db2f1fb4f6", dropId: "station-37866f28b417", expectedSub: "거북시장", evidence: "인천교통공사 공식 7호선↔인천2호선 환승 지도" },
+  { name: "이매", keepId: "station-ea48bd3f46f2", dropId: "station-7423a5270c95", expectedSub: "성남아트센터", evidence: "서울교통공사 공식 노선도 data-uid 1860(수인분당·경강 환승)" },
 ];
 
 /** 순수: 병합 후 부역명 = 대표 우선, 없으면 흡수분. */
@@ -50,7 +53,7 @@ function applyMerge(db, spec) {
         `${spec.name}: 이미 병합됐다고 보기엔 대표 부역명이 기대와 다름 ("${keep.name_sub}" ≠ "${spec.expectedSub}") — id 확인 필요`,
       );
     }
-    rehomeAllStationNodes(db, spec.dropId, spec.keepId);
+    reparentStation(db, { fromStationId: spec.dropId, toStationId: spec.keepId });
     return { name: spec.name, skipped: "이미 병합됨(엣지 정합 확인)" };
   }
   const dropLines = db
@@ -60,6 +63,7 @@ function applyMerge(db, spec) {
   for (const r of plan.reassignments) {
     reparentLine(db, { ...r, label: spec.name });
   }
+  reparentStation(db, { fromStationId: spec.dropId, toStationId: spec.keepId });
   // 부역명 보존 + 기대값 검증(하드코딩 불변식 강제)
   const mergedSub = reconcileNameSub(keep.name_sub, drop.name_sub);
   if (spec.expectedSub && mergedSub !== spec.expectedSub) {
