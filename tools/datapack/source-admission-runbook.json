@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "artifactKind": "source-admission-runbook",
   "issue": 1397,
+  "operationLookupCommand": "node tools/ci/api-catalog.mjs show provider:<sourceId>",
   "command": "node tools/datapack/run-source-admission-pipeline.mjs --candidate <candidateId> --url-template '<providerUrlWith{serviceKey}>' --service-key-env <ENV_NAME> --evidence-dir .codex/evidence/1397/<candidateId> --snapshot-id <snapshotId> --source-id <sourceId> --provider <providerName> --retrieved-at <ISO> --source-updated-at <ISO> --raw-object-uri s3://<bucket>/<key> --freshness-expires-at <ISO> --raw-retention-expires-at <ISO> --admin-review <local-admin-review.json> --output-inventory <candidate-source-inventory.json> --output <admission-summary.json>",
   "steps": [
     "fetch provider live sample using a backend/local secret env var",

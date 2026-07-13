@@ -2213,6 +2213,32 @@
       "displayName": "서울교통공사_실시간운임정보",
       "detailUrl": "https://www.data.go.kr/data/15143846/openapi.do",
       "requestUrl": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "pageNo",
+          "numOfRows",
+          "dataType",
+          "dptreStnNm",
+          "arvlStnNm"
+        ],
+        "responseEnvelope": "response.body.items.item",
+        "runner": {
+          "command": "node tools/datapack/probe-seoul-fare-api.mjs",
+          "requiredEnv": [
+            "DATA_GO_KR_SERVICE_KEY",
+            "FARE_API_PROBE_OUTPUT"
+          ]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
       "licenseEvidenceStatus": "confirmed_free_use",
       "sampleEvidenceStatus": "sanitized_live_probe_admitted",
       "admissionStatus": "official_od_fare_admitted_to_production_inventory",
