@@ -138,15 +138,22 @@ test("HTTPS fare 응답 code canary로 양방향 공식 OD 증거만 기록한�
     })), [
       { stationId: "station-sangnoksu", lineId: "seoul-4", fareStationCode: "9001" },
       { stationId: "station-sadang", lineId: "seoul-4", fareStationCode: "9002" },
+      { stationId: "station-2af75c3d707b", lineId: "seoul-4", fareStationCode: "0150" },
+      { stationId: "station-a2d54a5d63d2", lineId: "line-472a81add377", fareStationCode: "0151" },
     ]);
     assert.deepEqual(evidence.quotes.map(({ originStationId, destinationStationId }) =>
       `${originStationId}→${destinationStationId}`), [
       "station-sangnoksu→station-sadang",
       "station-sadang→station-sangnoksu",
+      "station-2af75c3d707b→station-a2d54a5d63d2",
     ]);
     assert.deepEqual(Object.keys(evidence.quotes[0].fares).sort(), requiredFareFields);
     assert.equal(JSON.stringify(evidence).includes("providerNotice"), false);
-    assert.deepEqual(evidence.attemptCounts, { "station-sangnoksu→station-sadang": 1, "station-sadang→station-sangnoksu": 1 });
+    assert.deepEqual(evidence.attemptCounts, {
+      "station-sangnoksu→station-sadang": 1,
+      "station-sadang→station-sangnoksu": 1,
+      "station-2af75c3d707b→station-a2d54a5d63d2": 1,
+    });
 
     const stored = JSON.parse(await readFile(outputPath, "utf8"));
     assert.deepEqual(stored, evidence);
@@ -251,7 +258,11 @@ test("429와 5xx는 방향별 최대 두 번만 재시도하고 attempt count를
     });
 
     const evidence = await probe({ outputPath, fetchImpl });
-    assert.deepEqual(evidence.attemptCounts, { "station-sangnoksu→station-sadang": 2, "station-sadang→station-sangnoksu": 2 });
+    assert.deepEqual(evidence.attemptCounts, {
+      "station-2af75c3d707b→station-a2d54a5d63d2": 1,
+      "station-sangnoksu→station-sadang": 2,
+      "station-sadang→station-sangnoksu": 2,
+    });
     assert.deepEqual(Object.fromEntries(attempts), { "상록수→사당": 2, "사당→상록수": 2 });
   });
 });
@@ -306,7 +317,11 @@ test("response body transport failure도 한 번만 재시도한다", async () =
     });
 
     const evidence = await probe({ outputPath, fetchImpl });
-    assert.deepEqual(evidence.attemptCounts, { "station-sangnoksu→station-sadang": 2, "station-sadang→station-sangnoksu": 2 });
+    assert.deepEqual(evidence.attemptCounts, {
+      "station-2af75c3d707b→station-a2d54a5d63d2": 1,
+      "station-sangnoksu→station-sadang": 2,
+      "station-sadang→station-sangnoksu": 2,
+    });
     assert.deepEqual(Object.fromEntries(attempts), { "상록수→사당": 2, "사당→상록수": 2 });
   });
 });

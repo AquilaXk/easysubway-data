@@ -14,7 +14,10 @@ import {
   requiredSha256,
   requiredRepresentativeRoutePatterns,
 } from "./lib/manifest-validation.mjs";
-import { officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
+import {
+  officialOdFareAdmissionsBySource,
+  officialOdFareQuoteSetHash,
+} from "./lib/official-od-fare-evidence.mjs";
 const facilityEvidenceProvenanceColumns = [
   "source_id",
   "source_snapshot_id",
@@ -74,9 +77,9 @@ async function main() {
     "--max-public-catalog-user-version",
   );
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  const officialOdFareAdmission = JSON.parse(
+  const officialOdFareAdmissions = officialOdFareAdmissionsBySource(JSON.parse(
     await readFile(path.join(import.meta.dirname, "official-od-fare-admission.json"), "utf8"),
-  );
+  ));
   validateManifest(manifest, { requireProduction, releasesTarget });
 
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-validate-"));
@@ -85,7 +88,7 @@ async function main() {
       await validatePack(root, temporaryDir, pack, manifest.manifestVersion ?? 1, {
         requireProduction,
         maxPublicCatalogUserVersion,
-        officialOdFareAdmission,
+        officialOdFareAdmission: officialOdFareAdmissions,
       });
     }
   } finally {
@@ -272,20 +275,23 @@ function validateFareTables(database, pack) {
   }
 }
 
-function validateOfficialOdFareQuotes(database, pack, admission) {
+function validateOfficialOdFareQuotes(database, pack, admissions) {
   if (!hasTable(database, "official_od_fare_quotes")) return;
   const rows = database.prepare("SELECT * FROM official_od_fare_quotes").all();
   if (rows.length === 0) return;
-  if (admission?.decision !== "APPROVED") {
-    throw new Error(`${pack.id}@${pack.version} official OD fare admission is not approved`);
-  }
   const sourceIds = new Set(pack.sourceInventory.map((source) => source.id));
+  validateOfficialOdFareQuoteRows(rows, sourceIds, admissions, pack);
+  validateOfficialOdFareQuoteSets(rows, admissions, pack);
+}
+
+function validateOfficialOdFareQuoteRows(rows, sourceIds, admissions, pack) {
   for (const row of rows) {
+    const admission = admissions?.get(row.source_id);
+    if (admission?.decision !== "APPROVED") {
+      throw new Error(`${pack.id}@${pack.version} official OD fare admission is not approved`);
+    }
     if (row.origin_station_id === row.destination_station_id) {
       throw new Error(`${pack.id}@${pack.version} official OD fare endpoints must be distinct`);
-    }
-    if (row.source_id !== admission.sourceId) {
-      throw new Error(`${pack.id}@${pack.version} official OD fare source_id must match admission`);
     }
     if (!sourceIds.has(row.source_id)) {
       throw new Error(`${pack.id}@${pack.version} official OD fare source_id is not in sourceInventory`);
@@ -309,21 +315,28 @@ function validateOfficialOdFareQuotes(database, pack, admission) {
       }
     }
   }
-  if (rows.length !== admission.quoteCount) {
-    throw new Error(`${pack.id}@${pack.version} official OD fare quote count must match admission`);
-  }
-  const quoteSetHash = officialOdFareQuoteSetHash(rows.map((row) => ({
-    originStationId: row.origin_station_id,
-    destinationStationId: row.destination_station_id,
-    gnrlCardFare: row.gnrl_card_fare,
-    gnrlCashFare: row.gnrl_cash_fare,
-    yungCardFare: row.yung_card_fare,
-    yungCashFare: row.yung_cash_fare,
-    childCardFare: row.child_card_fare,
-    childCashFare: row.child_cash_fare,
-  })));
-  if (quoteSetHash !== admission.quoteSetHash) {
-    throw new Error(`${pack.id}@${pack.version} official OD fare quote set hash must match admission`);
+}
+
+function validateOfficialOdFareQuoteSets(rows, admissions, pack) {
+  for (const sourceId of new Set(rows.map((row) => row.source_id))) {
+    const admission = admissions.get(sourceId);
+    const sourceRows = rows.filter((row) => row.source_id === sourceId);
+    if (sourceRows.length !== admission.quoteCount) {
+      throw new Error(`${pack.id}@${pack.version} official OD fare quote count must match admission`);
+    }
+    const quoteSetHash = officialOdFareQuoteSetHash(sourceRows.map((row) => ({
+      originStationId: row.origin_station_id,
+      destinationStationId: row.destination_station_id,
+      gnrlCardFare: row.gnrl_card_fare,
+      gnrlCashFare: row.gnrl_cash_fare,
+      yungCardFare: row.yung_card_fare,
+      yungCashFare: row.yung_cash_fare,
+      childCardFare: row.child_card_fare,
+      childCashFare: row.child_cash_fare,
+    })));
+    if (quoteSetHash !== admission.quoteSetHash) {
+      throw new Error(`${pack.id}@${pack.version} official OD fare quote set hash must match admission`);
+    }
   }
 }
 

@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
+import { officialOdFareAdmissionsBySource } from "./lib/official-od-fare-evidence.mjs";
 
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
@@ -282,27 +283,14 @@ function validateOfficialOdFareCandidate(candidate, sources, admissionBytes) {
     assertEqual(candidate.evidence[field], source[field], `${candidate.id}.evidence.${field} must match production inventory`);
   }
   if (!admissionBytes) throw new Error("official OD fare admission artifact is required");
-  const admission = JSON.parse(admissionBytes);
-  assertExactKeys(admission, [
-    "approvedAt",
-    "approvedBy",
-    "artifactKind",
-    "decision",
-    "evidenceHash",
-    "fareStationLineMappingLedgerHash",
-    "quoteCount",
-    "quoteSetHash",
-    "schemaVersion",
-    "snapshotId",
-    "sourceId",
-  ], "official OD fare admission");
-  assertEqual(admission.schemaVersion, 1, "official OD fare admission schemaVersion");
-  assertEqual(admission.artifactKind, "official-od-fare-admission", "official OD fare admission artifactKind");
-  assertEqual(admission.decision, "APPROVED", "admission decision");
+  const admission = officialOdFareAdmissionsBySource(JSON.parse(admissionBytes)).get(sourceId);
+  if (!admission) throw new Error(`${sourceId} official OD fare admission is missing`);
   assertEqual(admission.sourceId, sourceId, "admission sourceId");
   assertEqual(admission.snapshotId, snapshotId, "admission snapshotId");
   assertEqual(admission.evidenceHash, evidenceHash, "admission evidenceHash");
-  assertEqual(admission.quoteCount, 2, "admission quoteCount");
+  if (!Number.isSafeInteger(admission.quoteCount) || admission.quoteCount < 1) {
+    throw new Error("admission quoteCount must be a positive safe integer");
+  }
   assertSha256(admission.quoteSetHash, "admission quoteSetHash");
   assertString(admission.approvedBy, "admission approvedBy");
   assertString(admission.approvedAt, "admission approvedAt");

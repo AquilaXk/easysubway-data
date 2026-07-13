@@ -30,6 +30,10 @@ const EXPECTED_SAMPLE = Object.freeze({
 });
 const CANARY_ORIGIN = Object.freeze({ stationName: "서울역" });
 const CANARY_DESTINATION = Object.freeze({ stationName: "시청" });
+const CANARY_INTERNAL = Object.freeze({
+  origin: { stationId: "station-2af75c3d707b", lineId: "seoul-4", stationName: "서울역" },
+  destination: { stationId: "station-a2d54a5d63d2", lineId: "line-472a81add377", stationName: "시청" },
+});
 const TARGETS = Object.freeze([
   { stationId: "station-sangnoksu", lineId: "seoul-4", stationName: "상록수" },
   { stationId: "station-sadang", lineId: "seoul-4", stationName: "사당" },
@@ -201,6 +205,7 @@ export async function probeOfficialOdFares({
     const quotes = [];
     const targetMappings = [];
     const attemptCounts = {};
+    attemptCounts[`${CANARY_INTERNAL.origin.stationId}→${CANARY_INTERNAL.destination.stationId}`] = canary.attempts;
     for (const [origin, destination] of directions) {
       const { attempts, destinationCode, fares, originCode } = await fetchFareQuote({
         destination,
@@ -215,6 +220,11 @@ export async function probeOfficialOdFares({
       quotes.push({ originStationId: origin.stationId, destinationStationId: destination.stationId, fares });
       targetMappings.push({ destinationCode, originCode });
     }
+    quotes.push({
+      originStationId: CANARY_INTERNAL.origin.stationId,
+      destinationStationId: CANARY_INTERNAL.destination.stationId,
+      fares: canary.fares,
+    });
     if (targetMappings[0].originCode !== targetMappings[1].destinationCode
       || targetMappings[0].destinationCode !== targetMappings[1].originCode) {
       throw new Error("fare API target station code equivalence failed");
@@ -225,7 +235,10 @@ export async function probeOfficialOdFares({
       lineId: target.lineId,
       stationName: target.stationName,
       fareStationCode: index === 0 ? targetMappings[0].originCode : targetMappings[0].destinationCode,
-    }));
+    })).concat([
+      { ...CANARY_INTERNAL.origin, fareStationCode: canary.originCode },
+      { ...CANARY_INTERNAL.destination, fareStationCode: canary.destinationCode },
+    ]);
     const equivalence = {
       seoulStationLine4: { fareResponseStationCode: canary.originCode, fareCode: "0150", verified: true },
       cityHallLine1: { fareResponseStationCode: canary.destinationCode, fareCode: "0151", verified: true },
@@ -235,6 +248,7 @@ export async function probeOfficialOdFares({
       artifactKind: "official-od-fare-probe-evidence",
       mappingAvailability: "AVAILABLE",
       mappingField: "dptreStnCd/arvlStnCd",
+      providerId: "data-go-kr-b553766-fare2",
       equivalence,
       providerMappings,
       quotes,

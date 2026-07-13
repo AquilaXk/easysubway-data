@@ -1,13 +1,45 @@
 {
   "schemaVersion": 1,
-  "artifactKind": "official-od-fare-admission",
-  "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
-  "decision": "APPROVED",
-  "approvedBy": "aquilaXk10",
-  "approvedAt": "2026-07-13T00:33:32+09:00",
-  "sourceId": "seoul-metro-official-od-fares",
-  "snapshotId": "seoul-metro-official-od-fares-20260712",
-  "quoteCount": 2,
-  "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
-  "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a"
+  "artifactKind": "official-od-fare-admission-bundle",
+  "admissions": [
+    {
+      "schemaVersion": 1,
+      "artifactKind": "official-od-fare-admission",
+      "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
+      "decision": "APPROVED",
+      "approvedBy": "aquilaXk10",
+      "approvedAt": "2026-07-13T00:33:32+09:00",
+      "sourceId": "seoul-metro-official-od-fares",
+      "snapshotId": "seoul-metro-official-od-fares-20260712",
+      "quoteCount": 2,
+      "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
+      "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a"
+    },
+    {
+      "schemaVersion": 1,
+      "artifactKind": "official-od-fare-admission",
+      "evidenceHash": "a0d24e1e454f4165e879d74fdb352afd48e09c93af843aad97ddc0263031422d",
+      "decision": "APPROVED",
+      "approvedBy": "AquilaXk owner directive for #1762/#1769",
+      "approvedAt": "2026-07-13T04:31:50.000Z",
+      "sourceId": "seoul-metro-official-od-fare-canary",
+      "snapshotId": "seoul-metro-official-od-fare-canary-run-29085674167",
+      "quoteCount": 1,
+      "quoteSetHash": "68e68e770338e58113c1c07923e239f44e7b53a8eb94a9e298b57a829fb3d342",
+      "fareStationLineMappingLedgerHash": "58e795e03161e2100cffb2c777efcaa1d09a5e03abc7363676be5f26ae353541"
+    },
+    {
+      "schemaVersion": 1,
+      "artifactKind": "official-od-fare-admission",
+      "evidenceHash": "a4939a97b2c503ff2344f05f9928d71dee3414967bb284e28da48f754a04b6d4",
+      "decision": "APPROVED",
+      "approvedBy": "AquilaXk owner directive for #1762/#1769",
+      "approvedAt": "2026-07-13T04:31:50.000Z",
+      "sourceId": "busan-transportation-official-od-fares",
+      "snapshotId": "busan-transportation-official-od-fares-20260713",
+      "quoteCount": 3,
+      "quoteSetHash": "b57e801d1232d7bb0fff29ebebcf3245ceff1e65fb917facb7f86faf00490aec",
+      "fareStationLineMappingLedgerHash": "9c327840275be5c4583fc9e9cfdd16d2e4ecc06f660d08fd682bf9fe27d72390"
+    }
+  ]
 }

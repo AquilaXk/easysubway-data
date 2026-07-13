@@ -14022,6 +14022,7 @@ function officialOdFareEvidenceFixture() {
     artifactKind: "official-od-fare-probe-evidence",
     mappingAvailability: "AVAILABLE",
     mappingField: "dptreStnCd/arvlStnCd",
+    providerId: "data-go-kr-b553766-fare2",
     equivalence: {
       cityHallLine1: { fareResponseStationCode: "0151", fareCode: "0151", verified: true },
       seoulStationLine4: { fareResponseStationCode: "0150", fareCode: "0150", verified: true },
@@ -14029,15 +14030,106 @@ function officialOdFareEvidenceFixture() {
     providerMappings: [
       { stationId: "station-sangnoksu", lineId: "seoul-4", stationName: "상록수", fareStationCode: "1754" },
       { stationId: "station-sadang", lineId: "seoul-4", stationName: "사당", fareStationCode: "0433" },
+      { stationId: "station-2af75c3d707b", lineId: "seoul-4", stationName: "서울역", fareStationCode: "0150" },
+      { stationId: "station-a2d54a5d63d2", lineId: "line-472a81add377", stationName: "시청", fareStationCode: "0151" },
     ],
     quotes: [
       { originStationId: "station-sangnoksu", destinationStationId: "station-sadang", fares },
       { originStationId: "station-sadang", destinationStationId: "station-sangnoksu", fares },
+      {
+        originStationId: "station-2af75c3d707b",
+        destinationStationId: "station-a2d54a5d63d2",
+        fares: {
+          childCardFare: 550,
+          childCashFare: 550,
+          gnrlCardFare: 1550,
+          gnrlCashFare: 1650,
+          yungCardFare: 900,
+          yungCashFare: 1650,
+        },
+      },
     ],
     fieldNames: Object.keys(fares).sort(),
     attemptCounts: {
       "station-sadang→station-sangnoksu": 1,
       "station-sangnoksu→station-sadang": 1,
+      "station-2af75c3d707b→station-a2d54a5d63d2": 1,
+    },
+  };
+}
+
+function busanOfficialOdFareEvidenceFixture() {
+  return {
+    schemaVersion: 1,
+    artifactKind: "official-od-fare-probe-evidence",
+    mappingAvailability: "AVAILABLE",
+    mappingField: "mo_scode_s/mo_scode_e",
+    providerId: "busan-transportation-cyberstation",
+    equivalence: {
+      routeForm: {
+        cyberKinds: "1",
+        destinationField: "mo_scode_e",
+        originField: "mo_scode_s",
+        verified: true,
+      },
+    },
+    providerMappings: [
+      { stationId: "station-fcb7a21e5606", lineId: "line-ab1a041f6266", stationName: "하단", fareStationCode: "102" },
+      { stationId: "station-dd45c69d3e40", lineId: "line-ab1a041f6266", stationName: "당리", fareStationCode: "103" },
+      { stationId: "station-1fc7a7c971c8", lineId: "line-ab1a041f6266", stationName: "서면", fareStationCode: "119" },
+      { stationId: "station-6b611916f76a", lineId: "line-eb7b47920390", stationName: "장산", fareStationCode: "201" },
+    ],
+    quotes: [
+      {
+        originStationId: "station-fcb7a21e5606",
+        destinationStationId: "station-dd45c69d3e40",
+        fares: {
+          childCardFare: 0,
+          childCashFare: 700,
+          gnrlCardFare: 1600,
+          gnrlCashFare: 1700,
+          yungCardFare: 1050,
+          yungCashFare: 1150,
+        },
+      },
+      {
+        originStationId: "station-fcb7a21e5606",
+        destinationStationId: "station-6b611916f76a",
+        fares: {
+          childCardFare: 0,
+          childCashFare: 800,
+          gnrlCardFare: 1800,
+          gnrlCashFare: 1900,
+          yungCardFare: 1200,
+          yungCashFare: 1300,
+        },
+      },
+      {
+        originStationId: "station-1fc7a7c971c8",
+        destinationStationId: "station-6b611916f76a",
+        fares: {
+          childCardFare: 0,
+          childCashFare: 800,
+          gnrlCardFare: 1800,
+          gnrlCashFare: 1900,
+          yungCardFare: 1200,
+          yungCashFare: 1300,
+        },
+      },
+    ],
+    fieldNames: [
+      "childCardFare",
+      "childCashFare",
+      "gnrlCardFare",
+      "gnrlCashFare",
+      "yungCardFare",
+      "yungCashFare",
+    ],
+    attemptCounts: {
+      officialFareTable: 1,
+      "station-fcb7a21e5606→station-dd45c69d3e40": 1,
+      "station-fcb7a21e5606→station-6b611916f76a": 1,
+      "station-1fc7a7c971c8→station-6b611916f76a": 1,
     },
   };
 }
@@ -14058,7 +14150,7 @@ test("fare station-line mapping 원장은 probe mapping만 canonical hash로 산
       "--kind", "operator-mapping", "--fixture", catalogFixtureArg,
     ])).stdout);
     assert.equal(baseline.kind, "fare-station-line-mapping");
-    assert.equal(baseline.rowCount, 2);
+    assert.equal(baseline.rowCount, 4);
     assert.notEqual(baseline.ledgerHash, operator.ledgerHash);
 
     const reordered = structuredClone(evidence);
@@ -14119,7 +14211,7 @@ test("fare station-line mapping 원장은 probe mapping만 canonical hash로 산
         "--evidence", path.relative(root, wrongLinePath),
         "--source-id", "seoul-metro-official-od-fares",
       ]),
-      /lineId must be seoul-4/,
+      /providerMappings must match fixed targets/,
     );
 
     const unsafeEvidence = structuredClone(evidence);
@@ -14145,8 +14237,46 @@ test("fare station-line mapping admission은 이미 읽은 evidence 객체로 le
   const evidence = officialOdFareEvidenceFixture();
   const ledger = buildFareStationLineMappingLedger(evidence, "seoul-metro-official-od-fares");
   assert.equal(ledger.kind, "fare-station-line-mapping");
-  assert.equal(ledger.rowCount, 2);
+  assert.equal(ledger.rowCount, 4);
   assert.match(ledger.ledgerHash, /^[0-9a-f]{64}$/);
+});
+
+test("official OD fare admission bundle은 source별 승인만 선택한다", async () => {
+  const { officialOdFareAdmissionsBySource } = await import("./lib/official-od-fare-evidence.mjs");
+  const trackedBundle = JSON.parse(
+    await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"),
+  );
+  const admission = trackedBundle.admissions.find(
+    ({ sourceId }) => sourceId === "seoul-metro-official-od-fares",
+  );
+  assert.ok(admission);
+  const busan = {
+    ...admission,
+    sourceId: "busan-transportation-official-od-fares",
+    snapshotId: "busan-transportation-official-od-fares-20260713",
+    evidenceHash: "1".repeat(64),
+    quoteSetHash: "2".repeat(64),
+    fareStationLineMappingLedgerHash: "3".repeat(64),
+    quoteCount: 3,
+  };
+  const bundle = {
+    schemaVersion: 1,
+    artifactKind: "official-od-fare-admission-bundle",
+    admissions: [admission, busan],
+  };
+
+  const admissions = officialOdFareAdmissionsBySource(bundle);
+  assert.equal(admissions.size, 2);
+  assert.equal(admissions.get(admission.sourceId), admission);
+  assert.equal(admissions.get(busan.sourceId), busan);
+  assert.throws(
+    () => officialOdFareAdmissionsBySource({ ...bundle, admissions: [admission, admission] }),
+    /duplicate official OD fare admission sourceId/,
+  );
+  assert.throws(
+    () => officialOdFareAdmissionsBySource({ ...bundle, unexpected: true }),
+    /official OD fare admission bundle/,
+  );
 });
 
 test("official OD fare admin review는 sanitized admission만 생성한다", async () => {
@@ -14168,11 +14298,27 @@ test("official OD fare admin review는 sanitized admission만 생성한다", asy
     };
     const reviewPath = path.join(workspace, "review.json");
     await writeFile(reviewPath, JSON.stringify(review));
+    const trackedBundle = JSON.parse(
+      await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"),
+    );
+    const preservedAdmission = trackedBundle.admissions.find(
+      ({ sourceId }) => sourceId === "busan-transportation-official-od-fares",
+    );
+    const bundlePath = path.join(workspace, "bundle.json");
+    await writeFile(bundlePath, JSON.stringify(trackedBundle));
     const { stdout } = await runOfficialOdFareAdmissionBuilder([
       "--evidence", path.relative(root, evidencePath),
       "--admin-review", path.relative(root, reviewPath),
+      "--bundle", path.relative(root, bundlePath),
     ]);
-    const admission = JSON.parse(stdout);
+    const bundle = JSON.parse(stdout);
+    assert.equal(bundle.artifactKind, "official-od-fare-admission-bundle");
+    assert.equal(bundle.schemaVersion, 1);
+    assert.deepEqual(
+      bundle.admissions.find(({ sourceId }) => sourceId === preservedAdmission.sourceId),
+      preservedAdmission,
+    );
+    const admission = bundle.admissions.find(({ sourceId }) => sourceId === review.sourceId);
     assert.deepEqual(Object.keys(admission).sort(), [
       "approvedAt", "approvedBy", "artifactKind", "decision", "evidenceHash",
       "fareStationLineMappingLedgerHash", "quoteCount", "quoteSetHash", "schemaVersion", "snapshotId", "sourceId",
@@ -14181,6 +14327,13 @@ test("official OD fare admin review는 sanitized admission만 생성한다", asy
     assert.equal(admission.quoteCount, 2);
     assert.match(admission.quoteSetHash, /^[0-9a-f]{64}$/);
     assert.match(admission.fareStationLineMappingLedgerHash, /^[0-9a-f]{64}$/);
+    const generatedBundlePath = path.join(workspace, "generated-bundle.json");
+    await writeFile(generatedBundlePath, stdout);
+    await execFileAsync(process.execPath, [
+      "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
+      "--admission", generatedBundlePath,
+      "--check",
+    ], { cwd: root });
 
     const unsafeReview = { ...review, rawPath: "/tmp/provider.json" };
     const unsafeReviewPath = path.join(workspace, "unsafe-review.json");
@@ -14207,6 +14360,39 @@ test("official OD fare admin review는 sanitized admission만 생성한다", asy
       ]),
       /quote endpoints must match provider mappings/,
     );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("부산 official OD fare admission은 공식 운임표 시도 횟수를 보존한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "busan-official-od-fare-admission-"));
+  try {
+    const evidence = busanOfficialOdFareEvidenceFixture();
+    const evidencePath = path.join(workspace, "evidence.json");
+    const evidenceBytes = JSON.stringify(evidence);
+    await writeFile(evidencePath, evidenceBytes);
+    const review = {
+      schemaVersion: 1,
+      artifactKind: "official-od-fare-admin-review",
+      evidenceHash: sha256(evidenceBytes),
+      decision: "APPROVED",
+      approvedBy: "owner",
+      approvedAt: "2026-07-13T00:00:00.000Z",
+      sourceId: "busan-transportation-official-od-fares",
+      snapshotId: "busan-transportation-official-od-fares-20260713",
+    };
+    const reviewPath = path.join(workspace, "review.json");
+    await writeFile(reviewPath, JSON.stringify(review));
+
+    const { stdout } = await runOfficialOdFareAdmissionBuilder([
+      "--evidence", path.relative(root, evidencePath),
+      "--admin-review", path.relative(root, reviewPath),
+    ]);
+    const bundle = JSON.parse(stdout);
+    const admission = bundle.admissions.find(({ sourceId }) => sourceId === review.sourceId);
+    assert.equal(admission.quoteCount, 3);
+    assert.equal(admission.snapshotId, review.snapshotId);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -14342,7 +14528,12 @@ test("official OD fare candidate admission은 inventory hash 쌍과 일치해야
   const candidates = JSON.parse(await readFile(path.join(root, "tools/datapack/source-candidates.json"), "utf8"));
   const source = inventory.sources.find(({ id }) => id === "seoul-metro-official-od-fares");
   const candidate = candidates.candidates.find(({ id }) => id === "seoul-metro-official-od-fares");
-  const admission = JSON.parse(await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"));
+  const admissionBundle = JSON.parse(
+    await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"),
+  );
+  const admission = admissionBundle.admissions.find(
+    ({ sourceId }) => sourceId === "seoul-metro-official-od-fares",
+  );
 
   const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-candidate-"));
   try {
@@ -14357,7 +14548,7 @@ test("official OD fare candidate admission은 inventory hash 쌍과 일치해야
     ], { cwd: root });
     await writeFile(inventoryPath, JSON.stringify(inventory));
     await writeFile(candidatesPath, JSON.stringify(candidates));
-    await writeFile(admissionPath, JSON.stringify(admission, null, 2) + "\n");
+    await writeFile(admissionPath, JSON.stringify(admissionBundle, null, 2) + "\n");
     await validate();
 
     candidate.evidence.fareStationLineMappingLedgerHash = "c".repeat(64);
@@ -14383,7 +14574,7 @@ test("official OD fare candidate admission은 inventory hash 쌍과 일치해야
 
     candidate.admissionStatus = "official_od_fare_admitted_to_production_inventory";
     admission.decision = "REJECTED";
-    const rejectedBytes = JSON.stringify(admission, null, 2) + "\n";
+    const rejectedBytes = JSON.stringify(admissionBundle, null, 2) + "\n";
     source.officialOdFareAdmissionHash = sha256(rejectedBytes);
     candidate.evidence.officialOdFareAdmissionHash = source.officialOdFareAdmissionHash;
     await writeFile(inventoryPath, JSON.stringify(inventory));
@@ -14397,7 +14588,12 @@ test("official OD fare candidate admission은 inventory hash 쌍과 일치해야
 
 test("official OD fare 두 방향은 승인 artifact와 일치하는 SQLite row로 저장된다", async () => {
   const fixture = JSON.parse(await readFile(path.join(root, "tools/datapack/fixtures/catalog-fixture.json"), "utf8"));
-  const admission = JSON.parse(await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"));
+  const admissionBundle = JSON.parse(
+    await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"), "utf8"),
+  );
+  const admission = admissionBundle.admissions.find(
+    ({ sourceId }) => sourceId === "seoul-metro-official-od-fares",
+  );
   const quotes = fixture.packs[0].officialOdFareQuotes;
   assert.equal(quotes?.length, 2);
   assert.ok(quotes.every((quote) => quote.sourceId === admission.sourceId));
@@ -14452,6 +14648,168 @@ test("official OD fare 두 방향은 승인 artifact와 일치하는 SQLite row�
     );
   } finally {
     await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("전국 bundled datapack은 수도권·부산 대표 공식 OD를 각 3건 포함한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-fares-"));
+  const databasePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      databasePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const rows = database.prepare(`
+        SELECT origin_station_id AS originStationId,
+               destination_station_id AS destinationStationId,
+               source_id AS sourceId,
+               snapshot_id AS snapshotId
+        FROM official_od_fare_quotes
+        ORDER BY source_id, origin_station_id, destination_station_id
+      `).all().map((row) => ({ ...row }));
+      const capitalRows = rows.filter(({ sourceId }) => sourceId.startsWith("seoul-metro-official-od-fare"));
+      const busanRows = rows.filter(({ sourceId }) => sourceId === "busan-transportation-official-od-fares");
+      assert.equal(capitalRows.length, 3);
+      assert.equal(busanRows.length, 3);
+      for (const row of rows) {
+        assert.equal(database.prepare("SELECT COUNT(*) AS count FROM stations WHERE id IN (?, ?)")
+          .get(row.originStationId, row.destinationStationId).count, 2);
+      }
+    } finally {
+      database.close();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 공식 OD quote 적용은 admission 일부 source가 빠진 입력을 거부한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-partial-source-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const quotesPath = path.join(directory, "quotes.json");
+  try {
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+    const quotes = JSON.parse(
+      await readFile(path.join(root, "tools/datapack/official-od-fare-quotes.json"), "utf8"),
+    );
+    quotes.quotes = quotes.quotes.filter(
+      ({ sourceId }) => sourceId === "seoul-metro-official-od-fares",
+    );
+    await writeFile(quotesPath, JSON.stringify(quotes));
+    const originalPackHash = sha256(await readFile(packPath));
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
+        "--pack", packPath,
+        "--index", indexPath,
+        "--quotes", quotesPath,
+      ], { cwd: root }),
+      /quote source set must match admission source set/,
+    );
+    assert.equal(sha256(await readFile(packPath)), originalPackHash);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 공식 OD quote 재적용은 SQLite와 gzip hash를 변경하지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-idempotent-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  try {
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+    const apply = () => execFileAsync(process.execPath, [
+      "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
+      "--pack", packPath,
+      "--index", indexPath,
+    ], { cwd: root });
+
+    await apply();
+    const firstPack = await readFile(packPath);
+    const firstIndex = await readFile(indexPath);
+    await apply();
+
+    assert.equal(sha256(await readFile(packPath)), sha256(firstPack));
+    assert.equal(sha256(await readFile(indexPath)), sha256(firstIndex));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 공식 OD quote check는 catalog user_version 16을 요구한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-check-version-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      sqlitePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(sqlitePath);
+    database.exec("PRAGMA user_version = 15");
+    database.close();
+    const sqliteBytes = await readFile(sqlitePath);
+    const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+    await writeFile(packPath, gzipBytes);
+    const index = JSON.parse(
+      await readFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"),
+    );
+    Object.assign(index.packs.find(({ id }) => id === "capital"), {
+      sha256: sha256(gzipBytes),
+      sqliteSha256: sha256(sqliteBytes),
+      byteSize: gzipBytes.length,
+    });
+    await writeFile(indexPath, JSON.stringify(index));
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
+        "--pack", packPath,
+        "--index", indexPath,
+        "--check",
+      ], { cwd: root }),
+      /bundled catalog user_version must be 16/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 공식 OD quote no-op도 catalog user_version 16을 강제한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-user-version-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      sqlitePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(sqlitePath);
+    database.exec("PRAGMA user_version = 15");
+    database.close();
+    await writeFile(packPath, gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 }));
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+
+    await execFileAsync(process.execPath, [
+      "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
+      "--pack", packPath,
+      "--index", indexPath,
+    ], { cwd: root });
+
+    await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
+    const updated = new DatabaseSync(sqlitePath, { readOnly: true });
+    assert.equal(updated.prepare("PRAGMA user_version").get().user_version, 16);
+    updated.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

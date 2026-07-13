@@ -46,7 +46,7 @@
     "reproductionCommand": "node -e \"const c=require('crypto');console.log(c.createHash('sha256').update(JSON.stringify(require('./tools/datapack/release/source-snapshots.json'))).digest('hex'))\""
   },
   "sourceInventorySha256": {
-    "value": "61eddcd3a086938b3992fa69418da6e7dd026fc4cc486ae65b80c384613c33b5",
+    "value": "71c77bd821adbdfbd25c295bc6c045753431942638fe08aecdf36a165a2874d9",
     "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1769 official OD fare source admit 후 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
@@ -133,7 +133,7 @@
     "sourceId": "seoul-metro-official-od-fares",
     "snapshotId": "seoul-metro-official-od-fares-20260712",
     "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
-    "admissionHash": "dd7c2614921b2f1018bdb13d0fdbba70c72e2bfe145eac4a68e5dd07344c5cce",
+      "admissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
     "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
     "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
     "quotes": [

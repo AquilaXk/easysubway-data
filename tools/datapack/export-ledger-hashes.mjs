@@ -46,8 +46,6 @@ const ledgerKinds = new Set([
   "license",
   "fare-station-line-mapping",
 ]);
-const FARE_PROVIDER_ID = "data-go-kr-b553766-fare2";
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const kind = requireArg(args, "kind");
@@ -87,7 +85,7 @@ function buildFareStationLineMappingLedger(evidence, sourceId) {
     const providerStationCode = requiredString(mapping.fareStationCode, "providerMappings.fareStationCode");
     return {
       sourceId,
-      providerId: FARE_PROVIDER_ID,
+      providerId: requiredString(evidence.providerId, "evidence.providerId"),
       stationId,
       lineId,
       stationName: requiredString(mapping.stationName, "providerMappings.stationName"),

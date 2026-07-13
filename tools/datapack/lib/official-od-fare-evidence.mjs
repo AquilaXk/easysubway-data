@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { requiredArray, requiredString } from "./ledger-admission-cli.mjs";
 
-const REQUIRED_FARE_FIELDS = [
+export const REQUIRED_FARE_FIELDS = [
   "childCardFare",
   "childCashFare",
   "gnrlCardFare",
@@ -16,31 +16,157 @@ const EVIDENCE_KEYS = [
   "fieldNames",
   "mappingAvailability",
   "mappingField",
+  "providerId",
   "providerMappings",
   "quotes",
   "schemaVersion",
 ];
 const MAPPING_KEYS = ["fareStationCode", "lineId", "stationId", "stationName"];
-const FIXED_TARGETS = [
+const CAPITAL_COMBINED_TARGETS = [
+  "station-2af75c3d707b\u0000seoul-4\u0000서울역",
+  "station-a2d54a5d63d2\u0000line-472a81add377\u0000시청",
   "station-sadang\u0000seoul-4\u0000사당",
   "station-sangnoksu\u0000seoul-4\u0000상록수",
 ];
+const CAPITAL_DIRECTIONS = [
+  "station-2af75c3d707b\u0000station-a2d54a5d63d2",
+  "station-sadang\u0000station-sangnoksu",
+  "station-sangnoksu\u0000station-sadang",
+];
+const CAPITAL_EXACT_TARGETS = [
+  "station-sadang\u0000seoul-4\u0000사당",
+  "station-sangnoksu\u0000seoul-4\u0000상록수",
+];
+const CAPITAL_EXACT_DIRECTIONS = [
+  "station-sadang\u0000station-sangnoksu",
+  "station-sangnoksu\u0000station-sadang",
+];
+const CAPITAL_CANARY_TARGETS = [
+  "station-2af75c3d707b\u0000seoul-4\u0000서울역",
+  "station-a2d54a5d63d2\u0000line-472a81add377\u0000시청",
+];
+const CAPITAL_CANARY_DIRECTIONS = [
+  "station-2af75c3d707b\u0000station-a2d54a5d63d2",
+];
+const BUSAN_FIXED_TARGETS = [
+  "station-1fc7a7c971c8\u0000line-ab1a041f6266\u0000서면",
+  "station-6b611916f76a\u0000line-eb7b47920390\u0000장산",
+  "station-dd45c69d3e40\u0000line-ab1a041f6266\u0000당리",
+  "station-fcb7a21e5606\u0000line-ab1a041f6266\u0000하단",
+];
+const BUSAN_DIRECTIONS = [
+  "station-1fc7a7c971c8\u0000station-6b611916f76a",
+  "station-fcb7a21e5606\u0000station-6b611916f76a",
+  "station-fcb7a21e5606\u0000station-dd45c69d3e40",
+];
+const EVIDENCE_PROFILES = [
+  {
+    mappingField: "dptreStnCd/arvlStnCd",
+    providerId: "data-go-kr-b553766-fare2",
+    providerCode: /^\d{4}$/,
+    targets: CAPITAL_COMBINED_TARGETS,
+    directions: CAPITAL_DIRECTIONS,
+    attemptKeys: CAPITAL_DIRECTIONS.map((direction) => direction.replace("\u0000", "→")),
+  },
+  {
+    mappingField: "dptreStnCd/arvlStnCd",
+    providerId: "data-go-kr-b553766-fare2",
+    providerCode: /^\d{4}$/,
+    targets: CAPITAL_EXACT_TARGETS,
+    directions: CAPITAL_EXACT_DIRECTIONS,
+    attemptKeys: CAPITAL_EXACT_DIRECTIONS.map((direction) => direction.replace("\u0000", "→")),
+  },
+  {
+    mappingField: "dptreStnCd/arvlStnCd",
+    providerId: "data-go-kr-b553766-fare2",
+    providerCode: /^\d{4}$/,
+    targets: CAPITAL_CANARY_TARGETS,
+    directions: CAPITAL_CANARY_DIRECTIONS,
+    attemptKeys: CAPITAL_CANARY_DIRECTIONS.map((direction) => direction.replace("\u0000", "→")),
+  },
+  {
+    mappingField: "mo_scode_s/mo_scode_e",
+    providerId: "busan-transportation-cyberstation",
+    providerCode: /^\d{3}$/,
+    targets: BUSAN_FIXED_TARGETS,
+    directions: BUSAN_DIRECTIONS,
+    attemptKeys: [
+      ...BUSAN_DIRECTIONS.map((direction) => direction.replace("\u0000", "→")),
+      "officialFareTable",
+    ],
+  },
+];
+const ADMISSION_KEYS = [
+  "approvedAt",
+  "approvedBy",
+  "artifactKind",
+  "decision",
+  "evidenceHash",
+  "fareStationLineMappingLedgerHash",
+  "quoteCount",
+  "quoteSetHash",
+  "schemaVersion",
+  "snapshotId",
+  "sourceId",
+];
+
+export function officialOdFareAdmissionsBySource(bundle) {
+  assertObject(bundle, "official OD fare admission bundle");
+  assertExactKeys(
+    bundle,
+    ["admissions", "artifactKind", "schemaVersion"],
+    "official OD fare admission bundle",
+  );
+  if (bundle.schemaVersion !== 1 || bundle.artifactKind !== "official-od-fare-admission-bundle") {
+    throw new Error("official OD fare admission bundle identity is invalid");
+  }
+  const admissions = new Map();
+  for (const admission of requiredArray(bundle.admissions, "official OD fare admission bundle.admissions")) {
+    validateAdmission(admission);
+    const sourceId = requiredString(admission.sourceId, "official OD fare admission.sourceId");
+    if (admissions.has(sourceId)) throw new Error(`duplicate official OD fare admission sourceId: ${sourceId}`);
+    admissions.set(sourceId, admission);
+  }
+  if (admissions.size === 0) throw new Error("official OD fare admission bundle.admissions must not be empty");
+  return admissions;
+}
+
+function validateAdmission(admission) {
+  assertObject(admission, "official OD fare admission");
+  assertExactKeys(admission, ADMISSION_KEYS, "official OD fare admission");
+  if (admission.schemaVersion !== 1) throw new Error("official OD fare admission schemaVersion must be 1");
+  if (admission.artifactKind !== "official-od-fare-admission") {
+    throw new Error("official OD fare admission artifactKind must be official-od-fare-admission");
+  }
+  if (admission.decision !== "APPROVED") throw new Error('admission decision must be "APPROVED"');
+  requiredString(admission.snapshotId, "official OD fare admission.snapshotId");
+  requiredString(admission.approvedBy, "official OD fare admission.approvedBy");
+  requiredString(admission.approvedAt, "official OD fare admission.approvedAt");
+  for (const field of ["evidenceHash", "quoteSetHash", "fareStationLineMappingLedgerHash"]) {
+    if (typeof admission[field] !== "string" || !/^[0-9a-f]{64}$/.test(admission[field])) {
+      throw new Error(`official OD fare admission.${field} must be a sha256 hex string`);
+    }
+  }
+  if (!Number.isSafeInteger(admission.quoteCount) || admission.quoteCount < 1) {
+    throw new Error("official OD fare admission.quoteCount must be a positive safe integer");
+  }
+}
 
 export function validateOfficialOdFareEvidence(evidence) {
   assertObject(evidence, "evidence");
   assertExactKeys(evidence, EVIDENCE_KEYS, "evidence");
   if (evidence.schemaVersion !== 1
     || evidence.artifactKind !== "official-od-fare-probe-evidence"
-    || evidence.mappingAvailability !== "AVAILABLE"
-    || evidence.mappingField !== "dptreStnCd/arvlStnCd") {
+    || evidence.mappingAvailability !== "AVAILABLE") {
     throw new Error("evidence must be available official OD fare probe evidence");
   }
+  const mappingField = requiredString(evidence.mappingField, "evidence.mappingField");
+  const providerId = requiredString(evidence.providerId, "evidence.providerId");
   if (JSON.stringify(evidence.fieldNames) !== JSON.stringify(REQUIRED_FARE_FIELDS)) {
     throw new Error("evidence.fieldNames must contain the six official fare fields");
   }
 
   const mappings = requiredArray(evidence.providerMappings, "evidence.providerMappings");
-  if (mappings.length !== 2) throw new Error("evidence.providerMappings must contain exactly two rows");
   const stationIds = new Set();
   const stationLineKeys = new Set();
   const providerCodes = new Set();
@@ -52,8 +178,6 @@ export function validateOfficialOdFareEvidence(evidence) {
     const lineId = requiredString(mapping.lineId, "providerMappings.lineId");
     const stationName = requiredString(mapping.stationName, "providerMappings.stationName");
     const providerCode = requiredString(mapping.fareStationCode, "providerMappings.fareStationCode");
-    if (lineId !== "seoul-4") throw new Error("provider mapping lineId must be seoul-4");
-    if (!/^\d{4}$/.test(providerCode)) throw new Error("provider station code must be four digits");
     const stationLineKey = `${stationId}\u0000${lineId}`;
     if (stationLineKeys.has(stationLineKey)) throw new Error("duplicate station and line mapping");
     if (providerCodes.has(providerCode)) throw new Error("duplicate provider station code");
@@ -63,19 +187,23 @@ export function validateOfficialOdFareEvidence(evidence) {
     targets.push(`${stationId}\u0000${lineId}\u0000${stationName}`);
   }
   const sortedTargets = targets.toSorted((left, right) => left.localeCompare(right));
-  if (JSON.stringify(sortedTargets) !== JSON.stringify(FIXED_TARGETS)) {
+  const profile = EVIDENCE_PROFILES.find((candidate) =>
+    candidate.mappingField === mappingField
+      && candidate.providerId === providerId
+      && JSON.stringify(candidate.targets) === JSON.stringify(sortedTargets));
+  if (!profile) {
     throw new Error("evidence.providerMappings must match fixed targets");
   }
-
-  validateEquivalence(evidence.equivalence);
-  const expectedDirections = new Set();
-  for (const origin of stationIds) {
-    for (const destination of stationIds) {
-      if (origin !== destination) expectedDirections.add(`${origin}\u0000${destination}`);
-    }
+  if ([...providerCodes].some((providerCode) => !profile.providerCode.test(providerCode))) {
+    throw new Error("provider station code format is invalid");
   }
+
+  validateEquivalence(evidence.equivalence, evidence.mappingField);
+  const expectedDirections = new Set(profile.directions);
   const quotes = requiredArray(evidence.quotes, "evidence.quotes");
-  if (quotes.length !== 2) throw new Error("evidence.quotes must contain exactly two rows");
+  if (quotes.length !== profile.directions.length) {
+    throw new Error(`evidence.quotes must contain exactly ${profile.directions.length} rows`);
+  }
   for (const quote of quotes) {
     assertObject(quote, "evidence.quotes[]");
     assertExactKeys(quote, ["destinationStationId", "fares", "originStationId"], "evidence.quotes[]");
@@ -90,7 +218,7 @@ export function validateOfficialOdFareEvidence(evidence) {
     }
   }
   if (expectedDirections.size !== 0) throw new Error("quote endpoints must match provider mappings");
-  validateAttemptCounts(evidence.attemptCounts, stationIds);
+  validateAttemptCounts(evidence.attemptCounts, profile.attemptKeys);
   return { mappings, quotes };
 }
 
@@ -114,8 +242,19 @@ export function officialOdFareQuoteSetHash(quotes) {
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 
-function validateEquivalence(equivalence) {
+function validateEquivalence(equivalence, mappingField) {
   assertObject(equivalence, "evidence.equivalence");
+  if (mappingField === "mo_scode_s/mo_scode_e") {
+    assertExactKeys(equivalence, ["routeForm"], "evidence.equivalence");
+    const routeForm = equivalence.routeForm;
+    assertObject(routeForm, "evidence.equivalence.routeForm");
+    assertExactKeys(routeForm, ["cyberKinds", "destinationField", "originField", "verified"], "evidence.equivalence.routeForm");
+    if (routeForm.cyberKinds !== "1" || routeForm.originField !== "mo_scode_s"
+      || routeForm.destinationField !== "mo_scode_e" || routeForm.verified !== true) {
+      throw new Error("evidence.equivalence.routeForm must match the verified official route form");
+    }
+    return;
+  }
   assertExactKeys(equivalence, ["cityHallLine1", "seoulStationLine4"], "evidence.equivalence");
   for (const [key, expectedCode] of [["cityHallLine1", "0151"], ["seoulStationLine4", "0150"]]) {
     const entry = equivalence[key];
@@ -127,10 +266,8 @@ function validateEquivalence(equivalence) {
   }
 }
 
-function validateAttemptCounts(attemptCounts, stationIds) {
+function validateAttemptCounts(attemptCounts, directions) {
   assertObject(attemptCounts, "evidence.attemptCounts");
-  const [left, right] = stationIds;
-  const directions = [`${left}→${right}`, `${right}→${left}`];
   assertExactKeys(attemptCounts, directions, "evidence.attemptCounts");
   for (const direction of directions) {
     if (!Number.isInteger(attemptCounts[direction]) || attemptCounts[direction] < 1 || attemptCounts[direction] > 2) {

@@ -16,7 +16,10 @@ import {
   withoutSignature,
 } from "./lib/manifest-validation.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
-import { officialOdFareQuoteSetHash } from "./lib/official-od-fare-evidence.mjs";
+import {
+  officialOdFareAdmissionsBySource,
+  officialOdFareQuoteSetHash,
+} from "./lib/official-od-fare-evidence.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const productionMinimumTableRowNames = [
@@ -42,8 +45,13 @@ async function main() {
   const outputDir = path.resolve(root, requireArg(args, "output"));
   const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
   const officialOdFareAdmissionBytes = await readFile(path.join(root, "tools/datapack/official-od-fare-admission.json"));
-  const officialOdFareAdmission = JSON.parse(officialOdFareAdmissionBytes);
-  const { fixture, candidateBuild } = await loadBuildInput(args, officialOdFareAdmission, officialOdFareAdmissionBytes);
+  const officialOdFareAdmissionBundle = JSON.parse(officialOdFareAdmissionBytes);
+  const officialOdFareAdmissions = officialOdFareAdmissionsBySource(officialOdFareAdmissionBundle);
+  const { fixture, candidateBuild } = await loadBuildInput(
+    args,
+    officialOdFareAdmissions,
+    officialOdFareAdmissionBytes,
+  );
 
   validateFixture(fixture);
   await mkdir(outputDir, { recursive: true });
@@ -66,7 +74,7 @@ async function main() {
     await rm(sqlitePath, { force: true });
     await rm(compressedPath, { force: true });
 
-    buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmission);
+    buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions);
 
     const sqliteBytes = await readFile(sqlitePath);
     const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
@@ -161,7 +169,7 @@ async function main() {
   );
 }
 
-async function loadBuildInput(args, officialOdFareAdmission, officialOdFareAdmissionBytes) {
+async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmissionBytes) {
   const fixtureArg = args.fixture;
   const buildSpecArg = args["build-spec"];
   if ((fixtureArg == null) === (buildSpecArg == null)) {
@@ -181,7 +189,7 @@ async function loadBuildInput(args, officialOdFareAdmission, officialOdFareAdmis
   const officialOdFareEvidence = await validateCandidateBuildSpec(
     buildSpec,
     fixture,
-    officialOdFareAdmission,
+    officialOdFareAdmissions,
     officialOdFareAdmissionBytes,
   );
   return {
@@ -190,7 +198,7 @@ async function loadBuildInput(args, officialOdFareAdmission, officialOdFareAdmis
   };
 }
 
-async function validateCandidateBuildSpec(buildSpec, fixture, admission, admissionBytes) {
+async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admissionBytes) {
   if (!buildSpec || typeof buildSpec !== "object" || Array.isArray(buildSpec)) {
     throw new Error("buildSpec must be an object");
   }
@@ -214,7 +222,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admission, admissi
     throw new Error("buildSpec.builderGitSha must be a git sha");
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
-  return validateOfficialOdFareEvidence(buildSpec.officialOdFareEvidence, fixture, admission, admissionBytes);
+  return validateOfficialOdFareEvidence(buildSpec.officialOdFareEvidence, fixture, admissions, admissionBytes);
 }
 
 function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence) {
@@ -242,16 +250,17 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
   };
 }
 
-function validateOfficialOdFareEvidence(evidence, fixture, admission, admissionBytes) {
-  const candidateQuotes = fixture?.packs?.flatMap((pack) => pack.officialOdFareQuotes ?? []) ?? [];
+function validateOfficialOdFareEvidence(evidence, fixture, admissions, admissionBytes) {
+  const allCandidateQuotes = fixture?.packs?.flatMap((pack) => pack.officialOdFareQuotes ?? []) ?? [];
+  const candidateQuotes = evidence == null
+    ? allCandidateQuotes
+    : allCandidateQuotes.filter((quote) => quote.sourceId === evidence.sourceId);
   if (evidence == null && candidateQuotes.length === 0) return null;
   const label = "officialOdFareEvidence";
   const keys = ["sourceId", "snapshotId", "evidenceHash", "admissionHash", "quoteSetHash", "mappingLedgerHash", "quotes"];
   assertExactKeys(evidence, keys, label);
+  const admission = admissions.get(requiredString(evidence.sourceId, `${label}.sourceId`));
   if (admission?.decision !== "APPROVED") throw new Error(`${label} requires an approved admission`);
-  if (requiredString(evidence.sourceId, `${label}.sourceId`) !== admission.sourceId) {
-    throw new Error(`${label}.sourceId must match admission`);
-  }
   if (requiredString(evidence.snapshotId, `${label}.snapshotId`) !== admission.snapshotId) {
     throw new Error(`${label}.snapshotId must match admission`);
   }
@@ -829,7 +838,7 @@ function outOfStationTransferNetworkEdge(link) {
   };
 }
 
-function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmission) {
+function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
   const database = new DatabaseSync(sqlitePath);
   const isProductionPack = pack.artifactKind === "production";
   const networkEdges = routeGraphNetworkEdges(pack);
@@ -952,15 +961,16 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmission) {
           requiredString(row.zoneId, "stationFareZones.zoneId"),
         ],
       );
-      const officialOdFareQuotes = (pack.officialOdFareQuotes ?? []).map((row) => ({
-        row,
-        values: officialOdFareQuoteValues(row, officialOdFareAdmission),
-      }));
-      if (officialOdFareQuotes.length > 0) {
-        if (officialOdFareQuotes.length !== officialOdFareAdmission.quoteCount) {
+      const officialOdFareQuotes = (pack.officialOdFareQuotes ?? []).map((row) => {
+        const admission = officialOdFareAdmissions.get(row.sourceId);
+        return { admission, row, values: officialOdFareQuoteValues(row, admission) };
+      });
+      for (const admission of new Set(officialOdFareQuotes.map(({ admission }) => admission))) {
+        const sourceQuotes = officialOdFareQuotes.filter(({ admission: rowAdmission }) => rowAdmission === admission);
+        if (sourceQuotes.length !== admission.quoteCount) {
           throw new Error("officialOdFareQuotes count must match admission");
         }
-        if (officialOdFareQuoteSetHash(officialOdFareQuotes.map(({ row }) => row)) !== officialOdFareAdmission.quoteSetHash) {
+        if (officialOdFareQuoteSetHash(sourceQuotes.map(({ row }) => row)) !== admission.quoteSetHash) {
           throw new Error("officialOdFareQuotes quote set hash must match admission");
         }
       }

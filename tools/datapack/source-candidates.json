@@ -2268,7 +2268,7 @@
         "liveSampleRowCount": 2,
         "liveSampleEvidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
         "snapshotId": "seoul-metro-official-od-fares-20260712",
-        "officialOdFareAdmissionHash": "dd7c2614921b2f1018bdb13d0fdbba70c72e2bfe145eac4a68e5dd07344c5cce",
+      "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
         "fareStationLineMappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
         "coverageLimitations": [
           "상록수→사당 및 사당→상록수 두 방향의 승인된 2026-07-12 offline snapshot만 사용",
@@ -2301,6 +2301,89 @@
           "updateFrequency": "provider realtime; approved offline snapshot only",
           "unsupportedNotes": "source does not provide accessibility facility records"
         }
+      }
+    },
+    {
+      "id": "seoul-metro-official-od-fare-canary",
+      "priority": "P0",
+      "domain": "official_od_fares",
+      "displayName": "서울교통공사_실시간운임정보 검증 canary",
+      "detailUrl": "https://www.data.go.kr/data/15143846/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B553766/fare2/getRltmFare2",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "dataType", "dptreStnNm", "arvlStnNm"],
+        "responseEnvelope": "response.body.items.item",
+        "runner": { "command": "node tools/datapack/probe-seoul-fare-api.mjs", "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "FARE_API_PROBE_OUTPUT"] },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "sanitized_ci_probe_admitted",
+      "admissionStatus": "official_od_fare_admitted_to_production_inventory",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "productionInventoryReferenceId": "seoul-metro-official-od-fare-canary",
+      "evidence": {
+        "outputFields": ["dptreStnCd", "arvlStnCd", "gnrlCardFare", "gnrlCashFare", "yungCardFare", "yungCashFare", "childCardFare", "childCashFare"],
+        "liveSampleEvidenceHash": "a0d24e1e454f4165e879d74fdb352afd48e09c93af843aad97ddc0263031422d",
+        "snapshotId": "seoul-metro-official-od-fare-canary-run-29085674167",
+        "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
+        "fareStationLineMappingLedgerHash": "58e795e03161e2100cffb2c777efcaa1d09a5e03abc7363676be5f26ae353541"
+      }
+    },
+    {
+      "id": "busan-transportation-official-fare-table",
+      "priority": "P0",
+      "domain": "official_od_fares",
+      "displayName": "부산교통공사 도시철도 운임표",
+      "detailUrl": "https://www.data.go.kr/data/3057225/fileData.do",
+      "requestUrl": "https://www2.humetro.busan.kr/homepage/chs/page/subLocation.do?menu_no=1001010501",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www2.humetro.busan.kr/homepage/chs/page/subLocation.do?menu_no=1001010501",
+        "auth": { "placement": "none" },
+        "requiredParameters": ["menu_no"],
+        "responseEnvelope": "HTML 운임표 tbody의 1구간·2구간 rows",
+        "runner": { "command": "node tools/datapack/probe-busan-fare-api.mjs", "requiredEnv": ["BUSAN_FARE_API_PROBE_OUTPUT"] },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "sanitized_live_probe_admitted",
+      "admissionStatus": "evidence_recorded_linked_to_busan_official_od_fares",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "outputFields": ["1구간", "2구간", "교통카드", "QR승차권"]
+      }
+    },
+    {
+      "id": "busan-transportation-official-od-fares",
+      "priority": "P0",
+      "domain": "official_od_fares",
+      "displayName": "부산교통공사_운임정보·사이버스테이션",
+      "detailUrl": "https://www.data.go.kr/data/3057225/fileData.do",
+      "requestUrl": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+      "operation": {
+        "method": "POST",
+        "endpoint": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+        "auth": { "placement": "none" },
+        "requiredParameters": ["mo_scode_s", "mo_scode_e", "cyber_kinds"],
+        "responseEnvelope": "HTML .result-2 .discountCard/.discountMoney",
+        "runner": { "command": "node tools/datapack/probe-busan-fare-api.mjs", "requiredEnv": ["BUSAN_FARE_API_PROBE_OUTPUT"] },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "sanitized_live_probe_admitted",
+      "admissionStatus": "official_od_fare_admitted_to_production_inventory",
+      "mobileEmbeddingAllowed": false,
+      "productionInventoryReferenceId": "busan-transportation-official-od-fares",
+      "evidence": {
+        "outputFields": ["discountCard", "discountMoney"],
+        "liveSampleEvidenceHash": "a4939a97b2c503ff2344f05f9928d71dee3414967bb284e28da48f754a04b6d4",
+        "snapshotId": "busan-transportation-official-od-fares-20260713",
+        "officialOdFareAdmissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
+        "fareStationLineMappingLedgerHash": "9c327840275be5c4583fc9e9cfdd16d2e4ecc06f660d08fd682bf9fe27d72390"
       }
     }
   ]

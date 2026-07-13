@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { buildFareStationLineMappingLedger } from "./export-ledger-hashes.mjs";
 import { parseArgs, requiredString } from "./lib/ledger-admission-cli.mjs";
 import {
+  officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,
   validateOfficialOdFareEvidence,
 } from "./lib/official-od-fare-evidence.mjs";
@@ -21,6 +22,27 @@ const REVIEW_KEYS = [
   "snapshotId",
   "sourceId",
 ];
+const DIRECTIONS_BY_SOURCE = new Map([
+  [
+    "seoul-metro-official-od-fares",
+    [
+      "station-sadang\u0000station-sangnoksu",
+      "station-sangnoksu\u0000station-sadang",
+    ],
+  ],
+  [
+    "seoul-metro-official-od-fare-canary",
+    ["station-2af75c3d707b\u0000station-a2d54a5d63d2"],
+  ],
+  [
+    "busan-transportation-official-od-fares",
+    [
+      "station-1fc7a7c971c8\u0000station-6b611916f76a",
+      "station-fcb7a21e5606\u0000station-6b611916f76a",
+      "station-fcb7a21e5606\u0000station-dd45c69d3e40",
+    ],
+  ],
+]);
 
 async function main() {
   const admission = await buildOfficialOdFareAdmission(parseArgs(process.argv.slice(2)));
@@ -28,24 +50,31 @@ async function main() {
 }
 
 async function buildOfficialOdFareAdmission(args) {
-  assertExactKeys(args, ["admin-review", "evidence"], "argument");
+  assertAllowedKeys(args, ["admin-review", "bundle", "evidence"], "argument");
   const evidenceArg = requiredString(args.evidence, "--evidence");
   const reviewArg = requiredString(args["admin-review"], "--admin-review");
+  const bundleArg = args.bundle === undefined
+    ? "tools/datapack/official-od-fare-admission.json"
+    : requiredString(args.bundle, "--bundle");
   const evidencePath = path.resolve(root, evidenceArg);
   const reviewPath = path.resolve(root, reviewArg);
+  const bundlePath = path.resolve(root, bundleArg);
   const evidenceBytes = await readFile(evidencePath);
   const evidence = JSON.parse(evidenceBytes);
   const review = JSON.parse(await readFile(reviewPath, "utf8"));
+  const bundle = JSON.parse(await readFile(bundlePath, "utf8"));
 
   validateOfficialOdFareEvidence(evidence);
   validateReview(review);
+  const sourceEvidence = evidenceForSource(evidence, review.sourceId);
+  officialOdFareAdmissionsBySource(bundle);
   const evidenceHash = sha256(evidenceBytes);
   if (review.evidenceHash !== evidenceHash) {
     throw new Error("admin review evidenceHash must match sanitized evidence");
   }
-  const mappingLedger = buildFareStationLineMappingLedger(evidence, review.sourceId);
+  const mappingLedger = buildFareStationLineMappingLedger(sourceEvidence, review.sourceId);
 
-  return {
+  const admission = {
     schemaVersion: 1,
     artifactKind: "official-od-fare-admission",
     evidenceHash,
@@ -54,14 +83,56 @@ async function buildOfficialOdFareAdmission(args) {
     approvedAt: review.approvedAt,
     sourceId: review.sourceId,
     snapshotId: review.snapshotId,
-    quoteCount: evidence.quotes.length,
-    quoteSetHash: officialOdFareQuoteSetHash(evidence.quotes.map((quote) => ({
+    quoteCount: sourceEvidence.quotes.length,
+    quoteSetHash: officialOdFareQuoteSetHash(sourceEvidence.quotes.map((quote) => ({
       originStationId: quote.originStationId,
       destinationStationId: quote.destinationStationId,
       ...quote.fares,
     }))),
     fareStationLineMappingLedgerHash: mappingLedger.ledgerHash,
   };
+  return {
+    schemaVersion: 1,
+    artifactKind: "official-od-fare-admission-bundle",
+    admissions: [
+      ...bundle.admissions.filter(({ sourceId }) => sourceId !== admission.sourceId),
+      admission,
+    ].sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
+  };
+}
+
+function evidenceForSource(evidence, sourceId) {
+  const expected = DIRECTIONS_BY_SOURCE.get(sourceId);
+  if (!expected) {
+    throw new Error("evidence directions must match admin review sourceId");
+  }
+  const quotesByDirection = new Map(evidence.quotes.map((quote) => [
+    `${quote.originStationId}\u0000${quote.destinationStationId}`,
+    quote,
+  ]));
+  const quotes = expected.map((direction) => quotesByDirection.get(direction));
+  if (quotes.some((quote) => quote === undefined)) {
+    throw new Error("evidence directions must match admin review sourceId");
+  }
+  const stationIds = new Set(quotes.flatMap(({ originStationId, destinationStationId }) => [
+    originStationId,
+    destinationStationId,
+  ]));
+  const attemptCounts = Object.fromEntries([
+    ...Object.entries(evidence.attemptCounts).filter(([key]) => !key.includes("→")),
+    ...expected.map((direction) => {
+      const key = direction.replace("\u0000", "→");
+      return [key, evidence.attemptCounts[key]];
+    }),
+  ]);
+  const selected = {
+    ...evidence,
+    attemptCounts,
+    providerMappings: evidence.providerMappings.filter(({ stationId }) => stationIds.has(stationId)),
+    quotes,
+  };
+  validateOfficialOdFareEvidence(selected);
+  return selected;
 }
 
 function validateReview(review) {
@@ -92,6 +163,13 @@ function assertExactKeys(value, allowedKeys, label) {
   }
   for (const key of allowed) {
     if (!(key in value)) throw new Error(`${label}.${key} is required`);
+  }
+}
+
+function assertAllowedKeys(value, allowedKeys, label) {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw new Error(`${key} is not allowed in ${label}`);
   }
 }
 
