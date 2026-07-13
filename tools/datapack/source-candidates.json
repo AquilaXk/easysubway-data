@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
   "artifactKind": "production-source-candidates",
-  "source": "easysubway_public_subway_api_inventory.xlsx",
+  "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
+  "updatedAt": "2026-07-13",
   "candidates": [
     {
       "id": "kric-subway-route-info",
@@ -646,6 +647,61 @@
       "sampleEvidenceStatus": "sample_url_documented_key_required",
       "admissionStatus": "evidence_recorded_admin_review_required",
       "automaticRouteGraphEdgeAllowed": false,
+      "serviceKeyHandling": "offline_import_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "providerApproval": {
+        "status": "APPROVED",
+        "approvalScope": "API_CREDENTIAL",
+        "termsStatus": "REVIEW_REQUIRED",
+        "quotaStatus": "REVIEW_REQUIRED",
+        "productionUseAllowed": false,
+        "serviceId": "handicapped",
+        "operationId": "transferMovement",
+        "validFrom": "2026-07-06",
+        "validTo": "2027-07-06",
+        "renewalNoticeDays": 30,
+        "evidenceReferences": [
+          {
+            "type": "OWNER_CONFIRMATION",
+            "url": "https://github.com/AquilaXk/easysubway/issues/1397#issuecomment-4956908695"
+          }
+        ],
+        "recordedAt": "2026-07-13"
+      },
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/transferMovement",
+        "auth": {
+          "env": "KRIC_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": [
+          "serviceKey",
+          "format",
+          "railOprIsttCd",
+          "lnCd",
+          "stinCd",
+          "prevStinCd",
+          "chthTgtLn",
+          "chtnNextStinCd"
+        ],
+        "responseEnvelope": "root.body.items.item",
+        "runner": {
+          "command": "node tools/datapack/collect-kric-source-candidate-evidence.mjs",
+          "arguments": [
+            "--candidate",
+            "kric-transfer-movement-standard"
+          ],
+          "requiredEnv": [
+            "KRIC_SERVICE_KEY",
+            "RUNNER_TEMP"
+          ]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
       "evidence": {
         "listPageUrl": "https://data.kric.go.kr/rips/M_01_02/intro.do?page=2",
         "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=428&service=handicapped&operation=transferMovement&page=2",

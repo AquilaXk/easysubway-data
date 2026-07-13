@@ -3,6 +3,7 @@ name: Data Pack Expiry Alert
 on:
   schedule:
     - cron: "23 */4 * * *"
+    - cron: "41 0 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -13,7 +14,53 @@ permissions:
   contents: read
 
 jobs:
+  provider-approval-expiry:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '41 0 * * *' }}
+    name: Provider Approval Expiry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
+    steps:
+      - name: Provider Approval Expiry / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Provider Approval Expiry / Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Provider Approval Expiry / Check repository approvals
+        id: check
+        run: node tools/datapack/source-operation.mjs check-approvals --github-output "${GITHUB_OUTPUT}"
+
+      - name: Provider Approval Expiry / Skip missing Slack webhook
+        if: ${{ steps.check.outputs.status == 'WARNING' && env.SLACK_RELEASE_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Provider approval notification::SLACK_RELEASE_WEBHOOK_URL is not configured."
+
+      - name: Provider Approval Expiry / Notify Slack on renewal window
+        if: ${{ steps.check.outputs.status == 'WARNING' && env.SLACK_RELEASE_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
+        with:
+          webhook: ${{ env.SLACK_RELEASE_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway provider approval renewal window"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway Provider Approval Renewal Window*
+                    • approved contracts: `${{ steps.check.outputs.approved_count }}`
+                    • repo: `${{ github.repository }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>
+
   datapack-expiry-alert:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.schedule == '23 */4 * * *' }}
     name: Data Pack Expiry Alert
     runs-on: ubuntu-latest
     permissions:

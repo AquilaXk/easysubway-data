@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const CANDIDATES_URL = new URL("./source-candidates.json", import.meta.url);
 const CREDENTIAL_NAME = /^(?:accesskey|accesstoken|apikey|authorization|clientsecret|credential|key|password|privatekey|refreshtoken|secret|servicekey|signature|token|xamzcredential|xamzsecuritytoken|xamzsignature|xapikey)$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function normalizedName(value) {
   return value.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
@@ -87,6 +88,139 @@ function requireAllowedKeys(value, allowed, label) {
   if (unknown.length > 0) throw new Error(`${label} has unsupported fields: ${unknown.join(", ")}`);
 }
 
+function requiredDate(value, label) {
+  const text = requiredText(value, label);
+  const parsed = new Date(`${text}T00:00:00Z`);
+  if (!ISO_DATE.test(text) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== text) {
+    throw new Error(`${label} must be an ISO date`);
+  }
+  return text;
+}
+
+export function validateProviderApproval(candidate, { today = new Date().toISOString().slice(0, 10) } = {}) {
+  const approval = candidate?.providerApproval;
+  if (approval == null) return null;
+  if (typeof approval !== "object" || Array.isArray(approval)) {
+    throw new Error(`${candidate.id}.providerApproval must be an object`);
+  }
+  if (hasCredentialValue(approval)) {
+    throw new Error(`${candidate.id}.providerApproval secret-like values are forbidden`);
+  }
+  requireAllowedKeys(approval, new Set([
+    "status", "approvalScope", "termsStatus", "quotaStatus", "productionUseAllowed",
+    "serviceId", "operationId", "validFrom", "validTo", "renewalNoticeDays", "evidenceReferences", "recordedAt",
+  ]), `${candidate.id}.providerApproval`);
+  if (!new Set(["APPROVED", "EXPIRED", "REVOKED"]).has(approval.status)) {
+    throw new Error(`${candidate.id}.providerApproval.status is invalid`);
+  }
+  if (approval.approvalScope !== "API_CREDENTIAL") {
+    throw new Error(`${candidate.id}.providerApproval.approvalScope must be API_CREDENTIAL`);
+  }
+  const conditionStatuses = new Set(["APPROVED", "REVIEW_REQUIRED", "REJECTED", "NOT_APPLICABLE"]);
+  for (const field of ["termsStatus", "quotaStatus"]) {
+    if (!conditionStatuses.has(approval[field])) {
+      throw new Error(`${candidate.id}.providerApproval.${field} is invalid`);
+    }
+  }
+  if (typeof approval.productionUseAllowed !== "boolean") {
+    throw new Error(`${candidate.id}.providerApproval.productionUseAllowed must be a boolean`);
+  }
+  const productionUseAllowed = approval.status === "APPROVED"
+    && [approval.termsStatus, approval.quotaStatus].every((status) => new Set(["APPROVED", "NOT_APPLICABLE"]).has(status));
+  if (approval.productionUseAllowed !== productionUseAllowed) {
+    throw new Error(`${candidate.id}.providerApproval.productionUseAllowed must match credential, terms, and quota decisions`);
+  }
+  const serviceId = requiredText(approval.serviceId, `${candidate.id}.providerApproval.serviceId`);
+  const operationId = requiredText(approval.operationId, `${candidate.id}.providerApproval.operationId`);
+  if (candidate.operation?.endpoint != null) {
+    const endpoint = requiredHttpUrl(candidate.operation.endpoint, `${candidate.id}.operation.endpoint`);
+    const path = endpoint.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    if (path.at(-2) !== serviceId || path.at(-1) !== operationId) {
+      throw new Error(`${candidate.id}.providerApproval serviceId/operationId must match operation endpoint path`);
+    }
+  }
+  const validFrom = requiredDate(approval.validFrom, `${candidate.id}.providerApproval.validFrom`);
+  const validTo = requiredDate(approval.validTo, `${candidate.id}.providerApproval.validTo`);
+  if (approval.renewalNoticeDays != null
+    && (!Number.isInteger(approval.renewalNoticeDays) || approval.renewalNoticeDays < 1)) {
+    throw new Error(`${candidate.id}.providerApproval.renewalNoticeDays must be a positive integer`);
+  }
+  if (validTo < validFrom) {
+    throw new Error(`${candidate.id}.providerApproval.validTo must not precede validFrom`);
+  }
+  if (!Array.isArray(approval.evidenceReferences) || approval.evidenceReferences.length === 0) {
+    throw new Error(`${candidate.id}.providerApproval.evidenceReferences must be a non-empty array`);
+  }
+  const evidenceUrls = new Set();
+  for (const [index, evidence] of approval.evidenceReferences.entries()) {
+    if (evidence == null || typeof evidence !== "object" || Array.isArray(evidence)) {
+      throw new Error(`${candidate.id}.providerApproval.evidenceReferences[${index}] must be an object`);
+    }
+    requireAllowedKeys(evidence, new Set(["type", "url"]), `${candidate.id}.providerApproval.evidenceReferences[${index}]`);
+    if (!new Set(["OWNER_CONFIRMATION", "PROVIDER_PORTAL", "PROVIDER_DOCUMENT"]).has(evidence.type)) {
+      throw new Error(`${candidate.id}.providerApproval.evidenceReferences[${index}].type is invalid`);
+    }
+    const url = requiredHttpUrl(evidence.url, `${candidate.id}.providerApproval.evidenceReferences[${index}].url`).href;
+    if (evidenceUrls.has(url)) {
+      throw new Error(`${candidate.id}.providerApproval.evidenceReferences must not contain duplicate URLs`);
+    }
+    evidenceUrls.add(url);
+  }
+  requiredDate(approval.recordedAt, `${candidate.id}.providerApproval.recordedAt`);
+  requiredDate(today, "provider approval current date");
+  if (approval.status === "APPROVED" && validTo < today) {
+    throw new Error(`${candidate.id}.providerApproval.status is APPROVED but validTo has expired`);
+  }
+  if (approval.status === "APPROVED" && validFrom > today) {
+    throw new Error(`${candidate.id}.providerApproval.status is APPROVED but validFrom is in the future`);
+  }
+  return approval;
+}
+
+export function validateSourceCandidateDocument(document, options = {}) {
+  if (!document || typeof document !== "object" || Array.isArray(document)) {
+    throw new Error("source candidate document must be an object");
+  }
+  if (document.schemaVersion !== 1 || document.artifactKind !== "production-source-candidates") {
+    throw new Error("source candidate document identity is invalid");
+  }
+  if (document.source !== "tools/datapack/source-candidates.json") {
+    throw new Error("source candidate document source must be repository-local");
+  }
+  requiredDate(document.updatedAt, "source candidate document.updatedAt");
+  if (!Array.isArray(document.candidates)) throw new Error("source candidate document.candidates must be an array");
+  const ids = new Set();
+  for (const candidate of document.candidates) {
+    const id = requiredText(candidate?.id, "candidate.id");
+    if (ids.has(id)) throw new Error(`duplicate candidate id: ${id}`);
+    ids.add(id);
+    validateProviderApproval(candidate, options);
+  }
+  return document;
+}
+
+export function providerApprovalExpirySummary(document, { today = new Date().toISOString().slice(0, 10) } = {}) {
+  validateSourceCandidateDocument(document, { today });
+  const todayMillis = Date.parse(`${today}T00:00:00Z`);
+  const approvals = document.candidates
+    .filter((candidate) => candidate.providerApproval?.status === "APPROVED")
+    .map((candidate) => {
+      const approval = candidate.providerApproval;
+      return {
+        candidateId: candidate.id,
+        validTo: approval.validTo,
+        daysUntilExpiry: Math.floor((Date.parse(`${approval.validTo}T00:00:00Z`) - todayMillis) / 86_400_000),
+        renewalNoticeDays: approval.renewalNoticeDays ?? 30,
+      };
+    });
+  return {
+    status: approvals.some((approval) => approval.daysUntilExpiry <= approval.renewalNoticeDays)
+      ? "WARNING"
+      : "OK",
+    approvals,
+  };
+}
+
 export function validateOperation(candidate, { allowMissing = false } = {}) {
   const requestUrl = requiredHttpUrl(candidate?.requestUrl, `${candidate?.id ?? "candidate"}.requestUrl`);
   if (hasCredentialValue(candidate.requestUrl)) {
@@ -130,7 +264,9 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   const credentialFree = auth.placement === "none";
   requireAllowedKeys(
     auth,
-    credentialFree ? new Set(["placement"]) : new Set(["env", "placement", "parameter"]),
+    credentialFree
+      ? new Set(["placement"])
+      : new Set(["env", "placement", "parameter", "valueEncoding", "loadPolicy"]),
     `${candidate.id}.operation.auth`,
   );
   const authEnv = credentialFree ? null : requiredText(auth.env, `${candidate.id}.operation.auth.env`);
@@ -140,6 +276,12 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   const authParameter = credentialFree
     ? null
     : requiredText(auth.parameter, `${candidate.id}.operation.auth.parameter`);
+  if (auth.valueEncoding != null && auth.valueEncoding !== "url-search-params-once") {
+    throw new Error(`${candidate.id}.operation.auth.valueEncoding is invalid`);
+  }
+  if (auth.loadPolicy != null && auth.loadPolicy !== "process-env-no-shell-parsing") {
+    throw new Error(`${candidate.id}.operation.auth.loadPolicy is invalid`);
+  }
   const requiredParameters = stringList(
     operation.requiredParameters,
     `${candidate.id}.operation.requiredParameters`,
@@ -153,10 +295,21 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   if (!runner || typeof runner !== "object" || Array.isArray(runner)) {
     throw new Error(`${candidate.id}.operation.runner must be an object`);
   }
-  requireAllowedKeys(runner, new Set(["command", "requiredEnv"]), `${candidate.id}.operation.runner`);
+  requireAllowedKeys(runner, new Set(["command", "arguments", "requiredEnv"]), `${candidate.id}.operation.runner`);
   const command = requiredText(runner.command, `${candidate.id}.operation.runner.command`);
   if (!/^node tools\/[A-Za-z0-9_./-]+\.mjs$/.test(command)) {
     throw new Error(`${candidate.id}.operation.runner.command must be a literal repository Node command`);
+  }
+  const runnerArguments = stringList(
+    runner.arguments ?? [],
+    `${candidate.id}.operation.runner.arguments`,
+    { allowEmpty: true },
+  );
+  if (runnerArguments.some((argument) => {
+    const option = /^--([^=]+)(?:=|$)/.exec(argument);
+    return option && CREDENTIAL_NAME.test(normalizedName(option[1]));
+  })) {
+    throw new Error(`${candidate.id}.operation.runner.arguments must not include credential options`);
   }
   const requiredEnv = stringList(
     runner.requiredEnv,
@@ -177,14 +330,30 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
 }
 
 export function operationSummary(candidate) {
-  validateOperation(candidate, { allowMissing: true });
+  let operationValidationError = null;
+  try {
+    validateOperation(candidate, { allowMissing: true });
+  } catch (error) {
+    if (error instanceof Error && /credential values are forbidden/.test(error.message)) throw error;
+    operationValidationError = error instanceof Error ? error.message : "operation is invalid";
+  }
+  let providerApprovalValidationError = null;
+  try {
+    validateProviderApproval(candidate);
+  } catch (error) {
+    if (error instanceof Error && /secret-like values are forbidden/.test(error.message)) throw error;
+    providerApprovalValidationError = error instanceof Error ? error.message : "provider approval is invalid";
+  }
   return {
     id: requiredText(candidate.id, "candidate.id"),
     status: candidate.admissionStatus ?? null,
     endpoint: requiredText(candidate.requestUrl, `${candidate.id}.requestUrl`),
     sampleUrl: candidate.evidence?.sampleUrl ?? null,
     responseFields: candidate.evidence?.outputFields ?? [],
+    providerApproval: candidate.providerApproval ?? null,
+    providerApprovalValidationError,
     operation: candidate.operation ?? null,
+    operationValidationError,
   };
 }
 
@@ -204,22 +373,48 @@ export function operationHumanSummary(summary) {
     `sample: ${summary.sampleUrl ?? "not documented"}`,
     `response fields: ${summary.responseFields.join(", ") || "not documented"}`,
   ];
-  if (summary.operation) {
+  if (summary.providerApproval) {
     lines.push(
-      `auth env: ${summary.operation.auth.env ?? "not required"}`,
-      `required params: ${summary.operation.requiredParameters.join(", ")}`,
-      `response envelope: ${summary.operation.responseEnvelope}`,
-      `runner: ${summary.operation.runner.command}`,
-      `runner env: ${summary.operation.runner.requiredEnv.join(", ")}`,
+      `provider approval: ${summary.providerApproval.status}`,
+      `provider approval scope: ${summary.providerApproval.approvalScope}`,
+      `provider terms: ${summary.providerApproval.termsStatus}`,
+      `provider quota: ${summary.providerApproval.quotaStatus}`,
+      `provider production use: ${summary.providerApproval.productionUseAllowed ? "allowed" : "not allowed"}`,
+      `provider operation: ${summary.providerApproval.serviceId}/${summary.providerApproval.operationId}`,
+      `approval valid: ${summary.providerApproval.validFrom}..${summary.providerApproval.validTo}`,
     );
   } else {
+    lines.push("provider approval: none");
+  }
+  if (summary.providerApprovalValidationError) {
+    lines.push(`provider approval validation: ${summary.providerApprovalValidationError}`);
+  }
+  if (summary.operation && !summary.operationValidationError) {
+    const runner = [summary.operation.runner.command, ...(summary.operation.runner.arguments ?? [])].join(" ");
+    lines.push(
+      `auth env: ${summary.operation.auth.env ?? "not required"}`,
+      `auth value encoding: ${summary.operation.auth.valueEncoding ?? "provider default"}`,
+      `auth load policy: ${summary.operation.auth.loadPolicy ?? "runtime default"}`,
+      `required params: ${summary.operation.requiredParameters.join(", ")}`,
+      `response envelope: ${summary.operation.responseEnvelope}`,
+      `runner: ${runner}`,
+      `runner env: ${summary.operation.runner.requiredEnv.join(", ")}`,
+    );
+  } else if (!summary.operation) {
     lines.push("operation: not documented");
+  }
+  if (summary.operationValidationError) {
+    lines.push(`operation validation: ${summary.operationValidationError}`);
   }
   return lines.join("\n");
 }
 
 async function main(args = process.argv.slice(2)) {
-  const [command, sourceId] = args.filter((arg) => arg !== "--json");
+  const githubOutputIndex = args.indexOf("--github-output");
+  const githubOutput = githubOutputIndex === -1 ? null : requiredText(args[githubOutputIndex + 1], "--github-output");
+  const positional = args.filter((arg, index) => arg !== "--json"
+    && (githubOutputIndex === -1 || (index !== githubOutputIndex && index !== githubOutputIndex + 1)));
+  const [command, sourceId] = positional;
   const json = args.includes("--json");
   const document = JSON.parse(await readFile(CANDIDATES_URL, "utf8"));
   const operations = listOperations(document);
@@ -238,12 +433,29 @@ async function main(args = process.argv.slice(2)) {
     return;
   }
   if (command === "validate" && !sourceId) {
+    validateSourceCandidateDocument(document);
     const candidates = document.candidates.filter((candidate) => candidate.operation != null);
     for (const candidate of candidates) validateOperation(candidate);
     console.log(`source operation contracts valid: ${candidates.length}`);
     return;
   }
-  throw new Error("usage: source-operation.mjs list [--json] | show <source-id> [--json] | validate");
+  if (command === "check-approvals" && !sourceId) {
+    const summary = providerApprovalExpirySummary(document);
+    for (const approval of summary.approvals) {
+      if (approval.daysUntilExpiry <= approval.renewalNoticeDays) {
+        console.log(`::warning title=Provider approval expiry::${approval.candidateId} expires in ${approval.daysUntilExpiry} days (${approval.validTo})`);
+      }
+    }
+    if (githubOutput) {
+      await appendFile(
+        githubOutput,
+        `status=${summary.status}\napproved_count=${summary.approvals.length}\n`,
+      );
+    }
+    console.log(`provider approval expiry: ${summary.status} (${summary.approvals.length} approved)`);
+    return;
+  }
+  throw new Error("usage: source-operation.mjs list [--json] | show <source-id> [--json] | validate | check-approvals [--github-output <path>]");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

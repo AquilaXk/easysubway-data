@@ -5,9 +5,13 @@ import test from "node:test";
 import {
   listOperations,
   operationSummary,
+  providerApprovalExpirySummary,
   validateOperation,
+  validateSourceCandidateDocument,
 } from "./source-operation.mjs";
 import * as sourceOperation from "./source-operation.mjs";
+
+const FUTURE_APPROVAL_DATE = new Date(Date.now() + (366 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
 
 function candidate(id, overrides = {}) {
   return {
@@ -42,6 +46,27 @@ function validOperation(overrides = {}) {
   };
 }
 
+function providerApproval(overrides = {}) {
+  return {
+    status: "APPROVED",
+    approvalScope: "API_CREDENTIAL",
+    termsStatus: "REVIEW_REQUIRED",
+    quotaStatus: "REVIEW_REQUIRED",
+    productionUseAllowed: false,
+    serviceId: "handicapped",
+    operationId: "transferMovement",
+    validFrom: "2020-01-01",
+    validTo: FUTURE_APPROVAL_DATE,
+    renewalNoticeDays: 30,
+    evidenceReferences: [{
+      type: "OWNER_CONFIRMATION",
+      url: "https://github.com/AquilaXk/easysubway/issues/1397#issuecomment-4956908695",
+    }],
+    recordedAt: "2026-07-13",
+    ...overrides,
+  };
+}
+
 test("list는 requestUrl이 있는 source를 ID 순으로 반환한다", () => {
   const document = {
     candidates: [candidate("b"), { id: "local-file" }, candidate("a")],
@@ -63,6 +88,249 @@ test("show는 operation이 없어도 기존 endpoint와 response fields를 반�
   );
   assert.deepEqual(summary.responseFields, ["fieldA"]);
   assert.equal(summary.operation, null);
+});
+
+test("source candidate 정본은 repository 경로와 구조화된 provider 승인을 검증한다", () => {
+  const document = {
+    schemaVersion: 1,
+    artifactKind: "production-source-candidates",
+    source: "tools/datapack/source-candidates.json",
+    updatedAt: "2026-07-13",
+    candidates: [candidate("a", {
+      providerApproval: providerApproval(),
+    })],
+  };
+
+  assert.equal(validateSourceCandidateDocument(document), document);
+  assert.deepEqual(operationSummary(document.candidates[0]).providerApproval, document.candidates[0].providerApproval);
+});
+
+test("provider 승인은 잘못된 기간과 secret-like field를 거부한다", () => {
+  const base = {
+    schemaVersion: 1,
+    artifactKind: "production-source-candidates",
+    source: "tools/datapack/source-candidates.json",
+    updatedAt: "2026-07-13",
+  };
+  const approval = providerApproval({
+    validFrom: "2027-07-06",
+    validTo: "2026-07-06",
+  });
+
+  assert.throws(
+    () => validateSourceCandidateDocument({ ...base, candidates: [candidate("a", { providerApproval: approval })] }),
+    /validTo must not precede validFrom/,
+  );
+  assert.throws(
+    () => validateSourceCandidateDocument({
+      ...base,
+      candidates: [candidate("a", { providerApproval: { ...approval, validTo: "2028-07-06", serviceKey: "secret" } })],
+    }),
+    /secret-like values are forbidden/,
+  );
+  assert.throws(
+    () => validateSourceCandidateDocument({
+      ...base,
+      candidates: [candidate("a", { providerApproval: { ...approval, validTo: "2028-07-06", recordedAt: "2026-02-31" } })],
+    }),
+    /recordedAt must be an ISO date/,
+  );
+  assert.throws(
+    () => validateSourceCandidateDocument({
+      ...base,
+      candidates: [candidate("a", {
+        providerApproval: providerApproval({ termsStatus: "APPROVED", quotaStatus: "APPROVED" }),
+      })],
+    }),
+    /productionUseAllowed must match credential, terms, and quota decisions/,
+  );
+  assert.throws(
+    () => validateSourceCandidateDocument({
+      ...base,
+      candidates: [candidate("a", {
+        providerApproval: providerApproval({ evidenceReferences: [{ type: "OWNER_CONFIRMATION", url: "chat-only" }] }),
+      })],
+    }),
+    /evidenceReferences\[0\]\.url must be a valid HTTP\(S\) URL/,
+  );
+  const expiredApproval = {
+    ...approval,
+    validFrom: "2020-01-01",
+    validTo: "2020-12-31",
+  };
+  assert.throws(
+    () => validateSourceCandidateDocument({
+      ...base,
+      candidates: [candidate("a", { providerApproval: expiredApproval })],
+    }),
+    /status is APPROVED but validTo has expired/,
+  );
+  const historical = { ...expiredApproval, status: "EXPIRED" };
+  assert.equal(
+    validateSourceCandidateDocument({ ...base, candidates: [candidate("a", { providerApproval: historical })] })
+      .candidates[0].providerApproval,
+    historical,
+  );
+  const futureStart = new Date(Date.now() + (366 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+  const futureEnd = new Date(Date.now() + (732 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+  assert.throws(
+    () => validateSourceCandidateDocument({
+      ...base,
+      candidates: [candidate("a", {
+        providerApproval: { ...approval, validFrom: futureStart, validTo: futureEnd },
+      })],
+    }),
+    /status is APPROVED but validFrom is in the future/,
+  );
+});
+
+test("summary는 provider 승인에 secret-like 값이 있으면 출력 전에 거부한다", () => {
+  assert.throws(
+    () => operationSummary(candidate("a", {
+      providerApproval: providerApproval({
+        serviceKey: "actual-secret-value",
+      }),
+    })),
+    /secret-like values are forbidden/,
+  );
+});
+
+test("provider 승인은 service와 operation이 endpoint 경로와 일치해야 한다", () => {
+  const endpoint = "https://provider.example/handicapped/transferMovement";
+  const approval = providerApproval();
+  const approvedCandidate = candidate("approved", {
+    requestUrl: endpoint,
+    operation: validOperation({ endpoint }),
+    providerApproval: approval,
+  });
+
+  assert.equal(validateSourceCandidateDocument({
+    schemaVersion: 1,
+    artifactKind: "production-source-candidates",
+    source: "tools/datapack/source-candidates.json",
+    updatedAt: "2026-07-13",
+    candidates: [approvedCandidate],
+  }).candidates[0], approvedCandidate);
+
+  for (const providerApproval of [
+    { ...approval, serviceId: "different-service" },
+    { ...approval, operationId: "different-operation" },
+  ]) {
+    assert.throws(
+      () => validateSourceCandidateDocument({
+        schemaVersion: 1,
+        artifactKind: "production-source-candidates",
+        source: "tools/datapack/source-candidates.json",
+        updatedAt: "2026-07-13",
+        candidates: [{ ...approvedCandidate, providerApproval }],
+      }),
+      /providerApproval serviceId\/operationId must match operation endpoint path/,
+    );
+  }
+});
+
+test("provider 승인 만료 요약은 갱신 window부터 경고한다", () => {
+  const endpoint = "https://provider.example/handicapped/transferMovement";
+  const document = {
+    schemaVersion: 1,
+    artifactKind: "production-source-candidates",
+    source: "tools/datapack/source-candidates.json",
+    updatedAt: "2026-07-13",
+    candidates: [candidate("approved", {
+      requestUrl: endpoint,
+      operation: validOperation({ endpoint }),
+      providerApproval: providerApproval({
+        validFrom: "2026-07-06",
+        validTo: "2027-07-06",
+      }),
+    })],
+  };
+
+  assert.equal(providerApprovalExpirySummary(document, { today: "2027-06-05" }).status, "OK");
+  assert.deepEqual(providerApprovalExpirySummary(document, { today: "2027-06-06" }), {
+    status: "WARNING",
+    approvals: [{
+      candidateId: "approved",
+      validTo: "2027-07-06",
+      daysUntilExpiry: 30,
+      renewalNoticeDays: 30,
+    }],
+  });
+  assert.throws(
+    () => providerApprovalExpirySummary(document, { today: "2027-07-07" }),
+    /status is APPROVED but validTo has expired/,
+  );
+});
+
+test("KRIC key 계약은 URLSearchParams 1회 인코딩과 shell parsing 금지를 고정한다", () => {
+  const operation = validOperation({
+    auth: {
+      env: "KRIC_SERVICE_KEY",
+      placement: "query",
+      parameter: "serviceKey",
+      valueEncoding: "url-search-params-once",
+      loadPolicy: "process-env-no-shell-parsing",
+    },
+    runner: {
+      command: "node tools/datapack/probe-provider.mjs",
+      requiredEnv: ["KRIC_SERVICE_KEY"],
+    },
+  });
+
+  assert.equal(validateOperation(candidate("a", { operation })), operation);
+  const summary = operationSummary(candidate("a", { operation }));
+  assert.match(summary.operation.auth.loadPolicy, /no-shell-parsing/);
+  assert.match(sourceOperation.operationHumanSummary(summary), /^provider approval: none$/m);
+  assert.match(sourceOperation.operationHumanSummary(summary), /^auth value encoding: url-search-params-once$/m);
+  assert.match(sourceOperation.operationHumanSummary(summary), /^auth load policy: process-env-no-shell-parsing$/m);
+});
+
+test("승인된 provider의 human 요약은 승인 범위와 기간을 표시한다", () => {
+  const summary = operationSummary(candidate("a", {
+    providerApproval: providerApproval(),
+  }));
+
+  assert.match(sourceOperation.operationHumanSummary(summary), /^provider approval: APPROVED$/m);
+  assert.match(sourceOperation.operationHumanSummary(summary), /^provider operation: handicapped\/transferMovement$/m);
+  assert.match(
+    sourceOperation.operationHumanSummary(summary),
+    new RegExp(`^approval valid: 2020-01-01\\.\\.${FUTURE_APPROVAL_DATE}$`, "m"),
+  );
+});
+
+test("list는 만료 상태 오류를 candidate에 남기고 다른 provider를 계속 반환한다", () => {
+  const expired = candidate("expired", {
+    providerApproval: providerApproval({
+      validFrom: "2020-01-01",
+      validTo: "2020-12-31",
+      recordedAt: "2020-01-01",
+    }),
+  });
+
+  const invalidOperation = candidate("invalid-operation", {
+    operation: validOperation({ endpoint: "https://provider.example/wrong" }),
+  });
+  const rows = listOperations({ candidates: [candidate("active"), expired, invalidOperation] });
+
+  assert.deepEqual(rows.map(({ id }) => id), ["active", "expired", "invalid-operation"]);
+  assert.equal(rows[0].providerApprovalValidationError, null);
+  assert.match(rows[1].providerApprovalValidationError, /status is APPROVED but validTo has expired/);
+  assert.match(sourceOperation.operationHumanSummary(rows[1]), /^provider approval validation: .*has expired$/m);
+  assert.match(rows[2].operationValidationError, /endpoint must match requestUrl/);
+  assert.match(sourceOperation.operationHumanSummary(rows[2]), /^operation validation: .*endpoint must match requestUrl$/m);
+});
+
+test("잘못된 operation human 요약은 TypeError 대신 validation 오류를 표시한다", () => {
+  const endpoint = "https://provider.example/invalid";
+  const summary = operationSummary(candidate("invalid", {
+    operation: validOperation({ endpoint, auth: null }),
+  }));
+
+  assert.doesNotThrow(() => sourceOperation.operationHumanSummary(summary));
+  assert.match(
+    sourceOperation.operationHumanSummary(summary),
+    /^operation validation: invalid\.operation\.auth must be an object$/m,
+  );
 });
 
 test("show는 operation이 없어도 sample URL credential을 출력 전에 거부한다", () => {
@@ -140,6 +408,27 @@ test("validate는 endpoint URL과 runner 문자열의 credential을 거부한다
     assert.throws(
       () => validateOperation(candidate("a", { requestUrl: operation.endpoint, operation })),
       /credential values are forbidden|literal repository Node command/,
+    );
+  }
+});
+
+test("validate는 structured runner 인수의 credential option을 거부한다", () => {
+  for (const arguments_ of [
+    ["--token", "actual-secret-value"],
+    ["--service-key=actual-secret-value"],
+    ["--client_secret", "actual-secret-value"],
+  ]) {
+    assert.throws(
+      () => validateOperation(candidate("a", {
+        operation: validOperation({
+          runner: {
+            command: "node tools/datapack/probe-provider.mjs",
+            arguments: arguments_,
+            requiredEnv: ["PROVIDER_SERVICE_KEY"],
+          },
+        }),
+      })),
+      /runner\.arguments must not include credential options/,
     );
   }
 });
