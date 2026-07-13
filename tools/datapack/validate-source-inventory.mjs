@@ -397,6 +397,12 @@ function validateCoverageScope(coverageScope, sourceId) {
   assertStringArray(coverageScope.regionIds, `${sourceId}.coverageScope.regionIds`);
   assertStringArray(coverageScope.operatorIds, `${sourceId}.coverageScope.operatorIds`);
   assertStringArray(coverageScope.sourceDomains, `${sourceId}.coverageScope.sourceDomains`);
+  if (coverageScope.lineIds !== undefined) {
+    const lineIds = assertStringArray(coverageScope.lineIds, `${sourceId}.coverageScope.lineIds`);
+    if (new Set(lineIds).size !== lineIds.length) {
+      throw new Error(`${sourceId}.coverageScope.lineIds must not contain duplicates`);
+    }
+  }
 }
 
 function validateLicense(license, sourceId) {

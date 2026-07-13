@@ -1,16 +1,25 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
 const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
+const DEFAULT_ACTIVE_PACK_ID = "capital";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const targets = JSON.parse(await readFile(requireArg(args, "targets"), "utf8"));
   const inventory = JSON.parse(await readFile(requireArg(args, "inventory"), "utf8"));
   const provenance = args.provenance ? JSON.parse(await readFile(args.provenance, "utf8")) : null;
+  if (provenance && !args.manifest) {
+    throw new Error("--manifest is required with --provenance");
+  }
+  const manifestBytes = args.manifest ? await readFile(args.manifest) : null;
+  const candidateManifest = manifestBytes
+    ? coverageManifestIndex(JSON.parse(manifestBytes), sha256(manifestBytes))
+    : null;
   const releaseScope = args.releaseScope ? JSON.parse(await readFile(args.releaseScope, "utf8")) : null;
   // 게시 범위 domain/field 계약은 capital pilot targets가 정본이다. --release-scope가 켜지면 pilot targets를 로드해
   // scope 내 gap을 pilot field 계약으로 평가한다(전국 계약보다 좁은 pilot deferred domain·field가 반영됨).
@@ -18,7 +27,14 @@ async function main() {
     ? JSON.parse(await readFile(args.releaseTargets ?? DEFAULT_RELEASE_SCOPE_TARGETS, "utf8"))
     : null;
   const outputPath = requireArg(args, "output");
-  const report = buildCoverageGapReport(targets, inventory, provenance, releaseScope, releaseScopeTargets);
+  const report = buildCoverageGapReport(
+    targets,
+    inventory,
+    provenance,
+    candidateManifest,
+    releaseScope,
+    releaseScopeTargets,
+  );
 
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -50,28 +66,28 @@ async function main() {
   }
 }
 
-function buildCoverageGapReport(targets, inventory, provenance = null, releaseScope = null, releaseScopeTargets = null) {
+function buildCoverageGapReport(
+  targets,
+  inventory,
+  provenance = null,
+  candidateManifest = null,
+  releaseScope = null,
+  releaseScopeTargets = null,
+) {
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
   const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
-  const provenanceIndex = provenance ? provenanceFieldIndex(provenance) : null;
+  const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest) : null;
 
   // 전국 requirement는 nationwide targets 전량으로 산출한다(은폐 금지 — 전국 gap은 그대로 기록).
   const requirements = evaluateRequirements(targets, sources, provenanceIndex);
-  const coveredRequirements = requirements.filter((entry) => entry.status === "covered").length;
-  const totalRequirements = requirements.length;
-  const missingRequirements = totalRequirements - coveredRequirements;
-  const summary = {
-    totalRequirements,
-    coveredRequirements,
-    missingRequirements,
-    coverageRatio: totalRequirements === 0 ? 0 : Number((coveredRequirements / totalRequirements).toFixed(4)),
-    coverageComplete: missingRequirements === 0,
-  };
+  const summary = targets.schemaVersion === 2
+    ? buildTierSummary(targets, requirements)
+    : buildLegacySummary(requirements);
 
   const report = {
-    schemaVersion: 1,
+    schemaVersion: targets.schemaVersion,
     artifactKind: "nationwide-coverage-gap-report",
     targetVersion: targets.targetVersion,
     inventoryRetrievedAt: inventory.retrievedAt,
@@ -86,29 +102,38 @@ function buildCoverageGapReport(targets, inventory, provenance = null, releaseSc
     // pilot 계약은 전국 계약보다 좁다(예: accessibility_facilities에서 status 필드 제외, route_graph 등 deferred domain 제외).
     const pilotTargets = releaseScopeTargets ?? targets;
     validateTargets(pilotTargets);
-    const pilotTargetIndex = coverageTargetIndex(pilotTargets);
-    const pilotSources = inventory.sources.map((source) => normalizeSource(source, pilotTargetIndex));
-    const scopeRequirements = evaluateRequirements(pilotTargets, pilotSources, provenanceIndex).filter(
-      (entry) => scopeFilter.regionIds.has(entry.regionId) && scopeFilter.operatorIds.has(entry.operatorId),
-    );
+    const releaseScopes = releaseCoverageScopes(targets, pilotTargets, scopeFilter);
+    if (targets.schemaVersion === 2 && releaseScopes.length > 0) {
+      validateReleaseScopeParticipation(scopeFilter, releaseScopes);
+    }
+    const scopeRequirements = evaluateRequirements(pilotTargets, sources, provenanceIndex, {
+      scopes: releaseScopes,
+      includeLineId: true,
+      strictLineScope: pilotTargets.schemaVersion === 2,
+    });
     for (const entry of scopeRequirements) {
       entry.inReleaseScope = true;
     }
-    const inScopeCovered = scopeRequirements.filter((entry) => entry.status === "covered").length;
-    const inScopeTotal = scopeRequirements.length;
+    const blockingScopeRequirements = pilotTargets.schemaVersion === 2
+      ? scopeRequirements.filter((entry) => entry.releaseTier === "LAUNCH_REQUIRED")
+      : scopeRequirements;
+    const inScopeCovered = blockingScopeRequirements.filter(
+      (entry) => entry.status === "covered" || entry.status === "SUPPORTED",
+    ).length;
+    const inScopeTotal = blockingScopeRequirements.length;
     const inScopeMissing = inScopeTotal - inScopeCovered;
     // 전국 gap은 은폐 금지 — nationwide/in-scope 수치를 분리 기록한다. 게시 차단은 releaseScope.missingRequirements만 본다.
     summary.nationwide = {
-      totalRequirements,
-      coveredRequirements,
-      missingRequirements,
+      totalRequirements: summary.totalRequirements,
+      coveredRequirements: summary.coveredRequirements,
+      missingRequirements: summary.missingRequirements,
     };
     summary.releaseScope = {
       scopeId: scopeFilter.scopeId,
       targetVersion: pilotTargets.targetVersion,
       regionIds: [...scopeFilter.regionIds].sort(compareStrings),
       operatorIds: [...scopeFilter.operatorIds].sort(compareStrings),
-      sourceDomains: [...new Set(scopeRequirements.map((entry) => entry.sourceDomain))].sort(compareStrings),
+      sourceDomains: [...new Set(blockingScopeRequirements.map((entry) => entry.sourceDomain))].sort(compareStrings),
       totalRequirements: inScopeTotal,
       coveredRequirements: inScopeCovered,
       missingRequirements: inScopeMissing,
@@ -121,13 +146,84 @@ function buildCoverageGapReport(targets, inventory, provenance = null, releaseSc
   return report;
 }
 
-function evaluateRequirements(targets, sources, provenanceIndex) {
+function buildLegacySummary(requirements) {
+  const coveredRequirements = requirements.filter((entry) => entry.status === "covered").length;
+  const totalRequirements = requirements.length;
+  const missingRequirements = totalRequirements - coveredRequirements;
+  return {
+    totalRequirements,
+    coveredRequirements,
+    missingRequirements,
+    coverageRatio: totalRequirements === 0 ? 0 : Number((coveredRequirements / totalRequirements).toFixed(4)),
+    coverageComplete: missingRequirements === 0,
+  };
+}
+
+function buildTierSummary(targets, requirements) {
+  const launchRequired = summarizeTier(requirements, "LAUNCH_REQUIRED");
+  const enhancement = summarizeTier(requirements, "ENHANCEMENT");
+  launchRequired.explicitlyUnsupportedCount = 0;
+  launchRequired.terminalResolutionRatio = launchRequired.supportedRatio;
+  launchRequired.completionReady = launchRequired.missingCount === 0;
+  enhancement.progressRatio = enhancement.supportedRatio;
+  return {
+    totalRequirements: launchRequired.totalCount,
+    coveredRequirements: launchRequired.supportedCount,
+    missingRequirements: launchRequired.missingCount,
+    coverageRatio: launchRequired.supportedRatio,
+    coverageComplete: launchRequired.completionReady,
+    launchRequiredCompletionRatio: launchRequired.supportedRatio,
+    enhancementProgressRatio: enhancement.supportedRatio,
+    activeScopeCount: targets.activeLineScopes.length,
+    plannedScopeCount: targets.plannedLineScopes?.length ?? 0,
+    launchRequired,
+    enhancement,
+    scope: {
+      activeLineCount: new Set(targets.activeLineScopes.map(({ lineId }) => lineId)).size,
+      activeLineOperatorScopeCount: targets.activeLineScopes.length,
+    },
+  };
+}
+
+function summarizeTier(requirements, releaseTier) {
+  const tier = requirements.filter((entry) => entry.releaseTier === releaseTier);
+  const supportedCount = tier.filter((entry) => entry.status === "SUPPORTED").length;
+  const missingCount = tier.length - supportedCount;
+  return {
+    totalCount: tier.length,
+    supportedCount,
+    missingCount,
+    supportedRatio: tier.length === 0 ? 0 : Number((supportedCount / tier.length).toFixed(4)),
+  };
+}
+
+function evaluateRequirements(targets, sources, provenanceIndex, options = {}) {
   const requirements = [];
-  for (const region of targets.regions) {
-    for (const operatorId of region.operatorIds) {
-      for (const domain of targets.requiredSourceDomains) {
+  const regionNames = new Map(targets.regions.map((region) => [region.id, region.displayName]));
+  const scopes = options.scopes ?? (targets.schemaVersion === 2
+    ? targets.activeLineScopes
+    : targets.regions.flatMap((region) =>
+        region.operatorIds.map((operatorId) => ({
+          regionId: region.id,
+          regionName: region.displayName,
+          operatorId,
+          lineId: "",
+        })),
+      ));
+  const strictLineScope = options.strictLineScope ?? targets.schemaVersion === 2;
+  for (const scope of scopes) {
+    for (const domain of targets.requiredSourceDomains) {
         const fieldCoverage = domain.requiredFields.map((field) =>
-          coveredField(sources, provenanceIndex, region.id, operatorId, domain.id, field),
+          coveredField(
+            sources,
+            provenanceIndex,
+            scope.regionId,
+            scope.operatorId,
+            scope.lineId ?? "",
+            domain.id,
+            field,
+            { strictLineScope, requireProvenance: targets.schemaVersion === 2 },
+          ),
         );
         const coveredFields = fieldCoverage.filter((entry) => entry.status === "covered").length;
         const denominator = fieldCoverage.length;
@@ -139,11 +235,23 @@ function evaluateRequirements(targets, sources, provenanceIndex) {
           return 0;
         });
         requirements.push({
-          regionId: region.id,
-          regionName: region.displayName,
-          operatorId,
+          regionId: scope.regionId,
+          regionName: scope.regionName ?? regionNames.get(scope.regionId),
+          operatorId: scope.operatorId,
+          ...(targets.schemaVersion === 2 || options.includeLineId ? { lineId: scope.lineId } : {}),
+          ...(targets.schemaVersion === 2
+            ? {
+                serviceLifecycle: targets.activeLineScopeEvidence.serviceLifecycle,
+                releaseTier: domain.releaseTier,
+                effectiveFrom: targets.activeLineScopeEvidence.effectiveFrom,
+                verifiedAt: targets.activeLineScopeEvidence.verifiedAt,
+                evidenceRef: targets.activeLineScopeEvidence.evidenceRef,
+              }
+            : {}),
           sourceDomain: domain.id,
-          status: coverageRatio >= threshold ? "covered" : "missing",
+          status: targets.schemaVersion === 2
+            ? (coverageRatio >= threshold ? "SUPPORTED" : "MISSING")
+            : (coverageRatio >= threshold ? "covered" : "missing"),
           denominator,
           coveredFields,
           coverageRatio,
@@ -152,10 +260,60 @@ function evaluateRequirements(targets, sources, provenanceIndex) {
           missingFields: fieldCoverage.filter((entry) => entry.status === "missing").map((entry) => entry.field),
           fieldCoverage,
         });
-      }
     }
   }
   return requirements;
+}
+
+function releaseCoverageScopes(targets, pilotTargets, scopeFilter) {
+  const regionNames = new Map([
+    ...targets.regions.map((region) => [region.id, region.displayName]),
+    ...pilotTargets.regions.map((region) => [region.id, region.displayName]),
+  ]);
+  if (targets.schemaVersion === 2) {
+    return targets.activeLineScopes
+      .filter(
+        ({ regionId, operatorId, lineId }) =>
+          scopeFilter.regionIds.has(regionId) &&
+          scopeFilter.operatorIds.has(operatorId) &&
+          scopeFilter.lineIds.has(lineId),
+      )
+      .map(({ regionId, operatorId, lineId }) => ({
+        regionId,
+        regionName: regionNames.get(regionId),
+        operatorId,
+        lineId,
+      }));
+  }
+  return pilotTargets.regions.flatMap((region) => {
+    if (!scopeFilter.regionIds.has(region.id)) {
+      return [];
+    }
+    return region.operatorIds
+      .filter((operatorId) => scopeFilter.operatorIds.has(operatorId))
+      .flatMap((operatorId) =>
+        [...scopeFilter.lineIds].map((lineId) => ({
+          regionId: region.id,
+          regionName: region.displayName,
+          operatorId,
+          lineId,
+        })),
+      );
+  });
+}
+
+function validateReleaseScopeParticipation(scopeFilter, releaseScopes) {
+  for (const [field, values] of [
+    ["regionId", scopeFilter.regionIds],
+    ["operatorId", scopeFilter.operatorIds],
+    ["lineId", scopeFilter.lineIds],
+  ]) {
+    for (const value of values) {
+      if (!releaseScopes.some((scope) => scope[field] === value)) {
+        throw new Error(`release scope ${field} has no matching active coverage pair: ${value}`);
+      }
+    }
+  }
 }
 
 function resolveReleaseScope(releaseScope) {
@@ -172,10 +330,15 @@ function resolveReleaseScope(releaseScope) {
     supportScope.includedOperatorIds,
     "release scope supportScope.includedOperatorIds",
   );
+  const lineIds = requiredStringArray(
+    supportScope.includedLineIds,
+    "release scope supportScope.includedLineIds",
+  );
   return {
     scopeId,
     regionIds: new Set(regionIds),
     operatorIds: new Set(operatorIds),
+    lineIds: new Set(lineIds),
   };
 }
 
@@ -187,7 +350,12 @@ function coverageTargetIndex(targets) {
     ]),
     operatorIds: new Set([
       ...targets.regions.flatMap((region) => region.operatorIds),
+      ...(targets.activeLineScopes ?? []).map((scope) => scope.operatorId),
       ...optionalStringArray(targets.knownOperatorIds, "knownOperatorIds"),
+    ]),
+    lineIds: new Set([
+      ...(targets.activeLineScopes ?? []).map((scope) => scope.lineId),
+      ...(targets.inactiveLineExclusions ?? []).map((exclusion) => exclusion.lineId),
     ]),
     sourceDomains: new Set([
       ...targets.requiredSourceDomains.map((domain) => domain.id),
@@ -196,19 +364,53 @@ function coverageTargetIndex(targets) {
   };
 }
 
-function coveredField(sources, provenanceIndex, regionId, operatorId, sourceDomain, field) {
-  const sourceIds = sources
-    .filter(
-      (source) =>
-        source.regionIds.includes(regionId) &&
-        source.operatorIds.includes(operatorId) &&
-        source.sourceDomains.includes(sourceDomain) &&
-        (provenanceIndex
-          ? provenanceIndex.officialFieldScopes.has(coverageKey(source.id, regionId, operatorId, sourceDomain, field))
-          : source.fields.includes(field)),
-    )
-    .map((source) => source.id)
-    .sort();
+function coveredField(
+  sources,
+  provenanceIndex,
+  regionId,
+  operatorId,
+  lineId,
+  sourceDomain,
+  field,
+  { strictLineScope, requireProvenance },
+) {
+  const candidateSources = sources.filter(
+    (source) =>
+      source.regionIds.includes(regionId) &&
+      source.operatorIds.includes(operatorId) &&
+      (lineId === "" || source.lineIds.includes(lineId) || (!strictLineScope && source.lineIds.length === 0)) &&
+      source.sourceDomains.includes(sourceDomain),
+  );
+  let sourceIds = [];
+  if (provenanceIndex) {
+    const sourceIdsByPack = [...provenanceIndex.officialFieldScopesByPack.values()].map((officialFieldScopes) =>
+      candidateSources
+        .filter(
+          (source) =>
+            officialFieldScopes.has(coverageKey(
+              source.id,
+              regionId,
+              operatorId,
+              lineId,
+              sourceDomain,
+              field,
+            )) || (!strictLineScope && source.lineIds.length === 0 && officialFieldScopes.has(coverageKey(
+              source.id,
+              regionId,
+              operatorId,
+              "",
+              sourceDomain,
+              field,
+            ))),
+        )
+        .map((source) => source.id),
+    );
+    if (sourceIdsByPack.length > 0 && sourceIdsByPack.every((ids) => ids.length > 0)) {
+      sourceIds = [...new Set(sourceIdsByPack.flat())].sort(compareStrings);
+    }
+  } else if (!requireProvenance) {
+    sourceIds = candidateSources.filter((source) => source.fields.includes(field)).map((source) => source.id).sort();
+  }
   return {
     field,
     status: sourceIds.length > 0 ? "covered" : "missing",
@@ -220,8 +422,8 @@ function validateTargets(targets) {
   if (!targets || typeof targets !== "object" || Array.isArray(targets)) {
     throw new Error("coverage targets must be an object");
   }
-  if (targets.schemaVersion !== 1) {
-    throw new Error("coverage targets schemaVersion must be 1");
+  if (![1, 2].includes(targets.schemaVersion)) {
+    throw new Error("coverage targets schemaVersion must be 1 or 2");
   }
   if (targets.artifactKind !== "nationwide-datapack-coverage-targets") {
     throw new Error("coverage targets artifactKind must be nationwide-datapack-coverage-targets");
@@ -242,10 +444,19 @@ function validateTargets(targets) {
     domainIds.add(id);
     requiredString(domain.displayName, `${id}.displayName`);
     requiredStringArray(domain.requiredFields, `${id}.requiredFields`);
+    if (targets.schemaVersion === 2 && !["LAUNCH_REQUIRED", "ENHANCEMENT"].includes(domain.releaseTier)) {
+      throw new Error(`${id}.releaseTier must be LAUNCH_REQUIRED or ENHANCEMENT`);
+    }
     const threshold = domain.blockingThreshold?.minimumOfficialFieldCoverageRatio ?? 1;
     if (typeof threshold !== "number" || threshold <= 0 || threshold > 1) {
       throw new Error(`${id}.blockingThreshold.minimumOfficialFieldCoverageRatio must be between 0 and 1`);
     }
+  }
+  if (
+    targets.schemaVersion === 2 &&
+    !targets.requiredSourceDomains.some(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED")
+  ) {
+    throw new Error("schemaVersion 2 targets must include at least one LAUNCH_REQUIRED domain");
   }
   if (!Array.isArray(targets.regions) || targets.regions.length === 0) {
     throw new Error("regions must be a non-empty array");
@@ -260,6 +471,89 @@ function validateTargets(targets) {
     requiredString(region.displayName, `${id}.displayName`);
     requiredStringArray(region.operatorIds, `${id}.operatorIds`);
   }
+  if (targets.schemaVersion === 2) {
+    if (!Array.isArray(targets.activeLineScopes) || targets.activeLineScopes.length === 0) {
+      throw new Error("activeLineScopes must be a non-empty array");
+    }
+    const evidence = targets.activeLineScopeEvidence;
+    if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
+      throw new Error("activeLineScopeEvidence must be an object");
+    }
+    if (evidence.serviceLifecycle !== "ACTIVE") {
+      throw new Error("activeLineScopeEvidence.serviceLifecycle must be ACTIVE");
+    }
+    requiredString(evidence.effectiveFrom, "activeLineScopeEvidence.effectiveFrom");
+    requiredString(evidence.verifiedAt, "activeLineScopeEvidence.verifiedAt");
+    evidenceSourceId(evidence.evidenceRef, "activeLineScopeEvidence.evidenceRef");
+    if (!Array.isArray(targets.evidenceSources)) {
+      throw new Error("evidenceSources must be an array");
+    }
+    const evidenceSourceIds = new Set();
+    for (const source of targets.evidenceSources) {
+      const id = requiredString(source.id, "evidenceSources.id");
+      if (evidenceSourceIds.has(id)) {
+        throw new Error(`duplicate evidence source id: ${id}`);
+      }
+      evidenceSourceIds.add(id);
+      requiredString(source.publisher, `${id}.publisher`);
+      requiredString(source.title, `${id}.title`);
+      requiredString(source.publishedAt, `${id}.publishedAt`);
+      const url = requiredString(source.url, `${id}.url`);
+      if (!url.startsWith("https://")) {
+        throw new Error(`${id}.url must use https`);
+      }
+    }
+    if (!Array.isArray(targets.inactiveLineExclusions)) {
+      throw new Error("inactiveLineExclusions must be an array");
+    }
+    const inactiveLineIds = new Set();
+    for (const exclusion of targets.inactiveLineExclusions) {
+      const lineId = requiredString(exclusion.lineId, "inactiveLineExclusions.lineId");
+      if (inactiveLineIds.has(lineId)) {
+        throw new Error(`duplicate inactive line exclusion: ${lineId}`);
+      }
+      inactiveLineIds.add(lineId);
+      if (exclusion.status !== "OUT_OF_ACTIVE_SCOPE") {
+        throw new Error(`${lineId}.status must be OUT_OF_ACTIVE_SCOPE`);
+      }
+      if (!["SUSPENDED", "RETIRED"].includes(exclusion.serviceLifecycle)) {
+        throw new Error(`${lineId}.serviceLifecycle must be SUSPENDED or RETIRED`);
+      }
+      requiredString(exclusion.effectiveFrom, `${lineId}.effectiveFrom`);
+      requiredString(exclusion.verifiedAt, `${lineId}.verifiedAt`);
+      requiredString(exclusion.reasonKo, `${lineId}.reasonKo`);
+      const sourceId = evidenceSourceId(exclusion.evidenceRef, "inactiveLineExclusions.evidenceRef");
+      if (!evidenceSourceIds.has(sourceId)) {
+        throw new Error(`${lineId}.evidenceRef contains undefined evidence source: ${sourceId}`);
+      }
+    }
+    const lineScopeKeys = new Set();
+    for (const scope of targets.activeLineScopes) {
+      const lineId = requiredString(scope.lineId, "activeLineScopes.lineId");
+      const regionId = requiredString(scope.regionId, `${lineId}.regionId`);
+      const operatorId = requiredString(scope.operatorId, `${lineId}.operatorId`);
+      if (!regionIds.has(regionId)) {
+        throw new Error(`${lineId}.regionId contains undefined region: ${regionId}`);
+      }
+      const key = `${regionId}:${operatorId}:${lineId}`;
+      if (lineScopeKeys.has(key)) {
+        throw new Error(`duplicate active line scope: ${key}`);
+      }
+      if (inactiveLineIds.has(lineId)) {
+        throw new Error(`inactive line appears in activeLineScopes: ${lineId}`);
+      }
+      lineScopeKeys.add(key);
+    }
+  }
+}
+
+function evidenceSourceId(value, label) {
+  const evidenceRef = requiredString(value, label);
+  const match = /^source:([a-z0-9][a-z0-9-]*)$/.exec(evidenceRef);
+  if (!match) {
+    throw new Error(`${label} must use source:<id>`);
+  }
+  return match[1];
 }
 
 function validateInventory(inventory) {
@@ -284,20 +578,25 @@ function normalizeSource(source, targetIndex) {
   const regionIds = requiredStringArray(coverage.regionIds, `${id}.coverageScope.regionIds`);
   const operatorIds = requiredStringArray(coverage.operatorIds, `${id}.coverageScope.operatorIds`);
   const sourceDomains = requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`);
+  const lineIds = optionalStringArray(coverage.lineIds, `${id}.coverageScope.lineIds`);
   const fields = requiredStringArray(source.fieldsProvided ?? source.fields, `${id}.fieldsProvided`);
   validateKnownValues(regionIds, targetIndex.regionIds, `${id}.coverageScope.regionIds`, "region");
   validateKnownValues(operatorIds, targetIndex.operatorIds, `${id}.coverageScope.operatorIds`, "operator");
   validateKnownValues(sourceDomains, targetIndex.sourceDomains, `${id}.coverageScope.sourceDomains`, "source domain");
+  if (targetIndex.lineIds.size > 0) {
+    validateKnownValues(lineIds, targetIndex.lineIds, `${id}.coverageScope.lineIds`, "line");
+  }
   return {
     id,
     regionIds,
     operatorIds,
     sourceDomains,
+    lineIds,
     fields,
   };
 }
 
-function provenanceFieldIndex(provenance) {
+function provenanceFieldIndex(provenance, candidateManifest) {
   if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
     throw new Error("field provenance must be an object");
   }
@@ -307,18 +606,43 @@ function provenanceFieldIndex(provenance) {
   if (provenance.artifactKind !== "datapack-field-provenance") {
     throw new Error("field provenance artifactKind must be datapack-field-provenance");
   }
-  requiredString(provenance.manifestSha256, "field provenance manifestSha256");
+  const manifestSha256 = requiredString(provenance.manifestSha256, "field provenance manifestSha256");
+  if (manifestSha256 !== candidateManifest.sha256) {
+    throw new Error("field provenance manifestSha256 does not match --manifest");
+  }
   if (!Array.isArray(provenance.packs) || provenance.packs.length === 0) {
     throw new Error("field provenance packs must be a non-empty array");
   }
 
-  const officialFieldScopes = new Set();
+  const officialFieldScopesByPack = new Map(
+    [...candidateManifest.requiredPacks.keys()].map((identity) => [identity, new Set()]),
+  );
   const packs = [];
+  const packIdentities = new Set();
   for (const pack of provenance.packs) {
     const id = requiredString(pack.id, "field provenance pack.id");
     const version = requiredString(pack.version, "field provenance pack.version");
     const sqliteSha256 = requiredString(pack.sqliteSha256, "field provenance pack.sqliteSha256");
     const artifactKind = requiredString(pack.artifactKind, "field provenance pack.artifactKind");
+    const identity = `${id}@${version}`;
+    if (packIdentities.has(identity)) {
+      throw new Error(`duplicate field provenance pack: ${identity}`);
+    }
+    packIdentities.add(identity);
+    const manifestPack = candidateManifest.requiredPacks.get(identity);
+    if (!manifestPack) {
+      continue;
+    }
+    if (artifactKind !== manifestPack.artifactKind) {
+      throw new Error(`${identity} field provenance artifactKind does not match --manifest`);
+    }
+    if (artifactKind !== "production") {
+      throw new Error(`${identity} active field provenance pack must be production`);
+    }
+    if (sqliteSha256 !== manifestPack.sqliteSha256) {
+      throw new Error(`${identity} field provenance sqliteSha256 does not match --manifest`);
+    }
+    const officialFieldScopes = officialFieldScopesByPack.get(identity);
     packs.push({ id, version, artifactKind, sqliteSha256 });
     if (!Array.isArray(pack.records)) {
       throw new Error(`${id}@${version} field provenance records must be an array`);
@@ -330,8 +654,15 @@ function provenanceFieldIndex(provenance) {
       }
       for (const regionId of normalizedRecord.coverageScope.regionIds) {
         for (const operatorId of normalizedRecord.coverageScope.operatorIds) {
-          for (const sourceDomain of normalizedRecord.coverageScope.sourceDomains) {
-            officialFieldScopes.add(coverageKey(record.sourceId, regionId, operatorId, sourceDomain, record.field));
+          for (const lineId of normalizedRecord.coverageScope.lineIds) {
+            for (const sourceDomain of normalizedRecord.coverageScope.sourceDomains) {
+              officialFieldScopes.add(
+                coverageKey(record.sourceId, regionId, operatorId, lineId, sourceDomain, record.field),
+              );
+              officialFieldScopes.add(
+                coverageKey(record.sourceId, regionId, operatorId, "", sourceDomain, record.field),
+              );
+            }
           }
         }
       }
@@ -339,12 +670,77 @@ function provenanceFieldIndex(provenance) {
   }
 
   return {
-    officialFieldScopes,
+    officialFieldScopesByPack,
     candidate: {
-      manifestSha256: provenance.manifestSha256,
+      manifestSha256,
       packs,
     },
   };
+}
+
+function coverageManifestIndex(manifest, manifestSha256) {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error("coverage manifest must be an object");
+  }
+  if (!Array.isArray(manifest.packs) || manifest.packs.length === 0) {
+    throw new Error("coverage manifest packs must be a non-empty array");
+  }
+  const packsByIdentity = new Map();
+  for (const pack of manifest.packs) {
+    const identity = packIdentity(pack, "coverage manifest pack");
+    if (packsByIdentity.has(identity)) {
+      throw new Error(`duplicate coverage manifest pack: ${identity}`);
+    }
+    requiredString(pack.artifactKind, `${identity}.artifactKind`);
+    requiredString(pack.sqliteSha256, `${identity}.sqliteSha256`);
+    packsByIdentity.set(identity, pack);
+  }
+
+  const activePackIdentity = manifest.activePack === undefined
+    ? null
+    : packIdentity(manifest.activePack, "coverage manifest activePack");
+  if (activePackIdentity && !packsByIdentity.has(activePackIdentity)) {
+    throw new Error(`coverage manifest active pack is missing: ${activePackIdentity}`);
+  }
+  const overridePackIdentity = manifest.emergencyOverride === undefined
+    ? null
+    : packIdentity(manifest.emergencyOverride, "coverage manifest emergencyOverride");
+  if (overridePackIdentity && !packsByIdentity.has(overridePackIdentity)) {
+    throw new Error(`coverage manifest emergency override pack is missing: ${overridePackIdentity}`);
+  }
+  const fallbackRootIdentity = activePackIdentity
+    ?? packIdentity(defaultActivePack(manifest.packs), "coverage manifest default active pack");
+  // 앱은 emergency override를 먼저 열지만 파일 누락·손상 시 current active pack으로 fallback한다.
+  // 두 팩의 provenance를 합산하지 않고 각각 같은 coverage 계약을 만족해야 안전한 런타임 선택이 된다.
+  const requiredRootIdentities = [...new Set([
+    ...(overridePackIdentity ? [overridePackIdentity] : []),
+    fallbackRootIdentity,
+  ])];
+  const requiredPacks = new Map(
+    requiredRootIdentities.map((identity) => [identity, packsByIdentity.get(identity)]),
+  );
+  return { sha256: manifestSha256, requiredPacks };
+}
+
+function defaultActivePack(packs) {
+  const candidates = packs.filter((pack) => pack.id === DEFAULT_ACTIVE_PACK_ID);
+  if (candidates.length === 0) {
+    throw new Error(`coverage manifest default active pack is missing: ${DEFAULT_ACTIVE_PACK_ID}`);
+  }
+  return candidates.reduce((selected, pack) =>
+    versionNumber(pack.version) > versionNumber(selected.version) ? pack : selected,
+  );
+}
+
+function versionNumber(version) {
+  return /^\d+$/.test(version) ? BigInt(version) : 0n;
+}
+
+function packIdentity(pack, label) {
+  if (!pack || typeof pack !== "object" || Array.isArray(pack)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return `${requiredString(pack.id, `${label}.id`)}@${requiredString(pack.version, `${label}.version`)}`;
 }
 
 function validateProvenanceRecord(record, label) {
@@ -366,18 +762,30 @@ function validateProvenanceRecord(record, label) {
   if (!record.coverageScope || typeof record.coverageScope !== "object" || Array.isArray(record.coverageScope)) {
     throw new Error(`${label}.coverageScope must be an object for official field provenance`);
   }
+  const operatorIds = requiredStringArray(record.coverageScope.operatorIds, `${label}.coverageScope.operatorIds`);
+  const lineIds = record.coverageScope.lineIds === undefined
+    ? [""]
+    : requiredStringArray(record.coverageScope.lineIds, `${label}.coverageScope.lineIds`);
+  if (record.coverageScope.lineIds !== undefined && (operatorIds.length !== 1 || lineIds.length !== 1)) {
+    throw new Error(`${label} line-scoped field provenance must identify exactly one operator-line pair`);
+  }
   return {
     derivationKind,
     coverageScope: {
       regionIds: requiredStringArray(record.coverageScope.regionIds, `${label}.coverageScope.regionIds`),
-      operatorIds: requiredStringArray(record.coverageScope.operatorIds, `${label}.coverageScope.operatorIds`),
+      operatorIds,
+      lineIds,
       sourceDomains: requiredStringArray(record.coverageScope.sourceDomains, `${label}.coverageScope.sourceDomains`),
     },
   };
 }
 
-function coverageKey(sourceId, regionId, operatorId, sourceDomain, field) {
-  return `${sourceId}:${regionId}:${operatorId}:${sourceDomain}:${field}`;
+function coverageKey(sourceId, regionId, operatorId, lineId, sourceDomain, field) {
+  return `${sourceId}:${regionId}:${operatorId}:${lineId}:${sourceDomain}:${field}`;
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function validateKnownValues(values, knownValues, label, valueLabel) {

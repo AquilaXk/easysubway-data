@@ -118,6 +118,7 @@ async function main() {
 function buildFixture(rows, svgRows, officialSources, sourceShaById) {
   const operators = new Map();
   const lines = new Map();
+  const coverageLineOperatorScopes = new Map();
   const stations = new Map();
   const stationLines = new Map();
   const byLine = new Map();
@@ -133,6 +134,12 @@ function buildFixture(rows, svgRows, officialSources, sourceShaById) {
     });
 
     const lineId = lineIdFor(row.regionName, row.lineName);
+    const coverageScope = {
+      lineId,
+      regionId: coverageRegionId(row.regionName),
+      operatorId,
+    };
+    coverageLineOperatorScopes.set(`${coverageScope.regionId}:${operatorId}:${lineId}`, coverageScope);
     if (!lines.has(lineId)) {
       lines.set(lineId, {
         id: lineId,
@@ -200,7 +207,14 @@ function buildFixture(rows, svgRows, officialSources, sourceShaById) {
   }
 
   const firstEdge = networkEdges[0];
+  const sortedCoverageLineOperatorScopes = [...coverageLineOperatorScopes.values()].sort((left, right) =>
+    `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
+      `${right.regionId}:${right.operatorId}:${right.lineId}`,
+    ),
+  );
   return {
+    coverageLineOperatorScopeSemantics: "UNION_OF_PACK_SCOPES",
+    coverageLineOperatorScopes: sortedCoverageLineOperatorScopes,
     manifest: {
       ttlSeconds: 3600,
       activePack: { id: "capital", version: "1" },
@@ -212,6 +226,7 @@ function buildFixture(rows, svgRows, officialSources, sourceShaById) {
         artifactKind: "fixture",
         schemaVersion: "1",
         url: "catalog/capital-v1.sqlite.gz",
+        coverageLineOperatorScopes: sortedCoverageLineOperatorScopes,
         sourceInventory: sourceInventoryEntries(sourceShaById),
         requiredTables: [
           "catalog_metadata",
@@ -1045,6 +1060,20 @@ function stationCodeFor(regionName, lineName, stationName, sequence) {
 
 function regionLabel(regionName) {
   return regionName.endsWith("권") ? regionName : `${regionName}권`;
+}
+
+function coverageRegionId(regionName) {
+  const regionId = {
+    수도권: "capital",
+    부산: "busan",
+    대구: "daegu",
+    광주: "gwangju",
+    대전: "daejeon",
+  }[regionName];
+  if (!regionId) {
+    throw new Error(`unknown coverage region: ${regionName}`);
+  }
+  return regionId;
 }
 
 function sourceInventoryEntries(sourceShaById) {

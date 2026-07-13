@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "artifactKind": "nationwide-datapack-coverage-targets",
-  "targetVersion": "2026-07-02",
+  "targetVersion": "2026-07-13",
   "coverageGoal": "pre-store nationwide 100 percent functional subway coverage",
   "claimLedger": [
     {
@@ -16,7 +16,7 @@
       "claimKo": "전국 도시철도·광역철도·공항철도·GTX·경전철 지원",
       "status": "NO_GO",
       "releaseScopeArtifact": "tools/datapack/nationwide-coverage-targets.json",
-      "unblockConditionKo": "모든 roadmap stage의 source admission과 7개 requiredSourceDomains coverage ratio 1을 통과해야 한다."
+      "unblockConditionKo": "모든 ACTIVE 노선×운영기관 scope에서 6개 LAUNCH_REQUIRED domain의 MISSING이 0건이어야 한다."
     },
     {
       "claimId": "realtime_eta_accuracy",
@@ -37,6 +37,7 @@
     {
       "id": "station_line_membership",
       "displayName": "역/노선/운영기관 소속",
+      "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "line",
         "station_name",
@@ -49,6 +50,7 @@
     {
       "id": "route_graph_topology",
       "displayName": "경로 그래프 연결성과 이동 비용",
+      "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "network_edges",
         "duration_seconds",
@@ -61,6 +63,7 @@
     {
       "id": "accessibility_facilities",
       "displayName": "교통약자 접근성 시설과 상태",
+      "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "elevator",
         "escalator",
@@ -75,6 +78,7 @@
     {
       "id": "realtime_arrivals",
       "displayName": "실시간 도착/열차 참조",
+      "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "realtime_arrival_reference"
       ],
@@ -85,6 +89,7 @@
     {
       "id": "schedule_timetable",
       "displayName": "시간표와 운행 calendar",
+      "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "service_calendar",
         "trip",
@@ -97,6 +102,7 @@
     {
       "id": "route_map_positions",
       "displayName": "공식 노선도 좌표",
+      "releaseTier": "LAUNCH_REQUIRED",
       "requiredFields": [
         "route_map_position",
         "route_map_label_polygon"
@@ -108,6 +114,7 @@
     {
       "id": "demand_reference",
       "displayName": "승하차 수요 참고 지표",
+      "releaseTier": "ENHANCEMENT",
       "requiredFields": [
         "hourly_boarding_count",
         "hourly_alighting_count"
@@ -124,6 +131,79 @@
     "station_car_door_hints",
     "indoor_movement_paths"
   ],
+  "evidenceSources": [
+    {
+      "id": "incheon-maglev-track-facility-20251017",
+      "publisher": "인천광역시",
+      "title": "3년의 멈춤을 넘어, 다시 달리는 인천공항 자기부상열차",
+      "publishedAt": "2025-10-17",
+      "url": "https://www.incheon.go.kr/IC010205/view?repSeq=DOM_0000000013303245"
+    }
+  ],
+  "activeLineScopeEvidence": {
+    "serviceLifecycle": "ACTIVE",
+    "effectiveFrom": "2026-04-02",
+    "verifiedAt": "2026-07-13T00:00:00.000Z",
+    "evidenceRef": "source:molit-urban-rail-full-route"
+  },
+  "inactiveLineExclusions": [
+    {
+      "lineId": "line-cbe75f5287a1",
+      "status": "OUT_OF_ACTIVE_SCOPE",
+      "serviceLifecycle": "RETIRED",
+      "effectiveFrom": "2025-10-17",
+      "verifiedAt": "2026-07-13T00:00:00.000Z",
+      "reasonKo": "인천공항 자기부상철도는 도시철도 폐업 후 전용궤도시설로 전환되어 ACTIVE 도시철도 coverage 분모에서 제외한다.",
+      "evidenceRef": "source:incheon-maglev-track-facility-20251017"
+    }
+  ],
+  "activeLineScopes": [
+    { "lineId": "line-ab1a041f6266", "regionId": "busan", "operatorId": "busan-transportation" },
+    { "lineId": "line-d74614a04530", "regionId": "busan", "operatorId": "busan-transportation" },
+    { "lineId": "line-d812a5bc1e5f", "regionId": "busan", "operatorId": "busan-transportation" },
+    { "lineId": "line-eb7b47920390", "regionId": "busan", "operatorId": "busan-transportation" },
+    { "lineId": "line-f52eb59d8497", "regionId": "busan", "operatorId": "korail" },
+    { "lineId": "line-e4cce88f0d7f", "regionId": "busan", "operatorId": "operator-72566d06475a" },
+    { "lineId": "line-15b3b8a93259", "regionId": "capital", "operatorId": "incheon-transit" },
+    { "lineId": "line-42b5805f3b5a", "regionId": "capital", "operatorId": "incheon-transit" },
+    { "lineId": "line-98718184f016", "regionId": "capital", "operatorId": "incheon-transit" },
+    { "lineId": "line-051552e50435", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-41a8c75ec9d8", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-472a81add377", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-54a7b980b7c3", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-558d0bd8312d", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-6e39be0cb6e2", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-e4939a4b4713", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "seoul-4", "regionId": "capital", "operatorId": "korail" },
+    { "lineId": "line-2b2d9eaa53d0", "regionId": "capital", "operatorId": "operator-07a9e77a02b6" },
+    { "lineId": "line-aefa08ccc0a9", "regionId": "capital", "operatorId": "operator-10d7cf275a80" },
+    { "lineId": "shinbundang", "regionId": "capital", "operatorId": "operator-28e01fb8509d" },
+    { "lineId": "line-62096860ab09", "regionId": "capital", "operatorId": "operator-29e323a78a93" },
+    { "lineId": "line-5500c1600f71", "regionId": "capital", "operatorId": "operator-2e23276dfa94" },
+    { "lineId": "line-051552e50435", "regionId": "capital", "operatorId": "operator-38450e138464" },
+    { "lineId": "line-30886152e4f8", "regionId": "capital", "operatorId": "operator-3c623bf1a427" },
+    { "lineId": "line-8604048b6430", "regionId": "capital", "operatorId": "operator-5ca780d7dee1" },
+    { "lineId": "line-e9e9a5b520a4", "regionId": "capital", "operatorId": "operator-8134e61f8dbd" },
+    { "lineId": "line-f0e747248a31", "regionId": "capital", "operatorId": "operator-936e454d0bfb" },
+    { "lineId": "line-8604048b6430", "regionId": "capital", "operatorId": "operator-9e999d4aa596" },
+    { "lineId": "line-828f04afc588", "regionId": "capital", "operatorId": "operator-b2d80436b438" },
+    { "lineId": "line-2b2d9eaa53d0", "regionId": "capital", "operatorId": "operator-c361f9fc17e9" },
+    { "lineId": "seoul-4", "regionId": "capital", "operatorId": "operator-c361f9fc17e9" },
+    { "lineId": "line-15b3b8a93259", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "line-2b2d9eaa53d0", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "line-3f41718e0833", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "line-41a8c75ec9d8", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "line-472a81add377", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "line-80fc4d5350d4", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "seoul-2", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "seoul-4", "regionId": "capital", "operatorId": "seoul-metro" },
+    { "lineId": "line-0ffaa95b1b5d", "regionId": "daegu", "operatorId": "daegu-transportation" },
+    { "lineId": "line-5b8d9b05e7e6", "regionId": "daegu", "operatorId": "daegu-transportation" },
+    { "lineId": "line-e2938a4cc492", "regionId": "daegu", "operatorId": "daegu-transportation" },
+    { "lineId": "line-8f7ed01f290a", "regionId": "daegu", "operatorId": "korail" },
+    { "lineId": "line-7051a9c2525c", "regionId": "daejeon", "operatorId": "daejeon-transportation" },
+    { "lineId": "line-e57a361e8892", "regionId": "gwangju", "operatorId": "gwangju-metropolitan-rapid-transit" }
+  ],
   "regions": [
     {
       "id": "capital",
@@ -132,8 +212,6 @@
         "airport-railroad",
         "gimpo-goldline",
         "gtx-a",
-        "gtx-b",
-        "gtx-c",
         "seoul-metro",
         "shinbundang",
         "sillim-line",
@@ -186,7 +264,7 @@
   "roadmapGateCommands": [
     {
       "id": "coverage_gap_report",
-      "command": "node tools/datapack/report-coverage-gaps.mjs --targets tools/datapack/nationwide-coverage-targets.json --inventory tools/datapack/source-inventory.json --output artifacts/datapack-coverage-gaps.json"
+      "command": "node tools/datapack/report-coverage-gaps.mjs --targets tools/datapack/nationwide-coverage-targets.json --inventory tools/datapack/source-inventory.json --manifest artifacts/datapack/current.json --provenance artifacts/datapack/current.provenance.json --output artifacts/datapack-coverage-gaps.json"
     },
     {
       "id": "source_inventory_validation",
@@ -259,8 +337,6 @@
       "operatorIds": [
         "airport-railroad",
         "gtx-a",
-        "gtx-b",
-        "gtx-c",
         "shinbundang",
         "gimpo-goldline",
         "ui-sinseol-light-rail",

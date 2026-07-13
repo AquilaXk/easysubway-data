@@ -566,6 +566,9 @@ function packSourceInventoryEntry(source) {
     coverageScope: {
       regionIds: requiredStringArray(source.coverageScope?.regionIds, `${source.id}.coverageScope.regionIds`),
       operatorIds: requiredStringArray(source.coverageScope?.operatorIds, `${source.id}.coverageScope.operatorIds`),
+      ...(source.coverageScope?.lineIds === undefined
+        ? {}
+        : { lineIds: requiredStringArray(source.coverageScope.lineIds, `${source.id}.coverageScope.lineIds`) }),
       sourceDomains: requiredStringArray(source.coverageScope?.sourceDomains, `${source.id}.coverageScope.sourceDomains`),
     },
   };

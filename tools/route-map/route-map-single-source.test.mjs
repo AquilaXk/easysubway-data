@@ -56,12 +56,12 @@ test("route map 레이어는 active pack(capital)만 소유한다 — core는 �
   }
 });
 
-test("capital route map은 운행 중단된 인천공항 자기부상선을 도식에서 제외한다", () => {
+test("capital route map은 전용궤도시설로 전환된 인천공항 자기부상선을 도식에서 제외한다", () => {
   const { database, cleanup } = openPack("capital");
   try {
     // 정책: 노선도는 현재 운행 중이며 도시철도로 분류된 노선만 표시한다.
-    // 인천공항 자기부상철도(line-cbe75f5287a1)는 2023-11 도시철도 분류 해제·
-    // 2025-07 수도권 전철 시스템 제외 → route map 도식에서 제외한다.
+    // 인천공항 자기부상철도(line-cbe75f5287a1)는 도시철도 폐업 후 전용궤도시설로
+    // 전환되었다. 공식 근거는 nationwide-coverage-targets.json evidenceSources에 고정한다.
     // (카탈로그 lines/station_lines에는 존재할 수 있으나 렌더 레이어에는 없다.)
     assert.equal(
       count(

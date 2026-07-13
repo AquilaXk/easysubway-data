@@ -244,6 +244,12 @@ function validateSourceInventoryCoverageScope(coverageScope, label) {
   requiredStringArray(coverageScope.regionIds, `${label}.regionIds`);
   requiredStringArray(coverageScope.operatorIds, `${label}.operatorIds`);
   requiredStringArray(coverageScope.sourceDomains, `${label}.sourceDomains`);
+  if (coverageScope.lineIds !== undefined) {
+    const lineIds = requiredStringArray(coverageScope.lineIds, `${label}.lineIds`);
+    if (new Set(lineIds).size !== lineIds.length) {
+      throw new Error(`${label}.lineIds must not contain duplicates`);
+    }
+  }
 }
 
 function validateRegionalQualityMetrics(metrics, label) {

@@ -3383,6 +3383,33 @@ test("데이터팩 생성기는 production sourceInventory coverageScope 누락�
   );
 });
 
+test("데이터팩 생성기는 sourceInventory coverageScope.lineIds 형식을 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-source-line-scope-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  fixture.packs[0].sourceInventory[0].coverageScope.lineIds = "seoul-4";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        fixturePath,
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /production sourceInventory\.coverageScope\.lineIds must be a non-empty string array/,
+  );
+});
+
 test("데이터팩 생성기는 production sourceInventory 누락을 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-production-source-inventory-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -4075,6 +4102,49 @@ test("데이터팩 검증기는 production sourceInventory coverageScope 누락�
       { cwd: root, env: productionEnv },
     ),
     /capital@1 production sourceInventory.coverageScope must be an object/,
+  );
+});
+
+test("데이터팩 검증기는 sourceInventory coverageScope.lineIds 중복을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-validate-source-line-scope-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture",
+      fixturePath,
+      "--output",
+      outputDir,
+    ],
+    { cwd: root, env: productionEnv },
+  );
+
+  const manifestPath = path.join(outputDir, "current.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.packs[0].sourceInventory[0].coverageScope.lineIds = ["seoul-4", "seoul-4"];
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/validate-datapack.mjs",
+        "--manifest",
+        manifestPath,
+        "--root",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /production sourceInventory\.coverageScope\.lineIds must not contain duplicates/,
   );
 });
 
@@ -6255,6 +6325,25 @@ test("source inventory 검증기는 coverageScope 누락을 거부한다", async
   );
 });
 
+test("source inventory 검증기는 중복 lineIds를 거부한다", async () => {
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  inventory.sources[0].coverageScope.lineIds = ["seoul-4", "seoul-4"];
+  const outputDir = path.join(tmpdir(), `easysubway-source-inventory-line-scope-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/validate-source-inventory.mjs", "--inventory", inventoryPath],
+      { cwd: root },
+    ),
+    /coverageScope\.lineIds must not contain duplicates/,
+  );
+});
+
 test("source inventory 검증기는 schedule/realtime/facility capability 누락을 거부한다", async () => {
   const sourceInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
   const invalidInventory = structuredClone(sourceInventory);
@@ -8191,6 +8280,263 @@ test("source admission pipeline은 admin 승인 없는 inventory admission을 �
   );
 });
 
+test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정확히 일치한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-target-lines-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "nationwide-fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/build-molit-nationwide-fixture.mjs",
+      "--csv", "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+      "--svg-csv", "tools/datapack/sources/molit-rail-station-svg-route-20250811.csv",
+      "--seoulmetro-js", "tools/datapack/sources/seoulmetro-cyberstation-line-data-20260623.js",
+      "--humetro-html", "tools/datapack/sources/humetro-cyberstation-map-20260623.html",
+      "--humetro-css", "tools/datapack/sources/humetro-cyber-station-20250310c.css",
+      "--grtc-html", "tools/datapack/sources/grtc-cyber-simple-20260623.html",
+      "--dtro-html", "tools/datapack/sources/dtro-cyberstation-20260623.html",
+      "--djtc-html", "tools/datapack/sources/djtc-cyberstation-20260623.html",
+      "--djtc-css", "tools/datapack/sources/djtc-content-20260623.css",
+      "--output", fixturePath,
+    ],
+    { cwd: root },
+  );
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  const compareCoverageLineScopes = (left, right) =>
+    `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
+      `${right.regionId}:${right.operatorId}:${right.lineId}`,
+    );
+  assert.ok(Array.isArray(fixture.coverageLineOperatorScopes));
+  assert.equal(fixture.coverageLineOperatorScopeSemantics, "UNION_OF_PACK_SCOPES");
+  const packScopeUnion = [...new Map(
+    fixture.packs
+      .flatMap((pack) => pack.coverageLineOperatorScopes ?? [])
+      .map((scope) => [`${scope.regionId}:${scope.operatorId}:${scope.lineId}`, scope]),
+  ).values()].sort(compareCoverageLineScopes);
+  assert.deepEqual(fixture.coverageLineOperatorScopes, packScopeUnion);
+  assert.deepEqual(targets.inactiveLineExclusions, [
+    {
+      lineId: "line-cbe75f5287a1",
+      status: "OUT_OF_ACTIVE_SCOPE",
+      serviceLifecycle: "RETIRED",
+      effectiveFrom: "2025-10-17",
+      verifiedAt: "2026-07-13T00:00:00.000Z",
+      reasonKo: "인천공항 자기부상철도는 도시철도 폐업 후 전용궤도시설로 전환되어 ACTIVE 도시철도 coverage 분모에서 제외한다.",
+      evidenceRef: "source:incheon-maglev-track-facility-20251017",
+    },
+  ]);
+  assert.deepEqual(targets.evidenceSources, [
+    {
+      id: "incheon-maglev-track-facility-20251017",
+      publisher: "인천광역시",
+      title: "3년의 멈춤을 넘어, 다시 달리는 인천공항 자기부상열차",
+      publishedAt: "2025-10-17",
+      url: "https://www.incheon.go.kr/IC010205/view?repSeq=DOM_0000000013303245",
+    },
+  ]);
+  const inactiveLineIds = new Set(targets.inactiveLineExclusions.map(({ lineId }) => lineId));
+  const expected = packScopeUnion
+    .filter(({ lineId }) => !inactiveLineIds.has(lineId))
+    .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
+    .sort(compareCoverageLineScopes);
+  assert.equal(targets.schemaVersion, 2);
+  assert.ok(Array.isArray(targets.activeLineScopes));
+  const actual = targets.activeLineScopes
+    .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
+    .sort(compareCoverageLineScopes);
+
+  assert.ok(actual.every(({ lineId }) => !inactiveLineIds.has(lineId)));
+  assert.equal(new Set(actual.map(({ lineId }) => lineId)).size, 36);
+  assert.equal(actual.length, 45);
+  assert.deepEqual(actual, expected);
+});
+
+test("데이터팩 생성기는 top-level 노선 scope를 여러 pack scope의 합집합으로 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-scope-union-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const scope = { regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" };
+  fixture.coverageLineOperatorScopeSemantics = "UNION_OF_PACK_SCOPES";
+  fixture.coverageLineOperatorScopes = [scope];
+  fixture.packs[0].coverageLineOperatorScopes = [scope];
+  const secondPack = structuredClone(fixture.packs[0]);
+  secondPack.id = "capital-copy";
+  secondPack.version = "2";
+  secondPack.url = "catalog/capital-copy-v2.sqlite.gz";
+  fixture.packs.push(secondPack);
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+    { cwd: root },
+  );
+
+  const manifest = JSON.parse(await readFile(path.join(packOutputDir, "current.json"), "utf8"));
+  assert.deepEqual(manifest.packs.map(({ id }) => id), ["capital", "capital-copy"]);
+});
+
+test("데이터팩 생성기는 Unicode 정규화 형태가 다른 operator scope 집합을 순서와 무관하게 비교한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-scope-unicode-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const pack = fixture.packs[0];
+  pack.operators.push(
+    { id: "é", nameKo: "합성형 운영기관", nameEn: "" },
+    { id: "e\u0301", nameKo: "분해형 운영기관", nameEn: "" },
+  );
+  const scopes = [
+    { regionId: "capital", operatorId: "é", lineId: "seoul-4" },
+    { regionId: "capital", operatorId: "e\u0301", lineId: "seoul-4" },
+    { regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" },
+  ];
+  fixture.coverageLineOperatorScopeSemantics = "UNION_OF_PACK_SCOPES";
+  fixture.coverageLineOperatorScopes = scopes;
+  pack.coverageLineOperatorScopes = [scopes[1], scopes[0], scopes[2]];
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+    { cwd: root },
+  );
+});
+
+test("전국 coverage report는 운행 노선 launch와 enhancement 분모를 분리한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-tier-report-${Date.now()}`);
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.schemaVersion, 2);
+  assert.deepEqual(report.summary.scope, { activeLineCount: 36, activeLineOperatorScopeCount: 45 });
+  assert.equal(report.summary.launchRequiredCompletionRatio, 0);
+  assert.equal(report.summary.enhancementProgressRatio, 0);
+  assert.equal(report.summary.activeScopeCount, 45);
+  assert.equal(report.summary.plannedScopeCount, 0);
+  assert.equal(report.summary.launchRequired.totalCount, 270);
+  assert.equal(report.summary.launchRequired.supportedCount, 0);
+  assert.equal(report.summary.launchRequired.missingCount, 270);
+  assert.equal(report.summary.launchRequired.completionReady, false);
+  assert.equal(report.summary.enhancement.totalCount, 45);
+  assert.equal(report.summary.enhancement.supportedCount, 0);
+  assert.ok(report.requirements.every(({ lineId }) => typeof lineId === "string" && lineId.length > 0));
+  assert.ok(report.requirements.every(({ serviceLifecycle }) => serviceLifecycle === "ACTIVE"));
+  assert.ok(report.requirements.every(({ effectiveFrom }) => effectiveFrom === "2026-04-02"));
+  assert.ok(report.requirements.every(({ verifiedAt }) => verifiedAt === "2026-07-13T00:00:00.000Z"));
+  assert.ok(report.requirements.every(({ evidenceRef }) => evidenceRef === "source:molit-urban-rail-full-route"));
+});
+
+test("전국 coverage v2는 파일 경로를 공식 evidenceRef로 허용하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-invalid-evidence-ref-${Date.now()}`);
+  const targetsPath = path.join(outputDir, "nationwide-coverage-targets.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  targets.inactiveLineExclusions[0].evidenceRef = "tools/route-map/route-map-single-source.test.mjs";
+  await writeFile(targetsPath, `${JSON.stringify(targets, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", targetsPath,
+        "--inventory", "tools/datapack/source-inventory.json",
+        "--output", reportPath,
+        "--allow-gaps",
+      ],
+      { cwd: root },
+    ),
+    /inactiveLineExclusions\.evidenceRef must use source:<id>/,
+  );
+});
+
+test("전국 coverage v2는 LAUNCH_REQUIRED domain이 없는 target을 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-no-launch-domain-${Date.now()}`);
+  const targetsPath = path.join(outputDir, "nationwide-coverage-targets.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  for (const domain of targets.requiredSourceDomains) {
+    domain.releaseTier = "ENHANCEMENT";
+  }
+  await writeFile(targetsPath, `${JSON.stringify(targets, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", targetsPath,
+        "--inventory", "tools/datapack/source-inventory.json",
+        "--output", reportPath,
+        "--allow-gaps",
+      ],
+      { cwd: root },
+    ),
+    /schemaVersion 2 targets must include at least one LAUNCH_REQUIRED domain/,
+  );
+});
+
+test("전국 coverage v2는 line-scoped inventory만으로 지원 완료를 선언하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-provenance-required-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  await writeFile(inventoryPath, `${JSON.stringify(completeCoverageInventory(targets), null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /nationwide coverage gaps remain/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.launchRequired.supportedCount, 0);
+  assert.equal(report.summary.launchRequired.missingCount, report.summary.launchRequired.totalCount);
+});
+
 test("전국 coverage gap report는 현재 source inventory의 누락 coverage를 실패로 노출한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-fail-${Date.now()}`);
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
@@ -8243,13 +8589,12 @@ test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 rep
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   assert.equal(report.summary.coverageComplete, false);
-  assert.ok(report.summary.coveredRequirements > 0);
-  assert.ok(report.requirements.some((entry) => entry.status === "covered"));
-  assert.ok(report.requirements.some((entry) => entry.status === "missing"));
+  assert.equal(report.summary.coveredRequirements, 0);
+  assert.ok(report.requirements.every((entry) => entry.status === "MISSING"));
   assert.ok(report.requirements.every((entry) => Array.isArray(entry.sourceIds)));
 });
 
-test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inventory coverage를 반영한다", async () => {
+test("전국 coverage gap report는 operator-wide source를 노선 coverage로 승격하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-official-source-${Date.now()}`);
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
   await rm(outputDir, { recursive: true, force: true });
@@ -8271,27 +8616,25 @@ test("전국 coverage gap report는 TAGO, 국가철도공단, 부산 source inve
   );
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.equal(report.summary.totalRequirements, 119);
-  assert.equal(report.summary.coveredRequirements, 4);
-  assert.equal(report.summary.missingRequirements, 115);
+  assert.equal(report.summary.totalRequirements, 270);
+  assert.equal(report.summary.coveredRequirements, 0);
+  assert.equal(report.summary.missingRequirements, 270);
 
   const busanStationMembership = report.requirements.find(
     (entry) =>
       entry.regionId === "busan" &&
       entry.operatorId === "busan-transportation" &&
+      entry.lineId === "line-ab1a041f6266" &&
       entry.sourceDomain === "station_line_membership",
   );
-  assert.deepEqual(busanStationMembership?.sourceIds, [
-    "busan-transportation-urban-rail-station-info",
-    "kric-metropolitan-rail-station-info",
-    "molit-urban-rail-full-route",
-  ]);
-  assert.deepEqual(busanStationMembership?.missingFields, ["line", "station_code"]);
+  assert.deepEqual(busanStationMembership?.sourceIds, []);
+  assert.deepEqual(busanStationMembership?.missingFields, ["line", "station_name", "station_code"]);
 
   const capitalAccessibilityFacilities = report.requirements.find(
     (entry) =>
       entry.regionId === "capital" &&
       entry.operatorId === "seoul-metro" &&
+      entry.lineId === "seoul-4" &&
       entry.sourceDomain === "accessibility_facilities",
   );
   assert.deepEqual(capitalAccessibilityFacilities?.sourceIds, []);
@@ -8337,6 +8680,7 @@ test("전국 coverage gap report는 targets에 없는 coverageScope domain을 �
 test("전국 coverage gap report는 target coverage가 모두 충족되면 성공한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-complete-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
@@ -8344,6 +8688,7 @@ test("전국 coverage gap report는 target coverage가 모두 충족되면 성�
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
 
   await execFileAsync(
     process.execPath,
@@ -8353,6 +8698,10 @@ test("전국 coverage gap report는 target coverage가 모두 충족되면 성�
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
       inventoryPath,
+      "--manifest",
+      path.join(outputDir, "current.json"),
+      "--provenance",
+      provenancePath,
       "--output",
       reportPath,
     ],
@@ -8363,6 +8712,84 @@ test("전국 coverage gap report는 target coverage가 모두 충족되면 성�
   assert.equal(report.summary.coverageComplete, true);
   assert.equal(report.summary.missingRequirements, 0);
   assert.equal(report.summary.coverageRatio, 1);
+});
+
+test("전국 coverage gap report는 여러 노선과 운영기관을 곱집합으로 해석할 provenance를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-ambiguous-pair-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const provenance = completeCoverageProvenance(inventory);
+  provenance.packs[0].records[0].coverageScope = {
+    ...provenance.packs[0].records[0].coverageScope,
+    operatorIds: ["seoul-metro", "korail"],
+    lineIds: ["seoul-4", "line-31e4cf10b52b"],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", path.join(outputDir, "current.json"),
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /line-scoped field provenance must identify exactly one operator-line pair/,
+  );
+});
+
+test("전국 coverage gap report는 inactive 노선 source metadata를 허용하되 출시 분모에서 제외한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-inactive-line-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = {
+    schemaVersion: 1,
+    retrievedAt: "2026-07-13",
+    sources: [
+      {
+        id: "inactive-maglev-metadata",
+        coverageScope: {
+          regionIds: ["capital"],
+          operatorIds: ["airport-railroad"],
+          lineIds: ["line-cbe75f5287a1"],
+          sourceDomains: ["station_line_membership"],
+        },
+        fieldsProvided: ["line", "station_name", "station_code"],
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.scope.activeLineCount, 36);
+  assert.ok(report.requirements.every(({ lineId }) => lineId !== "line-cbe75f5287a1"));
 });
 
 test("전국 coverage gap report는 candidate field provenance와 manifest hash를 evidence로 결합한다", async () => {
@@ -8376,7 +8803,7 @@ test("전국 coverage gap report는 candidate field provenance와 manifest hash�
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await writeFile(provenancePath, `${JSON.stringify(completeCoverageProvenance(inventory), null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
 
   await execFileAsync(
     process.execPath,
@@ -8386,6 +8813,8 @@ test("전국 coverage gap report는 candidate field provenance와 manifest hash�
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
       inventoryPath,
+      "--manifest",
+      path.join(outputDir, "current.json"),
       "--provenance",
       provenancePath,
       "--output",
@@ -8396,11 +8825,747 @@ test("전국 coverage gap report는 candidate field provenance와 manifest hash�
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   assert.equal(report.summary.coverageComplete, true);
-  assert.equal(report.candidate.manifestSha256, "a".repeat(64));
+  assert.equal(
+    report.candidate.manifestSha256,
+    sha256(await readFile(path.join(outputDir, "current.json"))),
+  );
   assert.deepEqual(report.candidate.packs.map(({ id, version, sqliteSha256 }) => ({ id, version, sqliteSha256 })), [
     { id: "nationwide", version: "1", sqliteSha256: "b".repeat(64) },
   ]);
   assert.ok(report.requirements.every((entry) => entry.fieldCoverage.every((field) => field.status === "covered")));
+});
+
+test("전국 coverage gap report는 provenance를 현재 manifest bytes에 결합한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-manifest-binding-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const provenance = completeCoverageProvenance(inventory);
+  const manifestJson = `${JSON.stringify({
+    activePack: { id: "nationwide", version: "1" },
+    packs: [{ id: "nationwide", version: "1", artifactKind: "production", sqliteSha256: "b".repeat(64) }],
+  }, null, 2)}\n`;
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /field provenance manifestSha256 does not match --manifest/,
+  );
+});
+
+test("전국 coverage gap report는 fixture manifest를 production provenance로 승격하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-artifact-kind-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const provenance = completeCoverageProvenance(inventory);
+  const manifestJson = `${JSON.stringify({
+    activePack: { id: "nationwide", version: "1" },
+    packs: [{ id: "nationwide", version: "1", artifactKind: "fixture", sqliteSha256: "b".repeat(64) }],
+  }, null, 2)}\n`;
+  provenance.manifestSha256 = sha256(Buffer.from(manifestJson));
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /field provenance artifactKind does not match --manifest/,
+  );
+});
+
+test("전국 coverage gap report는 실제 active pack 밖 dependency provenance를 집계하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-active-closure-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const records = completeCoverageProvenance(inventory).packs[0].records;
+  const manifest = {
+    activePack: { id: "active", version: "1" },
+    packs: [
+      {
+        id: "active",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "a".repeat(64),
+        dependencies: [{ id: "dependency", version: "1" }],
+      },
+      { id: "dependency", version: "1", artifactKind: "production", sqliteSha256: "b".repeat(64) },
+      { id: "inactive", version: "1", artifactKind: "production", sqliteSha256: "c".repeat(64) },
+    ],
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: sha256(Buffer.from(manifestJson)),
+    packs: [
+      {
+        id: "active",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "a".repeat(64),
+        records: [],
+      },
+      {
+        id: "dependency",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records,
+      },
+      {
+        id: "inactive",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "c".repeat(64),
+        records: [],
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /nationwide coverage gaps remain: 270 missing requirements/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["active"]);
+});
+
+test("전국 coverage gap report는 emergency override pack의 provenance를 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-emergency-override-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const records = completeCoverageProvenance(inventory).packs[0].records;
+  const manifest = {
+    activePack: { id: "active", version: "1" },
+    emergencyOverride: { id: "override", version: "1", reason: "긴급 안전 보정" },
+    packs: [
+      { id: "active", version: "1", artifactKind: "production", sqliteSha256: "a".repeat(64) },
+      { id: "override", version: "1", artifactKind: "production", sqliteSha256: "b".repeat(64) },
+    ],
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: sha256(Buffer.from(manifestJson)),
+    packs: [
+      {
+        id: "active",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "a".repeat(64),
+        records,
+      },
+      {
+        id: "override",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records: [],
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /nationwide coverage gaps remain: 270 missing requirements/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["active", "override"]);
+});
+
+test("전국 coverage gap report는 emergency override 실패 시 fallback active pack provenance도 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-emergency-fallback-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const records = completeCoverageProvenance(inventory).packs[0].records;
+  const manifest = {
+    activePack: { id: "active", version: "1" },
+    emergencyOverride: { id: "override", version: "1", reason: "긴급 안전 보정" },
+    packs: [
+      { id: "active", version: "1", artifactKind: "production", sqliteSha256: "a".repeat(64) },
+      { id: "override", version: "1", artifactKind: "production", sqliteSha256: "b".repeat(64) },
+    ],
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: sha256(Buffer.from(manifestJson)),
+    packs: [
+      {
+        id: "active",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "a".repeat(64),
+        records: [],
+      },
+      {
+        id: "override",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records,
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /nationwide coverage gaps remain: 270 missing requirements/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["active", "override"]);
+});
+
+test("전국 coverage gap report는 activePack 생략 시 기본 capital pack을 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-default-active-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const records = completeCoverageProvenance(inventory).packs[0].records;
+  const manifest = {
+    packs: [
+      { id: "capital", version: "1", artifactKind: "production", sqliteSha256: "a".repeat(64) },
+      { id: "inactive", version: "1", artifactKind: "production", sqliteSha256: "b".repeat(64) },
+    ],
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: sha256(Buffer.from(manifestJson)),
+    packs: [
+      {
+        id: "capital",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "a".repeat(64),
+        records,
+      },
+      {
+        id: "inactive",
+        version: "1",
+        artifactKind: "production",
+        sqliteSha256: "b".repeat(64),
+        records: [],
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", manifestPath,
+      "--provenance", provenancePath,
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, true);
+  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["capital"]);
+});
+
+test("전국 coverage gap report는 safe integer를 넘는 기본 capital pack 버전을 정확히 비교한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-large-default-version-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const manifestPath = path.join(outputDir, "current.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const records = completeCoverageProvenance(inventory).packs[0].records;
+  const oldVersion = "9007199254740992";
+  const newVersion = "9007199254740993";
+  const manifest = {
+    packs: [
+      { id: "capital", version: oldVersion, artifactKind: "production", sqliteSha256: "a".repeat(64) },
+      { id: "capital", version: newVersion, artifactKind: "production", sqliteSha256: "b".repeat(64) },
+    ],
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  const provenance = {
+    schemaVersion: 1,
+    artifactKind: "datapack-field-provenance",
+    manifestSha256: sha256(Buffer.from(manifestJson)),
+    packs: [
+      {
+        ...manifest.packs[0],
+        records: [],
+      },
+      {
+        ...manifest.packs[1],
+        records,
+      },
+    ],
+  };
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(manifestPath, manifestJson);
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", manifestPath,
+      "--provenance", provenancePath,
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, true);
+  assert.deepEqual(report.candidate.packs.map(({ version }) => version), [newVersion]);
+});
+
+test("v1 pilot release gate는 line-scoped inventory와 provenance를 포함 노선으로 평가한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-pilot-line-scope-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.releaseScope.coverageComplete, true);
+  assert.equal(report.releaseScopeRequirements.length, 3);
+  assert.ok(report.releaseScopeRequirements.every(({ lineId }) => lineId === "seoul-4"));
+});
+
+test("v1 pilot release gate는 다른 노선의 line-scoped provenance를 재사용하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-pilot-wrong-line-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const stationSource = inventory.sources.find(
+    (source) =>
+      source.coverageScope.operatorIds.includes("seoul-metro") &&
+      source.coverageScope.lineIds?.includes("seoul-4") &&
+      source.coverageScope.sourceDomains.includes("station_line_membership"),
+  );
+  stationSource.coverageScope.lineIds = ["seoul-2", "seoul-4"];
+  const provenance = completeCoverageProvenance(inventory);
+  for (const record of provenance.packs[0].records.filter(({ sourceId }) => sourceId === stationSource.id)) {
+    record.coverageScope = { ...record.coverageScope, lineIds: ["seoul-2"] };
+  }
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", path.join(outputDir, "current.json"),
+        "--provenance", provenancePath,
+        "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /in-scope coverage gaps remain: 1 missing requirements/,
+  );
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const stationRequirement = report.releaseScopeRequirements.find(
+    ({ sourceDomain }) => sourceDomain === "station_line_membership",
+  );
+  assert.equal(stationRequirement.status, "missing");
+  assert.deepEqual(stationRequirement.sourceIds, []);
+});
+
+test("v1 pilot release gate는 line-scoped source의 노선 없는 provenance를 재사용하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-pilot-unscoped-provenance-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const stationSource = inventory.sources.find(
+    (source) =>
+      source.coverageScope.operatorIds.includes("seoul-metro") &&
+      source.coverageScope.lineIds?.includes("seoul-4") &&
+      source.coverageScope.sourceDomains.includes("station_line_membership"),
+  );
+  const provenance = completeCoverageProvenance(inventory);
+  for (const record of provenance.packs[0].records.filter(({ sourceId }) => sourceId === stationSource.id)) {
+    record.coverageScope = { ...record.coverageScope };
+    delete record.coverageScope.lineIds;
+  }
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", path.join(outputDir, "current.json"),
+        "--provenance", provenancePath,
+        "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /in-scope coverage gaps remain: 1 missing requirements/,
+  );
+});
+
+test("v1 release gate는 active 노선-운영기관 pair만 평가한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-release-pairs-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const releaseScope = JSON.parse(
+    await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8"),
+  );
+  releaseScope.supportScope.includedOperatorIds = ["seoul-metro", "operator-28e01fb8509d"];
+  releaseScope.supportScope.includedLineIds = ["seoul-4", "shinbundang"];
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--release-scope", releaseScopePath,
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.releaseScope.coverageComplete, true);
+  assert.equal(report.releaseScopeRequirements.length, 6);
+  assert.deepEqual(
+    [...new Set(report.releaseScopeRequirements.map(({ lineId, operatorId }) => `${lineId}:${operatorId}`))].sort(),
+    ["seoul-4:seoul-metro", "shinbundang:operator-28e01fb8509d"],
+  );
+});
+
+test("release gate는 일부만 active pair에 매칭되는 scope를 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-release-partial-scope-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const releaseScopePath = path.join(outputDir, "release-scope.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const releaseScope = JSON.parse(
+    await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8"),
+  );
+  releaseScope.supportScope.includedLineIds.push("unknown-line");
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+  await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", path.join(outputDir, "current.json"),
+        "--provenance", provenancePath,
+        "--release-scope", releaseScopePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /release scope lineId has no matching active coverage pair: unknown-line/,
+  );
+});
+
+test("schema v1 direct target은 line-scoped provenance를 operator requirement로 집계한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-v1-line-provenance-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/capital-pilot-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  for (const source of inventory.sources) {
+    source.coverageScope.lineIds = ["seoul-4"];
+  }
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/capital-pilot-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.coverageComplete, true);
+  assert.equal(report.summary.missingRequirements, 0);
+});
+
+test("release gate는 schema v2 release target의 SUPPORTED requirement를 집계한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-release-v2-target-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const provenance = completeCoverageProvenance(inventory);
+  provenance.packs[0].records = provenance.packs[0].records.filter(
+    (record) => !record.coverageScope.sourceDomains.includes("demand_reference"),
+  );
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--manifest", path.join(outputDir, "current.json"),
+      "--provenance", provenancePath,
+      "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+      "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--output", reportPath,
+    ],
+    { cwd: root },
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.summary.releaseScope.coverageComplete, true);
+  assert.equal(report.summary.releaseScope.coveredRequirements, 6);
+  assert.equal(report.summary.releaseScope.missingRequirements, 0);
+  assert.ok(
+    report.releaseScopeRequirements.some(
+      ({ releaseTier, sourceDomain, status }) =>
+        releaseTier === "ENHANCEMENT" && sourceDomain === "demand_reference" && status === "MISSING",
+    ),
+  );
+});
+
+test("release gate는 schema v2 release target에서 operator-wide provenance로 line scope를 우회하지 않는다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-coverage-release-v2-strict-line-${Date.now()}`);
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const provenancePath = path.join(outputDir, "current.provenance.json");
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const stationSource = inventory.sources.find(
+    (source) =>
+      source.coverageScope.operatorIds.includes("seoul-metro") &&
+      source.coverageScope.lineIds?.includes("seoul-4") &&
+      source.coverageScope.sourceDomains.includes("station_line_membership"),
+  );
+  delete stationSource.coverageScope.lineIds;
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", path.join(outputDir, "current.json"),
+        "--provenance", provenancePath,
+        "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+        "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /in-scope coverage gaps remain: 1 missing requirements/,
+  );
+
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const stationRequirement = report.releaseScopeRequirements.find(
+    ({ sourceDomain }) => sourceDomain === "station_line_membership",
+  );
+  assert.equal(stationRequirement.status, "MISSING");
+  assert.deepEqual(stationRequirement.sourceIds, []);
 });
 
 test("전국 coverage gap report는 multi-region source의 provenance scope를 requirement별로 제한한다", async () => {
@@ -8418,6 +9583,7 @@ test("전국 coverage gap report는 multi-region source의 provenance scope를 r
     coverageScope: {
       regionIds: ["capital", "busan"],
       operatorIds: ["seoul-metro", "busan-transportation"],
+      lineIds: ["seoul-4", "line-ab1a041f6266"],
       sourceDomains: ["station_line_membership"],
     },
     fieldsProvided: stationMembership.requiredFields,
@@ -8445,6 +9611,7 @@ test("전국 coverage gap report는 multi-region source의 provenance scope를 r
           coverageScope: {
             regionIds: ["capital"],
             operatorIds: ["seoul-metro"],
+            lineIds: ["seoul-4"],
             sourceDomains: ["station_line_membership"],
           },
           derivationKind: "OFFICIAL",
@@ -8454,7 +9621,7 @@ test("전국 coverage gap report는 multi-region source의 provenance scope를 r
     ],
   };
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
 
   await execFileAsync(
     process.execPath,
@@ -8464,6 +9631,8 @@ test("전국 coverage gap report는 multi-region source의 provenance scope를 r
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
       inventoryPath,
+      "--manifest",
+      path.join(outputDir, "current.json"),
       "--provenance",
       provenancePath,
       "--output",
@@ -8478,17 +9647,19 @@ test("전국 coverage gap report는 multi-region source의 provenance scope를 r
     (entry) =>
       entry.regionId === "capital" &&
       entry.operatorId === "seoul-metro" &&
+      entry.lineId === "seoul-4" &&
       entry.sourceDomain === "station_line_membership",
   );
   const busanRequirement = report.requirements.find(
     (entry) =>
       entry.regionId === "busan" &&
       entry.operatorId === "busan-transportation" &&
+      entry.lineId === "line-ab1a041f6266" &&
       entry.sourceDomain === "station_line_membership",
   );
-  assert.equal(capitalRequirement.status, "covered");
+  assert.equal(capitalRequirement.status, "SUPPORTED");
   assert.deepEqual(capitalRequirement.missingFields, []);
-  assert.equal(busanRequirement.status, "missing");
+  assert.equal(busanRequirement.status, "MISSING");
   assert.deepEqual(busanRequirement.sourceIds, []);
   assert.deepEqual(busanRequirement.missingFields, stationMembership.requiredFields);
 });
@@ -8510,6 +9681,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
         coverageScope: {
           regionIds: ["capital"],
           operatorIds: ["seoul-metro"],
+          lineIds: ["seoul-4"],
           sourceDomains: ["accessibility_facilities"],
         },
         fieldsProvided: ["station_code", "station_name", "location", "floor_from", "floor_to"],
@@ -8535,6 +9707,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
             coverageScope: {
               regionIds: ["capital"],
               operatorIds: ["seoul-metro"],
+              lineIds: ["seoul-4"],
               sourceDomains: ["accessibility_facilities"],
             },
             derivationKind: "OFFICIAL",
@@ -8545,7 +9718,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
     ],
   };
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
 
   await execFileAsync(
     process.execPath,
@@ -8555,6 +9728,8 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
       inventoryPath,
+      "--manifest",
+      path.join(outputDir, "current.json"),
       "--provenance",
       provenancePath,
       "--output",
@@ -8569,6 +9744,7 @@ test("전국 coverage gap report는 provenance 모드에서 source-native field�
     (entry) =>
       entry.regionId === "capital" &&
       entry.operatorId === "seoul-metro" &&
+      entry.lineId === "seoul-4" &&
       entry.sourceDomain === "accessibility_facilities",
   );
   const elevatorCoverage = accessibilityRequirement.fieldCoverage.find((entry) => entry.field === "elevator");
@@ -8590,7 +9766,7 @@ test("전국 coverage gap report는 generated fixture manual provenance를 offic
   const provenance = completeCoverageProvenance(inventory);
   provenance.packs[0].records.find((record) => record.field === "line").derivationKind = "GENERATED";
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
-  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+  await writeCoverageCandidate(outputDir, provenance);
 
   await assert.rejects(
     execFileAsync(
@@ -8601,6 +9777,8 @@ test("전국 coverage gap report는 generated fixture manual provenance를 offic
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
         inventoryPath,
+        "--manifest",
+        path.join(outputDir, "current.json"),
         "--provenance",
         provenancePath,
         "--output",
@@ -8724,6 +9902,178 @@ test("공식 source ingest adapter는 stable id mapping으로 catalog fixture pa
     derivationKind: "OFFICIAL",
   });
   assert.equal(facilityStatusRecord.derivationKind, "GENERATED");
+});
+
+test("공식 source ingest와 build provenance는 lineIds를 보존한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-line-scope-provenance-${Date.now()}`);
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
+  const fixturePath = path.join(outputDir, "catalog-fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const inventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  for (const source of inventory.sources.filter(({ id }) =>
+    ["seoulmetro-station-line-info", "seoul-realtime-arrival-station-info"].includes(id))) {
+    source.coverageScope.lineIds = ["seoul-4"];
+  }
+  await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  await writeFile(inputPath, `${JSON.stringify(sourceIngestInput(), null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory", inventoryPath,
+      "--input", inputPath,
+      "--output", fixturePath,
+    ],
+    { cwd: root },
+  );
+
+  const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  const stationSource = fixture.packs[0].sourceInventory.find(
+    ({ id }) => id === "seoulmetro-station-line-info",
+  );
+  assert.deepEqual(stationSource.coverageScope.lineIds, ["seoul-4"]);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+    { cwd: root, env: productionEnv },
+  );
+  const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
+  const lineRecord = provenance.packs[0].records.find(
+    (record) => record.entityType === "station_line" && record.field === "line",
+  );
+  assert.deepEqual(lineRecord.coverageScope.lineIds, ["seoul-4"]);
+});
+
+test("데이터팩 생성기는 line-scoped source와 행 노선이 불일치하면 거부한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-line-scope-mismatch-${Date.now()}`);
+  const inputPath = path.join(outputDir, "official-source-input.json");
+  const fixturePath = path.join(outputDir, "catalog-fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(inputPath, `${JSON.stringify(sourceIngestInput(), null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    [
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--input", inputPath,
+      "--output", fixturePath,
+    ],
+    { cwd: root },
+  );
+
+  const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  fixture.packs[0].sourceInventory.find(
+    ({ id }) => id === "seoulmetro-station-line-info",
+  ).coverageScope.lineIds = ["seoul-2"];
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+      { cwd: root, env: productionEnv },
+    ),
+    /source coverageScope lineIds do not include record lineIds/,
+  );
+});
+
+test("데이터팩 생성기는 여러 노선 service provenance를 실제 운영기관-노선 pair로 분할한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-service-provenance-pairs-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const pack = fixture.packs[0];
+  pack.lines.find(({ id }) => id === "seoul-2").operatorId = "korail";
+  const scheduleSource = structuredClone(pack.sourceInventory.find(({ id }) => id === "fixture-capital-catalog"));
+  scheduleSource.id = "fixture-schedule-pairs";
+  scheduleSource.fields = ["service_calendars"];
+  scheduleSource.coverageScope = {
+    regionIds: ["capital"],
+    operatorIds: ["seoul-metro", "korail"],
+    lineIds: ["seoul-4", "seoul-2"],
+    sourceDomains: ["schedule_timetable"],
+  };
+  pack.sourceInventory.push(scheduleSource);
+  pack.serviceCalendars[0].sourceId = scheduleSource.id;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+    { cwd: root, env: productionEnv },
+  );
+
+  const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
+  const scopes = provenance.packs[0].records
+    .filter((record) => record.entityType === "service_calendar" && record.field === "service_calendar")
+    .map(({ coverageScope }) => coverageScope)
+    .sort((left, right) => left.lineIds[0].localeCompare(right.lineIds[0]));
+  assert.deepEqual(scopes, [
+    {
+      regionIds: ["capital"],
+      operatorIds: ["korail"],
+      lineIds: ["seoul-2"],
+      sourceDomains: ["schedule_timetable"],
+    },
+    {
+      regionIds: ["capital"],
+      operatorIds: ["seoul-metro"],
+      lineIds: ["seoul-4"],
+      sourceDomains: ["schedule_timetable"],
+    },
+  ]);
+});
+
+test("데이터팩 생성기는 공동 운영 노선 provenance에 공식 operator-line pair를 모두 보존한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-shared-line-provenance-pairs-${Date.now()}`);
+  const fixturePath = path.join(outputDir, "fixture.json");
+  const packOutputDir = path.join(outputDir, "pack");
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  const pack = fixture.packs[0];
+  pack.coverageLineOperatorScopes = [
+    { regionId: "capital", operatorId: "korail", lineId: "seoul-4" },
+    { regionId: "capital", operatorId: "seoul-metro", lineId: "seoul-4" },
+  ];
+  const scheduleSource = structuredClone(pack.sourceInventory.find(({ id }) => id === "fixture-capital-catalog"));
+  scheduleSource.id = "fixture-shared-line-schedule";
+  scheduleSource.fields = ["service_calendars"];
+  scheduleSource.coverageScope = {
+    regionIds: ["capital"],
+    operatorIds: ["korail", "seoul-metro"],
+    lineIds: ["seoul-4"],
+    sourceDomains: ["schedule_timetable"],
+  };
+  pack.sourceInventory.push(scheduleSource);
+  pack.serviceCalendars[0].sourceId = scheduleSource.id;
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(
+    process.execPath,
+    ["tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutputDir],
+    { cwd: root, env: productionEnv },
+  );
+
+  const provenance = JSON.parse(await readFile(path.join(packOutputDir, "current.provenance.json"), "utf8"));
+  const pairs = provenance.packs[0].records
+    .filter((record) => record.entityType === "service_calendar" && record.field === "service_calendar")
+    .map(({ coverageScope }) => `${coverageScope.lineIds[0]}:${coverageScope.operatorIds[0]}`)
+    .sort();
+  assert.deepEqual(pairs, ["seoul-4:korail", "seoul-4:seoul-metro"]);
 });
 
 test("데이터팩 생성기는 service pattern route node의 edge provenance scope를 canonical station-line operator로 제한한다", async () => {
@@ -10780,6 +12130,8 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
       "tools/datapack/capital-pilot-coverage-targets.json",
       "--inventory",
       "tools/datapack/source-inventory.json",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
       "--provenance",
       path.join(packOutputDir, "current.provenance.json"),
       "--output",
@@ -10880,6 +12232,8 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
       "tools/datapack/source-inventory.json",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
       "--provenance",
       path.join(packOutputDir, "current.provenance.json"),
       "--output",
@@ -10893,10 +12247,11 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
     (entry) =>
       entry.regionId === "capital" &&
       entry.operatorId === "seoul-metro" &&
+      entry.lineId === "seoul-4" &&
       entry.sourceDomain === "route_map_positions",
   );
-  assert.equal(capitalRouteMapCoverage.status, "covered");
-  assert.deepEqual(capitalRouteMapCoverage.missingFields, []);
+  assert.equal(capitalRouteMapCoverage.status, "MISSING");
+  assert.deepEqual(capitalRouteMapCoverage.missingFields, ["route_map_position", "route_map_label_polygon"]);
 
   // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
   // 기준으로 판정한다. 현행 인벤토리는 전국 gap 다수 + scope 내 gap 0이므로, --allow-gaps 없이도 exit 0으로 통과하되
@@ -10910,6 +12265,8 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
       "tools/datapack/source-inventory.json",
+      "--manifest",
+      path.join(packOutputDir, "current.json"),
       "--provenance",
       path.join(packOutputDir, "current.provenance.json"),
       "--release-scope",
@@ -10965,6 +12322,8 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
         "tools/datapack/source-inventory.json",
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
         "--provenance",
         scopeGapProvenancePath,
         "--release-scope",
@@ -11005,6 +12364,8 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
         "tools/datapack/source-inventory.json",
+        "--manifest",
+        path.join(packOutputDir, "current.json"),
         "--provenance",
         path.join(packOutputDir, "current.provenance.json"),
         "--release-scope",
@@ -13049,25 +14410,31 @@ function productionSummaryNetworkEdges(servicePattern = "EXPRESS") {
 }
 
 function completeCoverageInventory(targets) {
+  const scopes = targets.schemaVersion === 2
+    ? targets.activeLineScopes
+    : targets.regions.flatMap((region) =>
+        region.operatorIds.map((operatorId) => ({ regionId: region.id, operatorId, lineId: null })),
+      );
+  const regionNames = new Map(targets.regions.map((region) => [region.id, region.displayName]));
   return {
     schemaVersion: 1,
     region: "nationwide",
     artifactKind: "production-source-inventory",
     retrievedAt: "2026-06-22",
-    sources: targets.regions.flatMap((region) =>
-      region.operatorIds.flatMap((operatorId) =>
+    sources: scopes.flatMap((scope) =>
         targets.requiredSourceDomains.map((domain) => ({
-          id: `${region.id}-${operatorId}-${domain.id}`,
-          displayName: `${region.displayName} ${operatorId} ${domain.id}`,
+          id: `${scope.regionId}-${scope.operatorId}-${scope.lineId ?? "operator"}-${domain.id}`,
+          displayName: `${regionNames.get(scope.regionId)} ${scope.operatorId} ${scope.lineId ?? "operator"} ${domain.id}`,
           owner: "테스트 운영기관",
           provider: "테스트 운영기관",
           providerDepartment: "테스트",
           sourceSystem: "테스트",
-          datasetUrl: `https://example.invalid/${region.id}/${operatorId}/${domain.id}`,
+          datasetUrl: `https://example.invalid/${scope.regionId}/${scope.operatorId}/${scope.lineId ?? "operator"}/${domain.id}`,
           datasetKind: "fixture-only",
           coverageScope: {
-            regionIds: [region.id],
-            operatorIds: [operatorId],
+            regionIds: [scope.regionId],
+            operatorIds: [scope.operatorId],
+            ...(scope.lineId ? { lineIds: [scope.lineId] } : {}),
             sourceDomains: [domain.id],
           },
           requiredForProductionPack: true,
@@ -13086,7 +14453,6 @@ function completeCoverageInventory(targets) {
           capabilities: sourceCapabilityFixture(domain.id),
           fieldsProvided: domain.requiredFields,
         })),
-      ),
     ),
   };
 }
@@ -13165,6 +14531,25 @@ function completeCoverageProvenance(inventory) {
       },
     ],
   };
+}
+
+async function writeCoverageCandidate(outputDir, provenance) {
+  const packs = provenance.packs.map(({ id, version, artifactKind, sqliteSha256 }) => ({
+    id,
+    version,
+    artifactKind,
+    sqliteSha256,
+  }));
+  const manifestJson = `${JSON.stringify({
+    activePack: { id: packs[0].id, version: packs[0].version },
+    packs,
+  }, null, 2)}\n`;
+  provenance.manifestSha256 = sha256(Buffer.from(manifestJson));
+  await writeFile(path.join(outputDir, "current.json"), manifestJson);
+  await writeFile(
+    path.join(outputDir, "current.provenance.json"),
+    `${JSON.stringify(provenance, null, 2)}\n`,
+  );
 }
 
 function markFixturePackProduction(fixture) {

@@ -39,6 +39,7 @@ const candidateBuildSpecHashFields = [
   "sourceInventorySha256",
 ];
 const sourceSnapshotStatuses = new Set(["LOCKED"]);
+const compareStrings = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -388,8 +389,10 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
   const sourceScopes = sourceCoverageScopeMap(pack.sourceInventory ?? []);
   const defaultSourceId = pack.sourceInventory?.length === 1 ? pack.sourceInventory[0].id : "";
   const lineOperatorIds = new Map((pack.lines ?? []).map((line) => [line.id, line.operatorId]).filter(([, operatorId]) => operatorId));
+  const coverageOperatorIdsByLine = coverageOperatorIdsForLines(lineOperatorIds, pack.coverageLineOperatorScopes);
   const stationLineOperatorIds = new Map();
   const stationOperatorIds = new Map();
+  const stationLineIds = new Map();
   for (const stationLine of pack.stationLines ?? []) {
     const operatorId = lineOperatorIds.get(stationLine.lineId);
     if (!operatorId) {
@@ -399,53 +402,71 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     const operators = stationOperatorIds.get(stationLine.stationId) ?? new Set();
     operators.add(operatorId);
     stationOperatorIds.set(stationLine.stationId, operators);
+    const lineIds = stationLineIds.get(stationLine.stationId) ?? new Set();
+    lineIds.add(stationLine.lineId);
+    stationLineIds.set(stationLine.stationId, lineIds);
   }
   const records = [];
-  const addRecord = (row, entityType, entityId, field, operatorIds = []) => {
+  const addRecord = (row, entityType, entityId, field, operatorIds = [], lineIds = []) => {
     const sourceId = row.sourceId ?? defaultSourceId;
     if (!sourceId) {
       return;
     }
-    const coverageScope = recordCoverageScope(sourceScopes.get(sourceId), operatorIds);
+    const coverageScopes = recordCoverageScopes(
+      sourceScopes.get(sourceId),
+      operatorIds,
+      lineIds,
+      coverageOperatorIdsByLine,
+    );
     const recordDerivationKind =
       entityType === "facility" && field === "status" && !sourceFields.get(sourceId)?.has("status")
         ? "GENERATED"
         : derivationKind(row, artifactKind);
-    records.push({
-      entityType,
-      entityId,
-      field,
-      sourceId,
-      ...(row.sourceSnapshotId ? { sourceSnapshotId: row.sourceSnapshotId } : {}),
-      ...(row.providerRecordHash ? { providerRecordHash: row.providerRecordHash } : {}),
-      ...(row.evidenceHash ? { evidenceHash: row.evidenceHash } : {}),
-      ...(coverageScope ? { coverageScope } : {}),
-      derivationKind: recordDerivationKind,
-      verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.reviewedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
-    });
+    for (const coverageScope of coverageScopes) {
+      records.push({
+        entityType,
+        entityId,
+        field,
+        sourceId,
+        ...(row.sourceSnapshotId ? { sourceSnapshotId: row.sourceSnapshotId } : {}),
+        ...(row.providerRecordHash ? { providerRecordHash: row.providerRecordHash } : {}),
+        ...(row.evidenceHash ? { evidenceHash: row.evidenceHash } : {}),
+        ...(coverageScope ? { coverageScope } : {}),
+        derivationKind: recordDerivationKind,
+        verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.reviewedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
+      });
+    }
   };
 
   for (const station of pack.stations ?? []) {
-    addRecord(station, "station", station.id, "station_name", [...(stationOperatorIds.get(station.id) ?? [])]);
+    addRecord(
+      station,
+      "station",
+      station.id,
+      "station_name",
+      [...(stationOperatorIds.get(station.id) ?? [])],
+      [...(stationLineIds.get(station.id) ?? [])],
+    );
   }
   for (const stationLine of pack.stationLines ?? []) {
     const entityId = `${stationLine.stationId}:${stationLine.lineId}`;
     const operatorIds = [lineOperatorIds.get(stationLine.lineId)].filter(Boolean);
-    addRecord(stationLine, "station_line", entityId, "line", operatorIds);
-    addRecord(stationLine, "station_line", entityId, "station_code", operatorIds);
+    addRecord(stationLine, "station_line", entityId, "line", operatorIds, [stationLine.lineId]);
+    addRecord(stationLine, "station_line", entityId, "station_code", operatorIds, [stationLine.lineId]);
   }
   for (const edge of routeGraphNetworkEdges(pack)) {
     const operatorIds = operatorIdsForNodes([edge.fromNodeId, edge.toNodeId], stationLineOperatorIds);
-    addRecord(edge, "network_edge", edge.id, "network_edges", operatorIds);
-    addRecord(edge, "network_edge", edge.id, "duration_seconds", operatorIds);
-    addRecord(edge, "network_edge", edge.id, "distance_meters", operatorIds);
+    const lineIds = lineIdsForNodes([edge.fromNodeId, edge.toNodeId]);
+    addRecord(edge, "network_edge", edge.id, "network_edges", operatorIds, lineIds);
+    addRecord(edge, "network_edge", edge.id, "duration_seconds", operatorIds, lineIds);
+    addRecord(edge, "network_edge", edge.id, "distance_meters", operatorIds, lineIds);
   }
   for (const position of pack.routeMapPositions ?? []) {
     const entityId = `${position.stationId}:${position.lineId}:${position.region ?? ""}`;
     const operatorIds = [lineOperatorIds.get(position.lineId)].filter(Boolean);
-    addRecord(position, "route_map_position", entityId, "route_map_position", operatorIds);
+    addRecord(position, "route_map_position", entityId, "route_map_position", operatorIds, [position.lineId]);
     if (Array.isArray(position.labelPolygon) && position.labelPolygon.length > 0) {
-      addRecord(position, "route_map_position", entityId, "route_map_label_polygon", operatorIds);
+      addRecord(position, "route_map_position", entityId, "route_map_label_polygon", operatorIds, [position.lineId]);
     }
   }
   const transitRouteLineIds = new Map((pack.transitRoutes ?? []).map((route) => [route.id, route.lineId]));
@@ -453,36 +474,66 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
   for (const route of pack.transitRoutes ?? []) {
     const operatorIds = [lineOperatorIds.get(route.lineId)].filter(Boolean);
     transitRouteOperatorIds.set(route.id, operatorIds);
-    addRecord(route, "transit_route", route.id, "route", operatorIds);
+    addRecord(route, "transit_route", route.id, "route", operatorIds, [route.lineId]);
   }
   const serviceOperatorIds = new Map();
+  const serviceLineIds = new Map();
   const tripOperatorIds = new Map();
+  const tripLineIds = new Map();
   for (const trip of pack.transitTrips ?? []) {
     const lineId = transitRouteLineIds.get(trip.routeId);
     const operatorId = lineOperatorIds.get(lineId);
     if (operatorId) {
       tripOperatorIds.set(trip.id, [operatorId]);
+      tripLineIds.set(trip.id, [lineId]);
       const operatorIds = serviceOperatorIds.get(trip.serviceId) ?? new Set();
       operatorIds.add(operatorId);
       serviceOperatorIds.set(trip.serviceId, operatorIds);
+      const lineIds = serviceLineIds.get(trip.serviceId) ?? new Set();
+      lineIds.add(lineId);
+      serviceLineIds.set(trip.serviceId, lineIds);
     }
   }
   for (const calendar of pack.serviceCalendars ?? []) {
-    addRecord(calendar, "service_calendar", calendar.serviceId, "service_calendar", [
-      ...(serviceOperatorIds.get(calendar.serviceId) ?? []),
-    ]);
+    addRecord(
+      calendar,
+      "service_calendar",
+      calendar.serviceId,
+      "service_calendar",
+      [...(serviceOperatorIds.get(calendar.serviceId) ?? [])],
+      [...(serviceLineIds.get(calendar.serviceId) ?? [])],
+    );
   }
   for (const calendarDate of pack.serviceCalendarDates ?? []) {
-    addRecord(calendarDate, "service_calendar_date", `${calendarDate.serviceId}:${calendarDate.date}`, "calendar_date", [
-      ...(serviceOperatorIds.get(calendarDate.serviceId) ?? []),
-    ]);
+    addRecord(
+      calendarDate,
+      "service_calendar_date",
+      `${calendarDate.serviceId}:${calendarDate.date}`,
+      "calendar_date",
+      [...(serviceOperatorIds.get(calendarDate.serviceId) ?? [])],
+      [...(serviceLineIds.get(calendarDate.serviceId) ?? [])],
+    );
   }
   for (const trip of pack.transitTrips ?? []) {
-    addRecord(trip, "transit_trip", trip.id, "trip", tripOperatorIds.get(trip.id) ?? []);
+    addRecord(
+      trip,
+      "transit_trip",
+      trip.id,
+      "trip",
+      tripOperatorIds.get(trip.id) ?? [],
+      tripLineIds.get(trip.id) ?? [],
+    );
   }
   for (const stopTime of pack.transitStopTimes ?? []) {
     const operatorIds = [lineOperatorIds.get(stopTime.lineId)].filter(Boolean);
-    addRecord(stopTime, "transit_stop_time", `${stopTime.tripId}:${stopTime.stopSequence}`, "stop_time", operatorIds);
+    addRecord(
+      stopTime,
+      "transit_stop_time",
+      `${stopTime.tripId}:${stopTime.stopSequence}`,
+      "stop_time",
+      operatorIds,
+      [stopTime.lineId],
+    );
   }
   for (const frequency of pack.transitFrequencies ?? []) {
     addRecord(
@@ -491,23 +542,26 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
       `${frequency.tripId}:${frequency.startTimeSeconds}:${frequency.endTimeSeconds}`,
       "frequency",
       tripOperatorIds.get(frequency.tripId) ?? [],
+      tripLineIds.get(frequency.tripId) ?? [],
     );
   }
   const scheduleOperatorIds = [...new Set([...transitRouteOperatorIds.values()].flat())].sort((left, right) =>
     left.localeCompare(right),
   );
+  const scheduleLineIds = [...new Set(transitRouteLineIds.values())].sort((left, right) => left.localeCompare(right));
   for (const feedInfo of pack.transitFeedInfo ?? []) {
-    addRecord(feedInfo, "transit_feed_info", "feed_info", "feed_info", scheduleOperatorIds);
+    addRecord(feedInfo, "transit_feed_info", "feed_info", "feed_info", scheduleOperatorIds, scheduleLineIds);
   }
   for (const facility of pack.facilities ?? []) {
     const operatorIds = [...(stationOperatorIds.get(facility.stationId) ?? [])];
+    const lineIds = facility.lineId ? [facility.lineId] : [...(stationLineIds.get(facility.stationId) ?? [])];
     const field = facilityField(facility.type);
     if (field) {
-      addRecord(facility, "facility", facility.id, field, operatorIds);
+      addRecord(facility, "facility", facility.id, field, operatorIds, lineIds);
     }
-    addRecord(facility, "facility", facility.id, "status", operatorIds);
+    addRecord(facility, "facility", facility.id, "status", operatorIds, lineIds);
     if (facility.verifiedAt || facility.lastVerifiedAt) {
-      addRecord(facility, "facility", facility.id, "verified_at", operatorIds);
+      addRecord(facility, "facility", facility.id, "verified_at", operatorIds, lineIds);
     }
   }
   for (const mapping of pack.realtimeProviderStationMappings ?? []) {
@@ -519,6 +573,7 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
         `${mapping.providerId}:${mapping.providerStationId}`,
         "realtime_arrival_reference",
         operatorIds,
+        [mapping.lineId],
       );
     }
   }
@@ -546,22 +601,65 @@ function sourceCoverageScopeMap(sourceInventory) {
     scopes.set(source.id, {
       regionIds: Array.isArray(source.coverageScope.regionIds) ? [...source.coverageScope.regionIds] : [],
       operatorIds: Array.isArray(source.coverageScope.operatorIds) ? [...source.coverageScope.operatorIds] : [],
+      lineIds: Array.isArray(source.coverageScope.lineIds) ? [...source.coverageScope.lineIds] : [],
       sourceDomains: Array.isArray(source.coverageScope.sourceDomains) ? [...source.coverageScope.sourceDomains] : [],
     });
   }
   return scopes;
 }
 
-function recordCoverageScope(sourceScope, operatorIds) {
+function coverageOperatorIdsForLines(lineOperatorIds, coverageLineOperatorScopes) {
+  const result = new Map();
+  for (const scope of coverageLineOperatorScopes ?? []) {
+    if (!lineOperatorIds.has(scope.lineId)) {
+      continue;
+    }
+    const operatorIds = result.get(scope.lineId) ?? new Set();
+    operatorIds.add(scope.operatorId);
+    result.set(scope.lineId, operatorIds);
+  }
+  for (const [lineId, operatorId] of lineOperatorIds.entries()) {
+    if (!result.has(lineId)) {
+      result.set(lineId, new Set([operatorId]));
+    }
+  }
+  return result;
+}
+
+function recordCoverageScopes(sourceScope, operatorIds, lineIds, coverageOperatorIdsByLine) {
   if (!sourceScope) {
-    return null;
+    return [null];
   }
   const scopedOperatorIds = sourceScope.operatorIds.filter((operatorId) => operatorIds.includes(operatorId));
-  return {
-    regionIds: sourceScope.regionIds,
-    operatorIds: scopedOperatorIds.length > 0 ? scopedOperatorIds : sourceScope.operatorIds,
-    sourceDomains: sourceScope.sourceDomains,
-  };
+  const scopedLineIds = sourceScope.lineIds.filter((lineId) => lineIds.includes(lineId)).sort();
+  if (sourceScope.lineIds.length > 0 && lineIds.length > 0 && scopedLineIds.length === 0) {
+    throw new Error("source coverageScope lineIds do not include record lineIds");
+  }
+  if (scopedLineIds.length === 0) {
+    return [{
+      regionIds: sourceScope.regionIds,
+      operatorIds: scopedOperatorIds.length > 0 ? scopedOperatorIds : sourceScope.operatorIds,
+      sourceDomains: sourceScope.sourceDomains,
+    }];
+  }
+  return scopedLineIds.flatMap((lineId) => {
+    const scopedLineOperatorIds = [...(coverageOperatorIdsByLine.get(lineId) ?? [])]
+      .filter((operatorId) => sourceScope.operatorIds.includes(operatorId))
+      .sort(compareStrings);
+    if (scopedLineOperatorIds.length === 0) {
+      throw new Error(`source coverageScope does not include operator for record line: ${lineId}`);
+    }
+    return scopedLineOperatorIds.map((operatorId) => ({
+      regionIds: sourceScope.regionIds,
+      operatorIds: [operatorId],
+      lineIds: [lineId],
+      sourceDomains: sourceScope.sourceDomains,
+    }));
+  });
+}
+
+function lineIdsForNodes(nodeIds) {
+  return [...new Set(nodeIds.map((nodeId) => String(nodeId).split(":")[1]).filter(Boolean))].sort(compareStrings);
 }
 
 function operatorIdsForNodes(nodeIds, stationLineOperatorIds) {
@@ -1801,6 +1899,11 @@ function validateFixture(fixture) {
   if (!Array.isArray(fixture.packs) || fixture.packs.length === 0) {
     throw new Error("fixture packs must be a non-empty array");
   }
+  validateCoverageLineOperatorScopes(fixture.coverageLineOperatorScopes, fixture.packs);
+  for (const pack of fixture.packs) {
+    validateCoverageLineOperatorScopes(pack.coverageLineOperatorScopes, [pack]);
+  }
+  validateCoverageLineOperatorScopeAlignment(fixture);
   const packIdentities = new Set(
     fixture.packs.map((pack) => `${pack.id ?? ""}@${pack.version ?? ""}`),
   );
@@ -1841,6 +1944,61 @@ function validateFixture(fixture) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
     }
     validateMinimumTableRows(pack, artifactKind);
+  }
+}
+
+function validateCoverageLineOperatorScopes(scopes, packs) {
+  if (scopes === undefined) {
+    return;
+  }
+  if (!Array.isArray(scopes) || scopes.length === 0) {
+    throw new Error("coverageLineOperatorScopes must be a non-empty array");
+  }
+  const lineIds = new Set(packs.flatMap((pack) => (pack.lines ?? []).map((line) => line.id)));
+  const operatorIds = new Set(packs.flatMap((pack) => (pack.operators ?? []).map((operator) => operator.id)));
+  const keys = new Set();
+  for (const scope of scopes) {
+    if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+      throw new Error("coverageLineOperatorScopes[] must be an object");
+    }
+    const regionId = requiredString(scope.regionId, "coverageLineOperatorScopes[].regionId");
+    const operatorId = requiredString(scope.operatorId, "coverageLineOperatorScopes[].operatorId");
+    const lineId = requiredString(scope.lineId, "coverageLineOperatorScopes[].lineId");
+    if (!operatorIds.has(operatorId)) {
+      throw new Error(`coverageLineOperatorScopes contains undefined operator: ${operatorId}`);
+    }
+    if (!lineIds.has(lineId)) {
+      throw new Error(`coverageLineOperatorScopes contains undefined line: ${lineId}`);
+    }
+    const key = `${regionId}:${operatorId}:${lineId}`;
+    if (keys.has(key)) {
+      throw new Error(`duplicate coverageLineOperatorScope: ${key}`);
+    }
+    keys.add(key);
+  }
+}
+
+function validateCoverageLineOperatorScopeAlignment(fixture) {
+  if (fixture.coverageLineOperatorScopes === undefined) {
+    if (fixture.coverageLineOperatorScopeSemantics !== undefined) {
+      throw new Error("coverageLineOperatorScopeSemantics requires top-level coverageLineOperatorScopes");
+    }
+    return;
+  }
+  if (fixture.coverageLineOperatorScopeSemantics !== "UNION_OF_PACK_SCOPES") {
+    throw new Error("top-level coverageLineOperatorScopes must declare UNION_OF_PACK_SCOPES semantics");
+  }
+  const fixtureKeys = [...new Set(
+    fixture.coverageLineOperatorScopes
+      .map(({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`),
+  )].sort(compareStrings);
+  const packKeys = [...new Set(
+    fixture.packs
+      .flatMap((pack) => pack.coverageLineOperatorScopes ?? [])
+      .map(({ regionId, operatorId, lineId }) => `${regionId}:${operatorId}:${lineId}`),
+  )].sort(compareStrings);
+  if (JSON.stringify(fixtureKeys) !== JSON.stringify(packKeys)) {
+    throw new Error("fixture coverageLineOperatorScopes must equal the union of pack coverageLineOperatorScopes");
   }
 }
 
@@ -2000,6 +2158,12 @@ function validateSourceInventoryCoverageScope(coverageScope, label) {
   requiredStringArray(coverageScope.regionIds, `${label}.regionIds`);
   requiredStringArray(coverageScope.operatorIds, `${label}.operatorIds`);
   requiredStringArray(coverageScope.sourceDomains, `${label}.sourceDomains`);
+  if (coverageScope.lineIds !== undefined) {
+    const lineIds = requiredStringArray(coverageScope.lineIds, `${label}.lineIds`);
+    if (new Set(lineIds).size !== lineIds.length) {
+      throw new Error(`${label}.lineIds must not contain duplicates`);
+    }
+  }
 }
 
 function isAbsoluteHttpsWithHost(value) {

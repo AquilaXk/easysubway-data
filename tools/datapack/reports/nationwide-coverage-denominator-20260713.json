@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "nationwide-coverage-denominator-evidence",
+  "issue": 2052,
+  "asOf": "2026-07-13",
+  "inputs": {
+    "targets": {
+      "path": "tools/datapack/nationwide-coverage-targets.json",
+      "sha256": "e4da92287f300cefab3355acf38066b1f0ba8970119a87f7f07f87643f754176"
+    },
+    "officialSnapshot": {
+      "path": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+      "sha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7"
+    }
+  },
+  "before": {
+    "aggregation": "region_operator_domain",
+    "totalRequirements": 119,
+    "coveredRequirements": 4,
+    "missingRequirements": 115
+  },
+  "after": {
+    "aggregation": "active_line_operator_domain",
+    "activeLineCount": 36,
+    "activeLineOperatorScopeCount": 45,
+    "launchRequiredCount": 270,
+    "enhancementCount": 45,
+    "launchRequiredCompletionRatio": 0,
+    "enhancementProgressRatio": 0,
+    "activeScopeCount": 45,
+    "plannedScopeCount": 0
+  },
+  "catalogTargetDiff": {
+    "extra": [],
+    "missing": [],
+    "mappingMismatch": [],
+    "inactiveExcluded": [
+      "line-cbe75f5287a1"
+    ]
+  },
+  "decision": "NO_GO_MISSING_REMAINS"
+}
