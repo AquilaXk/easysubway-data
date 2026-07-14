@@ -3,7 +3,7 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-07-13",
+  "updatedAt": "2026-07-14",
   "candidates": [
     {
       "id": "kric-subway-route-info",
@@ -2674,20 +2674,20 @@
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_attribution",
-      "sampleEvidenceStatus": "application_complete_activation_pending",
-      "admissionStatus": "missing_live_schema_result_code_30",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "validated_live_sample_non_itx_urban_rail_only",
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "retrievedAt": "2026-07-13",
+        "retrievedAt": "2026-07-14",
         "searchTerms": ["ITX-청춘", "ITX_CHEONGCHUN", "경춘선", "역사별시각표"],
         "outputFields": ["arvTm", "dayCd", "dayNm", "dptTm", "lnCd", "orgStinCd", "railOprIsttCd", "stinCd", "tmnStinCd", "trnNo"],
         "coverageLimitations": [
-          "2026-07-13 K2 25역 credential-safe call은 provider resultCode 30으로 거절",
-          "활용신청 완료 후 provider 활성화와 live schema 확인 전 ITX-청춘 schedule_timetable은 MISSING"
+          "2026-07-14 K2 25역 credential-safe call은 모두 provider resultCode 00과 expected body schema를 반환",
+          "실제 열차번호는 K8001~K8405 도시철도이며 TAGO ITX-청춘 02001~02035와 join 0건이므로 ITX trip/stop materialization에는 사용할 수 없음"
         ]
       },
-      "nextAction": "KRIC 활용신청 활성화 전파 후 K2 25역을 재수집하고 TAGO ITX train number와 trip/stop join을 재검증한다"
+      "nextAction": "도시철도 station timetable source로만 유지하고 ITX-청춘은 한국철도공사 여객열차 운행계획·운행정보의 activation과 live schema를 별도로 검증한다"
     },
     {
       "id": "tago-train-city-codes",
@@ -2800,6 +2800,162 @@
         ]
       },
       "nextAction": "#2094 기차 검색에는 사용 가능하나 #2053 route timetable은 station-level source와 교차검증 전 MISSING 유지"
+    },
+    {
+      "id": "korail-train-operation-codes",
+      "priority": "P0",
+      "domain": "train_operation_code_catalog",
+      "displayName": "한국철도공사 열차운행 코드정보",
+      "detailUrl": "https://www.data.go.kr/data/15125762/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551457/run/v2/codes2",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B551457/run/v2/codes2",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "returnType", "cond[type::EQ]"],
+        "responseEnvelope": "response.header + response.body.items.item + totalCount",
+        "runner": {
+          "command": "node tools/datapack/probe-korail-train-operation-api.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "KORAIL_TRAIN_OPERATION_API_SOURCE_ID", "KORAIL_TRAIN_OPERATION_API_OUTPUT"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "validated_live_sample_materialization_pending",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-14",
+        "searchTerms": ["한국철도공사", "ITX-청춘", "ITX_CHEONGCHUN", "운행코드", "정차구분"],
+        "endpoint": "https://apis.data.go.kr/B551457/run/v2/codes2",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["JSON", "XML"],
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "returnType", "cond[type::EQ]", "cond[code::EQ]", "cond[value::LIKE]"],
+        "outputFields": ["code", "type", "value"],
+        "liveValidation": {
+          "requestScope": "cond[type::EQ]=mrnt_cd, pageNo=1, numOfRows=10, returnType=JSON",
+          "httpStatus": 200,
+          "providerResultCode": "0",
+          "rowCount": 10,
+          "totalCount": 164,
+          "schemaStatus": "EXPECTED",
+          "rawSha256": "5fb12853e3e5c67fc479befc9b69ceadf9757c70279cadd8ddb2afe26503b7fc"
+        },
+        "coverageLimitations": [
+          "mrnt_cd, stn_cd, stop_se_cd, uppln_dn_se_cd 해석용 코드표이며 timetable row 자체는 제공하지 않음",
+          "2026-07-14 live 검증은 mrnt_cd 첫 10건이며 전체 type과 pagination materialization은 아직 수행하지 않음"
+        ]
+      },
+      "nextAction": "tracked Node collector로 필요한 코드 type을 수집하고 timetable row의 station·line·direction·stop 값을 canonical contract에 매핑한다"
+    },
+    {
+      "id": "korail-traveler-train-run-plan",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["capital"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-54a7b980b7c3"]
+      },
+      "displayName": "한국철도공사 여객열차 운행계획",
+      "detailUrl": "https://www.data.go.kr/data/15125762/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "returnType", "cond[run_ymd::GTE]", "cond[run_ymd::LTE]"],
+        "responseEnvelope": "response.header + response.body.items.item + totalCount",
+        "runner": {
+          "command": "node tools/datapack/probe-korail-train-operation-api.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "KORAIL_TRAIN_OPERATION_API_SOURCE_ID", "KORAIL_TRAIN_OPERATION_RUN_DATE", "KORAIL_TRAIN_OPERATION_API_OUTPUT"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "validated_live_sample_materialization_pending",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-14",
+        "searchTerms": ["한국철도공사", "ITX-청춘", "ITX_CHEONGCHUN", "여객열차 운행계획"],
+        "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["JSON", "XML"],
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "returnType", "cond[run_ymd::GTE]", "cond[run_ymd::LTE]", "cond[dptre_stn_cd::EQ]", "cond[dptre_stn_nm::EQ]", "cond[arvl_stn_cd::EQ]", "cond[arvl_stn_nm::EQ]"],
+        "outputFields": ["run_ymd", "trn_no", "dptre_stn_cd", "dptre_stn_nm", "arvl_stn_cd", "arvl_stn_nm", "trn_plan_dptre_dt", "trn_plan_arvl_dt"],
+        "retentionWindow": "과거 3개월부터 미래 1개월",
+        "liveValidation": {
+          "requestScope": "run_ymd=20260714, pageNo=1, numOfRows=10, returnType=JSON",
+          "httpStatus": 200,
+          "providerResultCode": "0",
+          "rowCount": 10,
+          "totalCount": 247,
+          "schemaStatus": "EXPECTED",
+          "rawSha256": "f1cbef88be0cf47da569876d95b5f9118e8bf7b42fbdeb8a2c84ecff3e9bae86"
+        },
+        "coverageLimitations": [
+          "열차별 양 끝역과 계획 출도착시각을 제공하지만 중간 정차역 sequence는 제공하지 않음",
+          "2026-07-14 live schema는 검증했지만 ITX-청춘 train type 식별과 전체 pagination materialization은 아직 수행하지 않음"
+        ]
+      },
+      "nextAction": "tracked Node collector로 ITX 열차번호·양 끝역·계획시간을 검증하고 여객열차 운행정보의 station rows와 교차검증한다"
+    },
+    {
+      "id": "korail-traveler-train-run-info",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["capital"],
+        "operatorIds": ["korail"],
+        "lineIds": ["line-54a7b980b7c3"]
+      },
+      "displayName": "한국철도공사 여객열차 운행정보",
+      "detailUrl": "https://www.data.go.kr/data/15125762/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
+        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "returnType", "cond[run_ymd::GTE]", "cond[run_ymd::LTE]"],
+        "responseEnvelope": "response.header + response.body.items.item + totalCount",
+        "runner": {
+          "command": "node tools/datapack/probe-korail-train-operation-api.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "KORAIL_TRAIN_OPERATION_API_SOURCE_ID", "KORAIL_TRAIN_OPERATION_RUN_DATE", "KORAIL_TRAIN_OPERATION_API_OUTPUT"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "validated_live_sample_materialization_pending",
+      "serviceKeyHandling": "offline_probe_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-14",
+        "searchTerms": ["한국철도공사", "ITX-청춘", "ITX_CHEONGCHUN", "여객열차 운행정보", "정차순서"],
+        "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": ["JSON", "XML"],
+        "requiredParameters": ["serviceKey", "pageNo", "numOfRows", "returnType", "cond[run_ymd::GTE]", "cond[run_ymd::LTE]", "cond[stn_cd::EQ]", "cond[stn_nm::EQ]", "cond[mrnt_cd::EQ]", "cond[mrnt_nm::EQ]"],
+        "outputFields": ["run_ymd", "trn_no", "trn_run_sn", "stn_cd", "stn_nm", "mrnt_cd", "mrnt_nm", "uppln_dn_se_cd", "stop_se_cd", "stop_se_nm", "trn_dptre_dt", "trn_arvl_dt"],
+        "retentionWindow": "과거 3개월부터 전일",
+        "liveValidation": {
+          "requestScope": "run_ymd=20260713, pageNo=1, numOfRows=10, returnType=JSON",
+          "httpStatus": 200,
+          "providerResultCode": "0",
+          "rowCount": 10,
+          "totalCount": 8549,
+          "schemaStatus": "EXPECTED",
+          "rawSha256": "109278d79ebab9cf8c520e3dfc75b8f19f7ccaee9eaaf012b0f69148ad627123"
+        },
+        "coverageLimitations": [
+          "실제 운행 row이므로 미래 계획 timetable을 단독으로 대체하지 않음",
+          "2026-07-13 live schema는 검증했지만 ITX-청춘 row filter, 전체 pagination, trn_run_sn 순서와 stop_se_cd 의미 검증은 아직 수행하지 않음"
+        ]
+      },
+      "nextAction": "tracked Node collector로 ITX station rows를 수집하고 codes2·canonical station·운행계획과 결합해 정차 순서와 시각을 fail-closed 검증한다"
     },
     {
       "id": "daejeon-train-timetable",
