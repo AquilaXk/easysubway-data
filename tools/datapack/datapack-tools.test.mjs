@@ -16314,7 +16314,7 @@ test("source inventory는 official OD fare admission hash 쌍을 함께 요구�
     );
 
     const nonFareInventory = structuredClone(sourceInventory);
-    const nonFareSource = nonFareInventory.sources.find(({ id }) => id === "kric-braille-displays");
+    const nonFareSource = nonFareInventory.sources.find(({ id }) => id === "kric-disabled-toilet");
     nonFareSource.officialOdFareAdmissionHash = "a".repeat(64);
     nonFareSource.fareStationLineMappingLedgerHash = "b".repeat(64);
     const nonFarePath = path.join(workspace, "non-fare.json");
@@ -16327,7 +16327,7 @@ test("source inventory는 official OD fare admission hash 쌍을 함께 요구�
     );
 
     const partialFareInventory = structuredClone(nonFareInventory);
-    partialFareInventory.sources.find(({ id }) => id === "kric-braille-displays").fieldsProvided.push("gnrlCardFare");
+    partialFareInventory.sources.find(({ id }) => id === "kric-disabled-toilet").fieldsProvided.push("gnrlCardFare");
     const partialFarePath = path.join(workspace, "partial-fare.json");
     await writeFile(partialFarePath, JSON.stringify(partialFareInventory));
     await assert.rejects(

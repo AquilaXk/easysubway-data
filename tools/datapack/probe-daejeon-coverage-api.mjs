@@ -9,20 +9,13 @@ import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs"
 export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   "daejeon-train-timetable": Object.freeze({
     endpoint: "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
-    format: "xml",
     expectedFields: ["dayType", "drctType", "stNum", "tmList", "tmZone"],
   }),
   "daejeon-station-distance-fare": Object.freeze({
     endpoint: "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
-    format: "xml",
     query: { strstnno: "111", endstnno: "120" },
     expectedFields: ["distfloat", "fee", "min", "sec"],
     validateItem: validateDistanceFareItem,
-  }),
-  "daejeon-braille-guide-map": Object.freeze({
-    endpoint: "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
-    format: "json",
-    query: { page: "1", perPage: "100", returnType: "JSON" },
   }),
 });
 
@@ -34,7 +27,7 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
   url.searchParams.set("serviceKey", key);
   for (const [name, value] of Object.entries(operation.query ?? {})) url.searchParams.set(name, value);
 
-  const response = await fetchWithRetry(url, operation.format, fetchImpl);
+  const response = await fetchWithRetry(url, fetchImpl);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
   const raw = await response.text();
   if (!response.ok) {
@@ -43,21 +36,16 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
   }
   let parsed;
   try {
-    parsed = operation.format === "xml"
-      ? parseXmlEvidence(raw, operation.expectedFields, operation.validateItem)
-      : parseJsonEvidence(raw);
+    parsed = parseXmlEvidence(raw, operation.expectedFields, operation.validateItem);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Daejeon coverage API parse failure";
     throw new Error(`${message}; observedAt=${now.toISOString()}; httpStatus=${response.status}; `
       + `contentType=${contentType || "missing"}; rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
   }
-  if (operation.format === "xml" && !new Set(["application/xml", "text/xml"]).has(contentType)) {
+  if (!new Set(["application/xml", "text/xml"]).has(contentType)) {
     throw new Error(`Daejeon coverage API schema mismatch: content-type ${contentType || "missing"}; `
       + `observedAt=${now.toISOString()}; httpStatus=${response.status}; `
       + `rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
-  }
-  if (operation.format === "json" && contentType !== "application/json") {
-    throw new Error(`Daejeon coverage API schema mismatch: content-type ${contentType || "missing"}`);
   }
   return {
     schemaVersion: 1,
@@ -76,13 +64,13 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
   };
 }
 
-async function fetchWithRetry(url, format, fetchImpl) {
+async function fetchWithRetry(url, fetchImpl) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       return await fetchImpl(url, {
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
-        headers: { accept: format === "xml" ? "application/xml,text/xml" : "application/json" },
+        headers: { accept: "application/xml,text/xml" },
       });
     } catch (error) {
       if (attempt === 1) throw new Error("Daejeon coverage API transport failure", { cause: error });
@@ -142,23 +130,6 @@ function validateDistanceFareItem({ distfloat, fee, min, sec }) {
 function xmlScalar(raw, field) {
   const match = new RegExp(`<${field}\\b[^>]*>([^<]{0,64})<\\/${field}>`, "i").exec(raw);
   return match?.[1].trim() ?? null;
-}
-
-function parseJsonEvidence(raw) {
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("Daejeon coverage API schema mismatch: invalid JSON");
-  }
-  if (!Array.isArray(parsed?.data) || !Number.isInteger(parsed.currentCount)
-    || parsed.currentCount !== parsed.data.length || !Number.isInteger(parsed.totalCount)) {
-    throw new Error("Daejeon coverage API schema mismatch: JSON envelope");
-  }
-  const outputFields = [...new Set(parsed.data.flatMap((row) => (
-    row && typeof row === "object" && !Array.isArray(row) ? Object.keys(row) : []
-  )))].sort((left, right) => left.localeCompare(right, "ko"));
-  return { providerResultCode: "00", rowCount: parsed.data.length, outputFields };
 }
 
 function decodedServiceKey(value) {

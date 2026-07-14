@@ -3338,49 +3338,6 @@
       "nextAction": "전체 OD와 canonical station mapping을 별도 이슈에서 검증한 뒤 topology materialization을 판정한다."
     },
     {
-      "id": "daejeon-braille-guide-map",
-      "priority": "P1",
-      "domain": "accessibility_facilities",
-      "coverageScope": {
-        "regionIds": ["daejeon"],
-        "operatorIds": ["daejeon-transportation"],
-        "lineIds": ["line-7051a9c2525c"]
-      },
-      "displayName": "대전교통공사_역사 점자 안내도 현황",
-      "detailUrl": "https://www.data.go.kr/data/15044677/fileData.do",
-      "requestUrl": "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
-      "operation": {
-        "method": "GET",
-        "endpoint": "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
-        "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
-        "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
-        "responseEnvelope": "{currentCount,data[],matchCount,page,perPage,totalCount}",
-        "runner": {
-          "command": "node tools/datapack/probe-daejeon-coverage-api.mjs",
-          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_API_PROBE_SOURCE_ID", "DAEJEON_API_PROBE_OUTPUT"]
-        },
-        "secretPolicy": "env-only-redacted-output"
-      },
-      "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "application_complete_activation_pending",
-      "admissionStatus": "provider_activation_required_before_schema_admission",
-      "serviceKeyHandling": "offline_probe_secret_only",
-      "mobileEmbeddingAllowed": false,
-      "evidence": {
-        "retrievedAt": "2026-07-14",
-        "endpoint": "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
-        "usePermissionRange": "이용허락범위 제한 없음",
-        "formats": ["JSON", "XML"],
-        "outputFields": [],
-        "liveValidation": { "attempts": 2, "httpStatus": 401, "admitted": false },
-        "coverageLimitations": [
-          "점자 안내도 현황만 제공하며 엘리베이터·에스컬레이터·휠체어리프트 전체 계약을 충족하지 않음",
-          "2026-07-14 credential-safe probe와 bounded retry가 모두 HTTP 401로 종료됨"
-        ]
-      },
-      "nextAction": "활용신청 전파 후 tracked probe로 actual schema를 확정하고 점자 안내도 capability만 제한적으로 admission한다"
-    },
-    {
       "id": "public-data-portal-search",
       "priority": "P0",
       "domain": "provider_discovery",

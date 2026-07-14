@@ -143,6 +143,17 @@ test("대전 역간 candidate는 official XML만 active로 admission하고 topol
 });
 
 test("대전 coverage probe는 provider/schema 오류를 fail closed한다", async (context) => {
+  await context.test("유효한 XML 본문도 JSON content-type이면 거부한다", async () => {
+    await assert.rejects(probeDaejeonCoverageApi({
+      sourceId: "daejeon-train-timetable",
+      serviceKey: "key",
+      fetchImpl: async () => new Response(
+        `<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>평일</dayType><drctType>상행</drctType><stNum>101</stNum><tmList>0530</tmList><tmZone>05</tmZone></item></items></body></response>`,
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    }), /schema mismatch: content-type application\/json/);
+  });
+
   await context.test("XML content-type mismatch는 credential 없는 hash 진단을 남긴다", async () => {
     const secret = "do-not-log-content-type-key";
     await assert.rejects(probeDaejeonCoverageApi({
@@ -212,19 +223,7 @@ test("대전 coverage probe는 provider/schema 오류를 fail closed한다", asy
     }), /provider resultCode 99/);
   });
 
-  await context.test("JSON schema mismatch", async () => {
-    await assert.rejects(probeDaejeonCoverageApi({
-      sourceId: "daejeon-braille-guide-map",
-      serviceKey: "key",
-      fetchImpl: async () => new Response(JSON.stringify({ data: "not-an-array" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    }), /schema mismatch/);
-  });
-
   assert.deepEqual(Object.keys(DAEJEON_COVERAGE_OPERATIONS).sort(), [
-    "daejeon-braille-guide-map",
     "daejeon-station-distance-fare",
     "daejeon-train-timetable",
   ]);
