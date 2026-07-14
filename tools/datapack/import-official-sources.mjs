@@ -1280,6 +1280,11 @@ function validateTransitStopTimesFollowLineSequence(stopTimes, stationLines, lin
     for (let index = 1; index < rows.length; index += 1) {
       const previous = rows[index - 1];
       const current = rows[index];
+      if (previous.lineId !== current.lineId) {
+        direction = 0;
+        wrapped = false;
+        continue;
+      }
       const delta = rows[index].lineSequence - rows[index - 1].lineSequence;
       if (delta === 0) {
         throw new Error(`transit_stop_times lineSequence must change between stops: ${tripId}`);

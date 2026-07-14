@@ -6,6 +6,33 @@
   "representation": "SERVICE_PATTERN_ON_EXISTING_LINE",
   "servicePattern": "EXPRESS",
   "timezone": "Asia/Seoul",
+  "allowedConsumerIssues": ["#1400", "#2098", "#2099"],
+  "legacyDaejeonRowCount": 0,
+  "legacyYongsanDaejeonTripCount": 0,
+  "completenessAdmission": {
+    "dateInput": "EXPLICIT",
+    "maxFutureDays": 6,
+    "replayAdmissionAllowed": false,
+    "serviceDayCodes": { "8": "WEEKDAY", "7": "SATURDAY", "9": "SUNDAY_OR_HOLIDAY" },
+    "rosterStationUniverse": "CANONICAL_GYEONGCHUN_INTERSECT_TAGO_TRAIN_STATION_CATALOG",
+    "excludedStationEvidenceRequired": true,
+    "odMatrixHashInput": ["date", "depStationId", "arrStationId"],
+    "odMatrixCanonicalSerialization": "SORTED_TUPLE_ARRAY_JSON_UTF8",
+    "requiredDirections": ["D", "U"],
+    "requiredTrainNumberSets": ["ROSTER", "PLAN", "INFO", "MATERIALIZED"],
+    "incompleteStatus": "MISSING",
+    "cliFailureExitCode": 1
+  },
+  "searchScopePolicy": {
+    "operatingRoute": "GYEONGCHUN_LINE_ONLY",
+    "legacyDaejeonData": "REJECT",
+    "partitionKey": "CANONICAL_OD_STATION_MEMBERSHIP",
+    "metropolitanRouteSearch": {
+      "SUBWAY": "EXCLUDED",
+      "SUBWAY_AND_TRAIN": "CANONICAL_OD_STATIONS_IN_CAPITAL_METROPOLITAN_NETWORK"
+    },
+    "duplicatePhysicalStationAllowed": false
+  },
   "coverageStates": {
     "station_line_membership": "SUPPORTED",
     "route_graph_topology": "MISSING",
@@ -107,8 +134,58 @@
       "trainCount": 18,
       "stationSequenceRowCount": 113,
       "missingTimestampStopCount": 113,
+      "stationTimeCapability": {
+        "status": "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+        "reasonCode": "OFFICIAL_OPERATION_FIELDS_EMPTY",
+        "checkedStopCount": 113,
+        "populatedTimestampStopCount": 0,
+        "requiredTimestampFieldCount": 190,
+        "populatedTimestampFieldCount": 0,
+        "verifiedAt": "2026-07-14T06:36:22.122Z",
+        "travelerTrainRunInfo2RawResponseSha256": "ff64cf6683de1fbc089dde751af198b4745bbd71260b3867cef69f615bafce4c"
+      },
       "disposition": "SUPPORTED_FOR_CANONICAL_STOP_SEQUENCE_ONLY",
       "limitation": "trn_arvl_dt와 trn_dptre_dt가 113개 정차 row 모두 비어 있어 timetable time으로 승격할 수 없다."
+    },
+    "korailCompletenessAdmission": {
+      "provider": "TAGO + 한국철도공사",
+      "officialSourceUrl": "https://www.data.go.kr/data/15125762/openapi.do",
+      "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
+      "observedAt": "2026-07-14T08:35:44.292Z",
+      "selectedServiceDates": { "8": "20260715", "7": "20260718", "9": "20260719" },
+      "admissionStatus": "MISSING",
+      "admissionEligible": false,
+      "canonicalStationCount": 25,
+      "rosterStationCount": 15,
+      "stationSetHash": "fe20a22d4c8fab383e287dfcb32b1fddb99e344441101a9c1e4d358a33d6f673",
+      "serviceDays": [
+        {
+          "dayCd": "8", "serviceDate": "20260715", "rosterTrainNumberCount": 36,
+          "expectedOdCount": 210, "completedOdCount": 210, "failedOdCount": 0,
+          "odMatrixHash": "2f1cf28e24b20e6d279ed4ce06663a5a3a7629718511a0066ddf8529fdcf1934",
+          "rosterEvidenceHash": "14c2f5003f4da2489c795f5df07eec72389ed5cb814a72aa796466df715af3d6",
+          "failureStage": "TIMETABLE", "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "failureContext": "operation=travelerTrainRunInfo2,total=0"
+        },
+        {
+          "dayCd": "7", "serviceDate": "20260718", "rosterTrainNumberCount": 52,
+          "expectedOdCount": 210, "completedOdCount": 210, "failedOdCount": 0,
+          "odMatrixHash": "b7b68526820e5a49f003289cffe6309ce52961e0da96e067bef34cf28de1ebec",
+          "rosterEvidenceHash": "5d15a55d214f65851dd6d6cd43293279c07ba80c0e358a2dee55b4df846aed0b",
+          "failureStage": "TIMETABLE", "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "failureContext": "operation=travelerTrainRunInfo2,total=0"
+        },
+        {
+          "dayCd": "9", "serviceDate": "20260719", "rosterTrainNumberCount": 52,
+          "expectedOdCount": 210, "completedOdCount": 210, "failedOdCount": 0,
+          "odMatrixHash": "550af97e469ccc20fde2ad9a531c0896bcf8a41d746f900023a5b2c98ac28e20",
+          "rosterEvidenceHash": "5e038a74413bae4ebaee6c3dcfb7333ac237daa96faa7050f782f6dcd4686bb9",
+          "failureStage": "TIMETABLE", "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "failureContext": "operation=travelerTrainRunInfo2,total=0"
+        }
+      ],
+      "artifactEvidenceHash": "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
+      "credentialRedacted": true
     }
   },
   "materialization": {

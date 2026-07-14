@@ -8406,6 +8406,9 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
         lineId: "line-54a7b980b7c3",
         servicePattern: "EXPRESS",
         representation: "SERVICE_PATTERN_ON_EXISTING_LINE",
+        operatingRoute: "GYEONGCHUN_LINE_ONLY",
+        legacyDaejeonData: "REJECT",
+        metropolitanRouteSearchCoverage: "CANONICAL_OD_STATIONS_IN_CAPITAL_METROPOLITAN_NETWORK",
         coverageContract: "tools/datapack/itx-cheongchun-coverage-contract.json",
         coverageStates: {
           station_line_membership: "SUPPORTED",
@@ -11265,6 +11268,49 @@ test("공식 source ingest adapter는 명시한 lineSequence 경계 wrap만 허�
   input.lines[0].lineSequenceWrapAllowed = true;
   const generated = await importOfficialSourceInput(outputDir, input);
   assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 3);
+});
+
+test("공식 source ingest adapter는 cross-line trip의 lineSequence를 노선 구간별로 검증한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-source-ingest-cross-line-stop-times-${Date.now()}`);
+  const input = sourceIngestInput();
+  input.lines.push({
+    ...input.lines[0],
+    id: "line-branch",
+    nameKo: "분기 노선",
+    nameEn: "Branch Line",
+  });
+  for (const station of [
+    { sourceStationCode: "501", stationId: "station-branch-1", stationNameKo: "분기1", lineSequence: 1 },
+    { sourceStationCode: "502", stationId: "station-branch-2", stationNameKo: "분기2", lineSequence: 12 },
+  ]) {
+    input.stationMappings.push({
+      sourceId: "seoulmetro-station-line-info",
+      sourceStationCode: station.sourceStationCode,
+      lineId: "line-branch",
+      stationId: station.stationId,
+      stationLineId: `${station.stationId}:line-branch`,
+      mappingStatus: "active",
+    });
+    input.stationLineRows.push({
+      ...input.stationLineRows[0],
+      sourceStationCode: station.sourceStationCode,
+      lineId: "line-branch",
+      stationNameKo: station.stationNameKo,
+      stationNameEn: station.stationNameKo,
+      normalizedName: station.stationNameKo,
+      stationCode: station.sourceStationCode,
+      lineSequence: station.lineSequence,
+    });
+  }
+  input.transitStopTimes = [
+    { tripId: "trip-cross-line", stopSequence: 1, stationId: "station-sadang", lineId: "seoul-4", arrivalSeconds: 28800, departureSeconds: 28800 },
+    { tripId: "trip-cross-line", stopSequence: 2, stationId: "station-sangnoksu", lineId: "seoul-4", arrivalSeconds: 29400, departureSeconds: 29400 },
+    { tripId: "trip-cross-line", stopSequence: 3, stationId: "station-branch-1", lineId: "line-branch", arrivalSeconds: 30000, departureSeconds: 30000 },
+    { tripId: "trip-cross-line", stopSequence: 4, stationId: "station-branch-2", lineId: "line-branch", arrivalSeconds: 30600, departureSeconds: 30600 },
+  ];
+
+  const generated = await importOfficialSourceInput(outputDir, input);
+  assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 4);
 });
 
 test("공식 source ingest adapter는 cross-line EXPRESS summary edge도 격리 정책을 요구한다", async () => {

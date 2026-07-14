@@ -46,6 +46,9 @@
         "lineId": "line-54a7b980b7c3",
         "servicePattern": "EXPRESS",
         "representation": "SERVICE_PATTERN_ON_EXISTING_LINE",
+        "operatingRoute": "GYEONGCHUN_LINE_ONLY",
+        "legacyDaejeonData": "REJECT",
+        "metropolitanRouteSearchCoverage": "CANONICAL_OD_STATIONS_IN_CAPITAL_METROPOLITAN_NETWORK",
         "coverageContract": "tools/datapack/itx-cheongchun-coverage-contract.json",
         "coverageStates": {
           "station_line_membership": "SUPPORTED",

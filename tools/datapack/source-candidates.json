@@ -3010,7 +3010,7 @@
           "OD 결과는 중간 정차역·pickup/drop-off를 제공하지 않아 단독으로 trip stop sequence를 구성할 수 없음"
         ]
       },
-      "nextAction": "#2094 기차 검색에는 사용 가능하나 #2053 route timetable은 station-level source와 교차검증 전 MISSING 유지"
+      "nextAction": "#2116 공식 roster evidence로만 사용하며 station-level completeness 전에는 timetable을 MISSING으로 유지한다"
     },
     {
       "id": "korail-train-operation-codes",
@@ -3167,7 +3167,7 @@
         "materializationRunner": {
           "command": "node tools/datapack/collect-korail-itx-cheongchun-timetable.mjs",
           "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"],
-          "requiredArguments": ["--date", "--kric-day-cd", "--canonical-pack", "--train-number-evidence", "--output"]
+          "requiredArguments": ["--day8-date", "--day7-date", "--day9-date", "--canonical-pack", "--output"]
         },
         "liveMaterialization": {
           "runDate": "20260713",
@@ -3175,14 +3175,41 @@
           "tagoTrainCount": 18,
           "canonicalStationSequenceRowCount": 113,
           "missingTimestampStopCount": 113,
-          "status": "MISSING_STATION_TIMES"
+          "status": "MISSING_STATION_TIMES",
+          "stationTimeCapability": {
+            "status": "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+            "reasonCode": "OFFICIAL_OPERATION_FIELDS_EMPTY",
+            "checkedStopCount": 113,
+            "populatedTimestampStopCount": 0,
+            "requiredTimestampFieldCount": 190,
+            "populatedTimestampFieldCount": 0,
+            "verifiedAt": "2026-07-14T06:36:22.122Z",
+            "travelerTrainRunInfo2RawResponseSha256": "ff64cf6683de1fbc089dde751af198b4745bbd71260b3867cef69f615bafce4c"
+          }
+        },
+        "currentCompletenessAdmission": {
+          "evidenceRef": "tools/datapack/itx-cheongchun-coverage-contract.json#officialEvidence.korailCompletenessAdmission",
+          "observedAt": "2026-07-14T08:35:44.292Z",
+          "selectedServiceDates": { "8": "20260715", "7": "20260718", "9": "20260719" },
+          "serviceDayCount": 3,
+          "totalExpectedOdCount": 630,
+          "totalCompletedOdCount": 630,
+          "totalFailedOdCount": 0,
+          "rosterTrainNumberCounts": { "8": 36, "7": 52, "9": 52 },
+          "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "admissionStatus": "MISSING",
+          "admissionEligible": false,
+          "artifactEvidenceHash": "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
+          "nextReviewAt": "2026-07-20T00:00:00.000Z",
+          "credentialRedacted": true
         },
         "coverageLimitations": [
           "TAGO ITX 18편의 trn_run_sn·canonical 정차순서 113건은 검증됨",
-          "113건 모두 trn_dptre_dt·trn_arvl_dt 값이 비어 timetable trip/stop/time은 생성하지 않음"
+          "113건 모두 trn_dptre_dt·trn_arvl_dt 값이 비어 timetable trip/stop/time은 생성하지 않음",
+          "20260715·20260718·20260719 roster OD matrix는 630/630 완료됐으나 미래 travelerTrainRunInfo2가 세 날짜 모두 0건이어서 admission은 MISSING"
         ]
       },
-      "nextAction": "provider가 station time 값을 제공하면 같은 collector로 재검증하고, 그 전에는 topology sequence로만 사용한다"
+      "nextAction": "provider가 station time 값을 제공하면 같은 collector로 #1400·#2098·#2099 completeness를 재검증한다"
     },
     {
       "id": "daejeon-train-timetable",

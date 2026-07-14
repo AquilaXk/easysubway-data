@@ -1461,7 +1461,17 @@
   ],
   "materialization": {
     "status": "MISSING_STATION_TIMES",
-    "missingTimestampStopCount": 113
+    "missingTimestampStopCount": 113,
+    "stationTimeCapability": {
+      "status": "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+      "reasonCode": "OFFICIAL_OPERATION_FIELDS_EMPTY",
+      "checkedStopCount": 113,
+      "populatedTimestampStopCount": 0,
+      "requiredTimestampFieldCount": 190,
+      "populatedTimestampFieldCount": 0,
+      "verifiedAt": "2026-07-14T06:36:22.122Z",
+      "travelerTrainRunInfo2RawResponseSha256": "ff64cf6683de1fbc089dde751af198b4745bbd71260b3867cef69f615bafce4c"
+    }
   },
   "operations": [
     {

@@ -838,7 +838,10 @@ function validateRailProductScope(scope, activeLineScopeKeys) {
   const itx = routeServices.get("ITX_CHEONGCHUN");
   const itxStates = itx.coverageStates;
   const allowedStates = new Set(["SUPPORTED", "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE", "MISSING"]);
-  if (itx.coverageContract !== "tools/datapack/itx-cheongchun-coverage-contract.json"
+  if (itx.operatingRoute !== "GYEONGCHUN_LINE_ONLY"
+    || itx.legacyDaejeonData !== "REJECT"
+    || itx.metropolitanRouteSearchCoverage !== "CANONICAL_OD_STATIONS_IN_CAPITAL_METROPOLITAN_NETWORK"
+    || itx.coverageContract !== "tools/datapack/itx-cheongchun-coverage-contract.json"
     || !itxStates || ["station_line_membership", "route_graph_topology", "schedule_timetable"]
       .some((domain) => !allowedStates.has(itxStates[domain]))
     || itx.supportClaimAllowed !== Object.values(itxStates).every((state) => state === "SUPPORTED")) {
