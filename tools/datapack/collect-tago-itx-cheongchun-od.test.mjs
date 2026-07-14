@@ -18,6 +18,15 @@ function tagoResponse(items, totalCount = items.length) {
   } }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
+async function withoutTotalCount(response) {
+  const payload = await response.json();
+  delete payload.response.body.totalCount;
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 test("ITX admission 날짜는 KST 오늘~6일과 dayCd 요일을 검증한다", () => {
   const serviceDates = { "8": "20260715", "7": "20260718", "9": "20260719" };
   assert.deepEqual(validateItxServiceDates(serviceDates, {
@@ -72,6 +81,41 @@ test("ITX OD matrix hash는 정렬된 date·depStationId·arrStationId tuple 직
   assert.equal(matrix.expectedOdCount, 2);
   assert.equal(matrix.stationSetHash, sha256(JSON.stringify(["A", "B"])));
   assert.equal(matrix.odMatrixHash, sha256(JSON.stringify(tuples)));
+});
+
+test("TAGO catalog operation은 pagination field와 totalCount를 요구하지 않는다", async (context) => {
+  for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
+    await context.test(`${operation} totalCount 없음`, async () => {
+      const fallback = validFetch();
+      const artifact = await collectTagoItxCheongchunOd({
+        serviceKey: "key",
+        departureDate: "2026-07-14",
+        kricServiceDayCode: "8",
+        fetchImpl: async (url) => {
+          const response = await fallback(url);
+          return new URL(url).pathname.endsWith(operation) ? withoutTotalCount(response) : response;
+        },
+      });
+      assert.deepEqual(artifact.trainNumbers, ["2001"]);
+    });
+  }
+
+  await context.test("pagination query 없음", async () => {
+    const fallback = validFetch();
+    await collectTagoItxCheongchunOd({
+      serviceKey: "key",
+      departureDate: "2026-07-14",
+      kricServiceDayCode: "8",
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("GetVhcleKndList") || parsed.pathname.endsWith("GetCtyCodeList")) {
+          assert.equal(parsed.searchParams.has("pageNo"), false);
+          assert.equal(parsed.searchParams.has("numOfRows"), false);
+        }
+        return fallback(url);
+      },
+    });
+  });
 });
 
 test("TAGO ITX roster는 canonical 역의 양방향 OD 전체를 수집한다", async () => {

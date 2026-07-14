@@ -225,9 +225,12 @@ async function fetchAll(operation, query, key, fetchImpl) {
   const all = [];
   const rawHashes = [];
   let totalCount = null;
-  for (let pageNo = 1; pageNo <= 100; pageNo += 1) {
+  const paginated = operation === "GetCtyAcctoTrainSttnList" || operation === "GetStrtpntAlocFndTrainInfo";
+  for (let pageNo = 1; pageNo <= (paginated ? 100 : 1); pageNo += 1) {
     const url = new URL(`${BASE}/${operation}`);
-    for (const [name, value] of Object.entries({ serviceKey: key, _type: "json", pageNo: String(pageNo), numOfRows: "100", ...query })) {
+    for (const [name, value] of Object.entries({
+      serviceKey: key, _type: "json", ...(paginated ? { pageNo: String(pageNo), numOfRows: "100" } : {}), ...query,
+    })) {
       url.searchParams.set(name, String(value));
     }
     const response = await fetchWithRetry(url, fetchImpl);
@@ -247,6 +250,11 @@ async function fetchAll(operation, query, key, fetchImpl) {
     const rows = items == null ? [] : Array.isArray(items) ? items : [items];
     if (rows.some((row) => !row || typeof row !== "object" || Array.isArray(row))) {
       throw new Error(`TAGO ${operation} schema mismatch: item`);
+    }
+    if (!paginated) {
+      all.push(...rows);
+      totalCount = rows.length;
+      break;
     }
     if (body.totalCount === undefined || body.totalCount === null || body.totalCount === "") {
       throw new Error(`TAGO ${operation} schema mismatch: totalCount`);
