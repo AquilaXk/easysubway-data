@@ -13,9 +13,11 @@ export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
     expectedFields: ["dayType", "drctType", "stNum", "tmList", "tmZone"],
   }),
   "daejeon-station-distance-fare": Object.freeze({
-    endpoint: "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
-    format: "json",
-    query: { page: "1", perPage: "100", returnType: "JSON" },
+    endpoint: "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
+    format: "xml",
+    query: { strstnno: "111", endstnno: "120" },
+    expectedFields: ["distfloat", "fee", "min", "sec"],
+    validateItem: validateDistanceFareItem,
   }),
   "daejeon-braille-guide-map": Object.freeze({
     endpoint: "https://api.odcloud.kr/api/15044677/v1/uddi:6d7ceef4-f258-47ea-ab28-c3c7ef005c2c",
@@ -33,13 +35,16 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
   for (const [name, value] of Object.entries(operation.query ?? {})) url.searchParams.set(name, value);
 
   const response = await fetchWithRetry(url, operation.format, fetchImpl);
-  if (!response.ok) throw new Error(`Daejeon coverage API HTTP ${response.status}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
   const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`Daejeon coverage API HTTP ${response.status}; observedAt=${now.toISOString()}; `
+      + `contentType=${contentType || "missing"}; rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
+  }
   let parsed;
   try {
     parsed = operation.format === "xml"
-      ? parseXmlEvidence(raw, operation.expectedFields)
+      ? parseXmlEvidence(raw, operation.expectedFields, operation.validateItem)
       : parseJsonEvidence(raw);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Daejeon coverage API parse failure";
@@ -47,7 +52,9 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
       + `contentType=${contentType || "missing"}; rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
   }
   if (operation.format === "xml" && !new Set(["application/xml", "text/xml"]).has(contentType)) {
-    throw new Error(`Daejeon coverage API schema mismatch: content-type ${contentType || "missing"}`);
+    throw new Error(`Daejeon coverage API schema mismatch: content-type ${contentType || "missing"}; `
+      + `observedAt=${now.toISOString()}; httpStatus=${response.status}; `
+      + `rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
   }
   if (operation.format === "json" && contentType !== "application/json") {
     throw new Error(`Daejeon coverage API schema mismatch: content-type ${contentType || "missing"}`);
@@ -63,6 +70,7 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
     schemaStatus: "EXPECTED",
     rowCount: parsed.rowCount,
     outputFields: parsed.outputFields,
+    rawBytes: Buffer.byteLength(raw),
     rawSha256: sha256(raw),
     credentialRedacted: true,
   };
@@ -83,7 +91,7 @@ async function fetchWithRetry(url, format, fetchImpl) {
   throw new Error("Daejeon coverage API transport failure");
 }
 
-function parseXmlEvidence(raw, expectedFields) {
+function parseXmlEvidence(raw, expectedFields, validateItem) {
   const parsed = scanXmlStructure(raw);
   const resultCode = xmlScalar(raw, "resultCode");
   if (resultCode !== "00") {
@@ -96,11 +104,39 @@ function parseXmlEvidence(raw, expectedFields) {
   if (!["response", "header", "resultCode", "body"].every((tag) => tags.has(tag))) {
     throw new Error("Daejeon coverage API schema mismatch: XML envelope");
   }
-  const outputFields = expectedFields.filter((field) => tags.has(field));
-  if (parsed.itemCount > 0 && outputFields.length !== expectedFields.length) {
-    throw new Error("Daejeon coverage API schema mismatch: XML item fields");
+  const items = [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map((match) => match[1]);
+  if (items.length === 0 || items.length !== parsed.itemCount) {
+    throw new Error("Daejeon coverage API schema mismatch: XML items");
   }
-  return { providerResultCode: "00", rowCount: parsed.itemCount, outputFields };
+  for (const item of items) {
+    const values = Object.fromEntries(expectedFields.map((field) => [field, xmlScalar(item, field)]));
+    if (Object.values(values).some((value) => value == null)) {
+      throw new Error("Daejeon coverage API schema mismatch: XML item fields");
+    }
+    validateItem?.(values);
+  }
+  return { providerResultCode: "00", rowCount: items.length, outputFields: [...expectedFields] };
+}
+
+function validateDistanceFareItem({ distfloat, fee, min, sec }) {
+  const distanceText = distfloat?.trim() ?? "";
+  const fareText = fee?.trim() ?? "";
+  const minutesText = min?.trim() ?? "";
+  const secondsText = sec?.trim() ?? "";
+  const distance = Number(distanceText);
+  const fare = Number(fareText);
+  const minutes = Number(minutesText);
+  const seconds = Number(secondsText);
+  if (!/^\d+(?:\.\d+)?$/.test(distanceText)
+    || !/^\d+$/.test(fareText)
+    || !/^\d+$/.test(minutesText)
+    || !/^\d+$/.test(secondsText)
+    || !Number.isFinite(distance) || distance <= 0
+    || !Number.isInteger(fare) || fare < 0
+    || !Number.isInteger(minutes) || minutes < 0
+    || !Number.isInteger(seconds) || seconds < 0 || seconds > 59) {
+    throw new Error("Daejeon coverage API schema mismatch: distance/fare values");
+  }
 }
 
 function xmlScalar(raw, field) {

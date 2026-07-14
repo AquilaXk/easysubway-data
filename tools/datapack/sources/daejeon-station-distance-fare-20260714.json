@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "daejeon-coverage-api-probe-evidence",
+  "sourceId": "daejeon-station-distance-fare",
+  "observedAt": "2026-07-14T11:02:59.086Z",
+  "endpoint": "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
+  "httpStatus": 200,
+  "providerResultCode": "00",
+  "schemaStatus": "EXPECTED",
+  "rowCount": 1,
+  "outputFields": [
+    "distfloat",
+    "fee",
+    "min",
+    "sec"
+  ],
+  "rawBytes": 251,
+  "rawSha256": "2c1fbf407fe70b53b4f1ea9db174b65a245e80e65746078dd0d368bb518cfcb7",
+  "credentialRedacted": true
+}

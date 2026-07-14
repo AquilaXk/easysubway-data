@@ -3277,15 +3277,16 @@
         "operatorIds": ["daejeon-transportation"],
         "lineIds": ["line-7051a9c2525c"]
       },
-      "displayName": "대전교통공사_대전도시철도 1호선 역간 소요시간·거리·요금",
-      "detailUrl": "https://www.data.go.kr/data/15082979/fileData.do",
-      "requestUrl": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+      "displayName": "대전교통공사_역간 소요시간/거리/요금 조회 서비스",
+      "detailUrl": "https://www.data.go.kr/data/15158794/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
       "operation": {
         "method": "GET",
-        "endpoint": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+        "endpoint": "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
         "auth": { "env": "DATA_GO_KR_SERVICE_KEY", "placement": "query", "parameter": "serviceKey" },
-        "requiredParameters": ["serviceKey", "page", "perPage", "returnType"],
-        "responseEnvelope": "{currentCount,data[],matchCount,page,perPage,totalCount}",
+        "requiredParameters": ["serviceKey", "strstnno", "endstnno"],
+        "responseEnvelope": "response.header + response.body.items.item",
+        "responseFields": ["distfloat", "fee", "min", "sec"],
         "runner": {
           "command": "node tools/datapack/probe-daejeon-coverage-api.mjs",
           "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_API_PROBE_SOURCE_ID", "DAEJEON_API_PROBE_OUTPUT"]
@@ -3293,23 +3294,48 @@
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "application_complete_activation_pending",
-      "admissionStatus": "provider_activation_required_before_schema_admission",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "validated_live_schema_admitted",
       "serviceKeyHandling": "offline_probe_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
         "retrievedAt": "2026-07-14",
-        "endpoint": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+        "endpoint": "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
         "usePermissionRange": "이용허락범위 제한 없음",
-        "formats": ["JSON", "XML"],
-        "outputFields": [],
-        "liveValidation": { "attempts": 2, "httpStatus": 401, "admitted": false },
+        "formats": ["XML"],
+        "outputFields": ["distfloat", "fee", "min", "sec"],
+        "liveValidation": {
+          "observedAt": "2026-07-14T11:02:59.086Z",
+          "httpStatus": 200,
+          "providerResultCode": "00",
+          "schemaStatus": "EXPECTED",
+          "rowCount": 1,
+          "outputFields": ["distfloat", "fee", "min", "sec"],
+          "rawBytes": 251,
+          "rawSha256": "2c1fbf407fe70b53b4f1ea9db174b65a245e80e65746078dd0d368bb518cfcb7",
+          "evidenceArtifact": "tools/datapack/sources/daejeon-station-distance-fare-20260714.json",
+          "admitted": true
+        },
+        "coverageAssessment": {
+          "state": "MISSING",
+          "reasonCode": "LIVE_SCHEMA_ADMITTED_FULL_OD_MAPPING_NOT_IMPLEMENTED"
+        },
+        "historicalSources": [
+          {
+            "detailUrl": "https://www.data.go.kr/data/15082979/fileData.do",
+            "endpoint": "https://api.odcloud.kr/api/15082979/v1/uddi:bdfe4740-2e2b-4663-94af-b86de0e6e9de",
+            "observedAt": "2026-07-14",
+            "attempts": 2,
+            "httpStatus": 401,
+            "reasonCode": "SUPERSEDED_FOR_LIVE_PROBE",
+            "runtimeEligible": false
+          }
+        ],
         "coverageLimitations": [
-          "대전도시철도 1호선의 역간 소요시간·거리·요금 자료",
-          "2026-07-14 credential-safe probe와 bounded retry가 모두 HTTP 401로 종료됨"
+          "대전도시철도 1호선의 역간 소요시간·거리·요금 자료"
         ]
       },
-      "nextAction": "활용신청 전파 후 tracked probe로 실제 row field와 hash를 확보한 뒤 topology source admission을 진행한다"
+      "nextAction": "전체 OD와 canonical station mapping을 별도 이슈에서 검증한 뒤 topology materialization을 판정한다."
     },
     {
       "id": "daejeon-braille-guide-map",
