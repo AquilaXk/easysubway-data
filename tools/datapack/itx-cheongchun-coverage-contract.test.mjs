@@ -3,8 +3,12 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
+const stationSequenceEvidence = JSON.parse(await readFile(
+  new URL("./sources/korail-itx-cheongchun-station-sequence-20260713.json", import.meta.url),
+  "utf8",
+));
 
-test("ITX-청춘 coverage contract는 OD 성공을 stop-sequence 지원으로 과장하지 않는다", () => {
+test("ITX-청춘 coverage contract는 sequence 성공을 timetable 시각 지원으로 과장하지 않는다", () => {
   assert.deepEqual(contract.coverageStates, {
     station_line_membership: "SUPPORTED",
     route_graph_topology: "MISSING",
@@ -15,8 +19,17 @@ test("ITX-청춘 coverage contract는 OD 성공을 stop-sequence 지원으로 �
   assert.equal(contract.officialEvidence.tagoTrainOd.query.kricServiceDayCode, "8");
   assert.equal(contract.officialEvidence.tagoTrainOd.limitation, "OD 결과는 완전한 trip stop sequence가 아니다.");
   assert.equal(contract.officialEvidence.kricUrbanTimetable.trainNumberJoinCount, 0);
-  assert.equal(contract.officialEvidence.kricStationTimetable.providerResultCode, "30");
-  assert.equal(contract.materialization.status, "MISSING_STATION_LEVEL_ITX_ROWS");
+  assert.equal(contract.officialEvidence.kricStationTimetable.providerResultCode, "00");
+  assert.equal(contract.officialEvidence.kricStationTimetable.tagoTrainNumberJoinCount, 0);
+  assert.deepEqual(contract.officialEvidence.korailStationSequence.routeCodeMapping,
+    stationSequenceEvidence.routeCodeMapping);
+  assert.equal(contract.officialEvidence.korailStationSequence.trainCount, stationSequenceEvidence.trainCount);
+  assert.equal(contract.officialEvidence.korailStationSequence.stationSequenceRowCount,
+    stationSequenceEvidence.stationSequenceRowCount);
+  assert.equal(contract.officialEvidence.korailStationSequence.missingTimestampStopCount,
+    stationSequenceEvidence.materialization.missingTimestampStopCount);
+  assert.equal(contract.officialEvidence.korailStationSequence.disposition, "SUPPORTED_FOR_CANONICAL_STOP_SEQUENCE_ONLY");
+  assert.equal(contract.materialization.status, "MISSING_STATION_TIMES");
   assert.equal(contract.claimGate.supportClaimAllowed, false);
   assert.equal(contract.claimGate.currentStatus, "NO_GO");
 });
@@ -29,6 +42,8 @@ test("ITX-청춘 evidence는 공식 URL·schema/hash·재검토 시점을 갖고
   }
   assert.match(contract.officialEvidence.kricRouteRoster.schemaFingerprint, /^[a-f0-9]{64}$/);
   assert.match(contract.officialEvidence.tagoTrainOd.evidenceHash, /^[a-f0-9]{64}$/);
+  assert.equal(contract.officialEvidence.korailStationSequence.evidenceArtifact,
+    "tools/datapack/sources/korail-itx-cheongchun-station-sequence-20260713.json");
   assert.equal(new Date(contract.freshness.nextReviewAt).toISOString(), contract.freshness.nextReviewAt);
   assert.doesNotMatch(serialized, /serviceKey=|KRIC_SERVICE_KEY|DATA_GO_KR_SERVICE_KEY/);
 });

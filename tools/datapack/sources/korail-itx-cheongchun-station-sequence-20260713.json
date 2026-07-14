@@ -1,0 +1,1508 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "korail-itx-cheongchun-station-sequence-evidence",
+  "serviceId": "ITX_CHEONGCHUN",
+  "canonicalLineId": "line-54a7b980b7c3",
+  "servicePattern": "EXPRESS",
+  "officialSourceUrl": "https://www.data.go.kr/data/15125762/openapi.do",
+  "observedAt": "2026-07-14T06:17:17.510Z",
+  "runDate": "20260713",
+  "kricServiceDayCode": "8",
+  "providerResultCode": "0",
+  "schemaStatus": "EXPECTED",
+  "routeCodeMapping": {
+    "providerCode": "14",
+    "providerName": "경춘선"
+  },
+  "stopCodeMappings": [
+    {
+      "providerCode": "01",
+      "providerName": "시발"
+    },
+    {
+      "providerCode": "05",
+      "providerName": "종착"
+    },
+    {
+      "providerCode": "11",
+      "providerName": "여객승하차"
+    }
+  ],
+  "trainNumberFilter": {
+    "sourceArtifactKind": "tago-itx-cheongchun-od-evidence",
+    "trainNumberCount": 18,
+    "evidenceHash": "dab65b434470cd5adecb12529700a81a708af152bcd04f869b66644f637929ae"
+  },
+  "trainCount": 18,
+  "stationSequenceRowCount": 113,
+  "stopTimeCount": 0,
+  "trainNumbers": [
+    "2001",
+    "2003",
+    "2005",
+    "2007",
+    "2009",
+    "2011",
+    "2013",
+    "2015",
+    "2017",
+    "2019",
+    "2021",
+    "2023",
+    "2025",
+    "2027",
+    "2029",
+    "2031",
+    "2033",
+    "2035"
+  ],
+  "stationMappings": [
+    {
+      "providerStationCode": "3900388",
+      "providerStationName": "청량리",
+      "canonicalStationId": "station-b819702fa7d9",
+      "lineSequence": 1
+    },
+    {
+      "providerStationCode": "3900898",
+      "providerStationName": "상봉",
+      "canonicalStationId": "station-83bcb1eae340",
+      "lineSequence": 4
+    },
+    {
+      "providerStationCode": "3900423",
+      "providerStationName": "퇴계원",
+      "canonicalStationId": "station-b52ac4dfe64e",
+      "lineSequence": 9
+    },
+    {
+      "providerStationCode": "3900424",
+      "providerStationName": "사릉",
+      "canonicalStationId": "station-2ccf5647f7f7",
+      "lineSequence": 10
+    },
+    {
+      "providerStationCode": "3900426",
+      "providerStationName": "평내호평",
+      "canonicalStationId": "station-f3d9c93ba7d6",
+      "lineSequence": 12
+    },
+    {
+      "providerStationCode": "3900427",
+      "providerStationName": "마석",
+      "canonicalStationId": "station-661ff65ea040",
+      "lineSequence": 14
+    },
+    {
+      "providerStationCode": "3900429",
+      "providerStationName": "청평",
+      "canonicalStationId": "station-6c1f50a5aa3b",
+      "lineSequence": 16
+    },
+    {
+      "providerStationCode": "3900431",
+      "providerStationName": "가평",
+      "canonicalStationId": "station-4f6045ff9103",
+      "lineSequence": 18
+    },
+    {
+      "providerStationCode": "3900434",
+      "providerStationName": "강촌",
+      "canonicalStationId": "station-30ba86472e55",
+      "lineSequence": 21
+    },
+    {
+      "providerStationCode": "3900436",
+      "providerStationName": "남춘천",
+      "canonicalStationId": "station-d5e344125b52",
+      "lineSequence": 23
+    },
+    {
+      "providerStationCode": "3900437",
+      "providerStationName": "춘천",
+      "canonicalStationId": "station-dd14cfb89cbc",
+      "lineSequence": 24
+    }
+  ],
+  "stationSequences": [
+    {
+      "trainNumber": "2001",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2003",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2005",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2007",
+      "stops": [
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2009",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2011",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2013",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2015",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900429",
+          "providerStationName": "청평",
+          "canonicalStationId": "station-6c1f50a5aa3b",
+          "lineSequence": 16,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900434",
+          "providerStationName": "강촌",
+          "canonicalStationId": "station-30ba86472e55",
+          "lineSequence": 21,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2017",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2019",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2021",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900429",
+          "providerStationName": "청평",
+          "canonicalStationId": "station-6c1f50a5aa3b",
+          "lineSequence": 16,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900434",
+          "providerStationName": "강촌",
+          "canonicalStationId": "station-30ba86472e55",
+          "lineSequence": 21,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2023",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2025",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900898",
+          "providerStationName": "상봉",
+          "canonicalStationId": "station-83bcb1eae340",
+          "lineSequence": 4,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900423",
+          "providerStationName": "퇴계원",
+          "canonicalStationId": "station-b52ac4dfe64e",
+          "lineSequence": 9,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900424",
+          "providerStationName": "사릉",
+          "canonicalStationId": "station-2ccf5647f7f7",
+          "lineSequence": 10,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 9,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 10,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 11,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2027",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900898",
+          "providerStationName": "상봉",
+          "canonicalStationId": "station-83bcb1eae340",
+          "lineSequence": 4,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900423",
+          "providerStationName": "퇴계원",
+          "canonicalStationId": "station-b52ac4dfe64e",
+          "lineSequence": 9,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900424",
+          "providerStationName": "사릉",
+          "canonicalStationId": "station-2ccf5647f7f7",
+          "lineSequence": 10,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 9,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 10,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 11,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2029",
+      "stops": [
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900898",
+          "providerStationName": "상봉",
+          "canonicalStationId": "station-83bcb1eae340",
+          "lineSequence": 4,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900423",
+          "providerStationName": "퇴계원",
+          "canonicalStationId": "station-b52ac4dfe64e",
+          "lineSequence": 9,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900424",
+          "providerStationName": "사릉",
+          "canonicalStationId": "station-2ccf5647f7f7",
+          "lineSequence": 10,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 9,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 10,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 11,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2031",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900429",
+          "providerStationName": "청평",
+          "canonicalStationId": "station-6c1f50a5aa3b",
+          "lineSequence": 16,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900434",
+          "providerStationName": "강촌",
+          "canonicalStationId": "station-30ba86472e55",
+          "lineSequence": 21,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 8,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 9,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2033",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900427",
+          "providerStationName": "마석",
+          "canonicalStationId": "station-661ff65ea040",
+          "lineSequence": 14,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 7,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    },
+    {
+      "trainNumber": "2035",
+      "stops": [
+        {
+          "providerSequence": 2,
+          "providerStationCode": "3900388",
+          "providerStationName": "청량리",
+          "canonicalStationId": "station-b819702fa7d9",
+          "lineSequence": 1,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 3,
+          "providerStationCode": "3900426",
+          "providerStationName": "평내호평",
+          "canonicalStationId": "station-f3d9c93ba7d6",
+          "lineSequence": 12,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 4,
+          "providerStationCode": "3900431",
+          "providerStationName": "가평",
+          "canonicalStationId": "station-4f6045ff9103",
+          "lineSequence": 18,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 5,
+          "providerStationCode": "3900436",
+          "providerStationName": "남춘천",
+          "canonicalStationId": "station-d5e344125b52",
+          "lineSequence": 23,
+          "stopCode": "11",
+          "stopName": "여객승하차",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        },
+        {
+          "providerSequence": 6,
+          "providerStationCode": "3900437",
+          "providerStationName": "춘천",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "lineSequence": 24,
+          "stopCode": "05",
+          "stopName": "종착",
+          "arrivalTimestamp": null,
+          "departureTimestamp": null
+        }
+      ]
+    }
+  ],
+  "materialization": {
+    "status": "MISSING_STATION_TIMES",
+    "missingTimestampStopCount": 113
+  },
+  "operations": [
+    {
+      "operation": "codes2",
+      "endpoint": "https://apis.data.go.kr/B551457/run/v2/codes2",
+      "pageCount": 1,
+      "totalCount": 164,
+      "providerResultCode": "0",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "453290eaa4acd2cc0cacebeacc32182ab697a7237513f83d744bbd0ac1496b10"
+    },
+    {
+      "operation": "codes2",
+      "endpoint": "https://apis.data.go.kr/B551457/run/v2/codes2",
+      "pageCount": 1,
+      "totalCount": 14,
+      "providerResultCode": "0",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "4ccda5560283d48df78cbb146feac7c101d230416593dc0cd405926c18afea83"
+    },
+    {
+      "operation": "travelerTrainRunPlan2",
+      "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2",
+      "pageCount": 1,
+      "totalCount": 733,
+      "providerResultCode": "0",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "31e90b0cbddf0243bab8f54800ebdfa970b2375c6a8c796c2f952776088abdc0"
+    },
+    {
+      "operation": "travelerTrainRunInfo2",
+      "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
+      "pageCount": 1,
+      "totalCount": 280,
+      "providerResultCode": "0",
+      "schemaStatus": "EXPECTED",
+      "rawResponseSha256": "ff64cf6683de1fbc089dde751af198b4745bbd71260b3867cef69f615bafce4c"
+    }
+  ],
+  "transitTrips": [],
+  "transitStopTimes": [],
+  "evidenceHash": "5a5c2d511bb1d3a624ada2ac9ef20681592b73304f9dab19af061d26c858e26e",
+  "credentialRedacted": true
+}

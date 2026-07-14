@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   assertCompleteKricCollection,
   buildCollectionContext,
+  buildCollectionContextFromPack,
   filterRowsByTrainNumbers,
   redactKricCredential,
   validateItxOdJoin,
@@ -72,6 +73,24 @@ test("canonical fixture가 있으면 provider의 중복 순번 대신 canonical 
   assert.equal(ctx.lineSequenceByStationLine["station-mangu|gyeongchun"], 6);
 });
 
+test("bundled pack에서 #2097 canonical 경춘선 station context를 만든다", () => {
+  const roster = {
+    lnCd: "K2",
+    stations: [
+      { stinConsOrdr: 1, stinCd: "K117", railOprIsttCd: "KR", stinNm: "청량리" },
+      { stinConsOrdr: 25, stinCd: "K140", railOprIsttCd: "KR", stinNm: "춘천" },
+    ],
+  };
+  const ctx = buildCollectionContextFromPack(
+    roster,
+    "line-54a7b980b7c3",
+    "apps/mobile/assets/datapacks/capital.sqlite.gz",
+  );
+
+  assert.equal(ctx.stationIdByProviderStation["KR|K2|K117"], "station-b819702fa7d9");
+  assert.equal(ctx.stationIdByProviderStation["KR|K2|K140"], "station-dd14cfb89cbc");
+});
+
 test("TAGO ITX train number는 KRIC prefix·leading zero를 정규화해 EXPRESS rows만 남긴다", () => {
   const rows = [
     { trnNo: "K2001", servicePattern: "LOCAL" },
@@ -96,8 +115,11 @@ test("KRIC provider 실패·schema mismatch·부분 수집을 성공 artifact로
     [{ trnNo: "2001" }],
   );
   assert.throws(
-    () => assertCompleteKricCollection(1, 25),
-    /failed requests: 1\/25/,
+    () => assertCompleteKricCollection(1, 25, [{
+      requestKey: "stationTimetable|KR|K115|8",
+      error: "KRIC timetable provider resultCode 30",
+    }]),
+    /failed requests: 1\/25; diagnostics=KRIC timetable provider resultCode 30/,
   );
 });
 

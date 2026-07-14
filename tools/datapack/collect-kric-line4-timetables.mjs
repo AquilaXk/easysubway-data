@@ -12,6 +12,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { buildKricLine4CollectionPlan } from "./plan-kric-line4-collection.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
+import { cleanupPackDir, openPack } from "../route-map/pack-io.mjs";
 
 const SERVICE_ID_BY_DAY_CD = { "8": "weekday-kric", "7": "saturday-kric", "9": "holiday-kric" };
 
@@ -37,6 +38,26 @@ export function buildCollectionContext(roster, lineId, fixture = null) {
     routeIdByLineDirection: { [`${lineId}|up`]: `route-${lineId}-up`, [`${lineId}|down`]: `route-${lineId}-down` },
     serviceIdByDayCd: SERVICE_ID_BY_DAY_CD,
   };
+}
+
+export function buildCollectionContextFromPack(roster, lineId, packPath) {
+  const opened = openPack(packPath, "kric-canonical-");
+  try {
+    const rows = opened.db.prepare(`
+      SELECT stations.id, stations.name_ko, station_lines.line_sequence
+      FROM station_lines
+      JOIN stations ON stations.id = station_lines.station_id
+      WHERE station_lines.line_id = ?
+      ORDER BY station_lines.line_sequence, stations.id
+    `).all(lineId);
+    return buildCollectionContext(roster, lineId, { packs: [{
+      stations: rows.map(({ id, name_ko }) => ({ id, nameKo: name_ko })),
+      stationLines: rows.map(({ id, line_sequence }) => ({ stationId: id, lineId, lineSequence: line_sequence })),
+    }] });
+  } finally {
+    opened.db.close();
+    cleanupPackDir(opened.dir);
+  }
 }
 
 export function filterRowsByTrainNumbers(rows, trainNumbers, servicePattern = "EXPRESS") {
@@ -122,9 +143,11 @@ export function validateKricTimetablePayload(payload) {
   return payload.body;
 }
 
-export function assertCompleteKricCollection(failedRequestCount, requestCount) {
+export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
-    throw new Error(`KRIC timetable collection failed requests: ${failedRequestCount}/${requestCount}`);
+    const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
+    const suffix = diagnostics.length === 0 ? "" : `; diagnostics=${diagnostics.join(",")}`;
+    throw new Error(`KRIC timetable collection failed requests: ${failedRequestCount}/${requestCount}${suffix}`);
   }
 }
 
@@ -185,7 +208,12 @@ async function main() {
     includeExpress: args.express !== "false",
     operation: args.operation,
   });
-  const context = buildCollectionContext(roster, lineId, fixture);
+  if (fixture && args["canonical-pack"]) {
+    throw new Error("use only one of --canonical-fixture or --canonical-pack");
+  }
+  const context = args["canonical-pack"]
+    ? buildCollectionContextFromPack(roster, lineId, args["canonical-pack"])
+    : buildCollectionContext(roster, lineId, fixture);
 
   const intermediate = [];
   const perRequest = [];
@@ -205,7 +233,7 @@ async function main() {
     }
   }
 
-  assertCompleteKricCollection(failed, plan.requestCount);
+  assertCompleteKricCollection(failed, plan.requestCount, perRequest);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   const reconstructionRows = trainNumberEvidence
     ? filterRowsByTrainNumbers(intermediate, trainNumberEvidence.trainNumbers)
