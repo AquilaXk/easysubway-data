@@ -60,6 +60,7 @@ function validateQuotes(document, admissions) {
 function applyQuotes(sqlitePath, quotes) {
   const database = new DatabaseSync(sqlitePath);
   try {
+    rejectNewerCatalogVersion(database);
     database.exec("PRAGMA foreign_keys = ON");
     database.exec(`
       CREATE TABLE IF NOT EXISTS official_od_fare_quotes (
@@ -112,6 +113,15 @@ function applyQuotes(sqlitePath, quotes) {
     assertIntegrity(database);
   } finally {
     database.close();
+  }
+}
+
+function rejectNewerCatalogVersion(database) {
+  const current = database.prepare("PRAGMA user_version").get().user_version;
+  if (current > BUNDLED_CATALOG_USER_VERSION) {
+    throw new Error(
+      `official OD fare postprocessor does not support catalog user_version ${current} newer than ${BUNDLED_CATALOG_USER_VERSION}`,
+    );
   }
 }
 

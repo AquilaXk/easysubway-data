@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 
 const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
 const targets = JSON.parse(await readFile(new URL("./nationwide-coverage-targets.json", import.meta.url), "utf8"));
@@ -9,6 +11,49 @@ const stationSequenceEvidence = JSON.parse(await readFile(
   new URL("./sources/korail-itx-cheongchun-station-sequence-20260713.json", import.meta.url),
   "utf8",
 ));
+const admittedFixtureUrl = new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url);
+
+test("deterministic ADMITTED fixture는 test-only이며 production evidence에 연결되지 않는다", async () => {
+  let fixtureBytes = null;
+  try {
+    fixtureBytes = await readFile(admittedFixtureUrl);
+  } catch {
+    // 아래 assertion이 누락된 fixture를 계약 실패로 보고한다.
+  }
+  assert.ok(fixtureBytes, "test-only ITX-청춘 ADMITTED fixture가 필요하다");
+
+  const fixture = JSON.parse(fixtureBytes);
+  const fixtureSha256 = createHash("sha256").update(fixtureBytes).digest("hex");
+  assert.equal(fixture.fixtureClass, "TEST_ONLY");
+  assert.equal(fixture.serviceClass, "ITX_CHEONGCHUN");
+  assert.equal(fixture.admissionStatus, "ADMITTED");
+  assert.equal(fixture.admissionEligible, true);
+  assert.deepEqual(fixture.timetableArtifactIdentity, {
+    id: "test-only-itx-cheongchun-admitted-v1",
+    sha256Source: "FIXTURE_FILE_BYTES",
+  });
+  assert.deepEqual(fixture.canonicalPackIdentity, {
+    id: "capital",
+    sha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+  });
+
+  const forbiddenProductionSurfaces = [
+    "./source-inventory.json",
+    "./release/candidate-build-spec.json",
+    "./release/capital-production-reviewed-pack.json",
+    "../../apps/mobile/assets/datapacks/source-inventory.json",
+    "../../apps/mobile/assets/datapacks/index.json",
+    "../../apps/mobile/release/production-datapack-scope.json",
+  ];
+  for (const relativePath of forbiddenProductionSurfaces) {
+    const productionText = await readFile(new URL(relativePath, import.meta.url), "utf8");
+    assert.doesNotMatch(productionText, /test-only-itx-cheongchun-admitted\.json/);
+    assert.equal(productionText.includes(fixture.timetableArtifactIdentity.id), false,
+      `${relativePath}에 test-only fixture artifact ID가 연결됐다`);
+    assert.equal(productionText.includes(fixtureSha256), false, `${relativePath}에 test-only fixture hash가 연결됐다`);
+  }
+});
 
 test("ITX-청춘 coverage contract는 sequence 성공을 timetable 시각 지원으로 과장하지 않는다", () => {
   assert.deepEqual(contract.searchScopePolicy, {
@@ -91,6 +136,13 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
     officialSourceUrl: "https://www.data.go.kr/data/15125762/openapi.do",
     endpoint: "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
     observedAt: "2026-07-14T08:35:44.292Z",
+    artifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
+    canonicalPackIdentity: {
+      id: "capital",
+      sourceIssue: 2097,
+      sha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+      sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+    },
     selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
     admissionStatus: "MISSING",
     admissionEligible: false,
@@ -143,6 +195,27 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
     nextReviewAt: "2026-07-20T00:00:00.000Z",
     credentialRedacted: true,
   });
+});
+
+test("ITX-청춘 admission evidence는 #2097 canonical bundled pack bytes에 결합된다", async () => {
+  const canonicalPackBytes = await readFile(new URL(
+    "../../apps/mobile/assets/datapacks/capital.sqlite.gz",
+    import.meta.url,
+  ));
+  const canonicalPackSha256 = createHash("sha256").update(canonicalPackBytes).digest("hex");
+  const canonicalPackSqliteSha256 = createHash("sha256")
+    .update(gunzipSync(canonicalPackBytes))
+    .digest("hex");
+  assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
+    id: "capital",
+    sourceIssue: 2097,
+    sha256: canonicalPackSha256,
+    sqliteSha256: canonicalPackSqliteSha256,
+  });
+  assert.equal(
+    contract.officialEvidence.korailCompletenessAdmission.artifactId,
+    "itx-cheongchun-completeness-admission-20260714T083544292Z",
+  );
 });
 
 test("ITX-청춘 evidence는 공식 URL·schema/hash·재검토 시점을 갖고 credential을 포함하지 않는다", () => {

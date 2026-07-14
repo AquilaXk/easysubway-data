@@ -118,6 +118,7 @@ function applyHints(sqlitePath, hints) {
   const canonical = canonicalHints(hints);
   const database = new DatabaseSync(sqlitePath);
   try {
+    rejectNewerCatalogVersion(database);
     database.exec("PRAGMA foreign_keys = ON");
     ensureSchema(database);
     if (JSON.stringify(storedHints(database)) === JSON.stringify(canonical)) {
@@ -150,6 +151,15 @@ function applyHints(sqlitePath, hints) {
     assertIntegrity(database);
   } finally {
     database.close();
+  }
+}
+
+function rejectNewerCatalogVersion(database) {
+  const current = database.prepare("PRAGMA user_version").get().user_version;
+  if (current > BUNDLED_CATALOG_USER_VERSION) {
+    throw new Error(
+      `car door hint postprocessor does not support catalog user_version ${current} newer than ${BUNDLED_CATALOG_USER_VERSION}`,
+    );
   }
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -22,6 +22,7 @@ import {
 } from "./lib/official-od-fare-evidence.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const validatedItxAdmissionPacks = new WeakSet();
 const productionMinimumTableRowNames = [
   "stations",
   "station_lines",
@@ -177,16 +178,30 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
     throw new Error("exactly one of --fixture or --build-spec is required");
   }
   if (fixtureArg != null) {
+    const fixture = JSON.parse(await readFile(path.resolve(root, fixtureArg), "utf8"));
+    rejectTestOnlyBuildInput(fixture);
+    if (args["test-only-itx-admission"] != null) {
+      const admissionPath = await resolveBuildInputPath(
+        args["test-only-itx-admission"],
+        "testOnlyItxAdmission",
+      );
+      const admissionBytes = await readFile(admissionPath);
+      await materializeTestOnlyItxAdmission(fixture, JSON.parse(admissionBytes), admissionBytes);
+    }
     return {
-      fixture: JSON.parse(await readFile(path.resolve(root, fixtureArg), "utf8")),
+      fixture,
       candidateBuild: null,
     };
+  }
+  if (args["test-only-itx-admission"] != null) {
+    throw new Error("--test-only-itx-admission cannot be used with --build-spec");
   }
 
   const buildSpecPath = await resolveBuildInputPath(buildSpecArg, "buildSpec");
   const buildSpecBytes = await readFile(buildSpecPath);
   const buildSpec = JSON.parse(buildSpecBytes);
   const fixture = JSON.parse(await readFile(await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath"), "utf8"));
+  rejectTestOnlyBuildInput(fixture);
   const officialOdFareEvidence = await validateCandidateBuildSpec(
     buildSpec,
     fixture,
@@ -197,6 +212,163 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
     fixture,
     candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence),
   };
+}
+
+async function materializeTestOnlyItxAdmission(fixture, admission, admissionBytes) {
+  const freshUntil = validateTestOnlyItxAdmission(admission);
+  const canonicalIdentity = await validateTestOnlyItxCanonicalIdentity(admission);
+  const pack = testOnlyItxTargetPack(fixture, canonicalIdentity);
+  const lineId = requiredString(admission.canonicalLineId, "testOnlyItxAdmission.canonicalLineId");
+  const admittedStationIds = validateTestOnlyItxStations(pack, admission, lineId);
+  const timetableHash = sha256(admissionBytes);
+  const { trips, stopTimes, edges } = deriveTestOnlyItxRows(
+    admission,
+    lineId,
+    admittedStationIds,
+    timetableHash,
+  );
+
+  pack.serviceCalendars = [...(pack.serviceCalendars ?? []), ...(admission.serviceCalendars ?? [])];
+  pack.transitRoutes = [...(pack.transitRoutes ?? []), ...(admission.transitRoutes ?? [])];
+  pack.transitTrips = [...(pack.transitTrips ?? []), ...trips];
+  pack.transitStopTimes = [...(pack.transitStopTimes ?? []), ...stopTimes];
+  pack.networkEdges = [...(pack.networkEdges ?? []), ...edges];
+  pack.routeServiceArtifactEvidence = [{
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId: requiredString(
+      admission.timetableArtifactIdentity?.id,
+      "testOnlyItxAdmission.timetableArtifactIdentity.id",
+    ),
+    timetableArtifactSha256: timetableHash,
+    canonicalPackId: canonicalIdentity.id,
+    canonicalPackSha256: canonicalIdentity.sha256,
+    canonicalPackSqliteSha256: canonicalIdentity.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible: true,
+    freshUntil,
+    sourceIssue: 2116,
+  }];
+  validatedItxAdmissionPacks.add(pack);
+}
+
+function validateTestOnlyItxAdmission(admission) {
+  if (
+    admission?.fixtureClass !== "TEST_ONLY"
+    || admission?.artifactKind !== "deterministic-itx-cheongchun-admission-fixture"
+  ) {
+    throw new Error("--test-only-itx-admission requires the deterministic TEST_ONLY fixture");
+  }
+  if (
+    admission.serviceClass !== "ITX_CHEONGCHUN"
+    || admission.sourceIssue !== 2116
+    || admission.admissionStatus !== "ADMITTED"
+    || admission.admissionEligible !== true
+    || admission.freshness?.status !== "FRESH"
+  ) {
+    throw new Error("test-only ITX admission must be FRESH and ADMITTED by #2116");
+  }
+  const freshUntil = requiredUtcDateString(
+    admission.freshness.freshUntil,
+    "testOnlyItxAdmission.freshness.freshUntil",
+  );
+  if (Date.parse(freshUntil) <= candidateBuildNow().getTime()) {
+    throw new Error("test-only ITX admission freshness must be in the future");
+  }
+  return freshUntil;
+}
+
+async function validateTestOnlyItxCanonicalIdentity(admission) {
+  const canonicalIdentity = admission.canonicalPackIdentity;
+  const canonicalGzipBytes = await readFile(
+    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"),
+  );
+  if (
+    canonicalIdentity?.id !== "capital"
+    || canonicalIdentity.sha256 !== sha256(canonicalGzipBytes)
+    || canonicalIdentity.sqliteSha256 !== sha256(gunzipSync(canonicalGzipBytes))
+  ) {
+    throw new Error("test-only ITX admission canonical pack identity is stale");
+  }
+  if (admission.timetableArtifactIdentity?.sha256Source !== "FIXTURE_FILE_BYTES") {
+    throw new Error("test-only ITX timetable identity must hash fixture file bytes");
+  }
+  return canonicalIdentity;
+}
+
+function testOnlyItxTargetPack(fixture, canonicalIdentity) {
+  const pack = fixture.packs?.find(({ id }) => id === canonicalIdentity.id);
+  if (!pack || (pack.artifactKind ?? "fixture") !== "fixture") {
+    throw new Error("test-only ITX admission can materialize only into a fixture pack");
+  }
+  return pack;
+}
+
+function validateTestOnlyItxStations(pack, admission, lineId) {
+  const stationIds = new Set((pack.stations ?? []).map(({ id }) => id));
+  const routeMapMembers = new Set((pack.routeMapPositions ?? [])
+    .filter(({ lineId: memberLineId, region }) => memberLineId === lineId && region === "수도권")
+    .map(({ stationId }) => stationId));
+  const admittedStationIds = new Set((admission.canonicalStations ?? []).map((station) => {
+    if (station.capitalRouteMapMember !== true) {
+      throw new Error(`test-only ITX station is not a capital route-map member: ${station.canonicalStationId}`);
+    }
+    return requiredString(station.canonicalStationId, "testOnlyItxAdmission.canonicalStations[].canonicalStationId");
+  }));
+  for (const stationId of admittedStationIds) {
+    if (!stationIds.has(stationId) || !routeMapMembers.has(stationId)) {
+      throw new Error(`test-only ITX canonical station membership is missing: ${stationId}`);
+    }
+  }
+  return admittedStationIds;
+}
+
+function deriveTestOnlyItxRows(admission, lineId, admittedStationIds, timetableHash) {
+  const trips = admission.transitTrips ?? [];
+  const stopTimes = admission.transitStopTimes ?? [];
+  const edges = [];
+  for (const trip of trips) {
+    if (trip.serviceClass !== "ITX_CHEONGCHUN" || trip.servicePattern !== "EXPRESS") {
+      throw new Error(`test-only ITX trip must be EXPRESS: ${trip.id}`);
+    }
+    const tripStops = stopTimes
+      .filter(({ tripId }) => tripId === trip.id)
+      .sort((left, right) => left.stopSequence - right.stopSequence);
+    if (tripStops.length < 2) {
+      throw new Error(`test-only ITX trip must have at least two stops: ${trip.id}`);
+    }
+    for (const stop of tripStops) {
+      if (stop.lineId !== lineId || !admittedStationIds.has(stop.stationId)) {
+        throw new Error(`test-only ITX stop is outside admitted canonical scope: ${trip.id}`);
+      }
+    }
+    for (let index = 1; index < tripStops.length; index += 1) {
+      const from = tripStops[index - 1];
+      const to = tripStops[index];
+      const durationSeconds = to.arrivalSeconds - from.departureSeconds;
+      if (!Number.isInteger(durationSeconds) || durationSeconds <= 0) {
+        throw new Error(`test-only ITX stop times are not increasing: ${trip.id}`);
+      }
+      edges.push({
+        id: `itx-cheongchun:${trip.id}:${from.stopSequence}-${to.stopSequence}`,
+        fromNodeId: `${from.stationId}:${lineId}:EXPRESS`,
+        toNodeId: `${to.stationId}:${lineId}:EXPRESS`,
+        durationSeconds,
+        distanceMeters: 0,
+        edgeType: "RIDE",
+        servicePattern: "EXPRESS",
+        serviceClass: "ITX_CHEONGCHUN",
+        evidenceHash: timetableHash,
+        lastVerifiedAt: admission.freshness.observedAt,
+      });
+    }
+  }
+  return { trips, stopTimes, edges };
+}
+
+function rejectTestOnlyBuildInput(fixture) {
+  if (fixture?.fixtureClass === "TEST_ONLY") {
+    throw new Error("TEST_ONLY artifact cannot be used as datapack build input");
+  }
 }
 
 async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admissionBytes) {
@@ -1157,6 +1329,7 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           "trip_headsign",
           "direction_id",
           "service_pattern",
+          "service_class",
           "service_day_start_seconds",
         ],
         pack.transitTrips ?? [],
@@ -1167,6 +1340,7 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           row.tripHeadsign ?? "",
           row.directionId ?? "",
           row.servicePattern ?? "LOCAL",
+          row.serviceClass ?? "SUBWAY",
           row.serviceDayStartSeconds ?? 0,
         ],
       );
@@ -1214,6 +1388,35 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
         ["id", "feed_end_date"],
         pack.transitFeedInfo ?? [],
         (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
+      );
+      insertRows(
+        database,
+        "route_service_artifact_evidence",
+        [
+          "service_class",
+          "timetable_artifact_id",
+          "timetable_artifact_sha256",
+          "canonical_pack_id",
+          "canonical_pack_sha256",
+          "canonical_pack_sqlite_sha256",
+          "admission_status",
+          "admission_eligible",
+          "fresh_until",
+          "source_issue",
+        ],
+        pack.routeServiceArtifactEvidence ?? [],
+        (row) => [
+          requiredString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"),
+          requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"),
+          requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.timetableArtifactSha256"),
+          requiredString(row.canonicalPackId, "routeServiceArtifactEvidence.canonicalPackId"),
+          requiredString(row.canonicalPackSha256, "routeServiceArtifactEvidence.canonicalPackSha256"),
+          requiredString(row.canonicalPackSqliteSha256, "routeServiceArtifactEvidence.canonicalPackSqliteSha256"),
+          requiredString(row.admissionStatus, "routeServiceArtifactEvidence.admissionStatus"),
+          boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.admissionEligible"),
+          row.freshUntil ?? null,
+          requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.sourceIssue"),
+        ],
       );
       insertRows(
         database,
@@ -1345,6 +1548,7 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           "distance_meters",
           "edge_type",
           "service_pattern",
+          "service_class",
           "includes_stairs",
           "stair_access_state",
           "accessibility_status",
@@ -1374,6 +1578,7 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
             row.distanceMeters ?? 0,
             row.edgeType ?? "WALKWAY",
             row.servicePattern ?? "",
+            row.serviceClass ?? "SUBWAY",
             stairAccessState === "STAIR_ONLY" ? 1 : 0,
             stairAccessState,
             accessibilityStatus,
@@ -1920,6 +2125,7 @@ function validateFixture(fixture) {
   }
   for (const pack of fixture.packs) {
     validatePackIdentity(pack, "pack");
+    validateRouteServiceAdmission(pack);
     const artifactKind = pack.artifactKind ?? "fixture";
     if (artifactKind !== "fixture" && artifactKind !== "production") {
       throw new Error("pack.artifactKind must be fixture or production");
@@ -1944,6 +2150,28 @@ function validateFixture(fixture) {
       throw new Error(`${pack.id} requiredTables must be a non-empty array`);
     }
     validateMinimumTableRows(pack, artifactKind);
+  }
+}
+
+function validateRouteServiceAdmission(pack) {
+  const evidenceRows = (pack.routeServiceArtifactEvidence ?? [])
+    .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
+  if (evidenceRows.length > 1) {
+    throw new Error("pack must contain exactly one ITX_CHEONGCHUN evidence row");
+  }
+  const evidence = evidenceRows[0];
+  const itxRowCount = [
+    ...(pack.transitTrips ?? []),
+    ...(pack.networkEdges ?? []),
+  ].filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length;
+  if (evidence?.admissionStatus === "ADMITTED" && itxRowCount === 0) {
+    throw new Error("ADMITTED evidence requires ITX_CHEONGCHUN rows");
+  }
+  if (itxRowCount > 0 && (evidence?.admissionStatus !== "ADMITTED" || evidence?.admissionEligible !== true)) {
+    throw new Error("ITX_CHEONGCHUN rows require ADMITTED evidence");
+  }
+  if (itxRowCount > 0 && !validatedItxAdmissionPacks.has(pack)) {
+    throw new Error("ITX_CHEONGCHUN rows require a validated admission artifact materializer");
   }
 }
 

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "deterministic-itx-cheongchun-admission-fixture",
+  "fixtureClass": "TEST_ONLY",
+  "serviceClass": "ITX_CHEONGCHUN",
+  "canonicalLineId": "line-54a7b980b7c3",
+  "sourceIssue": 2116,
+  "admissionStatus": "ADMITTED",
+  "admissionEligible": true,
+  "freshness": {
+    "status": "FRESH",
+    "observedAt": "2026-07-14T00:00:00.000Z",
+    "freshUntil": "2099-01-01T00:00:00.000Z"
+  },
+  "timetableArtifactIdentity": {
+    "id": "test-only-itx-cheongchun-admitted-v1",
+    "sha256Source": "FIXTURE_FILE_BYTES"
+  },
+  "canonicalPackIdentity": {
+    "id": "capital",
+    "sha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    "sqliteSha256": "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03"
+  },
+  "canonicalStations": [
+    {
+      "providerStationId": "NAT130126",
+      "canonicalStationId": "station-b819702fa7d9",
+      "nameKo": "청량리",
+      "capitalRouteMapMember": true
+    },
+    {
+      "providerStationId": "NAT140873",
+      "canonicalStationId": "station-dd14cfb89cbc",
+      "nameKo": "춘천",
+      "capitalRouteMapMember": true
+    }
+  ],
+  "serviceCalendars": [
+    {
+      "serviceId": "test-only-weekday",
+      "monday": true,
+      "tuesday": true,
+      "wednesday": true,
+      "thursday": true,
+      "friday": true,
+      "saturday": false,
+      "sunday": false,
+      "startDate": "20260714",
+      "endDate": "20260721",
+      "timezone": "Asia/Seoul"
+    }
+  ],
+  "transitRoutes": [
+    {
+      "id": "test-only-itx-cheongchun-down",
+      "lineId": "line-54a7b980b7c3",
+      "routeShortName": "ITX-청춘",
+      "routeLongName": "청량리 → 춘천",
+      "directionName": "춘천 방면",
+      "timezone": "Asia/Seoul"
+    }
+  ],
+  "transitTrips": [
+    {
+      "id": "test-only-itx-cheongchun-2001",
+      "routeId": "test-only-itx-cheongchun-down",
+      "serviceId": "test-only-weekday",
+      "tripHeadsign": "station-dd14cfb89cbc",
+      "directionId": "down",
+      "servicePattern": "EXPRESS",
+      "serviceClass": "ITX_CHEONGCHUN"
+    }
+  ],
+  "transitStopTimes": [
+    {
+      "tripId": "test-only-itx-cheongchun-2001",
+      "stopSequence": 1,
+      "stationId": "station-b819702fa7d9",
+      "lineId": "line-54a7b980b7c3",
+      "arrivalSeconds": 28800,
+      "departureSeconds": 28860
+    },
+    {
+      "tripId": "test-only-itx-cheongchun-2001",
+      "stopSequence": 2,
+      "stationId": "station-dd14cfb89cbc",
+      "lineId": "line-54a7b980b7c3",
+      "arrivalSeconds": 33000,
+      "departureSeconds": 33060
+    }
+  ]
+}

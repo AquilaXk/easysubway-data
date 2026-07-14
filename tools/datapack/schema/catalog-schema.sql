@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 16;
+PRAGMA user_version = 18;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -94,10 +94,12 @@ CREATE TABLE transit_trips (
   trip_headsign TEXT NOT NULL DEFAULT '',
   direction_id TEXT NOT NULL DEFAULT '',
   service_pattern TEXT NOT NULL DEFAULT 'LOCAL',
+  service_class TEXT NOT NULL DEFAULT 'SUBWAY',
   service_day_start_seconds INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (route_id) REFERENCES transit_routes(id),
   FOREIGN KEY (service_id) REFERENCES service_calendars(service_id),
   CHECK (service_pattern IN ('LOCAL', 'EXPRESS')),
+  CHECK (service_class IN ('SUBWAY', 'ITX_CHEONGCHUN')),
   CHECK (service_day_start_seconds >= 0 AND service_day_start_seconds < 108000)
 );
 
@@ -209,6 +211,30 @@ CREATE TABLE transit_feed_info (
   CHECK (feed_end_date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]')
 );
 
+CREATE TABLE route_service_artifact_evidence (
+  service_class TEXT NOT NULL PRIMARY KEY,
+  timetable_artifact_id TEXT NOT NULL,
+  timetable_artifact_sha256 TEXT NOT NULL,
+  canonical_pack_id TEXT NOT NULL,
+  canonical_pack_sha256 TEXT NOT NULL,
+  canonical_pack_sqlite_sha256 TEXT NOT NULL,
+  admission_status TEXT NOT NULL,
+  admission_eligible INTEGER NOT NULL,
+  fresh_until TEXT,
+  source_issue INTEGER NOT NULL,
+  CHECK (service_class = 'ITX_CHEONGCHUN'),
+  CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (admission_status IN ('MISSING', 'ADMITTED')),
+  CHECK (admission_eligible IN (0, 1)),
+  CHECK (
+    (admission_status = 'ADMITTED' AND admission_eligible = 1 AND fresh_until IS NOT NULL)
+    OR (admission_status = 'MISSING' AND admission_eligible = 0)
+  ),
+  CHECK (source_issue = 2116)
+);
+
 CREATE TABLE realtime_provider_line_mappings (
   provider_id TEXT NOT NULL,
   provider_line_id TEXT NOT NULL,
@@ -254,6 +280,7 @@ CREATE TABLE network_edges (
   -- Mobile keeps old TRANSFER rows as inStationTransfer for saved/older packs.
   edge_type TEXT NOT NULL DEFAULT 'WALKWAY',
   service_pattern TEXT NOT NULL DEFAULT '',
+  service_class TEXT NOT NULL DEFAULT 'SUBWAY',
   includes_stairs INTEGER NOT NULL DEFAULT 0,
   stair_access_state TEXT NOT NULL DEFAULT 'UNKNOWN',
   accessibility_status TEXT NOT NULL DEFAULT 'UNKNOWN',
@@ -265,7 +292,8 @@ CREATE TABLE network_edges (
   verification_status TEXT NOT NULL DEFAULT 'UNKNOWN',
   facility_id TEXT,
   last_verified_at INTEGER,
-  evidence_hash TEXT NOT NULL DEFAULT ''
+  evidence_hash TEXT NOT NULL DEFAULT '',
+  CHECK (service_class IN ('SUBWAY', 'ITX_CHEONGCHUN'))
 );
 
 CREATE TABLE out_of_station_transfer_links (

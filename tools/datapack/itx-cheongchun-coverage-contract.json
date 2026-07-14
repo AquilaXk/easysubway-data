@@ -152,6 +152,13 @@
       "officialSourceUrl": "https://www.data.go.kr/data/15125762/openapi.do",
       "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
       "observedAt": "2026-07-14T08:35:44.292Z",
+      "artifactId": "itx-cheongchun-completeness-admission-20260714T083544292Z",
+      "canonicalPackIdentity": {
+        "id": "capital",
+        "sourceIssue": 2097,
+        "sha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+        "sqliteSha256": "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03"
+      },
       "selectedServiceDates": { "8": "20260715", "7": "20260718", "9": "20260719" },
       "admissionStatus": "MISSING",
       "admissionEligible": false,

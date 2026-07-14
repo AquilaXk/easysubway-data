@@ -884,10 +884,22 @@ function representativeRouteGraph(database) {
     undirectedAdjacency,
   );
 
+  const hasServiceClass = database
+    .prepare("PRAGMA table_info(network_edges)")
+    .all()
+    .some(({ name }) => name === "service_class");
   const edges = database
-    .prepare("SELECT id, from_node_id, to_node_id, edge_type, service_pattern FROM network_edges ORDER BY id")
+    .prepare(`
+      SELECT id, from_node_id, to_node_id, edge_type, service_pattern,
+             ${hasServiceClass ? "service_class" : "'SUBWAY' AS service_class"}
+      FROM network_edges
+      ORDER BY id
+    `)
     .all();
   for (const edge of edges) {
+    if (String(edge.service_class).toUpperCase() !== "SUBWAY") {
+      continue;
+    }
     const routeGraphEdgeType = routeGraphConnectivityEdgeType(edge.edge_type);
     if (routeGraphEdgeType === null) {
       continue;

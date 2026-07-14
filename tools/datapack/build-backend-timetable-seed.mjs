@@ -17,7 +17,9 @@
 // easysubway.timetable.seed.enabled)가 startup(Flyway 이후)에 TransactionTemplate으로 all-or-nothing 적재한다.
 // Flyway 데이터 마이그레이션을 쓰지 않는 이유: 배포 시 자동 적용이라 flag 게이트가 불가하고 ~67개 @SpringBootTest DB를
 // 오염시키며 버전 번호 경합이 있다. feed_end_date는 seed에 포함(--feed-end-date, 기본=--end-date; STALE 안전장치).
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { gunzipSync } from "node:zlib";
 
 const SECONDS_LIMIT_EXCLUSIVE = 108000; // V29 CHECK: arrival/departure BETWEEN 0 AND 107999
 
@@ -47,12 +49,20 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
 
   const tripIds = validateTrips(trips);
   validateStopTimes(stopTimes, tripIds);
+  const evidence = validateRouteServiceEvidence(
+    artifact?.routeServiceArtifactEvidence ?? [],
+    trips,
+    options.buildNow ?? new Date(),
+    options.timetableArtifactSha256,
+    options.canonicalPackIdentity,
+  );
 
   const calendars = deriveCalendars(trips, dayMap, startDate, endDate);
-  const routes = deriveRoutes(trips, lineId);
+  const routes = deriveRoutes(trips, lineId, artifact?.transitRoutes);
 
   const statements = [
     feedInfoInsert(feedEndDate),
+    ...evidence.map(routeServiceEvidenceInsert),
     ...calendars.map(calendarInsert),
     ...routes.map(routeInsert),
     ...trips.map(tripInsert),
@@ -64,6 +74,8 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
 }
 
 const ALLOWED_SERVICE_PATTERNS = new Set(["LOCAL", "EXPRESS"]);
+const ALLOWED_SERVICE_CLASSES = new Set(["SUBWAY", "ITX_CHEONGCHUN"]);
+const OFFSET_ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 // trip 행이 V29 제약(id PK 유일, service_pattern CHECK, service_day_start_seconds 범위)을 만족하는지
 // 생성 단계에서 검증한다(로드-시점 FK/CHECK 실패를 앞당김). trip id 집합을 stop_times FK 검증용으로 반환.
@@ -79,12 +91,80 @@ function validateTrips(trips) {
     if (!ALLOWED_SERVICE_PATTERNS.has(pattern)) {
       throw new Error(`transit_trips service_pattern must be LOCAL or EXPRESS: ${id}:${pattern}`);
     }
+    const serviceClass = trip.serviceClass ?? "SUBWAY";
+    if (!ALLOWED_SERVICE_CLASSES.has(serviceClass)) {
+      throw new Error(`transit_trips service_class must be SUBWAY or ITX_CHEONGCHUN: ${id}:${serviceClass}`);
+    }
     const dayStart = trip.serviceDayStartSeconds ?? 0;
     if (!Number.isInteger(dayStart) || dayStart < 0 || dayStart >= SECONDS_LIMIT_EXCLUSIVE) {
       throw new Error(`transit_trips service_day_start_seconds out of range [0,${SECONDS_LIMIT_EXCLUSIVE}): ${id}:${dayStart}`);
     }
   }
   return ids;
+}
+
+function validateRouteServiceEvidence(
+  rows,
+  trips,
+  buildNow,
+  timetableArtifactSha256,
+  canonicalPackIdentity,
+) {
+  if (!Array.isArray(rows) || rows.length > 1) {
+    throw new Error("routeServiceArtifactEvidence must contain at most one row");
+  }
+  const hasItxTrips = trips.some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
+  if (!hasItxTrips) {
+    const evidence = rows[0];
+    if (evidence && (
+      evidence.serviceClass !== "ITX_CHEONGCHUN"
+      || evidence.admissionStatus !== "MISSING"
+      || evidence.admissionEligible !== false
+    )) {
+      throw new Error("ADMITTED evidence requires ITX_CHEONGCHUN trips");
+    }
+    if (evidence) {
+      validateCanonicalPackIdentity(evidence, canonicalPackIdentity);
+    }
+    return rows;
+  }
+  const evidence = rows[0];
+  if (
+    evidence?.serviceClass !== "ITX_CHEONGCHUN"
+    || evidence.admissionStatus !== "ADMITTED"
+    || evidence.admissionEligible !== true
+  ) {
+    throw new Error("ITX_CHEONGCHUN seed requires ADMITTED route service evidence");
+  }
+  if (typeof evidence.freshUntil !== "string" || !OFFSET_ISO_8601.test(evidence.freshUntil)) {
+    throw new Error("ITX_CHEONGCHUN freshUntil must be offset ISO-8601");
+  }
+  const freshUntil = new Date(evidence.freshUntil);
+  if (Number.isNaN(freshUntil.getTime()) || freshUntil <= buildNow) {
+    throw new Error("ITX_CHEONGCHUN route service evidence must be fresh");
+  }
+  if (
+    typeof timetableArtifactSha256 !== "string"
+    || !/^[a-f0-9]{64}$/.test(timetableArtifactSha256)
+    || evidence.timetableArtifactSha256 !== timetableArtifactSha256
+  ) {
+    throw new Error("ITX_CHEONGCHUN timetable artifact SHA-256 identity mismatch");
+  }
+  validateCanonicalPackIdentity(evidence, canonicalPackIdentity);
+  return rows;
+}
+
+function validateCanonicalPackIdentity(evidence, canonicalPackIdentity) {
+  if (
+    typeof canonicalPackIdentity?.id !== "string"
+    || !/^[a-f0-9]{64}$/.test(canonicalPackIdentity?.sha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(canonicalPackIdentity?.sqliteSha256 ?? "")
+    || evidence.canonicalPackId !== canonicalPackIdentity.id
+    || evidence.canonicalPackSha256 !== canonicalPackIdentity.sha256
+    || evidence.canonicalPackSqliteSha256 !== canonicalPackIdentity.sqliteSha256
+  ) {
+    throw new Error("ITX_CHEONGCHUN canonical pack identity mismatch");
+  }
 }
 
 function validateStopTimes(stopTimes, tripIds) {
@@ -142,18 +222,37 @@ function deriveCalendars(trips, dayMap, startDate, endDate) {
   });
 }
 
-function deriveRoutes(trips, lineId) {
+function deriveRoutes(trips, lineId, routeRows) {
+  if (routeRows !== undefined && !Array.isArray(routeRows)) {
+    throw new Error("transitRoutes must be an array");
+  }
+  const declaredRoutes = new Map();
+  for (const row of routeRows ?? []) {
+    const id = requireString(row.id, "transitRoutes.id");
+    if (declaredRoutes.has(id)) {
+      throw new Error(`transitRoutes duplicate id: ${id}`);
+    }
+    declaredRoutes.set(id, row);
+  }
   const byId = new Map();
   for (const trip of trips) {
     const id = requireString(trip.routeId, "transitTrips.routeId");
+    const declared = declaredRoutes.get(id);
+    if (routeRows !== undefined && !declared) {
+      throw new Error(`transitTrips routeId is missing from transitRoutes: ${id}`);
+    }
     if (!byId.has(id)) {
+      const declaredLineId = declared ? requireString(declared.lineId, `transitRoutes.${id}.lineId`) : null;
+      if (lineId && declaredLineId && lineId !== declaredLineId) {
+        throw new Error(`transitRoutes lineId does not match --line-id: ${id}`);
+      }
       byId.set(id, {
         id,
-        lineId: lineId ?? deriveLineIdFromRouteId(id),
-        directionName: trip.directionId ?? "",
-        shortName: "",
-        longName: "",
-        timezone: DEFAULT_TIMEZONE,
+        lineId: lineId ?? declaredLineId ?? deriveLineIdFromRouteId(id),
+        directionName: optionalString(declared?.directionName, `transitRoutes.${id}.directionName`, trip.directionId ?? ""),
+        shortName: optionalString(declared?.routeShortName, `transitRoutes.${id}.routeShortName`),
+        longName: optionalString(declared?.routeLongName, `transitRoutes.${id}.routeLongName`),
+        timezone: optionalString(declared?.timezone, `transitRoutes.${id}.timezone`, DEFAULT_TIMEZONE),
       });
     }
   }
@@ -183,10 +282,34 @@ function routeInsert(r) {
 
 function tripInsert(t) {
   return (
-    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_day_start_seconds, trip_headsign, direction_id) VALUES (" +
+    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES (" +
     `${quote(requireString(t.id, "transitTrips.id"))}, ${quote(requireString(t.routeId, "transitTrips.routeId"))}, ` +
     `${quote(requireString(t.serviceId, "transitTrips.serviceId"))}, ${quote(t.servicePattern ?? "LOCAL")}, ` +
-    `${t.serviceDayStartSeconds ?? 0}, ${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")});`
+    `${quote(t.serviceClass ?? "SUBWAY")}, ${t.serviceDayStartSeconds ?? 0}, ${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")});`
+  );
+}
+
+function routeServiceEvidenceInsert(row) {
+  const hashes = [
+    [row.timetableArtifactSha256, "timetableArtifactSha256"],
+    [row.canonicalPackSha256, "canonicalPackSha256"],
+    [row.canonicalPackSqliteSha256, "canonicalPackSqliteSha256"],
+  ];
+  for (const [value, label] of hashes) {
+    if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+      throw new Error(`routeServiceArtifactEvidence.${label} must be a lowercase sha256`);
+    }
+  }
+  if (row.sourceIssue !== 2116) {
+    throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2116");
+  }
+  return (
+    "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
+    `${quote(requireString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"))}, ` +
+    `${quote(requireString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"))}, ` +
+    `${quote(row.timetableArtifactSha256)}, ${quote(requireString(row.canonicalPackId, "routeServiceArtifactEvidence.canonicalPackId"))}, ` +
+    `${quote(row.canonicalPackSha256)}, ${quote(row.canonicalPackSqliteSha256)}, ${quote(row.admissionStatus)}, ` +
+    `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue});`
   );
 }
 
@@ -223,6 +346,16 @@ function requireString(value, label) {
   return value;
 }
 
+function optionalString(value, label, fallback = "") {
+  if (value == null) {
+    return fallback;
+  }
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+  return value;
+}
+
 function requireInteger(value, label) {
   if (!Number.isInteger(value)) {
     throw new Error(`${label} must be an integer`);
@@ -232,12 +365,55 @@ function requireInteger(value, label) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const artifact = JSON.parse(await readFile(args.input, "utf8"));
+  const artifactBytes = await readFile(args.input);
+  const artifact = JSON.parse(artifactBytes.toString("utf8"));
+  let canonicalPackIdentity;
+  if (args["route-service-evidence"]) {
+    if ((artifact.routeServiceArtifactEvidence ?? []).length > 0) {
+      throw new Error("route service evidence must be separate from timetable artifact bytes");
+    }
+    if (!args["canonical-pack"]) {
+      throw new Error("--canonical-pack is required with --route-service-evidence");
+    }
+    const canonicalPackBytes = await readFile(args["canonical-pack"]);
+    let canonicalSqliteBytes;
+    try {
+      canonicalSqliteBytes = gunzipSync(canonicalPackBytes);
+    } catch {
+      throw new Error("--canonical-pack must be a gzip-compressed SQLite artifact");
+    }
+    canonicalPackIdentity = {
+      id: requireString(artifact.canonicalPackIdentity?.id, "canonicalPackIdentity.id"),
+      sha256: createHash("sha256").update(canonicalPackBytes).digest("hex"),
+      sqliteSha256: createHash("sha256").update(canonicalSqliteBytes).digest("hex"),
+    };
+    if (
+      artifact.canonicalPackIdentity?.sha256 !== canonicalPackIdentity.sha256
+      || artifact.canonicalPackIdentity?.sqliteSha256 !== canonicalPackIdentity.sqliteSha256
+    ) {
+      throw new Error("timetable artifact canonical pack identity mismatch");
+    }
+    const sidecar = JSON.parse(await readFile(args["route-service-evidence"], "utf8"));
+    artifact.routeServiceArtifactEvidence = Array.isArray(sidecar) ? sidecar : [sidecar];
+  }
   const seed = buildBackendTimetableSeed(artifact, {
     lineId: args["line-id"],
     startDate: args["start-date"],
     endDate: args["end-date"],
     feedEndDate: args["feed-end-date"],
+    timetableArtifactSha256: createHash("sha256").update(artifactBytes).digest("hex"),
+    canonicalPackIdentity,
+    serviceCalendarDayMap: Array.isArray(artifact.serviceCalendars)
+      ? Object.fromEntries(artifact.serviceCalendars.map((calendar) => [calendar.serviceId, {
+        monday: calendar.monday,
+        tuesday: calendar.tuesday,
+        wednesday: calendar.wednesday,
+        thursday: calendar.thursday,
+        friday: calendar.friday,
+        saturday: calendar.saturday,
+        sunday: calendar.sunday,
+      }]))
+      : undefined,
   });
   if (args.output) {
     await writeFile(args.output, seed.sql);

@@ -57,6 +57,25 @@ const productionEnv = {
   EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
 };
 
+test("데이터팩 생성기는 TEST_ONLY admission fixture를 build input으로 거부한다", async (context) => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-test-only-"));
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/test-only-itx-cheongchun-admitted.json",
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /TEST_ONLY artifact cannot be used as datapack build input/,
+  );
+});
+
 test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack을 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-${Date.now()}`);
   await rm(outputDir, { recursive: true, force: true });
@@ -211,7 +230,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 16);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
@@ -720,7 +739,7 @@ test("데이터팩 검증기는 공개 채널 user_version 상한을 넘는 pack
       ],
       { cwd: root, env: productionEnv },
     ),
-    /capital@1 catalog user_version 16 exceeds public compatibility maximum 14/,
+    /capital@1 catalog user_version 18 exceeds public compatibility maximum 14/,
   );
 });
 
@@ -747,7 +766,7 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 16);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
     assert.equal(
       database.prepare("SELECT feed_end_date FROM transit_feed_info").get().feed_end_date,
       "20261231",
@@ -2817,7 +2836,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 16);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
     assert.deepEqual(
       {
         ...database
@@ -5486,6 +5505,57 @@ test("데이터팩 검증기는 WALKWAY edge를 route graph 연결성으로 인�
     ),
     /station-line node is isolated from route graph/,
   );
+});
+
+test("데이터팩 검증기는 ITX edge를 SUBWAY representative route 연결성으로 인정하지 않는다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-itx-only-route-"));
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    );
+
+    const manifestPath = path.join(outputDir, "current.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const pack = manifest.packs[0];
+    const sqlitePath = path.join(outputDir, "catalog", "capital-v1.sqlite");
+    const database = new DatabaseSync(sqlitePath);
+    try {
+      database.prepare("UPDATE network_edges SET service_class = 'ITX_CHEONGCHUN' WHERE edge_type = 'RIDE'").run();
+    } finally {
+      database.close();
+    }
+    const sqliteBytes = await readFile(sqlitePath);
+    const compressedBytes = gzipSync(sqliteBytes);
+    await writeFile(path.join(outputDir, "catalog", "capital-v1.sqlite.gz"), compressedBytes);
+    pack.sizeBytes = compressedBytes.length;
+    pack.sha256 = sha256(compressedBytes);
+    pack.sqliteSha256 = sha256(sqliteBytes);
+    const fixturePayload = `${pack.id}:${pack.version}:${pack.sha256}:${pack.sqliteSha256}:${pack.sizeBytes}`;
+    pack.signature.value = sha256(Buffer.from(fixturePayload));
+    pack.representativeRouteRegressionSignature.value = sha256(
+      Buffer.from(`${fixturePayload}:${representativeRouteRegressionPayload(pack.representativeRouteRegressions)}`),
+    );
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        ["tools/datapack/validate-datapack.mjs", "--manifest", manifestPath, "--root", outputDir],
+        { cwd: root, env: productionEnv },
+      ),
+      /representativeRouteRegressions required edge missing|station-line node is isolated from route graph|route graph has unreachable directed path/,
+    );
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });
 
 test("데이터팩 검증기는 unknown network edge_type을 거부한다", async () => {
@@ -16631,6 +16701,38 @@ test("bundled 공식 OD quote no-op도 catalog user_version 16을 강제한다",
   }
 });
 
+test("bundled 공식 OD quote 후처리기는 v18 catalog를 v16으로 낮추지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-newer-version-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      sqlitePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(sqlitePath);
+    database.exec("PRAGMA user_version = 18");
+    database.close();
+    const inputPack = gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 });
+    await writeFile(packPath, inputPack);
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
+        "--pack", packPath,
+        "--index", indexPath,
+      ], { cwd: root }),
+      /does not support catalog user_version 18 newer than 16/,
+    );
+
+    assert.equal(sha256(await readFile(packPath)), sha256(inputPack));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("수도권 bundled datapack은 빠른하차 차량·출입문 힌트 35건을 포함한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-"));
   const databasePath = path.join(directory, "capital.sqlite");
@@ -16723,6 +16825,38 @@ test("bundled 차량·출입문 힌트 check는 catalog user_version 16을 요�
       ], { cwd: root }),
       /bundled catalog user_version must be 16/,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bundled 차량·출입문 힌트 후처리기는 v18 catalog를 v16으로 낮추지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-newer-version-"));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  try {
+    await writeFile(
+      sqlitePath,
+      gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
+    );
+    const database = new DatabaseSync(sqlitePath);
+    database.exec("PRAGMA user_version = 18");
+    database.close();
+    const inputPack = gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 });
+    await writeFile(packPath, inputPack);
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/apply-car-door-hints-to-bundled-pack.mjs",
+        "--pack", packPath,
+        "--index", indexPath,
+      ], { cwd: root }),
+      /does not support catalog user_version 18 newer than 16/,
+    );
+
+    assert.equal(sha256(await readFile(packPath)), sha256(inputPack));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
