@@ -8491,6 +8491,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
     trainSearchOnly: {
       trackingIssue: 2094,
       routeMapProvided: false,
+      exclusionContract: "apps/mobile/release/train-search-itx-exclusion-gate.json",
       services: ["KTX", "KTX_SANCHEON", "SRT", "ITX_MAUM", "ITX_SAEMAEUL", "SAEMAEUL", "MUGUNGHWA", "NURIRO"],
     },
   });

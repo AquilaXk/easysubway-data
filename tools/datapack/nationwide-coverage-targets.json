@@ -61,6 +61,7 @@
     "trainSearchOnly": {
       "trackingIssue": 2094,
       "routeMapProvided": false,
+      "exclusionContract": "apps/mobile/release/train-search-itx-exclusion-gate.json",
       "services": [
         "KTX",
         "KTX_SANCHEON",
