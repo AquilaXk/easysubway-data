@@ -88,7 +88,7 @@ test("TAGO 시간표 수집 plan CLI는 checkpoint와 output을 적용한다", a
   });
   const inputPath = path.join(dir, "input.json");
   const checkpointPath = path.join(dir, "checkpoint.json");
-  const outputPath = path.join(dir, "plan.json");
+  const outputPath = path.join(dir, "nested", "plan.json");
   await writeFile(
     inputPath,
     `${JSON.stringify({

@@ -13,6 +13,8 @@ import {
 export const DATAGO_SOURCE_CANDIDATE_IDS = Object.freeze([
   "seoul-metro-transfer-distance-duration",
   "seoul-metro-fast-exit-car-door",
+  "seoul-metro-accessibility",
+  "seoul-metro-facility-location",
 ]);
 
 const DATAGO_REST_ORIGIN = "https://apis.data.go.kr";
@@ -60,13 +62,6 @@ export function resolveDatagoCandidateRequest(candidatesDocument, candidateId) {
   if (!candidate) {
     throw new Error(`tracked candidate metadata is missing: ${candidateId}`);
   }
-  if (candidate.sampleEvidenceStatus !== "sample_url_documented_key_required") {
-    throw new Error(`${candidateId} sample evidence status is not pending`);
-  }
-  if (candidate.admissionStatus !== "evidence_recorded_admin_review_required") {
-    throw new Error(`${candidateId} admission status no longer requires admin review`);
-  }
-
   if (!candidate.evidence?.sampleUrl || !candidate.evidence?.endpoint || !candidate.requestUrl) {
     throw new Error(`${candidateId} endpoint not yet confirmed; cannot collect until data.go.kr endpoint is documented`);
   }

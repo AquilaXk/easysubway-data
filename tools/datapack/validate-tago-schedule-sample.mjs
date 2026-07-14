@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -658,7 +658,9 @@ async function main() {
 }
 
 async function writeJsonOutput(outputPath, value) {
-  await writeFile(path.resolve(outputPath), `${JSON.stringify(value, null, 2)}\n`);
+  const resolvedOutput = path.resolve(outputPath);
+  await mkdir(path.dirname(resolvedOutput), { recursive: true, mode: 0o700 });
+  await writeFile(resolvedOutput, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
 }
 
 function requiredString(value, label) {

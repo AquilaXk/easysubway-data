@@ -90,6 +90,52 @@ test("show는 operation이 없어도 기존 endpoint와 response fields를 반�
   assert.equal(summary.operation, null);
 });
 
+test("operation raw response fields는 normalized evidence fields보다 API catalog에 우선한다", () => {
+  const operation = validOperation({ responseFields: ["providerField"] });
+  const source = candidate("a", { operation });
+
+  assert.equal(validateOperation(source), operation);
+  assert.deepEqual(operationSummary(source).responseFields, ["providerField"]);
+});
+
+test("operation raw response fields는 중복과 빈 값을 거부한다", () => {
+  for (const responseFields of [["fieldA", "fieldA"], [""], []]) {
+    const source = candidate("a", { operation: validOperation({ responseFields }) });
+    assert.throws(() => validateOperation(source), /operation\.responseFields/);
+  }
+});
+
+test("operation sample URL은 legacy evidence보다 우선하고 endpoint 밖 경로를 거부한다", () => {
+  const sampleUrl = "https://provider.example/a?serviceKey=[서비스키값]";
+  const source = candidate("a", {
+    operation: validOperation({ sampleUrl }),
+    evidence: {
+      endpoint: "https://legacy.example/a",
+      sampleUrl: "https://legacy.example/a?serviceKey=[서비스키값]",
+      outputFields: ["legacyField"],
+    },
+  });
+
+  assert.equal(validateOperation(source), source.operation);
+  assert.equal(operationSummary(source).sampleUrl, sampleUrl);
+  assert.throws(
+    () => validateOperation(candidate("a", {
+      operation: validOperation({ sampleUrl: "https://provider.example/other?serviceKey=[서비스키값]" }),
+    })),
+    /operation\.sampleUrl must use the operation endpoint/,
+  );
+});
+
+test("apiCatalog는 false만 API catalog 제외로 해석한다", () => {
+  assert.equal(operationSummary(candidate("a")).apiCatalog, true);
+  assert.equal(operationSummary(candidate("a", { apiCatalog: true })).apiCatalog, true);
+  assert.equal(operationSummary(candidate("a", { apiCatalog: false })).apiCatalog, false);
+  assert.throws(
+    () => operationSummary(candidate("a", { apiCatalog: "false" })),
+    /apiCatalog must be a boolean/,
+  );
+});
+
 test("source candidate 정본은 repository 경로와 구조화된 provider 승인을 검증한다", () => {
   const document = {
     schemaVersion: 1,
@@ -539,4 +585,32 @@ test("공식 OD fare source는 재현 가능한 operation과 조회 명령을 �
     runbook.operationLookupCommand,
     "node tools/ci/api-catalog.mjs show provider:<sourceId>",
   );
+});
+
+test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", async () => {
+  const document = JSON.parse(
+    await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"),
+  );
+  const migratedKricIds = [
+    "kric-station-elevator",
+    "kric-station-elevator-movement",
+    "kric-station-escalator",
+    "kric-wheelchair-lift-location",
+    "kric-wheelchair-lift-movement",
+  ];
+
+  for (const id of migratedKricIds) {
+    const source = document.candidates.find((entry) => entry.id === id);
+    assert.match(source.operation.endpoint, /^https:\/\/openapi\.kric\.go\.kr\//);
+    assert.match(source.operation.sampleUrl, /^https:\/\/openapi\.kric\.go\.kr\//);
+    assert.match(source.evidence.endpoint, /^https:\/\/apis\.data\.go\.kr\/B551181\//);
+    assert.match(source.evidence.liveSampleNote, /legacy data\.go\.kr endpoint/);
+  }
+
+  const tago = document.candidates.find((entry) => entry.id === "molit-tago-subway-info");
+  assert.deepEqual(tago.operation.runner.arguments.slice(-3), [
+    "--output",
+    ".codex/evidence/tago-schedule-collection.json",
+    "--quiet",
+  ]);
 });

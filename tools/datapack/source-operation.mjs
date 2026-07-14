@@ -245,7 +245,7 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
     throw new Error(`${candidate.id}.operation credential values are forbidden`);
   }
   requireAllowedKeys(operation, new Set([
-    "method", "endpoint", "auth", "requiredParameters", "responseEnvelope", "runner", "secretPolicy",
+    "method", "endpoint", "sampleUrl", "auth", "requiredParameters", "responseEnvelope", "responseFields", "runner", "secretPolicy",
   ]), `${candidate.id}.operation`);
   if (!new Set(["GET", "POST"]).has(operation.method)) {
     throw new Error(`${candidate.id}.operation.method must be GET or POST`);
@@ -253,6 +253,14 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   const operationUrl = requiredHttpUrl(operation.endpoint, `${candidate.id}.operation.endpoint`);
   if (operationUrl.href !== requestUrl.href) {
     throw new Error(`${candidate.id}.operation endpoint must match requestUrl`);
+  }
+  if (operation.sampleUrl != null) {
+    const operationSampleUrl = requiredHttpUrl(operation.sampleUrl, `${candidate.id}.operation.sampleUrl`);
+    if (hasCredentialValue(operation.sampleUrl)
+      || operationSampleUrl.origin !== operationUrl.origin
+      || operationSampleUrl.pathname !== operationUrl.pathname) {
+      throw new Error(`${candidate.id}.operation.sampleUrl must use the operation endpoint without credential values`);
+    }
   }
   const auth = operation.auth;
   if (!auth || typeof auth !== "object" || Array.isArray(auth)) {
@@ -291,6 +299,9 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
     throw new Error(`${candidate.id}.operation.requiredParameters must include the auth parameter`);
   }
   requiredText(operation.responseEnvelope, `${candidate.id}.operation.responseEnvelope`);
+  if (operation.responseFields != null) {
+    stringList(operation.responseFields, `${candidate.id}.operation.responseFields`);
+  }
   const runner = operation.runner;
   if (!runner || typeof runner !== "object" || Array.isArray(runner)) {
     throw new Error(`${candidate.id}.operation.runner must be an object`);
@@ -330,6 +341,9 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
 }
 
 export function operationSummary(candidate) {
+  if (candidate.apiCatalog != null && typeof candidate.apiCatalog !== "boolean") {
+    throw new Error(`${candidate.id}.apiCatalog must be a boolean`);
+  }
   let operationValidationError = null;
   try {
     validateOperation(candidate, { allowMissing: true });
@@ -346,14 +360,15 @@ export function operationSummary(candidate) {
   }
   return {
     id: requiredText(candidate.id, "candidate.id"),
+    apiCatalog: candidate.apiCatalog !== false,
     displayName: candidate.displayName ?? null,
     domain: candidate.domain ?? null,
     detailUrl: candidate.detailUrl ?? null,
     searchTerms: candidate.evidence?.searchTerms ?? [],
     status: candidate.admissionStatus ?? null,
     endpoint: requiredText(candidate.requestUrl, `${candidate.id}.requestUrl`),
-    sampleUrl: candidate.evidence?.sampleUrl ?? null,
-    responseFields: candidate.evidence?.outputFields ?? [],
+    sampleUrl: candidate.operation?.sampleUrl ?? candidate.evidence?.sampleUrl ?? null,
+    responseFields: candidate.operation?.responseFields ?? candidate.evidence?.outputFields ?? [],
     providerApproval: candidate.providerApproval ?? null,
     providerApprovalValidationError,
     operation: candidate.operation ?? null,

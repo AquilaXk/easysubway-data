@@ -37,7 +37,7 @@ async function assertCollectorCleanup(runnerTemp) {
   assert.equal(existsSync(path.join(runnerTemp, "kric-source-candidate-evidence")), false);
 }
 
-test("KRIC evidence collector는 정확한 10개 allowlist와 tracked endpoint를 강제한다", () => {
+test("KRIC evidence collector는 catalog 15개 allowlist와 tracked endpoint를 강제한다", () => {
   assert.deepEqual(KRIC_SOURCE_CANDIDATE_IDS, [
     "kric-subway-route-info",
     "kric-station-info",
@@ -49,12 +49,24 @@ test("KRIC evidence collector는 정확한 10개 allowlist와 tracked endpoint�
     "kric-transfer-movement-standard",
     "kric-transfer-movement-detailed",
     "kric-station-convenience-standard",
+    "kric-station-elevator",
+    "kric-station-elevator-movement",
+    "kric-station-escalator",
+    "kric-wheelchair-lift-location",
+    "kric-wheelchair-lift-movement",
   ]);
 
   const request = resolveKricCandidateRequest({ candidates: [candidate] }, candidate.id);
   assert.equal(request.candidateId, candidate.id);
   assert.equal(request.endpoint, candidate.evidence.endpoint);
   assert.equal(request.format, "json");
+  assert.doesNotThrow(() => resolveKricCandidateRequest({
+    candidates: [{
+      ...candidate,
+      sampleEvidenceStatus: "validated_live_sample",
+      admissionStatus: "admitted_to_production_inventory",
+    }],
+  }, candidate.id));
 
   assert.throws(
     () => resolveKricCandidateRequest({ candidates: [candidate] }, "kric-subway-timetable"),
@@ -83,6 +95,79 @@ test("KRIC evidence collector는 정확한 10개 allowlist와 tracked endpoint�
     }, candidate.id),
     /provider origin must be https:\/\/openapi\.kric\.go\.kr/,
   );
+});
+
+test("migrated KRIC runner는 legacy evidence와 분리된 operation sample을 사용한다", async () => {
+  const migrated = {
+    id: "kric-station-elevator",
+    requestUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    operation: {
+      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+      sampleUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+      responseFields: ["providerField"],
+    },
+    evidence: {
+      endpoint: "https://apis.data.go.kr/B551181/stationElevatorInfo/getStationElevatorList",
+      formats: ["JSON"],
+    },
+  };
+
+  const request = resolveKricCandidateRequest({ candidates: [migrated] }, migrated.id);
+  assert.equal(request.endpoint, migrated.operation.endpoint);
+  assert.equal(decodeURI(request.sampleUrl.href), migrated.operation.sampleUrl);
+  assert.equal(request.format, "json");
+
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-migrated-"));
+  try {
+    const outputs = await collectKricSourceCandidateEvidence({
+      candidateId: migrated.id,
+      candidatesDocument: { candidates: [migrated] },
+      runnerTemp,
+      serviceKey: "key",
+      fetchImpl: async () => new Response(JSON.stringify([{ providerField: "value" }]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    });
+    const sample = JSON.parse(await readFile(outputs.sample, "utf8"));
+    assert.equal(sample.endpoint, migrated.operation.endpoint);
+    assert.deepEqual(sample.fields, ["providerField"]);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("migrated KRIC runner는 responseFields가 없어도 operation endpoint provenance를 기록한다", async () => {
+  const migrated = {
+    id: "kric-station-elevator",
+    requestUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    operation: {
+      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+      sampleUrl: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+    },
+    evidence: {
+      endpoint: "https://apis.data.go.kr/B551181/stationElevatorInfo/getStationElevatorList",
+      formats: ["JSON"],
+      outputFields: ["providerField"],
+    },
+  };
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-migrated-no-fields-"));
+  try {
+    const outputs = await collectKricSourceCandidateEvidence({
+      candidateId: migrated.id,
+      candidatesDocument: { candidates: [migrated] },
+      runnerTemp,
+      serviceKey: "key",
+      fetchImpl: async () => new Response(JSON.stringify([{ providerField: "value" }]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    });
+    const sample = JSON.parse(await readFile(outputs.sample, "utf8"));
+    assert.equal(sample.endpoint, migrated.operation.endpoint);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
 });
 
 test("KRIC evidence collector는 raw를 제거하고 sanitized sample/report/hashes만 남긴다", async () => {
@@ -117,6 +202,31 @@ test("KRIC evidence collector는 raw를 제거하고 sanitized sample/report/has
     assert.equal(hashes.rawSha256, sample.rawSha256);
     assert.equal(hashes.evidenceHash, sample.evidenceHash);
     assert.doesNotMatch(`${JSON.stringify(sample)}\n${report}\n${JSON.stringify(hashes)}`, new RegExp(serviceKey));
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 operation raw fields로 legacy normalized evidence와 분리해 검증한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-operation-fields-"));
+  const source = {
+    ...candidate,
+    operation: { responseFields: ["providerField"] },
+    evidence: { ...candidate.evidence, outputFields: ["legacyField"] },
+  };
+  try {
+    const outputs = await collectKricSourceCandidateEvidence({
+      candidateId: source.id,
+      candidatesDocument: { candidates: [source] },
+      runnerTemp,
+      serviceKey: "key",
+      fetchImpl: async () => new Response(JSON.stringify([{ providerField: "value" }]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    });
+    const sample = JSON.parse(await readFile(outputs.sample, "utf8"));
+    assert.deepEqual(sample.fields, ["providerField"]);
   } finally {
     await rm(runnerTemp, { recursive: true, force: true });
   }
