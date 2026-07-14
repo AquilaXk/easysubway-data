@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "daejeon-coverage-api-probe-evidence",
+  "sourceId": "daejeon-train-timetable",
+  "observedAt": "2026-07-14T07:02:58.606Z",
+  "endpoint": "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
+  "httpStatus": 200,
+  "providerResultCode": "00",
+  "schemaStatus": "EXPECTED",
+  "rowCount": 1628,
+  "outputFields": [
+    "dayType",
+    "drctType",
+    "stNum",
+    "tmList",
+    "tmZone"
+  ],
+  "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+  "credentialRedacted": true
+}

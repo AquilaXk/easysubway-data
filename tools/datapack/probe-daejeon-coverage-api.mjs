@@ -24,7 +24,7 @@ export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   }),
 });
 
-export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl = fetch } = {}) {
+export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl = fetch, now = new Date() } = {}) {
   const operation = DAEJEON_COVERAGE_OPERATIONS[sourceId];
   if (!operation) throw new Error(`unsupported Daejeon coverage source: ${sourceId ?? "missing"}`);
   const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
@@ -32,13 +32,20 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
   url.searchParams.set("serviceKey", key);
   for (const [name, value] of Object.entries(operation.query ?? {})) url.searchParams.set(name, value);
 
-  const response = await fetchWithRetry(url, fetchImpl);
+  const response = await fetchWithRetry(url, operation.format, fetchImpl);
   if (!response.ok) throw new Error(`Daejeon coverage API HTTP ${response.status}`);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
   const raw = await response.text();
-  const parsed = operation.format === "xml"
-    ? parseXmlEvidence(raw, operation.expectedFields)
-    : parseJsonEvidence(raw);
+  let parsed;
+  try {
+    parsed = operation.format === "xml"
+      ? parseXmlEvidence(raw, operation.expectedFields)
+      : parseJsonEvidence(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Daejeon coverage API parse failure";
+    throw new Error(`${message}; observedAt=${now.toISOString()}; httpStatus=${response.status}; `
+      + `contentType=${contentType || "missing"}; rawBytes=${Buffer.byteLength(raw)}; rawSha256=${sha256(raw)}`);
+  }
   if (operation.format === "xml" && !new Set(["application/xml", "text/xml"]).has(contentType)) {
     throw new Error(`Daejeon coverage API schema mismatch: content-type ${contentType || "missing"}`);
   }
@@ -49,6 +56,7 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
     schemaVersion: 1,
     artifactKind: "daejeon-coverage-api-probe-evidence",
     sourceId,
+    observedAt: now.toISOString(),
     endpoint: operation.endpoint,
     httpStatus: response.status,
     providerResultCode: parsed.providerResultCode,
@@ -60,13 +68,13 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
   };
 }
 
-async function fetchWithRetry(url, fetchImpl) {
+async function fetchWithRetry(url, format, fetchImpl) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       return await fetchImpl(url, {
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/json,application/xml,text/xml" },
+        headers: { accept: format === "xml" ? "application/xml,text/xml" : "application/json" },
       });
     } catch (error) {
       if (attempt === 1) throw new Error("Daejeon coverage API transport failure", { cause: error });
