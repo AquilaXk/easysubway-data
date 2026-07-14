@@ -156,6 +156,8 @@ async function buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, args }) 
     requireArg(args, "source-id"),
     "--provider",
     requireArg(args, "provider"),
+    "--source-class-id",
+    requireArg(args, "source-class-id"),
     "--retrieved-at",
     requireArg(args, "retrieved-at"),
     "--raw-object-uri",
@@ -164,6 +166,8 @@ async function buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, args }) 
     requireArg(args, "freshness-expires-at"),
     "--raw-retention-expires-at",
     requireArg(args, "raw-retention-expires-at"),
+    ...(args["freshness-basis-at"] ? ["--freshness-basis-at", args["freshness-basis-at"]] : []),
+    ...(args["provider-valid-until"] ? ["--provider-valid-until", args["provider-valid-until"]] : []),
     ...(args["source-updated-at"] ? ["--source-updated-at", args["source-updated-at"]] : []),
   ]);
   return readJson(snapshotPath);

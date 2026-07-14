@@ -87,3 +87,90 @@ test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고
   assert.match(yml, /is-pointer-only/);            // 빌드 스텝 게이팅 output
   assert.doesNotMatch(yml, /mode != 'rollback'/);  // 구 게이트가 pointer-only로 통합됨
 });
+
+test("production publish는 canonical decision의 write 허용 뒤에만 실행된다", () => {
+  assert.match(yml, /id:\s*release-decision/);
+  assert.match(yml, /node tools\/datapack\/decide-datapack-release\.mjs/);
+  const publishStep = yml.match(/- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(publishStep, "production publish 스텝을 찾지 못함");
+  assert.match(publishStep, /steps\.release-decision\.outputs\.productionWriteAllowed == 'true'/);
+  assert.match(yml, /production decision did not authorize executable run/);
+  assert.match(yml, /decision\.outcome === "NO_CHANGE_VALID"/);
+  assert.match(yml, /decision\.outcome === "PUBLISH_REQUIRED" && decision\.productionWriteAllowed === true/);
+});
+
+test("scheduled publish는 명시적 opt-in과 승인된 입력 경로 없이는 exploratory로 남는다", () => {
+  assert.match(yml, /DATAPACK_SCHEDULED_PUBLISH_ENABLED/);
+  assert.match(yml, /github\.event_name == 'schedule' && vars\.DATAPACK_SCHEDULED_PUBLISH_ENABLED == 'true'/);
+  assert.doesNotMatch(yml, /vars\.EASYSUBWAY_DATAPACK_SCHEDULED_/);
+  assert.match(yml, /SCHEDULED_BUILD_SPEC_PATH/);
+  assert.match(yml, /SCHEDULED_RELEASE_REQUEST_ID/);
+  assert.match(yml, /SCHEDULED_ANDROID_EVIDENCE_PATH/);
+  assert.match(yml, /SCHEDULED_STRICT_ROUTE_REGRESSION_PATH/);
+  assert.match(yml, /scheduled production publish requires configured approval evidence/);
+  assert.match(yml, /steps\.release-mode\.outputs\.release_request_id/);
+});
+
+test("release build는 source snapshot freshness를 build 전에 fail closed로 검증한다", () => {
+  const freshnessStep = yml.match(
+    /- name: Data Pack Release \/ Validate source snapshot freshness[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(freshnessStep, "source snapshot freshness 검증 스텝을 찾지 못함");
+  assert.match(freshnessStep, /validate-source-snapshot-freshness\.mjs/);
+  assert.match(freshnessStep, /--build-spec/);
+  assert.doesNotMatch(freshnessStep, /--snapshots/);
+  assert.match(freshnessStep, /--policy apps\/mobile\/release\/datapack-freshness-sla\.json/);
+  assert.ok(
+    yml.indexOf("Validate source snapshot freshness") < yml.indexOf("Build data packs"),
+    "source snapshot freshness는 build 전에 검증해야 함",
+  );
+});
+
+test("current manifest 조회는 404만 initial release로 허용한다", () => {
+  const downloadStep = yml.match(/- name: Data Pack Release \/ Download current production manifest[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(downloadStep, "current production manifest 다운로드 스텝을 찾지 못함");
+  assert.match(downloadStep, /http_status/);
+  assert.match(downloadStep, /404/);
+  assert.match(downloadStep, /rm -f "\$\{EASYSUBWAY_DATAPACK_CURRENT_MANIFEST\}"/);
+  assert.match(downloadStep, /exit 1/);
+});
+
+test("publish run은 remote artifact validation 뒤 최종 decision과 callback을 만든다", () => {
+  assert.match(yml, /validate-remote-datapack-artifact\.mjs/);
+  assert.match(yml, /id:\s*final-release-decision/);
+  assert.match(yml, /PUBLISHED_AND_VERIFIED/);
+  assert.match(yml, /Upload release decision artifact/);
+  const remoteValidationArtifact = yml.match(
+    /- name: Data Pack Release \/ Upload remote validation artifact[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(remoteValidationArtifact, "remote validation artifact 업로드 스텝을 찾지 못함");
+  assert.match(remoteValidationArtifact, /always\(\)/);
+  assert.match(remoteValidationArtifact, /EASYSUBWAY_DATAPACK_REMOTE_VALIDATION/);
+  assert.match(remoteValidationArtifact, /if-no-files-found:\s*ignore/);
+  const remoteValidation = yml.match(
+    /- name: Data Pack Release \/ Validate published remote artifact[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(remoteValidation, "remote validation 스텝을 찾지 못함");
+  assert.match(remoteValidation, /EXPECTED_MANIFEST_SHA256/);
+  assert.match(remoteValidation, /for attempt in 1 2 3 4/);
+  assert.match(remoteValidation, /sleep 20/);
+  assert.match(remoteValidation, /remote validation manifestSha256 mismatch/);
+  assert.match(yml, /steps\.production-publish\.outputs\.manifestSha256/);
+  assert.match(yml, /remote validation manifestSha256 mismatch/);
+  const finalDecision = yml.match(
+    /- name: Data Pack Release \/ Finalize published decision[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(finalDecision, "최종 release decision 스텝을 찾지 못함");
+  assert.match(finalDecision, /final_decision_args=\(/);
+  assert.match(finalDecision, /steps\.remote-validation\.outcome == 'success'/);
+  assert.match(finalDecision, /if \[\[ -f "\$\{EASYSUBWAY_DATAPACK_CURRENT_MANIFEST\}" \]\]; then/);
+  assert.match(finalDecision, /final_decision_args\+=\(--current-manifest/);
+  assert.match(yml, /GITHUB_STEP_SUMMARY/);
+});
+
+test("expiry alert는 publish 없이 같은 decision engine을 소비한다", () => {
+  const expiryWorkflow = readFileSync(path.join(root, ".github/workflows/datapack-expiry-alert.yml"), "utf8");
+  assert.match(expiryWorkflow, /decide-datapack-release\.mjs/);
+  assert.match(expiryWorkflow, /--current-manifest/);
+  assert.doesNotMatch(expiryWorkflow, /productionWriteAllowed == 'true'/);
+});

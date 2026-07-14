@@ -62,6 +62,7 @@ async function main() {
 
   const lines = [
     "EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled",
+    `EASYSUBWAY_DATA_PACK_BASE_URL=${env.EASYSUBWAY_DATA_PACK_BASE_URL}`,
     ...(env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL
       ? [`EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL=${env.EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}`]
       : exportedNames.map((name) => `${name}=${env[name]}`)),

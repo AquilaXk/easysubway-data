@@ -4,6 +4,7 @@
   "candidateId": "capital-pilot-candidate-20260712",
   "productionScopeId": "capital_pilot_android_v1",
   "fixturePath": "tools/datapack/release/capital-production-reviewed-pack.json",
+  "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
     "molit-urban-rail-full-route-capital-admission-20260712",
     "seoulmetro-station-line-info-capital-admission-20260712",

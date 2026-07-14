@@ -3,10 +3,23 @@
   "$id": "easysubway/contracts/datapack/datapack-index",
   "title": "번들 데이터팩 인덱스",
   "type": "object",
-  "required": ["schemaVersion", "packs"],
+  "required": [
+    "schemaVersion",
+    "builtAt",
+    "qualityAsOf",
+    "freshnessExpiresAt",
+    "sourceSnapshotSetHash",
+    "schemaIdentity",
+    "packs"
+  ],
   "additionalProperties": false,
   "properties": {
     "schemaVersion": { "type": "integer", "const": 1 },
+    "builtAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "qualityAsOf": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "freshnessExpiresAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "sourceSnapshotSetHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "schemaIdentity": { "type": "string", "const": "catalog-schema-v1" },
     "packs": {
       "type": "array",
       "minItems": 1,

@@ -88,6 +88,7 @@ jobs:
           {
             echo "EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST=${{ runner.temp }}/easysubway-datapack-expiry/current.json"
             echo "EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE=${{ runner.temp }}/easysubway-datapack-expiry/expiry-alert-evidence.json"
+            echo "EASYSUBWAY_DATAPACK_EXPIRY_DECISION=${{ runner.temp }}/easysubway-datapack-expiry/release-decision.json"
           } >> "${GITHUB_ENV}"
 
       - name: Data Pack Expiry Alert / Restore GitHub Actions dotenv secret
@@ -131,6 +132,11 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
             --output "${EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE}" \
             --policy apps/mobile/release/datapack-freshness-sla.json
+          node tools/datapack/decide-datapack-release.mjs \
+            --alert-only \
+            --current-manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
+            --freshness-policy apps/mobile/release/datapack-freshness-sla.json \
+            --output "${EASYSUBWAY_DATAPACK_EXPIRY_DECISION}"
           node -e '
             const fs = require("fs");
             const evidence = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE, "utf8"));
@@ -143,7 +149,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: easysubway-datapack-expiry-alert-${{ github.run_id }}
-          path: ${{ runner.temp }}/easysubway-datapack-expiry/expiry-alert-evidence.json
+          path: |
+            ${{ runner.temp }}/easysubway-datapack-expiry/expiry-alert-evidence.json
+            ${{ runner.temp }}/easysubway-datapack-expiry/release-decision.json
           if-no-files-found: error
           retention-days: 14
 

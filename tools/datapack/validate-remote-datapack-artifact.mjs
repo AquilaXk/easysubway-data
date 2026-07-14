@@ -14,7 +14,7 @@ const requireProduction = args["require-production"] === true;
 
 await mkdir(path.join(outputRoot, "catalog"), { recursive: true });
 const manifestPath = path.join(outputRoot, "catalog", "current.json");
-const manifestBytes = await download(manifestUrl);
+const manifestBytes = await download(manifestUrl, { revalidate: true });
 await writeFile(manifestPath, manifestBytes);
 
 const manifest = JSON.parse(manifestBytes.toString("utf8"));
@@ -117,12 +117,17 @@ function summarizeDownloadedPack({ pack, packUrl, packBytes }) {
   return summary;
 }
 
-async function download(url) {
+async function download(url, { revalidate = false } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
   let response;
   try {
-    response = await fetch(url, { signal: controller.signal });
+    response = await fetch(url, {
+      signal: controller.signal,
+      headers: revalidate
+        ? { "cache-control": "no-cache", pragma: "no-cache" }
+        : undefined,
+    });
   } catch (error) {
     if (error?.name === "AbortError") {
       throw new Error(`download timed out after ${DOWNLOAD_TIMEOUT_MS}ms: ${url}`);

@@ -1417,6 +1417,8 @@ test("source snapshot command는 raw token을 저장 전에 거부한다", async
           "kric-station-elevator",
           "--provider",
           "국가철도공단",
+          "--source-class-id",
+          "static_accessibility_facility",
           "--retrieved-at",
           "2026-06-30T03:00:00Z",
           "--raw-object-uri",
@@ -1453,10 +1455,12 @@ test("source snapshot command는 credential URI와 만료 retention metadata를 
     "kric-station-elevator",
     "--provider",
     "국가철도공단",
+    "--source-class-id",
+    "static_accessibility_facility",
     "--retrieved-at",
     "2026-06-30T03:00:00Z",
     "--freshness-expires-at",
-    "2026-07-07T03:00:00Z",
+    "2026-09-28T03:00:00Z",
   ];
 
   try {
@@ -1519,12 +1523,14 @@ test("source snapshot command는 raw CSV를 LOCKED snapshot metadata로 canonica
         "kric-station-elevator",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_accessibility_facility",
         "--retrieved-at",
         "2026-06-30T03:00:00Z",
         "--raw-object-uri",
         "s3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-station-elevator-20260630.csv",
         "--freshness-expires-at",
-        "2026-07-07T03:00:00Z",
+        "2026-09-28T03:00:00Z",
         "--raw-retention-expires-at",
         "2026-09-30T03:00:00Z",
       ],
@@ -1539,6 +1545,159 @@ test("source snapshot command는 raw CSV를 LOCKED snapshot metadata로 canonica
     assert.match(snapshot.schemaFingerprint, /^[0-9a-f]{64}$/);
     assert.equal(snapshot.providerRecordHashes.length, 2);
     assert.equal(await readFile(canonicalRawPath, "utf8"), "station,line\nSadang,2\nSangnoksu,4\n");
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 policy에서 파생되지 않은 임의 만료 시각을 거부한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-freshness-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "station\nSadang\n");
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-source-snapshot.mjs",
+          "--input", rawPath,
+          "--output", path.join(workDir, "snapshot.json"),
+          "--snapshot-id", "snapshot-kric-arbitrary-expiry",
+          "--source-id", "kric-station-elevator",
+          "--provider", "국가철도공단",
+          "--source-class-id", "static_accessibility_facility",
+          "--retrieved-at", "2026-06-30T03:00:00Z",
+          "--raw-object-uri", "s3://bucket/snapshot.json",
+          "--freshness-expires-at", "2099-01-01T00:00:00Z",
+          "--raw-retention-expires-at", "2099-02-01T00:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /SOURCE_FRESHNESS_DERIVATION_MISMATCH/,
+    );
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 source가 속하지 않은 freshness class를 거부한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-class-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "station\nSadang\n");
+
+  try {
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "tools/datapack/build-source-snapshot.mjs",
+          "--input", rawPath,
+          "--output", path.join(workDir, "snapshot.json"),
+          "--snapshot-id", "snapshot-kric-wrong-class",
+          "--source-id", "kric-station-elevator",
+          "--provider", "국가철도공단",
+          "--source-class-id", "static_network_metadata",
+          "--retrieved-at", "2026-06-30T03:00:00Z",
+          "--raw-object-uri", "s3://bucket/snapshot.json",
+          "--freshness-expires-at", "2026-07-30T03:00:00Z",
+          "--raw-retention-expires-at", "2026-09-30T03:00:00Z",
+        ],
+        { cwd: root },
+      ),
+      /SOURCE_FRESHNESS_POLICY_MISSING: kric-station-elevator source class/,
+    );
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 정책 basis와 provider validity 필드를 보존한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-planned-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  const outputPath = path.join(workDir, "snapshot.json");
+  const policyPath = path.join(workDir, "policy.json");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "trip\nA\n");
+  await writeFile(policyPath, JSON.stringify({
+    clockSkewSeconds: 300,
+    sourceClasses: [{
+      id: "planned_timetable",
+      sourceIds: ["planned-a"],
+      basisField: "serviceEffectiveAt",
+      maximumReverificationCadence: "P30D",
+      providerValidityEndField: "serviceEffectiveUntil",
+    }],
+  }));
+
+  try {
+    await execFileAsync(process.execPath, [
+      "tools/datapack/build-source-snapshot.mjs",
+      "--input", rawPath,
+      "--output", outputPath,
+      "--snapshot-id", "snapshot-planned-a",
+      "--source-id", "planned-a",
+      "--provider", "provider-a",
+      "--source-class-id", "planned_timetable",
+      "--freshness-policy", policyPath,
+      "--retrieved-at", "2026-07-02T00:00:00Z",
+      "--freshness-basis-at", "2026-07-01T00:00:00Z",
+      "--provider-valid-until", "2026-07-20T00:00:00Z",
+      "--raw-object-uri", "s3://bucket/snapshot-planned-a.csv",
+      "--freshness-expires-at", "2026-07-20T00:00:00Z",
+      "--raw-retention-expires-at", "2026-10-01T00:00:00Z",
+    ], { cwd: root });
+
+    const snapshot = JSON.parse(await readFile(outputPath, "utf8"));
+    assert.equal(snapshot.serviceEffectiveAt, "2026-07-01T00:00:00Z");
+    assert.equal(snapshot.serviceEffectiveUntil, "2026-07-20T00:00:00Z");
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("source snapshot command는 정책상 필수인 provider validity가 없으면 차단한다", async () => {
+  const workDir = path.join(tmpdir(), `easysubway-source-snapshot-validity-required-${process.pid}-${Date.now()}`);
+  const rawPath = path.join(workDir, "raw.csv");
+  const policyPath = path.join(workDir, "policy.json");
+  await rm(workDir, { recursive: true, force: true });
+  await mkdir(workDir, { recursive: true });
+  await writeFile(rawPath, "trip\nA\n");
+  await writeFile(policyPath, JSON.stringify({
+    clockSkewSeconds: 300,
+    sourceClasses: [{
+      id: "planned_timetable",
+      sourceIds: ["planned-a"],
+      basisField: "serviceEffectiveAt",
+      maximumReverificationCadence: "P30D",
+      providerValidityEndField: "serviceEffectiveUntil",
+    }],
+  }));
+
+  try {
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/build-source-snapshot.mjs",
+        "--input", rawPath,
+        "--output", path.join(workDir, "snapshot.json"),
+        "--snapshot-id", "snapshot-planned-a",
+        "--source-id", "planned-a",
+        "--provider", "provider-a",
+        "--source-class-id", "planned_timetable",
+        "--freshness-policy", policyPath,
+        "--retrieved-at", "2026-07-02T00:00:00Z",
+        "--freshness-basis-at", "2026-07-01T00:00:00Z",
+        "--raw-object-uri", "s3://bucket/snapshot-planned-a.csv",
+        "--freshness-expires-at", "2026-07-31T00:00:00Z",
+        "--raw-retention-expires-at", "2026-10-01T00:00:00Z",
+      ], { cwd: root }),
+      /--provider-valid-until is required/,
+    );
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
@@ -2587,6 +2746,7 @@ test("데이터팩 remote publish env exporter는 object storage와 signing 값�
   assert.match(stdout, /^::add-mask::private-key\\nline$/m);
   assert.match(stdout, /^::add-mask::private-key%0Aline$/m);
   assert.match(exported, /^EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled$/m);
+  assert.match(exported, /^EASYSUBWAY_DATA_PACK_BASE_URL=https:\/\/cdn\.example\.com\/easysubway-datapacks$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_ENDPOINT=https:\/\/object-storage\.example\.com$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY=access-key$/m);
   assert.match(exported, /^EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=secret-key$/m);
@@ -2636,6 +2796,7 @@ test("데이터팩 remote publish env exporter는 PAR URL을 secret publish targ
   const exported = await readFile(githubEnvFile, "utf8");
   assert.match(stdout, /^::add-mask::https:\/\/objectstorage\.example\.com\/p\/token\/n\/ns\/b\/bucket\/o\/$/m);
   assert.match(exported, /^EASYSUBWAY_DATAPACK_REMOTE_PUBLISH=enabled$/m);
+  assert.match(exported, /^EASYSUBWAY_DATA_PACK_BASE_URL=https:\/\/cdn\.example\.com\/easysubway-datapacks$/m);
   assert.match(
     exported,
     /^EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL=https:\/\/objectstorage\.example\.com\/p\/token\/n\/ns\/b\/bucket\/o\/$/m,
@@ -7852,6 +8013,8 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
       "kric-train-operation-organ",
       "--provider",
       "국가철도공단",
+      "--source-class-id",
+      "static_network_metadata",
       "--retrieved-at",
       "2026-07-02T00:00:00Z",
       "--source-updated-at",
@@ -7911,6 +8074,8 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
         "kric-train-operation-organ",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_network_metadata",
         "--retrieved-at",
         "2026-07-02T00:00:00Z",
         "--source-updated-at",
@@ -7955,6 +8120,8 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
         "kric-train-operation-organ",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_network_metadata",
         "--retrieved-at",
         "2026-07-02T00:00:00Z",
         "--source-updated-at",
@@ -8105,6 +8272,8 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
         "kric-train-operation-organ",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_network_metadata",
         "--retrieved-at",
         "2026-07-02T00:00:00Z",
         "--source-updated-at",
@@ -8252,6 +8421,8 @@ test("source admission pipeline은 JSON credential raw response를 저장 전에
         "kric-train-operation-organ",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_network_metadata",
         "--retrieved-at",
         "2026-07-02T00:00:00Z",
         "--raw-object-uri",
@@ -8310,6 +8481,8 @@ test("source admission pipeline은 live fetch 실패 메시지에서 service key
         "kric-train-operation-organ",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_network_metadata",
         "--retrieved-at",
         "2026-07-02T00:00:00Z",
         "--raw-object-uri",
@@ -8378,6 +8551,8 @@ test("source admission pipeline은 admin 승인 없는 inventory admission을 �
         "kric-train-operation-organ",
         "--provider",
         "국가철도공단",
+        "--source-class-id",
+        "static_network_metadata",
         "--retrieved-at",
         "2026-07-02T00:00:00Z",
         "--raw-object-uri",
@@ -17499,11 +17674,12 @@ test("build-admin-review-record 산출물은 run-source-admission-pipeline을 �
       "--snapshot-id", "kric-train-operation-organ-snapshot-20260702",
       "--source-id", "kric-train-operation-organ",
       "--provider", "국가철도공단",
+      "--source-class-id", "static_network_metadata",
       "--retrieved-at", "2026-07-02T00:00:00Z",
       "--source-updated-at", "2026-07-02T00:00:00Z",
       "--raw-object-uri", "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
-      "--freshness-expires-at", "2099-08-01T00:00:00Z",
-      "--raw-retention-expires-at", "2099-10-01T00:00:00Z",
+      "--freshness-expires-at", "2026-08-01T00:00:00Z",
+      "--raw-retention-expires-at", "2026-10-01T00:00:00Z",
       "--admin-review", adminReviewPath,
       "--output-inventory", outputInventoryPath,
       "--output", summaryPath,

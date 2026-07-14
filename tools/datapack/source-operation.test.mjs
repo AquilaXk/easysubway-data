@@ -585,6 +585,7 @@ test("공식 OD fare source는 재현 가능한 operation과 조회 명령을 �
     runbook.operationLookupCommand,
     "node tools/ci/api-catalog.mjs show provider:<sourceId>",
   );
+  assert.match(runbook.command, /--source-class-id <sourceClassId>/);
 });
 
 test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", async () => {
