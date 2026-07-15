@@ -453,6 +453,44 @@ export function validateManifestV2Envelope(manifest) {
   } else if (!/^[A-Za-z0-9_-]+$/.test(value)) {
     throw new Error("manifest.signature.value must be a base64url string");
   }
+  if (manifest.rollbackProvenance !== undefined) {
+    validateRollbackProvenance(manifest.rollbackProvenance, manifest.releaseSequence);
+  }
+}
+
+function validateRollbackProvenance(provenance, rescueSequence) {
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) {
+    throw new Error("manifest.rollbackProvenance must be an object");
+  }
+  const allowed = new Set([
+    "kind", "currentReleaseSequence", "failedReleaseSequence", "failedManifestSha256", "knownGoodReleaseSequence",
+    "knownGoodManifestSha256", "rollbackApprovalEventId", "approvedByRole", "approvedAt", "reasonCode",
+  ]);
+  for (const key of Object.keys(provenance)) {
+    if (!allowed.has(key)) throw new Error(`manifest.rollbackProvenance additional field is unsupported: ${key}`);
+  }
+  if (provenance.kind !== "MONOTONIC_RESCUE") {
+    throw new Error("manifest.rollbackProvenance.kind must be MONOTONIC_RESCUE");
+  }
+  const current = requiredPositiveInteger(provenance.currentReleaseSequence, "manifest.rollbackProvenance.currentReleaseSequence");
+  const failed = requiredPositiveInteger(provenance.failedReleaseSequence, "manifest.rollbackProvenance.failedReleaseSequence");
+  const knownGood = requiredPositiveInteger(provenance.knownGoodReleaseSequence, "manifest.rollbackProvenance.knownGoodReleaseSequence");
+  if (current !== failed) throw new Error("manifest.rollbackProvenance failed release must match current release");
+  if (!(knownGood < failed && failed < rescueSequence)) {
+    throw new Error("manifest.rollbackProvenance sequences must satisfy knownGood < failed < rescue");
+  }
+  requiredSha256(provenance.failedManifestSha256, "manifest.rollbackProvenance.failedManifestSha256");
+  requiredSha256(provenance.knownGoodManifestSha256, "manifest.rollbackProvenance.knownGoodManifestSha256");
+  requiredMatchingString(provenance.rollbackApprovalEventId, "manifest.rollbackProvenance.rollbackApprovalEventId", /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+  requiredMatchingString(provenance.approvedByRole, "manifest.rollbackProvenance.approvedByRole", /^[A-Za-z][A-Za-z0-9._-]{0,63}$/);
+  requiredDate(provenance.approvedAt, "manifest.rollbackProvenance.approvedAt");
+  requiredMatchingString(provenance.reasonCode, "manifest.rollbackProvenance.reasonCode", /^[A-Z][A-Z0-9_]{0,63}$/);
+}
+
+function requiredMatchingString(value, label, pattern) {
+  const text = requiredString(value, label);
+  if (!pattern.test(text)) throw new Error(`${label} is invalid`);
+  return text;
 }
 
 export function validateManifestSignature(manifest) {

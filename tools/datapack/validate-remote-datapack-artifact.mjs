@@ -38,6 +38,7 @@ const summary = {
   releaseSequence: manifest.releaseSequence,
   publishedAt: manifest.publishedAt,
   expiresAt: manifest.expiresAt,
+  rollbackProvenance: manifest.rollbackProvenance,
   packs: (manifest.packs ?? []).map((pack) => ({
     id: pack.id,
     version: pack.version,

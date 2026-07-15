@@ -10,6 +10,7 @@ import {
   bindAuthoritativeLaunchEvidence,
   buildLaunchCandidateBinding,
 } from "./launch-candidate-binding.mjs";
+import { validateManifest } from "./lib/manifest-validation.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const STATUSES = new Set(["PASS", "FAIL", "BLOCKED_EXTERNAL"]);
@@ -79,6 +80,150 @@ function validateRouteGraphTopologyIntegrity(bundle) {
   }
   if (status === "PASS" && violationCount !== 0) {
     throw new Error("routeGraphTopologyStatus PASS requires routeGraphTopologyViolationCount 0");
+  }
+}
+
+function validateRollbackRescue(bundle, requirePass, evidenceRaw, evidence, manifestRaw) {
+  const rescue = bundle.rollbackRescue;
+  if (rescue === undefined) return;
+  if (!rescue || typeof rescue !== "object" || Array.isArray(rescue)) {
+    throw new Error("rollbackRescue must be an object");
+  }
+  if (!evidenceRaw || !evidence) throw new Error("rollbackRescue requires --rollback-evidence");
+  if (!manifestRaw) throw new Error("rollbackRescue requires --rollback-manifest");
+  validateRollbackShape(rescue);
+  validateRollbackBundleBinding(rescue, bundle);
+  validateRollbackArtifactBinding(rescue, evidenceRaw, evidence, manifestRaw);
+  if (requirePass && rescue.validatorStatus !== "PASS") {
+    throw new Error("rollbackRescue validatorStatus must be PASS");
+  }
+  if (requirePass && rescue.manifestLastStatus !== "PASS") {
+    throw new Error("rollbackRescue manifestLastStatus must be PASS");
+  }
+}
+
+function validateRollbackShape(rescue) {
+  for (const field of [
+    "evidenceSha256",
+    "rcManifestSha256",
+    "knownGoodPackSha256",
+    "knownGoodSqliteSha256",
+    "rescueManifestSha256",
+  ]) {
+    if (!SHA256.test(rescue[field] ?? "")) throw new Error(`rollbackRescue ${field} must be sha256`);
+  }
+  for (const field of ["releaseRequestId", "rollbackApprovalEventId", "rcCandidateId"]) {
+    if (typeof rescue[field] !== "string" || rescue[field].length === 0) {
+      throw new Error(`rollbackRescue ${field} must be a non-empty string`);
+    }
+  }
+  for (const field of [
+    "currentReleaseSequence",
+    "failedReleaseSequence",
+    "knownGoodReleaseSequence",
+    "rescueReleaseSequence",
+  ]) {
+    if (!Number.isInteger(rescue[field]) || rescue[field] < 1) {
+      throw new Error(`rollbackRescue ${field} must be a positive integer`);
+    }
+  }
+  if (!(
+    rescue.knownGoodReleaseSequence < rescue.failedReleaseSequence
+    && rescue.failedReleaseSequence === rescue.currentReleaseSequence
+    && rescue.currentReleaseSequence < rescue.rescueReleaseSequence
+  )) {
+    throw new Error("rollbackRescue sequences must satisfy knownGood < failed = current < rescue");
+  }
+  if (!Number.isInteger(rescue.recoveryDurationSeconds) || rescue.recoveryDurationSeconds < 0) {
+    throw new Error("rollbackRescue recoveryDurationSeconds must be a non-negative integer");
+  }
+  if (!new Set(["PASS", "FAIL"]).has(rescue.validatorStatus)) {
+    throw new Error("rollbackRescue validatorStatus must be PASS or FAIL");
+  }
+  if (!new Set(["PASS", "FAIL", "NOT_EXECUTED"]).has(rescue.manifestLastStatus)) {
+    throw new Error("rollbackRescue manifestLastStatus is invalid");
+  }
+  if (!new Set(["DRY_RUN", "LOCAL_FIXTURE", "NON_PRODUCTION", "PRODUCTION"]).has(rescue.executionEnvironment)) {
+    throw new Error("rollbackRescue executionEnvironment is invalid");
+  }
+  if (typeof rescue.productionExecuted !== "boolean") {
+    throw new TypeError("rollbackRescue productionExecuted must be boolean");
+  }
+  if ((rescue.executionEnvironment === "PRODUCTION") !== rescue.productionExecuted) {
+    throw new Error("rollbackRescue productionExecuted must match executionEnvironment");
+  }
+}
+
+function validateRollbackBundleBinding(rescue, bundle) {
+  if (rescue.releaseRequestId !== bundle.releaseRequestId) {
+    throw new Error("rollbackRescue releaseRequestId must match bundle releaseRequestId");
+  }
+  if (rescue.rcCandidateId !== bundle.candidateId) {
+    throw new Error("rollbackRescue rcCandidateId must match bundle candidateId");
+  }
+  if (rescue.rcManifestSha256 !== bundle.manifestSha256) {
+    throw new Error("rollbackRescue rcManifestSha256 must match bundle manifestSha256");
+  }
+}
+
+function validateRollbackArtifactBinding(rescue, evidenceRaw, evidence, manifestRaw) {
+  if (rescue.evidenceSha256 !== createHash("sha256").update(evidenceRaw).digest("hex")) {
+    throw new Error("rollbackRescue evidence sha256 mismatch");
+  }
+  if (rescue.rescueManifestSha256 !== createHash("sha256").update(manifestRaw).digest("hex")) {
+    throw new Error("rollbackRescue manifest sha256 mismatch");
+  }
+  const manifest = JSON.parse(manifestRaw);
+  validateManifest(manifest, { requireProduction: true, releasesTarget: true });
+  if (manifest.releaseSequence !== rescue.rescueReleaseSequence) {
+    throw new Error("rollbackRescue manifest releaseSequence mismatch");
+  }
+  if (evidence.schemaVersion !== 1 || evidence.artifactKind !== "datapack-rollback-rescue-evidence") {
+    throw new Error("rollbackRescue evidence identity mismatch");
+  }
+  for (const [field, actual] of [
+    ["rollbackApprovalEventId", evidence.rollbackApprovalEventId],
+    ["currentReleaseSequence", evidence.from?.releaseSequence],
+    ["failedReleaseSequence", evidence.failed?.releaseSequence],
+    ["knownGoodReleaseSequence", evidence.knownGood?.releaseSequence],
+    ["rescueReleaseSequence", evidence.rescue?.releaseSequence],
+    ["rescueManifestSha256", evidence.rescue?.manifestSha256],
+    ["recoveryDurationSeconds", evidence.recoveryDurationSeconds],
+    ["validatorStatus", evidence.validatorStatus],
+    ["manifestLastStatus", evidence.manifestLastStatus],
+    ["executionEnvironment", evidence.executionEnvironment],
+    ["productionExecuted", evidence.productionExecuted],
+  ]) {
+    if (rescue[field] !== actual) throw new Error(`rollbackRescue ${field} evidence mismatch`);
+  }
+  const provenance = manifest.rollbackProvenance;
+  for (const [field, expected] of [
+    ["currentReleaseSequence", rescue.currentReleaseSequence],
+    ["failedReleaseSequence", rescue.failedReleaseSequence],
+    ["knownGoodReleaseSequence", rescue.knownGoodReleaseSequence],
+    ["failedManifestSha256", rescue.rcManifestSha256],
+    ["knownGoodManifestSha256", evidence.knownGood?.manifestSha256],
+    ["rollbackApprovalEventId", rescue.rollbackApprovalEventId],
+  ]) {
+    if (provenance?.[field] !== expected) {
+      throw new Error(`rollbackRescue manifest rollbackProvenance ${field} mismatch`);
+    }
+  }
+  if (evidence.failed?.manifestSha256 !== rescue.rcManifestSha256) {
+    throw new Error("rollbackRescue failed manifest evidence mismatch");
+  }
+  const knownGoodPack = evidence.knownGood?.packs?.find((pack) =>
+    pack.sha256 === rescue.knownGoodPackSha256
+    && pack.sqliteSha256 === rescue.knownGoodSqliteSha256);
+  if (!knownGoodPack) {
+    throw new Error("rollbackRescue known-good pack evidence mismatch");
+  }
+  if (!manifest.packs.some((pack) =>
+    pack.id === knownGoodPack.id
+    && pack.version === knownGoodPack.version
+    && pack.sha256 === knownGoodPack.sha256
+    && pack.sqliteSha256 === knownGoodPack.sqliteSha256)) {
+    throw new Error("rollbackRescue manifest known-good pack identity mismatch");
   }
 }
 
@@ -206,6 +351,15 @@ async function main() {
   }
 
   const bundle = JSON.parse(await readFile(bundlePath, "utf8"));
+  const rollbackEvidencePath = argValue(args, "--rollback-evidence");
+  const rollbackEvidenceRaw = rollbackEvidencePath
+    ? await readFile(rollbackEvidencePath, "utf8")
+    : null;
+  const rollbackEvidence = rollbackEvidenceRaw ? JSON.parse(rollbackEvidenceRaw) : null;
+  const rollbackManifestPath = argValue(args, "--rollback-manifest");
+  const rollbackManifestRaw = rollbackManifestPath
+    ? await readFile(rollbackManifestPath, "utf8")
+    : null;
   const scopeRaw = await readFile(scopePath, "utf8");
   const scope = JSON.parse(scopeRaw);
   const launchReportRaw = await readFile(launchReportPath, "utf8");
@@ -308,6 +462,7 @@ async function main() {
   }
 
   validateRouteGraphTopologyIntegrity(bundle);
+  validateRollbackRescue(bundle, requirePass, rollbackEvidenceRaw, rollbackEvidence, rollbackManifestRaw);
 }
 
 main().catch((error) => {

@@ -82,6 +82,9 @@ jobs:
             echo "EASYSUBWAY_DATAPACK_RELEASE_DECISION=${{ runner.temp }}/easysubway-datapack-stage/release-decision.json"
             echo "EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION=${{ runner.temp }}/easysubway-datapack-stage/final-release-decision.json"
             echo "EASYSUBWAY_DATAPACK_REMOTE_VALIDATION=${{ runner.temp }}/easysubway-datapack-remote-validation"
+            echo "EASYSUBWAY_DATAPACK_ROLLBACK_APPROVAL=${{ runner.temp }}/easysubway-rollback-approval.json"
+            echo "EASYSUBWAY_DATAPACK_ROLLBACK_EVIDENCE=${{ runner.temp }}/easysubway-datapack-rollback-rescue.json"
+            echo "EASYSUBWAY_DATAPACK_ROLLBACK_MANIFEST=${{ runner.temp }}/easysubway-datapack-rollback-rescue-manifest.json"
           } >> "${GITHUB_ENV}"
 
       - name: Data Pack Release / Parse modeArgs
@@ -102,11 +105,11 @@ jobs:
               console.error("modeArgs must be a JSON object");
               process.exit(1);
             }
-            const keys = ["buildSpecPath","releaseRequestId","releaseRequestPath","androidEvidencePath","strictRouteRegressionPath","allowGaps","rollbackTargetSequence","rollbackReason","rollbackIdempotencyKey","rolloutPercentage","rolloutTargetSequence","sourceGovernanceEvaluationAt"];
+            const keys = ["buildSpecPath","releaseRequestId","releaseRequestPath","androidEvidencePath","strictRouteRegressionPath","allowGaps","rollbackTargetSequence","rollbackFailedSequence","rollbackPublishedAt","rollbackExpiresAt","rolloutPercentage","rolloutTargetSequence","sourceGovernanceEvaluationAt"];
             const out = [];
             for (const k of keys) {
               const v = String(a[k] ?? "");
-              if (v.includes("\n")) {
+              if (v.includes("\n") || v.includes("\r")) {
                 console.error("modeArgs." + k + " must not contain newlines");
                 process.exit(1);
               }
@@ -237,6 +240,14 @@ jobs:
           fi
           if [[ "${mode}" == "production-publish" && "${target_channel}" != "production" ]]; then
             echo "production-publish requires targetChannel=production" >&2
+            exit 1
+          fi
+          if [[ "${mode}" == "rollback" && -z "${RELEASE_REQUEST_ID_INPUT:-}" ]]; then
+            echo "rollback requires releaseRequestId approval evidence" >&2
+            exit 1
+          fi
+          if [[ "${mode}" == "rollback" && -n "${release_request_path}" ]]; then
+            echo "rollback approval must be fetched from the authenticated API" >&2
             exit 1
           fi
 
@@ -375,6 +386,24 @@ jobs:
           curl -fsS -H "Authorization: Bearer ${token}" \
             "${API_BASE}/admin/api/datapack/release-requests/${releaseRequestId}" > release-request.json
           echo "RELEASE_REQUEST_PATH=release-request.json" >> "$GITHUB_ENV"
+
+      - name: Data Pack Release / Fetch rollback approval
+        if: ${{ steps.release-mode.outputs.mode == 'rollback' }}
+        env:
+          API_BASE: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
+          releaseRequestId: ${{ steps.release-mode.outputs.release_request_id }}
+        run: |
+          set -euo pipefail
+          _envfile_val() {
+            [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]] && { printf ''; return; }
+            local line
+            line="$(grep -m1 "^$1=" "${EASYSUBWAY_ENV_FILE}" 2>/dev/null || true)"
+            printf '%s' "${line#$1=}"
+          }
+          token="$(_envfile_val EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN)"
+          curl -fsS -H "Authorization: Bearer ${token}" \
+            "${API_BASE}/admin/api/datapack/rollback-approvals/${releaseRequestId}" \
+            > "${EASYSUBWAY_DATAPACK_ROLLBACK_APPROVAL}"
 
       - name: Data Pack Release / Prepare release fixture
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
@@ -945,22 +974,37 @@ jobs:
           curl -fsS -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \
             --data @callback.json "${API_BASE}/admin/api/datapack/release-callbacks" || echo "callback delivery failed (non-fatal)"
 
-      - name: Data Pack Release / Rollback pointer swap
+      - name: Data Pack Release / Publish monotonic rescue release
         if: ${{ steps.release-mode.outputs.mode == 'rollback' && steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}
         env:
-          # workflow_dispatch 자유입력을 셸에 직접 보간하지 않고 env로 전달한다(GHA expression injection 방지).
           ROLLBACK_TARGET_SEQUENCE: ${{ steps.args.outputs.rollbackTargetSequence }}
+          ROLLBACK_FAILED_SEQUENCE: ${{ steps.args.outputs.rollbackFailedSequence }}
           ROLLBACK_TARGET_CHANNEL: ${{ github.event.inputs.targetChannel }}
-          ROLLBACK_REASON: ${{ steps.args.outputs.rollbackReason }}
-          ROLLBACK_IDEMPOTENCY_KEY: ${{ steps.args.outputs.rollbackIdempotencyKey }}
+          ROLLBACK_PUBLISHED_AT: ${{ steps.args.outputs.rollbackPublishedAt }}
+          ROLLBACK_EXPIRES_AT: ${{ steps.args.outputs.rollbackExpiresAt }}
         run: |
           set -euo pipefail
           node tools/datapack/rollback-manifest.mjs \
             --target-sequence "${ROLLBACK_TARGET_SEQUENCE}" \
+            --failed-sequence "${ROLLBACK_FAILED_SEQUENCE}" \
             --channel "${ROLLBACK_TARGET_CHANNEL}" \
             --base-url "${EASYSUBWAY_OBJECT_STORAGE_PREAUTH_BASE_URL}" \
-            --reason "${ROLLBACK_REASON}" \
-            --idempotency-key "${ROLLBACK_IDEMPOTENCY_KEY}"
+            --approval "${EASYSUBWAY_DATAPACK_ROLLBACK_APPROVAL}" \
+            --published-at "${ROLLBACK_PUBLISHED_AT}" \
+            --expires-at "${ROLLBACK_EXPIRES_AT}" \
+            --manifest-output "${EASYSUBWAY_DATAPACK_ROLLBACK_MANIFEST}" \
+            --evidence-output "${EASYSUBWAY_DATAPACK_ROLLBACK_EVIDENCE}"
+
+      - name: Data Pack Release / Upload rollback rescue evidence
+        if: ${{ always() && steps.release-mode.outputs.mode == 'rollback' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-datapack-rollback-rescue-${{ github.run_id }}
+          path: |
+            ${{ env.EASYSUBWAY_DATAPACK_ROLLBACK_EVIDENCE }}
+            ${{ env.EASYSUBWAY_DATAPACK_ROLLBACK_MANIFEST }}
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Data Pack Release / Rollout update pointer swap
         if: ${{ steps.release-mode.outputs.mode == 'rollout-update' && steps.remote-publish-env.outputs.enabled == 'true' && github.ref == 'refs/heads/main' }}

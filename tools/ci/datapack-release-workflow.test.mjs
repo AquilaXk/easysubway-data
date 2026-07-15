@@ -128,6 +128,39 @@ test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고
   assert.doesNotMatch(yml, /mode != 'rollback'/);  // 구 게이트가 pointer-only로 통합됨
 });
 
+test("rollback 모드는 trusted approval·원격 catalog inventory와 sanitized report를 강제한다", () => {
+  const parseStep = yml.match(/- name: Data Pack Release \/ Parse modeArgs[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(parseStep, "Parse modeArgs 스텝을 찾지 못함");
+  for (const field of [
+    "rollbackFailedSequence",
+    "rollbackPublishedAt",
+    "rollbackExpiresAt",
+  ]) {
+    assert.match(parseStep, new RegExp(field));
+  }
+  for (const untrustedField of ["rollbackCatalogSequences", "rollbackApprovedByRole", "rollbackApprovedAt", "rollbackReasonCode"]) {
+    assert.doesNotMatch(parseStep, new RegExp(untrustedField));
+  }
+  const approvalStep = yml.match(/- name: Data Pack Release \/ Fetch rollback approval[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(approvalStep, "trusted rollback approval 조회 스텝을 찾지 못함");
+  assert.match(approvalStep, /rollback-approvals/);
+  assert.match(approvalStep, /Authorization: Bearer/);
+  const rollbackStep = yml.match(/- name: Data Pack Release \/ Publish monotonic rescue release[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(rollbackStep, "monotonic rescue publish 스텝을 찾지 못함");
+  assert.match(rollbackStep, /--failed-sequence/);
+  assert.match(rollbackStep, /--approval/);
+  assert.match(rollbackStep, /--published-at/);
+  assert.match(rollbackStep, /--expires-at/);
+  assert.match(rollbackStep, /--manifest-output/);
+  assert.match(rollbackStep, /--evidence-output/);
+  assert.doesNotMatch(rollbackStep, /--reason|--idempotency-key/);
+  assert.doesNotMatch(rollbackStep, /--catalog-sequences/);
+  assert.ok(yml.indexOf("Fetch rollback approval") < yml.indexOf("Publish monotonic rescue release"));
+  assert.match(yml, /Data Pack Release \/ Upload rollback rescue evidence/);
+  assert.match(yml, /easysubway-datapack-rollback-rescue-/);
+  assert.match(yml, /EASYSUBWAY_DATAPACK_ROLLBACK_MANIFEST/);
+});
+
 test("production publish는 canonical decision의 write 허용 뒤에만 실행된다", () => {
   assert.match(yml, /id:\s*release-decision/);
   assert.match(yml, /node tools\/datapack\/decide-datapack-release\.mjs/);

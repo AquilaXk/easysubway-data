@@ -39,6 +39,18 @@ function requireSha(value, name) {
   return text;
 }
 
+function requirePositiveInteger(value, name) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+function requirePass(value, name) {
+  if (value !== "PASS") throw new Error(`${name} must be PASS`);
+  return value;
+}
+
 function parseTime(value, name) {
   const millis = Date.parse(requireString(value, name));
   if (!Number.isFinite(millis)) {
@@ -89,6 +101,19 @@ async function main() {
   if (rollbackTimeSeconds < 0) {
     throw new Error("rollback.completedAt must be after rollback.startedAt");
   }
+  const currentReleaseSequence = requirePositiveInteger(rollback.currentReleaseSequence, "rollback.currentReleaseSequence");
+  const failedReleaseSequence = requirePositiveInteger(rollback.failedReleaseSequence, "rollback.failedReleaseSequence");
+  const knownGoodReleaseSequence = requirePositiveInteger(rollback.knownGoodReleaseSequence, "rollback.knownGoodReleaseSequence");
+  const rescueReleaseSequence = requirePositiveInteger(rollback.rescueReleaseSequence, "rollback.rescueReleaseSequence");
+  if (!(knownGoodReleaseSequence < failedReleaseSequence
+    && failedReleaseSequence === currentReleaseSequence
+    && currentReleaseSequence < rescueReleaseSequence)) {
+    throw new Error("rollback sequences must satisfy knownGood < failed = current < rescue");
+  }
+  const rescueManifestSha256 = requireSha(rollback.rescueManifestSha256, "rollback.rescueManifestSha256");
+  if (rescueManifestSha256 !== fixedManifest.sha256) {
+    throw new Error("rollback rescueManifestSha256 must match fixedManifest.sha256");
+  }
 
   const emergencyPatch = requireObject(input.emergencyPatch, "emergencyPatch");
   const routeRegressionReplay = requireObject(input.routeRegressionReplay, "routeRegressionReplay");
@@ -108,6 +133,15 @@ async function main() {
       badManifestUrl: badManifest.url,
       badManifestSha256: badManifest.sha256,
       rollbackTimeSeconds,
+      releaseSequences: {
+        knownGood: knownGoodReleaseSequence,
+        failed: failedReleaseSequence,
+        current: currentReleaseSequence,
+        rescue: rescueReleaseSequence,
+      },
+      rescueManifestSha256,
+      manifestLastStatus: requirePass(rollback.manifestLastStatus, "rollback.manifestLastStatus"),
+      idempotentReplayStatus: requirePass(rollback.idempotentReplayStatus, "rollback.idempotentReplayStatus"),
     },
     emergencyPatch: {
       auditId: requireString(emergencyPatch.auditId, "emergencyPatch.auditId"),

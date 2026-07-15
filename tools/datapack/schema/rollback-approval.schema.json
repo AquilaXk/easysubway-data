@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.local/schema/datapack-rollback-approval.schema.json",
+  "title": "EasySubway approved data pack rollback event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "rollbackApprovalEventId",
+    "targetChannel",
+    "failedManifestSha256",
+    "knownGoodManifestSha256",
+    "approvedBy",
+    "approvedByRole",
+    "approvedAt",
+    "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "datapack-rollback-approval" },
+    "rollbackApprovalEventId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "targetChannel": { "enum": ["dev", "staging", "production"] },
+    "failedManifestSha256": { "$ref": "#/$defs/sha256" },
+    "knownGoodManifestSha256": { "$ref": "#/$defs/sha256" },
+    "approvedBy": { "type": "string", "minLength": 1 },
+    "approvedByRole": { "const": "admin.datapack.rollback" },
+    "approvedAt": { "type": "string", "format": "date-time" },
+    "reasonCode": { "const": "ADMIN_APPROVED_ROLLBACK" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

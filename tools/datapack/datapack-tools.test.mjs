@@ -13970,6 +13970,13 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
         rollback: {
           startedAt: "2026-07-01T10:00:00.000Z",
           completedAt: "2026-07-01T10:03:20.000Z",
+          currentReleaseSequence: 43,
+          failedReleaseSequence: 43,
+          knownGoodReleaseSequence: 42,
+          rescueReleaseSequence: 44,
+          rescueManifestSha256: fixedManifestSha256,
+          manifestLastStatus: "PASS",
+          idempotentReplayStatus: "PASS",
         },
         emergencyPatch: {
           auditId: "patch-route-edge-1",
@@ -14008,6 +14015,15 @@ test("emergency datapack drill은 rollback, patch, route regression 증거를 �
   assert.equal(evidence.rollback.previousKnownGoodManifestSha256, knownGoodManifestSha256);
   assert.equal(evidence.rollback.badManifestSha256, badManifestSha256);
   assert.equal(evidence.rollback.rollbackTimeSeconds, 200);
+  assert.deepEqual(evidence.rollback.releaseSequences, {
+    knownGood: 42,
+    failed: 43,
+    current: 43,
+    rescue: 44,
+  });
+  assert.equal(evidence.rollback.rescueManifestSha256, fixedManifestSha256);
+  assert.equal(evidence.rollback.manifestLastStatus, "PASS");
+  assert.equal(evidence.rollback.idempotentReplayStatus, "PASS");
   assert.equal(evidence.emergencyPatch.auditId, "patch-route-edge-1");
   assert.deepEqual(
     evidence.emergencyPatch.correctedTables,
@@ -15956,6 +15972,7 @@ async function startRolloutTestStorage(seed) {
     const found = objects.get(key);
     if (!found) { res.statusCode = 404; res.end(); return; }
     res.setHeader("content-length", String(found.body.length));
+    res.setHeader("etag", `"${createHash("sha256").update(found.body).digest("hex")}"`);
     res.statusCode = 200;
     res.end(req.method === "HEAD" ? undefined : found.body);
   });
