@@ -79,6 +79,43 @@ test("coverage gap 스텝은 release 모드에서만 production provenance와 re
   assert.match(yml, /release mode cannot use --allow-gaps/);
 });
 
+test("release evidence는 canonical launch denominator report identity와 decision을 소비한다", () => {
+  const evidenceStep = yml.match(
+    /- name: Data Pack Release \/ Write release evidence bundle[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(evidenceStep, "release evidence bundle 스텝을 찾지 못함");
+  assert.match(evidenceStep, /EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT/);
+  assert.match(evidenceStep, /buildLaunchCandidateBinding/);
+  assert.match(evidenceStep, /buildLaunchDenominatorReport/);
+  assert.match(evidenceStep, /launchDenominatorReportRaw/);
+  assert.match(evidenceStep, /verifiedAccessibilityScopeSha256:\s*launchReport\.scopes\.verifiedAccessibilityScope\.sha256/);
+  assert.match(evidenceStep, /launchScopeSha256:\s*launchReport\.scopes\.routingLaunchScope\.sha256/);
+  assert.match(evidenceStep, /nationwideRoadmapScopeSha256:\s*launchReport\.scopes\.nationwideRoadmapScope\.sha256/);
+  assert.match(evidenceStep, /identityLinkageMatrixSha256:\s*launchReport\.identityLinkage\.matrixSha256/);
+  assert.match(evidenceStep, /launchDenominatorDecision:\s*launchReport\.decision/);
+  assert.match(evidenceStep, /launchDenominatorReportSha256:\s*hashBytes\(launchDenominatorReportRaw\)/);
+  assert.doesNotMatch(evidenceStep, /scopeId:\s*"capital_pilot_android_v1"/);
+  assert.match(yml, /--scope apps\/mobile\/release\/production-datapack-scope\.json/);
+  const normalValidationStep = yml.match(
+    /- name: Data Pack Release \/ Validate release evidence bundle[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(normalValidationStep, "normal release evidence validation 스텝을 찾지 못함");
+  const publishValidationStep = yml.match(
+    /- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(publishValidationStep, "production publish validation 스텝을 찾지 못함");
+  for (const [label, step] of [
+    ["normal", normalValidationStep],
+    ["publish", publishValidationStep],
+  ]) {
+    assert.match(step, /--scope apps\/mobile\/release\/production-datapack-scope\.json/, `${label} scope binding`);
+    assert.match(step, /--launch-report "?\$\{EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT\}"?/, `${label} report binding`);
+    assert.match(step, /--build-spec/, `${label} build spec binding`);
+    assert.match(step, /--manifest/, `${label} manifest binding`);
+    assert.match(step, /--source-evidence/, `${label} source evidence binding`);
+  }
+});
+
 test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고 빌드 스텝을 pointer-only로 게이트한다", () => {
   assert.match(yml, /rollout-update/);
   assert.match(yml, /publish-rollout\.mjs/);

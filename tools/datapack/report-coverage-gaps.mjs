@@ -579,19 +579,22 @@ function resolveReleaseScope(releaseScope) {
   if (!releaseScope || typeof releaseScope !== "object" || Array.isArray(releaseScope)) {
     throw new Error("release scope must be an object");
   }
-  const supportScope = releaseScope.supportScope;
+  const supportScope = releaseScope.verifiedAccessibilityScope;
   if (!supportScope || typeof supportScope !== "object" || Array.isArray(supportScope)) {
-    throw new Error("release scope supportScope must be an object");
+    throw new Error("release scope verifiedAccessibilityScope must be an object");
   }
-  const scopeId = requiredString(supportScope.id, "release scope supportScope.id");
-  const regionIds = requiredStringArray(supportScope.regionIds, "release scope supportScope.regionIds");
+  const scopeId = requiredString(supportScope.id, "release scope verifiedAccessibilityScope.id");
+  const regionIds = requiredStringArray(
+    supportScope.regionIds,
+    "release scope verifiedAccessibilityScope.regionIds",
+  );
   const operatorIds = requiredStringArray(
     supportScope.includedOperatorIds,
-    "release scope supportScope.includedOperatorIds",
+    "release scope verifiedAccessibilityScope.includedOperatorIds",
   );
   const lineIds = requiredStringArray(
     supportScope.includedLineIds,
-    "release scope supportScope.includedLineIds",
+    "release scope verifiedAccessibilityScope.includedLineIds",
   );
   return {
     scopeId,

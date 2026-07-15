@@ -77,6 +77,7 @@ jobs:
             echo "EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-graph-topology-report.json"
             echo "EASYSUBWAY_HEADWAY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/datapack-headways.json"
             echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${{ runner.temp }}/easysubway-datapack-stage/release-evidence-bundle.json"
+            echo "EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT=${{ runner.temp }}/easysubway-datapack-stage/launch-denominator-report.json"
             echo "EASYSUBWAY_DATAPACK_CURRENT_MANIFEST=${{ runner.temp }}/easysubway-datapack-stage/current-production.json"
             echo "EASYSUBWAY_DATAPACK_RELEASE_DECISION=${{ runner.temp }}/easysubway-datapack-stage/release-decision.json"
             echo "EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION=${{ runner.temp }}/easysubway-datapack-stage/final-release-decision.json"
@@ -525,27 +526,57 @@ jobs:
         id: evidence-bundle
         run: |
           set -euo pipefail
-          node - <<'NODE'
-          const { createHash } = require("crypto");
-          const fs = require("fs");
-          const path = require("path");
+          node --input-type=module - <<'NODE'
+          import { createHash } from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          import { buildLaunchDenominatorReport } from "./tools/datapack/build-launch-denominator-report.mjs";
+          import {
+            bindAuthoritativeLaunchEvidence,
+            buildLaunchCandidateBinding,
+          } from "./tools/datapack/launch-candidate-binding.mjs";
 
-          const hashFile = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          const hashBytes = (bytes) => createHash("sha256").update(bytes).digest("hex");
+          const hashFile = (file) => hashBytes(fs.readFileSync(file));
           const zeroHash = "0".repeat(64);
           const stage = process.env.EASYSUBWAY_DATAPACK_STAGE;
           const manifestPath = path.join(stage, "catalog", "current.json");
-          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const manifestRaw = fs.readFileSync(manifestPath, "utf8");
+          const manifest = JSON.parse(manifestRaw);
           const pack = manifest.packs?.[0] ?? {};
           const buildSpecPath = process.env.EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH;
-          const buildSpec = JSON.parse(fs.readFileSync(buildSpecPath, "utf8"));
+          const buildSpecRaw = fs.readFileSync(buildSpecPath, "utf8");
+          const buildSpec = JSON.parse(buildSpecRaw);
+          const launchDenominatorTemplatePath =
+            "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
+          const launchTemplate = JSON.parse(fs.readFileSync(launchDenominatorTemplatePath, "utf8"));
+          const productionScope = JSON.parse(
+            fs.readFileSync("apps/mobile/release/production-datapack-scope.json", "utf8"),
+          );
           const catalogDir = path.join(stage, "catalog");
           const gzipFile = fs.readdirSync(catalogDir).find((name) => name.endsWith(".sqlite.gz"));
           const releaseMode = process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE;
           const releaseLike = /^(release-candidate|production-publish)$/.test(releaseMode);
           const strictEvidence = process.env.EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH || "";
           const androidEvidence = process.env.EASYSUBWAY_ANDROID_EVIDENCE_PATH || "";
+          const sourceEvidencePath = `${process.env.EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json`;
+          const optionalRaw = (file) => file && fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+          const launchEvidenceRaw = {
+            buildSpecRaw,
+            manifestRaw,
+            sourceEvidenceRaw: optionalRaw(sourceEvidencePath),
+            serverEvidenceRaw: optionalRaw(strictEvidence),
+            mobileEvidenceRaw: optionalRaw(androidEvidence),
+          };
+          const candidateBinding = buildLaunchCandidateBinding(launchEvidenceRaw);
+          const evaluatorInput = bindAuthoritativeLaunchEvidence(launchTemplate.evaluatorInput, {
+            ...launchEvidenceRaw,
+            candidateBinding,
+          });
+          const launchReport = buildLaunchDenominatorReport(productionScope, evaluatorInput);
+          const launchDenominatorReportRaw = Buffer.from(`${JSON.stringify(launchReport, null, 2)}\n`);
+          fs.writeFileSync(process.env.EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT, launchDenominatorReportRaw);
           const externalStatus = (file) => file && fs.existsSync(file) ? "PASS" : releaseLike ? "FAIL" : "BLOCKED_EXTERNAL";
-          const externalHash = (file) => file && fs.existsSync(file) ? hashFile(file) : zeroHash;
           const releaseHash = (field) => {
             const value = releaseLike ? buildSpec[field] : pack[field] ?? zeroHash;
             const normalized = String(value ?? "").trim().toLowerCase();
@@ -598,28 +629,39 @@ jobs:
           const bundle = {
             schemaVersion: 1,
             artifactKind: "datapack-release-evidence-bundle",
-            candidateId: `${pack.id ?? "unknown"}@${pack.version ?? "unknown"}`,
-            scopeId: "capital_pilot_android_v1",
+            candidateId: candidateBinding.packCandidateId,
+            buildCandidateId: candidateBinding.buildCandidateId,
+            candidateBuilderGitSha: candidateBinding.candidateBuilderGitSha,
+            scopeId: launchReport.scopes.verifiedAccessibilityScope.id,
+            verifiedAccessibilityScopeId: launchReport.scopes.verifiedAccessibilityScope.id,
+            verifiedAccessibilityScopeSha256: launchReport.scopes.verifiedAccessibilityScope.sha256,
+            launchScopeId: launchReport.scopes.routingLaunchScope.id,
+            launchScopeSha256: launchReport.scopes.routingLaunchScope.sha256,
+            nationwideRoadmapScopeId: launchReport.scopes.nationwideRoadmapScope.id,
+            nationwideRoadmapScopeSha256: launchReport.scopes.nationwideRoadmapScope.sha256,
+            identityLinkageMatrixSha256: launchReport.identityLinkage.matrixSha256,
+            launchDenominatorDecision: launchReport.decision,
+            launchDenominatorReportSha256: hashBytes(launchDenominatorReportRaw),
             releaseRequestId: process.env.EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID,
             builderGitSha: process.env.GITHUB_SHA,
-            buildSpecSha256: hashFile(buildSpecPath),
+            buildSpecSha256: candidateBinding.buildSpecSha256,
             supportedDenominatorSha256: hashFile("apps/mobile/release/production-datapack-scope.json"),
             sourceSnapshotSetHash: releaseHash("sourceSnapshotSetHash"),
             approvedAliasLedgerHash: releaseHash("approvedAliasLedgerHash"),
             facilityEvidenceLedgerHash: releaseHash("facilityEvidenceLedgerHash"),
             routeEvidenceLedgerHash: releaseHash("routeEvidenceLedgerHash"),
             approvedOverrideSetHash: releaseHash("approvedOverrideSetHash"),
-            normalizedSourceInventorySha256: hashFile(`${process.env.EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json`),
+            normalizedSourceInventorySha256: candidateBinding.sourceEvidence.sha256 ?? zeroHash,
             sqliteSha256: pack.sqliteSha256 ?? pack.sha256 ?? zeroHash,
             gzipSha256: gzipFile ? hashFile(path.join(catalogDir, gzipFile)) : zeroHash,
-            manifestSha256: hashFile(manifestPath),
+            manifestSha256: candidateBinding.manifestSha256,
             coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
             itxCheongchunCoverageSha256: hashFile("tools/datapack/itx-cheongchun-coverage-contract.json"),
             routeMapPositionCoverageSha256: hashFile(process.env.EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT),
             routeGraphTopologySha256: hashFile(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT),
             headwayReportSha256: hashFile(process.env.EASYSUBWAY_HEADWAY_REPORT),
-            strictRouteRegressionSha256: externalHash(strictEvidence),
-            androidEvidenceSha256: externalHash(androidEvidence),
+            strictRouteRegressionSha256: candidateBinding.serverEvidence.sha256 ?? zeroHash,
+            androidEvidenceSha256: candidateBinding.mobileEvidence.sha256 ?? zeroHash,
             validatorStatus: "PASS",
             coverageStatus: releaseLike ? "PASS" : "BLOCKED_EXTERNAL",
             routeMapPositionCoverageStatus: "PASS",
@@ -639,7 +681,20 @@ jobs:
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
           set -euo pipefail
-          bundle_args=(--bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}")
+          bundle_args=(
+            --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}"
+            --scope apps/mobile/release/production-datapack-scope.json
+            --launch-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}"
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
+            --source-evidence "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json"
+          )
+          if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then
+            bundle_args+=(--server-evidence "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}")
+          fi
+          if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
+            bundle_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
+          fi
           if [[ "${EASYSUBWAY_DATAPACK_RELEASE_MODE}" =~ ^(release-candidate|production-publish)$ ]]; then
             bundle_args+=(--require-pass)
           fi
@@ -721,9 +776,22 @@ jobs:
         id: production-publish
         run: |
           set -euo pipefail
-          node tools/datapack/validate-release-evidence-bundle.mjs \
+          publish_validation_args=(
             --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}" \
+            --scope apps/mobile/release/production-datapack-scope.json \
+            --launch-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}" \
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
+            --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
+            --source-evidence "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json" \
             --require-pass
+          )
+          if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then
+            publish_validation_args+=(--server-evidence "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}")
+          fi
+          if [[ -n "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}" ]]; then
+            publish_validation_args+=(--mobile-evidence "${EASYSUBWAY_ANDROID_EVIDENCE_PATH}")
+          fi
+          node tools/datapack/validate-release-evidence-bundle.mjs "${publish_validation_args[@]}"
           node tools/datapack/validate-datapack.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \

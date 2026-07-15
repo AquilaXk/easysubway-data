@@ -9966,8 +9966,8 @@ test("v1 release gate는 active 노선-운영기관 pair만 평가한다", async
   const releaseScope = JSON.parse(
     await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8"),
   );
-  releaseScope.supportScope.includedOperatorIds = ["seoul-metro", "operator-28e01fb8509d"];
-  releaseScope.supportScope.includedLineIds = ["seoul-4", "shinbundang"];
+  releaseScope.verifiedAccessibilityScope.includedOperatorIds = ["seoul-metro", "operator-28e01fb8509d"];
+  releaseScope.verifiedAccessibilityScope.includedLineIds = ["seoul-4", "shinbundang"];
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
   await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
@@ -10009,7 +10009,7 @@ test("release gate는 일부만 active pair에 매칭되는 scope를 거부한�
   const releaseScope = JSON.parse(
     await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8"),
   );
-  releaseScope.supportScope.includedLineIds.push("unknown-line");
+  releaseScope.verifiedAccessibilityScope.includedLineIds.push("unknown-line");
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   await writeCoverageCandidate(outputDir, completeCoverageProvenance(inventory));
   await writeFile(releaseScopePath, `${JSON.stringify(releaseScope, null, 2)}\n`);
@@ -13010,7 +13010,7 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
   // #2000: scope의 region/operator id가 pilot targets와 하나도 매칭되지 않으면 in-scope requirement가 0개가 되어
   // missingRequirements === 0으로 공허 통과할 위험이 있다. fail closed — 존재하지 않는 regionId scope는 exit 1로 실패한다.
   const emptyScope = JSON.parse(await readFile("apps/mobile/release/production-datapack-scope.json", "utf8"));
-  emptyScope.supportScope.regionIds = ["nonexistent-region"];
+  emptyScope.verifiedAccessibilityScope.regionIds = ["nonexistent-region"];
   const emptyScopePath = path.join(outputDir, "empty-release-scope.json");
   await writeFile(emptyScopePath, `${JSON.stringify(emptyScope, null, 2)}\n`);
   const emptyScopeReportPath = path.join(outputDir, "empty-scope-coverage-gap-report.json");
