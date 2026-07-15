@@ -30,7 +30,7 @@ on:
       modeArgs:
         description: >-
           Mode-specific args as JSON. 예:
-          {"buildSpecPath":"tools/datapack/fixtures/candidate-build-spec.json","releaseRequestId":"exploratory-local","allowGaps":"false"}
+          {"buildSpecPath":"tools/datapack/fixtures/candidate-build-spec.json","releaseRequestId":"exploratory-local","allowGaps":"false","sourceGovernanceEvaluationAt":""}
         required: true
         default: '{"buildSpecPath":"tools/datapack/fixtures/candidate-build-spec.json","releaseRequestId":"exploratory-local","allowGaps":"false"}'
 
@@ -102,7 +102,7 @@ jobs:
               console.error("modeArgs must be a JSON object");
               process.exit(1);
             }
-            const keys = ["buildSpecPath","releaseRequestId","releaseRequestPath","androidEvidencePath","strictRouteRegressionPath","allowGaps","rollbackTargetSequence","rollbackReason","rollbackIdempotencyKey","rolloutPercentage","rolloutTargetSequence"];
+            const keys = ["buildSpecPath","releaseRequestId","releaseRequestPath","androidEvidencePath","strictRouteRegressionPath","allowGaps","rollbackTargetSequence","rollbackReason","rollbackIdempotencyKey","rolloutPercentage","rolloutTargetSequence","sourceGovernanceEvaluationAt"];
             const out = [];
             for (const k of keys) {
               const v = String(a[k] ?? "");
@@ -126,6 +126,7 @@ jobs:
           RELEASE_REQUEST_PATH_INPUT: ${{ steps.args.outputs.releaseRequestPath }}
           ANDROID_EVIDENCE_PATH_INPUT: ${{ steps.args.outputs.androidEvidencePath }}
           STRICT_ROUTE_REGRESSION_PATH_INPUT: ${{ steps.args.outputs.strictRouteRegressionPath }}
+          SOURCE_GOVERNANCE_EVALUATION_AT_INPUT: ${{ steps.args.outputs.sourceGovernanceEvaluationAt }}
           SCHEDULED_PUBLISH_ENABLED: ${{ vars.DATAPACK_SCHEDULED_PUBLISH_ENABLED }}
           SCHEDULED_BUILD_SPEC_PATH: ${{ vars.DATAPACK_SCHEDULED_BUILD_SPEC_PATH }}
           SCHEDULED_RELEASE_REQUEST_ID: ${{ vars.DATAPACK_SCHEDULED_RELEASE_REQUEST_ID }}
@@ -141,6 +142,7 @@ jobs:
           release_request_path="${RELEASE_REQUEST_PATH_INPUT:-}"
           android_evidence_path="${ANDROID_EVIDENCE_PATH_INPUT:-}"
           strict_route_regression_path="${STRICT_ROUTE_REGRESSION_PATH_INPUT:-}"
+          source_governance_evaluation_at="${SOURCE_GOVERNANCE_EVALUATION_AT_INPUT:-}"
 
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" && "${SCHEDULED_PUBLISH_ENABLED:-}" == "true" ]]; then
             mode=production-publish
@@ -185,10 +187,10 @@ jobs:
                 test -n "${release_request_id}" # ID만 있으면 release request는 API에서 조회한다
               fi
             fi
-            node - "${build_spec}" "${release_request_id}" "${release_request_path}" "${target_channel}" "${mode}" <<'NODE'
+            node - "${build_spec}" "${release_request_id}" "${release_request_path}" "${target_channel}" "${mode}" "${source_governance_evaluation_at}" <<'NODE'
             const fs = require("fs");
             const crypto = require("crypto");
-            const [buildSpecPath, releaseRequestId, releaseRequestPath, targetChannel, mode] = process.argv.slice(2);
+            const [buildSpecPath, releaseRequestId, releaseRequestPath, targetChannel, mode, sourceGovernanceEvaluationAt] = process.argv.slice(2);
             const marker = /(fixture|debug|demo|sample)/i;
             const sha256 = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
             const requireHash = (value, label) => {
@@ -200,6 +202,25 @@ jobs:
             if (!Array.isArray(buildSpec.sourceSnapshotIds) || buildSpec.sourceSnapshotIds.length === 0) throw new Error("buildSpec.sourceSnapshotIds must not be empty");
             for (const field of ["sourceSnapshotSetHash", "approvedAliasLedgerHash", "facilityEvidenceLedgerHash", "routeEvidenceLedgerHash", "approvedOverrideSetHash", "sourceInventorySha256"]) {
               requireHash(buildSpec[field], `buildSpec.${field}`);
+            }
+            if (buildSpec.sourceRawPurgeReportPath) {
+              if (process.env.GITHUB_EVENT_NAME === "schedule") {
+                throw new Error("scheduled production publish requires a fresh protection evidence pipeline");
+              }
+              if (!sourceGovernanceEvaluationAt || !Number.isFinite(Date.parse(sourceGovernanceEvaluationAt))) {
+                throw new Error("sourceGovernanceEvaluationAt is required with sourceRawPurgeReportPath");
+              }
+              for (const [pathField, hashField] of [
+                ["sourceRawPurgeReportPath", "sourceRawPurgeReportSha256"],
+                ["sourceRawPurgeJournalPath", "sourceRawPurgeJournalSha256"],
+                ["sourceRawPurgeLedgerPath", "sourceRawPurgeLedgerSha256"],
+                ["sourceRawPurgeAttestationPublicKeyPath", "sourceRawPurgeAttestationPublicKeySha256"],
+              ]) {
+                if (!buildSpec[pathField] || typeof buildSpec[pathField] !== "string") {
+                  throw new Error(`buildSpec.${pathField} is required with sourceRawPurgeReportPath`);
+                }
+                requireHash(buildSpec[hashField], `buildSpec.${hashField}`);
+              }
             }
             if (releaseRequestPath) {
               const request = JSON.parse(fs.readFileSync(releaseRequestPath, "utf8"));
@@ -229,11 +250,13 @@ jobs:
             echo "EASYSUBWAY_ANDROID_EVIDENCE_PATH=${android_evidence_path}"
             echo "EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH=${strict_route_regression_path}"
           } >> "${GITHUB_ENV}"
+          echo "EASYSUBWAY_SOURCE_GOVERNANCE_EVALUATION_AT=${source_governance_evaluation_at}" >> "${GITHUB_ENV}"
           {
             echo "mode=${mode}"
             echo "allow_gaps=${allow_gaps}"
             echo "target_channel=${target_channel}"
             echo "release_request_id=${release_request_id}"
+            echo "source_governance_evaluation_at=${source_governance_evaluation_at}"
             if [[ "${mode}" == "rollback" || "${mode}" == "rollout-update" ]]; then
               echo "is-pointer-only=true"
             else
@@ -243,11 +266,20 @@ jobs:
 
       - name: Data Pack Release / Validate source snapshot freshness
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' || steps.release-mode.outputs.mode == 'production-publish' }}
+        env:
+          EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256: ${{ secrets.EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256 }}
         run: |
           set -euo pipefail
-          node tools/datapack/validate-source-snapshot-freshness.mjs \
+          freshness_args=( \
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
-            --policy apps/mobile/release/datapack-freshness-sla.json
+            --policy apps/mobile/release/datapack-freshness-sla.json \
+            --governance-policy tools/datapack/source-governance-policy.json \
+            --inventory tools/datapack/source-inventory.json \
+          )
+          if [[ -n "${EASYSUBWAY_SOURCE_GOVERNANCE_EVALUATION_AT:-}" ]]; then
+            freshness_args+=(--purge-evaluation-at "${EASYSUBWAY_SOURCE_GOVERNANCE_EVALUATION_AT}")
+          fi
+          node tools/datapack/validate-source-snapshot-freshness.mjs "${freshness_args[@]}"
 
       - name: Data Pack Release / Restore GitHub Actions dotenv secret
         env:
@@ -422,7 +454,9 @@ jobs:
           set -euo pipefail
           node tools/datapack/validate-source-inventory.mjs \
             --inventory tools/datapack/source-inventory.json \
-            --scope apps/mobile/release/production-datapack-scope.json
+            --scope apps/mobile/release/production-datapack-scope.json \
+            --governance-policy tools/datapack/source-governance-policy.json \
+            --freshness-policy apps/mobile/release/datapack-freshness-sla.json
 
       - name: Data Pack Release / Validate generated data packs
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}

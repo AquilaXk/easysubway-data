@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "datapack-source-governance-policy",
+  "policyVersion": "2026-07-15",
+  "retentionClasses": [
+    {
+      "id": "standard-90d",
+      "retentionDays": 90
+    }
+  ],
+  "reasonCodeEscalations": [
+    {
+      "reasonCodes": ["SOURCE_LINEAGE_BROKEN", "SOURCE_DIFF_MISSING"],
+      "responsibleRole": "datapack-data-steward",
+      "alertRoute": "github:area-datapack",
+      "escalationHours": 4
+    },
+    {
+      "reasonCodes": ["SOURCE_FRESHNESS_POLICY_MISSING", "SOURCE_SNAPSHOT_EXPIRED"],
+      "responsibleRole": "datapack-source-owner",
+      "alertRoute": "github:release-blocker",
+      "escalationHours": 4
+    },
+    {
+      "reasonCodes": ["RAW_RETENTION_OVERDUE", "LEGAL_HOLD_INVALID"],
+      "responsibleRole": "datapack-data-steward",
+      "alertRoute": "github:area-operations",
+      "escalationHours": 24
+    },
+    {
+      "reasonCodes": ["LICENSE_REVIEW_REQUIRED", "REDISTRIBUTION_NOT_APPROVED"],
+      "responsibleRole": "datapack-release-approver",
+      "alertRoute": "github:release-blocker",
+      "escalationHours": 4
+    },
+    {
+      "reasonCodes": ["SOURCE_GOVERNANCE_OWNER_MISSING"],
+      "responsibleRole": "datapack-source-owner",
+      "alertRoute": "github:area-release-governance",
+      "escalationHours": 4
+    }
+  ],
+  "sources": [
+    {
+      "sourceId": "kric-train-operation-organ",
+      "sourceClassId": "static_network_metadata",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "bd7b209e47aeb0996ccdd6d1913d8a732ae8539cb9e648a55cfbebb9a64d0fd8",
+        "reviewedAt": "2026-07-13T13:30:00Z",
+        "nextReviewAt": "2027-07-13T13:30:00Z",
+        "termsUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=266&service=convenientInfo&operation=trainOperationOrgan&page=3",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "kric-station-elevator",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "08892ea7773d84a351e1f9f3ea208501fada4d062350b0f588c972af75c1c859",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "kric-station-elevator-movement",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "084ab0ae620b74c4ac6633cecd46fae4d91cfc831582beeb84bfe5b2222cd280",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "kric-station-escalator",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "2953cce5b977132db7e7a428c677e6d292401f77c40a1e8f8dd84af5a3e61df2",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "kric-subway-timetable",
+      "sourceClassId": "planned_timetable",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "3496800e96105558c3ce0e96df3bdd425a56c8420f8c7b93cca3e8309823d0f2",
+        "reviewedAt": "2026-07-09T00:00:00Z",
+        "nextReviewAt": "2027-07-09T00:00:00Z",
+        "termsUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=162&service=trainUseInfo&operation=subwayTimetable&page=2",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-location",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "1148013f21d3b4e66095ae428518b8e69c315bd624c2c09391d60584532e41b1",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "kric-wheelchair-lift-movement",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "8363159b325e09fbce4084c635e443db60272d8f973136e927d1348649001803",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "molit-urban-rail-full-route",
+      "sourceClassId": "static_network_metadata",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "2d0f88d855cf96413c17a412cb8197f1fb7d1e904b4ee0d42f99ead4fa558d53",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+        "reviewedProvider": "국토교통부",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "seoul-metro-accessibility",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "cd1063d4aa4b6290b1f4edabb9a74e62d70f8da5044aa4608b7f1e45e10c5963",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.data.go.kr/data/15143843/openapi.do",
+        "reviewedProvider": "서울교통공사",
+        "reviewedDatasetUrl": "https://www.data.go.kr/data/15143843/openapi.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "seoulmetro-cyberstation-route-map",
+      "sourceClassId": "route_map_asset",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "846453610a0713353caad62ce8eea88648e7dbe8f73acfcb8e2f70a369a59c2c",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+        "reviewedProvider": "서울교통공사",
+        "reviewedDatasetUrl": "https://www.seoulmetro.co.kr/kr/cyberStation.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
+      "sourceId": "seoulmetro-station-line-info",
+      "sourceClassId": "static_network_metadata",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "6925923cc0f86eb151280da6f7d5a08c3ab3cc8588aecdb12fab003cd6252e2b",
+        "reviewedAt": "2026-07-11T15:00:00Z",
+        "nextReviewAt": "2027-07-11T15:00:00Z",
+        "termsUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
+        "reviewedProvider": "서울교통공사",
+        "reviewedDatasetUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    }
+  ]
+}

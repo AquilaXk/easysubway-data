@@ -256,5 +256,32 @@
     "providerRecordHashes": [
       "45ee2683691482c7bc86ba0af3111474babfbeff7cb7b219bce2a75a4133e6d9"
     ]
+  },
+  {
+    "schemaVersion": 1,
+    "artifactKind": "official-source-snapshot",
+    "snapshotId": "kric-subway-timetable-line4-pilot-20260709",
+    "sourceId": "kric-subway-timetable",
+    "provider": "국가철도공단",
+    "retrievedAt": "2026-07-09T00:00:00Z",
+    "sourceUpdatedAt": "2026-07-09T00:00:00Z",
+    "serviceEffectiveAt": "2026-07-09T00:00:00Z",
+    "serviceEffectiveUntil": "2026-12-31T00:00:00Z",
+    "rowCount": 473,
+    "coverageCount": 1,
+    "rawSha256": "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
+    "rawObjectUri": "s3://easysubway-datapack-sources/kric-subway-timetable/20260709.json",
+    "redactedRequestFingerprint": "4ab1e2d84e511733f7f2c95023d853089d6f31e9a39cfe617037edc58112b1aa",
+    "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+    "snapshotStatus": "LOCKED",
+    "schemaStatus": "PASS",
+    "licenseStatus": "PASS",
+    "fetchStatus": "SUCCESS",
+    "redistributionAllowed": true,
+    "credentialRedacted": true,
+    "previousSnapshotId": null,
+    "diffSummary": null,
+    "freshnessExpiresAt": "2026-08-08T00:00:00.000Z",
+    "rawRetentionExpiresAt": "2026-10-07T00:00:00.000Z"
   }
 ]

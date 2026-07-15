@@ -97,6 +97,22 @@ test("존재하지 않는 UTC 날짜는 fail closed한다", () => {
   }), /RFC 3339 UTC timestamp/);
 });
 
+test("P1Y는 UTC calendar overflow로 윤일 다음 비윤년 3월 1일을 파생한다", () => {
+  assert.equal(deriveFreshness({
+    policy: {
+      sourceClasses: [{
+        id: "yearly",
+        basisField: "retrievedAt",
+        reverificationCadence: "P1Y",
+      }],
+    },
+    sourceClassId: "yearly",
+    basisAt: "2024-02-29T00:00:00.000Z",
+    storedExpiresAt: "2025-03-01T00:00:00.000Z",
+    evaluationAt: "2024-02-29T00:00:00.000Z",
+  }).freshnessExpiresAt, "2025-03-01T00:00:00.000Z");
+});
+
 test("schedule decision은 publish write를 승인 evidence와 strict pass 뒤에만 허용한다", () => {
   assert.deepEqual(decideScheduledRun({
     materialChange: false,

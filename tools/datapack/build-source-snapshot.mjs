@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { deriveFreshness } from "./freshness-policy.mjs";
-import { requiredCredentialFreeObjectUri } from "./source-snapshot-policy.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import {
+  buildSnapshotDiff,
+  requiredCredentialFreeObjectUri,
+} from "./source-snapshot-policy.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const DEFAULT_FRESHNESS_POLICY = "apps/mobile/release/datapack-freshness-sla.json";
 
@@ -13,6 +18,12 @@ async function main() {
   assertNoCredential(raw);
   const canonicalRaw = canonicalizeRaw(raw);
   const records = rowsFromRaw(canonicalRaw);
+  const previousSnapshot = args["previous-snapshot"]
+    ? JSON.parse(await readFile(path.resolve(args["previous-snapshot"]), "utf8"))
+    : null;
+  if (args["previous-snapshot-id"] != null || args["diff-summary"] != null) {
+    throw new Error("previous snapshot identity and diff must be producer-generated");
+  }
   const snapshot = {
     schemaVersion: 1,
     artifactKind: "official-source-snapshot",
@@ -22,6 +33,7 @@ async function main() {
     retrievedAt: requireArg(args, "retrieved-at"),
     sourceUpdatedAt: args["source-updated-at"] ?? null,
     rowCount: records.length,
+    coverageCount: requiredNonNegativeInteger(args["coverage-count"], "--coverage-count"),
     rawSha256: sha256(canonicalRaw),
     rawObjectUri: requiredCredentialFreeObjectUri(args["raw-object-uri"], "--raw-object-uri"),
     redactedRequestFingerprint: sha256(redactedRequest(args)),
@@ -32,19 +44,51 @@ async function main() {
     fetchStatus: "SUCCESS",
     redistributionAllowed: true,
     credentialRedacted: true,
-    previousSnapshotId: args["previous-snapshot-id"] ?? null,
-    diffSummary: args["diff-summary"] ?? null,
+    previousSnapshotId: null,
+    diffSummary: null,
     freshnessExpiresAt: requireArg(args, "freshness-expires-at"),
-    rawRetentionExpiresAt: requireArg(args, "raw-retention-expires-at"),
+    rawRetentionExpiresAt: args["governance-policy"] ? null : requireArg(args, "raw-retention-expires-at"),
     providerRecordHashes: records.map((record) => sha256(JSON.stringify(record))),
   };
   await validateFreshnessPolicy(snapshot, args);
+  if (previousSnapshot != null) {
+    if (previousSnapshot.sourceId !== snapshot.sourceId) {
+      throw new Error("SOURCE_LINEAGE_BROKEN: previous snapshot source");
+    }
+    if (requiredUtcInstant(snapshot.retrievedAt, "snapshot.retrievedAt")
+      <= requiredUtcInstant(previousSnapshot.retrievedAt, "previousSnapshot.retrievedAt")) {
+      throw new Error("SOURCE_LINEAGE_BROKEN: retrievedAt order");
+    }
+    snapshot.previousSnapshotId = requiredText(previousSnapshot.snapshotId, "previousSnapshot.snapshotId");
+    snapshot.diffSummary = buildSnapshotDiff(previousSnapshot, snapshot);
+  }
+  await validateRetentionPolicy(snapshot, args);
   validateSnapshot(snapshot);
 
   if (args["raw-output"]) {
     await writeFileWithParents(args["raw-output"], canonicalRaw);
   }
   await writeFileWithParents(requireArg(args, "output"), `${JSON.stringify(snapshot, null, 2)}\n`);
+}
+
+async function validateRetentionPolicy(snapshot, args) {
+  if (!args["governance-policy"]) return;
+  const policyBytes = await readFile(path.resolve(args["governance-policy"]));
+  const policy = JSON.parse(policyBytes.toString("utf8"));
+  const derived = deriveRawRetentionExpiresAt({
+    policy,
+    sourceId: snapshot.sourceId,
+    retrievedAt: snapshot.retrievedAt,
+  });
+  if (
+    args["raw-retention-expires-at"] != null
+    && Date.parse(args["raw-retention-expires-at"]) !== Date.parse(derived)
+  ) {
+    throw new Error("RAW_RETENTION_OVERDUE: raw retention derivation mismatch");
+  }
+  snapshot.rawRetentionExpiresAt = derived;
+  snapshot.governancePolicyVersion = requiredText(policy.policyVersion, "governance policy version");
+  snapshot.governancePolicySha256 = sha256(policyBytes);
 }
 
 async function validateFreshnessPolicy(snapshot, args) {
@@ -182,6 +226,12 @@ function requiredDate(value, label) {
     throw new Error(`${label} must be an ISO date-time`);
   }
   return millis;
+}
+
+function requiredNonNegativeInteger(value, label) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${label} must be a non-negative integer`);
+  return parsed;
 }
 
 function requireArg(args, name) {

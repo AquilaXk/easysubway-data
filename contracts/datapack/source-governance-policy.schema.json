@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "easysubway/contracts/datapack/source-governance-policy",
+  "title": "데이터팩 source governance policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "policyVersion",
+    "retentionClasses",
+    "reasonCodeEscalations",
+    "sources"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "artifactKind": { "type": "string", "const": "datapack-source-governance-policy" },
+    "policyVersion": { "type": "string", "format": "date" },
+    "retentionClasses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "retentionDays"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "retentionDays": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "reasonCodeEscalations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reasonCodes", "responsibleRole", "alertRoute", "escalationHours"],
+        "properties": {
+          "reasonCodes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "responsibleRole": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "alertRoute": { "type": "string", "pattern": ".+" },
+          "escalationHours": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceId",
+          "sourceClassId",
+          "retentionClassId",
+          "ownerRole",
+          "stewardRole",
+          "approvalRole",
+          "escalationHours",
+          "alertRoute",
+          "licenseReview"
+        ],
+        "properties": {
+          "sourceId": { "type": "string", "pattern": ".+" },
+          "sourceClassId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "retentionClassId": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "ownerRole": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "stewardRole": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "approvalRole": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "escalationHours": { "type": "integer", "minimum": 1 },
+          "alertRoute": { "type": "string", "pattern": ".+" },
+          "licenseReview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "termsHash",
+              "reviewedAt",
+              "nextReviewAt",
+              "termsUrl",
+              "reviewedProvider",
+              "reviewedDatasetUrl",
+              "redistributionScopes",
+              "approvedByRole"
+            ],
+            "properties": {
+              "status": { "enum": ["APPROVED", "REVIEW_REQUIRED", "BLOCKED", "EXPIRED"] },
+              "termsHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "reviewedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
+              "nextReviewAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
+              "termsUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+              "reviewedProvider": { "type": "string", "pattern": ".+" },
+              "reviewedDatasetUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+              "redistributionScopes": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "enum": ["DERIVED_DATAPACK"] }
+              },
+              "approvedByRole": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 import { officialOdFareAdmissionsBySource } from "./lib/official-od-fare-evidence.mjs";
+import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
@@ -10,6 +11,8 @@ const candidatesPath = optionValue("--candidates") ?? "tools/datapack/source-can
 const officialOdFareAdmissionPath = optionValue("--official-od-fare-admission")
   ?? "tools/datapack/official-od-fare-admission.json";
 const scopePath = optionValue("--scope");
+const governancePolicyPath = optionValue("--governance-policy");
+const freshnessPolicyPath = optionValue("--freshness-policy");
 const compareStrings = (left, right) => left.localeCompare(right);
 const officialOdFareFields = new Set([
   "childCardFare",
@@ -25,6 +28,16 @@ try {
   const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
   const scope = scopePath ? JSON.parse(await readFile(scopePath, "utf8")) : null;
   validateInventory(inventory);
+  if ((governancePolicyPath == null) !== (freshnessPolicyPath == null)) {
+    throw new Error("--governance-policy and --freshness-policy must be provided together");
+  }
+  if (governancePolicyPath) {
+    const [policy, freshnessPolicy] = await Promise.all([
+      readFile(governancePolicyPath, "utf8").then(JSON.parse),
+      readFile(freshnessPolicyPath, "utf8").then(JSON.parse),
+    ]);
+    validateSourceGovernancePolicy({ policy, inventory, freshnessPolicy });
+  }
   const officialOdFareAdmissionBytes = inventory.sources.some(
     (source) => source.officialOdFareAdmissionHash != null || source.fareStationLineMappingLedgerHash != null,
   ) ? await readFile(officialOdFareAdmissionPath) : null;

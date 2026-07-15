@@ -1,6 +1,6 @@
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash, createSign } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
@@ -1415,6 +1415,8 @@ test("source snapshot command는 raw token을 저장 전에 거부한다", async
           "snapshot-kric-token",
           "--source-id",
           "kric-station-elevator",
+          "--coverage-count",
+          "1",
           "--provider",
           "국가철도공단",
           "--source-class-id",
@@ -1453,6 +1455,8 @@ test("source snapshot command는 credential URI와 만료 retention metadata를 
     "snapshot-kric-policy",
     "--source-id",
     "kric-station-elevator",
+    "--coverage-count",
+    "1",
     "--provider",
     "국가철도공단",
     "--source-class-id",
@@ -1521,6 +1525,8 @@ test("source snapshot command는 raw CSV를 LOCKED snapshot metadata로 canonica
         "snapshot-kric-station-elevator-20260630",
         "--source-id",
         "kric-station-elevator",
+        "--coverage-count",
+        "2",
         "--provider",
         "국가철도공단",
         "--source-class-id",
@@ -1567,6 +1573,7 @@ test("source snapshot command는 policy에서 파생되지 않은 임의 만료 
           "--output", path.join(workDir, "snapshot.json"),
           "--snapshot-id", "snapshot-kric-arbitrary-expiry",
           "--source-id", "kric-station-elevator",
+          "--coverage-count", "1",
           "--provider", "국가철도공단",
           "--source-class-id", "static_accessibility_facility",
           "--retrieved-at", "2026-06-30T03:00:00Z",
@@ -1600,6 +1607,7 @@ test("source snapshot command는 source가 속하지 않은 freshness class를 �
           "--output", path.join(workDir, "snapshot.json"),
           "--snapshot-id", "snapshot-kric-wrong-class",
           "--source-id", "kric-station-elevator",
+          "--coverage-count", "1",
           "--provider", "국가철도공단",
           "--source-class-id", "static_network_metadata",
           "--retrieved-at", "2026-06-30T03:00:00Z",
@@ -1642,6 +1650,7 @@ test("source snapshot command는 정책 basis와 provider validity 필드를 보
       "--output", outputPath,
       "--snapshot-id", "snapshot-planned-a",
       "--source-id", "planned-a",
+      "--coverage-count", "1",
       "--provider", "provider-a",
       "--source-class-id", "planned_timetable",
       "--freshness-policy", policyPath,
@@ -1687,6 +1696,7 @@ test("source snapshot command는 정책상 필수인 provider validity가 없으
         "--output", path.join(workDir, "snapshot.json"),
         "--snapshot-id", "snapshot-planned-a",
         "--source-id", "planned-a",
+        "--coverage-count", "1",
         "--provider", "provider-a",
         "--source-class-id", "planned_timetable",
         "--freshness-policy", policyPath,
@@ -8023,8 +8033,6 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
       "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
       "--freshness-expires-at",
       "2026-08-01T00:00:00Z",
-      "--raw-retention-expires-at",
-      "2026-10-01T00:00:00Z",
       "--admin-review",
       adminReviewPath,
       "--output-inventory",
@@ -8043,7 +8051,8 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
   assert.equal(summary.adminReviewRecordHash, sha256(JSON.stringify(sortJson(adminReview))));
   assert.equal(summary.licenseEvidenceHash, adminReview.licenseEvidenceHash);
   const outputInventory = JSON.parse(await readFile(outputInventoryPath, "utf8"));
-  assert.ok(outputInventory.sources.some((source) => source.id === "kric-train-operation-organ"));
+  const admittedSource = outputInventory.sources.find((source) => source.id === "kric-train-operation-organ");
+  assert.equal(admittedSource.admissionEvidence.licenseEvidenceHash, adminReview.licenseEvidenceHash);
 
   const mismatchedAdminReview = JSON.parse(JSON.stringify(adminReview));
   mismatchedAdminReview.productionSource.admissionEvidence = {
@@ -8085,7 +8094,7 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
         "--freshness-expires-at",
         "2026-08-01T00:00:00Z",
         "--raw-retention-expires-at",
-        "2026-10-01T00:00:00Z",
+        "2026-09-30T00:00:00Z",
         "--admin-review",
         adminReviewPath,
         "--output-inventory",
@@ -8131,7 +8140,7 @@ test("source admission pipeline은 admin 승인 record로 inventory admission ev
         "--freshness-expires-at",
         "2026-08-01T00:00:00Z",
         "--raw-retention-expires-at",
-        "2026-10-01T00:00:00Z",
+        "2026-09-30T00:00:00Z",
         "--admin-review",
         adminReviewPath,
         "--output-inventory",
@@ -8151,6 +8160,7 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
   const seedSamplePath = path.join(outputDir, "seed-sample.json");
   const candidatesPath = path.join(outputDir, "source-candidates.json");
   const adminReviewPath = path.join(outputDir, "admin-review.json");
+  const outputInventoryPath = path.join(outputDir, "source-inventory.admitted.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(rawPath, `${JSON.stringify([{ railOprIsttCd: "S1", railOprIsttNm: "서울교통공사" }])}\n`);
@@ -8252,6 +8262,7 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
     productionSource,
   };
   await writeFile(adminReviewPath, `${JSON.stringify(adminReview, null, 2)}\n`);
+  await writeFile(outputInventoryPath, "preserved-final-inventory\n");
 
   await assert.rejects(
     execFileAsync(
@@ -8283,17 +8294,22 @@ test("source admission pipeline은 custom candidates를 최종 inventory 검증�
         "--freshness-expires-at",
         "2026-08-01T00:00:00Z",
         "--raw-retention-expires-at",
-        "2026-10-01T00:00:00Z",
+        "2026-09-30T00:00:00Z",
         "--admin-review",
         adminReviewPath,
         "--output-inventory",
-        path.join(outputDir, "source-inventory.admitted.json"),
+        outputInventoryPath,
         "--output",
         path.join(outputDir, "admission-summary.json"),
       ],
       { cwd: root },
     ),
     /molit-tago-subway-info\.admissionEvidence\.sampleEvidenceHash must be/,
+  );
+  assert.equal(await readFile(outputInventoryPath, "utf8"), "preserved-final-inventory\n");
+  assert.deepEqual(
+    (await readdir(outputDir)).filter((name) => name.startsWith(".source-inventory.admitted.json.")),
+    [],
   );
 });
 
@@ -8430,7 +8446,7 @@ test("source admission pipeline은 JSON credential raw response를 저장 전에
         "--freshness-expires-at",
         "2026-08-01T00:00:00Z",
         "--raw-retention-expires-at",
-        "2026-10-01T00:00:00Z",
+        "2026-09-30T00:00:00Z",
         "--admin-review",
         adminReviewPath,
         "--output-inventory",
@@ -8490,7 +8506,7 @@ test("source admission pipeline은 live fetch 실패 메시지에서 service key
         "--freshness-expires-at",
         "2026-08-01T00:00:00Z",
         "--raw-retention-expires-at",
-        "2026-10-01T00:00:00Z",
+        "2026-09-30T00:00:00Z",
         "--admin-review",
         adminReviewPath,
         "--output-inventory",
@@ -8560,7 +8576,7 @@ test("source admission pipeline은 admin 승인 없는 inventory admission을 �
         "--freshness-expires-at",
         "2026-08-01T00:00:00Z",
         "--raw-retention-expires-at",
-        "2026-10-01T00:00:00Z",
+        "2026-09-30T00:00:00Z",
         "--admin-review",
         adminReviewPath,
         "--output-inventory",
@@ -17679,7 +17695,7 @@ test("build-admin-review-record 산출물은 run-source-admission-pipeline을 �
       "--source-updated-at", "2026-07-02T00:00:00Z",
       "--raw-object-uri", "s3://easysubway-datapack-sources/kric-train-operation-organ/20260702.json",
       "--freshness-expires-at", "2026-08-01T00:00:00Z",
-      "--raw-retention-expires-at", "2026-10-01T00:00:00Z",
+      "--raw-retention-expires-at", "2026-09-30T00:00:00Z",
       "--admin-review", adminReviewPath,
       "--output-inventory", outputInventoryPath,
       "--output", summaryPath,

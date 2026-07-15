@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -29,19 +29,42 @@ async function main() {
   await writeFile(rawPath, raw);
 
   const sample = await buildSampleEvidence({ candidateId, rawPath, samplePath, args });
-  const snapshot = await buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, args });
+  const snapshot = await buildSnapshot({
+    rawPath,
+    canonicalRawPath,
+    snapshotPath,
+    coverageCount: sample.providerRecordHashes.length,
+    args,
+  });
   const adminReview = await readJson(path.resolve(root, requireArg(args, "admin-review")));
   const adminReviewRecordHash = validateAdminReview({ adminReview, candidateId, sample, snapshot, args });
   const inventory = await readJson(path.resolve(root, requireArg(args, "inventory")));
-  const outputInventory = admitSource({ inventory, productionSource: adminReview.productionSource });
-  await writeFile(outputInventoryPath, `${JSON.stringify(outputInventory, null, 2)}\n`);
-  await execNode([
-    "tools/datapack/validate-source-inventory.mjs",
-    "--inventory",
-    outputInventoryPath,
-    "--candidates",
-    args.candidates,
-  ]);
+  const outputInventory = admitSource({
+    inventory,
+    productionSource: adminReview.productionSource,
+    licenseEvidenceHash: adminReview.licenseEvidenceHash,
+  });
+  const stagedInventoryPath = path.join(
+    path.dirname(outputInventoryPath),
+    `.${path.basename(outputInventoryPath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await writeFile(stagedInventoryPath, `${JSON.stringify(outputInventory, null, 2)}\n`, { flag: "wx" });
+    await execNode([
+      "tools/datapack/validate-source-inventory.mjs",
+      "--inventory",
+      stagedInventoryPath,
+      "--candidates",
+      args.candidates,
+      "--governance-policy",
+      args["governance-policy"],
+      "--freshness-policy",
+      args["freshness-policy"],
+    ]);
+    await rename(stagedInventoryPath, outputInventoryPath);
+  } finally {
+    await rm(stagedInventoryPath, { force: true });
+  }
 
   const summary = {
     schemaVersion: 1,
@@ -58,6 +81,8 @@ async function main() {
     schemaFingerprint: sample.schemaFingerprint,
     providerRecordHashes: sample.providerRecordHashes,
     sourceSnapshotSetHash: sha256(JSON.stringify([snapshot])),
+    governancePolicyVersion: snapshot.governancePolicyVersion,
+    governancePolicySha256: snapshot.governancePolicySha256,
     sourceInventorySha256: sha256(JSON.stringify(outputInventory)),
     adminReviewRecordHash,
     licenseEvidenceHash: adminReview.licenseEvidenceHash,
@@ -78,6 +103,8 @@ function parseArgs(argv) {
   const args = {
     candidates: "tools/datapack/source-candidates.json",
     inventory: "tools/datapack/source-inventory.json",
+    "governance-policy": "tools/datapack/source-governance-policy.json",
+    "freshness-policy": "apps/mobile/release/datapack-freshness-sla.json",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -141,7 +168,7 @@ async function buildSampleEvidence({ candidateId, rawPath, samplePath, args }) {
   return JSON.parse(stdout);
 }
 
-async function buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, args }) {
+async function buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, coverageCount, args }) {
   await execNode([
     "tools/datapack/build-source-snapshot.mjs",
     "--input",
@@ -154,6 +181,8 @@ async function buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, args }) 
     requireArg(args, "snapshot-id"),
     "--source-id",
     requireArg(args, "source-id"),
+    "--coverage-count",
+    String(coverageCount),
     "--provider",
     requireArg(args, "provider"),
     "--source-class-id",
@@ -164,11 +193,17 @@ async function buildSnapshot({ rawPath, canonicalRawPath, snapshotPath, args }) 
     requireArg(args, "raw-object-uri"),
     "--freshness-expires-at",
     requireArg(args, "freshness-expires-at"),
-    "--raw-retention-expires-at",
-    requireArg(args, "raw-retention-expires-at"),
+    ...(args["raw-retention-expires-at"]
+      ? ["--raw-retention-expires-at", args["raw-retention-expires-at"]]
+      : []),
     ...(args["freshness-basis-at"] ? ["--freshness-basis-at", args["freshness-basis-at"]] : []),
     ...(args["provider-valid-until"] ? ["--provider-valid-until", args["provider-valid-until"]] : []),
     ...(args["source-updated-at"] ? ["--source-updated-at", args["source-updated-at"]] : []),
+    ...(args["previous-snapshot"] ? ["--previous-snapshot", args["previous-snapshot"]] : []),
+    "--governance-policy",
+    args["governance-policy"],
+    "--freshness-policy",
+    args["freshness-policy"],
   ]);
   return readJson(snapshotPath);
 }
@@ -213,6 +248,12 @@ function validateAdminReview({ adminReview, candidateId, sample, snapshot, args 
     if (productionQuota !== adminQuota) {
       throw new Error("adminReview.productionSource.admissionEvidence.quotaEvidence must match adminReview.quotaEvidence");
     }
+    if (
+      productionAdmissionEvidence.licenseEvidenceHash != null
+      && productionAdmissionEvidence.licenseEvidenceHash !== adminReview.licenseEvidenceHash
+    ) {
+      throw new Error("adminReview.productionSource.admissionEvidence.licenseEvidenceHash must match adminReview.licenseEvidenceHash");
+    }
   }
   const fieldsProvided = new Set(adminReview.productionSource.fieldsProvided ?? []);
   for (const field of sample.fields) {
@@ -223,9 +264,15 @@ function validateAdminReview({ adminReview, candidateId, sample, snapshot, args 
   return sha256(JSON.stringify(sortJson(adminReview)));
 }
 
-function admitSource({ inventory, productionSource }) {
+function admitSource({ inventory, productionSource, licenseEvidenceHash }) {
   const sources = inventory.sources.filter((source) => source.id !== productionSource.id);
-  sources.push(productionSource);
+  sources.push({
+    ...productionSource,
+    admissionEvidence: {
+      ...(productionSource.admissionEvidence ?? {}),
+      licenseEvidenceHash,
+    },
+  });
   sources.sort((left, right) => compareStrings(left.id, right.id));
   return { ...inventory, sources };
 }

@@ -34,10 +34,13 @@ test("workflow_dispatch 입력은 mode·targetChannel·modeArgs 3개로 통합�
 });
 
 test("modeArgs 파싱 스텝이 개별 인자를 output으로 펼친다", () => {
-  assert.match(yml, /id:\s*args/);
-  assert.match(yml, /modeArgs/);
-  assert.match(yml, /buildSpecPath/);
-  assert.match(yml, /releaseRequestId/);
+  const parseStep = yml.match(/- name: Data Pack Release \/ Parse modeArgs[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(parseStep, "Parse modeArgs 스텝을 찾지 못함");
+  assert.match(parseStep, /id:\s*args/);
+  assert.match(parseStep, /modeArgs/);
+  assert.match(parseStep, /buildSpecPath/);
+  assert.match(parseStep, /releaseRequestId/);
+  assert.match(parseStep, /sourceGovernanceEvaluationAt/);
 });
 
 test("modeArgs 파싱 스텝은 비-JSON·개행 주입을 방어한다", () => {
@@ -145,6 +148,8 @@ test("scheduled publish는 명시적 opt-in과 승인된 입력 경로 없이는
   assert.match(yml, /SCHEDULED_ANDROID_EVIDENCE_PATH/);
   assert.match(yml, /SCHEDULED_STRICT_ROUTE_REGRESSION_PATH/);
   assert.match(yml, /scheduled production publish requires configured approval evidence/);
+  assert.doesNotMatch(yml, /SCHEDULED_SOURCE_GOVERNANCE_EVALUATION_AT/);
+  assert.match(yml, /scheduled production publish requires a fresh protection evidence pipeline/);
   assert.match(yml, /steps\.release-mode\.outputs\.release_request_id/);
 });
 
@@ -157,6 +162,24 @@ test("release build는 source snapshot freshness를 build 전에 fail closed로 
   assert.match(freshnessStep, /--build-spec/);
   assert.doesNotMatch(freshnessStep, /--snapshots/);
   assert.match(freshnessStep, /--policy apps\/mobile\/release\/datapack-freshness-sla\.json/);
+  assert.match(freshnessStep, /--governance-policy tools\/datapack\/source-governance-policy\.json/);
+  assert.match(freshnessStep, /--inventory tools\/datapack\/source-inventory\.json/);
+  assert.match(
+    freshnessStep,
+    /EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256: \$\{\{ secrets\.EASYSUBWAY_SOURCE_RAW_PURGE_ATTESTATION_PUBLIC_KEY_SHA256 \}\}/,
+  );
+  assert.match(freshnessStep, /--purge-evaluation-at "\$\{EASYSUBWAY_SOURCE_GOVERNANCE_EVALUATION_AT\}"/);
+  assert.doesNotMatch(freshnessStep, /--evaluation-at/);
+  assert.match(yml, /sourceGovernanceEvaluationAt is required with sourceRawPurgeReportPath/);
+  assert.match(yml, /sourceRawPurgeAttestationPublicKey/);
+  assert.match(yml, /sourceRawPurgeJournal/);
+  assert.match(yml, /sourceRawPurgeLedger/);
+  const inventoryStep = yml.match(
+    /- name: Data Pack Release \/ Validate source inventory[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(inventoryStep, "source inventory 검증 스텝을 찾지 못함");
+  assert.match(inventoryStep, /--governance-policy tools\/datapack\/source-governance-policy\.json/);
+  assert.match(inventoryStep, /--freshness-policy apps\/mobile\/release\/datapack-freshness-sla\.json/);
   assert.ok(
     yml.indexOf("Validate source snapshot freshness") < yml.indexOf("Build data packs"),
     "source snapshot freshness는 build 전에 검증해야 함",

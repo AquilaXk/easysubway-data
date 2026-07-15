@@ -94,7 +94,51 @@
               "facility": { "type": "object" }
             }
           },
-          "admissionEvidence": { "type": "object" },
+          "admissionEvidence": {
+            "type": "object",
+            "description": "승격 단계별 sanitized evidence를 보존하는 승인 필드 envelope이며 licenseEvidenceHash만 공통 필수다.",
+            "additionalProperties": false,
+            "required": ["licenseEvidenceHash"],
+            "properties": {
+              "artifactKind": { "type": "string" },
+              "issue": { "type": "integer" },
+              "candidateId": { "type": "string" },
+              "sourceId": { "type": "string" },
+              "snapshotId": { "type": "string" },
+              "decision": { "type": "string" },
+              "approvedBy": { "type": "string" },
+              "approvedAt": { "type": "string" },
+              "sampleEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "schemaFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "sourceSnapshotSetHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "sourceInventorySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "adminReviewRecordHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "licenseEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "aliasLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "operatorMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "facilityEvidenceLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "routeEvidenceLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "overrideHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "admissionDurationSeconds": { "type": "integer", "minimum": 0 },
+              "quotaEvidence": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["defaultDailyLimit", "portal", "productionUseAllowed", "unlockStatus"],
+                "properties": {
+                  "portal": { "type": "string" },
+                  "defaultDailyLimit": { "type": ["integer", "string", "null"] },
+                  "unlockStatus": { "type": "string" },
+                  "productionUseAllowed": { "type": "boolean" },
+                  "documentedMonthlyLimit": { "type": "integer" },
+                  "runtimeDailyHardLimit": { "type": "integer" },
+                  "runtimePerMinuteHardLimit": { "type": "integer" },
+                  "sharedQuotaStore": { "type": "string" }
+                }
+              },
+              "productionUseNoteKo": { "type": "string" }
+            }
+          },
           "officialOdFareAdmissionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
           "fareStationLineMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
         }

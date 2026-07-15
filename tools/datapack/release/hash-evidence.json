@@ -4,7 +4,7 @@
   "issue": 1996,
   "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
   "productionScopeId": "capital_pilot_android_v1",
-  "truthfulnessRule": "모든 값은 (a) 커밋 데이터에서 결정적 재산출, 또는 (b) #1992·#1996 admission 실행 산출물의 byte-exact 재생성·검증본에서만 채웠다. 임의 합성값 없음. 사당·상록수 4호선 접근성 상태는 실측 그대로(UNDER_MAINTENANCE/NO_OFFICIAL_FEED) 기록 — 거짓 AVAILABLE 위장 없음.",
+  "truthfulnessRule": "모든 값은 (a) 커밋 데이터에서 결정적 재산출, 또는 (b) #1415·#1992·#1996 admission 실행 산출물의 재생성·검증본에서만 채웠다. 임의 합성값 없음. 사당·상록수 4호선 접근성 상태는 실측 그대로(UNDER_MAINTENANCE/NO_OFFICIAL_FEED) 기록 — 거짓 AVAILABLE 위장 없음.",
   "ledgerHashes": {
     "note": "export-ledger-hashes.mjs 산출값 == #1992 admissionEvidence 기록값(완전 일치 검증 PASS).",
     "approvedAliasLedgerHash": {
@@ -35,18 +35,20 @@
     ]
   },
   "sourceSnapshots": {
-    "note": "source-snapshots.json은 admission 실행(9종, snapshot -capital-admission-20260712)의 snapshot 객체를 커밋 원천 데이터에서 byte-exact 재생성한 것. #1996에서 seoul-metro-accessibility(P0 accessibility_facilities)를 9번째로 추가 admit. 재생성본 검증: 각 snapshot에 대해 sha256(JSON.stringify([snapshot])) == 해당 source의 admissionEvidence.sourceSnapshotSetHash (9/9 PASS).",
-    "order": "admission chain 순서(source-candidates.json 순): molit-urban-rail-full-route → seoulmetro-station-line-info → seoulmetro-cyberstation-route-map → kric-station-elevator → kric-station-elevator-movement → kric-station-escalator → kric-wheelchair-lift-location → kric-wheelchair-lift-movement → seoul-metro-accessibility",
-    "committedVerificationCommand": "node -e \"const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),i=require('./tools/datapack/source-inventory.json');for(const n of s){const e=i.sources.find(x=>x.id===n.sourceId).admissionEvidence;console.log(n.sourceId,c.createHash('sha256').update(JSON.stringify([n])).digest('hex')===e.sourceSnapshotSetHash)}\"",
-    "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨."
+    "note": "source-snapshots.json의 -capital-admission-20260712 9종은 admission 실행 snapshot을 커밋 원천 데이터에서 byte-exact 재생성한 것이며 9/9 admissionEvidence.sourceSnapshotSetHash와 일치한다. kric-subway-timetable 1종은 이미 승인·bundled된 production 필수 source를 release gate에서 누락하지 않도록 커밋된 #1415 admission raw/schema hash, 473-row redacted sample, schedule provenance와 2026 service window를 결합한 release evidence다.",
+    "order": "release snapshot 순서: molit-urban-rail-full-route → seoulmetro-station-line-info → seoulmetro-cyberstation-route-map → kric-station-elevator → kric-station-elevator-movement → kric-station-escalator → kric-wheelchair-lift-location → kric-wheelchair-lift-movement → seoul-metro-accessibility → kric-subway-timetable",
+    "committedVerificationCommand": "node -e \"const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json').filter(n=>n.snapshotId.endsWith('-capital-admission-20260712')),i=require('./tools/datapack/source-inventory.json');for(const n of s){const e=i.sources.find(x=>x.id===n.sourceId).admissionEvidence;console.log(n.sourceId,c.createHash('sha256').update(JSON.stringify([n])).digest('hex')===e.sourceSnapshotSetHash)}\"",
+    "timetableEvidenceCommand": "node -e \"const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json').find(n=>n.sourceId==='kric-subway-timetable'),i=require('./tools/datapack/source-inventory.json').sources.find(n=>n.id==='kric-subway-timetable').admissionEvidence,p=require('./tools/datapack/inputs/capital-pilot-production-source-input.json').scheduleProvenance;console.log(s.snapshotId===i.snapshotId&&s.snapshotId===p.sourceSnapshotId&&s.rawSha256===i.rawSha256&&s.schemaFingerprint===i.schemaFingerprint)\"",
+    "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨.",
+    "governanceOverlayNote": "9종 admission snapshot과 timetable release evidence의 원천 hash·identity는 유지한다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생한 release-time overlay이며, validator가 evidence의 freshness basis와 현행 정책 바이트로 재계산해 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "845b5a8f54f5c09277c2e7e6468fd8baab4da74210512f3b83be12d3bdcad75e",
-    "contract": "run-source-admission-pipeline.mjs 60행 공식 sha256(JSON.stringify([snapshot...]))을 9-snapshot 배열로 일반화(배열=source-snapshots.json 그대로, 위 order). build-datapack·워크플로는 이 값을 재계산하지 않고 build-spec↔release-request 상호 일치만 강제(workflow 187행).",
+    "value": "722d5bb834c56ac408f6babcdc21d471144defdfc66bd88e92216fab3c7e67e0",
+    "contract": "run-source-admission-pipeline.mjs의 sha256(JSON.stringify([snapshot...])) 계약을 production 필수 source 10종 배열에 적용한다(배열=source-snapshots.json, 위 order). freshness validator가 build-spec 선택 set을 재계산하고 inventory.requiredForProductionPack 10종과 정확히 대조한다.",
     "reproductionCommand": "node -e \"const c=require('crypto');console.log(c.createHash('sha256').update(JSON.stringify(require('./tools/datapack/release/source-snapshots.json'))).digest('hex'))\""
   },
   "sourceInventorySha256": {
-    "value": "71c77bd821adbdfbd25c295bc6c045753431942638fe08aecdf36a165a2874d9",
+    "value": "9542b06ec11fd085957a9d27b29c6d1650a11d1f74f5e656d4d9f929cae259dc",
     "contract": "run-source-admission-pipeline.mjs 61행 공식 sha256(JSON.stringify(admittedInventory)). #1769 official OD fare source admit 후 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리(workflow 331행)와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
@@ -127,6 +129,14 @@
       "rawSha256": "8a1fbdfbc55f2cd4bc8f54e616f515133f00ee528d078ab21cdd0c1de7ad6814",
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
       "perSourceSnapshotSetHash": "3f10026a5a7cc98b870073d9f795540be21e654f13e17a890c7a472849e3d7b3"
+    },
+    {
+      "sourceId": "kric-subway-timetable",
+      "snapshotId": "kric-subway-timetable-line4-pilot-20260709",
+      "rawSha256": "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
+      "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
+      "admissionSourceSnapshotSetHash": "306e5150d3744f0ff8bc42a0e12c2662e855f4194137f6bfbd63b7b405cf3b62",
+      "releaseEvidenceSnapshotSetHash": "06ba5b27632fb6c3218f16ebff4ade46ed81e598ad4969c95c5fdc180c17c828"
     }
   ],
   "officialOdFareEvidence": {
