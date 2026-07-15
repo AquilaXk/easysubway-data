@@ -1,26 +1,94 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "artifactKind": "itx-cheongchun-coverage-contract",
   "serviceId": "ITX_CHEONGCHUN",
   "canonicalLineId": "line-54a7b980b7c3",
   "representation": "SERVICE_PATTERN_ON_EXISTING_LINE",
   "servicePattern": "EXPRESS",
   "timezone": "Asia/Seoul",
-  "allowedConsumerIssues": ["#1400", "#2098", "#2099"],
+  "allowedConsumerIssues": [
+    "#2145",
+    "#1400",
+    "#2098",
+    "#2099",
+    "#2058",
+    "#2137"
+  ],
   "legacyDaejeonRowCount": 0,
   "legacyYongsanDaejeonTripCount": 0,
   "completenessAdmission": {
     "dateInput": "EXPLICIT",
     "maxFutureDays": 6,
     "replayAdmissionAllowed": false,
-    "serviceDayCodes": { "8": "WEEKDAY", "7": "SATURDAY", "9": "SUNDAY_OR_HOLIDAY" },
-    "rosterStationUniverse": "CANONICAL_GYEONGCHUN_INTERSECT_TAGO_TRAIN_STATION_CATALOG",
+    "serviceDayCodes": {
+      "7": "SATURDAY",
+      "8": "WEEKDAY",
+      "9": "SUNDAY_OR_HOLIDAY"
+    },
+    "rosterStationUniverse": "CANONICAL_ITX_CORRIDOR_28_INTERSECT_TAGO_TRAIN_STATION_CATALOG",
     "excludedStationEvidenceRequired": true,
-    "odMatrixHashInput": ["date", "depStationId", "arrStationId"],
+    "stationSetHashInput": [
+      "canonicalStationId",
+      "providerStationId"
+    ],
+    "odMatrixHashInput": [
+      "date",
+      "depCanonicalStationId",
+      "depProviderStationId",
+      "arrCanonicalStationId",
+      "arrProviderStationId"
+    ],
     "odMatrixCanonicalSerialization": "SORTED_TUPLE_ARRAY_JSON_UTF8",
-    "requiredDirections": ["D", "U"],
-    "requiredTrainNumberSets": ["ROSTER", "PLAN", "INFO", "MATERIALIZED"],
+    "requiredDirections": [
+      "up",
+      "down"
+    ],
+    "requiredTrainNumberSets": [
+      "TAGO_OD",
+      "MATERIALIZED"
+    ],
+    "korailPlanCorroboration": {
+      "required": false,
+      "missingDisposition": "KORAIL_PLAN_NOT_AVAILABLE_WARNING",
+      "duplicateDisposition": "KORAIL_PLAN_DUPLICATE_FAIL_CLOSED",
+      "mismatchDisposition": "KORAIL_PLAN_MISMATCH_FAIL_CLOSED"
+    },
+    "snapshotAnomalyPolicy": {
+      "policyId": "itx-snapshot-anomaly-v1",
+      "threshold": "ZERO_TOLERANCE",
+      "comparisonUnit": "DAY_CD",
+      "normalizedSets": [
+        "stationSet",
+        "odSet",
+        "trainSet",
+        "stopSequenceSet",
+        "timetableTupleSet"
+      ],
+      "bootstrapStatus": "BOOTSTRAP_REVIEW_REQUIRED",
+      "changeStatus": "CHANGE_REVIEW_REQUIRED",
+      "failureReasonCode": "SNAPSHOT_ANOMALY_BLOCKED"
+    },
+    "failureStages": [
+      "ROSTER",
+      "OD_MATERIALIZATION",
+      "PLAN_CORROBORATION",
+      "SNAPSHOT_DIFF"
+    ],
+    "completenessSupportedStatus": "SUPPORTED",
+    "admittedReferenceStatus": "ADMITTED",
+    "freshnessBasis": "LATEST_SELECTED_SERVICE_DATE_NEXT_DAY_00_00_ASIA_SEOUL",
+    "operationResponseContracts": {
+      "nonPaginated": [
+        "GetVhcleKndList",
+        "GetCtyCodeList"
+      ],
+      "paginated": [
+        "GetCtyAcctoTrainSttnList",
+        "GetStrtpntAlocFndTrainInfo"
+      ]
+    },
     "incompleteStatus": "MISSING",
+    "quotaExhaustionCode": "TAGO_QUOTA_BUDGET_EXHAUSTED",
     "cliFailureExitCode": 1
   },
   "searchScopePolicy": {
@@ -45,7 +113,11 @@
       "officialSourceUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=431&service=trainUseInfo&operation=subwayRouteInfo",
       "endpoint": "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo",
       "license": "저작권표시",
-      "query": { "mreaWideCd": "01", "lnCd": "K2", "format": "xml" },
+      "query": {
+        "mreaWideCd": "01",
+        "lnCd": "K2",
+        "format": "xml"
+      },
       "providerResultCode": "00",
       "schemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
       "rawResponseSha256": "1ba98e1225827c2022a8993e7a2947089b6759a8b8021dab6d688b10f0d6ecda",
@@ -67,10 +139,22 @@
         "trainGradeCode": "09"
       },
       "canonicalStationMappings": [
-        { "providerStationId": "NAT130126", "canonicalStationId": "station-b819702fa7d9", "nameKo": "청량리" },
-        { "providerStationId": "NAT140873", "canonicalStationId": "station-dd14cfb89cbc", "nameKo": "춘천" }
+        {
+          "providerStationId": "NAT130126",
+          "canonicalStationId": "station-b819702fa7d9",
+          "nameKo": "청량리"
+        },
+        {
+          "providerStationId": "NAT140873",
+          "canonicalStationId": "station-dd14cfb89cbc",
+          "nameKo": "춘천"
+        }
       ],
-      "trainGradeMapping": { "providerCode": "09", "providerName": "ITX-청춘", "serviceId": "ITX_CHEONGCHUN" },
+      "trainGradeMapping": {
+        "providerCode": "09",
+        "providerName": "ITX-청춘",
+        "serviceId": "ITX_CHEONGCHUN"
+      },
       "providerResultCode": "00",
       "schemaStatus": "EXPECTED",
       "rowCount": 18,
@@ -91,7 +175,12 @@
         "status": "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
         "reasonCode": "OFFICIAL_OPERATION_FIELD_NOT_PROVIDED"
       },
-      "fare": { "status": "SUPPORTED", "field": "adultcharge", "unit": "KRW", "passenger": "ADULT_1" },
+      "fare": {
+        "status": "SUPPORTED",
+        "field": "adultcharge",
+        "unit": "KRW",
+        "passenger": "ADULT_1"
+      },
       "limitation": "OD 결과는 완전한 trip stop sequence가 아니다."
     },
     "kricUrbanTimetable": {
@@ -117,18 +206,36 @@
       "status": "VALIDATED_NON_ITX_URBAN_RAIL_ONLY",
       "stationCount": 25,
       "tagoTrainNumberJoinCount": 0,
-      "expectedFields": ["arvTm", "dayCd", "dayNm", "dptTm", "lnCd", "orgStinCd", "railOprIsttCd", "stinCd", "tmnStinCd", "trnNo"]
+      "expectedFields": [
+        "arvTm",
+        "dayCd",
+        "dayNm",
+        "dptTm",
+        "lnCd",
+        "orgStinCd",
+        "railOprIsttCd",
+        "stinCd",
+        "tmnStinCd",
+        "trnNo"
+      ]
     },
     "korailStationSequence": {
       "provider": "한국철도공사",
-      "operations": ["codes2", "travelerTrainRunPlan2", "travelerTrainRunInfo2"],
+      "operations": [
+        "codes2",
+        "travelerTrainRunPlan2",
+        "travelerTrainRunInfo2"
+      ],
       "officialSourceUrl": "https://www.data.go.kr/data/15125762/openapi.do",
       "endpoint": "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
       "providerResultCode": "0",
       "schemaStatus": "EXPECTED",
       "observedDate": "2026-07-14",
       "runDate": "2026-07-13",
-      "routeCodeMapping": { "providerCode": "14", "providerName": "경춘선" },
+      "routeCodeMapping": {
+        "providerCode": "14",
+        "providerName": "경춘선"
+      },
       "trainNumberSource": "tools/datapack/sources/tago-itx-cheongchun-od-20260714.json",
       "evidenceArtifact": "tools/datapack/sources/korail-itx-cheongchun-station-sequence-20260713.json",
       "trainCount": 18,
@@ -159,7 +266,11 @@
         "sha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
         "sqliteSha256": "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03"
       },
-      "selectedServiceDates": { "8": "20260715", "7": "20260718", "9": "20260719" },
+      "selectedServiceDates": {
+        "7": "20260718",
+        "8": "20260715",
+        "9": "20260719"
+      },
       "admissionStatus": "MISSING",
       "admissionEligible": false,
       "canonicalStationCount": 25,
@@ -167,27 +278,42 @@
       "stationSetHash": "fe20a22d4c8fab383e287dfcb32b1fddb99e344441101a9c1e4d358a33d6f673",
       "serviceDays": [
         {
-          "dayCd": "8", "serviceDate": "20260715", "rosterTrainNumberCount": 36,
-          "expectedOdCount": 210, "completedOdCount": 210, "failedOdCount": 0,
+          "dayCd": "8",
+          "serviceDate": "20260715",
+          "rosterTrainNumberCount": 36,
+          "expectedOdCount": 210,
+          "completedOdCount": 210,
+          "failedOdCount": 0,
           "odMatrixHash": "2f1cf28e24b20e6d279ed4ce06663a5a3a7629718511a0066ddf8529fdcf1934",
           "rosterEvidenceHash": "14c2f5003f4da2489c795f5df07eec72389ed5cb814a72aa796466df715af3d6",
-          "failureStage": "TIMETABLE", "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "failureStage": "TIMETABLE",
+          "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
           "failureContext": "operation=travelerTrainRunInfo2,total=0"
         },
         {
-          "dayCd": "7", "serviceDate": "20260718", "rosterTrainNumberCount": 52,
-          "expectedOdCount": 210, "completedOdCount": 210, "failedOdCount": 0,
+          "dayCd": "7",
+          "serviceDate": "20260718",
+          "rosterTrainNumberCount": 52,
+          "expectedOdCount": 210,
+          "completedOdCount": 210,
+          "failedOdCount": 0,
           "odMatrixHash": "b7b68526820e5a49f003289cffe6309ce52961e0da96e067bef34cf28de1ebec",
           "rosterEvidenceHash": "5d15a55d214f65851dd6d6cd43293279c07ba80c0e358a2dee55b4df846aed0b",
-          "failureStage": "TIMETABLE", "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "failureStage": "TIMETABLE",
+          "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
           "failureContext": "operation=travelerTrainRunInfo2,total=0"
         },
         {
-          "dayCd": "9", "serviceDate": "20260719", "rosterTrainNumberCount": 52,
-          "expectedOdCount": 210, "completedOdCount": 210, "failedOdCount": 0,
+          "dayCd": "9",
+          "serviceDate": "20260719",
+          "rosterTrainNumberCount": 52,
+          "expectedOdCount": 210,
+          "completedOdCount": 210,
+          "failedOdCount": 0,
           "odMatrixHash": "550af97e469ccc20fde2ad9a531c0896bcf8a41d746f900023a5b2c98ac28e20",
           "rosterEvidenceHash": "5e038a74413bae4ebaee6c3dcfb7333ac237daa96faa7050f782f6dcd4686bb9",
-          "failureStage": "TIMETABLE", "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
+          "failureStage": "TIMETABLE",
+          "failureReasonCode": "OFFICIAL_RUN_INFO_EMPTY",
           "failureContext": "operation=travelerTrainRunInfo2,total=0"
         }
       ],
@@ -197,13 +323,23 @@
   },
   "materialization": {
     "algorithm": "TAGO ITX 열차번호 + Korail 경춘선 station rows를 group하고 canonical lineSequence 단조성과 양 끝역을 검증한 뒤, 실제 시각이 있는 경우에만 trip/stop/time을 생성",
-    "deterministicKey": ["serviceId", "serviceDay", "providerTrainNumber"],
-    "reject": ["MISSING_STOP", "DUPLICATE_STOP", "NON_MONOTONE_STOP_ORDER", "ARRIVAL_AFTER_DEPARTURE", "OD_ONLY_AS_COMPLETE_TRIP"],
+    "deterministicKey": [
+      "serviceId",
+      "serviceDay",
+      "providerTrainNumber"
+    ],
+    "reject": [
+      "MISSING_STOP",
+      "DUPLICATE_STOP",
+      "NON_MONOTONE_STOP_ORDER",
+      "ARRIVAL_AFTER_DEPARTURE",
+      "OD_ONLY_AS_COMPLETE_TRIP"
+    ],
     "status": "MISSING_STATION_TIMES"
   },
   "freshness": {
     "status": "MISSING",
-    "nextReviewAt": "2026-07-20T00:00:00.000Z",
+    "nextReviewAt": "2026-07-20T00:00:00+09:00",
     "eventTrigger": "Korail station row 시각 값 제공 또는 다른 공식 station-level timetable 발견"
   },
   "claimGate": {
@@ -216,5 +352,24 @@
     "requiresFreshness": "FRESH",
     "currentStatus": "NO_GO",
     "supportClaimAllowed": false
+  },
+  "sourceTimetableArtifact": {
+    "status": "ADMITTED",
+    "admissionEligible": true,
+    "artifactId": "itx-cheongchun-source-timetable-20260715152903681",
+    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json",
+    "sha256": "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
+    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681-completeness-evidence.json",
+    "completenessEvidenceSha256": "f47650a9e0bfe9cc02683540bfbf4b214bcf869e4c659e04464226478fc2f257",
+    "schemaVersion": 1,
+    "freshUntil": "2026-07-20T00:00:00+09:00",
+    "policyVersion": "itx-snapshot-anomaly-v1",
+    "promotion": {
+      "mode": "UNCHANGED_AUTO",
+      "previousArtifactSha256": "4134ae94f2cae0e6463077ee8c29c2f2417904de9dd2e751782c26ab0af1a2a7",
+      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715112641542.json",
+      "approvalUrl": null,
+      "approvedArtifactSha256": null
+    }
   }
 }

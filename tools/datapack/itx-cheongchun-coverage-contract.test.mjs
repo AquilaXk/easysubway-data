@@ -96,7 +96,7 @@ test("ITX-청춘 coverage contract는 sequence 성공을 timetable 시각 지원
   assert.equal(contract.claimGate.currentStatus, "NO_GO");
 });
 
-test("ITX-청춘 #2116 evidence wiring은 #1400·#2098·#2099만 허용한다", () => {
+test("ITX-청춘 source artifact는 승인된 후속 이슈만 소비할 수 있다", () => {
   const itxTarget = targets.railProductScope.routeMapAndRouting
     .find(({ serviceId }) => serviceId === "ITX_CHEONGCHUN");
   assert.equal(Object.hasOwn(contract.searchScopePolicy, "trainSearch"), false);
@@ -108,7 +108,7 @@ test("ITX-청춘 #2116 evidence wiring은 #1400·#2098·#2099만 허용한다", 
     contract.searchScopePolicy.metropolitanRouteSearch.SUBWAY_AND_TRAIN,
   );
   assert.equal(targets.railProductScope.trainSearchOnly.services.includes("ITX_CHEONGCHUN"), false);
-  assert.deepEqual(contract.allowedConsumerIssues, ["#1400", "#2098", "#2099"]);
+  assert.deepEqual(contract.allowedConsumerIssues, ["#2145", "#1400", "#2098", "#2099", "#2058", "#2137"]);
   assert.equal(contract.legacyDaejeonRowCount, 0);
   assert.equal(contract.legacyYongsanDaejeonTripCount, 0);
 });
@@ -119,15 +119,128 @@ test("ITX-청춘 admission contract는 날짜·OD matrix·양방향 completeness
     maxFutureDays: 6,
     replayAdmissionAllowed: false,
     serviceDayCodes: { "8": "WEEKDAY", "7": "SATURDAY", "9": "SUNDAY_OR_HOLIDAY" },
-    rosterStationUniverse: "CANONICAL_GYEONGCHUN_INTERSECT_TAGO_TRAIN_STATION_CATALOG",
+    rosterStationUniverse: "CANONICAL_ITX_CORRIDOR_28_INTERSECT_TAGO_TRAIN_STATION_CATALOG",
     excludedStationEvidenceRequired: true,
-    odMatrixHashInput: ["date", "depStationId", "arrStationId"],
+    stationSetHashInput: ["canonicalStationId", "providerStationId"],
+    odMatrixHashInput: [
+      "date",
+      "depCanonicalStationId",
+      "depProviderStationId",
+      "arrCanonicalStationId",
+      "arrProviderStationId",
+    ],
     odMatrixCanonicalSerialization: "SORTED_TUPLE_ARRAY_JSON_UTF8",
-    requiredDirections: ["D", "U"],
-    requiredTrainNumberSets: ["ROSTER", "PLAN", "INFO", "MATERIALIZED"],
+    requiredDirections: ["up", "down"],
+    requiredTrainNumberSets: ["TAGO_OD", "MATERIALIZED"],
+    korailPlanCorroboration: {
+      required: false,
+      missingDisposition: "KORAIL_PLAN_NOT_AVAILABLE_WARNING",
+      duplicateDisposition: "KORAIL_PLAN_DUPLICATE_FAIL_CLOSED",
+      mismatchDisposition: "KORAIL_PLAN_MISMATCH_FAIL_CLOSED",
+    },
+    snapshotAnomalyPolicy: {
+      policyId: "itx-snapshot-anomaly-v1",
+      threshold: "ZERO_TOLERANCE",
+      comparisonUnit: "DAY_CD",
+      normalizedSets: ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"],
+      bootstrapStatus: "BOOTSTRAP_REVIEW_REQUIRED",
+      changeStatus: "CHANGE_REVIEW_REQUIRED",
+      failureReasonCode: "SNAPSHOT_ANOMALY_BLOCKED",
+    },
+    failureStages: ["ROSTER", "OD_MATERIALIZATION", "PLAN_CORROBORATION", "SNAPSHOT_DIFF"],
+    completenessSupportedStatus: "SUPPORTED",
+    admittedReferenceStatus: "ADMITTED",
+    freshnessBasis: "LATEST_SELECTED_SERVICE_DATE_NEXT_DAY_00_00_ASIA_SEOUL",
+    operationResponseContracts: {
+      nonPaginated: ["GetVhcleKndList", "GetCtyCodeList"],
+      paginated: ["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"],
+    },
     incompleteStatus: "MISSING",
+    quotaExhaustionCode: "TAGO_QUOTA_BUDGET_EXHAUSTED",
     cliFailureExitCode: 1,
   });
+});
+
+test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_AUTO exact bytes로 ADMITTED된다", async () => {
+  const reference = contract.sourceTimetableArtifact;
+  assert.equal(reference.status, "ADMITTED");
+  assert.equal(reference.admissionEligible, true);
+  assert.match(reference.artifactId, /^itx-cheongchun-source-timetable-\d{17}$/);
+  assert.equal(reference.artifactPath, `tools/datapack/sources/${reference.artifactId}.json`);
+  assert.match(reference.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    reference.completenessEvidencePath,
+    `tools/datapack/sources/${reference.artifactId}-completeness-evidence.json`,
+  );
+  assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(reference.promotion, {
+    mode: "UNCHANGED_AUTO",
+    previousArtifactSha256: "4134ae94f2cae0e6463077ee8c29c2f2417904de9dd2e751782c26ab0af1a2a7",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260715112641542.json",
+    approvalUrl: null,
+    approvedArtifactSha256: null,
+  });
+
+  const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));
+  assert.equal(
+    createHash("sha256").update(previousBytes).digest("hex"),
+    reference.promotion.previousArtifactSha256,
+  );
+
+  const artifactBytes = await readFile(new URL(`../../${reference.artifactPath}`, import.meta.url));
+  assert.equal(createHash("sha256").update(artifactBytes).digest("hex"), reference.sha256);
+  const artifact = JSON.parse(artifactBytes);
+  const completenessBytes = await readFile(new URL(`../../${reference.completenessEvidencePath}`, import.meta.url));
+  assert.equal(
+    createHash("sha256").update(completenessBytes).digest("hex"),
+    reference.completenessEvidenceSha256,
+  );
+  const completeness = JSON.parse(completenessBytes);
+  assert.equal(artifact.completenessEvidenceSha256, reference.completenessEvidenceSha256);
+  assert.equal(completeness.validationStatus, "SUPPORTED");
+  assert.equal(completeness.materialization.status, "SUPPORTED");
+  assert.deepEqual(completeness.selectedServiceDates, artifact.selectedServiceDates);
+  assert.equal(artifact.artifactId, reference.artifactId);
+  assert.equal(artifact.artifactKind, "itx-cheongchun-source-timetable");
+  assert.equal(artifact.promotionStatus, "SUPPORTED");
+  assert.equal(artifact.snapshotDiff.status, "SUPPORTED");
+  assert.equal(artifact.snapshotDiff.previousArtifactSha256, reference.promotion.previousArtifactSha256);
+  const diffByDay = new Map(artifact.snapshotDiff.serviceDays.map((day) => [day.dayCd, day]));
+  const expectedDayCds = Object.keys(artifact.selectedServiceDates).sort();
+  assert.deepEqual(artifact.normalizedSnapshotSets.map(({ dayCd }) => dayCd).sort(), expectedDayCds);
+  assert.deepEqual([...diffByDay.keys()].sort(), expectedDayCds);
+  const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
+  for (const { dayCd, sets } of artifact.normalizedSnapshotSets) {
+    const diff = diffByDay.get(dayCd);
+    assert.equal(diff.blocked, false);
+    for (const name of setNames) {
+      const values = sets[name].map((value) => JSON.stringify(value)).sort().map(JSON.parse);
+      assert.deepEqual(diff.sets[name].added, []);
+      assert.deepEqual(diff.sets[name].removed, []);
+      assert.equal(diff.sets[name].count, values.length);
+      assert.equal(
+        diff.sets[name].sha256,
+        createHash("sha256").update(JSON.stringify(values)).digest("hex"),
+      );
+    }
+  }
+  assert.equal(artifact.credentialRedacted, true);
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260716", "7": "20260718", "9": "20260719" });
+  for (const dayCd of ["8", "7", "9"]) {
+    assert.deepEqual(
+      [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
+      ["down", "up"],
+    );
+  }
+  assert.equal(artifact.stationSequences.filter(({ trainNumber }) => trainNumber === "2035").length, 1);
+  assert.doesNotMatch(
+    artifactBytes.toString("utf8"),
+    /serviceKey(?:=|["']?\s*:)|KRIC_SERVICE_KEY|DATA_GO_KR_SERVICE_KEY/i,
+  );
+  assert.doesNotMatch(
+    completenessBytes.toString("utf8"),
+    /serviceKey(?:=|["']?\s*:)|KRIC_SERVICE_KEY|DATA_GO_KR_SERVICE_KEY/i,
+  );
 });
 
 test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 credential 없이 고정한다", () => {
@@ -228,6 +341,7 @@ test("ITX-청춘 evidence는 공식 URL·schema/hash·재검토 시점을 갖고
   assert.match(contract.officialEvidence.tagoTrainOd.evidenceHash, /^[a-f0-9]{64}$/);
   assert.equal(contract.officialEvidence.korailStationSequence.evidenceArtifact,
     "tools/datapack/sources/korail-itx-cheongchun-station-sequence-20260713.json");
-  assert.equal(new Date(contract.freshness.nextReviewAt).toISOString(), contract.freshness.nextReviewAt);
+  assert.match(contract.freshness.nextReviewAt, /(?:Z|[+-]\d{2}:\d{2})$/);
+  assert.equal(Date.parse(contract.freshness.nextReviewAt), Date.parse(contract.sourceTimetableArtifact.freshUntil));
   assert.doesNotMatch(serialized, /serviceKey=|KRIC_SERVICE_KEY|DATA_GO_KR_SERVICE_KEY/);
 });

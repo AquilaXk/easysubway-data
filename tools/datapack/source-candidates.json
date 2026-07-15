@@ -3167,7 +3167,7 @@
         "materializationRunner": {
           "command": "node tools/datapack/collect-korail-itx-cheongchun-timetable.mjs",
           "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"],
-          "requiredArguments": ["--day8-date", "--day7-date", "--day9-date", "--canonical-pack", "--output"]
+          "requiredArguments": ["--day8-date", "--day7-date", "--day9-date", "--canonical-pack", "--completeness-output", "--output"]
         },
         "liveMaterialization": {
           "runDate": "20260713",
