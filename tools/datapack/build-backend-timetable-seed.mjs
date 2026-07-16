@@ -46,9 +46,10 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
     throw new Error(`feed_end_date must be 8-digit YYYYMMDD (transit_feed_info VARCHAR(8)): ${feedEndDate}`);
   }
   const dayMap = options.serviceCalendarDayMap ?? SERVICE_CALENDAR_DAY_MAP;
+  const excludedServiceCalendarIds = new Set(options.excludeServiceCalendarIds ?? []);
 
-  const tripIds = validateTrips(trips);
-  validateStopTimes(stopTimes, tripIds);
+  const tripsById = validateTrips(trips);
+  validateStopTimes(stopTimes, tripsById);
   const evidence = validateRouteServiceEvidence(
     artifact?.routeServiceArtifactEvidence ?? [],
     trips,
@@ -57,11 +58,12 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
     options.canonicalPackIdentity,
   );
 
-  const calendars = deriveCalendars(trips, dayMap, startDate, endDate);
+  const calendars = deriveCalendars(trips, dayMap, startDate, endDate)
+    .filter(({ serviceId }) => !excludedServiceCalendarIds.has(serviceId));
   const routes = deriveRoutes(trips, lineId, artifact?.transitRoutes);
 
   const statements = [
-    feedInfoInsert(feedEndDate),
+    ...(options.includeFeedInfo === false ? [] : [feedInfoInsert(feedEndDate)]),
     ...evidence.map(routeServiceEvidenceInsert),
     ...calendars.map(calendarInsert),
     ...routes.map(routeInsert),
@@ -80,27 +82,34 @@ const OFFSET_ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|
 // trip 행이 V29 제약(id PK 유일, service_pattern CHECK, service_day_start_seconds 범위)을 만족하는지
 // 생성 단계에서 검증한다(로드-시점 FK/CHECK 실패를 앞당김). trip id 집합을 stop_times FK 검증용으로 반환.
 function validateTrips(trips) {
-  const ids = new Set();
+  const byId = new Map();
   for (const trip of trips) {
     const id = requireString(trip.id, "transitTrips.id");
-    if (ids.has(id)) {
+    if (byId.has(id)) {
       throw new Error(`transit_trips duplicate id (PK): ${id}`);
     }
-    ids.add(id);
-    const pattern = trip.servicePattern ?? "LOCAL";
+    requireString(trip.routeId, "transitTrips.routeId");
+    requireString(trip.serviceId, "transitTrips.serviceId");
+    requireString(trip.tripHeadsign, "transitTrips.tripHeadsign");
+    requireString(trip.directionId, "transitTrips.directionId");
+    const pattern = trip.servicePattern;
     if (!ALLOWED_SERVICE_PATTERNS.has(pattern)) {
-      throw new Error(`transit_trips service_pattern must be LOCAL or EXPRESS: ${id}:${pattern}`);
+      throw new Error(`transit_trips service_pattern must be explicitly LOCAL or EXPRESS: ${id}:${pattern}`);
     }
     const serviceClass = trip.serviceClass ?? "SUBWAY";
     if (!ALLOWED_SERVICE_CLASSES.has(serviceClass)) {
       throw new Error(`transit_trips service_class must be SUBWAY or ITX_CHEONGCHUN: ${id}:${serviceClass}`);
     }
+    if (serviceClass === "ITX_CHEONGCHUN" && pattern !== "EXPRESS") {
+      throw new Error(`ITX_CHEONGCHUN trips must use EXPRESS service_pattern: ${id}:${pattern}`);
+    }
     const dayStart = trip.serviceDayStartSeconds ?? 0;
     if (!Number.isInteger(dayStart) || dayStart < 0 || dayStart >= SECONDS_LIMIT_EXCLUSIVE) {
       throw new Error(`transit_trips service_day_start_seconds out of range [0,${SECONDS_LIMIT_EXCLUSIVE}): ${id}:${dayStart}`);
     }
+    byId.set(id, { serviceClass, servicePattern: pattern });
   }
-  return ids;
+  return byId;
 }
 
 function validateRouteServiceEvidence(
@@ -167,7 +176,7 @@ function validateCanonicalPackIdentity(evidence, canonicalPackIdentity) {
   }
 }
 
-function validateStopTimes(stopTimes, tripIds) {
+function validateStopTimes(stopTimes, tripsById) {
   const seenKeys = new Set();
   const byTrip = new Map();
   for (const row of stopTimes) {
@@ -175,8 +184,21 @@ function validateStopTimes(stopTimes, tripIds) {
     const stopSequence = requireInteger(row.stopSequence, "stopSequence");
     const arrival = requireInteger(row.arrivalSeconds, "arrivalSeconds");
     const departure = requireInteger(row.departureSeconds, "departureSeconds");
-    if (!tripIds.has(tripId)) {
+    const trip = tripsById.get(tripId);
+    if (!trip) {
       throw new Error(`transit_stop_times trip_id not found in transitTrips (FK): ${tripId}:${stopSequence}`);
+    }
+    requireString(row.stationId, "transitStopTimes.stationId");
+    requireString(row.lineId, "transitStopTimes.lineId");
+    const pickupType = row.pickupType ?? 0;
+    const dropOffType = row.dropOffType ?? 0;
+    if (![0, 1].includes(pickupType) || ![0, 1].includes(dropOffType)) {
+      throw new Error(`transit_stop_times pickup_type/drop_off_type must be 0 or 1: ${tripId}:${stopSequence}`);
+    }
+    if (trip.servicePattern === "EXPRESS" && pickupType !== dropOffType) {
+      throw new Error(
+        `EXPRESS pass-through rows must set pickup_type=1 and drop_off_type=1 together: ${tripId}:${stopSequence}`,
+      );
     }
     if (arrival < 0 || arrival >= SECONDS_LIMIT_EXCLUSIVE || departure < 0 || departure >= SECONDS_LIMIT_EXCLUSIVE) {
       throw new Error(`transit_stop_times seconds out of range [0,${SECONDS_LIMIT_EXCLUSIVE}): ${tripId}:${stopSequence}`);
@@ -199,12 +221,20 @@ function validateStopTimes(stopTimes, tripIds) {
   // intra-trip 시각 단조성: stopSequence 순서로 departure[N] <= arrival[N+1] (음/영 소요시간 방지, RAPTOR 전제).
   for (const [tripId, rows] of byTrip) {
     rows.sort((left, right) => left.stopSequence - right.stopSequence);
+    if (rows.some((row, index) => row.stopSequence !== index + 1)) {
+      throw new Error(`transit_stop_times stop_sequence must be contiguous from 1: ${tripId}`);
+    }
     for (let index = 1; index < rows.length; index += 1) {
       if (rows[index - 1].departure > rows[index].arrival) {
         throw new Error(
           `transit_stop_times departure must be <= next arrival (monotonic order): ${tripId}:${rows[index - 1].stopSequence}->${rows[index].stopSequence}`,
         );
       }
+    }
+  }
+  for (const tripId of tripsById.keys()) {
+    if (!byTrip.has(tripId)) {
+      throw new Error(`transit_trips must contain at least one stop pattern row: ${tripId}`);
     }
   }
 }
@@ -284,7 +314,7 @@ function tripInsert(t) {
   return (
     "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES (" +
     `${quote(requireString(t.id, "transitTrips.id"))}, ${quote(requireString(t.routeId, "transitTrips.routeId"))}, ` +
-    `${quote(requireString(t.serviceId, "transitTrips.serviceId"))}, ${quote(t.servicePattern ?? "LOCAL")}, ` +
+    `${quote(requireString(t.serviceId, "transitTrips.serviceId"))}, ${quote(t.servicePattern)}, ` +
     `${quote(t.serviceClass ?? "SUBWAY")}, ${t.serviceDayStartSeconds ?? 0}, ${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")});`
   );
 }
@@ -300,8 +330,8 @@ function routeServiceEvidenceInsert(row) {
       throw new Error(`routeServiceArtifactEvidence.${label} must be a lowercase sha256`);
     }
   }
-  if (row.sourceIssue !== 2116) {
-    throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2116");
+  if (![2116, 2135].includes(row.sourceIssue)) {
+    throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2116 or 2135");
   }
   return (
     "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +

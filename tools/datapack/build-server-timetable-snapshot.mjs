@@ -1,0 +1,698 @@
+#!/usr/bin/env node
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { gunzipSync, gzipSync } from "node:zlib";
+
+import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
+const SCHEMA_IDENTITY = "backend-timetable-snapshot-v1";
+const ITX_SERVICE_ID_BY_SOURCE = {
+  "weekday-kric": "itx-cheongchun-weekday-kric",
+  "saturday-kric": "itx-cheongchun-saturday-kric",
+  "holiday-kric": "itx-cheongchun-holiday-kric",
+};
+const ITX_SERVICE_CALENDAR_DAY_MAP = {
+  "itx-cheongchun-weekday-kric": {
+    monday: true, tuesday: true, wednesday: true, thursday: true, friday: true, saturday: false, sunday: false,
+  },
+  "itx-cheongchun-saturday-kric": {
+    monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false,
+  },
+  "itx-cheongchun-holiday-kric": {
+    monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: false, sunday: true,
+  },
+};
+
+export function buildServerTimetableSnapshot({
+  baselineGzipBytes,
+  contractBytes,
+  sourceBytes,
+  completenessBytes,
+  canonicalPackGzipBytes,
+  topologyEvidenceBytes,
+  subwayRosterBytes,
+  canonicalGzipBytes,
+  buildNow = new Date(),
+}) {
+  const rawBaselineSql = normalizeBaselineSql(baselineGzipBytes);
+  const contract = parseJson(contractBytes, "coverage contract");
+  const source = parseJson(sourceBytes, "source artifact");
+  const completeness = parseJson(completenessBytes, "completeness evidence");
+  const topologyEvidence = parseJson(topologyEvidenceBytes, "topology evidence");
+  const subwayRoster = parseJson(subwayRosterBytes, "subway roster");
+  const admittedCanonicalPackIdentity = validateAdmission({
+    contract,
+    source,
+    sourceBytes,
+    completeness,
+    completenessBytes,
+    buildNow,
+  });
+  const { canonicalPackIdentity, canonicalPackLineage } = validateCanonicalTopologyPack({
+    contract,
+    source,
+    sourceBytes,
+    topologyEvidence,
+    topologyEvidenceBytes,
+    canonicalPackGzipBytes,
+    admittedCanonicalPackIdentity,
+  });
+  const baselineSql = normalizeSubwayStationIds(
+    rawBaselineSql,
+    canonicalPackGzipBytes,
+    subwayRoster,
+  );
+  const existingCalendarIds = insertedIds(baselineSql, "service_calendars");
+  const sortedTrips = [...source.transitTrips]
+    .map((trip) => ({
+      ...trip,
+      serviceId: namespacedItxServiceId(trip.serviceId),
+      serviceClass: "ITX_CHEONGCHUN",
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const sortedStopTimes = [...source.transitStopTimes]
+    .sort((left, right) => left.tripId.localeCompare(right.tripId)
+      || left.stopSequence - right.stopSequence);
+  const routeServiceArtifactEvidence = [{
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId: source.artifactId,
+    timetableArtifactSha256: sha256(sourceBytes),
+    canonicalPackId: canonicalPackIdentity.id,
+    canonicalPackSha256: canonicalPackIdentity.sha256,
+    canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible: true,
+    freshUntil: source.freshUntil,
+    sourceIssue: 2135,
+  }];
+  const itxSeed = buildBackendTimetableSeed({
+    ...source,
+    transitTrips: sortedTrips,
+    transitStopTimes: sortedStopTimes,
+    routeServiceArtifactEvidence,
+  }, {
+    includeFeedInfo: false,
+    excludeServiceCalendarIds: existingCalendarIds,
+    serviceCalendarDayMap: ITX_SERVICE_CALENDAR_DAY_MAP,
+    startDate: earliestServiceDate(source.selectedServiceDates),
+    endDate: latestServiceDate(source.selectedServiceDates),
+    buildNow,
+    timetableArtifactSha256: sha256(sourceBytes),
+    canonicalPackIdentity,
+  });
+  assertNoIdentityCollisions(baselineSql, itxSeed);
+  const sql = `${baselineSql}${itxSeed.sql}`;
+  const sqlBytes = Buffer.from(sql);
+  const gzipBytes = canonicalGzipBytes ?? gzipSync(sqlBytes, { level: 9, mtime: 0 });
+  if (canonicalGzipBytes != null) {
+    let canonicalSqlBytes;
+    try {
+      canonicalSqlBytes = gunzipSync(canonicalGzipBytes);
+    } catch {
+      throw new Error("canonical gzip transport does not match normalized SQL");
+    }
+    if (!canonicalSqlBytes.equals(sqlBytes)) {
+      throw new Error("canonical gzip transport does not match normalized SQL");
+    }
+  }
+  const snapshotSha256 = sha256(sqlBytes);
+  const canonicalStationIds = canonicalStationSet(source);
+  const canonicalStationSetHash = sha256(Buffer.from(JSON.stringify(canonicalStationIds)));
+  const baselineCounts = statementCounts(baselineSql);
+  const servicePatternEvidence = representativeServicePatternEvidence(baselineSql, source);
+  const evidenceWithoutHash = {
+    schemaVersion: 1,
+    artifactKind: ARTIFACT_KIND,
+    schemaIdentity: SCHEMA_IDENTITY,
+    snapshotId: `server-timetable-snapshot-${snapshotSha256.slice(0, 16)}`,
+    snapshotSha256,
+    snapshotSqlByteSize: sqlBytes.length,
+    snapshotGzipSha256: sha256(gzipBytes),
+    snapshotGzipByteSize: gzipBytes.length,
+    freshUntil: source.freshUntil,
+    serviceIdentity: {
+      serviceId: contract.serviceId,
+      canonicalLineId: contract.canonicalLineId,
+      servicePattern: contract.servicePattern,
+      timezone: contract.timezone,
+    },
+    sourceArtifact: {
+      id: source.artifactId,
+      sha256: sha256(sourceBytes),
+      completenessEvidenceSha256: sha256(completenessBytes),
+    },
+    canonicalPackIdentity,
+    canonicalPackLineage,
+    canonicalStationSet: {
+      version: `sha256:${canonicalStationSetHash}`,
+      sha256: canonicalStationSetHash,
+      memberCount: canonicalStationIds.length,
+    },
+    sourceLineageSha256: sha256(Buffer.from(JSON.stringify(
+      [...source.sourceLineage].sort((left, right) => left.dayCd.localeCompare(right.dayCd)),
+    ))),
+    servicePatternEvidence,
+    rowCounts: {
+      calendars: baselineCounts.calendars + itxSeed.calendars.length,
+      routes: baselineCounts.routes + itxSeed.routes.length,
+      trips: baselineCounts.trips + itxSeed.tripCount,
+      stopTimes: baselineCounts.stopTimes + itxSeed.stopTimeCount,
+      subwayTrips: baselineCounts.trips,
+      subwayStopTimes: baselineCounts.stopTimes,
+      itxTrips: itxSeed.tripCount,
+      itxStopTimes: itxSeed.stopTimeCount,
+      routeServiceEvidence: 1,
+    },
+  };
+  const evidence = {
+    ...evidenceWithoutHash,
+    evidenceHash: sha256(Buffer.from(JSON.stringify(evidenceWithoutHash))),
+  };
+  return {
+    sql,
+    gzipBytes,
+    evidence,
+    evidenceBytes: Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`),
+  };
+}
+
+function namespacedItxServiceId(sourceServiceId) {
+  const serviceId = ITX_SERVICE_ID_BY_SOURCE[sourceServiceId];
+  if (!serviceId) throw new Error(`unsupported ITX service calendar: ${sourceServiceId}`);
+  return serviceId;
+}
+
+function validateCanonicalTopologyPack({
+  contract,
+  source,
+  sourceBytes,
+  topologyEvidence,
+  topologyEvidenceBytes,
+  canonicalPackGzipBytes,
+  admittedCanonicalPackIdentity,
+}) {
+  let canonicalPackSqliteBytes;
+  try {
+    canonicalPackSqliteBytes = gunzipSync(canonicalPackGzipBytes);
+  } catch {
+    throw new Error("canonical topology pack identity mismatch");
+  }
+  const outputSha256 = sha256(canonicalPackGzipBytes);
+  const outputSqliteSha256 = sha256(canonicalPackSqliteBytes);
+  if (source.canonicalPackIdentity?.path !== "apps/mobile/assets/datapacks/capital.sqlite.gz"
+    || topologyEvidence?.schemaVersion !== 1
+    || topologyEvidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || topologyEvidence.serviceId !== "ITX_CHEONGCHUN"
+    || topologyEvidence.sourceIssue !== 2135
+    || topologyEvidence.sourceArtifact?.id !== source.artifactId
+    || topologyEvidence.sourceArtifact?.sha256 !== sha256(sourceBytes)
+    || topologyEvidence.sourceArtifact?.completenessEvidenceSha256
+      !== source.completenessEvidenceSha256
+    || topologyEvidence.sourceArtifact?.freshUntil !== source.freshUntil
+    || topologyEvidence.pack?.id !== "capital"
+    || topologyEvidence.pack.inputSha256 !== admittedCanonicalPackIdentity.sha256
+    || topologyEvidence.pack.inputSqliteSha256 !== admittedCanonicalPackIdentity.sqliteSha256
+    || topologyEvidence.pack.outputSha256 !== outputSha256
+    || topologyEvidence.pack.outputSqliteSha256 !== outputSqliteSha256
+    || topologyEvidence.pack.byteSize !== canonicalPackGzipBytes.length
+    || topologyEvidence.topology?.stationMembershipCount <= 0
+    || topologyEvidence.topology?.connectedComponentCount !== 1
+    || topologyEvidence.topology?.isolatedServedStationCount !== 0
+    || !lowercaseSha(topologyEvidence.topology?.sha256)
+    || !contract.allowedConsumerIssues?.includes("#1400")) {
+    throw new Error("canonical topology pack identity mismatch");
+  }
+  return {
+    canonicalPackIdentity: {
+      id: topologyEvidence.pack.id,
+      sha256: outputSha256,
+      sqliteSha256: outputSqliteSha256,
+    },
+    canonicalPackLineage: {
+      topologyEvidenceSha256: sha256(topologyEvidenceBytes),
+      topologySha256: topologyEvidence.topology.sha256,
+      admittedInputSha256: admittedCanonicalPackIdentity.sha256,
+      admittedInputSqliteSha256: admittedCanonicalPackIdentity.sqliteSha256,
+    },
+  };
+}
+
+function normalizeSubwayStationIds(sql, canonicalPackGzipBytes, subwayRoster) {
+  const stationMapping = canonicalSubwayStationMapping(canonicalPackGzipBytes, subwayRoster);
+  let normalized = sql;
+  for (const [sourceStationId, canonicalStationId] of stationMapping) {
+    normalized = normalized.replaceAll(`'${sourceStationId}'`, `'${canonicalStationId}'`);
+  }
+  const unresolved = normalized.split("\n")
+    .filter((line) => line.startsWith("INSERT INTO transit_stop_times "))
+    .map((line) => values(line)[2])
+    .filter((stationId) => stationId.startsWith("station-seoul-4-"));
+  if (unresolved.length > 0) {
+    throw new Error(`subway baseline has unmapped canonical stations: ${unresolved[0]}`);
+  }
+  return normalized;
+}
+
+function canonicalSubwayStationMapping(canonicalPackGzipBytes, subwayRoster) {
+  if (!Array.isArray(subwayRoster?.stations) || subwayRoster.stations.length === 0) {
+    throw new Error("subway roster stations are required for canonical mapping");
+  }
+  const directory = mkdtempSync(path.join(tmpdir(), "server-snapshot-canonical-"));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  let db;
+  try {
+    writeFileSync(sqlitePath, gunzipSync(canonicalPackGzipBytes));
+    db = new DatabaseSync(sqlitePath, { readOnly: true });
+    const canonicalStations = db.prepare(`
+      SELECT stations.id, stations.name_ko, station_lines.line_sequence
+      FROM station_lines
+      JOIN stations ON stations.id = station_lines.station_id
+      WHERE station_lines.line_id = 'seoul-4'
+      ORDER BY station_lines.line_sequence, stations.id
+    `).all();
+    if (canonicalStations.length !== subwayRoster.stations.length) {
+      throw new Error("subway roster and canonical pack station counts differ");
+    }
+    const canonicalBySequence = new Map(canonicalStations.map((station) => [
+      Number(station.line_sequence),
+      station,
+    ]));
+    const mapping = new Map();
+    for (const station of subwayRoster.stations) {
+      const canonical = canonicalBySequence.get(Number(station.stinConsOrdr));
+      const sourceName = canonicalSubwayStationName(station.stinNm);
+      if (!canonical || sourceName !== normalizeStationName(canonical.name_ko)) {
+        throw new Error(`subway roster canonical station mismatch: ${station.stinCd}`);
+      }
+      const sourceStationId = `station-seoul-4-${station.stinCd}`;
+      if (mapping.has(sourceStationId)) {
+        throw new Error(`subway roster duplicate station identity: ${sourceStationId}`);
+      }
+      mapping.set(sourceStationId, canonical.id);
+    }
+    return mapping;
+  } catch (error) {
+    if (error?.message?.startsWith("subway roster")) throw error;
+    throw new Error("canonical topology pack SQLite mapping is invalid", { cause: error });
+  } finally {
+    db?.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function canonicalSubwayStationName(value) {
+  const normalized = normalizeStationName(value);
+  return normalized === "능길" ? "신길온천" : normalized;
+}
+
+function normalizeStationName(value) {
+  return String(value ?? "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .toLocaleLowerCase("ko-KR");
+}
+
+function representativeServicePatternEvidence(sql, source) {
+  const trips = sql.split("\n")
+    .filter((line) => line.startsWith("INSERT INTO transit_trips "))
+    .map((line) => {
+      const row = valuesByColumn(line, "transit_trips");
+      return {
+        id: requiredSqlColumn(row, "id"),
+        routeId: requiredSqlColumn(row, "route_id"),
+        servicePattern: requiredSqlColumn(row, "service_pattern"),
+        directionId: requiredSqlColumn(row, "direction_id"),
+      };
+    });
+  const stopsByTrip = new Map();
+  for (const line of sql.split("\n").filter((value) => value.startsWith("INSERT INTO transit_stop_times "))) {
+    const row = values(line);
+    const stops = stopsByTrip.get(row[0]) ?? [];
+    stops.push({ sequence: Number(row[1]), stationId: row[2] });
+    stopsByTrip.set(row[0], stops);
+  }
+  const localTrips = trips.filter(({ servicePattern }) => servicePattern === "LOCAL");
+  const expressTrips = trips.filter(({ servicePattern }) => servicePattern === "EXPRESS");
+  const local = localTrips.sort((left, right) => left.id.localeCompare(right.id))
+    .find((candidate) => orderedStationIds(stopsByTrip.get(candidate.id)).length > 1);
+  const express = representativeItxExpressPattern(source);
+  if (!local || !express) {
+    throw new Error("complete snapshot must contain representative LOCAL and EXPRESS stop patterns");
+  }
+  return {
+    localTripCount: localTrips.length,
+    expressTripCount: expressTrips.length + source.transitTrips.length,
+    representativeLocal: tripPatternSummary(local, stopsByTrip),
+    representativeExpress: express,
+  };
+}
+
+function representativeItxExpressPattern(source) {
+  const stopTimesByTrip = new Map();
+  for (const stop of source.transitStopTimes) {
+    const stops = stopTimesByTrip.get(stop.tripId) ?? [];
+    stops.push({ sequence: stop.stopSequence, stationId: stop.stationId });
+    stopTimesByTrip.set(stop.tripId, stops);
+  }
+  for (const trip of [...source.transitTrips].sort((left, right) => left.id.localeCompare(right.id))) {
+    const stopStationIds = orderedStationIds(stopTimesByTrip.get(trip.id));
+    const dayCd = trip.id.split("-").at(-1);
+    const roster = source.stationRosters.find((candidate) => candidate.dayCd === dayCd);
+    const corridor = [...new Map([...(roster?.stations ?? [])]
+      .sort((left, right) => left.corridorSequence - right.corridorSequence)
+      .map((station) => [station.canonicalStationId, station])).values()]
+      .map(({ canonicalStationId }) => canonicalStationId);
+    const first = corridor.indexOf(stopStationIds[0]);
+    const last = corridor.indexOf(stopStationIds.at(-1));
+    if (first < 0 || last < 0) continue;
+    const start = Math.min(first, last);
+    const end = Math.max(first, last);
+    const passThroughStationIds = corridor.slice(start, end + 1)
+      .filter((stationId) => !stopStationIds.includes(stationId));
+    if (passThroughStationIds.length === 0) continue;
+    return {
+      tripId: trip.id,
+      routeId: trip.routeId,
+      directionId: trip.directionId,
+      terminalStationId: stopStationIds.at(-1),
+      stopStationIds,
+      passThroughStationIds,
+      stopPatternSha256: sha256(Buffer.from(JSON.stringify(stopStationIds))),
+    };
+  }
+  return null;
+}
+
+function tripPatternSummary(trip, stopsByTrip) {
+  const stopStationIds = orderedStationIds(stopsByTrip.get(trip.id));
+  return {
+    tripId: trip.id,
+    routeId: trip.routeId,
+    directionId: trip.directionId,
+    terminalStationId: stopStationIds.at(-1),
+    stopStationIds,
+    passThroughStationIds: [],
+    stopPatternSha256: sha256(Buffer.from(JSON.stringify(stopStationIds))),
+  };
+}
+
+function orderedStationIds(stops = []) {
+  return [...stops]
+    .sort((left, right) => left.sequence - right.sequence)
+    .map(({ stationId }) => stationId);
+}
+
+function validateAdmission({
+  contract,
+  source,
+  sourceBytes,
+  completeness,
+  completenessBytes,
+  buildNow,
+}) {
+  const reference = contract?.sourceTimetableArtifact;
+  if (contract?.schemaVersion !== 2
+    || contract.artifactKind !== "itx-cheongchun-coverage-contract"
+    || contract.serviceId !== "ITX_CHEONGCHUN"
+    || !contract.allowedConsumerIssues?.includes("#2145")
+    || reference?.status !== "ADMITTED"
+    || reference.admissionEligible !== true
+    || reference.schemaVersion !== 1) {
+    throw new Error("#2145 requires the canonical #2135 ADMITTED source contract");
+  }
+  if (reference.sha256 !== sha256(sourceBytes)) {
+    throw new Error("source artifact SHA-256 mismatch");
+  }
+  if (reference.completenessEvidenceSha256 !== sha256(completenessBytes)) {
+    throw new Error("completeness evidence SHA-256 mismatch");
+  }
+  const { evidenceHash: sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
+  const { evidenceHash: completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
+  if (source?.schemaVersion !== 1
+    || source.artifactKind !== "itx-cheongchun-source-timetable"
+    || source.artifactId !== reference.artifactId
+    || source.serviceId !== "ITX_CHEONGCHUN"
+    || source.validationStatus !== "SUPPORTED"
+    || source.freshUntil !== reference.freshUntil
+    || source.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
+    || sourceEvidenceHash !== sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)))) {
+    throw new Error("source artifact schema or lineage mismatch");
+  }
+  if (completeness?.schemaVersion !== 2
+    || completeness.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
+    || completeness.serviceId !== "ITX_CHEONGCHUN"
+    || completeness.validationStatus !== "SUPPORTED"
+    || completeness.materialization?.status !== "SUPPORTED"
+    || completeness.credentialRedacted !== true
+    || completenessEvidenceHash !== sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)))) {
+    throw new Error("completeness evidence schema or lineage mismatch");
+  }
+  const freshUntil = Date.parse(source.freshUntil);
+  if (!Number.isFinite(freshUntil) || freshUntil <= buildNow.getTime()) {
+    throw new Error("source artifact is stale");
+  }
+  if (!Array.isArray(source.transitTrips) || source.transitTrips.length === 0
+    || !Array.isArray(source.transitStopTimes) || source.transitStopTimes.length === 0
+    || !Array.isArray(source.sourceLineage) || source.sourceLineage.length !== 3) {
+    throw new Error("source artifact must contain complete timetable and lineage rows");
+  }
+  const canonical = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
+  if (canonical?.id !== "capital"
+    || !lowercaseSha(canonical.sha256)
+    || !lowercaseSha(canonical.sqliteSha256)
+    || source.canonicalPackIdentity?.sha256 !== canonical.sha256) {
+    throw new Error("canonical pack identity mismatch");
+  }
+  return { id: canonical.id, sha256: canonical.sha256, sqliteSha256: canonical.sqliteSha256 };
+}
+
+function normalizeBaselineSql(baselineGzipBytes) {
+  let sql;
+  try {
+    sql = gunzipSync(baselineGzipBytes).toString("utf8");
+  } catch {
+    throw new Error("subway baseline must be gzip-compressed SQL");
+  }
+  const statements = sql.lines ? sql.lines() : sql.split(/\r?\n/);
+  const normalized = statements.map((line) => line.trim()).filter(Boolean);
+  if (normalized.length === 0 || normalized.some((line) => !line.endsWith(";"))) {
+    throw new Error("subway baseline must contain one complete SQL statement per line");
+  }
+  const value = `${normalized.join("\n")}\n`;
+  const tripPatterns = normalized
+    .filter((line) => line.startsWith("INSERT INTO transit_trips "))
+    .map((line) => values(line)[3]);
+  if (tripPatterns.length === 0 || tripPatterns.some((pattern) => !["LOCAL", "EXPRESS"].includes(pattern))) {
+    throw new Error("subway baseline trips must explicitly declare LOCAL or EXPRESS service_pattern");
+  }
+  if (/ITX_CHEONGCHUN|route_service_artifact_evidence/.test(value)) {
+    throw new Error("subway baseline must not contain additive ITX rows or evidence");
+  }
+  return value;
+}
+
+function assertNoIdentityCollisions(baselineSql, itxSeed) {
+  const baselineRoutes = insertedIds(baselineSql, "transit_routes");
+  const baselineTrips = insertedIds(baselineSql, "transit_trips");
+  for (const route of itxSeed.routes) {
+    if (baselineRoutes.has(route.id)) throw new Error(`complete seed duplicate route id: ${route.id}`);
+  }
+  for (const statement of itxSeed.statements.filter((value) => value.startsWith("INSERT INTO transit_trips"))) {
+    const [tripId] = values(statement);
+    if (baselineTrips.has(tripId)) throw new Error(`complete seed duplicate trip id: ${tripId}`);
+  }
+}
+
+function statementCounts(sql) {
+  const count = (table) => (sql.match(new RegExp(`INSERT INTO ${table} \\(`, "g")) ?? []).length;
+  return {
+    calendars: count("service_calendars"),
+    routes: count("transit_routes"),
+    trips: count("transit_trips"),
+    stopTimes: count("transit_stop_times"),
+  };
+}
+
+function insertedIds(sql, table) {
+  const ids = new Set();
+  for (const line of sql.split("\n").filter((value) => value.startsWith(`INSERT INTO ${table} `))) {
+    ids.add(values(line)[0]);
+  }
+  return ids;
+}
+
+function values(statement) {
+  const marker = " VALUES (";
+  const start = statement.indexOf(marker);
+  if (start < 0 || !statement.endsWith(");")) throw new Error("unsupported seed statement shape");
+  const input = statement.slice(start + marker.length, -2);
+  const result = [];
+  let token = "";
+  let quoted = false;
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+    if (character === "'") {
+      if (quoted && input[index + 1] === "'") {
+        token += "'";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      result.push(token.trim());
+      token = "";
+    } else {
+      token += character;
+    }
+  }
+  if (quoted) throw new Error("unterminated SQL string");
+  result.push(token.trim());
+  return result;
+}
+
+function valuesByColumn(statement, table) {
+  const prefix = `INSERT INTO ${table} (`;
+  const marker = ") VALUES (";
+  const end = statement.indexOf(marker);
+  if (!statement.startsWith(prefix) || end < 0) throw new Error("unsupported seed statement shape");
+  const columns = statement.slice(prefix.length, end).split(",").map((column) => column.trim());
+  const row = values(statement);
+  if (columns.length !== row.length) throw new Error("seed statement column/value count mismatch");
+  return Object.fromEntries(columns.map((column, index) => [column, row[index]]));
+}
+
+function requiredSqlColumn(row, column) {
+  const value = row[column];
+  if (value == null || value === "") throw new Error(`seed statement column is missing: ${column}`);
+  return value;
+}
+
+function canonicalStationSet(source) {
+  return [...new Set(source.stationRosters.flatMap(({ stations }) => stations)
+    .map(({ canonicalStationId, lineId }) => `${canonicalStationId}:${lineId}`))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function earliestServiceDate(selectedServiceDates) {
+  return Object.values(selectedServiceDates).sort((left, right) => left.localeCompare(right))[0];
+}
+
+function latestServiceDate(selectedServiceDates) {
+  return Object.values(selectedServiceDates).sort((left, right) => left.localeCompare(right)).at(-1);
+}
+
+function parseJson(bytes, label) {
+  try {
+    return JSON.parse(bytes);
+  } catch (error) {
+    throw new Error(`${label} must be valid JSON`, { cause: error });
+  }
+}
+
+function lowercaseSha(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const baselinePath = path.resolve(root, args.baseline
+    ?? "backend/src/main/resources/timetable/line4-subway-timetable-seed.sql.gz");
+  const contractPath = path.resolve(root, args.contract
+    ?? "tools/datapack/itx-cheongchun-coverage-contract.json");
+  const outputPath = path.resolve(root, args.output
+    ?? "backend/src/main/resources/timetable/line4-timetable-seed.sql.gz");
+  const evidencePath = path.resolve(root, args.evidence
+    ?? "tools/datapack/server-timetable-snapshot-evidence.json");
+  const runtimeEvidencePath = path.resolve(root, args["runtime-evidence"]
+    ?? "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json");
+  const canonicalPackPath = path.resolve(root, args["canonical-pack"]
+    ?? "apps/mobile/assets/datapacks/capital.sqlite.gz");
+  const topologyEvidencePath = path.resolve(root, args["topology-evidence"]
+    ?? "tools/datapack/itx-cheongchun-topology-evidence.json");
+  const subwayRosterPath = path.resolve(root, args["subway-roster"]
+    ?? "tools/datapack/sources/kric-line4-route-roster-20260706.json");
+  const canonicalGzipBytes = args.check ? await readFile(outputPath) : undefined;
+  const contractBytes = await readFile(contractPath);
+  const contract = parseJson(contractBytes, "coverage contract");
+  const result = buildServerTimetableSnapshot({
+    baselineGzipBytes: await readFile(baselinePath),
+    contractBytes,
+    sourceBytes: await readFile(path.resolve(root, contract.sourceTimetableArtifact.artifactPath)),
+    completenessBytes: await readFile(path.resolve(
+      root,
+      contract.sourceTimetableArtifact.completenessEvidencePath,
+    )),
+    canonicalPackGzipBytes: await readFile(canonicalPackPath),
+    topologyEvidenceBytes: await readFile(topologyEvidencePath),
+    subwayRosterBytes: await readFile(subwayRosterPath),
+    canonicalGzipBytes,
+    buildNow: buildClock(),
+  });
+  if (args.check) {
+    const [storedSnapshot, storedEvidence, storedRuntimeEvidence] = await Promise.all([
+      readFile(outputPath),
+      readFile(evidencePath),
+      readFile(runtimeEvidencePath),
+    ]);
+    if (!storedSnapshot.equals(result.gzipBytes)
+      || !storedEvidence.equals(result.evidenceBytes)
+      || !storedRuntimeEvidence.equals(result.evidenceBytes)) {
+      throw new Error("server timetable snapshot is stale");
+    }
+  } else {
+    await Promise.all([
+      writeFile(outputPath, result.gzipBytes),
+      writeFile(evidencePath, result.evidenceBytes),
+      writeFile(runtimeEvidencePath, result.evidenceBytes),
+    ]);
+  }
+  process.stdout.write(`${JSON.stringify({
+    snapshotId: result.evidence.snapshotId,
+    snapshotSha256: result.evidence.snapshotSha256,
+    rowCounts: result.evidence.rowCounts,
+  }, null, 2)}\n`);
+}
+
+function buildClock() {
+  const value = process.env.EASYSUBWAY_TIMETABLE_SNAPSHOT_BUILD_NOW;
+  if (value == null) return new Date();
+  if (!value.endsWith("Z")) throw new Error("EASYSUBWAY_TIMETABLE_SNAPSHOT_BUILD_NOW must be UTC ISO-8601");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error("EASYSUBWAY_TIMETABLE_SNAPSHOT_BUILD_NOW must be UTC ISO-8601");
+  return date;
+}
+
+function parseArgs(argv) {
+  const args = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--check") {
+      args.check = true;
+      continue;
+    }
+    if (!flag.startsWith("--") || argv[index + 1] == null || argv[index + 1].startsWith("--")) {
+      throw new Error(`invalid argument: ${flag}`);
+    }
+    args[flag.slice(2)] = argv[index + 1];
+    index += 1;
+  }
+  return args;
+}
+
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  main().catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
+}

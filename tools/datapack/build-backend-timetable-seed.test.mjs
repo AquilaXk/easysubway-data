@@ -88,6 +88,71 @@ test("trip seed는 service_class를 명시하고 기본 SUBWAY를 보존한다",
   assert.match(sql, /'LOCAL', 'SUBWAY', 0/);
 });
 
+test("final seed는 모든 trip의 explicit LOCAL/EXPRESS servicePattern을 요구한다", () => {
+  for (const servicePattern of [undefined, null, "", " ", "RAPID", "UNKNOWN"]) {
+    const trip = { ...ARTIFACT.transitTrips[0], servicePattern };
+    assert.throws(
+      () => buildBackendTimetableSeed({
+        transitTrips: [trip],
+        transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+      }, OPTIONS),
+      /service_pattern must be explicitly LOCAL or EXPRESS/,
+    );
+  }
+});
+
+test("serviceClass/servicePattern 조합은 SUBWAY LOCAL·EXPRESS와 ITX EXPRESS만 허용한다", () => {
+  const subwayExpress = {
+    ...ARTIFACT,
+    transitTrips: ARTIFACT.transitTrips.map((trip) => ({ ...trip, servicePattern: "EXPRESS" })),
+  };
+  assert.match(buildBackendTimetableSeed(subwayExpress, OPTIONS).sql, /'EXPRESS', 'SUBWAY'/);
+
+  assert.throws(
+    () => buildBackendTimetableSeed({
+      transitTrips: [{
+        ...ARTIFACT.transitTrips[0],
+        serviceClass: "ITX_CHEONGCHUN",
+        servicePattern: "LOCAL",
+      }],
+      transitStopTimes: [ARTIFACT.transitStopTimes[0]],
+    }, OPTIONS),
+    /ITX_CHEONGCHUN.*EXPRESS/,
+  );
+});
+
+test("EXPRESS 통과역 row는 pickup/drop-off를 모두 금지하고 실제 정차역만 승하차 가능하게 보존한다", () => {
+  const trip = { ...ARTIFACT.transitTrips[0], servicePattern: "EXPRESS" };
+  const passThrough = {
+    tripId: trip.id,
+    stopSequence: 2,
+    stationId: "station-pass-through",
+    lineId: "seoul-4",
+    pickupType: 1,
+    dropOffType: 1,
+    arrivalSeconds: 30500,
+    departureSeconds: 30500,
+  };
+  const terminal = { ...ARTIFACT.transitStopTimes[1], stopSequence: 3 };
+  const { sql } = buildBackendTimetableSeed({
+    transitTrips: [trip],
+    transitStopTimes: [ARTIFACT.transitStopTimes[0], passThrough, terminal],
+  }, OPTIONS);
+
+  assert.match(sql, /'station-pass-through', 'seoul-4', 1, 1, 30500, 30500/);
+  assert.throws(
+    () => buildBackendTimetableSeed({
+      transitTrips: [trip],
+      transitStopTimes: [
+        ARTIFACT.transitStopTimes[0],
+        { ...passThrough, pickupType: 1, dropOffType: 0 },
+        terminal,
+      ],
+    }, OPTIONS),
+    /EXPRESS.*pickup_type=1.*drop_off_type=1/,
+  );
+});
+
 test("ITX seed는 test-only timetable·canonical pack identity evidence를 같은 SQL에 고정한다", async () => {
   const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = JSON.parse(artifactBytes);
@@ -238,7 +303,11 @@ test("CLI는 timetable 원본과 분리된 evidence sidecar를 실제 input byte
 test("stale ITX evidence는 seed 생성 단계에서 거부한다", () => {
   const artifact = {
     ...ARTIFACT,
-    transitTrips: ARTIFACT.transitTrips.map((trip) => ({ ...trip, serviceClass: "ITX_CHEONGCHUN" })),
+    transitTrips: ARTIFACT.transitTrips.map((trip) => ({
+      ...trip,
+      serviceClass: "ITX_CHEONGCHUN",
+      servicePattern: "EXPRESS",
+    })),
     routeServiceArtifactEvidence: [{
       serviceClass: "ITX_CHEONGCHUN",
       admissionStatus: "ADMITTED",
@@ -278,7 +347,11 @@ test("ITX trip 0건인 seed에는 ADMITTED evidence를 기록하지 않는다", 
 test("ITX evidence freshUntil은 runtime loader가 읽는 offset ISO-8601 형식이어야 한다", () => {
   const artifact = {
     ...ARTIFACT,
-    transitTrips: ARTIFACT.transitTrips.map((trip) => ({ ...trip, serviceClass: "ITX_CHEONGCHUN" })),
+    transitTrips: ARTIFACT.transitTrips.map((trip) => ({
+      ...trip,
+      serviceClass: "ITX_CHEONGCHUN",
+      servicePattern: "EXPRESS",
+    })),
     routeServiceArtifactEvidence: [{
       serviceClass: "ITX_CHEONGCHUN",
       timetableArtifactId: "invalid-freshness-format",

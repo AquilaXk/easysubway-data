@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "server-timetable-snapshot-evidence",
+  "schemaIdentity": "backend-timetable-snapshot-v1",
+  "snapshotId": "server-timetable-snapshot-c8ae07b67e133c8e",
+  "snapshotSha256": "c8ae07b67e133c8ee019069b1c11590aac1449398caf87eb68bca540615b9623",
+  "snapshotSqlByteSize": 8373964,
+  "snapshotGzipSha256": "9824f18502fd4a794bfc6fe3b9d4784d094c0f98eb45269de6b7a1a0dd83a82a",
+  "snapshotGzipByteSize": 321382,
+  "freshUntil": "2026-07-20T00:00:00+09:00",
+  "serviceIdentity": {
+    "serviceId": "ITX_CHEONGCHUN",
+    "canonicalLineId": "line-54a7b980b7c3",
+    "servicePattern": "EXPRESS",
+    "timezone": "Asia/Seoul"
+  },
+  "sourceArtifact": {
+    "id": "itx-cheongchun-source-timetable-20260715152903681",
+    "sha256": "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
+    "completenessEvidenceSha256": "f47650a9e0bfe9cc02683540bfbf4b214bcf869e4c659e04464226478fc2f257"
+  },
+  "canonicalPackIdentity": {
+    "id": "capital",
+    "sha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+    "sqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc"
+  },
+  "canonicalPackLineage": {
+    "topologyEvidenceSha256": "d0f1db9fe5c615d261601222a250228596789b406d48b58c57b4294360cd3578",
+    "topologySha256": "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
+    "admittedInputSha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    "admittedInputSqliteSha256": "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03"
+  },
+  "canonicalStationSet": {
+    "version": "sha256:1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
+    "sha256": "1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
+    "memberCount": 18
+  },
+  "sourceLineageSha256": "a0cfbc1c07121f444ff57cd4aaa03b277b20f7828c9407ba991c69c66a524db2",
+  "servicePatternEvidence": {
+    "localTripCount": 888,
+    "expressTripCount": 147,
+    "representativeLocal": {
+      "tripId": "route-seoul-4-down-4236-8",
+      "routeId": "route-seoul-4-down",
+      "directionId": "down",
+      "terminalStationId": "station-871f17171f3c",
+      "stopStationIds": [
+        "station-sadang",
+        "station-2a2d0080fa4a",
+        "station-e95f8616788c",
+        "station-b90e3daa23a1",
+        "station-a5392987e17f",
+        "station-319d94686a49",
+        "station-a70f2c253492",
+        "station-2af75c3d707b",
+        "station-ae0e5bd1256d",
+        "station-cb4c8948c9f2",
+        "station-32b6747795b6",
+        "station-b1f32d3f7d4d",
+        "station-1cf13ec0de75",
+        "station-c94d2aebf662",
+        "station-e0e57dfb9ba1",
+        "station-d490bb686722",
+        "station-28d327b6af8c",
+        "station-153b1d7fc702",
+        "station-2c11d90fdb36",
+        "station-697787cc84e5",
+        "station-b0ab9028ddcc",
+        "station-a95a856ea633",
+        "station-239ba3bb73a6",
+        "station-3d32c6fc878a",
+        "station-871f17171f3c"
+      ],
+      "passThroughStationIds": [],
+      "stopPatternSha256": "33ef38960a5cad4baf8be9e1905020c686e16b420281a987cde00e75328cd0c3"
+    },
+    "representativeExpress": {
+      "tripId": "route-line-54a7b980b7c3-down-2002-8",
+      "routeId": "route-line-54a7b980b7c3-down",
+      "directionId": "down",
+      "terminalStationId": "station-8aa315864466",
+      "stopStationIds": [
+        "station-dd14cfb89cbc",
+        "station-d5e344125b52",
+        "station-4f6045ff9103",
+        "station-661ff65ea040",
+        "station-f3d9c93ba7d6",
+        "station-2ccf5647f7f7",
+        "station-b52ac4dfe64e",
+        "station-83bcb1eae340",
+        "station-b819702fa7d9",
+        "station-e5cf592cf355",
+        "station-8aa315864466"
+      ],
+      "passThroughStationIds": [
+        "station-c0679b9a6cf8",
+        "station-b42d22b753ca",
+        "station-c7f9f6a29fc1",
+        "station-6c1f50a5aa3b",
+        "station-add5012df314",
+        "station-30ba86472e55",
+        "station-67e47e3e2da2"
+      ],
+      "stopPatternSha256": "2867053b936a0df7fd6528f4aa5deca721e44a186e83fecc49ac8165e48738c7"
+    }
+  },
+  "rowCounts": {
+    "calendars": 5,
+    "routes": 4,
+    "trips": 1035,
+    "stopTimes": 34070,
+    "subwayTrips": 895,
+    "subwayStopTimes": 33062,
+    "itxTrips": 140,
+    "itxStopTimes": 1008,
+    "routeServiceEvidence": 1
+  },
+  "evidenceHash": "8ab3f3884445ef2f649ada4cd63b2825104540edaae7b8ff12af698deeb3b0c1"
+}
