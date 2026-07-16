@@ -112,7 +112,7 @@ test("production request identity는 manifest 밖의 서명된 immutable binding
   )?.[0];
   assert.ok(buildStep, "data pack build 스텝을 찾지 못함");
   assert.doesNotMatch(buildStep, /--release-request-id/);
-  const finalize = yml.indexOf("Data Pack Release / Finalize published decision");
+  const finalize = yml.indexOf("Data Pack Release / Finalize production decision");
   const publishBinding = yml.indexOf("Data Pack Release / Publish finalized release request binding");
   const callback = yml.indexOf("Data Pack Release / Send release callback");
   assert.ok(finalize >= 0 && publishBinding > finalize && callback > publishBinding);
@@ -146,7 +146,7 @@ test("NO_CHANGE_VALID 재실행은 current manifest binding과 callback을 복�
     /- name: Data Pack Release \/ Publish finalized release request binding[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(binding, "release request binding 스텝을 찾지 못함");
-  assert.match(binding, /steps\.release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
+  assert.match(binding, /steps\.final-release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
   assert.match(binding, /EASYSUBWAY_DATAPACK_CURRENT_MANIFEST/);
   assert.match(binding, /--release-outcome/);
   assert.match(binding, /NO_CHANGE_VALID/);
@@ -362,14 +362,20 @@ test("publish run은 remote artifact validation 뒤 최종 decision과 callback�
   assert.match(yml, /steps\.production-publish\.outputs\.manifestSha256/);
   assert.match(yml, /remote validation manifestSha256 mismatch/);
   const finalDecision = yml.match(
-    /- name: Data Pack Release \/ Finalize published decision[\s\S]*?\n\s+- name:/,
+    /- name: Data Pack Release \/ Finalize production decision[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(finalDecision, "최종 release decision 스텝을 찾지 못함");
   assert.match(finalDecision, /final_decision_args=\(/);
-  assert.match(finalDecision, /steps\.remote-validation\.outcome == 'success'/);
+  assert.match(finalDecision, /REMOTE_VALIDATION_OUTCOME/);
   assert.match(finalDecision, /if \[\[ -f "\$\{EASYSUBWAY_DATAPACK_CURRENT_MANIFEST\}" \]\]; then/);
   assert.match(finalDecision, /final_decision_args\+=\(--current-manifest/);
   assert.match(yml, /GITHUB_STEP_SUMMARY/);
+});
+
+test("RC producer는 현재 remote production manifest를 다시 검증한다", () => {
+  const releaseWorkflow = readFileSync(path.join(root, ".github/workflows/release-artifacts.yml"), "utf8");
+  assert.match(releaseWorkflow, /validate-remote-datapack-artifact\.mjs/);
+  assert.match(releaseWorkflow, /--expected-manifest release-artifacts\/downloaded\/datapack-selected\/current\.json/);
 });
 
 test("expiry alert는 publish 없이 같은 decision engine을 소비한다", () => {

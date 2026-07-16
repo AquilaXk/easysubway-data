@@ -55,6 +55,8 @@ function decide(overrides = {}) {
   return evaluateReleaseDecision({
     candidateManifest: manifest(),
     currentManifest: manifest(),
+    candidateManifestSha256: hash("1"),
+    currentManifestSha256: hash("2"),
     buildSpec: buildSpec(),
     buildSpecSha256: hash("e"),
     releaseRequest: approval(),
@@ -79,6 +81,8 @@ test("변경이 없고 current pack이 fresh이면 NO_CHANGE_VALID이다", () =>
     publishAttempted: false,
     remoteValidationPassed: false,
     sourceSnapshotSetHash: hash("c"),
+    selectedManifestSha256: hash("2"),
+    selectedReleaseSequence: 10,
     reasonCodes: [],
     evaluationAt,
   });
@@ -197,6 +201,8 @@ test("publish 후 remote validation 결과로 최종 상태를 정한다", () =>
   });
   assert.equal(verified.outcome, "PUBLISHED_AND_VERIFIED");
   assert.equal(verified.productionWriteAllowed, true);
+  assert.equal(verified.selectedManifestSha256, hash("1"));
+  assert.equal(verified.selectedReleaseSequence, 11);
   const failed = decide({
     candidateManifest: changed,
     publishAttempted: true,

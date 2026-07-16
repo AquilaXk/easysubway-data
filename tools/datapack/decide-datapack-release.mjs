@@ -10,6 +10,8 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 export function evaluateReleaseDecision({
   candidateManifest,
   currentManifest,
+  candidateManifestSha256,
+  currentManifestSha256,
   buildSpec,
   buildSpecSha256,
   releaseRequest,
@@ -57,6 +59,18 @@ export function evaluateReleaseDecision({
   if (materialChange && !approvalValid) reasonCodes.push("MATERIAL_CHANGE_UNAPPROVED");
   if (scheduled.outcome === "PUBLISH_REQUIRED") reasonCodes.push("PUBLISH_REQUIRED_NOT_COMPLETED");
   if (publishAttempted && !remoteValidationPassed) reasonCodes.push("POST_PUBLISH_REMOTE_VALIDATION_FAILED");
+  const selectedManifest = selectedManifestIdentity({
+    outcome: scheduled.outcome,
+    candidateManifest,
+    candidateManifestSha256,
+    currentManifest,
+    currentManifestSha256,
+  });
+  if (selectedManifest && (!isSha256(selectedManifest.sha256)
+    || !Number.isSafeInteger(selectedManifest.releaseSequence)
+    || selectedManifest.releaseSequence < 1)) {
+    throw new Error("final release decision requires a selected manifest sha256 and releaseSequence");
+  }
 
   return {
     schemaVersion: 1,
@@ -69,9 +83,23 @@ export function evaluateReleaseDecision({
     publishAttempted,
     remoteValidationPassed,
     sourceSnapshotSetHash: buildSpec?.sourceSnapshotSetHash ?? "-",
+    selectedManifestSha256: selectedManifest?.sha256 ?? null,
+    selectedReleaseSequence: selectedManifest?.releaseSequence ?? null,
     reasonCodes,
     evaluationAt: new Date(evaluatedMillis).toISOString(),
   };
+}
+
+function selectedManifestIdentity({
+  outcome, candidateManifest, candidateManifestSha256, currentManifest, currentManifestSha256,
+}) {
+  if (outcome === "PUBLISHED_AND_VERIFIED") {
+    return { sha256: candidateManifestSha256, releaseSequence: candidateManifest.releaseSequence };
+  }
+  if (outcome === "NO_CHANGE_VALID") {
+    return { sha256: currentManifestSha256, releaseSequence: currentManifest?.releaseSequence };
+  }
+  return null;
 }
 
 function stableManifestIdentity(manifest) {
@@ -152,14 +180,16 @@ function requiredNonEmptyPair(requestedBy, approvedBy) {
 
 async function main(argv) {
   const args = parseArgs(argv);
-  const currentManifest = await optionalJson(args.get("current-manifest"));
+  const currentDocument = await optionalJsonDocument(args.get("current-manifest"));
+  const currentManifest = currentDocument?.value ?? null;
   const alertOnly = args.has("alert-only");
   if (alertOnly && !currentManifest) {
     throw new Error("--current-manifest is required with --alert-only");
   }
-  const candidateManifest = alertOnly
-    ? currentManifest
-    : await requiredJson(args, "candidate-manifest");
+  const candidateDocument = alertOnly
+    ? currentDocument
+    : await requiredJsonDocument(args, "candidate-manifest");
+  const candidateManifest = candidateDocument.value;
 
   const buildSpecPath = args.get("build-spec");
   const buildSpecBytes = buildSpecPath ? await readFile(buildSpecPath) : null;
@@ -173,6 +203,8 @@ async function main(argv) {
   const decision = evaluateReleaseDecision({
     candidateManifest,
     currentManifest,
+    candidateManifestSha256: sha256(candidateDocument.bytes),
+    currentManifestSha256: currentDocument ? sha256(currentDocument.bytes) : null,
     buildSpec,
     buildSpecSha256: buildSpecBytes ? sha256(buildSpecBytes) : null,
     releaseRequest,
@@ -221,12 +253,19 @@ function parseArgs(argv) {
   return args;
 }
 
-async function requiredJson(args, name) {
-  return JSON.parse(await readFile(requiredArg(args, name), "utf8"));
+async function requiredJsonDocument(args, name) {
+  const bytes = await readFile(requiredArg(args, name));
+  return { bytes, value: JSON.parse(bytes.toString("utf8")) };
 }
 
 async function optionalJson(file) {
   return file ? JSON.parse(await readFile(file, "utf8")) : null;
+}
+
+async function optionalJsonDocument(file) {
+  if (!file) return null;
+  const bytes = await readFile(file);
+  return { bytes, value: JSON.parse(bytes.toString("utf8")) };
 }
 
 function requiredArg(args, name) {

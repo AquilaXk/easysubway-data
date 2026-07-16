@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
 
@@ -11,10 +11,17 @@ const args = parseArgs(process.argv.slice(2));
 const manifestUrl = requireArg(args, "manifest-url");
 const outputRoot = path.resolve(requireArg(args, "output"));
 const requireProduction = args["require-production"] === true;
+const expectedManifestPath = args["expected-manifest"];
 
 await mkdir(path.join(outputRoot, "catalog"), { recursive: true });
 const manifestPath = path.join(outputRoot, "catalog", "current.json");
 const manifestBytes = await download(manifestUrl, { revalidate: true });
+if (expectedManifestPath) {
+  const expectedManifestBytes = await readFile(path.resolve(expectedManifestPath));
+  if (sha256(manifestBytes) !== sha256(expectedManifestBytes)) {
+    throw new Error("remote production manifest does not match the selected RC manifest");
+  }
+}
 await writeFile(manifestPath, manifestBytes);
 
 const manifest = JSON.parse(manifestBytes.toString("utf8"));

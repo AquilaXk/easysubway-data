@@ -1,4 +1,4 @@
-import { createHash, createVerify } from "node:crypto";
+import { createHash, createPublicKey, createVerify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { usesLocalPlaceholderHost } from "../production-url-policy.mjs";
@@ -21,10 +21,20 @@ export function verifyRsaSha256Signature(publicKey, value, signature) {
 
 export function signingPublicKey() {
   const key = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM?.trim();
-  if (!key) {
-    throw new Error("EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM is required for production data pack validation");
+  if (key) return key;
+  const n = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N?.trim();
+  const e = process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E?.trim();
+  if (n && e) {
+    try {
+      return createPublicKey({ key: { kty: "RSA", n, e }, format: "jwk" })
+        .export({ type: "spki", format: "pem" });
+    } catch {
+      throw new Error("production data pack RSA public key parameters are invalid");
+    }
   }
-  return key;
+  throw new Error(
+    "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM or RSA N/E is required for production data pack validation",
+  );
 }
 
 export function signingKeyId() {
@@ -140,6 +150,31 @@ export function validatePackIdentity(value, label) {
   if (!/^[0-9]+$/.test(version)) {
     throw new Error(`${label}.version is invalid`);
   }
+}
+
+export function selectEffectiveDataPack(manifest, defaultPackId = "capital") {
+  const selectedIdentity = manifest?.emergencyOverride ?? manifest?.activePack;
+  if (selectedIdentity && typeof selectedIdentity === "object") {
+    const candidates = manifest.packs.filter((pack) => (
+      pack.id === selectedIdentity.id && String(pack.version) === String(selectedIdentity.version)
+    ));
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+  if (typeof selectedIdentity === "string") {
+    const candidates = manifest.packs.filter((pack) => pack.id === selectedIdentity);
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+  const defaults = manifest?.packs?.filter((pack) => pack.id === defaultPackId) ?? [];
+  return defaults.reduce((selected, pack) => (
+    selected === null || BigInt(pack.version) > BigInt(selected.version) ? pack : selected
+  ), null);
+}
+
+export function selectFallbackDataPack(manifest, defaultPackId = "capital") {
+  if (!manifest?.emergencyOverride) return selectEffectiveDataPack(manifest, defaultPackId);
+  const withoutEmergencyOverride = { ...manifest };
+  delete withoutEmergencyOverride.emergencyOverride;
+  return selectEffectiveDataPack(withoutEmergencyOverride, defaultPackId);
 }
 
 export function validatePackUrl(packUrl, label) {

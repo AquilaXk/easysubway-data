@@ -968,20 +968,39 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Data Pack Release / Finalize published decision
-        if: ${{ !cancelled() && steps.production-publish.outputs.manifestSha256 != '' }}
+      - name: Data Pack Release / Finalize production decision
+        if: ${{ !cancelled() && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
         id: final-release-decision
+        env:
+          PUBLISHED_MANIFEST_SHA256: ${{ steps.production-publish.outputs.manifestSha256 }}
+          NO_CHANGE_MANIFEST_SHA256: ${{ steps.no-change-release.outputs.manifestSha256 }}
+          REMOTE_VALIDATION_OUTCOME: ${{ steps.remote-validation.outcome }}
         run: |
           set -euo pipefail
           release_request_path="${RELEASE_REQUEST_PATH:-${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}}"
+          candidate_manifest="${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
+          publish_attempted=true
+          expected_outcome=PUBLISHED_AND_VERIFIED
+          if [[ -n "${NO_CHANGE_MANIFEST_SHA256}" ]]; then
+            candidate_manifest="${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}"
+            publish_attempted=false
+            expected_outcome=NO_CHANGE_VALID
+          elif [[ -z "${PUBLISHED_MANIFEST_SHA256}" ]]; then
+            echo "final production decision requires a published or no-change manifest identity" >&2
+            exit 1
+          fi
+          remote_validation_status=FAIL
+          if [[ "${REMOTE_VALIDATION_OUTCOME}" == success ]]; then
+            remote_validation_status=PASS
+          fi
           final_decision_args=(
-            --candidate-manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
+            --candidate-manifest "${candidate_manifest}"
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
             --freshness-policy apps/mobile/release/datapack-freshness-sla.json
             --release-request "${release_request_path}"
             --strict-validation-status PASS
-            --publish-attempted true
-            --remote-validation-status "${{ steps.remote-validation.outcome == 'success' && 'PASS' || 'FAIL' }}"
+            --publish-attempted "${publish_attempted}"
+            --remote-validation-status "${remote_validation_status}"
             --output "${EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION}"
             --github-output "${GITHUB_OUTPUT}"
           )
@@ -989,21 +1008,18 @@ jobs:
             final_decision_args+=(--current-manifest "${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}")
           fi
           node tools/datapack/decide-datapack-release.mjs "${final_decision_args[@]}"
-          node -e "const d=require(process.env.EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION); if (d.outcome !== 'PUBLISHED_AND_VERIFIED') process.exit(1);"
+          EXPECTED_OUTCOME="${expected_outcome}" node -e "const d=require(process.env.EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION); if (d.outcome !== process.env.EXPECTED_OUTCOME || d.remoteValidationPassed !== true) process.exit(1);"
 
       - name: Data Pack Release / Publish finalized release request binding
-        if: ${{ !cancelled() && steps.remote-validation.outcome == 'success' && (steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' || steps.release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
+        if: ${{ !cancelled() && steps.remote-validation.outcome == 'success' && (steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' || steps.final-release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
         id: release-request-binding
         run: |
           set -euo pipefail
           release_manifest="${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
-          if [[ "${{ steps.release-decision.outputs.outcome }}" == "NO_CHANGE_VALID" ]]; then
+          if [[ "${{ steps.final-release-decision.outputs.outcome }}" == "NO_CHANGE_VALID" ]]; then
             release_manifest="${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}"
           fi
           release_outcome="${{ steps.final-release-decision.outputs.outcome }}"
-          if [[ "${{ steps.release-decision.outputs.outcome }}" == "NO_CHANGE_VALID" ]]; then
-            release_outcome="NO_CHANGE_VALID"
-          fi
           node tools/datapack/build-release-request-binding.mjs \
             --manifest "${release_manifest}" \
             --release-request-id "${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID}" \
