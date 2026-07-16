@@ -160,7 +160,7 @@
       "rawObjectUri": "s3://easysubway-datapack-sources/seoul-metro-accessibility/20260712.json",
       "rawSha256": "8a1fbdfbc55f2cd4bc8f54e616f515133f00ee528d078ab21cdd0c1de7ad6814",
       "redactedRequestFingerprint": "57e7d275b103eb14ee1320eb947da5d4120c2b296b9b32b00593b2eb2b7529e8",
-      "schemaFingerprint": "4f0066bdb9b24d5be35b39c1f15b5dce5e84bd5087773301542efc04156f7a99",
+      "schemaFingerprint": "d26d4f55806083f067207948ce977e0ae3d5e84df796d58441909de2c247c170",
       "licenseStatus": "PASS",
       "redistributionAllowed": true,
       "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",

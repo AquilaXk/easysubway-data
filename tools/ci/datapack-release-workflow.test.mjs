@@ -155,7 +155,12 @@ test("NO_CHANGE_VALID 재실행은 current manifest binding과 callback을 복�
     /- name: Data Pack Release \/ Publish finalized release request binding[\s\S]*?\n\s+- name:/,
   )?.[0];
   assert.ok(binding, "release request binding 스텝을 찾지 못함");
+  assert.match(binding, /steps\.final-release-decision\.outcome == 'success'/);
   assert.match(binding, /steps\.final-release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
+  assert.match(binding, /FINAL_RELEASE_OUTCOME: \$\{\{ steps\.final-release-decision\.outputs\.outcome \}\}/);
+  assert.match(binding, /if \[\[ "\$\{FINAL_RELEASE_OUTCOME\}" == "NO_CHANGE_VALID" \]\]/);
+  assert.match(binding, /release_outcome="\$\{FINAL_RELEASE_OUTCOME\}"/);
+  assert.doesNotMatch(binding.match(/run: \|[\s\S]*/)?.[0] ?? "", /\$\{\{ steps\.final-release-decision/);
   assert.match(binding, /EASYSUBWAY_DATAPACK_CURRENT_MANIFEST/);
   assert.match(binding, /--release-outcome/);
   assert.match(binding, /NO_CHANGE_VALID/);

@@ -22,6 +22,7 @@ const buildProvenanceStringFields = [
   "sourceId",
   "rawObjectUri",
   "redactedRequestFingerprint",
+  "schemaFingerprint",
   "licenseStatus",
   "snapshotStatus",
 ];
@@ -156,7 +157,10 @@ export function validateSourceSnapshotFreshness({
     const reasonCodes = [...new Set(governanceResults.flatMap((result) => result.reasonCodes))].sort();
     if (reasonCodes.length > 0) throw new Error(reasonCodes.join(","));
   }
-  return { snapshotSetHash, results, governanceResults };
+  const schemaFingerprintSetHash = sha256(JSON.stringify(selectedSnapshots
+    .map(({ snapshotId, schemaFingerprint }) => ({ snapshotId, schemaFingerprint }))
+    .sort((left, right) => left.snapshotId.localeCompare(right.snapshotId))));
+  return { snapshotSetHash, schemaFingerprintSetHash, results, governanceResults };
 }
 
 async function main(argv) {
@@ -253,6 +257,7 @@ async function main(argv) {
   process.stdout.write(`${JSON.stringify({
     status: "PASS",
     sourceSnapshotSetHash: result.snapshotSetHash,
+    schemaFingerprintSetHash: result.schemaFingerprintSetHash,
     snapshotCount: result.results.length,
     governanceDecision: result.governanceResults.length > 0 ? "GO" : "NOT_EVALUATED",
   })}\n`);

@@ -1011,15 +1011,17 @@ jobs:
           EXPECTED_OUTCOME="${expected_outcome}" node -e "const d=require(process.env.EASYSUBWAY_DATAPACK_FINAL_RELEASE_DECISION); if (d.outcome !== process.env.EXPECTED_OUTCOME || d.remoteValidationPassed !== true) process.exit(1);"
 
       - name: Data Pack Release / Publish finalized release request binding
-        if: ${{ !cancelled() && steps.remote-validation.outcome == 'success' && (steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' || steps.final-release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
+        if: ${{ !cancelled() && steps.remote-validation.outcome == 'success' && steps.final-release-decision.outcome == 'success' && (steps.final-release-decision.outputs.outcome == 'PUBLISHED_AND_VERIFIED' || steps.final-release-decision.outputs.outcome == 'NO_CHANGE_VALID') }}
         id: release-request-binding
+        env:
+          FINAL_RELEASE_OUTCOME: ${{ steps.final-release-decision.outputs.outcome }}
         run: |
           set -euo pipefail
           release_manifest="${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
-          if [[ "${{ steps.final-release-decision.outputs.outcome }}" == "NO_CHANGE_VALID" ]]; then
+          if [[ "${FINAL_RELEASE_OUTCOME}" == "NO_CHANGE_VALID" ]]; then
             release_manifest="${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}"
           fi
-          release_outcome="${{ steps.final-release-decision.outputs.outcome }}"
+          release_outcome="${FINAL_RELEASE_OUTCOME}"
           node tools/datapack/build-release-request-binding.mjs \
             --manifest "${release_manifest}" \
             --release-request-id "${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID}" \
