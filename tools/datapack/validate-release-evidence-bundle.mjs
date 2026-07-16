@@ -204,6 +204,9 @@ function validateRollbackArtifactBinding(rescue, evidenceRaw, evidence, manifest
     ["failedManifestSha256", rescue.rcManifestSha256],
     ["knownGoodManifestSha256", evidence.knownGood?.manifestSha256],
     ["rollbackApprovalEventId", rescue.rollbackApprovalEventId],
+    ["approvedByRole", evidence.approvedByRole],
+    ["approvedAt", evidence.approvedAt],
+    ["reasonCode", evidence.reasonCode],
   ]) {
     if (provenance?.[field] !== expected) {
       throw new Error(`rollbackRescue manifest rollbackProvenance ${field} mismatch`);

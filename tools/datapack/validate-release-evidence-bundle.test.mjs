@@ -294,6 +294,9 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     schemaVersion: 1,
     artifactKind: "datapack-rollback-rescue-evidence",
     rollbackApprovalEventId: bundle.rollbackRescue.rollbackApprovalEventId,
+    approvedByRole: "admin.datapack.rollback",
+    approvedAt: "2026-07-15T00:30:00.000Z",
+    reasonCode: "ADMIN_APPROVED_ROLLBACK",
     from: { releaseSequence: 115, manifestSha256: bundle.manifestSha256 },
     failed: { releaseSequence: 115, manifestSha256: bundle.manifestSha256 },
     knownGood: {
@@ -331,6 +334,27 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     "--rollback-manifest", rollbackManifestPath,
   ];
   await execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root });
+
+  for (const [field, tampered] of [
+    ["approvedByRole", "admin.datapack.other"],
+    ["approvedAt", "2026-07-15T00:31:00.000Z"],
+    ["reasonCode", "OTHER_REASON"],
+  ]) {
+    const original = rollbackEvidence[field];
+    rollbackEvidence[field] = tampered;
+    const tamperedEvidenceRaw = json(rollbackEvidence);
+    bundle.rollbackRescue.evidenceSha256 = sha256(tamperedEvidenceRaw);
+    await writeFile(rollbackEvidencePath, tamperedEvidenceRaw);
+    await writeFile(bundlePath, json(bundle));
+    await assert.rejects(
+      execFileAsync(process.execPath, [...rollbackValidatorCommand, "--require-pass"], { cwd: root }),
+      new RegExp(`rollbackProvenance ${field} mismatch`),
+    );
+    rollbackEvidence[field] = original;
+  }
+  bundle.rollbackRescue.evidenceSha256 = sha256(boundRollbackEvidenceRaw);
+  await writeFile(rollbackEvidencePath, boundRollbackEvidenceRaw);
+  await writeFile(bundlePath, json(bundle));
 
   const unsignedManifest = JSON.parse(rollbackManifestRaw);
   delete unsignedManifest.signature;
