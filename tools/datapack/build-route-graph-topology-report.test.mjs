@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
@@ -88,7 +88,7 @@ test("route graph topology report는 ITX service layer row를 별도 집계한�
   const sqlitePath = createTopologySqlite({
     stationLines: [
       ["station-a", "line-k2", 1],
-      ["station-b", "line-k2", 24],
+      ["station-b", "line-k2", 2],
     ],
     edges: [
       ["edge-a-b-itx", "station-a:line-k2:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 300, 6000, "ITX_CHEONGCHUN"],
@@ -103,6 +103,53 @@ test("route graph topology report는 ITX service layer row를 별도 집계한�
 
   assert.deepEqual(report.rideCountsByServiceClass, { ITX_CHEONGCHUN: 1 });
   assert.equal(report.itxServiceLayerSegmentCount, 1);
+  assert.equal(report.violations.nonAdjacentExpressRide.length, 1);
+});
+
+test("route graph topology report는 승인되지 않은 ITX 노선 경계 edge를 거부한다", () => {
+  const sqlitePath = createTopologySqlite({
+    stationLines: [
+      ["station-a", "line-k1", 10],
+      ["station-b", "line-k2", 20],
+    ],
+    edges: [
+      ["edge-a-b-itx", "station-a:line-k1:EXPRESS", "station-b:line-k2:EXPRESS", "RIDE", "EXPRESS", 0, 0, "ITX_CHEONGCHUN"],
+    ],
+  });
+
+  const report = buildRouteGraphTopologyReport(sqlitePath, {
+    id: "capital",
+    version: "1",
+    artifactKind: "fixture",
+  });
+
+  assert.equal(report.itxServiceLayerSegmentCount, 1);
+  assert.deepEqual(report.violations.nonAdjacentExpressRide, [
+    {
+      edgeId: "edge-a-b-itx",
+      fromNode: "station-a:line-k1",
+      toNode: "station-b:line-k2",
+      fromLineSequence: 10,
+      toLineSequence: 20,
+    },
+  ]);
+});
+
+test("route graph topology report는 #2135 admitted ITX edge set만 예외로 허용한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "route-graph-admitted-itx-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  await writeFile(sqlitePath, gunzipSync(await readFile(
+    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"),
+  )));
+
+  const report = buildRouteGraphTopologyReport(sqlitePath, {
+    id: "capital",
+    version: "18",
+    artifactKind: "production",
+  });
+
+  assert.equal(report.itxServiceLayerSegmentCount, 48);
   assert.deepEqual(report.violations.nonAdjacentExpressRide, []);
 });
 

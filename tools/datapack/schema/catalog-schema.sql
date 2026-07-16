@@ -232,7 +232,7 @@ CREATE TABLE route_service_artifact_evidence (
     (admission_status = 'ADMITTED' AND admission_eligible = 1 AND fresh_until IS NOT NULL)
     OR (admission_status = 'MISSING' AND admission_eligible = 0)
   ),
-  CHECK (source_issue = 2116)
+  CHECK (source_issue IN (2116, 2135))
 );
 
 CREATE TABLE realtime_provider_line_mappings (

@@ -516,7 +516,19 @@ async function loadCompletenessEvidence(completenessPath, candidate, repositoryR
   } catch (error) {
     throw new Error("SOURCE_COMPLETENESS_EVIDENCE_MISMATCH", { cause: error });
   }
-  if (JSON.stringify(expectedCandidate) !== JSON.stringify(candidate)) {
+  // The bundled pack may advance after admission. Its immutable identity remains protected by
+  // the admitted source bytes/reference hash, while this comparison replays the completeness payload.
+  const {
+    canonicalPackIdentity: _expectedPackIdentity,
+    evidenceHash: _expectedEvidenceHash,
+    ...expectedAdmissionPayload
+  } = expectedCandidate;
+  const {
+    canonicalPackIdentity: _admittedPackIdentity,
+    evidenceHash: _admittedEvidenceHash,
+    ...admittedPayload
+  } = candidate;
+  if (JSON.stringify(expectedAdmissionPayload) !== JSON.stringify(admittedPayload)) {
     throw new Error("SOURCE_COMPLETENESS_EVIDENCE_MISMATCH");
   }
   return { bytes, completeness };

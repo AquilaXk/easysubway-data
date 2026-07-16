@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "itx-cheongchun-mobile-topology-evidence",
+  "serviceId": "ITX_CHEONGCHUN",
+  "sourceIssue": 2135,
+  "sourceArtifact": {
+    "id": "itx-cheongchun-source-timetable-20260715152903681",
+    "sha256": "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
+    "completenessEvidenceSha256": "f47650a9e0bfe9cc02683540bfbf4b214bcf869e4c659e04464226478fc2f257",
+    "freshUntil": "2026-07-20T00:00:00+09:00"
+  },
+  "topology": {
+    "stationMembershipCount": 18,
+    "servedStationCount": 14,
+    "edgeCount": 48,
+    "directions": [
+      "up",
+      "down"
+    ],
+    "connectedComponentCount": 1,
+    "isolatedServedStationCount": 0,
+    "sha256": "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
+    "durationSecondsEmbedded": false,
+    "fareEmbedded": false
+  },
+  "pack": {
+    "id": "capital",
+    "inputSha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    "inputSqliteSha256": "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+    "inputByteSize": 354980,
+    "outputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+    "outputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+    "byteSize": 359319,
+    "byteSizeDelta": 4339
+  }
+}

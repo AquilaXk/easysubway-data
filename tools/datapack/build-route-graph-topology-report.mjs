@@ -1,10 +1,13 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+
+const ADMITTED_ITX_EDGE_SET_SHA256 = "da771d5264efd198989b6e1c589c130620274f7c7d99c423909f3a1c5acf2b2f";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -93,6 +96,12 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
     const edgeCountsByType = {};
     const rideCountsByServicePattern = {};
     const rideCountsByServiceClass = {};
+    const itxEdges = edges
+      .filter((edge) => String(edge.service_class).toUpperCase() === "ITX_CHEONGCHUN")
+      .map((edge) => ({ ...edge }));
+    const admittedItxEdgeIds = hashJson(itxEdges) === ADMITTED_ITX_EDGE_SET_SHA256
+      ? new Set(itxEdges.map(({ id }) => id))
+      : new Set();
 
     addGeneratedStationTransferEdges(stationLines, routeGraphNodes, adjacency, undirected);
     for (const edge of edges) {
@@ -113,12 +122,14 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
       const from = stationLineByNode.get(fromNode);
       const to = stationLineByNode.get(toNode);
       if (edgeType === "RIDE" && from && to) {
-        const isItxSkipStop = serviceClass === "ITX_CHEONGCHUN"
-          && servicePattern === "EXPRESS"
-          && from.line_id === to.line_id;
+        const isItxExpress = serviceClass === "ITX_CHEONGCHUN"
+          && servicePattern === "EXPRESS";
+        const isAdmittedItxEdge = isItxExpress && admittedItxEdgeIds.has(edge.id);
+        const invalidAdjacency = from.line_id !== to.line_id
+          || Math.abs(from.line_sequence - to.line_sequence) !== 1;
         if (
-          from.line_id !== to.line_id
-          || (Math.abs(from.line_sequence - to.line_sequence) !== 1 && !isItxSkipStop)
+          (isItxExpress && !isAdmittedItxEdge)
+          || (!isItxExpress && invalidAdjacency)
         ) {
           const violation = {
             edgeId: edge.id,
@@ -178,6 +189,10 @@ export function buildRouteGraphTopologyReport(sqlitePath, pack = {}) {
   } finally {
     database.close();
   }
+}
+
+function hashJson(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function connectedLineNodes(stationLines) {
