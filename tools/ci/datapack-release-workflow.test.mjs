@@ -120,6 +120,15 @@ test("production request identity는 manifest 밖의 서명된 immutable binding
   assert.match(bindingStep, /id:\s*release-request-binding/);
   assert.match(bindingStep, /--only release-request-binding/);
   assert.match(bindingStep, /--verify-only/);
+  const verifiedBindingArtifact = yml.slice(publishBinding,
+    yml.indexOf("Data Pack Release / Send release callback"));
+  assert.match(verifiedBindingArtifact,
+    /Data Pack Release \/ Upload verified release request binding/);
+  assert.match(verifiedBindingArtifact,
+    /if:\s*\$\{\{ steps\.release-request-binding\.outcome == 'success' \}\}/);
+  assert.match(verifiedBindingArtifact,
+    /name:\s*easysubway-published-release-request-binding-\$\{\{ github\.sha \}\}/);
+  assert.match(verifiedBindingArtifact, /path:\s*\$\{\{ runner\.temp \}\}\/easysubway-datapack-stage\/catalog\/release-request-binding\.json/);
   const callbackStep = yml.slice(callback, yml.indexOf("Data Pack Release / Upload callback delivery evidence"));
   assert.match(callbackStep, /steps\.release-request-binding\.outcome == 'success'/);
   assert.match(callbackStep, /'BLOCKED_EXTERNAL'/);

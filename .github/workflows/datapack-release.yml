@@ -1039,6 +1039,15 @@ jobs:
             --root "${EASYSUBWAY_DATAPACK_STAGE}" \
             --verify-only
 
+      - name: Data Pack Release / Upload verified release request binding
+        if: ${{ steps.release-request-binding.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-published-release-request-binding-${{ github.sha }}
+          path: ${{ runner.temp }}/easysubway-datapack-stage/catalog/release-request-binding.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Data Pack Release / Send release callback
         if: ${{ !cancelled() && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
         id: callback-delivery
