@@ -2,6 +2,13 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  canonicalJson,
+  signingKeyId,
+  signingPublicKey,
+  verifyRsaSha256Signature,
+  withoutSignature,
+} from "./lib/manifest-validation.mjs";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -11,6 +18,25 @@ async function main() {
   const manifestBytes = await readFile(manifestPath);
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   validateManifestShape(manifest);
+
+  const only = args.get("only");
+  if (only) {
+    if (only !== "release-request-binding" || !args.has("release-request-binding")) {
+      throw new Error("--only release-request-binding requires --release-request-binding");
+    }
+    const plan = {
+      schemaVersion: 3,
+      mode: "object-storage-preflight",
+      manifestObjectKey: "catalog/current.json",
+      steps: await releaseRequestBindingSteps(args, root, manifest, manifestBytes),
+    };
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(plan, null, 2)}\n`);
+    return;
+  }
+  if (args.has("release-request-binding")) {
+    throw new Error("release request binding requires --only release-request-binding after final validation");
+  }
 
   const packPlans = [];
   for (const pack of manifest.packs) {
@@ -101,6 +127,58 @@ async function main() {
 
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(plan, null, 2)}\n`);
+}
+
+async function releaseRequestBindingSteps(args, root, manifest, manifestBytes) {
+  const bindingPath = path.resolve(args.get("release-request-binding"));
+  const bindingBytes = await readFile(bindingPath);
+  const binding = JSON.parse(bindingBytes.toString("utf8"));
+  validateReleaseRequestBinding(binding, manifest, manifestBytes);
+  const sourcePath = safeRelativeObjectPath(path.relative(root, bindingPath), "release request binding path");
+  const objectKey = `catalog/release-requests/${sha256(Buffer.from(binding.releaseRequestId, "utf8"))}.json`;
+  return [
+    {
+      type: "put-release-request-binding-object",
+      sourcePath,
+      objectKey,
+      sha256: sha256(bindingBytes),
+      sizeBytes: bindingBytes.length,
+      immutable: true,
+    },
+    {
+      type: "verify-release-request-binding-object",
+      objectKey,
+      sha256: sha256(bindingBytes),
+      sizeBytes: bindingBytes.length,
+      immutable: true,
+    },
+  ];
+}
+
+function validateReleaseRequestBinding(binding, manifest, manifestBytes) {
+  if (binding?.schemaVersion !== 1
+    || binding.artifactKind !== "datapack-release-request-binding"
+    || typeof binding.releaseRequestId !== "string"
+    || binding.releaseRequestId.length === 0
+    || binding.releaseSequence !== manifest.releaseSequence
+    || binding.channel !== manifest.channel
+    || binding.manifestSha256 !== sha256(manifestBytes)
+    || typeof binding.keyId !== "string"
+    || binding.keyId.length === 0
+    || binding.keyId !== signingKeyId()
+    || !["PUBLISHED_AND_VERIFIED", "NO_CHANGE_VALID"].includes(binding.releaseOutcome)
+    || binding.signature?.algorithm !== "rsa-sha256-release-request-v1"
+    || typeof binding.signature?.value !== "string"
+    || binding.signature.value.length === 0) {
+    throw new Error("release request binding keyId or manifest identity does not match configured signer");
+  }
+  if (!verifyRsaSha256Signature(
+    signingPublicKey(),
+    canonicalJson(withoutSignature(binding)),
+    binding.signature.value,
+  )) {
+    throw new Error("release request binding signature is invalid");
+  }
 }
 
 function parseArgs(argv) {

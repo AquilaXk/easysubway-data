@@ -8,6 +8,9 @@
     "schemaVersion",
     "artifactKind",
     "releaseRequestId",
+    "releaseSequence",
+    "channel",
+    "idempotencyKey",
     "workflowRunUrl",
     "manifestSha256",
     "sqliteSha256",
@@ -19,9 +22,16 @@
     "callbackVerifier"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "artifactKind": { "const": "datapack-release-callback" },
     "releaseRequestId": { "type": "string", "minLength": 1 },
+    "releaseSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "channel": { "enum": ["dev", "staging", "production"] },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 68,
+      "pattern": "^[^:]+:[1-9][0-9]*:[a-f0-9]{64}$"
+    },
     "workflowRunUrl": { "type": "string", "minLength": 1 },
     "manifestSha256": { "$ref": "#/$defs/sha256" },
     "sqliteSha256": { "$ref": "#/$defs/sha256" },

@@ -27,7 +27,7 @@ export function signingPublicKey() {
   return key;
 }
 
-function signingKeyId() {
+export function signingKeyId() {
   return process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1";
 }
 

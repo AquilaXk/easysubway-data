@@ -84,6 +84,35 @@ async function main() {
       continue;
     }
 
+    if (step.type === "put-release-request-binding-object") {
+      const bytes = await readAndVerifySource(root, step);
+      if (!dryRun && !verifyOnly) {
+        const created = await client.putObjectIfAbsent(step.objectKey, bytes, step);
+        if (!created) {
+          const existing = await client.readObject(step.objectKey);
+          if (!existing.exists) {
+            throw new Error(`${step.objectKey} conditional create conflict but object is unavailable`);
+          }
+          const storedSha256 = sha256(existing.body);
+          if (storedSha256 !== step.sha256) {
+            throw new Error(`${step.objectKey} immutable violation: stored sha ${storedSha256} != ${step.sha256}`);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (step.type === "verify-release-request-binding-object") {
+      if (!dryRun) {
+        const stored = await client.readObject(step.objectKey);
+        if (!stored.exists || stored.body.length !== step.sizeBytes
+          || sha256(stored.body) !== step.sha256) {
+          throw new Error(`${step.objectKey} uploaded checksum mismatch`);
+        }
+      }
+      continue;
+    }
+
     throw new Error(`unsupported publish step: ${step.type}`);
   }
 }
@@ -123,6 +152,31 @@ function objectStorageClient() {
         throw new Error(`${key} PUT failed with HTTP ${response.statusCode}`);
       }
     },
+    putObjectIfAbsent: async (key, bytes, step) => {
+      const response = await signedRequest({
+        endpoint,
+        bucket,
+        key,
+        region,
+        accessKey,
+        secretKey,
+        method: "PUT",
+        body: bytes,
+        headers: {
+          "content-length": String(bytes.length),
+          "content-type": contentTypeForKey(key),
+          "cache-control": cacheControlForKey(key),
+          "if-none-match": "*",
+          "x-amz-meta-sha256": step.sha256,
+          "x-amz-meta-size-bytes": String(step.sizeBytes),
+        },
+      });
+      if (response.statusCode === 412) return false;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`${key} conditional PUT failed with HTTP ${response.statusCode}`);
+      }
+      return true;
+    },
     verifyObject: async (key, step) => {
       const response = await signedRequest({
         endpoint,
@@ -159,6 +213,17 @@ function objectStorageClient() {
       }
       return { exists: true, sha256: response.headers["x-amz-meta-sha256"] };
     },
+    readObject: async (key) => {
+      const response = await signedRequest({
+        endpoint, bucket, key, region, accessKey, secretKey,
+        method: "GET", body: Buffer.alloc(0),
+      });
+      if (response.statusCode === 404) return { exists: false };
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`${key} GET failed with HTTP ${response.statusCode}`);
+      }
+      return { exists: true, body: response.body };
+    },
   };
 }
 
@@ -180,6 +245,26 @@ function preauthenticatedObjectStorageClient(baseUrl) {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw new Error(`${key} PUT failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
       }
+    },
+    putObjectIfAbsent: async (key, bytes, step) => {
+      const response = await unsignedRequest({
+        url: preauthObjectUrl(baseUrl, key),
+        method: "PUT",
+        body: bytes,
+        headers: {
+          "content-length": String(bytes.length),
+          "content-type": contentTypeForKey(key),
+          "cache-control": cacheControlForKey(key),
+          "if-none-match": "*",
+          "opc-meta-sha256": step.sha256,
+          "opc-meta-size-bytes": String(step.sizeBytes),
+        },
+      });
+      if (response.statusCode === 412) return false;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`${key} conditional PUT failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+      }
+      return true;
     },
     verifyObject: async (key, step) => {
       const response = await unsignedRequest({
@@ -208,6 +293,16 @@ function preauthenticatedObjectStorageClient(baseUrl) {
         throw new Error(`${key} GET failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
       }
       return { exists: true, sha256: sha256(response.body) };
+    },
+    readObject: async (key) => {
+      const response = await unsignedRequest({
+        url: preauthObjectUrl(baseUrl, key), method: "GET", body: Buffer.alloc(0),
+      });
+      if (response.statusCode === 404) return { exists: false };
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`${key} GET failed with HTTP ${response.statusCode}${errorBodySuffix(response.body)}`);
+      }
+      return { exists: true, body: response.body };
     },
   };
 }
@@ -247,8 +342,12 @@ async function signedRequest(options) {
         },
       },
       (response) => {
-        response.resume();
-        response.on("end", () => resolve(response));
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => {
+          response.body = Buffer.concat(chunks);
+          resolve(response);
+        });
       },
     );
     request.on("error", reject);

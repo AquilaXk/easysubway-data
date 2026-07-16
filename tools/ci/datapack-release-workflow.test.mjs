@@ -62,6 +62,110 @@ test("production-publish는 release request 조회 스텝과 !cancelled() 콜백
   assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
 });
 
+test("production callback은 bounded sender 증적을 항상 보존하고 실패를 fail-closed한다", () => {
+  const productionPublishStep = yml.match(
+    /- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(productionPublishStep, "production publish 스텝을 찾지 못함");
+  assert.match(productionPublishStep, /validatorStatus=\$\{bundle\.validatorStatus\}/);
+  assert.match(productionPublishStep, /routeRegressionStatus=\$\{bundle\.strictRouteRegressionStatus\}/);
+
+  const callbackStep = yml.match(
+    /- name: Data Pack Release \/ Send release callback[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(callbackStep, "release callback 스텝을 찾지 못함");
+  assert.match(callbackStep, /id:\s*callback-delivery/);
+  assert.match(callbackStep, /continue-on-error:\s*true/);
+  assert.match(callbackStep, /send-release-callback\.mjs/);
+  assert.doesNotMatch(callbackStep, /--(?:payload|output|github-output)/);
+  assert.doesNotMatch(
+    callbackStep,
+    /curl|Authorization|Bearer|set\s+-x|(?:echo|printf|printenv)[^\n]*(?:HMAC|TOKEN|PRIVATE_KEY)/i,
+  );
+
+  const uploadStep = yml.match(
+    /- name: Data Pack Release \/ Upload callback delivery evidence[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(uploadStep, "callback delivery 증적 업로드 스텝을 찾지 못함");
+  assert.match(uploadStep, /always\(\)/);
+  assert.match(uploadStep, /EASYSUBWAY_DATAPACK_CALLBACK_DELIVERY/);
+
+  const gateStep = yml.match(
+    /- name: Data Pack Release \/ Require confirmed callback delivery[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(gateStep, "callback delivery 확인 gate를 찾지 못함");
+  assert.match(gateStep, /steps\.callback-delivery\.outputs\.state/);
+  assert.match(gateStep, /CALLBACK_RECONCILIATION_REQUIRED/);
+  assert.match(gateStep, /exit\s+1/);
+});
+
+test("게시 workflow의 동시 실행은 기존 publish run을 취소하지 않는다", () => {
+  assert.match(yml, /concurrency:\s*[\s\S]*?cancel-in-progress:\s*false/);
+});
+
+test("production request identity는 manifest 밖의 서명된 immutable binding으로 게시한다", () => {
+  assert.match(yml, /build-release-request-binding\.mjs/);
+  assert.match(yml, /--release-request-binding/);
+  assert.match(yml, /EASYSUBWAY_DATAPACK_RELEASE_REQUEST_BINDING/);
+  const buildStep = yml.match(
+    /- name: Data Pack Release \/ Build data packs[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(buildStep, "data pack build 스텝을 찾지 못함");
+  assert.doesNotMatch(buildStep, /--release-request-id/);
+  const finalize = yml.indexOf("Data Pack Release / Finalize published decision");
+  const publishBinding = yml.indexOf("Data Pack Release / Publish finalized release request binding");
+  const callback = yml.indexOf("Data Pack Release / Send release callback");
+  assert.ok(finalize >= 0 && publishBinding > finalize && callback > publishBinding);
+  const bindingStep = yml.slice(publishBinding, callback);
+  assert.match(bindingStep, /id:\s*release-request-binding/);
+  assert.match(bindingStep, /--only release-request-binding/);
+  assert.match(bindingStep, /--verify-only/);
+  const callbackStep = yml.slice(callback, yml.indexOf("Data Pack Release / Upload callback delivery evidence"));
+  assert.match(callbackStep, /steps\.release-request-binding\.outcome == 'success'/);
+  assert.match(callbackStep, /'BLOCKED_EXTERNAL'/);
+  assert.match(callbackStep, /steps\.final-release-decision\.outputs\.outcome != 'PUBLISHED_AND_VERIFIED' && 'FAIL'/);
+});
+
+test("NO_CHANGE_VALID 재실행은 current manifest binding과 callback을 복구한다", () => {
+  const noChangeIdentity = yml.match(
+    /- name: Data Pack Release \/ Prepare no-change release identity[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(noChangeIdentity, "no-change release identity 스텝을 찾지 못함");
+  assert.match(noChangeIdentity, /steps\.release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
+  assert.match(noChangeIdentity, /EASYSUBWAY_DATAPACK_CURRENT_MANIFEST/);
+  assert.match(noChangeIdentity, /manifestSha256/);
+  assert.match(noChangeIdentity, /releaseSequence/);
+
+  const remoteValidation = yml.match(
+    /- name: Data Pack Release \/ Validate published remote artifact[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(remoteValidation, "remote validation 스텝을 찾지 못함");
+  assert.match(remoteValidation, /steps\.no-change-release\.outputs\.manifestSha256/);
+
+  const binding = yml.match(
+    /- name: Data Pack Release \/ Publish finalized release request binding[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(binding, "release request binding 스텝을 찾지 못함");
+  assert.match(binding, /steps\.release-decision\.outputs\.outcome == 'NO_CHANGE_VALID'/);
+  assert.match(binding, /EASYSUBWAY_DATAPACK_CURRENT_MANIFEST/);
+  assert.match(binding, /--release-outcome/);
+  assert.match(binding, /NO_CHANGE_VALID/);
+
+  const callback = yml.match(
+    /- name: Data Pack Release \/ Send release callback[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(callback, "release callback 스텝을 찾지 못함");
+  assert.match(callback, /steps\.no-change-release\.outputs\.releaseSequence/);
+  assert.match(callback, /steps\.no-change-release\.outputs\.manifestSha256/);
+
+  const noChangeValidationGate = yml.match(
+    /- name: Data Pack Release \/ Require successful no-change remote validation[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(noChangeValidationGate, "no-change remote validation gate를 찾지 못함");
+  assert.match(noChangeValidationGate, /steps\.remote-validation\.outcome != 'success'/);
+  assert.match(noChangeValidationGate, /exit 1/);
+});
+
 test("coverage gap 스텝은 release 모드에서만 production provenance와 release-scope를 배선한다", () => {
   // release-scope 게이트는 게시 범위(pilot region/operator × capitalPilotTargets domains) 내 gap만 차단한다(#1999).
   assert.match(yml, /--release-scope apps\/mobile\/release\/production-datapack-scope\.json/);
@@ -126,6 +230,13 @@ test("워크플로는 rollout-update 모드·publish-rollout 스텝을 가지고
   assert.match(yml, /rolloutTargetSequence/);
   assert.match(yml, /is-pointer-only/);            // 빌드 스텝 게이팅 output
   assert.doesNotMatch(yml, /mode != 'rollback'/);  // 구 게이트가 pointer-only로 통합됨
+  const rolloutStep = yml.match(
+    /- name: Data Pack Release \/ Rollout update pointer swap[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(rolloutStep, "rollout update 스텝을 찾지 못함");
+  assert.match(rolloutStep, /CALLBACK_RECONCILIATION_REQUIRED/);
+  assert.match(rolloutStep, /!\s*\[\[.*ROLLOUT_PERCENTAGE.*\^\[0-9\]\+\$/);
+  assert.match(rolloutStep, /ROLLOUT_PERCENTAGE\s*>\s*10\b/);
 });
 
 test("rollback 모드는 trusted approval·원격 catalog inventory와 sanitized report를 강제한다", () => {
