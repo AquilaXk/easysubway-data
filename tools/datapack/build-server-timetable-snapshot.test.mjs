@@ -89,6 +89,19 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   });
   assert.equal(first.evidence.rowCounts.itxTrips, source.transitTrips.length);
   assert.equal(first.evidence.rowCounts.itxStopTimes, source.transitStopTimes.length);
+  assert.ok(first.evidence.rowCounts.officialFares > 0);
+  assert.match(
+    first.sql,
+    /UPDATE transit_trips SET train_no = '2002' WHERE id = 'route-line-54a7b980b7c3-down-2002-8';/,
+  );
+  assert.match(
+    first.sql,
+    /INSERT INTO transit_trip_official_fares \([^\n]+\) VALUES \('route-line-54a7b980b7c3-[^']+-\d+-8', '[^']+', '[^']+', \d+, 'KRW', 'tago-train-schedule-fares', 'itx-cheongchun-source-timetable-[^']+'\);/,
+  );
+  assert.match(
+    first.sql,
+    /INSERT INTO transit_trip_official_fares \([^\n]+\) VALUES \('[^']+', 'station-sangnoksu', 'station-sadang', \d+, 'KRW', 'seoul-metro-official-od-fares', '[^']+'\);/,
+  );
   assert.ok(first.evidence.rowCounts.subwayTrips > 0);
   assert.ok(first.evidence.rowCounts.subwayStopTimes > first.evidence.rowCounts.subwayTrips);
   assert.match(first.sql, /'ITX_CHEONGCHUN'/);

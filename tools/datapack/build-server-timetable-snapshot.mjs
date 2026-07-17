@@ -108,7 +108,9 @@ export function buildServerTimetableSnapshot({
     canonicalPackIdentity,
   });
   assertNoIdentityCollisions(baselineSql, itxSeed);
-  const sql = `${baselineSql}${itxSeed.sql}`;
+  const plannerIdentity = plannerIdentitySql(source, completeness);
+  const subwayFares = officialSubwayFareSql(canonicalPackGzipBytes, baselineSql);
+  const sql = `${baselineSql}${itxSeed.sql}${plannerIdentity.sql}${subwayFares.sql}`;
   const sqlBytes = Buffer.from(sql);
   const gzipBytes = canonicalGzipBytes ?? gzipSync(sqlBytes, { level: 9, mtime: 0 });
   if (canonicalGzipBytes != null) {
@@ -168,6 +170,7 @@ export function buildServerTimetableSnapshot({
       subwayStopTimes: baselineCounts.stopTimes,
       itxTrips: itxSeed.tripCount,
       itxStopTimes: itxSeed.stopTimeCount,
+      officialFares: plannerIdentity.fareCount + subwayFares.fareCount,
       routeServiceEvidence: 1,
     },
   };
@@ -181,6 +184,112 @@ export function buildServerTimetableSnapshot({
     evidence,
     evidenceBytes: Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`),
   };
+}
+
+function plannerIdentitySql(source, completeness) {
+  const tripByServiceDayAndTrain = new Map();
+  const trainUpdates = source.transitTrips.map((trip) => {
+    const match = trip.id.match(/-(\d+)-([789])$/);
+    if (!match) throw new Error(`ITX trip train identity is invalid: ${trip.id}`);
+    const [, trainNumber, dayCd] = match;
+    const key = `${dayCd}:${trainNumber}`;
+    if (tripByServiceDayAndTrain.has(key)) {
+      throw new Error(`duplicate ITX trip train identity: ${key}`);
+    }
+    tripByServiceDayAndTrain.set(key, trip.id);
+    return `UPDATE transit_trips SET train_no = ${sqlText(trainNumber, "train number")} WHERE id = ${sqlText(trip.id, "trip id")};`;
+  }).sort((left, right) => left.localeCompare(right));
+
+  const fares = new Map();
+  for (const serviceDay of completeness.serviceDays ?? []) {
+    if (!/[789]/.test(serviceDay?.dayCd) || !Array.isArray(serviceDay?.roster?.itineraries)) {
+      throw new Error("complete timetable fare evidence is invalid");
+    }
+    for (const itinerary of serviceDay.roster.itineraries) {
+      const tripId = tripByServiceDayAndTrain.get(`${serviceDay.dayCd}:${itinerary.trainNumber}`);
+      const adultFareWon = Number(itinerary.adultFareWon);
+      if (!tripId || !Number.isInteger(adultFareWon) || adultFareWon <= 0) {
+        throw new Error("complete timetable fare evidence is invalid");
+      }
+      const originStationId = requiredText(itinerary.departureStationId, "fare origin station");
+      const destinationStationId = requiredText(itinerary.arrivalStationId, "fare destination station");
+      const key = `${tripId}\0${originStationId}\0${destinationStationId}`;
+      const row = { tripId, originStationId, destinationStationId, adultFareWon };
+      const existing = fares.get(key);
+      if (existing && existing.adultFareWon !== adultFareWon) {
+        throw new Error("conflicting official fare for trip OD");
+      }
+      fares.set(key, row);
+    }
+  }
+  const fareRows = [...fares.values()].sort((left, right) => left.tripId.localeCompare(right.tripId)
+    || left.originStationId.localeCompare(right.originStationId)
+    || left.destinationStationId.localeCompare(right.destinationStationId));
+  if (fareRows.length === 0) throw new Error("complete timetable official fares are required");
+  const fareStatements = fareRows.map((fare) => (
+    "INSERT INTO transit_trip_official_fares "
+      + "(trip_id, origin_station_id, destination_station_id, adult_fare_won, currency, source_id, source_snapshot_id) "
+      + `VALUES (${sqlText(fare.tripId, "fare trip id")}, ${sqlText(fare.originStationId, "fare origin")}, `
+      + `${sqlText(fare.destinationStationId, "fare destination")}, ${fare.adultFareWon}, 'KRW', `
+      + `'tago-train-schedule-fares', ${sqlText(source.artifactId, "fare snapshot id")});`
+  ));
+  return { sql: `${[...trainUpdates, ...fareStatements].join("\n")}\n`, fareCount: fareRows.length };
+}
+
+function officialSubwayFareSql(canonicalPackGzipBytes, baselineSql) {
+  const directory = mkdtempSync(path.join(tmpdir(), "server-snapshot-fares-"));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  let db;
+  try {
+    writeFileSync(sqlitePath, gunzipSync(canonicalPackGzipBytes));
+    db = new DatabaseSync(sqlitePath, { readOnly: true });
+    const quotes = db.prepare(`
+      SELECT origin_station_id, destination_station_id, gnrl_card_fare, source_id, snapshot_id
+      FROM official_od_fare_quotes
+      WHERE gnrl_card_fare > 0
+      ORDER BY origin_station_id, destination_station_id
+    `).all();
+    const stopsByTrip = new Map();
+    for (const line of baselineSql.split("\n").filter((value) => value.startsWith("INSERT INTO transit_stop_times "))) {
+      const [tripId, stopSequence, stationId] = values(line);
+      const stops = stopsByTrip.get(tripId) ?? [];
+      stops.push({ sequence: Number(stopSequence), stationId });
+      stopsByTrip.set(tripId, stops);
+    }
+    const rows = [];
+    for (const [tripId, stops] of [...stopsByTrip].sort(([left], [right]) => left.localeCompare(right))) {
+      const stationIds = orderedStationIds(stops);
+      for (const quote of quotes) {
+        const originIndex = stationIds.indexOf(quote.origin_station_id);
+        const destinationIndex = stationIds.indexOf(quote.destination_station_id);
+        if (originIndex < 0 || destinationIndex <= originIndex) continue;
+        rows.push(
+          "INSERT INTO transit_trip_official_fares "
+            + "(trip_id, origin_station_id, destination_station_id, adult_fare_won, currency, source_id, source_snapshot_id) "
+            + `VALUES (${sqlText(tripId, "fare trip id")}, ${sqlText(quote.origin_station_id, "fare origin")}, `
+            + `${sqlText(quote.destination_station_id, "fare destination")}, ${Number(quote.gnrl_card_fare)}, 'KRW', `
+            + `${sqlText(quote.source_id, "fare source")}, ${sqlText(quote.snapshot_id, "fare snapshot id")});`,
+        );
+      }
+    }
+    return { sql: rows.length === 0 ? "" : `${rows.join("\n")}\n`, fareCount: rows.length };
+  } catch (error) {
+    throw new Error("canonical official subway fare materialization failed", { cause: error });
+  } finally {
+    db?.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function requiredText(value, label) {
+  if (typeof value !== "string" || value.length === 0 || /[\r\n\0]/.test(value)) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
+function sqlText(value, label) {
+  return `'${requiredText(value, label).replaceAll("'", "''")}'`;
 }
 
 function namespacedItxServiceId(sourceServiceId) {

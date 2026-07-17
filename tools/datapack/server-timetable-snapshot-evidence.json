@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "artifactKind": "server-timetable-snapshot-evidence",
   "schemaIdentity": "backend-timetable-snapshot-v1",
-  "snapshotId": "server-timetable-snapshot-c8ae07b67e133c8e",
-  "snapshotSha256": "c8ae07b67e133c8ee019069b1c11590aac1449398caf87eb68bca540615b9623",
-  "snapshotSqlByteSize": 8373964,
-  "snapshotGzipSha256": "9824f18502fd4a794bfc6fe3b9d4784d094c0f98eb45269de6b7a1a0dd83a82a",
-  "snapshotGzipByteSize": 321382,
+  "snapshotId": "server-timetable-snapshot-5c2911620ead0185",
+  "snapshotSha256": "5c2911620ead0185235382a3f1367dc7eabec30594ebe88c2a968377056d642b",
+  "snapshotSqlByteSize": 9628408,
+  "snapshotGzipSha256": "06b65fed55e1d07623b0fbc69bf35b98973b22fb25e520d014fba69155d8fd5b",
+  "snapshotGzipByteSize": 340169,
   "freshUntil": "2026-07-20T00:00:00+09:00",
   "serviceIdentity": {
     "serviceId": "ITX_CHEONGCHUN",
@@ -113,7 +113,8 @@
     "subwayStopTimes": 33062,
     "itxTrips": 140,
     "itxStopTimes": 1008,
+    "officialFares": 3686,
     "routeServiceEvidence": 1
   },
-  "evidenceHash": "8ab3f3884445ef2f649ada4cd63b2825104540edaae7b8ff12af698deeb3b0c1"
+  "evidenceHash": "26a5e35a89daa4fdf68bec0884d2f5b537ed150c872cb5e3961b3990ec07a852"
 }
