@@ -64,6 +64,7 @@ export function reconstructTransitTrips(rows, context) {
       tripHeadsign: ordered.at(-1).stationId,
       directionId,
       servicePattern,
+      trainNo: trnNo,
     });
     ordered.forEach((row, index) => {
       transitStopTimes.push({

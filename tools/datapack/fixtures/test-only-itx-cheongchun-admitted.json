@@ -68,7 +68,8 @@
       "tripHeadsign": "station-dd14cfb89cbc",
       "directionId": "down",
       "servicePattern": "EXPRESS",
-      "serviceClass": "ITX_CHEONGCHUN"
+      "serviceClass": "ITX_CHEONGCHUN",
+      "trainNo": "2001"
     }
   ],
   "transitStopTimes": [

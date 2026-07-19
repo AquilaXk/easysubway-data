@@ -21,6 +21,7 @@ const ARTIFACT = {
       tripHeadsign: "station-seoul-4-433",
       directionId: "up",
       servicePattern: "LOCAL",
+      trainNo: "4719",
     },
     {
       id: "route-seoul-4-down-4108-9",
@@ -29,6 +30,7 @@ const ARTIFACT = {
       tripHeadsign: "station-seoul-4-456",
       directionId: "down",
       servicePattern: "LOCAL",
+      trainNo: "4108",
     },
   ],
   transitStopTimes: [
@@ -79,13 +81,13 @@ test("SQL은 FK 순서(calendars→routes→trips→stop_times)로 INSERT를 낸
   assert.ok(iCal >= 0 && iRoute > iCal && iTrip > iRoute && iStop > iTrip, `순서 위반: ${[iCal, iRoute, iTrip, iStop]}`);
 });
 
-test("trip seed는 service_class를 명시하고 기본 SUBWAY를 보존한다", () => {
+test("trip seed는 service_class·exact train_no를 명시하고 기본 SUBWAY를 보존한다", () => {
   const { sql } = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
   assert.match(
     sql,
-    /INSERT INTO transit_trips \(id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id\)/,
+    /INSERT INTO transit_trips \(id, route_id, service_id, service_pattern, service_class, train_no, service_day_start_seconds, trip_headsign, direction_id\)/,
   );
-  assert.match(sql, /'LOCAL', 'SUBWAY', 0/);
+  assert.match(sql, /'LOCAL', 'SUBWAY', '4719', 0/);
 });
 
 test("final seed는 모든 trip의 explicit LOCAL/EXPRESS servicePattern을 요구한다", () => {
@@ -183,7 +185,7 @@ test("ITX seed는 test-only timetable·canonical pack identity evidence를 같�
   assert.match(sql, new RegExp(artifact.routeServiceArtifactEvidence[0].timetableArtifactSha256));
   assert.match(sql, new RegExp(artifact.canonicalPackIdentity.sha256));
   assert.match(sql, new RegExp(artifact.canonicalPackIdentity.sqliteSha256));
-  assert.match(sql, /'EXPRESS', 'ITX_CHEONGCHUN', 0/);
+  assert.match(sql, /'EXPRESS', 'ITX_CHEONGCHUN', '2001', 0/);
   assert.match(sql, /'ITX-청춘'/);
   assert.match(sql, /'청량리 → 춘천'/);
   assert.throws(

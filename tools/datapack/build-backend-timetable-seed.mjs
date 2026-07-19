@@ -312,10 +312,11 @@ function routeInsert(r) {
 
 function tripInsert(t) {
   return (
-    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES (" +
+    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, train_no, service_day_start_seconds, trip_headsign, direction_id) VALUES (" +
     `${quote(requireString(t.id, "transitTrips.id"))}, ${quote(requireString(t.routeId, "transitTrips.routeId"))}, ` +
     `${quote(requireString(t.serviceId, "transitTrips.serviceId"))}, ${quote(t.servicePattern)}, ` +
-    `${quote(t.serviceClass ?? "SUBWAY")}, ${t.serviceDayStartSeconds ?? 0}, ${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")});`
+    `${quote(t.serviceClass ?? "SUBWAY")}, ${nullableQuote(t.trainNo)}, ${t.serviceDayStartSeconds ?? 0}, ` +
+    `${quote(t.tripHeadsign ?? "")}, ${quote(t.directionId ?? "")});`
   );
 }
 
@@ -363,6 +364,10 @@ function quote(value) {
     throw new Error(`value must not contain a newline (single-line statement invariant): ${JSON.stringify(text)}`);
   }
   return `'${text.replaceAll("'", "''")}'`;
+}
+
+function nullableQuote(value) {
+  return value == null || String(value).trim() === "" ? "NULL" : quote(value);
 }
 
 function bool(value) {

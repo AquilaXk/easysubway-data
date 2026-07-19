@@ -232,6 +232,7 @@ function materializeTagoItxOdRowsStrict({
       tripHeadsign: stops.at(-1).nameKo,
       directionId,
       servicePattern: "EXPRESS",
+      trainNo: trainNumber,
     });
     stops.forEach((stop, index) => transitStopTimes.push({
       tripId,

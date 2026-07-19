@@ -112,9 +112,10 @@ export function buildServerTimetableSnapshot({
   });
   assertNoIdentityCollisions(baselineSql, itxSeed);
   const plannerIdentity = plannerIdentitySql(source, completeness);
+  const subwayTrainIdentity = subwayTrainIdentitySql(baselineSql);
   const subwayFares = officialSubwayFareSql(canonicalPackGzipBytes, baselineSql);
   const accessibility = canonicalAccessibilitySql(reviewedPackBytes, sourceSnapshotsBytes, canonicalPackIdentity);
-  const sql = `${baselineSql}${itxSeed.sql}${plannerIdentity.sql}${subwayFares.sql}${accessibility.sql}`;
+  const sql = `${baselineSql}${itxSeed.sql}${plannerIdentity.sql}${subwayTrainIdentity}${subwayFares.sql}${accessibility.sql}`;
   const sqlBytes = Buffer.from(sql);
   const gzipBytes = canonicalGzipBytes ?? gzipSync(sqlBytes, { level: 9, mtime: 0 });
   if (canonicalGzipBytes != null) {
@@ -442,6 +443,21 @@ function plannerIdentitySql(source, completeness) {
       + `'tago-train-schedule-fares', ${sqlText(source.artifactId, "fare snapshot id")});`
   ));
   return { sql: `${[...trainUpdates, ...fareStatements].join("\n")}\n`, fareCount: fareRows.length };
+}
+
+function subwayTrainIdentitySql(baselineSql) {
+  const statements = baselineSql.split("\n")
+    .filter((line) => line.startsWith("INSERT INTO transit_trips "))
+    .map((line) => requiredSqlColumn(valuesByColumn(line, "transit_trips"), "id"))
+    .map((tripId) => {
+      const match = /^route-seoul-4-(?:up|down)-([A-Z]?\d+)-[789]$/.exec(tripId);
+      if (!match) throw new Error(`subway trip train identity is invalid: ${tripId}`);
+      const providerTrainNo = match[1].replace(/^[A-Z](?=\d+$)/, "");
+      return `UPDATE transit_trips SET train_no = ${sqlText(providerTrainNo, "subway train number")} WHERE id = ${sqlText(tripId, "subway trip id")};`;
+    })
+    .sort((left, right) => left.localeCompare(right));
+  if (statements.length === 0) throw new Error("subway trip train identity is missing");
+  return `${statements.join("\n")}\n`;
 }
 
 function officialSubwayFareSql(canonicalPackGzipBytes, baselineSql) {

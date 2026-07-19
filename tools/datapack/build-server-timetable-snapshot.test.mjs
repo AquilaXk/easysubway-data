@@ -102,6 +102,14 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   );
   assert.match(
     first.sql,
+    /UPDATE transit_trips SET train_no = '4227' WHERE id = 'route-seoul-4-up-4227-8';/,
+  );
+  assert.match(
+    first.sql,
+    /UPDATE transit_trips SET train_no = '4123' WHERE id = 'route-seoul-4-up-S4123-8';/,
+  );
+  assert.match(
+    first.sql,
     /INSERT INTO transit_trip_official_fares \([^\n]+\) VALUES \('route-line-54a7b980b7c3-[^']+-\d+-8', '[^']+', '[^']+', \d+, 'KRW', 'tago-train-schedule-fares', 'itx-cheongchun-source-timetable-[^']+'\);/,
   );
   assert.match(

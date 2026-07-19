@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "artifactKind": "server-timetable-snapshot-evidence",
   "schemaIdentity": "backend-timetable-snapshot-v1",
-  "snapshotId": "server-timetable-snapshot-ecb05d337e4a310f",
-  "snapshotSha256": "ecb05d337e4a310f2067001f1355d04a886a86751b5e803ad3197389e60abbc9",
-  "snapshotSqlByteSize": 9637699,
-  "snapshotGzipSha256": "c2ec7b3d2099cee821f3a71fb5e6c5431875c6ded94bd37bb18fafcf7c6ec46c",
-  "snapshotGzipByteSize": 342404,
+  "snapshotId": "server-timetable-snapshot-8dba0bb1b1de67e4",
+  "snapshotSha256": "8dba0bb1b1de67e4208224d02159a722a538b8b3b2add15951ef50b227c83668",
+  "snapshotSqlByteSize": 9714229,
+  "snapshotGzipSha256": "a76f26a14cf159eb2fb15a6ac9c171e4d79c6c45f6ada3eaaf85d710767eba81",
+  "snapshotGzipByteSize": 347833,
   "freshUntil": "2026-07-20T00:00:00+09:00",
   "serviceIdentity": {
     "serviceId": "ITX_CHEONGCHUN",
@@ -123,5 +123,5 @@
     "transferRules": 0,
     "routeEdgeEvidence": 4
   },
-  "evidenceHash": "c93eef5327a84aadf7134b05ab74ae7a5ca1919c11897e18e9975e88d00d5120"
+  "evidenceHash": "22fb760e2ef917a8a83047e62940525d91305b601d37aa631cf0a2ca45c89b11"
 }

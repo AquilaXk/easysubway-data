@@ -614,7 +614,7 @@ function hasClosedCandidateShape(candidate) {
     "stationId", "nameKo", "corridorSequence", "lineId", "arrivalAt", "departureAt",
     "arrivalSeconds", "departureSeconds", "stopSequence",
   ];
-  const tripKeys = ["id", "routeId", "serviceId", "directionId", "servicePattern", "tripHeadsign"];
+  const tripKeys = ["id", "routeId", "serviceId", "directionId", "servicePattern", "tripHeadsign", "trainNo"];
   const stopTimeKeys = ["tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds"];
   const summaryKeys = ["count", "added", "removed", "sha256"];
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
@@ -1709,6 +1709,7 @@ function materializeAnalyzedKorailItxRows(analyzed, kricServiceDayCode, runDate)
       tripHeadsign: trip.stops.at(-1).providerStationName,
       directionId,
       servicePattern: "EXPRESS",
+      trainNo: trip.trainNumber,
     });
     rows.forEach((row, index) => transitStopTimes.push({
       tripId,
