@@ -18,6 +18,9 @@ const KNOWN_HTTP_PROVIDER_HOSTS = new Set([
   "openapi.seoul.go.kr:8088",
 ]);
 const CREDENTIAL_ENVS = new Set(["DATA_GO_KR_SERVICE_KEY", "KRIC_SERVICE_KEY", "SEOUL_OPENAPI_KEY"]);
+const DATA_GO_ORGANIZATION_NAMES = new Map([
+  ["korail", "한국철도공사"],
+]);
 const SOURCE_DOMAIN_SEARCH = Object.freeze({
   station_line_membership: {
     terms: ["역정보", "역명", "역코드", "노선정보", "역사정보"],
@@ -68,7 +71,8 @@ export function buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCan
   const entries = targets.activeLineScopes.flatMap((scope) => domains.map((sourceDomain) => {
     const domain = SOURCE_DOMAIN_SEARCH[sourceDomain];
     if (!domain) throw new Error(`unsupported launch source domain: ${sourceDomain}`);
-    const operatorName = requiredString(operators.get(scope.operatorId), `operator ${scope.operatorId}`);
+    const fixtureOperatorName = requiredString(operators.get(scope.operatorId), `operator ${scope.operatorId}`);
+    const operatorName = DATA_GO_ORGANIZATION_NAMES.get(scope.operatorId) ?? fixtureOperatorName;
     const lineName = requiredString(lines.get(scope.lineId), `line ${scope.lineId}`);
     const lineTerms = lineSearchTerms(lineName);
     return {

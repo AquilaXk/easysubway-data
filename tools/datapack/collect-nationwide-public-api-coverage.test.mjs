@@ -96,6 +96,46 @@ test("전국 target과 fixture에서 line AND domain 실제 검색 계획을 만
   ]]);
 });
 
+test("KORAIL 검색은 공공데이터포털 정식 기관명을 사용한다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "busan", operatorId: "korail", lineId: "donghae" }],
+      requiredSourceDomains: [{ id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" }],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "korail", nameKo: "코레일" }],
+        lines: [{ id: "donghae", nameKo: "동해선" }],
+      }],
+    },
+  });
+
+  assert.ok(searchPlan.entries[0].queries.length > 0);
+  assert.ok(searchPlan.entries[0].queries.every(
+    ({ query }) => query.organizations[0] === "한국철도공사",
+  ));
+});
+
+test("KORAIL scope도 fixture 운영기관이 없으면 검색 계획 생성을 거부한다", () => {
+  assert.throws(
+    () => buildNationwidePublicApiSearchPlan({
+      targets: {
+        targetVersion: "2026-07-13",
+        activeLineScopes: [{ regionId: "busan", operatorId: "korail", lineId: "donghae" }],
+        requiredSourceDomains: [{ id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" }],
+      },
+      fixture: {
+        packs: [{
+          operators: [],
+          lines: [{ id: "donghae", nameKo: "동해선" }],
+        }],
+      },
+    }),
+    /operator korail is required/,
+  );
+});
+
 test("운영기관 공통 검색 결과는 현재 line 지원 증거가 아니라 검증 대기 후보로 남긴다", async () => {
   const searchTarget = {
     ...target,
