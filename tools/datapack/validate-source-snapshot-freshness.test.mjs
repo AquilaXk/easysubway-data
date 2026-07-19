@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
@@ -614,6 +615,20 @@ test("실제 release build spec은 current source inventory에 결합되어 gove
   ], { cwd: root });
 
   assert.equal(JSON.parse(stdout).governanceDecision, "GO");
+});
+
+test("실제 release hash evidence는 current source inventory와 build spec에 결합된다", async () => {
+  const [inventory, buildSpec, hashEvidence] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/hash-evidence.json"), "utf8").then(JSON.parse),
+  ]);
+  const inventorySha256 = createHash("sha256")
+    .update(JSON.stringify(inventory))
+    .digest("hex");
+
+  assert.equal(buildSpec.sourceInventorySha256, inventorySha256);
+  assert.equal(hashEvidence.sourceInventorySha256.value, inventorySha256);
 });
 
 test("승인 allowlist 밖의 unbound snapshot은 build spec policy로 backfill할 수 없다", () => {

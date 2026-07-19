@@ -151,6 +151,77 @@
       }
     },
     {
+      "id": "daejeon-station-distance-fare",
+      "displayName": "대전교통공사_역간 소요시간/거리/요금 조회 서비스",
+      "owner": "대전교통공사",
+      "provider": "대전교통공사",
+      "providerDepartment": "대전교통공사",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15158794/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "대전교통공사 1호선 22개 역의 42개 방향성 인접 edge",
+      "coverageScope": {
+        "regionIds": ["daejeon"],
+        "operatorIds": ["daejeon-transportation"],
+        "lineIds": ["line-7051a9c2525c"],
+        "sourceDomains": ["route_graph_topology"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-07-20",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대전교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15158794/openapi.do"
+      },
+      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters"],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "realtime",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "realtime",
+          "unsupportedNotes": "source provides static route travel cost, not realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "realtime",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2326,
+        "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
+        "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
+        "snapshotId": "daejeon-station-distance-fare-topology-20260720",
+        "snapshotPath": "tools/datapack/sources/daejeon-route-topology-20260720.json",
+        "capturedAt": "2026-07-19T22:12:49.895Z",
+        "freshUntil": "2026-07-20T22:12:49.895Z",
+        "stationCount": 22,
+        "edgeCount": 42,
+        "excludedTransferCount": 0,
+        "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
+        "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
+      }
+    },
+    {
       "id": "kric-disabled-toilet",
       "displayName": "국가철도공단_역사별 장애인 화장실 위치",
       "owner": "국가철도공단",

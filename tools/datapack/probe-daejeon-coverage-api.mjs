@@ -19,13 +19,22 @@ export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   }),
 });
 
-export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl = fetch, now = new Date() } = {}) {
+export async function probeDaejeonCoverageApi({
+  sourceId,
+  serviceKey,
+  query,
+  captureRows = false,
+  fetchImpl = fetch,
+  now = new Date(),
+} = {}) {
   const operation = DAEJEON_COVERAGE_OPERATIONS[sourceId];
   if (!operation) throw new Error(`unsupported Daejeon coverage source: ${sourceId ?? "missing"}`);
   const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
   const url = new URL(operation.endpoint);
   url.searchParams.set("serviceKey", key);
-  for (const [name, value] of Object.entries(operation.query ?? {})) url.searchParams.set(name, value);
+  const requestQuery = query ?? operation.query ?? {};
+  validateOperationQuery(sourceId, requestQuery, query !== undefined);
+  for (const [name, value] of Object.entries(requestQuery)) url.searchParams.set(name, value);
 
   const response = await fetchWithRetry(url, fetchImpl);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() ?? "";
@@ -58,6 +67,11 @@ export async function probeDaejeonCoverageApi({ sourceId, serviceKey, fetchImpl 
     schemaStatus: "EXPECTED",
     rowCount: parsed.rowCount,
     outputFields: parsed.outputFields,
+    ...(captureRows ? {
+      rows: parsed.rows,
+      rowsSha256: sha256(JSON.stringify(parsed.rows)),
+    } : {}),
+    ...(Object.keys(requestQuery).length > 0 ? { query: requestQuery } : {}),
     rawBytes: Buffer.byteLength(raw),
     rawSha256: sha256(raw),
     credentialRedacted: true,
@@ -96,14 +110,16 @@ function parseXmlEvidence(raw, expectedFields, validateItem) {
   if (items.length === 0 || items.length !== parsed.itemCount) {
     throw new Error("Daejeon coverage API schema mismatch: XML items");
   }
+  const rows = [];
   for (const item of items) {
     const values = Object.fromEntries(expectedFields.map((field) => [field, xmlScalar(item, field)]));
     if (Object.values(values).some((value) => value == null)) {
       throw new Error("Daejeon coverage API schema mismatch: XML item fields");
     }
     validateItem?.(values);
+    rows.push(values);
   }
-  return { providerResultCode: "00", rowCount: items.length, outputFields: [...expectedFields] };
+  return { providerResultCode: "00", rowCount: items.length, outputFields: [...expectedFields], rows };
 }
 
 function validateDistanceFareItem({ distfloat, fee, min, sec }) {
@@ -124,6 +140,23 @@ function validateDistanceFareItem({ distfloat, fee, min, sec }) {
     || !Number.isInteger(minutes) || minutes < 0
     || !Number.isInteger(seconds) || seconds < 0 || seconds > 59) {
     throw new Error("Daejeon coverage API schema mismatch: distance/fare values");
+  }
+}
+
+function validateOperationQuery(sourceId, query, overridden) {
+  if (sourceId !== "daejeon-station-distance-fare") {
+    if (overridden) throw new Error(`query override is not allowed for ${sourceId}`);
+    return;
+  }
+  if (!query || typeof query !== "object" || Array.isArray(query)
+    || Object.keys(query).sort().join(",") !== "endstnno,strstnno") {
+    throw new Error("Daejeon distance query is invalid");
+  }
+  const from = String(query.strstnno);
+  const to = String(query.endstnno);
+  if (!/^1(?:0[1-9]|1\d|2[0-2])$/.test(from)
+    || !/^1(?:0[1-9]|1\d|2[0-2])$/.test(to) || from === to) {
+    throw new Error("Daejeon distance query is invalid");
   }
 }
 

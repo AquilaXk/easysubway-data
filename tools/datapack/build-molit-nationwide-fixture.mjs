@@ -945,6 +945,30 @@ function rowFromCsv(row) {
   };
 }
 
+export function parseMolitDaejeonStationMappings(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const mappings = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "대전"
+      && row.operatorName === "대전교통공사"
+      && row.lineName === "1호선")
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(100 + row.sequence),
+    }));
+  if (lineIdFor("대전", "1호선") !== "line-7051a9c2525c"
+    || mappings.length !== 22
+    || mappings.some((mapping, index) => mapping.stationNumber !== String(101 + index))
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error("MOLIT Daejeon Line 1 mapping must contain 22 unique stations in sequence");
+  }
+  return mappings;
+}
+
 function svgRowFromCsv(row) {
   if (row.length < 8 || row[0] === "SVG파일명") {
     return null;

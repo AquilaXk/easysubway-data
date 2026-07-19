@@ -39,6 +39,13 @@ const positiveFacilityStatuses = new Set(["NORMAL", "AVAILABLE", "IN_SERVICE", "
 // 단 strict route guarantee(#1394 휠체어 이용 보장)는 AVAILABLE 전용으로 불변이며, UNDER_MAINTENANCE/
 // NO_OFFICIAL_FEED edge는 strict_route_eligible=0 이어야 한다.
 const verifiedAccessibilityStatuses = new Set(["AVAILABLE", "UNDER_MAINTENANCE", "NO_OFFICIAL_FEED"]);
+const coverageRegionIdByStationRegion = new Map([
+  ["수도권", "capital"],
+  ["부산권", "busan"],
+  ["대구권", "daegu"],
+  ["광주권", "gwangju"],
+  ["대전권", "daejeon"],
+]);
 const maintenanceOperationalStatuses = new Set([
   "UNDER_MAINTENANCE",
   "MAINTENANCE",
@@ -1028,7 +1035,12 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
     return;
   }
   const stationLineRows = database
-    .prepare("SELECT station_id, line_id FROM station_lines")
+    .prepare(`
+      SELECT sl.station_id, sl.line_id, s.region, l.operator_id
+      FROM station_lines sl
+      JOIN stations s ON s.id = sl.station_id
+      JOIN lines l ON l.id = sl.line_id
+    `)
     .all();
   const stationIds = new Set(
     database
@@ -1042,27 +1054,11 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
   if (stationLineNodes.size === 0) {
     return;
   }
-  const routeGraphRequiredNodes = connectedLineNodes(stationLineRows);
-
-  const connectedNodes = new Set();
-  const directedAdjacency = new Map(
-    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
-  );
-  const undirectedAdjacency = new Map(
-    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
-  );
   const edges = database
     .prepare("SELECT id, from_node_id, to_node_id, edge_type FROM network_edges ORDER BY id")
     .all();
-  let hasExplicitRouteGraphEdge = false;
-  addGeneratedStationTransferEdges(
-    stationLineRows,
-    routeGraphRequiredNodes,
-    connectedNodes,
-    directedAdjacency,
-    undirectedAdjacency,
-  );
-  for (const edge of edges) {
+  const explicitRouteGraphLineIds = new Set();
+  const resolvedEdges = edges.map((edge) => {
     const edgeType = normalizedEdgeType(edge.edge_type);
     const endpoints = [
       routeEndpoint(edge.from_node_id, stationIds, stationLineNodes),
@@ -1081,15 +1077,44 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
       }
     }
     validateAccessEdgeEndpointShape(edge, edgeType, endpoints, pack);
+    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edgeType);
+    if (routeGraphEdgeType !== null) {
+      for (const { stationLineNode } of endpoints) {
+        if (stationLineNode !== null) explicitRouteGraphLineIds.add(stationLineNode.split(":")[1]);
+      }
+    }
+    return { edge, endpoints, routeGraphEdgeType };
+  });
+
+  const hasRegressionContract = Boolean(pack.routeRegressionScope)
+    || (Array.isArray(pack.representativeRouteRegressions) && pack.representativeRouteRegressions.length > 0);
+  if (explicitRouteGraphLineIds.size === 0 && !hasRegressionContract) return;
+  const requiredLineIds = hasRegressionContract
+    ? new Set(stationLineRows.map(({ line_id }) => line_id))
+    : explicitRouteGraphLineIds;
+  const routeGraphRequiredNodes = connectedLineNodes(stationLineRows, requiredLineIds);
+  const connectedNodes = new Set();
+  const directedAdjacency = new Map(
+    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  const undirectedAdjacency = new Map(
+    [...routeGraphRequiredNodes].map((nodeId) => [nodeId, new Set()]),
+  );
+  addGeneratedStationTransferEdges(
+    stationLineRows,
+    routeGraphRequiredNodes,
+    connectedNodes,
+    directedAdjacency,
+    undirectedAdjacency,
+  );
+  for (const { endpoints, routeGraphEdgeType } of resolvedEdges) {
     const fromNode = endpoints[0].stationLineNode;
     const toNode = endpoints[1].stationLineNode;
-    const routeGraphEdgeType = routeGraphConnectivityEdgeType(edgeType);
     if (
       routeGraphEdgeType !== null &&
       routeGraphRequiredNodes.has(fromNode) &&
       routeGraphRequiredNodes.has(toNode)
     ) {
-      hasExplicitRouteGraphEdge = true;
       addRouteGraphEdge(
         fromNode,
         toNode,
@@ -1108,21 +1133,15 @@ function validateNetworkEdgeStationLineEndpoints(database, pack) {
       }
     }
   }
-
-  if (
-    !hasExplicitRouteGraphEdge &&
-    !pack.routeRegressionScope &&
-    (!Array.isArray(pack.representativeRouteRegressions) || pack.representativeRouteRegressions.length === 0)
-  ) {
-    return;
-  }
   for (const nodeId of routeGraphRequiredNodes) {
     if (!connectedNodes.has(nodeId)) {
       throw new Error(`${pack.id}@${pack.version} station-line node is isolated from route graph: ${nodeId}`);
     }
   }
-  validateRouteGraphSingleComponent(undirectedAdjacency, pack);
-  validateRouteGraphDirectedReachability(directedAdjacency, pack);
+  for (const networkNodes of routeGraphNetworkScopes(stationLineRows, resolvedEdges, routeGraphRequiredNodes)) {
+    validateRouteGraphSingleComponent(scopedAdjacency(undirectedAdjacency, networkNodes), pack);
+    validateRouteGraphDirectedReachability(scopedAdjacency(directedAdjacency, networkNodes), pack);
+  }
 }
 
 function stationLineNodeId(stationId, lineId) {
@@ -1207,16 +1226,76 @@ function isNetworkTransferEdgeType(edgeType) {
     edgeType === "LEGACY_TRANSFER";
 }
 
-function connectedLineNodes(stationLineRows) {
+function connectedLineNodes(stationLineRows, requiredLineIds) {
   const lineCounts = new Map();
   for (const row of stationLineRows) {
     lineCounts.set(row.line_id, (lineCounts.get(row.line_id) ?? 0) + 1);
   }
   return new Set(
     stationLineRows
-      .filter((row) => (lineCounts.get(row.line_id) ?? 0) > 1)
+      .filter((row) => requiredLineIds.has(row.line_id) && (lineCounts.get(row.line_id) ?? 0) > 1)
       .map((row) => stationLineNodeId(row.station_id, row.line_id)),
   );
+}
+
+function routeGraphNetworkScopes(stationLineRows, resolvedEdges, requiredNodes) {
+  const scopeByNode = new Map();
+  const parentByScope = new Map();
+  for (const row of stationLineRows) {
+    const nodeId = stationLineNodeId(row.station_id, row.line_id);
+    if (!requiredNodes.has(nodeId)) continue;
+    const scope = `${row.region}\0${row.operator_id}`;
+    scopeByNode.set(nodeId, scope);
+    if (!parentByScope.has(scope)) parentByScope.set(scope, scope);
+  }
+  const root = (scope) => {
+    let current = scope;
+    while (parentByScope.get(current) !== current) current = parentByScope.get(current);
+    let cursor = scope;
+    while (parentByScope.get(cursor) !== current) {
+      const next = parentByScope.get(cursor);
+      parentByScope.set(cursor, current);
+      cursor = next;
+    }
+    return current;
+  };
+  const union = (left, right) => {
+    const leftRoot = root(left);
+    const rightRoot = root(right);
+    if (leftRoot !== rightRoot) parentByScope.set(rightRoot, leftRoot);
+  };
+  const scopesByStation = new Map();
+  for (const row of stationLineRows) {
+    const scope = scopeByNode.get(stationLineNodeId(row.station_id, row.line_id));
+    if (!scope) continue;
+    const scopes = scopesByStation.get(row.station_id) ?? [];
+    scopes.push(scope);
+    scopesByStation.set(row.station_id, scopes);
+  }
+  for (const scopes of scopesByStation.values()) {
+    for (let index = 1; index < scopes.length; index += 1) union(scopes[0], scopes[index]);
+  }
+  for (const { endpoints, routeGraphEdgeType } of resolvedEdges) {
+    if (routeGraphEdgeType === null) continue;
+    const left = scopeByNode.get(endpoints[0].stationLineNode);
+    const right = scopeByNode.get(endpoints[1].stationLineNode);
+    if (left && right) union(left, right);
+  }
+  const nodesByNetwork = new Map();
+  for (const [nodeId, scope] of scopeByNode) {
+    const network = root(scope);
+    const nodes = nodesByNetwork.get(network) ?? new Set();
+    nodes.add(nodeId);
+    nodesByNetwork.set(network, nodes);
+  }
+  return nodesByNetwork.values();
+}
+
+function scopedAdjacency(adjacency, nodes) {
+  return new Map([...nodes].map((nodeId) => [
+    nodeId,
+    new Set([...(adjacency.get(nodeId) ?? [])].filter((nextNodeId) => nodes.has(nextNodeId))),
+  ]));
 }
 
 function addGeneratedStationTransferEdges(
@@ -1736,10 +1815,22 @@ function validatePositiveEdgeProvenance(edge, sourceUpdatedAtById, pack, accessi
 }
 
 function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
+  const accessibilityScopes = accessibilityCoverageScopes(database, accessibilityEvidence.sourceById);
   const stationLineRows = database
-    .prepare("SELECT station_id, line_id FROM station_lines ORDER BY station_id, line_id")
+    .prepare(`
+      SELECT sl.station_id, sl.line_id, l.operator_id, s.region
+      FROM station_lines sl
+      JOIN lines l ON l.id = sl.line_id
+      JOIN stations s ON s.id = sl.station_id
+      ORDER BY sl.station_id, sl.line_id
+    `)
     .all();
-  const requiredPairs = requiredAccessibilityCoveragePairs(stationLineRows);
+  const claimedStationLineRows = accessibilityScopes === null
+    ? stationLineRows
+    : stationLineRows.filter((row) => accessibilityScopes.has(
+      accessibilityCoverageScopeKey(stationRegionId(row.region), row.operator_id),
+    ));
+  const requiredPairs = requiredAccessibilityCoveragePairs(claimedStationLineRows);
   const verifiedPairs = verifiedAccessibilityCoveragePairs(edgeRows, accessibilityEvidence);
 
   return {
@@ -1747,6 +1838,49 @@ function productionVerifiedCoverage(database, edgeRows, accessibilityEvidence) {
     exit: coverageItem(requiredPairs.exit, verifiedPairs.exit),
     transfer: coverageItem(requiredPairs.transfer, verifiedPairs.transfer),
   };
+}
+
+function accessibilityCoverageScopes(database, sourceById) {
+  const row = database.prepare(
+    "SELECT value FROM catalog_metadata WHERE key = 'productionCoverageEvidence'",
+  ).get();
+  if (!row) return null;
+  let entries;
+  try {
+    entries = JSON.parse(row.value);
+  } catch {
+    throw new Error("productionCoverageEvidence metadata must be valid JSON");
+  }
+  if (!Array.isArray(entries)) throw new Error("productionCoverageEvidence metadata must be an array");
+  const scopes = new Set();
+  const hasAccessibilitySource = [...sourceById.values()]
+    .some((source) => sourceSupportsDomain(source, "accessibility_facilities"));
+  for (const entry of entries) {
+    if (entry?.sourceDomain !== "accessibility_facilities") continue;
+    if (typeof entry.regionId !== "string" || !entry.regionId
+      || typeof entry.operatorId !== "string" || !entry.operatorId
+      || !Array.isArray(entry.sourceIds) || entry.sourceIds.length === 0
+      || entry.sourceIds.some((sourceId) => !sourceSupportsCoverageScope(
+        sourceById.get(sourceId), entry.regionId, entry.operatorId, "accessibility_facilities",
+      ))) {
+      throw new Error("productionCoverageEvidence accessibility scope is invalid");
+    }
+    scopes.add(accessibilityCoverageScopeKey(entry.regionId, entry.operatorId));
+  }
+  if (hasAccessibilitySource && scopes.size === 0) {
+    throw new Error("productionCoverageEvidence accessibility scope is missing");
+  }
+  return scopes;
+}
+
+function stationRegionId(region) {
+  const regionId = coverageRegionIdByStationRegion.get(String(region ?? "").normalize("NFKC"));
+  if (!regionId) throw new Error(`station region is not mapped to a coverage region: ${region}`);
+  return regionId;
+}
+
+function accessibilityCoverageScopeKey(regionId, operatorId) {
+  return `${regionId}\0${operatorId}`;
 }
 
 function requiredAccessibilityCoveragePairs(stationLineRows) {
@@ -2107,6 +2241,12 @@ function stationLineEvidenceKey(stationId, lineId) {
 
 function sourceSupportsDomain(source, domain) {
   return source?.coverageScope?.sourceDomains?.includes(domain) === true;
+}
+
+function sourceSupportsCoverageScope(source, regionId, operatorId, domain) {
+  return sourceSupportsDomain(source, domain)
+    && source.coverageScope.regionIds?.includes(regionId) === true
+    && source.coverageScope.operatorIds?.includes(operatorId) === true;
 }
 
 function edgePairKey(fromNodeId, toNodeId) {

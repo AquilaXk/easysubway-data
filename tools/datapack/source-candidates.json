@@ -3413,18 +3413,18 @@
         "responseEnvelope": "response.header + response.body.items.item",
         "responseFields": ["distfloat", "fee", "min", "sec"],
         "runner": {
-          "command": "node tools/datapack/probe-daejeon-coverage-api.mjs",
-          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_API_PROBE_SOURCE_ID", "DAEJEON_API_PROBE_OUTPUT"]
+          "command": "node tools/datapack/collect-daejeon-route-topology.mjs",
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_TOPOLOGY_OUTPUT"]
         },
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
       "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "validated_live_schema_admitted",
+      "admissionStatus": "production_topology_materialized",
       "serviceKeyHandling": "offline_probe_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "retrievedAt": "2026-07-14",
+        "retrievedAt": "2026-07-20",
         "endpoint": "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": ["XML"],
@@ -3442,8 +3442,21 @@
           "admitted": true
         },
         "coverageAssessment": {
-          "state": "MISSING",
-          "reasonCode": "LIVE_SCHEMA_ADMITTED_FULL_OD_MAPPING_NOT_IMPLEMENTED"
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_graph_topology",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
+          "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs"
+        },
+        "topologyValidation": {
+          "observedAt": "2026-07-19T22:12:49.895Z",
+          "stationCount": 22,
+          "edgeCount": 42,
+          "excludedTransferCount": 0,
+          "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
+          "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+          "evidenceArtifact": "tools/datapack/sources/daejeon-route-topology-20260720.json"
         },
         "historicalSources": [
           {
@@ -3457,10 +3470,11 @@
           }
         ],
         "coverageLimitations": [
-          "대전도시철도 1호선의 역간 소요시간·거리·요금 자료"
+          "대전도시철도 1호선 22개 역의 인접 21구간 양방향 edge만 포함한다",
+          "provider credential과 raw XML은 배포 artifact에 포함하지 않는다"
         ]
       },
-      "nextAction": "전체 OD와 canonical station mapping을 별도 이슈에서 검증한 뒤 topology materialization을 판정한다."
+      "nextAction": "#2325에서 공식 timetable과 이 topology의 인접 소요시간을 결합해 schedule_timetable production admission을 완료한다."
     },
     {
       "id": "public-data-portal-search",

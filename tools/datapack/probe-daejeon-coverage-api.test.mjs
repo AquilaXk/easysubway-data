@@ -120,20 +120,29 @@ test("대전 열차시각표 candidate는 live XML schema만 admission하고 cov
   assert.deepEqual(timetableEvidence.outputFields, candidate.evidence.outputFields);
 });
 
-test("대전 역간 candidate는 official XML만 active로 admission하고 topology는 MISSING이다", () => {
+test("대전 역간 candidate는 official XML과 full adjacent OD로 topology를 production admission한다", () => {
   const candidate = sourceCandidates.candidates.find(({ id }) => id === "daejeon-station-distance-fare");
   assert.equal(candidate.detailUrl, "https://www.data.go.kr/data/15158794/openapi.do");
   assert.equal(candidate.requestUrl, "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01");
-  assert.equal(candidate.admissionStatus, "validated_live_schema_admitted");
+  assert.equal(candidate.admissionStatus, "production_topology_materialized");
   assert.equal(candidate.evidence.liveValidation.rowCount > 0, true);
-  assert.equal(candidate.evidence.coverageAssessment.state, "MISSING");
+  assert.equal(candidate.evidence.coverageAssessment.state, "SUPPORTED");
+  assert.equal(candidate.evidence.coverageAssessment.requirementCount, 1);
+  assert.equal(candidate.evidence.topologyValidation.edgeCount, 42);
+  assert.equal(candidate.evidence.topologyValidation.contentSha256,
+    "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f");
+  assert.deepEqual(candidate.operation.runner, {
+    command: "node tools/datapack/collect-daejeon-route-topology.mjs",
+    requiredEnv: ["DATA_GO_KR_SERVICE_KEY", "DAEJEON_TOPOLOGY_OUTPUT"],
+  });
   assert.deepEqual(candidate.evidence.coverageLimitations, [
-    "대전도시철도 1호선의 역간 소요시간·거리·요금 자료",
+    "대전도시철도 1호선 22개 역의 인접 21구간 양방향 edge만 포함한다",
+    "provider credential과 raw XML은 배포 artifact에 포함하지 않는다",
   ]);
   assert.equal(candidate.evidence.historicalSources[0].reasonCode, "SUPERSEDED_FOR_LIVE_PROBE");
   assert.equal(candidate.evidence.historicalSources[0].runtimeEligible, false);
   assert.equal(candidate.nextAction,
-    "전체 OD와 canonical station mapping을 별도 이슈에서 검증한 뒤 topology materialization을 판정한다.");
+    "#2325에서 공식 timetable과 이 topology의 인접 소요시간을 결합해 schedule_timetable production admission을 완료한다.");
   assert.equal(distanceFareEvidence.rawSha256, candidate.evidence.liveValidation.rawSha256);
   assert.equal(distanceFareEvidence.rawBytes > 0, true);
   assert.equal(distanceFareEvidence.observedAt.startsWith("2026-07-14"), true);
