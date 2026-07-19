@@ -20,6 +20,8 @@ const contractPath = path.join(root, "tools/datapack/itx-cheongchun-coverage-con
 const canonicalPackPath = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
 const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 const subwayRosterPath = path.join(root, "tools/datapack/sources/kric-line4-route-roster-20260706.json");
+const reviewedPackPath = path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json");
+const sourceSnapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json");
 const buildNow = new Date("2026-07-16T00:00:00.000Z");
 
 function sha256(value) {
@@ -38,6 +40,8 @@ async function inputs() {
   const canonicalPackGzipBytes = await readFile(canonicalPackPath);
   const topologyEvidenceBytes = await readFile(topologyEvidencePath);
   const subwayRosterBytes = await readFile(subwayRosterPath);
+  const reviewedPackBytes = await readFile(reviewedPackPath);
+  const sourceSnapshotsBytes = await readFile(sourceSnapshotsPath);
   return {
     baselineGzipBytes,
     contractBytes,
@@ -46,6 +50,8 @@ async function inputs() {
     canonicalPackGzipBytes,
     topologyEvidenceBytes,
     subwayRosterBytes,
+    reviewedPackBytes,
+    sourceSnapshotsBytes,
   };
 }
 
@@ -104,6 +110,14 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   );
   assert.ok(first.evidence.rowCounts.subwayTrips > 0);
   assert.ok(first.evidence.rowCounts.subwayStopTimes > first.evidence.rowCounts.subwayTrips);
+  assert.equal(first.evidence.rowCounts.stationPathwayNodes, 4);
+  assert.equal(first.evidence.rowCounts.stationPathwayEdges, 4);
+  assert.equal(first.evidence.rowCounts.transferRules, 0);
+  assert.equal(first.evidence.rowCounts.routeEdgeEvidence, 4);
+  assert.equal((first.sql.match(/INSERT INTO station_pathway_nodes/g) ?? []).length, 4);
+  assert.equal((first.sql.match(/INSERT INTO station_pathway_edges/g) ?? []).length, 4);
+  assert.equal((first.sql.match(/INSERT INTO transfer_rules/g) ?? []).length, 0);
+  assert.equal((first.sql.match(/INSERT INTO route_edge_evidence/g) ?? []).length, 4);
   assert.match(first.sql, /'ITX_CHEONGCHUN'/);
   assert.match(first.sql, /, 2135\);/);
   assert.equal((first.sql.match(/INSERT INTO transit_feed_info/g) ?? []).length, 1);
@@ -137,6 +151,164 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   ));
   assert.ok(first.evidence.servicePatternEvidence.localTripCount > 0);
   assert.ok(first.evidence.servicePatternEvidence.expressTripCount > 0);
+});
+
+test("접근성 source snapshot의 lineage와 governance 값을 그대로 materialize한다", async () => {
+  const value = await inputs();
+  const reviewedPack = JSON.parse(value.reviewedPackBytes);
+  const snapshots = JSON.parse(value.sourceSnapshotsBytes);
+  const parent = snapshots.find(
+    ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-capital-admission-20260712",
+  );
+  const child = {
+    ...parent,
+    snapshotId: "seoul-metro-accessibility-capital-admission-20260713",
+    retrievedAt: "2026-07-13T00:00:00Z",
+    sourceUpdatedAt: null,
+    rowCount: 9,
+    coverageCount: 2,
+    previousSnapshotId: parent.snapshotId,
+    diffSummary: { status: "CHANGED", rowDelta: 8, coverageDelta: 1 },
+    governancePolicyVersion: "2026-07-15",
+    governancePolicySha256: "a".repeat(64),
+  };
+  for (const pack of reviewedPack.packs) {
+    for (const edge of pack.networkEdges ?? []) {
+      if (["ENTRY", "EXIT"].includes(edge.edgeType) && edge.sourceSnapshotId === parent.snapshotId) {
+        edge.sourceSnapshotId = child.snapshotId;
+      }
+    }
+  }
+
+  const result = buildServerTimetableSnapshot({
+    ...value,
+    reviewedPackBytes: Buffer.from(JSON.stringify(reviewedPack)),
+    sourceSnapshotsBytes: Buffer.from(JSON.stringify([...snapshots, child])),
+    buildNow,
+  });
+  const parentOffset = result.sql.indexOf(`SELECT '${parent.snapshotId}'`);
+  const childStatement = result.sql.split("\n")
+    .find((line) => line.includes(`SELECT '${child.snapshotId}'`));
+
+  assert.ok(parentOffset >= 0);
+  assert.ok(childStatement);
+  assert.ok(parentOffset < result.sql.indexOf(childStatement));
+  assert.match(childStatement, /, NULL, NULL, NULL, 9, 2, /);
+  assert.match(childStatement, new RegExp(`, '${parent.snapshotId}', 'CHANGED', `));
+  assert.match(childStatement, /'\{"status":"CHANGED","rowDelta":8,"coverageDelta":1\}'/);
+  assert.match(childStatement, /, '2026-07-15', 'a{64}' WHERE/);
+  const parentStatement = result.sql.split("\n")
+    .find((line) => line.includes(`SELECT '${parent.snapshotId}'`));
+  assert.match(parentStatement, /, '2026-07-15', '[a-f0-9]{64}' WHERE/);
+});
+
+test("접근성 evidence identity는 실제 materialization 입력에만 결합한다", async () => {
+  const value = await inputs();
+  const baseline = buildServerTimetableSnapshot({ ...value, buildNow });
+  const reviewedPack = JSON.parse(value.reviewedPackBytes);
+  reviewedPack.unrelatedMetadata = "changed";
+  const snapshots = JSON.parse(value.sourceSnapshotsBytes);
+  snapshots.push({ snapshotId: "unrelated-snapshot" });
+
+  const unrelatedChange = buildServerTimetableSnapshot({
+    ...value,
+    reviewedPackBytes: Buffer.from(JSON.stringify(reviewedPack)),
+    sourceSnapshotsBytes: Buffer.from(JSON.stringify(snapshots)),
+    buildNow,
+  });
+
+  assert.equal(unrelatedChange.sql, baseline.sql);
+  assert.deepEqual(unrelatedChange.evidence, baseline.evidence);
+  const accessSql = baseline.sql.slice(baseline.sql.indexOf("INSERT INTO data_source_snapshots"));
+  assert.equal(
+    baseline.evidence.accessibilitySource.materializedSqlSha256,
+    sha256(Buffer.from(accessSql)),
+  );
+});
+
+test("접근성 edge의 계단 여부가 boolean이 아니면 strict materialization을 거부한다", async () => {
+  const value = await inputs();
+  const reviewedPack = JSON.parse(value.reviewedPackBytes);
+  reviewedPack.packs[0].networkEdges[0].includesStairs = "true";
+
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      reviewedPackBytes: Buffer.from(JSON.stringify(reviewedPack)),
+      buildNow,
+    }),
+    /canonical accessibility edge includesStairs is invalid/,
+  );
+});
+
+test("접근성 source snapshot의 정책 값이 boolean이 아니면 materialization을 거부한다", async () => {
+  const value = await inputs();
+
+  for (const field of ["redistributionAllowed", "credentialRedacted"]) {
+    const snapshots = JSON.parse(value.sourceSnapshotsBytes);
+    const snapshot = snapshots.find(
+      ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-capital-admission-20260712",
+    );
+    snapshot[field] = "false";
+
+    assert.throws(
+      () => buildServerTimetableSnapshot({
+        ...value,
+        sourceSnapshotsBytes: Buffer.from(JSON.stringify(snapshots)),
+        buildNow,
+      }),
+      /canonical accessibility source snapshot policy boolean is invalid/,
+    );
+  }
+});
+
+test("접근성 source와 edge의 숫자 값이 유효한 정수가 아니면 materialization을 거부한다", async () => {
+  const value = await inputs();
+  const snapshots = JSON.parse(value.sourceSnapshotsBytes);
+  const snapshot = snapshots.find(
+    ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-capital-admission-20260712",
+  );
+  snapshot.rowCount = "1";
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      sourceSnapshotsBytes: Buffer.from(JSON.stringify(snapshots)),
+      buildNow,
+    }),
+    /snapshot rowCount is invalid/,
+  );
+
+  for (const [field, invalidValue, message] of [
+    ["durationSeconds", 1.5, "pathway duration"],
+    ["distanceMeters", -1, "pathway distance"],
+    ["reliabilityScore", 101, "pathway reliability"],
+  ]) {
+    const reviewedPack = JSON.parse(value.reviewedPackBytes);
+    reviewedPack.packs[0].networkEdges[0][field] = invalidValue;
+    assert.throws(
+      () => buildServerTimetableSnapshot({
+        ...value,
+        reviewedPackBytes: Buffer.from(JSON.stringify(reviewedPack)),
+        buildNow,
+      }),
+      new RegExp(`${message} is invalid`),
+    );
+  }
+});
+
+test("접근성 edge endpoint 형식이 잘못되면 명시적인 build error로 거부한다", async () => {
+  const value = await inputs();
+  const reviewedPack = JSON.parse(value.reviewedPackBytes);
+  reviewedPack.packs[0].networkEdges[0].toNodeId = null;
+
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      reviewedPackBytes: Buffer.from(JSON.stringify(reviewedPack)),
+      buildNow,
+    }),
+    /canonical accessibility edge endpoints are invalid/,
+  );
 });
 
 test("complete snapshot은 source·completeness identity와 freshness를 fail closed한다", async () => {

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
+import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
@@ -38,6 +39,8 @@ export function buildServerTimetableSnapshot({
   canonicalPackGzipBytes,
   topologyEvidenceBytes,
   subwayRosterBytes,
+  reviewedPackBytes,
+  sourceSnapshotsBytes,
   canonicalGzipBytes,
   buildNow = new Date(),
 }) {
@@ -110,7 +113,8 @@ export function buildServerTimetableSnapshot({
   assertNoIdentityCollisions(baselineSql, itxSeed);
   const plannerIdentity = plannerIdentitySql(source, completeness);
   const subwayFares = officialSubwayFareSql(canonicalPackGzipBytes, baselineSql);
-  const sql = `${baselineSql}${itxSeed.sql}${plannerIdentity.sql}${subwayFares.sql}`;
+  const accessibility = canonicalAccessibilitySql(reviewedPackBytes, sourceSnapshotsBytes, canonicalPackIdentity);
+  const sql = `${baselineSql}${itxSeed.sql}${plannerIdentity.sql}${subwayFares.sql}${accessibility.sql}`;
   const sqlBytes = Buffer.from(sql);
   const gzipBytes = canonicalGzipBytes ?? gzipSync(sqlBytes, { level: 9, mtime: 0 });
   if (canonicalGzipBytes != null) {
@@ -152,6 +156,7 @@ export function buildServerTimetableSnapshot({
     },
     canonicalPackIdentity,
     canonicalPackLineage,
+    accessibilitySource: accessibility.source,
     canonicalStationSet: {
       version: `sha256:${canonicalStationSetHash}`,
       sha256: canonicalStationSetHash,
@@ -172,6 +177,10 @@ export function buildServerTimetableSnapshot({
       itxStopTimes: itxSeed.stopTimeCount,
       officialFares: plannerIdentity.fareCount + subwayFares.fareCount,
       routeServiceEvidence: 1,
+      stationPathwayNodes: accessibility.nodeCount,
+      stationPathwayEdges: accessibility.edgeCount,
+      transferRules: accessibility.transferRuleCount,
+      routeEdgeEvidence: accessibility.evidenceCount,
     },
   };
   const evidence = {
@@ -184,6 +193,205 @@ export function buildServerTimetableSnapshot({
     evidence,
     evidenceBytes: Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`),
   };
+}
+
+function canonicalAccessibilitySql(reviewedPackBytes, sourceSnapshotsBytes, canonicalPackIdentity) {
+  const fixture = parseJson(reviewedPackBytes, "reviewed production pack");
+  const sourceSnapshots = parseJson(sourceSnapshotsBytes, "source snapshots");
+  const pack = fixture?.packs?.find(({ id }) => id === canonicalPackIdentity.id);
+  if (!pack || !Array.isArray(pack.networkEdges) || !Array.isArray(sourceSnapshots)) {
+    throw new Error("canonical accessibility source is invalid");
+  }
+  const edges = pack.networkEdges
+    .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
+    .sort((left, right) => left.id.localeCompare(right.id));
+  if (edges.length === 0) throw new Error("canonical accessibility source has no entry or exit edges");
+  const snapshotsById = new Map(sourceSnapshots.map((row) => [row.snapshotId, row]));
+  const nodes = new Map();
+  const usedSnapshots = new Map();
+  for (const edge of edges) {
+    if (typeof edge.includesStairs !== "boolean") {
+      throw new Error(`canonical accessibility edge includesStairs is invalid: ${edge.id}`);
+    }
+    const endpoint = accessEdgeEndpoint(edge);
+    addAccessNode(nodes, endpoint.stationId, null, edge.edgeType === "ENTRY" ? edge.fromNodeId : edge.toNodeId);
+    addAccessNode(nodes, endpoint.stationId, endpoint.lineId, edge.edgeType === "ENTRY" ? edge.toNodeId : edge.fromNodeId);
+    const snapshot = snapshotsById.get(edge.sourceSnapshotId);
+    if (!snapshot || snapshot.sourceId !== edge.sourceId) {
+      throw new Error(`canonical accessibility source snapshot is missing: ${edge.id}`);
+    }
+    addSourceSnapshotLineage(snapshot, snapshotsById, usedSnapshots, new Set());
+  }
+  const snapshotStatements = [...usedSnapshots.values()]
+    .map(sourceSnapshotInsert);
+  const nodeStatements = [...nodes.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(accessNodeInsert);
+  const edgeStatements = edges.map(accessEdgeInsert);
+  const evidenceStatements = edges.map((edge) => routeEdgeEvidenceInsert(edge, accessEdgeEndpoint(edge)));
+  const sql = `${[...snapshotStatements, ...nodeStatements, ...edgeStatements, ...evidenceStatements].join("\n")}\n`;
+  return {
+    sql,
+    source: {
+      materializedSqlSha256: sha256(Buffer.from(sql)),
+    },
+    nodeCount: nodes.size,
+    edgeCount: edges.length,
+    transferRuleCount: 0,
+    evidenceCount: evidenceStatements.length,
+  };
+}
+
+function addSourceSnapshotLineage(snapshot, snapshotsById, usedSnapshots, visiting) {
+  if (usedSnapshots.has(snapshot.snapshotId)) return;
+  if (visiting.has(snapshot.snapshotId)) throw new Error("canonical accessibility source snapshot lineage cycles");
+  visiting.add(snapshot.snapshotId);
+  if (snapshot.previousSnapshotId != null) {
+    const previous = snapshotsById.get(snapshot.previousSnapshotId);
+    if (!previous || previous.sourceId !== snapshot.sourceId) {
+      throw new Error(`canonical accessibility source snapshot ancestor is missing: ${snapshot.snapshotId}`);
+    }
+    addSourceSnapshotLineage(previous, snapshotsById, usedSnapshots, visiting);
+  }
+  visiting.delete(snapshot.snapshotId);
+  usedSnapshots.set(snapshot.snapshotId, snapshot);
+}
+
+function accessEdgeEndpoint(edge) {
+  const platformNodeId = edge.edgeType === "ENTRY" ? edge.toNodeId : edge.fromNodeId;
+  const stationNodeId = edge.edgeType === "ENTRY" ? edge.fromNodeId : edge.toNodeId;
+  if (typeof platformNodeId !== "string" || typeof stationNodeId !== "string") {
+    throw new Error(`canonical accessibility edge endpoints are invalid: ${edge.id}`);
+  }
+  const separator = platformNodeId.lastIndexOf(":");
+  const stationId = platformNodeId.slice(0, separator);
+  const lineId = platformNodeId.slice(separator + 1);
+  if (separator < 1 || stationNodeId !== stationId || !lineId) {
+    throw new Error(`canonical accessibility edge endpoints are invalid: ${edge.id}`);
+  }
+  return { stationId, lineId };
+}
+
+function addAccessNode(nodes, stationId, lineId, id) {
+  const node = { id, stationId, lineId, nodeType: lineId == null ? "CONCOURSE" : "PLATFORM" };
+  const existing = nodes.get(id);
+  if (existing && JSON.stringify(existing) !== JSON.stringify(node)) {
+    throw new Error(`canonical accessibility node identity collision: ${id}`);
+  }
+  nodes.set(id, node);
+}
+
+function sourceSnapshotInsert(row) {
+  if (typeof row.redistributionAllowed !== "boolean" || typeof row.credentialRedacted !== "boolean") {
+    throw new Error(`canonical accessibility source snapshot policy boolean is invalid: ${row.snapshotId}`);
+  }
+  const rowCount = sqlInteger(row.rowCount, "snapshot rowCount");
+  const coverageCount = sourceSnapshotCoverageCount(row, rowCount);
+  const legacyGovernance = approvedLegacyGovernanceBinding(row);
+  const diffSummary = row.diffSummary == null
+    ? null
+    : (typeof row.diffSummary === "string" ? row.diffSummary : row.diffSummary.status);
+  const values = [
+    sqlText(row.snapshotId, "snapshot id"), sqlText(row.sourceId, "snapshot source id"),
+    sqlText(row.provider, "snapshot provider"), sqlTimestamp(row.retrievedAt, "snapshot retrievedAt"),
+    sqlNullableTimestamp(row.sourceUpdatedAt, "snapshot sourceUpdatedAt"),
+    sqlNullableTimestamp(row.freshnessBasisAt, "snapshot freshnessBasisAt"),
+    sqlNullableTimestamp(row.providerValidUntil, "snapshot providerValidUntil"),
+    rowCount, coverageCount,
+    sqlText(row.rawSha256, "snapshot rawSha256"), sqlText(row.rawObjectUri, "snapshot rawObjectUri"),
+    sqlText(row.redactedRequestFingerprint, "snapshot request fingerprint"),
+    sqlText(row.schemaFingerprint, "snapshot schema fingerprint"), sqlText(row.snapshotStatus, "snapshot status"),
+    sqlText(row.schemaStatus, "snapshot schema status"), sqlText(row.licenseStatus, "snapshot license status"),
+    sqlText(row.fetchStatus, "snapshot fetch status"), row.redistributionAllowed ? "TRUE" : "FALSE",
+    row.credentialRedacted ? "TRUE" : "FALSE",
+    sqlNullableText(row.previousSnapshotId, "snapshot previous id"),
+    sqlNullableText(diffSummary, "snapshot diff summary"),
+    row.diffSummary == null ? "NULL" : sqlText(JSON.stringify(row.diffSummary), "snapshot diff summary JSON"),
+    sqlTimestamp(row.freshnessExpiresAt, "snapshot freshnessExpiresAt"),
+    sqlTimestamp(row.rawRetentionExpiresAt, "snapshot rawRetentionExpiresAt"),
+    sqlNullableText(row.governancePolicyVersion ?? legacyGovernance?.governancePolicyVersion,
+      "snapshot governance policy version"),
+    sqlNullableText(row.governancePolicySha256 ?? legacyGovernance?.governancePolicySha256,
+      "snapshot governance policy hash"),
+  ];
+  const columns = [
+    "snapshot_id", "source_id", "provider", "retrieved_at", "source_updated_at", "freshness_basis_at",
+    "provider_valid_until", "row_count", "coverage_count", "raw_sha256", "raw_object_uri",
+    "redacted_request_fingerprint", "schema_fingerprint", "snapshot_status", "schema_status",
+    "license_status", "fetch_status", "redistribution_allowed", "credential_redacted", "previous_snapshot_id",
+    "diff_summary", "diff_summary_json", "freshness_expires_at", "raw_retention_expires_at",
+    "governance_policy_version", "governance_policy_sha256",
+  ];
+  const exactIdentity = columns
+    .map((column, index) => `${column} IS NOT DISTINCT FROM ${values[index]}`)
+    .join(" AND ");
+  return `INSERT INTO data_source_snapshots (${columns.join(", ")}) `
+    + `SELECT ${values.join(", ")} WHERE NOT EXISTS (SELECT 1 FROM data_source_snapshots WHERE ${exactIdentity});`;
+}
+
+function sourceSnapshotCoverageCount(row, rowCount) {
+  if (Number.isInteger(row.coverageCount) && row.coverageCount >= 0) return row.coverageCount;
+  if (row.previousSnapshotId == null && row.diffSummary == null
+    && approvedLegacyGovernanceBinding(row) != null) return rowCount;
+  throw new Error(`canonical accessibility source snapshot coverage is missing: ${row.snapshotId}`);
+}
+
+function accessNodeInsert(node) {
+  return "INSERT INTO station_pathway_nodes (id, station_id, line_id, node_type, label) VALUES ("
+    + `${sqlText(node.id, "pathway node id")}, ${sqlText(node.stationId, "pathway station id")}, `
+    + `${node.lineId == null ? "NULL" : sqlText(node.lineId, "pathway line id")}, `
+    + `${sqlText(node.nodeType, "pathway node type")}, ${sqlText(node.id, "pathway node label")});`;
+}
+
+function accessEdgeInsert(edge) {
+  return "INSERT INTO station_pathway_edges (id, from_node_id, to_node_id, edge_type, duration_seconds, distance_meters, bidirectional, includes_stairs, reliability_score, accessibility_status, source_id, source_snapshot_id, provider_record_hash, provenance_kind, verification_status, last_verified_at, evidence_hash, instruction, legacy_internal_route_edge_id) VALUES ("
+    + `${sqlText(edge.id, "pathway edge id")}, ${sqlText(edge.fromNodeId, "pathway from node")}, `
+    + `${sqlText(edge.toNodeId, "pathway to node")}, ${sqlText(edge.edgeType, "pathway edge type")}, `
+    + `${sqlInteger(edge.durationSeconds, "pathway duration")}, `
+    + `${sqlInteger(edge.distanceMeters, "pathway distance")}, FALSE, ${edge.includesStairs ? "TRUE" : "FALSE"}, `
+    + `${sqlInteger(edge.reliabilityScore, "pathway reliability", 100)}, `
+    + `${sqlText(edge.accessibilityStatus, "pathway accessibility status")}, `
+    + `${sqlText(edge.sourceId, "pathway source id")}, ${sqlText(edge.sourceSnapshotId, "pathway source snapshot id")}, `
+    + `${sqlText(edge.providerRecordHash, "pathway provider hash")}, ${sqlText(edge.provenanceKind, "pathway provenance")}, `
+    + `${sqlText(edge.verificationStatus, "pathway verification")}, ${sqlTimestamp(edge.lastVerifiedAt, "pathway verifiedAt")}, `
+    + `${sqlText(edge.evidenceHash, "pathway evidence hash")}, '', ${sqlText(edge.id, "legacy pathway edge id")});`;
+}
+
+function routeEdgeEvidenceInsert(edge, endpoint) {
+  const strictEligible = edge.accessibilityStatus === "AVAILABLE"
+    && edge.verificationStatus === "VERIFIED"
+    && ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_VERIFIED"].includes(edge.provenanceKind)
+    && edge.includesStairs === false;
+  return "INSERT INTO route_edge_evidence (id, station_id, line_id, edge_id, edge_type, source_id, source_snapshot_id, provenance_kind, verification_status, last_verified_at, evidence_hash, strict_route_eligible, blocker_reason, created_at) VALUES ("
+    + `${sqlText(`route-evidence-${edge.id}`, "route evidence id")}, ${sqlText(endpoint.stationId, "route evidence station")}, `
+    + `${sqlText(endpoint.lineId, "route evidence line")}, ${sqlText(edge.id, "route evidence edge")}, `
+    + `${sqlText(edge.edgeType, "route evidence type")}, ${sqlText(edge.sourceId, "route evidence source")}, `
+    + `${sqlText(edge.sourceSnapshotId, "route evidence snapshot")}, ${sqlText(edge.provenanceKind, "route evidence provenance")}, `
+    + `${sqlText(edge.verificationStatus, "route evidence verification")}, ${sqlTimestamp(edge.lastVerifiedAt, "route evidence verifiedAt")}, `
+    + `${sqlText(edge.evidenceHash, "route evidence hash")}, ${strictEligible ? "TRUE" : "FALSE"}, `
+    + `${strictEligible ? "NULL" : sqlText(edge.accessibilityStatus, "route evidence blocker")}, `
+    + `${sqlTimestamp(edge.lastVerifiedAt, "route evidence createdAt")});`;
+}
+
+function sqlTimestamp(value, label) {
+  const date = new Date(requiredText(value, label));
+  if (Number.isNaN(date.getTime())) throw new Error(`${label} is invalid`);
+  return `'${date.toISOString().slice(0, 19).replace("T", " ")}'`;
+}
+
+function sqlInteger(value, label, maximum = Number.MAX_SAFE_INTEGER) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
+function sqlNullableTimestamp(value, label) {
+  return value == null ? "NULL" : sqlTimestamp(value, label);
+}
+
+function sqlNullableText(value, label) {
+  return value == null ? "NULL" : sqlText(value, label);
 }
 
 function plannerIdentitySql(source, completeness) {
@@ -731,6 +939,10 @@ async function main() {
     ?? "tools/datapack/itx-cheongchun-topology-evidence.json");
   const subwayRosterPath = path.resolve(root, args["subway-roster"]
     ?? "tools/datapack/sources/kric-line4-route-roster-20260706.json");
+  const reviewedPackPath = path.resolve(root, args["reviewed-pack"]
+    ?? "tools/datapack/release/capital-production-reviewed-pack.json");
+  const sourceSnapshotsPath = path.resolve(root, args["source-snapshots"]
+    ?? "tools/datapack/release/source-snapshots.json");
   const canonicalGzipBytes = args.check ? await readFile(outputPath) : undefined;
   const contractBytes = await readFile(contractPath);
   const contract = parseJson(contractBytes, "coverage contract");
@@ -745,6 +957,8 @@ async function main() {
     canonicalPackGzipBytes: await readFile(canonicalPackPath),
     topologyEvidenceBytes: await readFile(topologyEvidencePath),
     subwayRosterBytes: await readFile(subwayRosterPath),
+    reviewedPackBytes: await readFile(reviewedPackPath),
+    sourceSnapshotsBytes: await readFile(sourceSnapshotsPath),
     canonicalGzipBytes,
     buildNow: buildClock(),
   });
