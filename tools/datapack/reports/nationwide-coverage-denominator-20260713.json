@@ -6,7 +6,7 @@
   "inputs": {
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "c2bb2cbdb90452ec5ca5f94a7bbe8e9e8b22d7eadad5d4b370605083f8873a98"
+      "sha256": "573d880cfc4d252b642500d8d1c4e612dec6a6127698e4533a013574ab0fa062"
     },
     "officialSnapshot": {
       "path": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",

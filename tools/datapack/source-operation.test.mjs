@@ -496,6 +496,26 @@ test("validate는 credential-free operation을 명시적으로 허용한다", ()
   );
 });
 
+test("validate는 required, fixed, optional parameter를 구분하고 중복을 거부한다", () => {
+  const operation = validOperation({
+    fixedParameters: { act: "xml" },
+    optionalParameters: ["scode"],
+  });
+  assert.equal(validateOperation(candidate("a", { operation })), operation);
+
+  for (const invalid of [
+    validOperation({ fixedParameters: { serviceKey: "secret" } }),
+    validOperation({ fixedParameters: { act: "xml" }, optionalParameters: ["act"] }),
+    validOperation({ optionalParameters: ["serviceKey"] }),
+    validOperation({ fixedParameters: { act: "" } }),
+  ]) {
+    assert.throws(
+      () => validateOperation(candidate("a", { operation: invalid })),
+      /credential values are forbidden|parameter names must be disjoint|fixedParameters\.act is required/,
+    );
+  }
+});
+
 test("validate는 operation endpoint mismatch를 거부한다", () => {
   const invalid = candidate("a", {
     operation: validOperation({ endpoint: "https://provider.example/wrong" }),

@@ -245,7 +245,8 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
     throw new Error(`${candidate.id}.operation credential values are forbidden`);
   }
   requireAllowedKeys(operation, new Set([
-    "method", "endpoint", "sampleUrl", "auth", "requiredParameters", "responseEnvelope", "responseFields", "runner", "secretPolicy",
+    "method", "endpoint", "sampleUrl", "auth", "requiredParameters", "fixedParameters", "optionalParameters",
+    "responseEnvelope", "responseFields", "runner", "secretPolicy",
   ]), `${candidate.id}.operation`);
   if (!new Set(["GET", "POST"]).has(operation.method)) {
     throw new Error(`${candidate.id}.operation.method must be GET or POST`);
@@ -297,6 +298,27 @@ export function validateOperation(candidate, { allowMissing = false } = {}) {
   );
   if (authParameter != null && !requiredParameters.includes(authParameter)) {
     throw new Error(`${candidate.id}.operation.requiredParameters must include the auth parameter`);
+  }
+  const fixedParameters = operation.fixedParameters ?? {};
+  if (typeof fixedParameters !== "object" || Array.isArray(fixedParameters)) {
+    throw new TypeError(`${candidate.id}.operation.fixedParameters must be an object`);
+  }
+  for (const [name, value] of Object.entries(fixedParameters)) {
+    requiredText(name, `${candidate.id}.operation.fixedParameters name`);
+    requiredText(value, `${candidate.id}.operation.fixedParameters.${name}`);
+  }
+  const optionalParameters = stringList(
+    operation.optionalParameters ?? [],
+    `${candidate.id}.operation.optionalParameters`,
+    { allowEmpty: true },
+  );
+  const parameterNames = [
+    ...requiredParameters,
+    ...Object.keys(fixedParameters),
+    ...optionalParameters,
+  ];
+  if (new Set(parameterNames).size !== parameterNames.length) {
+    throw new Error(`${candidate.id}.operation parameter names must be disjoint`);
   }
   requiredText(operation.responseEnvelope, `${candidate.id}.operation.responseEnvelope`);
   if (operation.responseFields != null) {
@@ -410,11 +432,16 @@ export function operationHumanSummary(summary) {
   }
   if (summary.operation && !summary.operationValidationError) {
     const runner = [summary.operation.runner.command, ...(summary.operation.runner.arguments ?? [])].join(" ");
+    const fixedParameters = Object.entries(summary.operation.fixedParameters ?? {})
+      .map(([key, value]) => `${key}=${value}`)
+      .join(", ") || "none";
     lines.push(
       `auth env: ${summary.operation.auth.env ?? "not required"}`,
       `auth value encoding: ${summary.operation.auth.valueEncoding ?? "provider default"}`,
       `auth load policy: ${summary.operation.auth.loadPolicy ?? "runtime default"}`,
       `required params: ${summary.operation.requiredParameters.join(", ")}`,
+      `fixed params: ${fixedParameters}`,
+      `optional params: ${(summary.operation.optionalParameters ?? []).join(", ") || "none"}`,
       `response envelope: ${summary.operation.responseEnvelope}`,
       `runner: ${runner}`,
       `runner env: ${summary.operation.runner.requiredEnv.join(", ")}`,

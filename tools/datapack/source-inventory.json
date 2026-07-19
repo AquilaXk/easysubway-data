@@ -75,6 +75,82 @@
       }
     },
     {
+      "id": "busan-transportation-route-topology",
+      "displayName": "부산교통공사_도시철도 역간 거리·소요시간",
+      "owner": "부산교통공사",
+      "provider": "부산교통공사",
+      "providerDepartment": "영업처",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15001019/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "부산교통공사 1~4호선 114개 역의 220개 방향성 인접 edge",
+      "coverageScope": {
+        "regionIds": ["busan"],
+        "operatorIds": ["busan-transportation"],
+        "lineIds": [
+          "line-ab1a041f6266",
+          "line-d74614a04530",
+          "line-d812a5bc1e5f",
+          "line-eb7b47920390"
+        ],
+        "sourceDomains": ["route_graph_topology"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "realtime",
+      "observedDataUpdatedAt": "2026-07-20",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 제1유형",
+        "attribution": "부산교통공사, 공공누리 제1유형(출처표시); 제3자 권리 포함 저작권 표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15001019/openapi.do"
+      },
+      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters"],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "realtime",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "realtime",
+          "unsupportedNotes": "source provides static route travel cost, not realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "realtime",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2319,
+        "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
+        "verificationTest": "tools/datapack/materialize-busan-route-topology.test.mjs",
+        "snapshotId": "busan-transportation-route-topology-20260720",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+        "capturedAt": "2026-07-19T18:13:31.841Z",
+        "freshUntil": "2026-07-20T18:13:31.841Z",
+        "stationCount": 114,
+        "edgeCount": 220,
+        "excludedTransferCount": 18,
+        "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
+        "contentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      }
+    },
+    {
       "id": "kric-disabled-toilet",
       "displayName": "국가철도공단_역사별 장애인 화장실 위치",
       "owner": "국가철도공단",
