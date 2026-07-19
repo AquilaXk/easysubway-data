@@ -1,10 +1,20 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { TextDecoder } from "node:util";
 import vm from "node:vm";
 
+import {
+  normalizeMolitProviderLineName,
+  parseMolitSvgProviderIdentity,
+} from "./lib/molit-svg-provider-identity.mjs";
+
 const sourceId = "molit-urban-rail-full-route";
+const kricProviderCodeCatalogSourceId = "kric-provider-code-catalog-20260228";
+const kricProviderCodeCatalogSha256 = "ef1f8b094e32e81c7390e8566984293dcefcc85e7fadacfe4433e77ddcc61272";
+const kricProviderCodeCatalogContentSha256 = "012e7dca252e148d148af8146e87d0bb5484de4638379a39204eb492e0413c26";
 const seoulMetroSourceId = "seoulmetro-cyberstation";
 const humetroSourceId = "humetro-cyberstation";
 const grtcSourceId = "grtc-cyberstation";
@@ -21,6 +31,8 @@ const knownOperatorIds = new Map([
   ["광주교통공사", "gwangju-metropolitan-rapid-transit"],
   ["대전교통공사", "daejeon-transportation"],
   ["인천교통공사", "incheon-transit"],
+  ["한국철도공사", "korail"],
+  ["김포골드라인에스알에스(주)", "operator-2e23276dfa94"],
 ]);
 
 const knownLineIds = new Map([
@@ -71,6 +83,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const csvPath = requireArg(args, "csv");
   const svgCsvPath = requireArg(args, "svg-csv");
+  const kricCodeCatalogPath = requireArg(args, "kric-code-catalog");
   const seoulMetroPath = args["seoulmetro-js"];
   const humetroHtmlPath = args["humetro-html"];
   const humetroCssPath = args["humetro-css"];
@@ -81,6 +94,7 @@ async function main() {
   const outputPath = requireArg(args, "output");
   const csvBytes = await readFile(csvPath);
   const svgCsvBytes = await readFile(svgCsvPath);
+  const kricCodeCatalogBytes = await readFile(kricCodeCatalogPath);
   const seoulMetroBytes = seoulMetroPath ? await readFile(seoulMetroPath) : Buffer.alloc(0);
   const humetroHtmlBytes = humetroHtmlPath ? await readFile(humetroHtmlPath) : Buffer.alloc(0);
   const humetroCssBytes = humetroCssPath ? await readFile(humetroCssPath) : Buffer.alloc(0);
@@ -111,11 +125,14 @@ async function main() {
   ]);
   const rows = parseCsv(csv).map(rowFromCsv).filter(Boolean);
   const svgRows = parseCsv(svgCsv).map(svgRowFromCsv).filter(Boolean);
-  const fixture = buildFixture(rows, svgRows, officialSources, sourceShaById);
+  const kricCodeCatalog = JSON.parse(kricCodeCatalogBytes.toString("utf8"));
+  validateKricProviderCodeCatalogIdentity(kricCodeCatalog);
+  sourceShaById.set(kricCodeCatalog.sourceId, kricCodeCatalog.sourceSha256);
+  const fixture = buildFixture(rows, svgRows, kricCodeCatalog, officialSources, sourceShaById);
   await writeFile(outputPath, `${JSON.stringify(fixture, null, 2)}\n`);
 }
 
-function buildFixture(rows, svgRows, officialSources, sourceShaById) {
+function buildFixture(rows, svgRows, kricCodeCatalog, officialSources, sourceShaById) {
   const operators = new Map();
   const lines = new Map();
   const coverageLineOperatorScopes = new Map();
@@ -212,9 +229,12 @@ function buildFixture(rows, svgRows, officialSources, sourceShaById) {
       `${right.regionId}:${right.operatorId}:${right.lineId}`,
     ),
   );
+  const providerLineScopes = providerLineScopesFor(kricCodeCatalog, coverageLineOperatorScopes, lines);
+  validateMolitProviderIdentities(svgRows, providerLineScopes);
   return {
     coverageLineOperatorScopeSemantics: "UNION_OF_PACK_SCOPES",
     coverageLineOperatorScopes: sortedCoverageLineOperatorScopes,
+    providerLineScopes,
     manifest: {
       ttlSeconds: 3600,
       activePack: { id: "capital", version: "1" },
@@ -931,12 +951,111 @@ function svgRowFromCsv(row) {
   }
   return {
     svgFileName: row[0].trim(),
+    providerIdentity: parseMolitSvgProviderIdentity(row[0].trim(), row[1].trim()),
     lineName: row[2].trim(),
     stationName: row[3].trim(),
     upPath: row[4].trim(),
     downPath: row[5].trim(),
     svgOrder: Number.parseInt(row[6].trim(), 10),
   };
+}
+
+function providerLineScopesFor(catalog, coverageScopes, lines) {
+  validateKricProviderCodeCatalogIdentity(catalog);
+  if (catalog?.artifactKind !== "kric-provider-line-catalog" || !Array.isArray(catalog.providerLines)
+    || !Number.isInteger(catalog.stationRecordCount) || catalog.stationRecordCount < 1) {
+    throw new Error("KRIC provider code catalog is invalid");
+  }
+  const providerByOperatorLine = new Map();
+  for (const [index, row] of catalog.providerLines.entries()) {
+    const { railOprIsttCd, operatorName, lnCd, lineName } = row ?? {};
+    if ([railOprIsttCd, operatorName, lnCd, lineName].some((value) => typeof value !== "string" || !value.trim())) {
+      throw new Error(`KRIC provider line catalog row ${index} is invalid`);
+    }
+    const key = `${operatorIdFor(operatorName)}:${normalizeMolitProviderLineName(lineName)}`;
+    const provider = { railOprIsttCd, lnCd };
+    const existing = providerByOperatorLine.get(key);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(provider)) {
+      throw new Error(`conflicting KRIC provider code: ${key}`);
+    }
+    providerByOperatorLine.set(key, provider);
+  }
+  const providerScopes = [];
+  for (const scope of coverageScopes.values()) {
+    const line = lines.get(scope.lineId);
+    if (!line) throw new Error(`coverage line is missing: ${scope.lineId}`);
+    const provider = providerByOperatorLine.get(`${scope.operatorId}:${normalizeMolitProviderLineName(line.nameKo)}`);
+    if (!provider) throw new Error(`KRIC provider code is missing: ${scope.regionId}:${scope.operatorId}:${scope.lineId}`);
+    providerScopes.push({
+      ...scope,
+      mreaWideCd: providerRegionCode(scope.regionId),
+      lnCd: provider.lnCd,
+      railOprIsttCd: provider.railOprIsttCd,
+    });
+  }
+  return providerScopes.sort((left, right) =>
+    `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
+      `${right.regionId}:${right.operatorId}:${right.lineId}`,
+    ),
+  );
+}
+
+export function validateKricProviderCodeCatalogIdentity(catalog) {
+  if (catalog?.sourceId !== kricProviderCodeCatalogSourceId) {
+    throw new Error("KRIC provider code catalog sourceId is invalid");
+  }
+  if (typeof catalog.sourceSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(catalog.sourceSha256)) {
+    throw new Error("KRIC provider code catalog sourceSha256 is invalid");
+  }
+  if (catalog.sourceSha256.toLowerCase() !== kricProviderCodeCatalogSha256) {
+    throw new Error("KRIC provider code catalog sourceSha256 does not match trusted snapshot");
+  }
+  const contentSha256 = sha256(JSON.stringify({
+    stationRecordCount: catalog.stationRecordCount,
+    providerLines: catalog.providerLines,
+  }));
+  if (contentSha256 !== kricProviderCodeCatalogContentSha256) {
+    throw new Error("KRIC provider code catalog canonical content hash does not match trusted snapshot");
+  }
+}
+
+export function validateMolitProviderIdentities(svgRows, providerLineScopes) {
+  const expected = new Map(providerLineScopes.map((scope) => [
+    `${scope.regionId}:${scope.operatorId}:${scope.lineId}`,
+    scope,
+  ]));
+  for (const row of svgRows) {
+    if (row.svgFileName?.startsWith("subway_") && !row.providerIdentity) {
+      throw new Error(`MOLIT subway provider identity is invalid: ${row.svgFileName}`);
+    }
+    if (!row.providerIdentity) continue;
+    const regionName = regionNameForProviderCode(row.providerIdentity.mreaWideCd);
+    const key = `${coverageRegionId(regionName)}:${operatorIdFor(row.providerIdentity.operatorName)}:${lineIdFor(regionName, normalizeMolitProviderLineName(row.lineName))}`;
+    const scope = expected.get(key);
+    if (!scope) throw new Error(`MOLIT provider scope is unmatched: ${key}`);
+    if (scope.mreaWideCd !== row.providerIdentity.mreaWideCd || scope.lnCd !== row.providerIdentity.lnCd
+      || scope.railOprIsttCd !== row.providerIdentity.railOprIsttCd) {
+      throw new Error(`MOLIT/KRIC provider code mismatch: ${key}`);
+    }
+  }
+}
+
+function providerRegionCode(regionId) {
+  const code = { capital: "01", busan: "02", daegu: "03", gwangju: "04", daejeon: "05" }[regionId];
+  if (!code) throw new Error(`unknown provider region: ${regionId}`);
+  return code;
+}
+
+function regionNameForProviderCode(mreaWideCd) {
+  const regionName = {
+    "01": "수도권",
+    "02": "부산",
+    "03": "대구",
+    "04": "광주",
+    "05": "대전",
+  }[mreaWideCd];
+  if (!regionName) throw new Error(`unknown MOLIT provider region: ${mreaWideCd}`);
+  return regionName;
 }
 
 function svgRowsByKey(rows) {
@@ -1087,6 +1206,18 @@ function sourceInventoryEntries(sourceShaById) {
   };
   return [
     {
+      id: "kric-provider-code-catalog-20260228",
+      owner: "국가철도공단",
+      url: "https://data.kric.go.kr/rips/M_04_01/detail.do?id=395",
+      sourceSha256: sourceShaById.get("kric-provider-code-catalog-20260228") ?? "",
+      license: "철도 데이터 포털 공식 공개 코드정보(재배포 범위 검토 필요)",
+      licenseStatus: "review-required",
+      redistributionAllowed: false,
+      updateFrequency: "on-change",
+      updatedAt: "2026-02-28T00:00:00.000Z",
+      fields: ["provider_operator_code", "provider_line_code", "provider_station_code"],
+    },
+    {
       ...common,
       id: sourceId,
       url: sourceUrl,
@@ -1191,4 +1322,6 @@ function requireArg(args, name) {
   return value;
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  await main();
+}

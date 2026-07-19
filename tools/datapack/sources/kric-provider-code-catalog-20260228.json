@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "kric-provider-line-catalog",
+  "sourceId": "kric-provider-code-catalog-20260228",
+  "sourceSha256": "ef1f8b094e32e81c7390e8566984293dcefcc85e7fadacfe4433e77ddcc61272",
+  "capturedAt": "2026-07-19T13:38:26.639Z",
+  "stationRecordCount": 1108,
+  "providerLines": [
+    {
+      "railOprIsttCd": "AR",
+      "operatorName": "공항철도주식회사",
+      "lnCd": "A1",
+      "lineName": "공항"
+    },
+    {
+      "railOprIsttCd": "BG",
+      "operatorName": "부산김해경전철주식회사",
+      "lnCd": "B1",
+      "lineName": "부산김해경전철"
+    },
+    {
+      "railOprIsttCd": "BS",
+      "operatorName": "부산교통공사",
+      "lnCd": "1",
+      "lineName": "1호선"
+    },
+    {
+      "railOprIsttCd": "BS",
+      "operatorName": "부산교통공사",
+      "lnCd": "2",
+      "lineName": "2호선"
+    },
+    {
+      "railOprIsttCd": "BS",
+      "operatorName": "부산교통공사",
+      "lnCd": "3",
+      "lineName": "3호선"
+    },
+    {
+      "railOprIsttCd": "BS",
+      "operatorName": "부산교통공사",
+      "lnCd": "4",
+      "lineName": "4호선"
+    },
+    {
+      "railOprIsttCd": "DG",
+      "operatorName": "대구교통공사",
+      "lnCd": "1",
+      "lineName": "1호선"
+    },
+    {
+      "railOprIsttCd": "DG",
+      "operatorName": "대구교통공사",
+      "lnCd": "2",
+      "lineName": "2호선"
+    },
+    {
+      "railOprIsttCd": "DG",
+      "operatorName": "대구교통공사",
+      "lnCd": "3",
+      "lineName": "3호선"
+    },
+    {
+      "railOprIsttCd": "DJ",
+      "operatorName": "대전교통공사",
+      "lnCd": "1",
+      "lineName": "1호선"
+    },
+    {
+      "railOprIsttCd": "DX",
+      "operatorName": "네오트랜스주식회사",
+      "lnCd": "D1",
+      "lineName": "신분당"
+    },
+    {
+      "railOprIsttCd": "EV",
+      "operatorName": "용인경량전철주식회사",
+      "lnCd": "E1",
+      "lineName": "에버라인"
+    },
+    {
+      "railOprIsttCd": "GJ",
+      "operatorName": "광주교통공사",
+      "lnCd": "1",
+      "lineName": "1호선"
+    },
+    {
+      "railOprIsttCd": "GM",
+      "operatorName": "김포골드라인에스알에스(주)",
+      "lnCd": "G1",
+      "lineName": "김포골드라인"
+    },
+    {
+      "railOprIsttCd": "GU",
+      "operatorName": "구리도시공사",
+      "lnCd": "8",
+      "lineName": "8호선"
+    },
+    {
+      "railOprIsttCd": "GX",
+      "operatorName": "지티엑스에이운영",
+      "lnCd": "A",
+      "lineName": "GTX-A"
+    },
+    {
+      "railOprIsttCd": "IA",
+      "operatorName": "인천국제공항공사",
+      "lnCd": "M1",
+      "lineName": "자기부상"
+    },
+    {
+      "railOprIsttCd": "IC",
+      "operatorName": "인천교통공사",
+      "lnCd": "7",
+      "lineName": "7호선"
+    },
+    {
+      "railOprIsttCd": "IC",
+      "operatorName": "인천교통공사",
+      "lnCd": "I1",
+      "lineName": "인천1호선"
+    },
+    {
+      "railOprIsttCd": "IC",
+      "operatorName": "인천교통공사",
+      "lnCd": "I2",
+      "lineName": "인천2호선"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "1",
+      "lineName": "1호선"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "3",
+      "lineName": "3호선"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "4",
+      "lineName": "4호선"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "K1",
+      "lineName": "수인분당"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "K2",
+      "lineName": "경춘"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "K4",
+      "lineName": "경의중앙"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "K5",
+      "lineName": "경강"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "K6",
+      "lineName": "동해"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "K7",
+      "lineName": "대경선"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "operatorName": "한국철도공사",
+      "lnCd": "WS",
+      "lineName": "서해선"
+    },
+    {
+      "railOprIsttCd": "NU",
+      "operatorName": "남양주도시공사",
+      "lnCd": "4",
+      "lineName": "4호선"
+    },
+    {
+      "railOprIsttCd": "NU",
+      "operatorName": "남양주도시공사",
+      "lnCd": "8",
+      "lineName": "8호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "1",
+      "lineName": "1호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "2",
+      "lineName": "2호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "3",
+      "lineName": "3호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "4",
+      "lineName": "4호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "5",
+      "lineName": "5호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "6",
+      "lineName": "6호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "7",
+      "lineName": "7호선"
+    },
+    {
+      "railOprIsttCd": "S1",
+      "operatorName": "서울교통공사",
+      "lnCd": "8",
+      "lineName": "8호선"
+    },
+    {
+      "railOprIsttCd": "S9",
+      "operatorName": "서울시메트로9호선주식회사",
+      "lnCd": "9",
+      "lineName": "9호선"
+    },
+    {
+      "railOprIsttCd": "SL",
+      "operatorName": "남서울경전철주식회사",
+      "lnCd": "L1",
+      "lineName": "신림선"
+    },
+    {
+      "railOprIsttCd": "SR",
+      "operatorName": "주식회사 SR",
+      "lnCd": "A",
+      "lineName": "GTX-A"
+    },
+    {
+      "railOprIsttCd": "SW",
+      "operatorName": "서해철도주식회사",
+      "lnCd": "WS",
+      "lineName": "서해선"
+    },
+    {
+      "railOprIsttCd": "UI",
+      "operatorName": "우이신설경전철주식회사",
+      "lnCd": "UI",
+      "lineName": "우이신설"
+    },
+    {
+      "railOprIsttCd": "UL",
+      "operatorName": "의정부경량전철주식회사",
+      "lnCd": "U1",
+      "lineName": "의정부"
+    }
+  ]
+}

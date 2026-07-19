@@ -3,8 +3,53 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-07-14",
+  "updatedAt": "2026-07-19",
   "candidates": [
+    {
+      "id": "kric-provider-code-catalog",
+      "priority": "P0",
+      "domain": "station_line_membership",
+      "displayName": "국가철도공단 운영기관·노선·역 API 코드정보",
+      "detailUrl": "https://data.kric.go.kr/rips/M_04_01/detail.do?id=395",
+      "requestUrl": "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://data.kric.go.kr/rips/download.file?answerId=395&fileId=1&id=395&type=N",
+        "auth": { "placement": "none" },
+        "requiredParameters": ["answerId", "fileId", "id", "type"],
+        "responseEnvelope": "XLSX ZIP workbook Sheet1",
+        "responseFields": ["RAIL_OPR_ISTT_CD", "RAIL_OPR_ISTT_NM", "LN_CD", "LN_NM", "STIN_CD", "STIN_NM"],
+        "runner": {
+          "command": "node tools/datapack/collect-kric-code-catalog.mjs",
+          "arguments": [
+            "--output",
+            "/tmp/easysubway-kric-provider-code-catalog.xlsx",
+            "--metadata-output",
+            "/tmp/easysubway-kric-provider-code-catalog.metadata.json"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "review_required",
+      "sampleEvidenceStatus": "validated_live_sample",
+      "admissionStatus": "admitted_as_code_mapping",
+      "automaticRouteGraphEdgeAllowed": false,
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_04_01/detail.do?id=395",
+        "termsUrl": "https://data.kric.go.kr/rips/serviceInfo/clause.do",
+        "retrievedAt": "2026-07-19",
+        "searchTerms": ["운영기관", "노선", "역 코드", "GTX-A", "대경선", "인천1호선"],
+        "outputFields": ["RAIL_OPR_ISTT_CD", "RAIL_OPR_ISTT_NM", "LN_CD", "LN_NM", "STIN_CD", "STIN_NM"],
+        "liveSampleRetrievedAt": "2026-07-19T13:38:26.639Z",
+        "liveSampleFormat": "xlsx",
+        "liveSampleRowCount": 1108,
+        "liveSampleRawSha256": "ef1f8b094e32e81c7390e8566984293dcefcc85e7fadacfe4433e77ddcc61272",
+        "liveSampleNote": "공식 2026-02-28 XLSX를 credential-free tracked collector로 수집하고 ZIP·workbook·6개 column·1,108 station row를 검증한 뒤 provider-line 정본으로 축약했습니다. 공개 다운로드는 확인했지만 포털 약관만으로 재배포 허용을 확정할 수 없어 code mapping 외 production admission과 mobile embedding은 금지합니다."
+      },
+      "nextAction": "재배포 범위의 명시적 승인을 확보한 뒤 license evidence를 재검토하고, 공식 코드 변경 공지 시 동일 collector로 재수집해 provider-line diff를 검토한다"
+    },
     {
       "id": "kric-subway-route-info",
       "priority": "P0",

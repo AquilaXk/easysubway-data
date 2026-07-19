@@ -81,7 +81,49 @@ test("전국 target과 fixture에서 line AND domain 실제 검색 계획을 만
   assert.equal(searchPlan.entries[0].queries[0].query.page, 0);
   assert.equal(searchPlan.entries[0].queries[0].query.size, 10_000);
   assert.equal(searchPlan.entries[0].queries[0].query.keyword, "1호선");
+  assert.equal(searchPlan.entries[0].queries[0].credentialParam, "Authorization");
   assert.deepEqual(searchPlan.entries[0].queries[0].matchTermGroups[1], ["1호선"]);
+  const operatorWideQuery = searchPlan.entries[0].queries.find(({ query }) => query.keyword === "실시간도착");
+  assert.ok(operatorWideQuery);
+  assert.equal(operatorWideQuery.coverageScope, "OPERATOR_DISCOVERY");
+  assert.deepEqual(operatorWideQuery.query.organizations, ["부산교통공사"]);
+  assert.deepEqual(operatorWideQuery.matchTermGroups, [[
+    "실시간도착",
+    "실시간열차",
+    "열차위치",
+    "도착정보",
+    "실제일시",
+  ]]);
+});
+
+test("운영기관 공통 검색 결과는 현재 line 지원 증거가 아니라 검증 대기 후보로 남긴다", async () => {
+  const searchTarget = {
+    ...target,
+    queries: [{
+      providerId: "data-go-search",
+      endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
+      operation: "searchData",
+      credentialEnv: "DATA_GO_KR_SERVICE_KEY",
+      credentialParam: "Authorization",
+      credentialPlacement: "header",
+      method: "POST",
+      format: "json",
+      coverageScope: "OPERATOR_DISCOVERY",
+      matchTermGroups: [["실시간도착", "도착정보"]],
+      query: { page: 0, size: 10_000, dataType: ["API"], organizations: ["부산교통공사"], keyword: "실시간도착" },
+    }],
+  };
+  const resolutions = await collectNationwidePublicApiCoverage({
+    searchPlan: plan([searchTarget]),
+    credentials: { DATA_GO_KR_SERVICE_KEY: "key" },
+    fetchImpl: async () => new Response(JSON.stringify({
+      statusCode: 200,
+      result: { sum: 1, dataCount: 1, data: [{ dataName: "부산교통공사 실시간도착정보" }] },
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+  });
+
+  assert.equal(resolutions.entries.length, 0);
+  assert.equal(resolutions.unresolved[0].reasonCode, "PUBLIC_API_CANDIDATE_REQUIRES_LINE_VALIDATION");
 });
 
 test("전국 공통 provider 후보가 있으면 운영기관 catalog 0건을 공식 미지원으로 확정하지 않는다", async () => {
@@ -226,7 +268,14 @@ test("공공데이터 검색이 거부하는 GTX-A 문장부호는 안전한 ali
     },
   });
 
-  assert.deepEqual(searchPlan.entries[0].queries.map(({ query }) => query.keyword), ["GTXA"]);
+  assert.deepEqual(searchPlan.entries[0].queries.map(({ query }) => query.keyword), [
+    "GTXA",
+    "실시간도착",
+    "실시간열차",
+    "열차위치",
+    "도착정보",
+    "실제일시",
+  ]);
   assert.deepEqual(searchPlan.entries[0].queries[0].matchTermGroups[1], ["GTXA"]);
 });
 
@@ -278,7 +327,7 @@ test("공공데이터포털 검색 API를 POST로 실제 조회해 전체 검색
       endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
       operation: "searchData",
       credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-      credentialParam: "serviceKey",
+      credentialParam: "Authorization",
       credentialPlacement: "header",
       method: "POST",
       format: "json",
@@ -291,7 +340,7 @@ test("공공데이터포털 검색 API를 POST로 실제 조회해 전체 검색
     fetchImpl: async (url, init) => {
       assert.equal(init.method, "POST");
       assert.equal(init.headers["content-type"], "application/json");
-      assert.equal(init.headers.authorization, "Infuser encoded+key");
+      assert.equal(init.headers.Authorization, "Infuser encoded+key");
       assert.deepEqual(JSON.parse(init.body), searchTarget.queries[0].query);
       assert.equal(url.searchParams.has("serviceKey"), false);
       return new Response(JSON.stringify({ statusCode: 200, result: { sum: 0, dataCount: 0, data: [] } }), {
@@ -313,7 +362,7 @@ test("같은 공공기관 검색 request는 여러 domain에서 한 번만 호�
     endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
     operation: "searchData",
     credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-    credentialParam: "serviceKey",
+    credentialParam: "Authorization",
     credentialPlacement: "header",
     method: "POST",
     format: "json",
@@ -352,7 +401,7 @@ test("JSON schema mismatch는 값 없이 bounded field contract만 남긴다", a
       endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
       operation: "searchData",
       credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-      credentialParam: "serviceKey",
+      credentialParam: "Authorization",
       credentialPlacement: "header",
       method: "POST",
       format: "json",
@@ -388,7 +437,7 @@ test("공공데이터 검색 결과는 공개 metadata의 domain term과 일치�
       endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
       operation: "searchData",
       credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-      credentialParam: "serviceKey",
+      credentialParam: "Authorization",
       credentialPlacement: "header",
       method: "POST",
       format: "json",
@@ -440,7 +489,7 @@ test("metadata relevance 검색은 전체 page를 결합한 뒤 공식 미지원
       endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
       operation: "searchData",
       credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-      credentialParam: "serviceKey",
+      credentialParam: "Authorization",
       credentialPlacement: "header",
       method: "POST",
       format: "json",
@@ -480,7 +529,7 @@ test("공공데이터 pagination이 빈 page나 반복 page로 정체되면 MISS
       endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
       operation: "searchData",
       credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-      credentialParam: "serviceKey",
+      credentialParam: "Authorization",
       credentialPlacement: "header",
       method: "POST",
       format: "json",

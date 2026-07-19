@@ -79,18 +79,20 @@ export function buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCan
       knownProviderCandidateIds: (knownProviderCandidatesByDomain.get(sourceDomain) ?? [])
         .filter((candidate) => candidateAppliesToScope(candidate.coverageScope, scope))
         .map(({ id }) => id),
-      queries: lineTerms.map((keyword) => ({
-        providerId: "data-go-search",
-        endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
-        operation: "searchData",
-        credentialEnv: "DATA_GO_KR_SERVICE_KEY",
-        credentialParam: "serviceKey",
-        credentialPlacement: "header",
-        method: "POST",
-        format: "json",
-        matchTermGroups: [domain.terms, lineTerms],
-        query: { page: 0, size: 10_000, dataType: ["API"], organizations: [operatorName], keyword },
-      })),
+      queries: [
+        ...lineTerms.map((keyword) => publicApiSearchQuery({
+          operatorName,
+          keyword,
+          coverageScope: "LINE_EVIDENCE",
+          matchTermGroups: [domain.terms, lineTerms],
+        })),
+        ...domain.terms.map((keyword) => publicApiSearchQuery({
+          operatorName,
+          keyword,
+          coverageScope: "OPERATOR_DISCOVERY",
+          matchTermGroups: [domain.terms],
+        })),
+      ],
     };
   }));
   return {
@@ -98,6 +100,22 @@ export function buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCan
     artifactKind: "nationwide-public-api-coverage-search-plan",
     targetVersion: requiredString(targets.targetVersion, "targets.targetVersion"),
     entries,
+  };
+}
+
+function publicApiSearchQuery({ operatorName, keyword, coverageScope, matchTermGroups }) {
+  return {
+    providerId: "data-go-search",
+    endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
+    operation: "searchData",
+    credentialEnv: "DATA_GO_KR_SERVICE_KEY",
+    credentialParam: "Authorization",
+    credentialPlacement: "header",
+    method: "POST",
+    format: "json",
+    coverageScope,
+    matchTermGroups,
+    query: { page: 0, size: 10_000, dataType: ["API"], organizations: [operatorName], keyword },
   };
 }
 
@@ -133,7 +151,9 @@ export async function collectNationwidePublicApiCoverage({
       results.push(result.evidence);
       if (result.evidence.matchCount > 0) {
         unresolvedResult = {
-          reasonCode: "PUBLIC_API_DATA_AVAILABLE",
+          reasonCode: query.coverageScope === "OPERATOR_DISCOVERY"
+            ? "PUBLIC_API_CANDIDATE_REQUIRES_LINE_VALIDATION"
+            : "PUBLIC_API_DATA_AVAILABLE",
           matchCount: result.evidence.matchCount,
           ...(result.evidence.capturedRows ? { matches: result.evidence.capturedRows } : {}),
         };
@@ -259,7 +279,9 @@ async function runQuery(query, credentials, fetchImpl, requestCache) {
     url.searchParams.set("format", query.format);
   }
   if (query.credentialPlacement !== "header") url.searchParams.set(query.credentialParam, credential);
-  const authorization = query.credentialPlacement === "header" ? { authorization: `Infuser ${credential}` } : {};
+  const authorization = query.credentialPlacement === "header"
+    ? { [query.credentialParam]: `Infuser ${credential}` }
+    : {};
   const requestKey = JSON.stringify({
     endpoint: query.endpoint,
     method: query.method ?? "GET",
@@ -550,6 +572,13 @@ function validateQuery(query, label) {
   requiredString(query.credentialParam, `${label}.credentialParam`);
   if (query.credentialPlacement !== undefined && !new Set(["header", "query"]).has(query.credentialPlacement)) {
     throw new Error(`${label}.credentialPlacement is invalid`);
+  }
+  if (query.credentialPlacement === "header" && query.credentialParam !== "Authorization") {
+    throw new Error(`${label}.credentialParam must be Authorization for header authentication`);
+  }
+  if (query.coverageScope !== undefined
+    && !new Set(["LINE_EVIDENCE", "OPERATOR_DISCOVERY"]).has(query.coverageScope)) {
+    throw new Error(`${label}.coverageScope is invalid`);
   }
   if (!new Set(["json", "xml"]).has(query.format)) throw new Error(`${label}.format is invalid`);
   if (query.format === "json" && query.method !== "POST") throw new Error(`${label}.json search must use POST`);

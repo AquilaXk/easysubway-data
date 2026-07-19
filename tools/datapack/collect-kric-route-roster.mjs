@@ -38,14 +38,15 @@ export async function collectKricRouteRoster({ mreaWideCd, lnCd, serviceKey, fet
   if (stations.length === 0) throw new Error("KRIC route roster returned zero stations");
   const stationCodes = new Map();
   for (const station of stations) {
-    if (stationCodes.has(station.stinCd)) {
-      const previous = stationCodes.get(station.stinCd);
+    const stationKey = `${station.railOprIsttCd}:${station.routCd}:${station.stinCd}`;
+    if (stationCodes.has(stationKey)) {
+      const previous = stationCodes.get(stationKey);
       throw new Error(
         `KRIC route roster duplicate station: previous=${previous.railOprIsttCd}/${previous.routCd}/${previous.stinCd}/${previous.stinConsOrdr}/${previous.stinNm} ` +
           `current=${station.railOprIsttCd}/${station.routCd}/${station.stinCd}/${station.stinConsOrdr}/${station.stinNm}`,
       );
     }
-    stationCodes.set(station.stinCd, station);
+    stationCodes.set(stationKey, station);
   }
   return {
     schemaVersion: 1,

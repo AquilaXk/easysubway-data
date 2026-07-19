@@ -8602,6 +8602,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
       "tools/datapack/build-molit-nationwide-fixture.mjs",
       "--csv", "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
       "--svg-csv", "tools/datapack/sources/molit-rail-station-svg-route-20250811.csv",
+      "--kric-code-catalog", "tools/datapack/sources/kric-provider-code-catalog-20260228.json",
       "--seoulmetro-js", "tools/datapack/sources/seoulmetro-cyberstation-line-data-20260623.js",
       "--humetro-html", "tools/datapack/sources/humetro-cyberstation-map-20260623.html",
       "--humetro-css", "tools/datapack/sources/humetro-cyber-station-20250310c.css",
@@ -8616,6 +8617,14 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
 
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  for (const pack of fixture.packs) {
+    const kricCodeCatalog = pack.sourceInventory.find(
+      ({ id }) => id === "kric-provider-code-catalog-20260228",
+    );
+    assert.ok(kricCodeCatalog, `${pack.packId} KRIC provider code catalog source missing`);
+    assert.equal(kricCodeCatalog.licenseStatus, "review-required");
+    assert.equal(kricCodeCatalog.redistributionAllowed, false);
+  }
   const compareCoverageLineScopes = (left, right) =>
     `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
       `${right.regionId}:${right.operatorId}:${right.lineId}`,
@@ -8695,6 +8704,26 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
   assert.equal(new Set(actual.map(({ lineId }) => lineId)).size, 36);
   assert.equal(actual.length, 45);
   assert.deepEqual(actual, expected);
+
+  const providerScopes = fixture.providerLineScopes
+    .filter(({ lineId }) => !inactiveLineIds.has(lineId))
+    .map(({ lineId, operatorId, regionId }) => ({ lineId, operatorId, regionId }))
+    .sort(compareCoverageLineScopes);
+  assert.equal(fixture.providerLineScopes.length, 46);
+  assert.deepEqual(providerScopes, expected);
+  assert.deepEqual(
+    fixture.providerLineScopes.find(({ lineId, operatorId }) => (
+      lineId === "line-ab1a041f6266" && operatorId === "busan-transportation"
+    )),
+    {
+      regionId: "busan",
+      operatorId: "busan-transportation",
+      lineId: "line-ab1a041f6266",
+      mreaWideCd: "02",
+      lnCd: "1",
+      railOprIsttCd: "BS",
+    },
+  );
 });
 
 test("전국 coverage target은 train-search-only 열차를 route scope에 섞으면 거부한다", async () => {
