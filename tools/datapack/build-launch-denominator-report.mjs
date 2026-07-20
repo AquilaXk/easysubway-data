@@ -376,8 +376,12 @@ function nonEmptyStringSet(values) {
 
 function canonicalize(value) {
   if (Array.isArray(value)) {
-    return value.map(canonicalize).sort((left, right) =>
-      JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    // localeCompare는 로케일 콜레이션에 의존해 canonicalScopeHash가 환경마다 갈리므로(#2390) 금지. 로케일 무관 코드포인트 비교로 정렬한다.
+    return value.map(canonicalize).sort((left, right) => {
+      const l = JSON.stringify(left);
+      const r = JSON.stringify(right);
+      return l < r ? -1 : l > r ? 1 : 0;
+    });
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(

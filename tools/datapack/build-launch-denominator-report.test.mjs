@@ -475,6 +475,20 @@ test("malformed scope subsections produce explicit contract blockers without thr
   }
 });
 
+test("canonicalScopeHash는 로케일 콜레이션과 무관하게 코드포인트 정렬로 고정된다 (#2390)", () => {
+  // 이 fixture의 배열은 대소문자가 섞여 있어 로케일 콜레이션과 코드포인트 정렬이 서로 다른 순서를 낸다:
+  //   코드포인트(고정): ["A","B","C","a","b"] (대문자 U+0041~ 가 소문자 U+0061~ 앞)
+  //   ICU 콜레이션(en/ko 등): ["a","A","b","B","C"] (대소문자 tertiary)
+  // "a" vs "B"만 봐도 en localeCompare는 a<B, 코드포인트는 B<a로 갈린다.
+  const fixtureScope = { values: ["a", "B", "C", "b", "A"] };
+  // 아래 상수는 코드포인트 정렬로 산출해 하드코딩했다. 이 상수가 흔들리면 canonicalization이
+  // 환경(로케일) 의존으로 회귀한 것이다 — localeCompare 복귀를 즉시 실패시키는 게이트다.
+  assert.equal(
+    canonicalScopeHash(fixtureScope),
+    "d9043362dbb747ebaa5969c0862f3e6a755db54bf578e92670e351d86868fc28",
+  );
+});
+
 test("incompatible shared identity values are null in report output", () => {
   const evidence = passingEvidence();
   evidence.mobile.identity.corridorId = "other-corridor";
