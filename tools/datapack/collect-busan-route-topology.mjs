@@ -102,7 +102,7 @@ export async function collectBusanRouteTopology({
     scope,
     scopeSha256: scope ? sha256(JSON.stringify(scope)) : null,
     rawSha256,
-    contentSha256: contentHash(edges, scope),
+    contentSha256: busanRouteTopologyContentHash(edges, scope),
     edges,
   };
 }
@@ -286,7 +286,7 @@ export function admitBusanRouteTopology(snapshot, { now = new Date() } = {}) {
   }
   validateNormalizedEdges(snapshot.edges);
   validateEdgesAgainstScope(snapshot.edges, scope);
-  if (snapshot.contentSha256 !== contentHash(snapshot.edges, scope)) {
+  if (snapshot.contentSha256 !== busanRouteTopologyContentHash(snapshot.edges, scope)) {
     throw new Error("Busan route topology admission content hash mismatch");
   }
   if (!/^[a-f0-9]{64}$/.test(snapshot.rawSha256 ?? "")) {
@@ -567,7 +567,7 @@ function validDate(value, label) {
   return value;
 }
 
-function contentHash(edges, scope) {
+export function busanRouteTopologyContentHash(edges, scope) {
   return sha256(JSON.stringify({ scope, edges }));
 }
 

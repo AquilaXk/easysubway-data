@@ -173,6 +173,86 @@
       }
     },
     {
+      "id": "busan-transportation-timetable",
+      "displayName": "부산교통공사_부산 도시철도 열차시각표 조회 서비스",
+      "owner": "부산교통공사",
+      "provider": "부산교통공사",
+      "providerDepartment": "IT지원단",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15000522/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "부산교통공사 1~4호선 3개 요일 유형 3833개 운행과 109140개 stop time",
+      "coverageScope": {
+        "regionIds": ["busan"],
+        "operatorIds": ["busan-transportation"],
+        "lineIds": [
+          "line-ab1a041f6266",
+          "line-d74614a04530",
+          "line-d812a5bc1e5f",
+          "line-eb7b47920390"
+        ],
+        "sourceDomains": ["schedule_timetable"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-20",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 제1유형(출처표시)",
+        "attribution": "부산교통공사, 공공누리 제1유형(출처표시); 제3자 권리 포함 저작권 표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15000522/openapi.do"
+      },
+      "fieldsProvided": ["service_calendar", "trip", "stop_time"],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "BUSAN_LINES_1_TO_4_FULL_TIMETABLE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "표준 열차도착 시각이며 실제 도착시각이 아니다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2368,
+        "materializer": "tools/datapack/materialize-busan-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-busan-timetable.test.mjs",
+        "snapshotId": "busan-transportation-timetable-20260720",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
+        "capturedAt": "2026-07-20T08:37:16.931Z",
+        "freshUntil": "2026-07-21T08:37:16.931Z",
+        "rowCount": 109140,
+        "departureCount": 109140,
+        "tripCount": 3833,
+        "stopTimeCount": 109140,
+        "rawSha256": "8269d5ba02ea03824220da02b5d807d8bce5eeba9bbc8e520d4a4e5938e03a95",
+        "rowsSha256": "9e5474410ba38fe1cc1f36611b82c5c05af1d2a33d7c2bef7bcf740cfadc1a7a",
+        "topologySourceId": "busan-transportation-route-topology",
+        "topologySnapshotId": "busan-transportation-route-topology-20260720",
+        "topologyContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      }
+    },
+    {
       "id": "daejeon-station-distance-fare",
       "displayName": "대전교통공사_역간 소요시간/거리/요금 조회 서비스",
       "owner": "대전교통공사",
