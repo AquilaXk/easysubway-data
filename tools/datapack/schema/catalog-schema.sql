@@ -577,8 +577,27 @@ CREATE TABLE route_map_positions (
   FOREIGN KEY (station_id, line_id) REFERENCES station_lines(station_id, line_id)
 );
 
+CREATE TABLE route_map_line_tracks (
+  region TEXT NOT NULL,
+  line_id TEXT NOT NULL,
+  track_index INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  svg_color TEXT NOT NULL DEFAULT '',
+  source_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  license TEXT NOT NULL,
+  license_status TEXT NOT NULL,
+  commercial_use_allowed INTEGER NOT NULL DEFAULT 0 CHECK (commercial_use_allowed IN (0, 1)),
+  attribution_required INTEGER NOT NULL DEFAULT 1 CHECK (attribution_required IN (0, 1)),
+  updated_at INTEGER,
+  PRIMARY KEY (region, line_id, track_index),
+  FOREIGN KEY (line_id) REFERENCES lines(id)
+);
+
 CREATE INDEX idx_facilities_station ON facilities(station_id);
 CREATE INDEX idx_route_map_positions_region_line ON route_map_positions(region, line_id);
+CREATE INDEX idx_route_map_line_tracks_region_line ON route_map_line_tracks(region, line_id);
 CREATE INDEX idx_internal_route_edges_from ON internal_route_edges(from_node_id);
 CREATE INDEX idx_station_pathway_nodes_station ON station_pathway_nodes(station_id, line_id, node_type);
 CREATE INDEX idx_station_pathway_edges_from ON station_pathway_edges(from_node_id);

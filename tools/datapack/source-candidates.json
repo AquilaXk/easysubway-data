@@ -3487,6 +3487,65 @@
       "nextAction": "#2138의 나머지 provider/domain batch를 같은 production SQLite·field provenance 계약으로 합치고 최종 nationwide candidate를 rehearsal한다"
     },
     {
+      "id": "busan-transportation-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": ["busan"],
+        "operatorIds": ["busan-transportation"],
+        "lineIds": [
+          "line-ab1a041f6266",
+          "line-d74614a04530",
+          "line-d812a5bc1e5f",
+          "line-eb7b47920390"
+        ]
+      },
+      "displayName": "부산교통공사_도시철도 노선도·사이버스테이션",
+      "detailUrl": "https://www.data.go.kr/data/15054957/fileData.do",
+      "requestUrl": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+      "licenseEvidenceStatus": "confirmed_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "busan-transportation-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-20",
+        "endpoint": "https://www2.humetro.busan.kr/homepage/cyberstation/map.do",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": ["HTML", "CSS", "PNG", "JSON"],
+        "outputFields": ["route_map_position", "route_map_label_polygon", "route_map_line_track"],
+        "stationCount": 114,
+        "htmlSha256": "491568c86676bd2ed26594af3be1da54e36f407fe4deff4b8b019e003e28f7f3",
+        "cssSha256": "2247ab29d55938677e544dd5cc264a0524dc68d01d6baf133be236df2bea4569",
+        "connectorEvidenceSha256": "16ab42c0e0949eb267169108f990f44e35aab8ac1f7efe789ded36f158019859",
+        "connectorAssetSetSha256": "ddc72cb299d80f51182d4e1c4b3a7e0e01ff99f16d54b6d6e9f4a0d935c03037",
+        "rawSha256": "bcb19874de43bd8d2de526e1d3f468285c7950725a17a6d5dc6ec820576b4028",
+        "positionsSha256": "59ef85ae09d81c05f189a3532c98cb74081217b080d036ffc9468cabc064f27d",
+        "connectorsSha256": "6ea628dab25b93c861e398637af643c3222eb282a5a107a6a83eecefceb8d81a",
+        "connectorCount": 110,
+        "connectorAssetCount": 32,
+        "connectorEvidenceArtifact": "tools/datapack/sources/busan-transportation-route-map-connectors-20260720.json",
+        "connectorEvidenceArtifactSha256": "8f119b7c2cd8d9527abbbd8d6937f237a5ea9f03e70ff5f7ef425b8af10ce941",
+        "evidenceArtifact": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 4,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-busan-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-busan-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "부산교통공사 1~4호선 114개 역에 한정한다",
+          "공식 HTML/CSS와 32개 PNG 연결선 snapshot을 offline materializer에서만 소비하며 runtime 네트워크 호출은 하지 않는다"
+        ]
+      },
+      "nextAction": "공식 사이버스테이션 변경 시 HTML/CSS·PNG hash와 114개 좌표·110개 연결선 snapshot을 함께 갱신한다"
+    },
+    {
       "id": "daejeon-station-distance-fare",
       "priority": "P0",
       "domain": "route_graph_topology",

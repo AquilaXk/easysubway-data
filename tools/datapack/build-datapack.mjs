@@ -665,6 +665,11 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
       addRecord(position, "route_map_position", entityId, "route_map_label_polygon", operatorIds, [position.lineId]);
     }
   }
+  for (const track of pack.routeMapLineTracks ?? []) {
+    const entityId = `${track.lineId}:${track.trackIndex}:${track.region ?? ""}`;
+    const operatorIds = [lineOperatorIds.get(track.lineId)].filter(Boolean);
+    addRecord(track, "route_map_line_track", entityId, "route_map_line_track", operatorIds, [track.lineId]);
+  }
   const transitRouteLineIds = new Map((pack.transitRoutes ?? []).map((route) => [route.id, route.lineId]));
   const transitRouteOperatorIds = new Map();
   for (const route of pack.transitRoutes ?? []) {
@@ -1662,6 +1667,41 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           boolFlag(row.commercialUseAllowed, "routeMapPositions.commercialUseAllowed"),
           boolFlag(row.attributionRequired, "routeMapPositions.attributionRequired"),
           timestamp(row.reviewedAt),
+          timestamp(row.updatedAt),
+        ],
+      );
+      insertRows(
+        database,
+        "route_map_line_tracks",
+        [
+          "region",
+          "line_id",
+          "track_index",
+          "path",
+          "svg_color",
+          "source_id",
+          "source_name",
+          "source_url",
+          "license",
+          "license_status",
+          "commercial_use_allowed",
+          "attribution_required",
+          "updated_at",
+        ],
+        pack.routeMapLineTracks ?? [],
+        (row) => [
+          requiredString(row.region, "routeMapLineTracks.region"),
+          requiredString(row.lineId, "routeMapLineTracks.lineId"),
+          requiredNonNegativeInteger(row.trackIndex, "routeMapLineTracks.trackIndex"),
+          requiredString(row.path, "routeMapLineTracks.path"),
+          row.svgColor ?? "",
+          requiredString(row.sourceId, "routeMapLineTracks.sourceId"),
+          requiredString(row.sourceName, "routeMapLineTracks.sourceName"),
+          requiredString(row.sourceUrl, "routeMapLineTracks.sourceUrl"),
+          requiredString(row.license, "routeMapLineTracks.license"),
+          requiredString(row.licenseStatus, "routeMapLineTracks.licenseStatus"),
+          boolFlag(row.commercialUseAllowed, "routeMapLineTracks.commercialUseAllowed"),
+          boolFlag(row.attributionRequired, "routeMapLineTracks.attributionRequired"),
           timestamp(row.updatedAt),
         ],
       );
