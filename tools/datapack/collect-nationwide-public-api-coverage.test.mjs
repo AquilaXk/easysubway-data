@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildNationwidePublicApiSearchPlan,
   collectNationwidePublicApiCoverage,
+  summarizeUnresolvedDiagnostics,
 } from "./collect-nationwide-public-api-coverage.mjs";
 
 const target = {
@@ -623,7 +624,7 @@ test("데이터 존재·provider 실패·bounded retry 실패는 MISSING으로 �
       }
       if (url.searchParams.get("lnCd") === "2") return xmlResponse({ code: "99" });
       retryCalls += 1;
-      throw new TypeError("network unavailable");
+      throw new TypeError("network unavailable never-print-this-key", { cause: { code: "ENOTFOUND" } });
     },
     now: new Date("2026-07-13T00:00:00.000Z"),
   });
@@ -637,6 +638,8 @@ test("데이터 존재·provider 실패·bounded retry 실패는 MISSING으로 �
   assert.equal(retryCalls, 2);
   assert.deepEqual(resolutions.unresolved[0].matches, [{ stinCd: "101" }]);
   assert.equal(resolutions.unresolved[2].attempts, 2);
+  assert.equal(resolutions.unresolved[2].transportReason, "ENOTFOUND");
+  assert.doesNotMatch(JSON.stringify(resolutions), /never-print-this-key/);
 });
 
 test("bounded retry는 attempt마다 새 timeout signal을 사용한다", async () => {
@@ -655,4 +658,23 @@ test("bounded retry는 attempt마다 새 timeout signal을 사용한다", async 
   assert.equal(resolutions.entries.length, 1);
   assert.equal(signals.length, 2);
   assert.notEqual(signals[0], signals[1]);
+});
+
+test("sanitized 진단은 reason과 transport code별 건수만 고정한다", () => {
+  assert.deepEqual(summarizeUnresolvedDiagnostics([
+    { reasonCode: "PUBLIC_API_FETCH_FAILED", transportReason: "ENOTFOUND" },
+    { reasonCode: "PUBLIC_API_FETCH_FAILED", transportReason: "ENOTFOUND" },
+    { reasonCode: "PUBLIC_API_HTTP_FAILURE", httpStatus: 403 },
+    { reasonCode: "PUBLIC_API_FETCH_FAILED\nnever-print-this-key", transportReason: "ENOTFOUND\nnever-print-this-key" },
+    { reasonCode: "PUBLIC_API_PROVIDER_FAILURE", providerResultCode: "03\nnever-print-this-key" },
+  ]), [
+    "PUBLIC_API_FETCH_FAILED/ENOTFOUND=2",
+    "PUBLIC_API_HTTP_FAILURE/HTTP_403=1",
+    "PUBLIC_API_PROVIDER_FAILURE/PROVIDER_UNKNOWN=1",
+    "PUBLIC_API_UNKNOWN/TRANSPORT_UNKNOWN=1",
+  ]);
+  assert.doesNotMatch(summarizeUnresolvedDiagnostics([{
+    reasonCode: "PUBLIC_API_FETCH_FAILED\nnever-print-this-key",
+    transportReason: "ENOTFOUND\nnever-print-this-key",
+  }]).join(","), /never-print-this-key|\n/);
 });
