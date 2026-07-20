@@ -139,6 +139,45 @@
               "productionUseNoteKo": { "type": "string" }
             }
           },
+          "membershipAdmissionEvidence": {
+            "type": "object",
+            "description": "역·노선 정본과 운영기관 역번호를 field-level provenance로 결속한 production 승인 근거다.",
+            "additionalProperties": false,
+            "required": [
+              "issue",
+              "materializer",
+              "verificationTest",
+              "snapshotId",
+              "lineId",
+              "verifiedAt",
+              "stationCount",
+              "membershipSourceId",
+              "membershipSourceRawSha256",
+              "membershipSourceSnapshotSha256",
+              "mappingSha256",
+              "stationCodesSha256",
+              "stationCodeSourceId",
+              "stationCodeSnapshotId",
+              "stationCodeContentSha256"
+            ],
+            "properties": {
+              "issue": { "type": "integer", "minimum": 1 },
+              "materializer": { "type": "string", "minLength": 1 },
+              "verificationTest": { "type": "string", "minLength": 1 },
+              "snapshotId": { "type": "string", "minLength": 1 },
+              "lineId": { "type": "string", "minLength": 1 },
+              "verifiedAt": { "type": "string", "format": "date-time" },
+              "stationCount": { "type": "integer", "minimum": 1 },
+              "membershipSourceId": { "type": "string", "minLength": 1 },
+              "membershipSourceRawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "membershipSourceSnapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "mappingSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "stationCodesSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "stationCodeSourceId": { "type": "string", "minLength": 1 },
+              "stationCodeSnapshotId": { "type": "string", "minLength": 1 },
+              "stationCodeContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
           "topologyAdmissionEvidence": {
             "type": "object",
             "description": "공식 topology snapshot의 production materialization 승인 근거다.",

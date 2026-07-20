@@ -17,7 +17,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const evidenceNow = new Date("2026-07-20T01:16:47.000Z");
+const evidenceNow = new Date("2026-07-20T04:00:00.000Z");
 
 async function inputs() {
   const [baseFixture, timetableSnapshot, topologySnapshot, inventory, stationMapCsv] = await Promise.all([
@@ -224,6 +224,7 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
   assert.deepEqual(report.requirements
     .filter(({ operatorId, status }) => operatorId === "daejeon-transportation" && status === "SUPPORTED")
     .map(({ lineId, sourceDomain }) => ({ lineId, sourceDomain })), [
+    { lineId: "line-7051a9c2525c", sourceDomain: "station_line_membership" },
     { lineId: "line-7051a9c2525c", sourceDomain: "route_graph_topology" },
     { lineId: "line-7051a9c2525c", sourceDomain: "schedule_timetable" },
   ]);

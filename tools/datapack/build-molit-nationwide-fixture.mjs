@@ -966,7 +966,10 @@ export function parseMolitDaejeonStationMappings(csvBytes) {
     || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
     throw new Error("MOLIT Daejeon Line 1 mapping must contain 22 unique stations in sequence");
   }
-  return mappings;
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sha256(csvBytes),
+    enumerable: true,
+  });
 }
 
 function svgRowFromCsv(row) {

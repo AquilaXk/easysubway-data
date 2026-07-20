@@ -580,9 +580,32 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
   }
   const records = [];
   const addRecord = (row, entityType, entityId, field, operatorIds = [], lineIds = []) => {
-    const sourceId = row.sourceId ?? defaultSourceId;
+    const fieldProvenance = row.fieldProvenance?.[field];
+    if (fieldProvenance !== undefined
+      && (!fieldProvenance || typeof fieldProvenance !== "object" || Array.isArray(fieldProvenance))) {
+      throw new Error(`${entityType}.${field} fieldProvenance must be an object`);
+    }
+    if (fieldProvenance?.sourceId !== undefined) {
+      requiredString(fieldProvenance.sourceId, `${entityType}.${field} fieldProvenance sourceId`);
+    }
+    const rowSourceId = row.sourceId ?? defaultSourceId;
+    if (fieldProvenance?.sourceId !== undefined && fieldProvenance.sourceId !== rowSourceId) {
+      for (const linkageField of ["sourceSnapshotId", "providerRecordHash", "evidenceHash", "verifiedAt"]) {
+        if (typeof fieldProvenance[linkageField] !== "string" || fieldProvenance[linkageField].trim() === "") {
+          throw new Error(`${entityType}.${field} fieldProvenance source change requires explicit ${linkageField}`);
+        }
+      }
+    }
+    const provenanceRow = fieldProvenance ? { ...row, ...fieldProvenance } : row;
+    const sourceId = provenanceRow.sourceId ?? defaultSourceId;
     if (!sourceId) {
       return;
+    }
+    if (fieldProvenance && !sourceScopes.has(sourceId)) {
+      throw new Error(`${entityType}.${field} fieldProvenance source is missing from sourceInventory: ${sourceId}`);
+    }
+    if (fieldProvenance && !sourceFields.get(sourceId)?.has(field)) {
+      throw new Error(`${entityType}.${field} fieldProvenance source does not provide ${field}: ${sourceId}`);
     }
     const coverageScopes = recordCoverageScopes(
       sourceScopes.get(sourceId),
@@ -593,19 +616,20 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     const recordDerivationKind =
       entityType === "facility" && field === "status" && !sourceFields.get(sourceId)?.has("status")
         ? "GENERATED"
-        : derivationKind(row, artifactKind);
+        : derivationKind(provenanceRow, artifactKind);
     for (const coverageScope of coverageScopes) {
       records.push({
         entityType,
         entityId,
         field,
         sourceId,
-        ...(row.sourceSnapshotId ? { sourceSnapshotId: row.sourceSnapshotId } : {}),
-        ...(row.providerRecordHash ? { providerRecordHash: row.providerRecordHash } : {}),
-        ...(row.evidenceHash ? { evidenceHash: row.evidenceHash } : {}),
+        ...(provenanceRow.sourceSnapshotId ? { sourceSnapshotId: provenanceRow.sourceSnapshotId } : {}),
+        ...(provenanceRow.providerRecordHash ? { providerRecordHash: provenanceRow.providerRecordHash } : {}),
+        ...(provenanceRow.evidenceHash ? { evidenceHash: provenanceRow.evidenceHash } : {}),
         ...(coverageScope ? { coverageScope } : {}),
         derivationKind: recordDerivationKind,
-        verifiedAt: row.verifiedAt ?? row.lastVerifiedAt ?? row.reviewedAt ?? row.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
+        verifiedAt: provenanceRow.verifiedAt ?? provenanceRow.lastVerifiedAt ?? provenanceRow.reviewedAt
+          ?? provenanceRow.updatedAt ?? sourceUpdatedAt.get(sourceId) ?? "",
       });
     }
   };

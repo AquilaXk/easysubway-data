@@ -159,12 +159,12 @@
       "sourceSystem": "공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15158794/openapi.do",
       "datasetKind": "open-api",
-      "coverage": "대전교통공사 1호선 22개 역의 42개 방향성 인접 edge",
+      "coverage": "대전교통공사 1호선 22개 공식 역번호와 42개 방향성 인접 edge",
       "coverageScope": {
         "regionIds": ["daejeon"],
         "operatorIds": ["daejeon-transportation"],
         "lineIds": ["line-7051a9c2525c"],
-        "sourceDomains": ["route_graph_topology"]
+        "sourceDomains": ["route_graph_topology", "station_line_membership"]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -180,7 +180,7 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15158794/openapi.do"
       },
-      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters"],
+      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters", "station_code"],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -219,6 +219,23 @@
         "excludedTransferCount": 0,
         "rawSha256": "7d064dd28ff74cc43c91030307b55edb801caa2eff28ef09c69d2461c262d1d1",
         "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2346,
+        "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
+        "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daejeon-membership-20260720",
+        "lineId": "line-7051a9c2525c",
+        "verifiedAt": "2026-07-20T03:30:00.000Z",
+        "stationCount": 22,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
+        "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
+        "stationCodeSourceId": "daejeon-station-distance-fare",
+        "stationCodeSnapshotId": "daejeon-station-distance-fare-topology-20260720",
+        "stationCodeContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       }
     },
     {
@@ -1646,6 +1663,80 @@
           "productionUseAllowed": false
         },
         "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+      }
+    },
+    {
+      "id": "molit-urban-rail-full-route-daejeon-membership",
+      "displayName": "국토교통부_도시철도 전체노선 대전 1호선 membership admission",
+      "owner": "국토교통부",
+      "provider": "국토교통부",
+      "providerDepartment": "도시철도 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+      "datasetKind": "reviewed-admission-slice",
+      "coverage": "국토교통부 역·노선 정본과 대전교통공사 역번호로 검증한 대전 1호선 22개 station membership",
+      "coverageScope": {
+        "regionIds": ["daejeon"],
+        "operatorIds": ["daejeon-transportation"],
+        "lineIds": ["line-7051a9c2525c"],
+        "sourceDomains": ["station_line_membership"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "annual admission review",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-06-22",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국토교통부·대전교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15122916/fileData.do"
+      },
+      "fieldsProvided": ["line", "station_name"],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2346,
+        "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
+        "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daejeon-membership-20260720",
+        "lineId": "line-7051a9c2525c",
+        "verifiedAt": "2026-07-20T03:30:00.000Z",
+        "stationCount": 22,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "a73ae83fbeb294c293a22bda5a44aef0a9263596fa6ef196f0c06670e918422f",
+        "stationCodesSha256": "4f9ad3bbf2efbf7dcdac8976eb18b34b4c9e5936ba7bcd1316c03dc516e1dd49",
+        "stationCodeSourceId": "daejeon-station-distance-fare",
+        "stationCodeSnapshotId": "daejeon-station-distance-fare-topology-20260720",
+        "stationCodeContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
       }
     },
     {

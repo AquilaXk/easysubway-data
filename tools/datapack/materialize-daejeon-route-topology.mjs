@@ -8,6 +8,8 @@ import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixtu
 import { DAEJEON_TOPOLOGY_ENDPOINT } from "./collect-daejeon-route-topology.mjs";
 
 const SOURCE_ID = "daejeon-station-distance-fare";
+const MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-daejeon-membership";
+const MEMBERSHIP_RAW_SOURCE_ID = "molit-urban-rail-full-route";
 const OPERATOR_ID = "daejeon-transportation";
 const LINE_ID = "line-7051a9c2525c";
 const PACK_ID = "nationwide-daejeon-topology";
@@ -24,7 +26,8 @@ export function materializeDaejeonRouteTopology({
   validateSnapshot(snapshot);
   const source = requiredSource(inventory, snapshot, now);
   const mappings = requiredMappings(canonicalStationMappings);
-  const compositionSha256 = sha256(JSON.stringify({ baseFixture, snapshot, source, mappings }));
+  const membershipSource = requiredMembershipSource(inventory, snapshot, mappings, now);
+  const compositionSha256 = sha256(JSON.stringify({ baseFixture, snapshot, source, membershipSource, mappings }));
   const fixture = structuredClone(baseFixture);
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1 || fixture.packs[0].artifactKind !== "production") {
     throw new Error("base fixture must contain exactly one production pack");
@@ -42,15 +45,30 @@ export function materializeDaejeonRouteTopology({
     throw new Error(`${SOURCE_ID} already exists in base fixture`);
   }
   pack.sourceInventory.push(packSource(source, snapshot));
+  if (pack.sourceInventory.some(({ id }) => id === MEMBERSHIP_SOURCE_ID)) {
+    throw new Error(`${MEMBERSHIP_SOURCE_ID} already exists in base fixture`);
+  }
+  pack.sourceInventory.push(packMembershipSource(membershipSource));
   pack.operators.push({ id: OPERATOR_ID, nameKo: "대전교통공사", nameEn: "" });
   pack.lines.push({ id: LINE_ID, operatorId: OPERATOR_ID, nameKo: "대전 1호선", nameEn: "", color: "#007448" });
 
   const byStationNumber = new Map(mappings.map((mapping) => [mapping.stationNumber, mapping]));
-  const canonicalSource = pack.sourceInventory.find(({ id }) => id === "molit-urban-rail-full-route");
+  const canonicalSource = pack.sourceInventory.find(({ id }) => id === MEMBERSHIP_RAW_SOURCE_ID);
   if (!canonicalSource?.fields?.includes("station_name") || !canonicalSource.fields.includes("station_sequence")) {
     throw new Error("MOLIT canonical station mapping source is missing from base fixture");
   }
-  for (const mapping of mappings) {
+  const membershipEvidence = source.membershipAdmissionEvidence;
+  for (const [index, mapping] of mappings.entries()) {
+    const membershipRecordHash = sha256(JSON.stringify({
+      lineId: LINE_ID,
+      stationName: mapping.stationName,
+      stationSequence: index + 1,
+    }));
+    const stationCodeRecordHash = sha256(JSON.stringify({
+      stationNumber: mapping.stationNumber,
+      adjacentRows: snapshot.rows.filter(({ fromStationNumber, toStationNumber }) =>
+        fromStationNumber === mapping.stationNumber || toStationNumber === mapping.stationNumber),
+    }));
     pack.stations.push({
       id: mapping.stationId,
       nameKo: mapping.stationName,
@@ -61,9 +79,12 @@ export function materializeDaejeonRouteTopology({
       longitude: null,
       dataQualityLevel: "LEVEL_2",
       dataSourceType: "OFFICIAL_FILE",
-      sourceId: canonicalSource.id,
+      sourceId: membershipSource.id,
+      sourceSnapshotId: membershipEvidence.snapshotId,
+      providerRecordHash: membershipRecordHash,
+      evidenceHash: membershipEvidence.mappingSha256,
       derivationKind: "OFFICIAL",
-      lastVerifiedAt: canonicalSource.updatedAt,
+      lastVerifiedAt: membershipEvidence.verifiedAt,
     });
     pack.stationLines.push({
       stationId: mapping.stationId,
@@ -71,9 +92,22 @@ export function materializeDaejeonRouteTopology({
       stationCode: mapping.stationNumber,
       lineSequence: Number(mapping.stationNumber) - 100,
       platformInfo: "",
-      sourceId: canonicalSource.id,
+      sourceId: membershipSource.id,
+      sourceSnapshotId: membershipEvidence.snapshotId,
+      providerRecordHash: membershipRecordHash,
+      evidenceHash: membershipEvidence.mappingSha256,
+      fieldProvenance: {
+        station_code: {
+          sourceId: SOURCE_ID,
+          sourceSnapshotId: source.topologyAdmissionEvidence.snapshotId,
+          providerRecordHash: stationCodeRecordHash,
+          evidenceHash: snapshot.contentSha256,
+          derivationKind: "OFFICIAL",
+          verifiedAt: snapshot.observedAt,
+        },
+      },
       derivationKind: "OFFICIAL",
-      lastVerifiedAt: canonicalSource.updatedAt,
+      lastVerifiedAt: membershipEvidence.verifiedAt,
     });
   }
 
@@ -178,6 +212,54 @@ function requiredMappings(mappings) {
     throw new Error("canonical Daejeon station mappings must contain stations 101 through 122 in order");
   }
   return mappings;
+}
+
+function requiredMembershipSource(inventory, snapshot, mappings, now) {
+  const source = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_SOURCE_ID);
+  const rawSource = inventory?.sources?.find(({ id }) => id === MEMBERSHIP_RAW_SOURCE_ID);
+  const stationCodeSource = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
+  const evidence = stationCodeSource?.membershipAdmissionEvidence;
+  const scope = source?.coverageScope;
+  const mappingSha256 = sha256(JSON.stringify(mappings));
+  const stationCodesSha256 = sha256(JSON.stringify(mappings.map(({ stationNumber }) => stationNumber)));
+  const verifiedAt = Date.parse(evidence?.verifiedAt ?? "");
+  if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
+    || rawSource?.admissionEvidence?.decision !== "APPROVED"
+    || !source.fieldsProvided?.includes("line") || !source.fieldsProvided.includes("station_name")
+    || !scope?.regionIds?.includes("daejeon") || !scope.operatorIds?.includes(OPERATOR_ID)
+    || JSON.stringify(scope.lineIds) !== JSON.stringify([LINE_ID])
+    || !scope.sourceDomains?.includes("station_line_membership")
+    || evidence?.issue !== 2346 || evidence.lineId !== LINE_ID || evidence.stationCount !== mappings.length
+    || JSON.stringify(source.membershipAdmissionEvidence) !== JSON.stringify(evidence)
+    || evidence.membershipSourceId !== MEMBERSHIP_RAW_SOURCE_ID
+    || evidence.mappingSha256 !== mappingSha256 || evidence.stationCodesSha256 !== stationCodesSha256
+    || evidence.stationCodeSourceId !== SOURCE_ID
+    || evidence.stationCodeSnapshotId !== stationCodeSource?.topologyAdmissionEvidence?.snapshotId
+    || evidence.stationCodeContentSha256 !== snapshot.contentSha256
+    || evidence.membershipSourceRawSha256 !== rawSource.admissionEvidence.rawSha256
+    || evidence.membershipSourceSnapshotSha256 !== mappings.sourceRawSha256
+    || !Number.isFinite(verifiedAt) || new Date(verifiedAt).toISOString() !== evidence.verifiedAt) {
+    throw new Error(`${MEMBERSHIP_SOURCE_ID} Daejeon membership evidence is invalid`);
+  }
+  if (now.getTime() < verifiedAt) {
+    throw new Error(`${MEMBERSHIP_SOURCE_ID} membership evidence is future-dated`);
+  }
+  return source;
+}
+
+function packMembershipSource(source) {
+  return {
+    id: source.id,
+    owner: source.owner,
+    url: source.datasetUrl,
+    license: source.license.name,
+    licenseStatus: "redistributable",
+    redistributionAllowed: true,
+    updateFrequency: source.updateFrequency,
+    updatedAt: source.membershipAdmissionEvidence.verifiedAt,
+    fields: [...source.fieldsProvided],
+    coverageScope: structuredClone(source.coverageScope),
+  };
 }
 
 function packSource(source, snapshot) {
