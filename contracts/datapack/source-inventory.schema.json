@@ -172,6 +172,47 @@
               "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
           },
+          "scheduleAdmissionEvidence": {
+            "type": "object",
+            "description": "공식 timetable snapshot의 production materialization 승인 근거다.",
+            "additionalProperties": false,
+            "required": [
+              "issue",
+              "materializer",
+              "verificationTest",
+              "snapshotId",
+              "snapshotPath",
+              "capturedAt",
+              "freshUntil",
+              "rowCount",
+              "departureCount",
+              "tripCount",
+              "stopTimeCount",
+              "rawSha256",
+              "rowsSha256",
+              "topologySourceId",
+              "topologySnapshotId",
+              "topologyContentSha256"
+            ],
+            "properties": {
+              "issue": { "type": "integer", "minimum": 1 },
+              "materializer": { "type": "string", "minLength": 1 },
+              "verificationTest": { "type": "string", "minLength": 1 },
+              "snapshotId": { "type": "string", "minLength": 1 },
+              "snapshotPath": { "type": "string", "minLength": 1 },
+              "capturedAt": { "type": "string", "format": "date-time" },
+              "freshUntil": { "type": "string", "format": "date-time" },
+              "rowCount": { "type": "integer", "minimum": 1 },
+              "departureCount": { "type": "integer", "minimum": 1 },
+              "tripCount": { "type": "integer", "minimum": 1 },
+              "stopTimeCount": { "type": "integer", "minimum": 1 },
+              "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rowsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "topologySourceId": { "type": "string", "minLength": 1 },
+              "topologySnapshotId": { "type": "string", "minLength": 1 },
+              "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
           "officialOdFareAdmissionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
           "fareStationLineMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
         }

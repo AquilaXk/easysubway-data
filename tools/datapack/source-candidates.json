@@ -3281,37 +3281,50 @@
         "secretPolicy": "env-only-redacted-output"
       },
       "licenseEvidenceStatus": "confirmed_free_use",
-      "sampleEvidenceStatus": "validated_live_sample",
-      "admissionStatus": "validated_live_schema_admitted",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "production_schedule_materialized",
+      "productionInventoryReferenceId": "daejeon-train-timetable",
       "serviceKeyHandling": "offline_probe_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "retrievedAt": "2026-07-14",
+        "retrievedAt": "2026-07-20",
         "endpoint": "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": ["XML"],
         "outputFields": ["dayType", "drctType", "stNum", "tmList", "tmZone"],
         "officialSwaggerOperationId": "getAllTimeTable",
         "liveValidation": {
-          "observedAt": "2026-07-14T07:02:58.606Z",
+          "observedAt": "2026-07-20T01:16:46.435Z",
           "httpStatus": 200,
           "providerResultCode": "00",
           "schemaStatus": "EXPECTED",
           "rowCount": 1628,
           "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
-          "evidenceArtifact": "tools/datapack/sources/daejeon-train-timetable-20260714.json",
+          "rowsSha256": "5888ab731dbe76b9b4791c30224664a12c37a25da50c5423d4266bc3c02c44a9",
+          "evidenceArtifact": "tools/datapack/sources/daejeon-train-timetable-20260720.json",
           "admitted": true
         },
         "coverageAssessment": {
-          "state": "MISSING",
-          "reasonCode": "LIVE_SCHEMA_ADMITTED_MATERIALIZATION_NOT_IMPLEMENTED"
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "schedule_timetable",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-daejeon-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-daejeon-timetable.test.mjs"
+        },
+        "materializationValidation": {
+          "departureCount": 9574,
+          "tripCount": 460,
+          "stopTimeCount": 10034,
+          "topologySourceId": "daejeon-station-distance-fare",
+          "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
         },
         "coverageLimitations": [
           "대전도시철도 1호선 계획 시각표이며 실시간 도착 정보가 아님",
-          "live XML schema 1628행은 검증됐지만 production transit trip/stop_time materialization은 아직 구현하지 않음"
+          "provider의 역별 출발시각을 직접 사용하고 종착 도착시각만 검증된 공식 인접 소요시간으로 완결함"
         ]
       },
-      "nextAction": "검증된 1628행을 대전도시철도 1호선 schedule_timetable transformer로 materialize하고 production pack 검증을 수행한다"
+      "nextAction": "#2138의 나머지 전국 requirement를 같은 production SQLite·field provenance 계약으로 계속 admission한다"
     },
     {
       "id": "busan-transportation-route-topology",

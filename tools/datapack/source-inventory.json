@@ -222,6 +222,81 @@
       }
     },
     {
+      "id": "daejeon-train-timetable",
+      "displayName": "대전교통공사_열차시각표 조회 서비스",
+      "owner": "대전교통공사",
+      "provider": "대전교통공사",
+      "providerDepartment": "대전교통공사",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15159278/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "대전교통공사 1호선 평일·휴일 460개 운행과 10034개 stop time",
+      "coverageScope": {
+        "regionIds": ["daejeon"],
+        "operatorIds": ["daejeon-transportation"],
+        "lineIds": ["line-7051a9c2525c"],
+        "sourceDomains": ["schedule_timetable"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-20",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대전교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15159278/openapi.do"
+      },
+      "fieldsProvided": ["service_calendar", "trip", "stop_time"],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "DAEJEON_LINE_1_FULL_TIMETABLE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "계획 시간표이며 실시간 도착 정보가 아니다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2325,
+        "materializer": "tools/datapack/materialize-daejeon-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daejeon-timetable.test.mjs",
+        "snapshotId": "daejeon-train-timetable-20260720",
+        "snapshotPath": "tools/datapack/sources/daejeon-train-timetable-20260720.json",
+        "capturedAt": "2026-07-20T01:16:46.435Z",
+        "freshUntil": "2026-07-21T01:16:46.435Z",
+        "rowCount": 1628,
+        "departureCount": 9574,
+        "tripCount": 460,
+        "stopTimeCount": 10034,
+        "rawSha256": "af47a698e7770e8fc709bb3dfa05b525f836b57b37cb9b716d6ca768e6723dbd",
+        "rowsSha256": "5888ab731dbe76b9b4791c30224664a12c37a25da50c5423d4266bc3c02c44a9",
+        "topologySourceId": "daejeon-station-distance-fare",
+        "topologySnapshotId": "daejeon-station-distance-fare-topology-20260720",
+        "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f"
+      }
+    },
+    {
       "id": "kric-disabled-toilet",
       "displayName": "국가철도공단_역사별 장애인 화장실 위치",
       "owner": "국가철도공단",

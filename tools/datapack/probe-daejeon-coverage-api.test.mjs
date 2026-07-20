@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -10,6 +11,9 @@ import {
 const sourceCandidates = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
 const timetableEvidence = JSON.parse(await readFile(
   new URL("./sources/daejeon-train-timetable-20260714.json", import.meta.url), "utf8",
+));
+const timetableRowsEvidence = JSON.parse(await readFile(
+  new URL("./sources/daejeon-train-timetable-20260720.json", import.meta.url), "utf8",
 ));
 const distanceFareEvidence = JSON.parse(await readFile(
   new URL("./sources/daejeon-station-distance-fare-20260714.json", import.meta.url), "utf8",
@@ -25,7 +29,7 @@ test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제�
     fetchImpl: async (url, init) => {
       requestedUrl = url;
       assert.equal(init.headers.accept, "application/xml,text/xml");
-      return new Response(`<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>평일</dayType><drctType>상행</drctType><stNum>101</stNum><tmList>0530</tmList><tmZone>05</tmZone></item></items></body></response>`, {
+      return new Response(`<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>0</dayType><drctType>1</drctType><stNum>101</stNum><tmList>30</tmList><tmZone>5</tmZone></item></items></body></response>`, {
         status: 200,
         headers: { "content-type": "application/xml" },
       });
@@ -37,6 +41,14 @@ test("대전 coverage probe는 시간표 XML을 검증하고 credential을 제�
   assert.equal(evidence.observedAt, "2026-07-14T07:00:00.000Z");
   assert.equal(evidence.rowCount, 1);
   assert.deepEqual(evidence.outputFields, ["dayType", "drctType", "stNum", "tmList", "tmZone"]);
+  assert.deepEqual(evidence.rows, [{
+    dayType: "0",
+    drctType: "1",
+    stNum: "101",
+    tmList: "30",
+    tmZone: "5",
+  }]);
+  assert.match(evidence.rowsSha256, /^[a-f0-9]{64}$/);
   assert.equal(evidence.credentialRedacted, true);
   assert.doesNotMatch(JSON.stringify(evidence), new RegExp(secret));
 });
@@ -65,6 +77,41 @@ test("대전 coverage probe는 공식 역간 거리·시간·요금 XML schema�
   assert.notEqual(evidence.outputFields,
     DAEJEON_COVERAGE_OPERATIONS["daejeon-station-distance-fare"].expectedFields);
   assert.equal(evidence.schemaStatus, "EXPECTED");
+});
+
+test("대전 시간표 XML은 공개 timetable 값 계약 밖 row를 거부한다", async (context) => {
+  const cases = [
+    ["day type", { dayType: "2" }],
+    ["direction type", { drctType: "2" }],
+    ["station number", { stNum: "100" }],
+    ["hour zone", { tmZone: "25" }],
+    ["minute", { tmList: "60" }],
+    ["empty token", { tmList: "05  10" }],
+    ["unsafe destination", { tmList: "05(alert!)" }],
+  ];
+
+  for (const [name, overrides] of cases) {
+    await context.test(name, async () => {
+      const row = {
+        dayType: "0",
+        drctType: "1",
+        stNum: "101",
+        tmList: "05 10(반석)",
+        tmZone: "5",
+        ...overrides,
+      };
+      await assert.rejects(probeDaejeonCoverageApi({
+        sourceId: "daejeon-train-timetable",
+        serviceKey: "key",
+        fetchImpl: async () => new Response(
+          `<response><header><resultCode>00</resultCode></header><body><items><item>${
+            Object.entries(row).map(([field, value]) => `<${field}>${value}</${field}>`).join("")
+          }</item></items></body></response>`,
+          { status: 200, headers: { "content-type": "application/xml" } },
+        ),
+      }), /schema mismatch: timetable values/);
+    });
+  }
 });
 
 test("대전 역간 XML은 빈 row와 잘못된 수치를 거부한다", async (context) => {
@@ -105,19 +152,52 @@ test("대전 역간 XML은 빈 row와 잘못된 수치를 거부한다", async (
   }
 });
 
-test("대전 열차시각표 candidate는 live XML schema만 admission하고 coverage는 계속 fail closed한다", () => {
+test("대전 열차시각표 candidate는 official XML과 topology lineage로 schedule을 production admission한다", () => {
   const candidate = sourceCandidates.candidates.find(({ id }) => id === "daejeon-train-timetable");
-  assert.equal(candidate.sampleEvidenceStatus, "validated_live_sample");
-  assert.equal(candidate.admissionStatus, "validated_live_schema_admitted");
+  assert.equal(candidate.sampleEvidenceStatus, "validated_live_full_snapshot");
+  assert.equal(candidate.admissionStatus, "production_schedule_materialized");
+  assert.equal(candidate.productionInventoryReferenceId, "daejeon-train-timetable");
   assert.equal(candidate.evidence.liveValidation.providerResultCode, "00");
   assert.equal(candidate.evidence.liveValidation.rowCount, 1628);
-  assert.equal(candidate.evidence.liveValidation.observedAt, "2026-07-14T07:02:58.606Z");
-  assert.equal(candidate.evidence.coverageAssessment.state, "MISSING");
+  assert.equal(candidate.evidence.liveValidation.observedAt, timetableRowsEvidence.observedAt);
+  assert.deepEqual(candidate.evidence.coverageAssessment, {
+    state: "SUPPORTED",
+    requirementCount: 1,
+    sourceDomain: "schedule_timetable",
+    artifactKind: "production",
+    materializer: "tools/datapack/materialize-daejeon-timetable.mjs",
+    verificationTest: "tools/datapack/materialize-daejeon-timetable.test.mjs",
+  });
   assert.equal(candidate.evidence.liveValidation.evidenceArtifact,
-    "tools/datapack/sources/daejeon-train-timetable-20260714.json");
+    "tools/datapack/sources/daejeon-train-timetable-20260720.json");
+  assert.equal(candidate.evidence.liveValidation.rowsSha256, timetableRowsEvidence.rowsSha256);
   assert.equal(timetableEvidence.sourceId, candidate.id);
   assert.equal(timetableEvidence.rawSha256, candidate.evidence.liveValidation.rawSha256);
   assert.deepEqual(timetableEvidence.outputFields, candidate.evidence.outputFields);
+  assert.deepEqual(candidate.evidence.materializationValidation, {
+    departureCount: 9574,
+    tripCount: 460,
+    stopTimeCount: 10034,
+    topologySourceId: "daejeon-station-distance-fare",
+    topologyContentSha256: "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+  });
+});
+
+test("대전 열차시각표 sanitized snapshot은 1628개 공개 row와 semantic hash를 고정한다", () => {
+  assert.equal(timetableRowsEvidence.sourceId, "daejeon-train-timetable");
+  assert.equal(timetableRowsEvidence.providerResultCode, "00");
+  assert.equal(timetableRowsEvidence.schemaStatus, "EXPECTED");
+  assert.equal(timetableRowsEvidence.rowCount, 1628);
+  assert.equal(timetableRowsEvidence.rows.length, timetableRowsEvidence.rowCount);
+  assert.equal(timetableRowsEvidence.rowsSha256,
+    createHash("sha256").update(JSON.stringify(timetableRowsEvidence.rows)).digest("hex"));
+  assert.equal(timetableRowsEvidence.rawSha256, timetableEvidence.rawSha256);
+  assert.deepEqual([...new Set(timetableRowsEvidence.rows.map(({ dayType }) => dayType))].sort(), ["0", "1"]);
+  assert.deepEqual([...new Set(timetableRowsEvidence.rows.map(({ drctType }) => drctType))].sort(), ["0", "1"]);
+  assert.deepEqual([...new Set(timetableRowsEvidence.rows.map(({ stNum }) => stNum))].sort(),
+    Array.from({ length: 22 }, (_, index) => String(101 + index)));
+  assert.equal(timetableRowsEvidence.credentialRedacted, true);
+  assert.doesNotMatch(JSON.stringify(timetableRowsEvidence), /serviceKey|authorization|credentialEnv/i);
 });
 
 test("대전 역간 candidate는 official XML과 full adjacent OD로 topology를 production admission한다", () => {
@@ -157,7 +237,7 @@ test("대전 coverage probe는 provider/schema 오류를 fail closed한다", asy
       sourceId: "daejeon-train-timetable",
       serviceKey: "key",
       fetchImpl: async () => new Response(
-        `<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>평일</dayType><drctType>상행</drctType><stNum>101</stNum><tmList>0530</tmList><tmZone>05</tmZone></item></items></body></response>`,
+        `<?xml version="1.0"?><response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items><item><dayType>0</dayType><drctType>1</drctType><stNum>101</stNum><tmList>30</tmList><tmZone>5</tmZone></item></items></body></response>`,
         { status: 200, headers: { "content-type": "application/json" } },
       ),
     }), /schema mismatch: content-type application\/json/);

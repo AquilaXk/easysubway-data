@@ -10,6 +10,8 @@ export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   "daejeon-train-timetable": Object.freeze({
     endpoint: "https://apis.data.go.kr/B554695/TimeTableSVC/getAllTimeTable",
     expectedFields: ["dayType", "drctType", "stNum", "tmList", "tmZone"],
+    captureRows: true,
+    validateItem: validateTimetableItem,
   }),
   "daejeon-station-distance-fare": Object.freeze({
     endpoint: "https://apis.data.go.kr/B554695/TimeDistSVC/getTimeDist01",
@@ -67,7 +69,7 @@ export async function probeDaejeonCoverageApi({
     schemaStatus: "EXPECTED",
     rowCount: parsed.rowCount,
     outputFields: parsed.outputFields,
-    ...(captureRows ? {
+    ...((captureRows || operation.captureRows) ? {
       rows: parsed.rows,
       rowsSha256: sha256(JSON.stringify(parsed.rows)),
     } : {}),
@@ -157,6 +159,23 @@ function validateOperationQuery(sourceId, query, overridden) {
   if (!/^1(?:0[1-9]|1\d|2[0-2])$/.test(from)
     || !/^1(?:0[1-9]|1\d|2[0-2])$/.test(to) || from === to) {
     throw new Error("Daejeon distance query is invalid");
+  }
+}
+
+function validateTimetableItem({ dayType, drctType, stNum, tmList, tmZone }) {
+  const stationNumber = Number(stNum);
+  const hour = Number(tmZone);
+  const tokens = tmList.split(" ");
+  const validTokens = tokens.length > 0 && tokens.every((token) => {
+    const match = /^(\d{1,2})(?:\(([가-힣A-Za-z0-9.· ]{1,40})\))?$/.exec(token);
+    return match && Number(match[1]) >= 0 && Number(match[1]) <= 59;
+  });
+  if (!new Set(["0", "1"]).has(dayType)
+    || !new Set(["0", "1"]).has(drctType)
+    || !/^\d{3}$/.test(stNum) || stationNumber < 101 || stationNumber > 122
+    || !/^\d{1,2}$/.test(tmZone) || hour < 5 || hour > 24
+    || !validTokens) {
+    throw new Error("Daejeon coverage API schema mismatch: timetable values");
   }
 }
 
