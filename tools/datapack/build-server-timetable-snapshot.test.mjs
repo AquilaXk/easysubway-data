@@ -456,3 +456,132 @@ test("CLI --check는 admitted input과 tracked snapshot/evidence의 최신성을
     env: { ...process.env, EASYSUBWAY_TIMETABLE_SNAPSHOT_BUILD_NOW: buildNow.toISOString() },
   });
 });
+
+// topology 불변 순수 freshness 리프레시: 재수집한 source가 현행 출하 pack을 대상으로 수집되어
+// admit된 pack identity가 번들 pack과 일치하는 상태. apply-itx 산출물(topology evidence) 없이도
+// admit된 identity를 재사용해 완주해야 한다.
+function consistentFreshnessInputs(value) {
+  const measuredGzipSha = sha256(value.canonicalPackGzipBytes);
+  const measuredSqliteSha = sha256(gunzipSync(value.canonicalPackGzipBytes));
+  const source = JSON.parse(value.sourceBytes);
+  source.canonicalPackIdentity.sha256 = measuredGzipSha;
+  const { evidenceHash: _drop, ...sourceWithoutHash } = source;
+  source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutHash)));
+  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
+  const contract = JSON.parse(value.contractBytes);
+  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = measuredGzipSha;
+  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = measuredSqliteSha;
+  contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
+  const contractBytes = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`);
+  const topology = JSON.parse(value.topologyEvidenceBytes);
+  topology.sourceArtifact.sha256 = sha256(sourceBytes);
+  topology.pack.inputSha256 = measuredGzipSha;
+  topology.pack.inputSqliteSha256 = measuredSqliteSha;
+  const topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topology, null, 2)}\n`);
+  return {
+    contractBytes, sourceBytes, topologyEvidenceBytes, measuredGzipSha, measuredSqliteSha,
+  };
+}
+
+test("pack 미입력 순수 freshness 경로는 admit된 pack identity를 evidence에 기록한다", async () => {
+  const value = await inputs();
+  const { contractBytes, sourceBytes, measuredGzipSha, measuredSqliteSha } = consistentFreshnessInputs(value);
+
+  const result = buildServerTimetableSnapshot({
+    ...value, contractBytes, sourceBytes, topologyEvidenceBytes: null, buildNow,
+  });
+
+  assert.deepEqual(result.evidence.canonicalPackIdentity, {
+    id: "capital", sha256: measuredGzipSha, sqliteSha256: measuredSqliteSha,
+  });
+  assert.deepEqual(result.evidence.canonicalPackLineage, {
+    provenance: "coverage-contract-admission",
+    admittedInputSha256: measuredGzipSha,
+    admittedInputSqliteSha256: measuredSqliteSha,
+  });
+  assert.match(
+    result.sql,
+    new RegExp(`'ITX_CHEONGCHUN', '[^']+', '[^']+', 'capital', '${measuredGzipSha}', '${measuredSqliteSha}', 'ADMITTED'`),
+  );
+});
+
+test("pack 미입력 경로는 admit된 identity와 번들 pack이 불일치하면 fail closed 한다", async () => {
+  const value = await inputs();
+
+  // 현행 tracked 상태: admit된 input(#2097 pre-topology pack)과 출하 pack(post-topology)이 다르다.
+  assert.throws(
+    () => buildServerTimetableSnapshot({ ...value, topologyEvidenceBytes: null, buildNow }),
+    /canonical topology pack identity mismatch/,
+  );
+});
+
+test("pack 미입력 경로는 sqliteSha256만 어긋나도 fail closed 한다", async () => {
+  const value = await inputs();
+  const { contractBytes, sourceBytes } = consistentFreshnessInputs(value);
+  // gzip sha256은 실측 pack과 일치시키되 sqliteSha256만 다른 값으로 어긋나게 한다.
+  const contract = JSON.parse(contractBytes);
+  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "9".repeat(64);
+  const tamperedContractBytes = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`);
+
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value, contractBytes: tamperedContractBytes, sourceBytes, topologyEvidenceBytes: null, buildNow,
+    }),
+    /canonical topology pack identity mismatch/,
+  );
+});
+
+test("pack 미입력 경로는 gzip이 파손되면 fail closed 한다", async () => {
+  const value = await inputs();
+  const { contractBytes, sourceBytes } = consistentFreshnessInputs(value);
+
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      contractBytes,
+      sourceBytes,
+      canonicalPackGzipBytes: Buffer.from("corrupt-not-a-gzip"),
+      topologyEvidenceBytes: null,
+      buildNow,
+    }),
+    /canonical topology pack identity mismatch/,
+  );
+});
+
+test("pack 미입력 경로와 topology evidence 경로는 동일 입력에서 byte-identical snapshot을 낸다", async () => {
+  const value = await inputs();
+  const { contractBytes, sourceBytes, topologyEvidenceBytes } = consistentFreshnessInputs(value);
+
+  const packMissing = buildServerTimetableSnapshot({
+    ...value, contractBytes, sourceBytes, topologyEvidenceBytes: null, buildNow,
+  });
+  const packProvided = buildServerTimetableSnapshot({
+    ...value, contractBytes, sourceBytes, topologyEvidenceBytes, buildNow,
+  });
+
+  assert.equal(packMissing.sql, packProvided.sql);
+  assert.equal(packMissing.evidence.snapshotSha256, packProvided.evidence.snapshotSha256);
+  assert.deepEqual(packMissing.evidence.canonicalPackIdentity, packProvided.evidence.canonicalPackIdentity);
+  // lineage provenance만 설계상 갈린다(admission 재사용 vs topology evidence 결합).
+  assert.equal(packMissing.evidence.canonicalPackLineage.provenance, "coverage-contract-admission");
+  assert.ok(packProvided.evidence.canonicalPackLineage.topologyEvidenceSha256);
+});
+
+test("CLI --without-topology-evidence는 admit된 pack identity와 번들 pack 불일치를 fail closed 한다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "server-timetable-snapshot-freshness-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/build-server-timetable-snapshot.mjs",
+      "--without-topology-evidence",
+      "--output", path.join(directory, "snapshot.sql.gz"),
+      "--evidence", path.join(directory, "evidence.json"),
+      "--runtime-evidence", path.join(directory, "runtime-evidence.json"),
+    ], {
+      cwd: root,
+      env: { ...process.env, EASYSUBWAY_TIMETABLE_SNAPSHOT_BUILD_NOW: buildNow.toISOString() },
+    }),
+    /canonical topology pack identity mismatch/,
+  );
+});

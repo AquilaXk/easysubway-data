@@ -48,7 +48,9 @@ export function buildServerTimetableSnapshot({
   const contract = parseJson(contractBytes, "coverage contract");
   const source = parseJson(sourceBytes, "source artifact");
   const completeness = parseJson(completenessBytes, "completeness evidence");
-  const topologyEvidence = parseJson(topologyEvidenceBytes, "topology evidence");
+  const topologyEvidence = topologyEvidenceBytes == null
+    ? null
+    : parseJson(topologyEvidenceBytes, "topology evidence");
   const subwayRoster = parseJson(subwayRosterBytes, "subway roster");
   const admittedCanonicalPackIdentity = validateAdmission({
     contract,
@@ -58,15 +60,19 @@ export function buildServerTimetableSnapshot({
     completenessBytes,
     buildNow,
   });
-  const { canonicalPackIdentity, canonicalPackLineage } = validateCanonicalTopologyPack({
-    contract,
-    source,
-    sourceBytes,
-    topologyEvidence,
-    topologyEvidenceBytes,
-    canonicalPackGzipBytes,
-    admittedCanonicalPackIdentity,
-  });
+  // 순수 freshness 리프레시(topology 불변)는 apply-itx가 산출하는 topology evidence 없이
+  // 이미 admit된 pack identity를 재사용한다. topology가 실제로 바뀌는 리프레시는 기존 경로.
+  const { canonicalPackIdentity, canonicalPackLineage } = topologyEvidenceBytes == null
+    ? admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity })
+    : validateCanonicalTopologyPack({
+      contract,
+      source,
+      sourceBytes,
+      topologyEvidence,
+      topologyEvidenceBytes,
+      canonicalPackGzipBytes,
+      admittedCanonicalPackIdentity,
+    });
   const baselineSql = normalizeSubwayStationIds(
     rawBaselineSql,
     canonicalPackGzipBytes,
@@ -522,6 +528,35 @@ function namespacedItxServiceId(sourceServiceId) {
   return serviceId;
 }
 
+function admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity }) {
+  let canonicalPackSqliteBytes;
+  try {
+    canonicalPackSqliteBytes = gunzipSync(canonicalPackGzipBytes);
+  } catch {
+    throw new Error("canonical topology pack identity mismatch");
+  }
+  const outputSha256 = sha256(canonicalPackGzipBytes);
+  const outputSqliteSha256 = sha256(canonicalPackSqliteBytes);
+  // coverage contract가 이미 admit한 identity를 evidence에 그대로 기록하되, 실제 번들 pack
+  // 파일의 실측 해시와 어긋나면 스테일 pin 위에 조용히 쌓지 않도록 fail closed 한다.
+  if (admittedCanonicalPackIdentity.sha256 !== outputSha256
+    || admittedCanonicalPackIdentity.sqliteSha256 !== outputSqliteSha256) {
+    throw new Error("canonical topology pack identity mismatch");
+  }
+  return {
+    canonicalPackIdentity: {
+      id: admittedCanonicalPackIdentity.id,
+      sha256: outputSha256,
+      sqliteSha256: outputSqliteSha256,
+    },
+    canonicalPackLineage: {
+      provenance: "coverage-contract-admission",
+      admittedInputSha256: admittedCanonicalPackIdentity.sha256,
+      admittedInputSqliteSha256: admittedCanonicalPackIdentity.sqliteSha256,
+    },
+  };
+}
+
 function validateCanonicalTopologyPack({
   contract,
   source,
@@ -953,6 +988,9 @@ async function main() {
     ?? "apps/mobile/assets/datapacks/capital.sqlite.gz");
   const topologyEvidencePath = path.resolve(root, args["topology-evidence"]
     ?? "tools/datapack/itx-cheongchun-topology-evidence.json");
+  // --without-topology-evidence: topology 불변 순수 freshness 리프레시. apply-itx 산출물
+  // (topology evidence) 없이 admit된 pack identity를 재사용한다.
+  const withoutTopologyEvidence = args["without-topology-evidence"] === true;
   const subwayRosterPath = path.resolve(root, args["subway-roster"]
     ?? "tools/datapack/sources/kric-line4-route-roster-20260706.json");
   const reviewedPackPath = path.resolve(root, args["reviewed-pack"]
@@ -971,7 +1009,7 @@ async function main() {
       contract.sourceTimetableArtifact.completenessEvidencePath,
     )),
     canonicalPackGzipBytes: await readFile(canonicalPackPath),
-    topologyEvidenceBytes: await readFile(topologyEvidencePath),
+    topologyEvidenceBytes: withoutTopologyEvidence ? null : await readFile(topologyEvidencePath),
     subwayRosterBytes: await readFile(subwayRosterPath),
     reviewedPackBytes: await readFile(reviewedPackPath),
     sourceSnapshotsBytes: await readFile(sourceSnapshotsPath),
@@ -1018,6 +1056,10 @@ function parseArgs(argv) {
     const flag = argv[index];
     if (flag === "--check") {
       args.check = true;
+      continue;
+    }
+    if (flag === "--without-topology-evidence") {
+      args["without-topology-evidence"] = true;
       continue;
     }
     if (!flag.startsWith("--") || argv[index + 1] == null || argv[index + 1].startsWith("--")) {

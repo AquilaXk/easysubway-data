@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { gunzipSync } from "node:zlib";
 
 import {
   buildItxSourceCandidate,
@@ -20,6 +21,7 @@ import {
 const PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
 const PACK_BYTES = await readFile(PACK_PATH);
 const PACK_SHA256 = createHash("sha256").update(PACK_BYTES).digest("hex");
+const PACK_SQLITE_SHA256 = createHash("sha256").update(gunzipSync(PACK_BYTES)).digest("hex");
 const YONGSAN_STATION_ID = "station-8aa315864466";
 const CHUNCHEON_STATION_ID = "station-dd14cfb89cbc";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
@@ -396,6 +398,85 @@ function ownerApproval(candidate) {
       created_at: "2026-07-15T01:30:00.000Z",
     }), { status: 200, headers: { "content-type": "application/json" } }),
   };
+}
+
+const STALE_PIN_SHA256 = "1".repeat(64);
+const STALE_PIN_SQLITE_SHA256 = "2".repeat(64);
+
+function stalePin(overrides = {}) {
+  return {
+    id: "capital",
+    sourceIssue: 2097,
+    sha256: STALE_PIN_SHA256,
+    sqliteSha256: STALE_PIN_SQLITE_SHA256,
+    ...overrides,
+  };
+}
+
+function shippedPackTopologyEvidence(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    serviceId: "ITX_CHEONGCHUN",
+    sourceIssue: 2135,
+    topology: { sha256: "d".repeat(64) },
+    pack: {
+      id: "capital",
+      outputSha256: PACK_SHA256,
+      outputSqliteSha256: PACK_SQLITE_SHA256,
+      byteSize: PACK_BYTES.length,
+      ...(overrides.pack ?? {}),
+    },
+    ...overrides.top,
+  };
+}
+
+// UNCHANGED_AUTO 승격 흐름을 구성하고 promote한 뒤, 결과 contract를 반환한다.
+// topologyEvidence === null이면 topology evidence 파일을 생성하지 않는다.
+async function promoteUnchangedWithPin({ pin, topologyEvidence }) {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-pin-correction-"));
+  try {
+    const sourceDir = path.join(dir, "tools/datapack/sources");
+    await mkdir(sourceDir, { recursive: true });
+    const previous = sourceCandidate({
+      artifactId: "itx-cheongchun-source-timetable-20260714010000000",
+      promotionStatus: "SUPPORTED",
+    });
+    const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
+    const previousSha = previousReference.sha256;
+    const contractExtras = { sourceTimetableArtifact: previousReference };
+    if (pin !== undefined) {
+      contractExtras.officialEvidence = { korailCompletenessAdmission: { canonicalPackIdentity: pin } };
+    }
+    const contractPath = await writeCoverageContract(dir, JSON.stringify(contractExtras));
+    if (topologyEvidence !== null) {
+      await writeFile(
+        path.join(dir, "tools/datapack/itx-cheongchun-topology-evidence.json"),
+        `${JSON.stringify(topologyEvidence, null, 2)}\n`,
+      );
+    }
+    const candidate = sourceCandidate({ promotionStatus: "SUPPORTED" });
+    candidate.snapshotDiff = unchangedSnapshotDiff(previousSha, candidate.normalizedSnapshotSets);
+    bindCandidateCompleteness(candidate);
+    const completeness = completenessForCandidate(candidate);
+    const candidatePath = path.join(dir, "candidate.json");
+    const completenessPath = path.join(dir, "completeness.json");
+    await Promise.all([
+      writeFile(candidatePath, sourceBytes(candidate)),
+      writeFile(completenessPath, completenessBytes(completeness)),
+    ]);
+    const promoted = await promoteItxSourceCandidate({
+      candidatePath,
+      completenessPath,
+      sourceOutputDir: sourceDir,
+      coverageContractPath: contractPath,
+      repositoryRoot: dir,
+      now: new Date("2026-07-15T02:00:00.000Z"),
+    });
+    return { promoted, contract: JSON.parse(await readFile(contractPath, "utf8")) };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 async function writeCoverageContract(repositoryRoot, contents) {
@@ -1288,6 +1369,91 @@ test("ITX changed candidate는 change OWNER approval로 immutable artifact를 �
       `tools/datapack/sources/${previous.artifactId}.json`,
     );
     assert.deepEqual(await readFile(promoted.artifactPath), Buffer.from(candidateBytes));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("UNCHANGED_AUTO 승격은 조건이 모두 충족되면 admission pin을 출하 pack 실체로 교정한다", async () => {
+  const { promoted, contract } = await promoteUnchangedWithPin({
+    pin: stalePin(),
+    topologyEvidence: shippedPackTopologyEvidence(),
+  });
+  assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
+  const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+  // pin의 3필드는 출하 pack 실체로 갱신되고, sourceIssue 등 잔여 필드는 보존된다.
+  assert.equal(pin.id, "capital");
+  assert.equal(pin.sha256, PACK_SHA256);
+  assert.equal(pin.sqliteSha256, PACK_SQLITE_SHA256);
+  assert.equal(pin.sourceIssue, 2097);
+  // 교정된 pin(sha256/sqliteSha256)은 build --without-topology-evidence 게이트가 요구하는
+  // 출하 pack 실측 identity와 정확히 일치한다.
+  assert.equal(pin.sha256, createHash("sha256").update(PACK_BYTES).digest("hex"));
+  assert.equal(pin.sqliteSha256, createHash("sha256").update(gunzipSync(PACK_BYTES)).digest("hex"));
+});
+
+test("UNCHANGED_AUTO 승격은 조건 미충족 시 admission pin을 불변 유지한다", async (context) => {
+  await context.test("topology evidence OUTPUT identity 불일치", async () => {
+    const { promoted, contract } = await promoteUnchangedWithPin({
+      pin: stalePin(),
+      topologyEvidence: shippedPackTopologyEvidence({ pack: { outputSqliteSha256: "9".repeat(64) } }),
+    });
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
+    const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+    assert.equal(pin.sha256, STALE_PIN_SHA256);
+    assert.equal(pin.sqliteSha256, STALE_PIN_SQLITE_SHA256);
+  });
+
+  await context.test("topology evidence 파일 부재", async () => {
+    const { promoted, contract } = await promoteUnchangedWithPin({
+      pin: stalePin(),
+      topologyEvidence: null,
+    });
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
+    const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+    assert.equal(pin.sha256, STALE_PIN_SHA256);
+    assert.equal(pin.sqliteSha256, STALE_PIN_SQLITE_SHA256);
+  });
+
+  await context.test("officialEvidence pin 부재 시에도 promote는 성공한다", async () => {
+    const { promoted, contract } = await promoteUnchangedWithPin({
+      topologyEvidence: shippedPackTopologyEvidence(),
+    });
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
+    assert.equal(contract.officialEvidence, undefined);
+  });
+});
+
+test("bootstrap 승격(UNCHANGED_AUTO 아님)은 admission pin을 교정하지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-pin-bootstrap-"));
+  try {
+    const sourceDir = path.join(dir, "tools/datapack/sources");
+    await mkdir(sourceDir, { recursive: true });
+    const candidate = sourceCandidate();
+    const candidateBytes = sourceBytes(candidate);
+    const candidatePath = path.join(dir, "candidate.json");
+    await writeFile(candidatePath, candidateBytes);
+    await writeCandidateCompleteness(candidatePath, candidate);
+    await writeFile(
+      path.join(dir, "tools/datapack/itx-cheongchun-topology-evidence.json"),
+      `${JSON.stringify(shippedPackTopologyEvidence(), null, 2)}\n`,
+    );
+    const contractPath = await writeCoverageContract(dir, JSON.stringify({
+      officialEvidence: { korailCompletenessAdmission: { canonicalPackIdentity: stalePin() } },
+    }));
+    const promoted = await promoteItxSourceCandidate({
+      candidatePath,
+      ...ownerApproval(candidate),
+      sourceOutputDir: sourceDir,
+      coverageContractPath: contractPath,
+      repositoryRoot: dir,
+      now: new Date("2026-07-15T02:00:00.000Z"),
+    });
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "BOOTSTRAP_OWNER_APPROVED");
+    const contract = JSON.parse(await readFile(contractPath, "utf8"));
+    const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+    assert.equal(pin.sha256, STALE_PIN_SHA256);
+    assert.equal(pin.sqliteSha256, STALE_PIN_SQLITE_SHA256);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

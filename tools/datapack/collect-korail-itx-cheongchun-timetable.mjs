@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipSync } from "node:zlib";
 
 import { cleanupPackDir, openPack, repoRoot } from "../route-map/pack-io.mjs";
 import {
@@ -14,6 +15,7 @@ const DETAIL_URL = "https://www.data.go.kr/data/15125762/openapi.do";
 const LINE_ID = "line-54a7b980b7c3";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
 const CANONICAL_PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
+const TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
 const CAPITAL_APPROACH_STATIONS = Object.freeze([
   Object.freeze({ canonicalStationId: "station-8aa315864466", nameKo: "용산", corridorSequence: 1, lineId: CAPITAL_APPROACH_LINE_ID }),
   Object.freeze({ canonicalStationId: "station-c0679b9a6cf8", nameKo: "옥수", corridorSequence: 2, lineId: CAPITAL_APPROACH_LINE_ID }),
@@ -458,6 +460,12 @@ async function promoteItxSourceCandidateLocked({
       approvedArtifactSha256: approvalRequired ? candidateSha256 : null,
     },
   };
+  await maybeCorrectAdmissionPin({
+    contract,
+    candidate,
+    promotionMode: contract.sourceTimetableArtifact.promotion.mode,
+    repositoryRoot,
+  });
   const contractTempPath = `${coverageContractPath}.${randomUUID()}.tmp`;
   try {
     await writeFile(contractTempPath, `${JSON.stringify(contract, null, 2)}\n`, { flag: "wx", mode: 0o644 });
@@ -717,6 +725,66 @@ async function validateCanonicalPackIdentity(identity, repositoryRoot) {
   } catch (error) {
     if (error instanceof Error && error.message === "CANONICAL_PACK_IDENTITY_INVALID") throw error;
     throw new Error("CANONICAL_PACK_IDENTITY_INVALID", { cause: error });
+  }
+}
+
+// UNCHANGED_AUTO 승격에 한해, #2341에서 오너가 수동으로 하던 "admission pin을 현행 출하 pack
+// 실체로 교정"을 검증 조건이 갖춰졌을 때만 자동화한다. 게이트 비교 로직(build의 validateAdmission
+// 등)은 불변이며, 여기서는 조건이 모두 실측될 때에만 pin을 출하 pack identity로 일관 갱신한다.
+// 조건 미충족이면 pin을 건드리지 않아 기존 수동 교정 경로(fail closed)가 그대로 유지된다.
+async function maybeCorrectAdmissionPin({ contract, candidate, promotionMode, repositoryRoot }) {
+  // (a) UNCHANGED_AUTO 승격일 때에만 자동 교정한다.
+  if (promotionMode !== "UNCHANGED_AUTO") return;
+  const pin = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
+  if (!isPlainObject(pin) || typeof pin.id !== "string"
+    || !/^[a-f0-9]{64}$/.test(pin.sha256 ?? "") || !/^[a-f0-9]{64}$/.test(pin.sqliteSha256 ?? "")) {
+    return;
+  }
+  const shipped = await readShippedPackIdentity(repositoryRoot);
+  if (shipped == null) return;
+  // (b) 재수집이 정확히 현행 출하 pack을 대상으로 이뤄졌는가(candidate identity == 출하 pack).
+  if (candidate?.canonicalPackIdentity?.sha256 !== shipped.gzipSha256) return;
+  // (c) 그 출하 pack의 topology가 apply-itx에서 이미 검증됐는가
+  //     (topology evidence의 pack OUTPUT identity == 출하 pack identity).
+  const evidence = await readTopologyEvidence(repositoryRoot);
+  if (!isPlainObject(evidence)
+    || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence.pack?.id !== pin.id
+    || evidence.pack?.outputSha256 !== shipped.gzipSha256
+    || evidence.pack?.outputSqliteSha256 !== shipped.sqliteSha256
+    || evidence.pack?.byteSize !== shipped.byteSize) {
+    return;
+  }
+  // 세 조건이 모두 충족되면 pin의 3필드를 출하 pack 실체로 일관 갱신한다(sourceIssue 등 잔여 필드는 보존).
+  pin.id = evidence.pack.id;
+  pin.sha256 = shipped.gzipSha256;
+  pin.sqliteSha256 = shipped.sqliteSha256;
+}
+
+async function readShippedPackIdentity(repositoryRoot) {
+  try {
+    const packPath = path.join(repositoryRoot, ...CANONICAL_PACK_PATH.split("/"));
+    const stat = await lstat(packPath);
+    if (stat.isSymbolicLink() || !stat.isFile()) return null;
+    const gzipBytes = await readFile(packPath);
+    return {
+      gzipSha256: sha256(gzipBytes),
+      sqliteSha256: sha256(gunzipSync(gzipBytes)),
+      byteSize: gzipBytes.length,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readTopologyEvidence(repositoryRoot) {
+  try {
+    const evidencePath = path.join(repositoryRoot, ...TOPOLOGY_EVIDENCE_PATH.split("/"));
+    const stat = await lstat(evidencePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) return null;
+    return JSON.parse(await readFile(evidencePath, "utf8"));
+  } catch {
+    return null;
   }
 }
 
