@@ -501,6 +501,243 @@
       }
     },
     {
+      "id": "gwangju-transportation-route-topology",
+      "displayName": "광주교통공사 도시철도 운행정보",
+      "owner": "광주교통공사",
+      "provider": "광주교통공사",
+      "providerDepartment": "IT전략팀",
+      "sourceSystem": "광주교통공사 오픈 API",
+      "datasetUrl": "https://www.grtc.co.kr/subway/contents/apiRunInfo",
+      "datasetKind": "official-open-api",
+      "coverage": "광주 1호선 20개 역과 38개 방향성 인접 거리·소요시간 edge",
+      "coverageScope": {
+        "regionIds": ["gwangju"],
+        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
+        "lineIds": ["line-e57a361e8892"],
+        "sourceDomains": ["route_graph_topology", "station_line_membership"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-20",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "광주교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15046044/fileData.do"
+      },
+      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters", "station_code"],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source provides route travel cost, not scheduled departures"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2383,
+        "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
+        "snapshotId": "gwangju-transportation-route-topology-20260720",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
+        "capturedAt": "2026-07-20T13:08:47.161Z",
+        "freshUntil": "2026-07-21T13:08:47.161Z",
+        "stationCount": 20,
+        "edgeCount": 38,
+        "excludedTransferCount": 0,
+        "rawSha256": "15e4a6835dff21997d29707b0554580560fd770388156b2ac169508cdfd6636a",
+        "contentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2383,
+        "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-gwangju-membership-20260720",
+        "lineIds": ["line-e57a361e8892"],
+        "verifiedAt": "2026-07-20T13:08:47.161Z",
+        "stationCount": 20,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
+        "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
+        "stationCodeSourceId": "gwangju-transportation-route-topology",
+        "stationCodeSnapshotId": "gwangju-transportation-route-topology-20260720",
+        "stationCodeContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
+      }
+    },
+    {
+      "id": "gwangju-transportation-cyberstation-timetable",
+      "displayName": "광주교통공사 사이버스테이션 열차시각표",
+      "owner": "광주교통공사",
+      "provider": "광주교통공사",
+      "providerDepartment": "IT전략팀",
+      "sourceSystem": "광주교통공사 사이버스테이션",
+      "datasetUrl": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
+      "datasetKind": "official-web-timetable",
+      "coverage": "광주 1호선 4개 요일 유형 810개 완결 운행과 14171개 stop time",
+      "coverageScope": {
+        "regionIds": ["gwangju"],
+        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
+        "lineIds": ["line-e57a361e8892"],
+        "sourceDomains": ["schedule_timetable"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-20",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "광주교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15111298/openapi.do"
+      },
+      "fieldsProvided": ["service_calendar", "trip", "stop_time"],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "GWANGJU_LINE_1_CURRENT_COMPLETE_TRIPS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "계획 시간표이며 실시간 도착 정보가 아니다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2383,
+        "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
+        "snapshotId": "gwangju-transportation-cyberstation-timetable-20260720",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
+        "capturedAt": "2026-07-20T12:55:50.079Z",
+        "freshUntil": "2026-07-21T12:55:50.079Z",
+        "rowCount": 13362,
+        "departureCount": 13360,
+        "tripCount": 810,
+        "stopTimeCount": 14171,
+        "rawSha256": "852b75f79ca7cccf8dfefc65ee4fe226f833e6cd2e52f5e721efdfac2efdc31a",
+        "rowsSha256": "2eec08dc30a97c50fd349dc607e77677829881790b5ca896856caa4b9bbd3ccd",
+        "topologySourceId": "gwangju-transportation-route-topology",
+        "topologySnapshotId": "gwangju-transportation-route-topology-20260720",
+        "topologyContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
+      }
+    },
+    {
+      "id": "molit-urban-rail-full-route-gwangju-membership",
+      "displayName": "국토교통부_도시철도 전체노선 광주 1호선 membership admission",
+      "owner": "국토교통부",
+      "provider": "국토교통부",
+      "providerDepartment": "도시철도 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+      "datasetKind": "reviewed-admission-slice",
+      "coverage": "국토교통부 역·노선 정본과 광주교통공사 역번호로 검증한 광주 1호선 20개 station membership",
+      "coverageScope": {
+        "regionIds": ["gwangju"],
+        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
+        "lineIds": ["line-e57a361e8892"],
+        "sourceDomains": ["station_line_membership"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "annual admission review",
+      "observedDataUpdatedAt": "2026-06-22",
+      "retrievedAt": "2026-07-20",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국토교통부·광주교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15122916/fileData.do"
+      },
+      "fieldsProvided": ["line", "station_name"],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2383,
+        "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-gwangju-membership-20260720",
+        "lineIds": ["line-e57a361e8892"],
+        "verifiedAt": "2026-07-20T13:08:47.161Z",
+        "stationCount": 20,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "f7515bed1908e7b1aff2674f58b8425d94a8177d1fb5bed1f3fb8545cb347a03",
+        "stationCodesSha256": "dc831a8f14fd33808b6e17ecbf829eb6d4c199b6c1d75c7673adaa97ad69df83",
+        "stationCodeSourceId": "gwangju-transportation-route-topology",
+        "stationCodeSnapshotId": "gwangju-transportation-route-topology-20260720",
+        "stationCodeContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
+      }
+    },
+    {
       "id": "kric-disabled-toilet",
       "displayName": "국가철도공단_역사별 장애인 화장실 위치",
       "owner": "국가철도공단",

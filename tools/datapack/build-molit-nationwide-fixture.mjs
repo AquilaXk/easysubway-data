@@ -972,6 +972,33 @@ export function parseMolitDaejeonStationMappings(csvBytes) {
   });
 }
 
+export function parseMolitGwangjuStationMappings(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const mappings = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "광주"
+      && row.operatorName === "광주교통공사"
+      && row.lineName === "1호선")
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      stationNumber: String(99 + row.sequence),
+    }));
+  if (lineIdFor("광주", "1호선") !== "line-e57a361e8892"
+    || mappings.length !== 20
+    || mappings.some((mapping, index) => mapping.stationNumber !== String(100 + index))
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error("MOLIT Gwangju Line 1 mapping must contain 20 unique stations in sequence");
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sha256(csvBytes),
+    enumerable: true,
+  });
+}
+
 function svgRowFromCsv(row) {
   if (row.length < 8 || row[0] === "SVG파일명") {
     return null;

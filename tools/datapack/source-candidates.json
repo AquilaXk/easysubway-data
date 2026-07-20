@@ -3285,7 +3285,7 @@
       },
       "licenseEvidenceStatus": "official_open_api_publication",
       "sampleEvidenceStatus": "validated_live_full_snapshot",
-      "admissionStatus": "official_live_snapshot_captured",
+      "admissionStatus": "production_materialized",
       "mobileEmbeddingAllowed": false,
       "evidence": {
         "retrievedAt": "2026-07-20",
@@ -3304,9 +3304,17 @@
         "liveSampleScopeSha256": "42d1a6e82b0c4dd0b199f90fe620c38ddb2a9826df334c39a2d0692449324de4",
         "liveSampleEdgesSha256": "8b0f77bb79db55e6f035e3e713bf9c2ade0b1a7619d495db44cefa1420257d0d",
         "liveSampleContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43",
-        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"
+        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 2,
+          "sourceDomains": ["station_line_membership", "route_graph_topology"],
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs"
+        }
       },
-      "nextAction": "38개 공식 topology edge를 광주 schedule materializer에 결합한다"
+      "nextAction": "24시간 topology snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
       "id": "gwangju-transportation-cyberstation-timetable",
@@ -3337,7 +3345,7 @@
       },
       "licenseEvidenceStatus": "covered_by_unrestricted_data_go_timetable_dataset_15111298",
       "sampleEvidenceStatus": "validated_live_full_snapshot",
-      "admissionStatus": "official_live_snapshot_captured",
+      "admissionStatus": "production_materialized",
       "mobileEmbeddingAllowed": false,
       "evidence": {
         "retrievedAt": "2026-07-20",
@@ -3352,9 +3360,22 @@
         "normalizedBoundaryMinuteCount": 1,
         "liveSampleContentSha256": "b050ed92cbdd555e22e987e4854a7d60b5293951992d6c14ae26c110f9b4fb5a",
         "liveSampleRowsSha256": "2eec08dc30a97c50fd349dc607e77677829881790b5ca896856caa4b9bbd3ccd",
-        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"
+        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json",
+        "materializedTripCount": 810,
+        "materializedStopTimeCount": 14171,
+        "admittedOfficialRowCount": 13360,
+        "generatedStopTimeCount": 811,
+        "quarantinedIncompleteTripRowCount": 2,
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "schedule_timetable",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs"
+        }
       },
-      "nextAction": "13,362개 현재 공식 schedule row를 deterministic timetable artifact로 materialize한다"
+      "nextAction": "24시간 timetable snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
       "id": "gwangju-transportation-timetable",
