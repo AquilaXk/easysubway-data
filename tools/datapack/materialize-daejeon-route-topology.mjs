@@ -229,7 +229,8 @@ function requiredMembershipSource(inventory, snapshot, mappings, now) {
     || !scope?.regionIds?.includes("daejeon") || !scope.operatorIds?.includes(OPERATOR_ID)
     || JSON.stringify(scope.lineIds) !== JSON.stringify([LINE_ID])
     || !scope.sourceDomains?.includes("station_line_membership")
-    || evidence?.issue !== 2346 || evidence.lineId !== LINE_ID || evidence.stationCount !== mappings.length
+    || evidence?.issue !== 2346 || JSON.stringify(evidence.lineIds) !== JSON.stringify([LINE_ID])
+    || evidence.stationCount !== mappings.length
     || JSON.stringify(source.membershipAdmissionEvidence) !== JSON.stringify(evidence)
     || evidence.membershipSourceId !== MEMBERSHIP_RAW_SOURCE_ID
     || evidence.mappingSha256 !== mappingSha256 || evidence.stationCodesSha256 !== stationCodesSha256

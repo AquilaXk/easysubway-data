@@ -83,7 +83,7 @@
       "sourceSystem": "공공데이터포털",
       "datasetUrl": "https://www.data.go.kr/data/15001019/openapi.do",
       "datasetKind": "open-api",
-      "coverage": "부산교통공사 1~4호선 114개 역의 220개 방향성 인접 edge",
+      "coverage": "부산교통공사 1~4호선 114개 역 membership과 220개 방향성 인접 edge",
       "coverageScope": {
         "regionIds": ["busan"],
         "operatorIds": ["busan-transportation"],
@@ -93,7 +93,7 @@
           "line-d812a5bc1e5f",
           "line-eb7b47920390"
         ],
-        "sourceDomains": ["route_graph_topology"]
+        "sourceDomains": ["route_graph_topology", "station_line_membership"]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -109,7 +109,7 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15001019/openapi.do"
       },
-      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters"],
+      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters", "line", "station_name", "station_code"],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -148,6 +148,28 @@
         "excludedTransferCount": 18,
         "rawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
         "contentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2363,
+        "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
+        "verificationTest": "tools/datapack/materialize-busan-route-topology.test.mjs",
+        "snapshotId": "busan-transportation-route-topology-20260720",
+        "lineIds": [
+          "line-ab1a041f6266",
+          "line-d74614a04530",
+          "line-d812a5bc1e5f",
+          "line-eb7b47920390"
+        ],
+        "verifiedAt": "2026-07-19T18:13:31.841Z",
+        "stationCount": 114,
+        "membershipSourceId": "busan-transportation-route-topology",
+        "membershipSourceRawSha256": "1314c1ca4bad29ca7b25e8887519ae89a503e649b67b15d53e9232940898eebd",
+        "membershipSourceSnapshotSha256": "bf0b275ec0c2c06f809a858eacbf60cfcb169025f08379be43ef8254fd0e7816",
+        "mappingSha256": "494648057aa006842743d4729b5118b33325283e45380b1703e25f543ed59d26",
+        "stationCodesSha256": "63545c48047eca5563c6c6f4f0e4c7eb19aa80e1ebf4766edfc82a357c2a2ebf",
+        "stationCodeSourceId": "busan-transportation-route-topology",
+        "stationCodeSnapshotId": "busan-transportation-route-topology-20260720",
+        "stationCodeContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
       }
     },
     {
@@ -225,7 +247,7 @@
         "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
         "snapshotId": "molit-urban-rail-full-route-daejeon-membership-20260720",
-        "lineId": "line-7051a9c2525c",
+        "lineIds": ["line-7051a9c2525c"],
         "verifiedAt": "2026-07-20T03:30:00.000Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
@@ -1726,7 +1748,7 @@
         "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
         "snapshotId": "molit-urban-rail-full-route-daejeon-membership-20260720",
-        "lineId": "line-7051a9c2525c",
+        "lineIds": ["line-7051a9c2525c"],
         "verifiedAt": "2026-07-20T03:30:00.000Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",

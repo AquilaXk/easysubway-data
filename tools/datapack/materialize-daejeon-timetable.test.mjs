@@ -238,7 +238,7 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
   assert.deepEqual(schedule.sourceIds, ["daejeon-train-timetable"]);
 });
 
-test("병합된 부산·대전 admission과 공식 미지원 evidence를 83/270 terminal 기준선으로 누적한다", async (context) => {
+test("병합된 부산·대전 admission과 공식 미지원 evidence를 87/270 terminal 기준선으로 누적한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-nationwide-cumulative-baseline-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const values = await inputs();
@@ -307,11 +307,11 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 83/270 
   const report = await readJsonAbsolute(reportPath);
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
-    supportedCount: 7,
+    supportedCount: 11,
     explicitlyUnsupportedCount: 76,
-    missingCount: 187,
-    supportedRatio: 0.0259,
-    terminalResolutionRatio: 0.3074,
+    missingCount: 183,
+    supportedRatio: 0.0407,
+    terminalResolutionRatio: 0.3222,
     completionReady: false,
   });
   assert.deepEqual(report.requirements
@@ -320,9 +320,13 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 83/270 
       `${regionId}:${operatorId}:${lineId}:${sourceDomain}`)
     .sort(), [
     "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+    "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
     "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+    "busan:busan-transportation:line-d74614a04530:station_line_membership",
     "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+    "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
     "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
+    "busan:busan-transportation:line-eb7b47920390:station_line_membership",
     "daejeon:daejeon-transportation:line-7051a9c2525c:route_graph_topology",
     "daejeon:daejeon-transportation:line-7051a9c2525c:schedule_timetable",
     "daejeon:daejeon-transportation:line-7051a9c2525c:station_line_membership",

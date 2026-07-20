@@ -9,6 +9,9 @@ import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs"
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_distance.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15001019/openapi.do";
 const FIELDS = ["startSn", "startSc", "endSn", "endSc", "dist", "time", "stoppingTime", "exchange"];
+const BUSAN_ROUTE_TOPOLOGY_FIELDS = Object.freeze([
+  "network_edges", "duration_seconds", "distance_meters", "line", "station_name", "station_code",
+]);
 const NORMALIZED_EDGE_FIELDS = [
   "edgeId", "lineId", "fromStationCode", "fromStationName", "toStationCode", "toStationName",
   "distanceMeters", "durationSeconds", "stoppingSeconds", "exchange",
@@ -89,7 +92,7 @@ export async function collectBusanRouteTopology({
     rowCount: edges.length,
     edgeCount: edges.length,
     lineIds,
-    fieldsProvided: ["network_edges", "duration_seconds", "distance_meters"],
+    fieldsProvided: [...BUSAN_ROUTE_TOPOLOGY_FIELDS],
     license: {
       type: "KOGL-1",
       attribution: "부산교통공사, 공공누리 제1유형(출처표시); 제3자 권리 포함 저작권 표시",
@@ -265,7 +268,7 @@ export function admitBusanRouteTopology(snapshot, { now = new Date() } = {}) {
   if (JSON.stringify(snapshot.lineIds) !== JSON.stringify(EXPECTED_LINE_IDS)) {
     throw new Error("Busan route topology admission line scope is incomplete");
   }
-  if (JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify(["network_edges", "duration_seconds", "distance_meters"])) {
+  if (JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify(BUSAN_ROUTE_TOPOLOGY_FIELDS)) {
     throw new Error("Busan route topology admission fields are invalid");
   }
   const scope = validateStationScopes(snapshot.scope);

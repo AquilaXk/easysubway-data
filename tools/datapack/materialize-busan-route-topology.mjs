@@ -24,7 +24,7 @@ export function materializeBusanRouteTopology({
   now = new Date(),
 }) {
   admitBusanRouteTopology(snapshot, { now });
-  const source = requiredSource(inventory, snapshot);
+  const source = requiredSource(inventory, snapshot, canonicalStationMappings);
   const fixture = structuredClone(baseFixture);
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1 || fixture.packs[0].artifactKind !== "production") {
     throw new Error("base fixture must contain exactly one production pack");
@@ -33,10 +33,6 @@ export function materializeBusanRouteTopology({
   const pack = fixture.packs[0];
   const version = /-(\d{8})$/.exec(source.topologyAdmissionEvidence.snapshotId)?.[1];
   if (!version) throw new Error(`${SOURCE_ID} snapshotId must end with YYYYMMDD`);
-  pack.id = PACK_ID;
-  pack.version = version;
-  pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${PACK_ID}-v${version}.sqlite.gz`;
-  fixture.manifest.activePack = { id: pack.id, version: pack.version };
 
   if (pack.sourceInventory.some(({ id }) => id === SOURCE_ID)) {
     throw new Error(`${SOURCE_ID} already exists in base fixture`);
@@ -126,10 +122,19 @@ export function materializeBusanRouteTopology({
     station_lines: pack.stationLines.length,
     network_edges: pack.networkEdges.length,
   };
+  pack.id = `${PACK_ID}-${materializedBusanPackContentHash(pack, version)}`;
+  pack.version = version;
+  pack.url = `https://objectstorage.ap-seoul-1.oraclecloud.com/n/axvym6vk8g7i/b/easysubway-datapacks/o/catalog/${pack.id}-v${version}.sqlite.gz`;
+  fixture.manifest.activePack = { id: pack.id, version: pack.version };
   return fixture;
 }
 
-function requiredSource(inventory, snapshot) {
+export function materializedBusanPackContentHash(pack, version) {
+  const { id: _id, version: _version, url: _url, ...content } = pack;
+  return sha256(JSON.stringify({ version, content }));
+}
+
+function requiredSource(inventory, snapshot, canonicalStationMappings) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true) {
     throw new Error(`${SOURCE_ID} is not admitted for production use`);
@@ -140,6 +145,30 @@ function requiredSource(inventory, snapshot) {
     || evidence.stationCount !== snapshot.stationCount || evidence.edgeCount !== snapshot.edgeCount
     || evidence.excludedTransferCount !== snapshot.excludedTransferCount) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
+  }
+  if (JSON.stringify(source.coverageScope?.regionIds) !== JSON.stringify(["busan"])
+    || JSON.stringify(source.coverageScope?.operatorIds) !== JSON.stringify([OPERATOR_ID])
+    || JSON.stringify(source.coverageScope?.lineIds) !== JSON.stringify(snapshot.lineIds)
+    || JSON.stringify(source.coverageScope?.sourceDomains)
+      !== JSON.stringify(["route_graph_topology", "station_line_membership"])
+    || JSON.stringify(source.fieldsProvided) !== JSON.stringify(snapshot.fieldsProvided)) {
+    throw new Error(`${SOURCE_ID} membership source metadata does not match snapshot`);
+  }
+  const membership = source.membershipAdmissionEvidence;
+  const mappingSha256 = canonicalStationMappingHash(canonicalStationMappings, snapshot.scope);
+  const stationCodesSha256 = sha256(JSON.stringify(snapshot.scope.map(({ stationCode }) => stationCode)));
+  if (!membership || membership.issue !== 2363
+    || membership.materializer !== "tools/datapack/materialize-busan-route-topology.mjs"
+    || membership.verificationTest !== "tools/datapack/materialize-busan-route-topology.test.mjs"
+    || membership.snapshotId !== evidence.snapshotId
+    || membership.verifiedAt !== snapshot.capturedAt || membership.stationCount !== snapshot.stationCount
+    || JSON.stringify(membership.lineIds) !== JSON.stringify(snapshot.lineIds)
+    || membership.membershipSourceId !== SOURCE_ID || membership.membershipSourceRawSha256 !== snapshot.rawSha256
+    || membership.membershipSourceSnapshotSha256 !== snapshot.scopeSha256
+    || membership.mappingSha256 !== mappingSha256 || membership.stationCodesSha256 !== stationCodesSha256
+    || membership.stationCodeSourceId !== SOURCE_ID || membership.stationCodeSnapshotId !== evidence.snapshotId
+    || membership.stationCodeContentSha256 !== snapshot.contentSha256) {
+    throw new Error(`${SOURCE_ID} membership evidence does not match snapshot`);
   }
   return source;
 }
@@ -188,6 +217,17 @@ function canonicalStationIdFor(mappings, station) {
     throw new Error(`canonical station mapping missing: ${key}`);
   }
   return stationId;
+}
+
+function canonicalStationMappingHash(mappings, scope) {
+  return sha256(JSON.stringify(canonicalStationMappingEntries(mappings, scope)));
+}
+
+function canonicalStationMappingEntries(mappings, scope) {
+  return scope.map((station) => {
+    const key = `${station.lineId}:${normalizedStationName(station.stationName)}`;
+    return [key, canonicalStationIdFor(mappings, station)];
+  }).sort(([left], [right]) => left.localeCompare(right, "en"));
 }
 
 function normalizedStationName(value) {

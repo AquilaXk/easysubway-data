@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import {
+  materializedBusanPackContentHash,
   materializeBusanRouteTopology,
   parseCanonicalBusanStationMappings,
 } from "./materialize-busan-route-topology.mjs";
@@ -38,6 +39,9 @@ test("부산 topology snapshot을 실제 production pack 입력으로 materializ
   const busanStationLines = pack.stationLines.filter(({ sourceId }) => sourceId === snapshot.sourceId);
 
   assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: pack.version });
+  assert.match(pack.id, /^nationwide-busan-topology-[a-f0-9]{64}$/);
+  assert.match(pack.url, new RegExp(`/catalog/${pack.id}-v${pack.version}\\.sqlite\\.gz$`));
+  assert.equal(pack.id, `nationwide-busan-topology-${materializedBusanPackContentHash(pack, pack.version)}`);
   assert.equal(fixture.manifest.releaseSequence, baseFixture.manifest.releaseSequence);
   assert.equal(fixture.manifest.publishedAt, baseFixture.manifest.publishedAt);
   assert.equal(fixture.manifest.expiresAt, baseFixture.manifest.expiresAt);
@@ -98,6 +102,52 @@ test("부산 topology snapshot을 실제 production pack 입력으로 materializ
     }),
     /inventory evidence/,
   );
+  const membershipMutations = [
+    ["issue", (evidence) => { evidence.issue += 1; }],
+    ["materializer", (evidence) => { evidence.materializer += ".tampered"; }],
+    ["verificationTest", (evidence) => { evidence.verificationTest += ".tampered"; }],
+    ["snapshotId", (evidence) => { evidence.snapshotId += "-tampered"; }],
+    ["lineIds", (evidence) => { evidence.lineIds = [...evidence.lineIds].reverse(); }],
+    ["verifiedAt", (evidence) => { evidence.verifiedAt = "2026-07-19T18:13:30.841Z"; }],
+    ["stationCount", (evidence) => { evidence.stationCount -= 1; }],
+    ["membershipSourceId", (evidence) => { evidence.membershipSourceId += "-tampered"; }],
+    ["membershipSourceRawSha256", (evidence) => { evidence.membershipSourceRawSha256 = "0".repeat(64); }],
+    ["membershipSourceSnapshotSha256", (evidence) => { evidence.membershipSourceSnapshotSha256 = "0".repeat(64); }],
+    ["mappingSha256", (evidence) => { evidence.mappingSha256 = "0".repeat(64); }],
+    ["stationCodesSha256", (evidence) => { evidence.stationCodesSha256 = "0".repeat(64); }],
+    ["stationCodeSourceId", (evidence) => { evidence.stationCodeSourceId += "-tampered"; }],
+    ["stationCodeSnapshotId", (evidence) => { evidence.stationCodeSnapshotId += "-tampered"; }],
+    ["stationCodeContentSha256", (evidence) => { evidence.stationCodeContentSha256 = "0".repeat(64); }],
+  ];
+  for (const [field, mutate] of membershipMutations) {
+    const mismatchedMembership = structuredClone(inventory);
+    const membershipEvidence = mismatchedMembership.sources.find(({ id }) => id === snapshot.sourceId)
+      .membershipAdmissionEvidence;
+    mutate(membershipEvidence);
+    assert.throws(
+      () => materializeBusanRouteTopology({
+        baseFixture,
+        snapshot,
+        inventory: mismatchedMembership,
+        canonicalStationMappings,
+        now: evidenceNow,
+      }),
+      /membership evidence/,
+      field,
+    );
+  }
+  const tamperedMappings = new Map(canonicalStationMappings);
+  tamperedMappings.set("line-ab1a041f6266:하단", "station-deadbeefdead");
+  assert.throws(
+    () => materializeBusanRouteTopology({
+      baseFixture,
+      snapshot,
+      inventory,
+      canonicalStationMappings: tamperedMappings,
+      now: evidenceNow,
+    }),
+    /membership evidence/,
+  );
   const incompleteMappings = new Map(canonicalStationMappings);
   incompleteMappings.delete("line-ab1a041f6266:하단");
   assert.throws(
@@ -110,9 +160,49 @@ test("부산 topology snapshot을 실제 production pack 입력으로 materializ
     }),
     /canonical station mapping missing/,
   );
+  const sourceMetadataMutations = [
+    ["regionIds", (source) => { source.coverageScope.regionIds = []; }],
+    ["operatorIds", (source) => { source.coverageScope.operatorIds = []; }],
+    ["lineIds", (source) => { source.coverageScope.lineIds = source.coverageScope.lineIds.slice(1); }],
+    ["sourceDomains", (source) => { source.coverageScope.sourceDomains = ["route_graph_topology"]; }],
+    ["line", (source) => { source.fieldsProvided = source.fieldsProvided.filter((field) => field !== "line"); }],
+    ["station_name", (source) => { source.fieldsProvided = source.fieldsProvided.filter((field) => field !== "station_name"); }],
+    ["station_code", (source) => { source.fieldsProvided = source.fieldsProvided.filter((field) => field !== "station_code"); }],
+  ];
+  for (const [field, mutate] of sourceMetadataMutations) {
+    const mismatchedMetadata = structuredClone(inventory);
+    mutate(mismatchedMetadata.sources.find(({ id }) => id === snapshot.sourceId));
+    assert.throws(
+      () => materializeBusanRouteTopology({
+        baseFixture,
+        snapshot,
+        inventory: mismatchedMetadata,
+        canonicalStationMappings,
+        now: evidenceNow,
+      }),
+      /membership source metadata/,
+      field,
+    );
+  }
+  const changedSourceMetadata = structuredClone(inventory);
+  changedSourceMetadata.sources.find(({ id }) => id === snapshot.sourceId).updateFrequency = "daily";
+  const changedFixture = materializeBusanRouteTopology({
+    baseFixture,
+    snapshot,
+    inventory: changedSourceMetadata,
+    canonicalStationMappings,
+    now: evidenceNow,
+  });
+  assert.notEqual(changedFixture.packs[0].id, pack.id);
+  const changedMaterializedContent = structuredClone(pack);
+  changedMaterializedContent.stations.find(({ sourceId }) => sourceId === snapshot.sourceId).nameEn = "Changed";
+  assert.notEqual(
+    materializedBusanPackContentHash(changedMaterializedContent, pack.version),
+    materializedBusanPackContentHash(pack, pack.version),
+  );
 });
 
-test("materialized production SQLite와 provenance만 부산 4개 topology requirement를 SUPPORTED로 만든다", async (context) => {
+test("materialized production SQLite와 provenance만 부산 4개 topology·membership requirement를 SUPPORTED로 만든다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-busan-topology-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -144,6 +234,9 @@ test("materialized production SQLite와 provenance만 부산 4개 topology requi
   assert.equal(database.prepare(
     "SELECT COUNT(*) AS count FROM network_edges WHERE source_id = ?",
   ).get(snapshot.sourceId).count, 220);
+  assert.equal(database.prepare(
+    "SELECT COUNT(*) AS count FROM station_lines WHERE line_id IN (?, ?, ?, ?)",
+  ).get(...snapshot.lineIds).count, 114);
   database.close();
 
   await execFileAsync(process.execPath, [
@@ -160,7 +253,10 @@ test("materialized production SQLite와 provenance만 부산 4개 topology requi
   const busan = report.requirements.filter(({ operatorId }) => operatorId === "busan-transportation");
   assert.deepEqual(
     busan.filter(({ status }) => status === "SUPPORTED").map(({ lineId, sourceDomain }) => ({ lineId, sourceDomain })),
-    snapshot.lineIds.map((lineId) => ({ lineId, sourceDomain: "route_graph_topology" })),
+    snapshot.lineIds.flatMap((lineId) => [
+      { lineId, sourceDomain: "station_line_membership" },
+      { lineId, sourceDomain: "route_graph_topology" },
+    ]),
   );
 });
 
