@@ -3257,6 +3257,165 @@
       "nextAction": "provider가 station time 값을 제공하면 같은 collector로 #1400·#2098·#2099 completeness를 재검증한다"
     },
     {
+      "id": "gwangju-transportation-route-topology",
+      "priority": "P0",
+      "domain": "route_graph_topology",
+      "coverageScope": {
+        "regionIds": ["gwangju"],
+        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
+        "lineIds": ["line-e57a361e8892"]
+      },
+      "displayName": "광주교통공사 도시철도 운행정보",
+      "detailUrl": "https://www.grtc.co.kr/subway/contents/apiRunInfo",
+      "requestUrl": "https://www.grtc.co.kr/subway/openapi/json/stationTimeInfomation",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www.grtc.co.kr/subway/openapi/json/stationTimeInfomation",
+        "auth": { "placement": "none" },
+        "requiredParameters": ["station_id"],
+        "fixedParameters": {},
+        "responseEnvelope": "JSON array of OD rows per station",
+        "responseFields": ["start_station_id", "start_station_name", "end_station_id", "end_station_name", "station_distance", "station_time"],
+        "runner": {
+          "command": "node tools/datapack/collect-gwangju-route-topology.mjs",
+          "arguments": ["--output", "/tmp/easysubway-gwangju-route-topology.json"],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "official_open_api_publication",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "official_live_snapshot_captured",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-20",
+        "officialDocumentationUrl": "https://www.grtc.co.kr/subway/contents/apiRunInfo",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15046044/fileData.do",
+        "license": "unrestricted",
+        "expectedStationCount": 20,
+        "expectedAdjacentEdgeCount": 38,
+        "liveSampleRetrievedAt": "2026-07-20T13:08:47.161Z",
+        "liveSampleFreshUntil": "2026-07-21T13:08:47.161Z",
+        "liveSampleRequestCount": 20,
+        "liveSampleOdRowCount": 380,
+        "liveSampleStationCount": 20,
+        "liveSampleAdjacentEdgeCount": 38,
+        "liveSampleRawSha256": "15e4a6835dff21997d29707b0554580560fd770388156b2ac169508cdfd6636a",
+        "liveSampleScopeSha256": "42d1a6e82b0c4dd0b199f90fe620c38ddb2a9826df334c39a2d0692449324de4",
+        "liveSampleEdgesSha256": "8b0f77bb79db55e6f035e3e713bf9c2ade0b1a7619d495db44cefa1420257d0d",
+        "liveSampleContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43",
+        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"
+      },
+      "nextAction": "38개 공식 topology edge를 광주 schedule materializer에 결합한다"
+    },
+    {
+      "id": "gwangju-transportation-cyberstation-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["gwangju"],
+        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
+        "lineIds": ["line-e57a361e8892"]
+      },
+      "displayName": "광주교통공사 사이버스테이션 열차시각표",
+      "detailUrl": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
+      "requestUrl": "https://www.grtc.co.kr/cyber/portlet/subwayTimetable",
+      "operation": {
+        "method": "POST",
+        "endpoint": "https://www.grtc.co.kr/cyber/portlet/subwayTimetable",
+        "auth": { "placement": "none" },
+        "requiredParameters": ["subwayid"],
+        "fixedParameters": { "lineNo": "1" },
+        "responseEnvelope": "official HTML fragment per station",
+        "responseFields": ["dayCode", "direction", "hour", "minute"],
+        "runner": {
+          "command": "node tools/datapack/collect-gwangju-cyberstation-timetable.mjs",
+          "arguments": ["--output", "/tmp/easysubway-gwangju-cyberstation-timetable.json"],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "covered_by_unrestricted_data_go_timetable_dataset_15111298",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "official_live_snapshot_captured",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-20",
+        "officialTimetablePage": "https://www.grtc.co.kr/subway/menu/trainTimetableSubMenu",
+        "officialRequestContractSource": "https://www.grtc.co.kr/cyber?timetable=19",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15111298/openapi.do",
+        "license": "unrestricted",
+        "liveSampleRetrievedAt": "2026-07-20T12:55:50.079Z",
+        "liveSampleStationCount": 20,
+        "liveSampleRowCount": 13362,
+        "excludedPlaceholderCount": 1,
+        "normalizedBoundaryMinuteCount": 1,
+        "liveSampleContentSha256": "b050ed92cbdd555e22e987e4854a7d60b5293951992d6c14ae26c110f9b4fb5a",
+        "liveSampleRowsSha256": "2eec08dc30a97c50fd349dc607e77677829881790b5ca896856caa4b9bbd3ccd",
+        "evidenceArtifact": "tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"
+      },
+      "nextAction": "13,362개 현재 공식 schedule row를 deterministic timetable artifact로 materialize한다"
+    },
+    {
+      "id": "gwangju-transportation-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": ["gwangju"],
+        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
+        "lineIds": ["line-e57a361e8892"]
+      },
+      "displayName": "광주교통공사_열차 시간표 데이터",
+      "detailUrl": "https://www.data.go.kr/data/15111298/openapi.do",
+      "requestUrl": "https://apis.data.go.kr/B551232/grtcTimetable/timetable",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://apis.data.go.kr/B551232/grtcTimetable/timetable",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": ["serviceKey"],
+        "fixedParameters": { "pageNo": "1..N", "numOfRows": "500" },
+        "optionalParameters": ["SUBWAY_NAME"],
+        "responseEnvelope": "response.header + response.body.items.item[]",
+        "responseFields": ["day", "endCord", "direction", "time", "subwayCord", "updateDt", "subwayLine", "endName", "subwayName"],
+        "runner": {
+          "command": "node tools/datapack/collect-gwangju-timetable.mjs",
+          "arguments": ["--output", "/tmp/easysubway-gwangju-timetable.json"],
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted",
+      "sampleEvidenceStatus": "validated_live_full_snapshot_stale",
+      "admissionStatus": "rejected_stale_provider_rows",
+      "serviceKeyHandling": "offline_collector_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-20",
+        "officialDetailPage": "https://www.data.go.kr/data/15111298/openapi.do",
+        "approval": "development_and_production_auto_approved",
+        "license": "unrestricted",
+        "outputFields": ["day", "endCord", "direction", "time", "subwayCord", "updateDt", "subwayLine", "endName", "subwayName"],
+        "liveSampleRetrievedAt": "2026-07-20T12:39:27.563Z",
+        "liveSampleRowCount": 11779,
+        "liveSamplePageCount": 24,
+        "liveSampleRawSha256": "bdb1cb0291351b01a8e52495ea64977f87f58301706b58c91f6ffba7075c3a6a",
+        "liveSampleRowsSha256": "83b124e6fed803e224714677252f693fd407d71af08f95c95a1e4eaf2b23b99e",
+        "providerUpdateDate": "20220917",
+        "freshnessAssessment": "STALE_NOT_ADMISSIBLE"
+      },
+      "coverageLimitations": [
+        "HTTP 200, provider resultCode 00, 11779/11779 rows와 schema는 정상이나 모든 행의 updateDt가 20220917",
+        "stale source는 production timetable 또는 SUPPORTED coverage 근거로 사용하지 않음"
+      ],
+      "nextAction": "광주교통공사 공식 cyberstation의 현재 timetable을 별도 tracked collector로 검증한다"
+    },
+    {
       "id": "daejeon-train-timetable",
       "priority": "P0",
       "domain": "schedule_timetable",
