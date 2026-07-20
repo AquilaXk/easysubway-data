@@ -2076,14 +2076,26 @@ async function fetchWithRetry(url, fetchImpl) {
   throw new Error("Korail train operation API transport failure");
 }
 
+// travelerTrainRunPlan2의 trn_plan_dptre_dt/trn_plan_arvl_dt는 보통 YYYYMMDDHHMISS로 오지만,
+// 관측상 일부 레코드는 "YYYY-MM-DD HH:MM:SS[.f]"로도 온다. 두 포맷만 엄격히 수용하고
+// 그 외는 그대로 fail — 파싱 이후의 비교·불일치 판정 로직은 변경하지 않는다.
+const ALTERNATE_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.\d+)?$/;
+
 function timestampSeconds(value, runDate, label) {
   const text = requiredString(String(value), label);
-  if (!/^\d{14}$/.test(text)) throw new Error(`${label} must use YYYYMMDDHHMISS`);
-  const hours = Number(text.slice(8, 10));
-  const minutes = Number(text.slice(10, 12));
-  const seconds = Number(text.slice(12, 14));
+  let digits;
+  if (/^\d{14}$/.test(text)) {
+    digits = text;
+  } else {
+    const match = ALTERNATE_TIMESTAMP_PATTERN.exec(text);
+    if (!match) throw new Error(`${label} must use YYYYMMDDHHMISS`);
+    digits = `${match[1]}${match[2]}${match[3]}${match[4]}${match[5]}${match[6]}`;
+  }
+  const hours = Number(digits.slice(8, 10));
+  const minutes = Number(digits.slice(10, 12));
+  const seconds = Number(digits.slice(12, 14));
   if (hours > 23 || minutes > 59 || seconds > 59) throw new Error(`${label} is invalid`);
-  return serviceDateOffsetSeconds(text.slice(0, 8), runDate, label) + hours * 3600 + minutes * 60 + seconds;
+  return serviceDateOffsetSeconds(digits.slice(0, 8), runDate, label) + hours * 3600 + minutes * 60 + seconds;
 }
 
 function serviceDateOffsetSeconds(timestampDate, runDate, label) {

@@ -321,14 +321,14 @@ test("ITX topology는 freshUntil 경계부터 ADMITTED source를 거부한다", 
     cwd: root,
     env: {
       ...process.env,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-19T14:59:59.999Z",
+      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-26T14:59:59.999Z",
     },
   });
   await assert.rejects(execFileAsync(process.execPath, command, {
     cwd: root,
     env: {
       ...process.env,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-19T15:00:00.000Z",
+      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-26T15:00:00.000Z",
     },
   }), /ITX topology source artifact is expired/);
 });

@@ -131,9 +131,9 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   assert.equal((first.sql.match(/INSERT INTO transit_feed_info/g) ?? []).length, 1);
   assert.equal((first.sql.match(/VALUES \('weekday-kric'/g) ?? []).length, 1);
   assert.equal((first.sql.match(/VALUES \('holiday-kric'/g) ?? []).length, 1);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-weekday-kric', '20260716', '20260719', 'Asia\/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE\)/);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-saturday-kric', '20260716', '20260719', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE\)/);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-holiday-kric', '20260716', '20260719', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE\)/);
+  assert.match(first.sql, /VALUES \('itx-cheongchun-weekday-kric', '20260724', '20260726', 'Asia\/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE\)/);
+  assert.match(first.sql, /VALUES \('itx-cheongchun-saturday-kric', '20260724', '20260726', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE\)/);
+  assert.match(first.sql, /VALUES \('itx-cheongchun-holiday-kric', '20260724', '20260726', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE\)/);
   for (const [sourceServiceId, namespacedServiceId] of [
     ["weekday-kric", "itx-cheongchun-weekday-kric"],
     ["saturday-kric", "itx-cheongchun-saturday-kric"],
@@ -332,7 +332,7 @@ test("complete snapshot은 source·completeness identity와 freshness를 fail cl
   assert.throws(
     () => buildServerTimetableSnapshot({
       ...value,
-      buildNow: new Date("2026-07-19T15:00:00.000Z"),
+      buildNow: new Date("2026-07-26T15:00:00.000Z"),
     }),
     /source artifact is stale/,
   );

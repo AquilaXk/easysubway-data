@@ -34,8 +34,8 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
   });
   assert.deepEqual(fixture.canonicalPackIdentity, {
     id: "capital",
-    sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-    sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+    sha256: "dfe8420b2f26d2ca2948575098e0a6a5e278c3b203f7cd9c1f1b588a07e74b02",
+    sqliteSha256: "c39f23cd6b8b20f88672d0456b72a4efbd3697b81035cfb49ded289e50f3a4aa",
   });
 
   const forbiddenProductionSurfaces = [
@@ -175,8 +175,8 @@ test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
     mode: "UNCHANGED_AUTO",
-    previousArtifactSha256: "4134ae94f2cae0e6463077ee8c29c2f2417904de9dd2e751782c26ab0af1a2a7",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260715112641542.json",
+    previousArtifactSha256: "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json",
     approvalUrl: null,
     approvedArtifactSha256: null,
   });
@@ -225,7 +225,7 @@ test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260716", "7": "20260718", "9": "20260719" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260724", "7": "20260725", "9": "20260726" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
@@ -253,8 +253,8 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
     canonicalPackIdentity: {
       id: "capital",
       sourceIssue: 2097,
-      sha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-      sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+      sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     },
     selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
     admissionStatus: "MISSING",

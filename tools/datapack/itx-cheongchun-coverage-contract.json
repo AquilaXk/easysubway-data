@@ -263,8 +263,8 @@
       "canonicalPackIdentity": {
         "id": "capital",
         "sourceIssue": 2097,
-        "sha256": "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-        "sqliteSha256": "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03"
+        "sha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+        "sqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc"
       },
       "selectedServiceDates": {
         "7": "20260718",
@@ -339,7 +339,7 @@
   },
   "freshness": {
     "status": "MISSING",
-    "nextReviewAt": "2026-07-20T00:00:00+09:00",
+    "nextReviewAt": "2026-07-27T00:00:00+09:00",
     "eventTrigger": "Korail station row 시각 값 제공 또는 다른 공식 station-level timetable 발견"
   },
   "claimGate": {
@@ -356,18 +356,18 @@
   "sourceTimetableArtifact": {
     "status": "ADMITTED",
     "admissionEligible": true,
-    "artifactId": "itx-cheongchun-source-timetable-20260715152903681",
-    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json",
-    "sha256": "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
-    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681-completeness-evidence.json",
-    "completenessEvidenceSha256": "f47650a9e0bfe9cc02683540bfbf4b214bcf869e4c659e04464226478fc2f257",
+    "artifactId": "itx-cheongchun-source-timetable-20260719230524758",
+    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260719230524758.json",
+    "sha256": "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+    "completenessEvidencePath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260719230524758-completeness-evidence.json",
+    "completenessEvidenceSha256": "b4a6f90490f2f6b56f396e9cc59e053d1ba02f3d3fe9cf5993b871bfc2d68201",
     "schemaVersion": 1,
-    "freshUntil": "2026-07-20T00:00:00+09:00",
+    "freshUntil": "2026-07-27T00:00:00+09:00",
     "policyVersion": "itx-snapshot-anomaly-v1",
     "promotion": {
       "mode": "UNCHANGED_AUTO",
-      "previousArtifactSha256": "4134ae94f2cae0e6463077ee8c29c2f2417904de9dd2e751782c26ab0af1a2a7",
-      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715112641542.json",
+      "previousArtifactSha256": "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
+      "previousArtifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json",
       "approvalUrl": null,
       "approvedArtifactSha256": null
     }

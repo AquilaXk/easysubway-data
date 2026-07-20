@@ -2816,6 +2816,44 @@ test("KORAIL plan selection은 missing warning과 duplicate·date·endpoint·tim
   ])), /KORAIL_PLAN_MISMATCH/);
 });
 
+test("KORAIL plan 시각은 YYYYMMDDHHMISS와 YYYY-MM-DD HH:MM:SS[.f] 두 포맷만 엄격히 수용한다", () => {
+  const materialized = tagoMaterializedFixture();
+  const input = (plans) => ({ plans, materialized, runDate: "20260713" });
+
+  // 대체 포맷(소수점 초 없음)도 동일 실제 시각이면 정상 통과한다.
+  const noFraction = validateKorailItxPlans(input([
+    planRow("02001", "용산", "춘천", "2026-07-13 06:00:00", "2026-07-13 08:00:00"),
+  ]));
+  assert.deepEqual(noFraction.trainNumbers, ["2001"]);
+
+  // 대체 포맷(소수점 초 포함, provider 관측 포맷 그대로)도 정상 통과한다.
+  const withFraction = validateKorailItxPlans(input([
+    planRow("02001", "용산", "춘천", "2026-07-13 06:00:00.0", "2026-07-13 08:00:00.0"),
+  ]));
+  assert.deepEqual(withFraction.trainNumbers, ["2001"]);
+
+  // 같은 호출 안에서 두 포맷이 섞여도 각자 정상 파싱된다.
+  const mixedFormats = validateKorailItxPlans(input([
+    planRow("02001", "용산", "춘천", "2026-07-13 06:00:00.0", "2026-07-13 08:00:00.0"),
+    planRow("02002", "춘천", "용산", "20260713070000", "20260713090000"),
+  ]));
+  assert.deepEqual(mixedFormats.trainNumbers, ["2001", "2002"]);
+
+  // 대체 포맷이라도 실제 컨텐츠(시각)가 TAGO와 다르면 여전히 fail-closed다 — 포맷 관용은
+  // 문자열 파싱에만 적용되고 불일치 판정 로직은 변경하지 않는다.
+  assert.throws(() => validateKorailItxPlans(input([
+    planRow("02001", "용산", "춘천", "2026-07-13 06:01:00.0", "2026-07-13 08:00:00.0"),
+  ])), /KORAIL_PLAN_MISMATCH/);
+
+  // 두 포맷 모두에 해당하지 않는 문자열은 그대로 즉시 fail한다.
+  assert.throws(() => validateKorailItxPlans(input([
+    planRow("02001", "용산", "춘천", "2026-07-13T06:00:00.0", "2026-07-13 08:00:00.0"),
+  ])), /KORAIL_PLAN_MISMATCH/);
+  assert.throws(() => validateKorailItxPlans(input([
+    planRow("02001", "용산", "춘천", "2026/07/13 06:00:00", "2026-07-13 08:00:00.0"),
+  ])), /KORAIL_PLAN_MISMATCH/);
+});
+
 function tagoMaterializedFixture() {
   return {
     trainNumbers: ["2001", "2002"],

@@ -21,6 +21,13 @@ const ADMITTED_CANONICAL_INPUTS = new Map([
       byteSize: 354980,
     },
   ],
+  [
+    "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+    {
+      gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+      byteSize: 359319,
+    },
+  ],
 ]);
 const ROUTE_SERVICE_EVIDENCE_COLUMNS = `
   service_class TEXT NOT NULL PRIMARY KEY,
