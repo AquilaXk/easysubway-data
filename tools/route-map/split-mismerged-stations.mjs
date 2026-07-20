@@ -8,6 +8,11 @@
 //   - 신촌: 2호선 신촌(코드 240, 서대문구) ↔ 경의중앙 신촌(P312, 마포구) = 별개역
 //   - 양평: 5호선 양평(코드 522, 영등포구) ↔ 경의중앙 양평(K135, 양평군) = 동명이역
 //
+// #2068 부산: 1호선 좌천(코드 22) ↔ 동해선 좌천(코드 16)은 서로 다른 물리역이나
+//   단일 station_id 환승 그룹으로 오병합돼(멤버 좌표 1509px 이격) 파이프라인 투영이
+//   1호선 좌천 노드를 outlier로 드래그, 실기기에서 무명 노드로 보였다. 오너 자작
+//   도식은 두 좌천을 각자 노드·라벨로 그리므로 별도 역으로 분리한다.
+//
 // id 정책(파급 대비 — station_id는 즐겨찾기·경로계획·시간표(#1415)·datapack(#1690)
 // 참조): 원 id는 승객 많은 도심 노선(2호선·5호선)에 유지, 경의중앙 쪽을 신규 id로
 // 발급. route_map_positions·station_lines의 경의중앙 행만 신규 id로 재지정한다.
@@ -23,6 +28,7 @@ import {
 
 const REGION = "수도권";
 const GYEONGUI = "line-6e39be0cb6e2"; // 수도권 경의중앙 — 분리 시 떼어낼 쪽
+const BUSAN_DONGHAE = "line-f52eb59d8497"; // 부산 동해 — 좌천 분리 시 떼어낼 쪽
 
 /** 분리 대상(공식 근거 첨부). moveLineId = 원 id에서 떼어 신규 id로 옮길 노선. */
 export const SPLITS = [
@@ -39,6 +45,14 @@ export const SPLITS = [
     moveLineId: GYEONGUI,
     keepEvidence: "5호선 양평 522(영등포구)",
     moveEvidence: "경의중앙 양평 K135(양평군)",
+  },
+  {
+    // 유지=승객 많은 도시철도 1호선, 분리=동해선(광역전철).
+    name: "좌천",
+    stationId: "station-d7f9228b4b73",
+    moveLineId: BUSAN_DONGHAE,
+    keepEvidence: "부산 1호선 좌천 22",
+    moveEvidence: "동해선 좌천 16",
   },
 ];
 

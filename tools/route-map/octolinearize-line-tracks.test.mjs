@@ -43,6 +43,41 @@ test("수직 우세도 45° 후 수직 도그레그", () => {
   ]);
 });
 
+test("octilinearSegment: bend-late는 코너를 b 근처로 옮긴다(#2068 5차 코너 방향 선택)", () => {
+  // (0,0)→(10,3): bend-early는 코너(3,3)=a에서 45° 먼저(diag*√2 짧은 리드가
+  // a쪽). bend-late는 직선(longAxis-diag=7)을 a에서 먼저 가고 나머지 대각선
+  // (diag*√2)이 b쪽 — 코너는 (7,0).
+  assert.deepEqual(octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 3 }, "bend-late"), [
+    { x: 0, y: 0 },
+    { x: 7, y: 0 },
+    { x: 10, y: 3 },
+  ]);
+});
+
+test("octilinearSegment: bend-late 수직 우세도 코너를 b 근처로", () => {
+  // (0,0)→(3,10): bend-early 코너(3,3). bend-late는 직선(longAxis-diag=7)을
+  // a에서 먼저(y축) → 코너(0,7).
+  assert.deepEqual(octilinearSegment({ x: 0, y: 0 }, { x: 3, y: 10 }, "bend-late"), [
+    { x: 0, y: 0 },
+    { x: 0, y: 7 },
+    { x: 3, y: 10 },
+  ]);
+});
+
+test("octilinearSegment: variant 미지정(기본)은 bend-early와 동일(기존 산출 불변)", () => {
+  assert.deepEqual(
+    octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 3 }),
+    octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 3 }, "bend-early"),
+  );
+});
+
+test("octilinearSegment: 이미 8선형이면 variant와 무관하게 직선 1세그먼트", () => {
+  assert.deepEqual(octilinearSegment({ x: 0, y: 0 }, { x: 10, y: 0 }, "bend-late"), [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+  ]);
+});
+
 test("octilinearPolyline은 노드를 모두 지나고 중복 없이 이어붙인다", () => {
   const nodes = [
     { x: 0, y: 0 },

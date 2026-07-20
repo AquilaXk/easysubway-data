@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 
+const execFileAsync = promisify(execFile);
+const root = path.resolve(import.meta.dirname, "../..");
 const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
 const targets = JSON.parse(await readFile(new URL("./nationwide-coverage-targets.json", import.meta.url), "utf8"));
 const sourceCandidates = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
@@ -34,8 +39,8 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
   });
   assert.deepEqual(fixture.canonicalPackIdentity, {
     id: "capital",
-    sha256: "dfe8420b2f26d2ca2948575098e0a6a5e278c3b203f7cd9c1f1b588a07e74b02",
-    sqliteSha256: "c39f23cd6b8b20f88672d0456b72a4efbd3697b81035cfb49ded289e50f3a4aa",
+    sha256: "69de54052bfa18f6fa6ecba68dc257e050d294e49cf0dfae03a6fe43355a55af",
+    sqliteSha256: "742695b4ac7b037adc31ba1f6ca2bd89fddbfd807083b5d27426591d307a00a1",
   });
 
   const forbiddenProductionSurfaces = [
@@ -336,6 +341,16 @@ test("ITX-청춘 admission input identity는 #1400 topology output까지 연속 
     contract.officialEvidence.korailCompletenessAdmission.artifactId,
     "itx-cheongchun-completeness-admission-20260714T083544292Z",
   );
+  // input(#2097 admitted 기준본)과 output(현재 번들 pack)이 더 이상 "input +
+  // ITX만"이 아닐 수 있다 — #2068 등 무관한 이유로 output이 재승인(readmit)된
+  // 경우, tools/datapack/readmit-bundled-pack-identity.mjs가 남긴
+  // readmissions 체인이 무결(각 링크 연쇄·ITX 하위그래프 불변 증명·최신 항목이
+  // pack.output*과 일치)해야만 이 lineage를 신뢰할 수 있다. 재승인 없이
+  // output만 손댄 무단 변조는 이 --check 호출 자체가 실패로 잡는다.
+  await execFileAsync(process.execPath, [
+    "tools/datapack/readmit-bundled-pack-identity.mjs",
+    "--check",
+  ], { cwd: root });
 });
 
 test("ITX-청춘 evidence는 공식 URL·schema/hash·재검토 시점을 갖고 credential을 포함하지 않는다", () => {

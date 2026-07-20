@@ -47,6 +47,22 @@ export function moveTrackVertex(verts, old, corner) {
   return { verts: out, changed };
 }
 
+// corner와 사실상 같은 점(부동소수 스냅 잔차, 서브픽셀)인 인접 정점을 병합해
+// 제거하는 반경(px). #2068 부산 마감 라운드: corner는 정수로 반올림되는데
+// 옆 정점(직전 octolinear 스냅 결과)이 반올림 전 실수 좌표로 남아 0.5px대의
+// 가짜 세그먼트(각도가 45°/90° 어디에도 안 맞아 audit-octolinearity가
+// 오탐 위반으로 잡는다)를 만든다. 실물 역 간격(최소 수백 px)보다 훨씬 작아
+// 다른 정류장 정점을 오인 병합할 위험이 없다.
+const DEDUPE_NEAR_CORNER_EPS = 2;
+
+/** corner와 [DEDUPE_NEAR_CORNER_EPS]px 이내(corner 자신 제외)인 인접 정점을 제거한다. */
+export function dedupeNearCorner(verts, corner) {
+  return verts.filter((v) => {
+    if (v.x === corner.x && v.y === corner.y) return true;
+    return Math.hypot(v.x - corner.x, v.y - corner.y) >= DEDUPE_NEAR_CORNER_EPS;
+  });
+}
+
 function parseArgs(argv) {
   const o = {
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
@@ -108,7 +124,8 @@ function main() {
         const { verts, changed } = moveTrackVertex(parsePathVertices(t.path), old, corner);
         if (changed) {
           vertMoved += 1;
-          if (!o.check) trkU.run(verticesToPath(verts), region, nudge.lineId, t.track_index);
+          const deduped = dedupeNearCorner(verts, corner);
+          if (!o.check) trkU.run(verticesToPath(deduped), region, nudge.lineId, t.track_index);
         }
       }
       console.log(

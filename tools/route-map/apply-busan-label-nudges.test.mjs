@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveCorner, moveTrackVertex } from "./apply-busan-label-nudges.mjs";
+import {
+  dedupeNearCorner,
+  deriveCorner,
+  moveTrackVertex,
+} from "./apply-busan-label-nudges.mjs";
 
 test("deriveCorner: corner=(prev.x, next.y)로 축정렬 코너를 도출한다", () => {
   const posByStation = new Map([
@@ -63,4 +67,29 @@ test("moveTrackVertex: old 정점이 없으면 무변경(changed=false)", () => 
   const { verts: out, changed } = moveTrackVertex(verts, { x: 999, y: 999 }, { x: 0, y: 0 });
   assert.equal(changed, false);
   assert.deepEqual(out, verts);
+});
+
+test("dedupeNearCorner: corner과 서브픽셀(<2px) 거리인 인접 정점을 제거한다 (#2068 마감 라운드 — 가짜 8선형 위반 방지)", () => {
+  const corner = { x: 5990, y: 4662 };
+  const verts = [
+    { x: 5800, y: 4662 },
+    { x: 5989.634, y: 4662.431 }, // corner에서 0.55px — 스냅 잔차, 병합 대상.
+    { x: 5990, y: 4662 }, // corner 자신 — 유지.
+    { x: 6200, y: 4550 },
+  ];
+  assert.deepEqual(dedupeNearCorner(verts, corner), [
+    { x: 5800, y: 4662 },
+    { x: 5990, y: 4662 },
+    { x: 6200, y: 4550 },
+  ]);
+});
+
+test("dedupeNearCorner: corner에서 충분히 먼(>=2px) 정점은 보존한다", () => {
+  const corner = { x: 0, y: 0 };
+  const verts = [
+    { x: 5, y: 0 },
+    { x: 0, y: 0 },
+    { x: -5, y: 0 },
+  ];
+  assert.deepEqual(dedupeNearCorner(verts, corner), verts);
 });

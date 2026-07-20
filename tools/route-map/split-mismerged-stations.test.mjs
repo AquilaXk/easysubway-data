@@ -39,12 +39,12 @@ test("planSplit는 이동 노선을 신규 id로 떼고 원 역 메타를 보존
   });
 });
 
-test("SPLITS는 공식 근거를 붙인 신촌·양평 오병합 대상을 담는다", () => {
+test("SPLITS는 공식 근거를 붙인 신촌·양평·좌천 오병합 대상을 담는다", () => {
   const names = SPLITS.map((s) => s.name).sort();
-  assert.deepEqual(names, ["신촌", "양평"]);
+  assert.deepEqual(names, ["신촌", "양평", "좌천"]);
   for (const s of SPLITS) {
     assert.match(s.stationId, /^station-[0-9a-f]{12}$/);
-    assert.ok(s.moveLineId, "이동(경의중앙) 노선 지정");
+    assert.ok(s.moveLineId, "떼어낼 노선 지정");
     assert.ok(s.keepEvidence && s.moveEvidence, "keep/move 공식 근거 문자열");
   }
 });

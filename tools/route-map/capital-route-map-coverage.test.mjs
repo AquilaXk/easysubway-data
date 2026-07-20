@@ -45,7 +45,11 @@ async function regionCoverage(region) {
 // [2026-07-13 #2097] 상봉의 7호선 node를 canonical 환승 그룹에 합치면서 레거시
 // QA가 line_id 정렬상 7호선 polygon을 대표로 골라 망우와 1건 겹친다. live 라벨
 // solver 게이트는 통과했으며 실제 앱 라벨 회귀는 없다.
-const zoom1OverlapBaseline = { 수도권: 13 };
+// [2026-07-18 #2068] 수도권 노드 간격 최소 기준 패스(동일노선 코리더 방향 보존
+// 연장)로 역 좌표가 재배치되며 레거시 LOD 배치 충돌이 13→14로 1건 는다. live
+// 게이트(Dart 솔버 capital_basemap_label_overlap_gate_test)는 별도로 통과·갱신
+// 확인했다 — 이 baseline은 위와 동일하게 레거시 LOD 참조값 악화만 막는다.
+const zoom1OverlapBaseline = { 수도권: 14 };
 
 for (const [region, expected] of Object.entries(expectedCountsByRegion)) {
   test(`${region} route map pack retains structured coverage`, async () => {

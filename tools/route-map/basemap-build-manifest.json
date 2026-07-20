@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "route-map-basemap-build-manifest",
+  "compiler": {
+    "package": "vector_graphics_compiler",
+    "version": "1.2.6"
+  },
+  "content": {
+    "svgLayer": "route-lines-and-station-symbols",
+    "stationSymbols": "owner-svg",
+    "labels": "owner-svg-anchor-with-solver-fallback",
+    "interaction": "route_map_positions"
+  },
+  "ownerLabelsSidecar": {
+    "path": "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+    "sha256": "5f9e8a05f15320e0dc01a9e9f3f429e8aea468719f0aeb6158401193bd3f2fd8"
+  },
+  "maps": [
+    {
+      "id": "seoul",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
+      "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.vec",
+      "sourceSvgSha256": "420cab308b7c7600ecbd046a0c4ccf2ff4338e8f3950c751dbd566514c5e8f20",
+      "normalizedSvgSha256": "e22023ba6cd2cd1138e5d710311907c2d87a897f09ddaf9841e747885daeb02a",
+      "compiledVectorSha256": "272d5a4eded8145edb903a63b9114be7670a2ac7604ee5f33bc3d51385f34fe6",
+      "viewBox": [
+        0,
+        0,
+        3800,
+        3020
+      ],
+      "ownerLabelCount": 655
+    },
+    {
+      "id": "busan",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v1.svg",
+      "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.vec",
+      "sourceSvgSha256": "dbeb76190231480eb7534e4ad2dfbfb1286f4c48a47d951c707c64ec1fe9adc6",
+      "normalizedSvgSha256": "92d02f6374740dbe97c12f8df63d134be12e926a8fa5bb2f9f4fb86fbf32ea65",
+      "compiledVectorSha256": "998289c0f182bfcc273ac658697ff0dd82578aa971a6a7e2af747fdaedb2d2a3",
+      "viewBox": [
+        0,
+        0,
+        12000,
+        7040
+      ],
+      "ownerLabelCount": 147
+    },
+    {
+      "id": "daegu",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daegu-v1.svg",
+      "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.vec",
+      "sourceSvgSha256": "e61c96c7b6d993e7f11a46a566e5575cc70c63d8002f9ac45c2d6aa3fca4a43a",
+      "normalizedSvgSha256": "12542ac2323d269a0107b2b8c36ae6d8febb66fe8eacfb286db02fe97e01987b",
+      "compiledVectorSha256": "a0e8a2a62b11647eeb1969ab899595b97836b4c187ca872c914768190470aadb",
+      "viewBox": [
+        0,
+        0,
+        4560,
+        2340
+      ],
+      "ownerLabelCount": 97
+    },
+    {
+      "id": "daejeon",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+      "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daejeon.vec",
+      "sourceSvgSha256": "87267074b0a7f50d90f7a40f158dc6096f418ce0438391497b7c73658b6edb04",
+      "normalizedSvgSha256": "a065fb99be8c5751587c7519c1a7600b579111adb895839e49d14d27efa68041",
+      "compiledVectorSha256": "c68acd47c97cbcb39925a34613822a2b0d61752067974139656079685e654f86",
+      "viewBox": [
+        0,
+        0,
+        2400,
+        1800
+      ],
+      "ownerLabelCount": 25
+    },
+    {
+      "id": "gwangju",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-gwangju-v1.svg",
+      "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/gwangju.vec",
+      "sourceSvgSha256": "23b419ecadba432b481961fdf40f7678abe5b469950cf53c028f85a8f5ea398b",
+      "normalizedSvgSha256": "d6ce6f067bca1883f06c4b2cb0d36bbfab68ed10237167117ee4ebb733701293",
+      "compiledVectorSha256": "e5e2b71ea789b2794ab2ab2b1feb9b8c76d2c4e933ffff1cbf11259124c7f254",
+      "viewBox": [
+        0,
+        0,
+        2400,
+        1800
+      ],
+      "ownerLabelCount": 62
+    }
+  ]
+}

@@ -19,8 +19,22 @@ import path from "node:path";
 import { verticesToPath } from "./audit-octolinearity.mjs";
 import { cleanupPackDir, openPack, repoRoot, writePack } from "./pack-io.mjs";
 
-/** 두 노드 a→b를 8방향 세그먼트 목록(정점 배열)으로 잇는다. 도그레그 1회 허용. */
-export function octilinearSegment(a, b) {
+/**
+ * 두 노드 a→b를 8방향 세그먼트 목록(정점 배열)으로 잇는다. 도그레그 1회 허용.
+ *
+ * #2068 5차(코디네이터 승인 — 코너 방향 재설계): variant로 도그레그 코너의
+ * 위치를 고른다. 두 변형 다 8선형(직선+대각선)이고 corner는 항상 실역이
+ * 아닌 합성 정점이므로 G-NODE·8선형 하드 게이트는 어느 쪽을 써도 그대로
+ * 유지된다 — "어느 끝이 짧은 대각선 리드(diag*√2)를 받고, 어느 끝이 긴
+ * 직선 리드(longAxis-diag)를 받는지"만 바뀐다:
+ *   - "bend-early"(기본, 기존 규칙 불변): a에서 대각선(diag*√2) 먼저, b까지
+ *     나머지 직선(longAxis-diag).
+ *   - "bend-late": a에서 직선(longAxis-diag) 먼저, b까지 나머지 대각선
+ *     (diag*√2) — 코너가 b 쪽 가까이 옮겨간다.
+ * 기본값(bend-early)만 쓰면 기존 모든 호출부(track 생성 등)의 산출이
+ * 완전히 그대로다.
+ */
+export function octilinearSegment(a, b, variant = "bend-early") {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const adx = Math.abs(dx);
@@ -29,13 +43,23 @@ export function octilinearSegment(a, b) {
   if (dx === 0 || dy === 0 || adx === ady) {
     return [a, b];
   }
-  // 도그레그: 짧은 축 길이(diag)만큼 45°로 이동한 꼭짓점 → 나머지 긴 축 직선.
-  // diag가 짧은 축과 같으므로 corner는 자동으로 긴 축의 b 좌표선에 놓인다
-  // (수평 우세면 corner.y=b.y, 수직 우세면 corner.x=b.x) — 두 경우 식이 동일하다.
   const diag = Math.min(adx, ady);
   const sx = Math.sign(dx);
   const sy = Math.sign(dy);
-  const corner = { x: a.x + sx * diag, y: a.y + sy * diag };
+  let corner;
+  if (variant === "bend-late") {
+    // 긴 축 방향으로 (longAxis-diag)만큼 a에서 먼저 이동 — corner가 b 근처.
+    if (adx > ady) {
+      corner = { x: a.x + sx * (adx - diag), y: a.y };
+    } else {
+      corner = { x: a.x, y: a.y + sy * (ady - diag) };
+    }
+  } else {
+    // bend-early(기존): 짧은 축 길이(diag)만큼 45°로 이동한 꼭짓점 → 나머지
+    // 긴 축 직선. diag가 짧은 축과 같으므로 corner는 자동으로 긴 축의 b
+    // 좌표선에 놓인다(수평 우세면 corner.y=b.y, 수직 우세면 corner.x=b.x).
+    corner = { x: a.x + sx * diag, y: a.y + sy * diag };
+  }
   return [a, corner, b];
 }
 

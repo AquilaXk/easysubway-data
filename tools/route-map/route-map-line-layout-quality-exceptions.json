@@ -1,0 +1,1229 @@
+{
+  "nodeStraight": [
+    {
+      "station": "도화",
+      "lineId": "1",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "세마",
+      "lineId": "1",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 1.41px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "시청",
+      "lineId": "2",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "잠실새내",
+      "lineId": "2",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "고속터미널",
+      "lineId": "9",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "양재",
+      "lineId": "3",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "화정",
+      "lineId": "3",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 5.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "수리산",
+      "lineId": "4",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "혜화",
+      "lineId": "4",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 0.45px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "명일",
+      "lineId": "5",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 3.91px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "미사",
+      "lineId": "5",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 2.91px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "여의도",
+      "lineId": "9",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 2.52px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "을지로4가",
+      "lineId": "5",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 5.50px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "굴포천",
+      "lineId": "7",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.28px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "부천시청",
+      "lineId": "7",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.24px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "부평구청",
+      "lineId": "7",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "남위례",
+      "lineId": "8",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 1.48px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "마곡나루",
+      "lineId": "airport-railroad",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 5.66px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "신논현",
+      "lineId": "9",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "검암",
+      "lineId": "airport-railroad",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 2.83px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "김포공항",
+      "lineId": "airport-railroad",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 5.66px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "수서",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.24px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "백양리",
+      "lineId": "gyeongchun",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "중랑",
+      "lineId": "gyeongchun",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 2.50px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "중랑",
+      "lineId": "gyeongui-jungang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 2.50px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "평내호평",
+      "lineId": "gyeongchun",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "수색",
+      "lineId": "gyeongui-jungang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 1.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "행신",
+      "lineId": "gyeongui-jungang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 0.50px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "모래내시장",
+      "lineId": "incheon-2",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 1.47px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "백마",
+      "lineId": "seohae",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 0.52px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "백마",
+      "lineId": "gyeongui-jungang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 0.52px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "미금",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.36px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "가천대",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 1.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "고색",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "남동인더스파크",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 5.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "수내",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 1.60px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "야탑",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.04px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "월곶",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 3.63px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "인천논현",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 4.24px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "죽전",
+      "lineId": "suin-bundang",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 2.45px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    },
+    {
+      "station": "회룡",
+      "lineId": "uijeongbu-lrt",
+      "reason": "short-straight-lead",
+      "detail": "직선 리드 길이 6.00px < 6px",
+      "note": "코너 방향 재설계(축 정렬/대각선 정렬, 이동량 작은 쪽 자동 선택)로 미세정렬 시도 — 이 edge는 어느 쪽으로 옮겨도 다른(이미 8선형인) 이웃 edge가 새로 위반되거나(연쇄 방지 가드로 스킵) 축/대각선 정렬 자체가 다른 실역 노드와 근접(census 안전망 revert)해 원상 복귀됨. resolveNodeClearanceByMicroAlign(relayout-svg-route-lines.mjs) 실측."
+    }
+  ],
+  "overlap": [
+    {
+      "lineA": "gimpo-goldline",
+      "lineB": "seohae",
+      "overlapLenPx": 18,
+      "separationPx": 0,
+      "at": {
+        "x": 548,
+        "y": 738
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gimpo-goldline",
+      "lineB": "9",
+      "overlapLenPx": 14,
+      "separationPx": 0,
+      "at": {
+        "x": 548,
+        "y": 738
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gimpo-goldline",
+      "lineB": "5",
+      "overlapLenPx": 18,
+      "separationPx": 0,
+      "at": {
+        "x": 548,
+        "y": 738
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "incheon-2",
+      "lineB": "airport-railroad",
+      "overlapLenPx": 6.5,
+      "separationPx": 2,
+      "at": {
+        "x": 385,
+        "y": 714.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "incheon-2",
+      "lineB": "airport-railroad",
+      "overlapLenPx": 2.83,
+      "separationPx": 0,
+      "at": {
+        "x": 385,
+        "y": 706
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "incheon-2",
+      "lineB": "airport-railroad",
+      "overlapLenPx": 39.45,
+      "separationPx": 0.55,
+      "at": {
+        "x": 383.5,
+        "y": 1170.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "incheon-2",
+      "lineB": "incheon-1",
+      "overlapLenPx": 6,
+      "separationPx": 0,
+      "at": {
+        "x": 579,
+        "y": 1211
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "sillim",
+      "lineB": "9",
+      "overlapLenPx": 19.94,
+      "separationPx": 0,
+      "at": {
+        "x": 995.8,
+        "y": 1055.2
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "sillim",
+      "lineB": "7",
+      "overlapLenPx": 9,
+      "separationPx": 0,
+      "at": {
+        "x": 916,
+        "y": 1196.3
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "sillim",
+      "lineB": "7",
+      "overlapLenPx": 23.87,
+      "separationPx": 0,
+      "at": {
+        "x": 916,
+        "y": 1232
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "sillim",
+      "lineB": "2",
+      "overlapLenPx": 66.3,
+      "separationPx": 0,
+      "at": {
+        "x": 978,
+        "y": 1327
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "sillim",
+      "lineB": "1",
+      "overlapLenPx": 48.08,
+      "separationPx": 0,
+      "at": {
+        "x": 1015.9,
+        "y": 1078.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "sillim",
+      "lineB": "1",
+      "overlapLenPx": 5.23,
+      "separationPx": 0,
+      "at": {
+        "x": 1015.9,
+        "y": 1169
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "ui-sinseol",
+      "lineB": "6",
+      "overlapLenPx": 21.04,
+      "separationPx": 0,
+      "at": {
+        "x": 1341.2,
+        "y": 670
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gtx-a",
+      "lineB": "suin-bundang",
+      "overlapLenPx": 44.25,
+      "separationPx": 0,
+      "at": {
+        "x": 1358,
+        "y": 1462
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "seohae",
+      "lineB": "gyeongui-jungang",
+      "overlapLenPx": 31.73,
+      "separationPx": 1.77,
+      "at": {
+        "x": 522.1,
+        "y": 540.1
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "seohae",
+      "lineB": "9",
+      "overlapLenPx": 14,
+      "separationPx": 0,
+      "at": {
+        "x": 548,
+        "y": 649.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "seohae",
+      "lineB": "7",
+      "overlapLenPx": 50,
+      "separationPx": 0,
+      "at": {
+        "x": 667,
+        "y": 977
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "seohae",
+      "lineB": "5",
+      "overlapLenPx": 33,
+      "separationPx": 0,
+      "at": {
+        "x": 548,
+        "y": 649.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "seohae",
+      "lineB": "3",
+      "overlapLenPx": 33.87,
+      "separationPx": 0.88,
+      "at": {
+        "x": 522.1,
+        "y": 540.1
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "seohae",
+      "lineB": "1",
+      "overlapLenPx": 3,
+      "separationPx": 0,
+      "at": {
+        "x": 569,
+        "y": 1149
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongchun",
+      "lineB": "gyeongui-jungang",
+      "overlapLenPx": 67.46,
+      "separationPx": 0.73,
+      "at": {
+        "x": 1691.7,
+        "y": 785.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongchun",
+      "lineB": "gyeongui-jungang",
+      "overlapLenPx": 37.82,
+      "separationPx": 0.73,
+      "at": {
+        "x": 1760.9,
+        "y": 785.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongchun",
+      "lineB": "8",
+      "overlapLenPx": 12.82,
+      "separationPx": 0,
+      "at": {
+        "x": 1941,
+        "y": 732
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongchun",
+      "lineB": "7",
+      "overlapLenPx": 51,
+      "separationPx": 0.37,
+      "at": {
+        "x": 1691.7,
+        "y": 785.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongchun",
+      "lineB": "6",
+      "overlapLenPx": 6,
+      "separationPx": 0,
+      "at": {
+        "x": 1792.8,
+        "y": 722.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongchun",
+      "lineB": "1",
+      "overlapLenPx": 34,
+      "separationPx": 0,
+      "at": {
+        "x": 1659,
+        "y": 682
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "airport-railroad",
+      "lineB": "gyeongui-jungang",
+      "overlapLenPx": 90.16,
+      "separationPx": 1.77,
+      "at": {
+        "x": 976,
+        "y": 972.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "airport-railroad",
+      "lineB": "6",
+      "overlapLenPx": 1.77,
+      "separationPx": 1.77,
+      "at": {
+        "x": 976,
+        "y": 972.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "airport-railroad",
+      "lineB": "6",
+      "overlapLenPx": 29,
+      "separationPx": 0,
+      "at": {
+        "x": 786,
+        "y": 792
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "airport-railroad",
+      "lineB": "5",
+      "overlapLenPx": 17.5,
+      "separationPx": 0,
+      "at": {
+        "x": 976,
+        "y": 955
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "incheon-1",
+      "lineB": "1",
+      "overlapLenPx": 22,
+      "separationPx": 0,
+      "at": {
+        "x": 417,
+        "y": 1138
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "shinbundang",
+      "lineB": "suin-bundang",
+      "overlapLenPx": 13.39,
+      "separationPx": 1.92,
+      "at": {
+        "x": 1486.8,
+        "y": 1485.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "shinbundang",
+      "lineB": "7",
+      "overlapLenPx": 29.82,
+      "separationPx": 0,
+      "at": {
+        "x": 1365.2,
+        "y": 1137.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "9",
+      "overlapLenPx": 8.31,
+      "separationPx": 0,
+      "at": {
+        "x": 1443,
+        "y": 1181
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "5",
+      "overlapLenPx": 9.73,
+      "separationPx": 0,
+      "at": {
+        "x": 1422.2,
+        "y": 813.2
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "4",
+      "overlapLenPx": 11.73,
+      "separationPx": 0.73,
+      "at": {
+        "x": 783.6,
+        "y": 1699.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "4",
+      "overlapLenPx": 20.31,
+      "separationPx": 1.77,
+      "at": {
+        "x": 770.1,
+        "y": 1699.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "4",
+      "overlapLenPx": 28.23,
+      "separationPx": 0.73,
+      "at": {
+        "x": 750.1,
+        "y": 1682.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "4",
+      "overlapLenPx": 41.9,
+      "separationPx": 0.73,
+      "at": {
+        "x": 720.1,
+        "y": 1682.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "4",
+      "overlapLenPx": 5.23,
+      "separationPx": 0.73,
+      "at": {
+        "x": 756.1,
+        "y": 1649.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "4",
+      "overlapLenPx": 8.83,
+      "separationPx": 1.77,
+      "at": {
+        "x": 763.1,
+        "y": 1649.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "2",
+      "overlapLenPx": 17,
+      "separationPx": 1.77,
+      "at": {
+        "x": 1477.2,
+        "y": 813.2
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "1",
+      "overlapLenPx": 9.02,
+      "separationPx": 1.04,
+      "at": {
+        "x": 1541.2,
+        "y": 752.2
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "1",
+      "overlapLenPx": 2,
+      "separationPx": 0,
+      "at": {
+        "x": 1126,
+        "y": 1604
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "1",
+      "overlapLenPx": 32.36,
+      "separationPx": 0,
+      "at": {
+        "x": 1126,
+        "y": 1618
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "suin-bundang",
+      "lineB": "1",
+      "overlapLenPx": 40,
+      "separationPx": 0,
+      "at": {
+        "x": 384,
+        "y": 1494
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "7",
+      "overlapLenPx": 50.12,
+      "separationPx": 0.37,
+      "at": {
+        "x": 1689.9,
+        "y": 786.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "5",
+      "overlapLenPx": 51.23,
+      "separationPx": 1.77,
+      "at": {
+        "x": 1425.8,
+        "y": 933.2
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "4",
+      "overlapLenPx": 19,
+      "separationPx": 0,
+      "at": {
+        "x": 1060,
+        "y": 1055
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "3",
+      "overlapLenPx": 36,
+      "separationPx": 0.88,
+      "at": {
+        "x": 523.9,
+        "y": 535.9
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "2",
+      "overlapLenPx": 10,
+      "separationPx": 0,
+      "at": {
+        "x": 871,
+        "y": 870
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "1",
+      "overlapLenPx": 31.5,
+      "separationPx": 0,
+      "at": {
+        "x": 1060,
+        "y": 1023.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "gyeongui-jungang",
+      "lineB": "1",
+      "overlapLenPx": 29.25,
+      "separationPx": 0.45,
+      "at": {
+        "x": 1554.8,
+        "y": 749.5
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "8",
+      "overlapLenPx": 6,
+      "separationPx": 0,
+      "at": {
+        "x": 1601,
+        "y": 1180
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "5",
+      "overlapLenPx": 14,
+      "separationPx": 0,
+      "at": {
+        "x": 548,
+        "y": 742
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "5",
+      "overlapLenPx": 29.53,
+      "separationPx": 0,
+      "at": {
+        "x": 953,
+        "y": 1098
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "5",
+      "overlapLenPx": 6,
+      "separationPx": 0,
+      "at": {
+        "x": 1748.3,
+        "y": 1163
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "4",
+      "overlapLenPx": 44,
+      "separationPx": 0,
+      "at": {
+        "x": 1183,
+        "y": 1085
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "2",
+      "overlapLenPx": 30.6,
+      "separationPx": 0,
+      "at": {
+        "x": 854.2,
+        "y": 1001.8
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "9",
+      "lineB": "1",
+      "overlapLenPx": 11,
+      "separationPx": 0,
+      "at": {
+        "x": 1012,
+        "y": 1074.4
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "8",
+      "lineB": "5",
+      "overlapLenPx": 11.38,
+      "separationPx": 0,
+      "at": {
+        "x": 1624,
+        "y": 1029.6
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "8",
+      "lineB": "3",
+      "overlapLenPx": 18.49,
+      "separationPx": 0,
+      "at": {
+        "x": 1666.2,
+        "y": 1254.8
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "7",
+      "lineB": "5",
+      "overlapLenPx": 22.46,
+      "separationPx": 0,
+      "at": {
+        "x": 1659,
+        "y": 905
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "7",
+      "lineB": "4",
+      "overlapLenPx": 6,
+      "separationPx": 0,
+      "at": {
+        "x": 1746,
+        "y": 425
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "7",
+      "lineB": "1",
+      "overlapLenPx": 19,
+      "separationPx": 0,
+      "at": {
+        "x": 1596,
+        "y": 495
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "7",
+      "lineB": "1",
+      "overlapLenPx": 29,
+      "separationPx": 0,
+      "at": {
+        "x": 781,
+        "y": 1184
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "7",
+      "lineB": "1",
+      "overlapLenPx": 11.14,
+      "separationPx": 0,
+      "at": {
+        "x": 748,
+        "y": 1184
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "7",
+      "lineB": "1",
+      "overlapLenPx": 5.66,
+      "separationPx": 0,
+      "at": {
+        "x": 667,
+        "y": 1153
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "6",
+      "lineB": "3",
+      "overlapLenPx": 7,
+      "separationPx": 0,
+      "at": {
+        "x": 905,
+        "y": 534
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "6",
+      "lineB": "3",
+      "overlapLenPx": 22,
+      "separationPx": 0,
+      "at": {
+        "x": 782,
+        "y": 538
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "6",
+      "lineB": "3",
+      "overlapLenPx": 51,
+      "separationPx": 0,
+      "at": {
+        "x": 1359,
+        "y": 884
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "6",
+      "lineB": "2",
+      "overlapLenPx": 3,
+      "separationPx": 0,
+      "at": {
+        "x": 837,
+        "y": 911
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "6",
+      "lineB": "2",
+      "overlapLenPx": 21.38,
+      "separationPx": 0,
+      "at": {
+        "x": 837,
+        "y": 917
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "5",
+      "lineB": "3",
+      "overlapLenPx": 25.28,
+      "separationPx": 0,
+      "at": {
+        "x": 1134,
+        "y": 752
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "5",
+      "lineB": "2",
+      "overlapLenPx": 45.74,
+      "separationPx": 0,
+      "at": {
+        "x": 878,
+        "y": 1055.7
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "5",
+      "lineB": "1",
+      "overlapLenPx": 51,
+      "separationPx": 1,
+      "at": {
+        "x": 876.7,
+        "y": 1148
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "5",
+      "lineB": "1",
+      "overlapLenPx": 41.25,
+      "separationPx": 1,
+      "at": {
+        "x": 876.7,
+        "y": 1148
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "5",
+      "lineB": "1",
+      "overlapLenPx": 1.41,
+      "separationPx": 0,
+      "at": {
+        "x": 970,
+        "y": 1148
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "4",
+      "lineB": "3",
+      "overlapLenPx": 28,
+      "separationPx": 0,
+      "at": {
+        "x": 1236,
+        "y": 879
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "4",
+      "lineB": "1",
+      "overlapLenPx": 60.64,
+      "separationPx": 0,
+      "at": {
+        "x": 1704,
+        "y": 485
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "4",
+      "lineB": "1",
+      "overlapLenPx": 26.7,
+      "separationPx": 0,
+      "at": {
+        "x": 1039,
+        "y": 889
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "4",
+      "lineB": "1",
+      "overlapLenPx": 13,
+      "separationPx": 0,
+      "at": {
+        "x": 901,
+        "y": 1402
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "3",
+      "lineB": "2",
+      "overlapLenPx": 28,
+      "separationPx": 0,
+      "at": {
+        "x": 1301,
+        "y": 1254
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    },
+    {
+      "lineA": "2",
+      "lineB": "1",
+      "overlapLenPx": 40,
+      "separationPx": 0,
+      "at": {
+        "x": 1442,
+        "y": 760
+      },
+      "note": "octilinearSegment bend-early/bend-late 두 변형 실측(hub-adjacent edge 대상 전역 적용): 간선 겹침 85→109·노드 직선여유 41→49로 악화(신림×2/gtx-a×1/gtx-a×6 등 신규 겹침 발생) — 허브 코너를 옮기면 그 허브에 걸린 다른 노선들과의 상대 각도가 동시에 바뀌어 되돌림. resolveOverlapsByMovingStations의 직접-edge 끝점 공유 스킵(라운드4 실측 안전 기준)이 유일하게 검증된 안전 상태."
+    }
+  ],
+  "note": "#2068 라운드 5(코디네이터 승인 — 코너 방향 재설계): 간선 겹침 104→85(18% 감소, 라운드4 8클러스터 42역 이동 유지)·노드 직선여유 67→41(39% 감소, resolveNodeClearanceByMicroAlign 80역 미세정렬 6px 이내). 두 게이트 모두 0 미달 — 잔여는 이 파일의 각 건에 실측 근거를 남긴다. 시도·실패한 방법: (1) 축 정렬만(짧은 축 0 스냅) — 근-45도 edge에서 이동량 30~50px까지 커져 census 안전망이 대량 revert(교훈으로 대각선 정렬 병행 도입). (2) 허브 인접 edge 전역 bend-late 휴리스틱 — 실측 악화(위 overlap 항목 note 참고), 되돌림. (3) 부분 이동(공유역 보호+나머지만 이동) — 강체성 붕괴로 클러스터당 최대 2799건 무한 진동(라운드4 실측), 안전 기준(직접 edge 끝점 공유 스킵)으로 복귀."
+}

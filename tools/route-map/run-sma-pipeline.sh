@@ -38,12 +38,13 @@ echo "[4/7] 노선 track 생성(SVG 색→슬러그→line_id 결정적 배정 +
 node tools/route-map/build-sma-tracks.mjs --geometry "$GEOM" --pack "$PACK" --region 수도권 --out "$TRACKS" --stitch-tolerance 40
 node -e "const fs=require('node:fs');const d=JSON.parse(fs.readFileSync('$TRACKS','utf8'));const p=JSON.parse(fs.readFileSync('$SEOHAE','utf8'));d.lines=d.lines.filter(l=>l.lineId!=='$SEOHAE_LINE_ID');d.lines.push({lineId:'$SEOHAE_LINE_ID',svgColor:'',trackCount:p.length,paths:p});d.lineCount=d.lines.length;fs.writeFileSync('$TRACKS24',JSON.stringify(d,null,1));"
 
-echo "[5/7] track 팩 반영 + 역 노드 track 투영(투영 게이트)"
+echo "[5/7] track 팩 반영 + 역-트랙 이탈 진단(#2068 P-65: 팩=SVG 고정 — 역은 옮기지 않는다,"
+echo "      --check로 보고만; project-nodes-to-tracks가 하던 이동은 respace --pin-stations로 대체)"
 node tools/route-map/apply-route-map-line-tracks.mjs --pack "$PACK" --index "$INDEX" --tracks "$TRACKS24"
-node tools/route-map/project-nodes-to-tracks.mjs --region 수도권 --pack "$PACK" --index "$INDEX"
+node tools/route-map/project-nodes-to-tracks.mjs --region 수도권 --pack "$PACK" --index "$INDEX" --check
 
-echo "[6/7] 재간격 → 8선형 잔차 스냅 → 분기 spur track 재생성 → enrich"
-respace_out="$(node tools/route-map/respace-route-map.mjs --region 수도권 --pack "$PACK" --index "$INDEX")"
+echo "[6/7] 재간격(역 좌표 고정, 트랙만 정리) → 8선형 잔차 스냅 → 분기 spur track 재생성 → enrich"
+respace_out="$(node tools/route-map/respace-route-map.mjs --region 수도권 --pack "$PACK" --index "$INDEX" --pin-stations)"
 printf '%s\n' "$respace_out" | head -1
 node tools/route-map/snap-tracks-octolinear.mjs --region 수도권 --pack "$PACK" --index "$INDEX"
 # 분기(지선) 노선을 마지막에 재생성한다: 원본 line_sequence가 지선을 본선과 선형

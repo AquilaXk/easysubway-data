@@ -477,13 +477,22 @@
          class="route-group"
          data-state="active">
         <path
-           d="M 216 384 L 288 456 L 360 528 L 432 600 L 504 672 L 576 744 L 624 792 L 744 792 L 864 792 L 984 792 L 1104 792 L 1248 792 L 1416 624 L 1512 624 L 1512 744 L 1512 864 L 1512 984 L 1512 1104 L 1512 1224 L 1632 1224 L 1776 1368 L 1872 1368 L 1968 1368 L 2016 1368 L 2064 1320 L 2112 1320 L 2112 1224 L 2160 1176 L 2232 1248 L 2232 1344"
+           d="M 540 234 L 540 1440 Q 540 1560 660 1560 L 924 1560 Q 1044 1560 1044 1440 L 1044 360 Q 1044 240 1164 240 L 1464 240 Q 1584 240 1584 360 L 1584 1350"
            class="route-line"
            fill="none"
            stroke="#00975A"
-           stroke-width="8"
+           stroke-width="30"
            id="path11"
            data-topology-revision="104-transfer-at-line2-206" />
+      </g>
+
+      <g class="line-terminal-badge" data-role="line-terminal-badge" id="line-terminal-badge-panam">
+        <circle cx="540" cy="234" r="45" fill="#00975A" data-role="line-terminal-badge" id="line-terminal-badge-circle-panam" />
+        <text x="540" y="234" fill="#FFFFFF" font-size="52" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge" id="line-terminal-badge-label-panam">1</text>
+      </g>
+      <g class="line-terminal-badge" data-role="line-terminal-badge" id="line-terminal-badge-banseok">
+        <circle cx="1584" cy="1350" r="45" fill="#00975A" data-role="line-terminal-badge" id="line-terminal-badge-circle-banseok" />
+        <text x="1584" y="1350" fill="#FFFFFF" font-size="52" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge" id="line-terminal-badge-label-banseok">1</text>
       </g>
       <g
          id="route-line-1-sikjangsan-extension"
@@ -520,12 +529,12 @@
          data-state="active"
          id="g12">
         <circle
-           cx="216"
-           cy="384"
-           r="6.2"
+           cx="1584"
+           cy="1224"
+           r="19"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="2.4"
+           stroke-width="6"
            id="circle12" />
       </g>
       <g
@@ -535,12 +544,12 @@
          data-state="active"
          id="g13">
         <circle
-           cx="288"
-           cy="456"
-           r="4.8"
+           cx="1584"
+           cy="1014"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle13" />
       </g>
       <g
@@ -550,12 +559,12 @@
          data-state="active"
          id="g14">
         <circle
-           cx="360"
-           cy="528"
-           r="4.8"
+           cx="1584"
+           cy="804"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle14" />
       </g>
       <g
@@ -565,12 +574,12 @@
          data-state="active"
          id="g15">
         <circle
-           cx="432"
-           cy="600"
-           r="4.8"
+           cx="1584"
+           cy="594"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle15" />
       </g>
       <g
@@ -580,12 +589,12 @@
          data-state="active"
          id="g16">
         <circle
-           cx="504"
-           cy="672"
-           r="4.8"
+           cx="1584"
+           cy="384"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle16" />
       </g>
       <g
@@ -595,12 +604,12 @@
          data-state="active"
          id="g17">
         <circle
-           cx="576"
-           cy="744"
-           r="4.8"
+           cx="1440"
+           cy="240"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle17" />
       </g>
       <g
@@ -610,12 +619,12 @@
          data-state="active"
          id="g18">
         <circle
-           cx="864"
-           cy="792"
-           r="4.8"
+           cx="1044"
+           cy="360"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle18" />
       </g>
       <g
@@ -625,12 +634,12 @@
          data-state="active"
          id="g19">
         <circle
-           cx="984"
-           cy="792"
-           r="4.8"
+           cx="1044"
+           cy="540"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle19" />
       </g>
       <g
@@ -640,12 +649,12 @@
          data-state="active"
          id="g20">
         <circle
-           cx="1104"
-           cy="792"
-           r="4.8"
+           cx="1044"
+           cy="720"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle20" />
       </g>
       <g
@@ -655,12 +664,12 @@
          data-state="active"
          id="g21">
         <circle
-           cx="1512"
-           cy="744"
-           r="4.8"
+           cx="1044"
+           cy="1080"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle21" />
       </g>
       <g
@@ -670,12 +679,12 @@
          data-state="active"
          id="g22">
         <circle
-           cx="1512"
-           cy="864"
-           r="4.8"
+           cx="1044"
+           cy="1260"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle22" />
       </g>
       <g
@@ -685,12 +694,12 @@
          data-state="active"
          id="g23">
         <circle
-           cx="1512"
-           cy="984"
-           r="4.8"
+           cx="1044"
+           cy="1440"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle23" />
       </g>
       <g
@@ -700,12 +709,12 @@
          data-state="active"
          id="g24">
         <circle
-           cx="1512"
-           cy="1224"
-           r="4.8"
+           cx="792"
+           cy="1560"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle24" />
       </g>
       <g
@@ -715,12 +724,12 @@
          data-state="active"
          id="g25">
         <circle
-           cx="1872"
-           cy="1368"
-           r="4.8"
+           cx="540"
+           cy="1260"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle25" />
       </g>
       <g
@@ -730,12 +739,12 @@
          data-state="active"
          id="g26">
         <circle
-           cx="1968"
-           cy="1368"
-           r="4.8"
+           cx="540"
+           cy="1080"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle26" />
       </g>
       <g
@@ -745,12 +754,12 @@
          data-state="active"
          id="g27">
         <circle
-           cx="2232"
-           cy="1248"
-           r="4.8"
+           cx="540"
+           cy="540"
+           r="15"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="1.8"
+           stroke-width="4.5"
            id="circle27" />
       </g>
       <g
@@ -760,12 +769,12 @@
          data-state="active"
          id="g28">
         <circle
-           cx="2232"
-           cy="1344"
-           r="6.2"
+           cx="540"
+           cy="360"
+           r="19"
            fill="#FFFFFF"
            stroke="#00975A"
-           stroke-width="2.4"
+           stroke-width="6"
            id="circle28" />
       </g>
       <g
@@ -2212,7 +2221,7 @@
            class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
           <path
              id="transfer-station-shell-outline-유성온천"
-             d="M 738.54 792 L 749.46 792"
+             d="M 1254.54 240 L 1265.46 240"
              fill="none"
              stroke="#3F4A5C"
              stroke-width="18.2"
@@ -2222,7 +2231,7 @@
              shape-rendering="geometricPrecision" />
           <path
              id="transfer-station-shell-fill-유성온천"
-             d="M 738.54 792 L 749.46 792"
+             d="M 1254.54 240 L 1265.46 240"
              fill="none"
              stroke="#FFFFFF"
              stroke-width="14.56"
@@ -2239,16 +2248,16 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-station-badge-circle-유성온천-1호선-1"
-               cx="738.54"
-               cy="792"
+               cx="1254.54"
+               cy="240"
                r="5.46"
                fill="#00975A"
                class="ourclass-transfer-badge-circle"
                shape-rendering="geometricPrecision" />
             <text
                id="transfer-station-badge-label-유성온천-1호선-1"
-               x="738.54"
-               y="792"
+               x="1254.54"
+               y="240"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2263,8 +2272,8 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-유성온천-construction-badge-halo-2"
-               cx="749.46"
-               cy="792"
+               cx="1265.46"
+               cy="240"
                r="6.82"
                fill="none"
                stroke="#F29A2E"
@@ -2274,8 +2283,8 @@
                data-state="construction" />
             <circle
                id="transfer-station-badge-circle-유성온천-2호선-2"
-               cx="749.46"
-               cy="792"
+               cx="1265.46"
+               cy="240"
                r="5.46"
                fill="#E72B35"
                class="ourclass-transfer-badge-circle"
@@ -2283,8 +2292,8 @@
                data-state="construction" />
             <text
                id="transfer-station-badge-label-유성온천-2호선-2"
-               x="749.46"
-               y="792"
+               x="1265.46"
+               y="240"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2317,7 +2326,7 @@
            class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
           <path
              id="transfer-station-shell-outline-정부청사"
-             d="M 1506.54 624 L 1517.46 624"
+             d="M 1038.54 900 L 1049.46 900"
              fill="none"
              stroke="#3F4A5C"
              stroke-width="18.2"
@@ -2327,7 +2336,7 @@
              shape-rendering="geometricPrecision" />
           <path
              id="transfer-station-shell-fill-정부청사"
-             d="M 1506.54 624 L 1517.46 624"
+             d="M 1038.54 900 L 1049.46 900"
              fill="none"
              stroke="#FFFFFF"
              stroke-width="14.56"
@@ -2344,16 +2353,16 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-station-badge-circle-정부청사-1호선-1"
-               cx="1506.54"
-               cy="624"
+               cx="1038.54"
+               cy="900"
                r="5.46"
                fill="#00975A"
                class="ourclass-transfer-badge-circle"
                shape-rendering="geometricPrecision" />
             <text
                id="transfer-station-badge-label-정부청사-1호선-1"
-               x="1506.54"
-               y="624"
+               x="1038.54"
+               y="900"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2368,8 +2377,8 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-정부청사-construction-badge-halo-2"
-               cx="1517.46"
-               cy="624"
+               cx="1049.46"
+               cy="900"
                r="6.82"
                fill="none"
                stroke="#F29A2E"
@@ -2379,8 +2388,8 @@
                data-state="construction" />
             <circle
                id="transfer-station-badge-circle-정부청사-2호선-2"
-               cx="1517.46"
-               cy="624"
+               cx="1049.46"
+               cy="900"
                r="5.46"
                fill="#E72B35"
                class="ourclass-transfer-badge-circle"
@@ -2388,8 +2397,8 @@
                data-state="construction" />
             <text
                id="transfer-station-badge-label-정부청사-2호선-2"
-               x="1517.46"
-               y="624"
+               x="1049.46"
+               y="900"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2422,7 +2431,7 @@
            class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
           <path
              id="transfer-station-shell-outline-서대전네거리"
-             d="M 1770.54 1368 L 1781.46 1368"
+             d="M 534.54 1440 L 545.46 1440"
              fill="none"
              stroke="#3F4A5C"
              stroke-width="18.2"
@@ -2432,7 +2441,7 @@
              shape-rendering="geometricPrecision" />
           <path
              id="transfer-station-shell-fill-서대전네거리"
-             d="M 1770.54 1368 L 1781.46 1368"
+             d="M 534.54 1440 L 545.46 1440"
              fill="none"
              stroke="#FFFFFF"
              stroke-width="14.56"
@@ -2449,16 +2458,16 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-station-badge-circle-서대전네거리-1호선-1"
-               cx="1770.54"
-               cy="1368"
+               cx="534.54"
+               cy="1440"
                r="5.46"
                fill="#00975A"
                class="ourclass-transfer-badge-circle"
                shape-rendering="geometricPrecision" />
             <text
                id="transfer-station-badge-label-서대전네거리-1호선-1"
-               x="1770.54"
-               y="1368"
+               x="534.54"
+               y="1440"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2473,8 +2482,8 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-서대전네거리-construction-badge-halo-2"
-               cx="1781.46"
-               cy="1368"
+               cx="545.46"
+               cy="1440"
                r="6.82"
                fill="none"
                stroke="#F29A2E"
@@ -2484,8 +2493,8 @@
                data-state="construction" />
             <circle
                id="transfer-station-badge-circle-서대전네거리-2호선-2"
-               cx="1781.46"
-               cy="1368"
+               cx="545.46"
+               cy="1440"
                r="5.46"
                fill="#E72B35"
                class="ourclass-transfer-badge-circle"
@@ -2493,8 +2502,8 @@
                data-state="construction" />
             <text
                id="transfer-station-badge-label-서대전네거리-2호선-2"
-               x="1781.46"
-               y="1368"
+               x="545.46"
+               y="1440"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2528,7 +2537,7 @@
            class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
           <path
              id="transfer-station-shell-outline-대전역"
-             d="M 2106.54 1320 L 2117.46 1320"
+             d="M 534.54 900 L 545.46 900"
              fill="none"
              stroke="#3F4A5C"
              stroke-width="18.2"
@@ -2538,7 +2547,7 @@
              shape-rendering="geometricPrecision" />
           <path
              id="transfer-station-shell-fill-대전역"
-             d="M 2106.54 1320 L 2117.46 1320"
+             d="M 534.54 900 L 545.46 900"
              fill="none"
              stroke="#FFFFFF"
              stroke-width="14.56"
@@ -2555,16 +2564,16 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-station-badge-circle-대전역-1호선-1"
-               cx="2106.54"
-               cy="1320"
+               cx="534.54"
+               cy="900"
                r="5.46"
                fill="#00975A"
                class="ourclass-transfer-badge-circle"
                shape-rendering="geometricPrecision" />
             <text
                id="transfer-station-badge-label-대전역-1호선-1"
-               x="2106.54"
-               y="1320"
+               x="534.54"
+               y="900"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2579,8 +2588,8 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-대전역-construction-badge-halo-2"
-               cx="2117.46"
-               cy="1320"
+               cx="545.46"
+               cy="900"
                r="6.82"
                fill="none"
                stroke="#F29A2E"
@@ -2590,8 +2599,8 @@
                data-state="construction" />
             <circle
                id="transfer-station-badge-circle-대전역-2호선-2"
-               cx="2117.46"
-               cy="1320"
+               cx="545.46"
+               cy="900"
                r="5.46"
                fill="#E72B35"
                class="ourclass-transfer-badge-circle"
@@ -2599,8 +2608,8 @@
                data-state="construction" />
             <text
                id="transfer-station-badge-label-대전역-2호선-2"
-               x="2117.46"
-               y="1320"
+               x="545.46"
+               y="900"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2633,7 +2642,7 @@
            class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule">
           <path
              id="transfer-station-shell-outline-대동"
-             d="M 2149.142 1180.5676 L 2160.062 1180.5676"
+             d="M 534.54 720 L 545.46 720"
              fill="none"
              stroke="#3F4A5C"
              stroke-width="18.2"
@@ -2643,7 +2652,7 @@
              shape-rendering="geometricPrecision" />
           <path
              id="transfer-station-shell-fill-대동"
-             d="M 2149.142 1180.5676 L 2160.062 1180.5676"
+             d="M 534.54 720 L 545.46 720"
              fill="none"
              stroke="#FFFFFF"
              stroke-width="14.56"
@@ -2660,16 +2669,16 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-station-badge-circle-대동-1호선-1"
-               cx="2149.142"
-               cy="1180.5676"
+               cx="534.54"
+               cy="720"
                r="5.46"
                fill="#00975A"
                class="ourclass-transfer-badge-circle"
                shape-rendering="geometricPrecision" />
             <text
                id="transfer-station-badge-label-대동-1호선-1"
-               x="2149.142"
-               y="1180.5676"
+               x="534.54"
+               y="720"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -2684,8 +2693,8 @@
              class="ourclass-transfer-badge">
             <circle
                id="transfer-대동-construction-badge-halo-2"
-               cx="2160.062"
-               cy="1180.5676"
+               cx="545.46"
+               cy="720"
                r="6.82"
                fill="none"
                stroke="#F29A2E"
@@ -2695,8 +2704,8 @@
                data-state="construction" />
             <circle
                id="transfer-station-badge-circle-대동-2호선-2"
-               cx="2160.062"
-               cy="1180.5676"
+               cx="545.46"
+               cy="720"
                r="5.46"
                fill="#E72B35"
                class="ourclass-transfer-badge-circle"
@@ -2704,8 +2713,8 @@
                data-state="construction" />
             <text
                id="transfer-station-badge-label-대동-2호선-2"
-               x="2160.062"
-               y="1180.5676"
+               x="545.46"
+               y="720"
                fill="#FFFFFF"
                class="ourclass-transfer-badge-label"
                font-size="8.19"
@@ -3182,10 +3191,10 @@
       <text
          id="station-label-line1-101"
          class="station-label terminal"
-         x="2216.00"
-         y="1350.00"
-         text-anchor="end"
-         font-size="14"
+         x="572"
+         y="379"
+         text-anchor="start"
+         font-size="57"
          font-weight="700"
          fill="#111111"
          data-label-role="terminal"
@@ -3193,20 +3202,20 @@
          data-station-code="101"
          data-full-official-name="판암"
          data-label-side="W"
-         data-node-x="2232"
-         data-node-y="1344"
+         data-node-x="540"
+         data-node-y="360"
          data-status="active"><tspan
            class="station-main"
-           x="2216.00"
+           x="572"
            dy="0"
            id="tspan93">판암</tspan></text>
       <text
          id="station-label-line1-102"
          class="station-label ordinary"
-         x="2216.00"
-         y="1266.00"
-         text-anchor="end"
-         font-size="13.2"
+         x="572"
+         y="558"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3214,20 +3223,20 @@
          data-station-code="102"
          data-full-official-name="신흥"
          data-label-side="W"
-         data-node-x="2232"
-         data-node-y="1248"
+         data-node-x="540"
+         data-node-y="540"
          data-status="active"><tspan
            class="station-main"
-           x="2216.00"
+           x="572"
            dy="0"
            id="tspan94">신흥</tspan></text>
       <text
          id="station-label-line1-105"
          class="station-label ordinary"
-         x="1968.3828"
-         y="1397.3199"
-         text-anchor="middle"
-         font-size="13.2px"
+         x="572"
+         y="1098"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4f5964"
          data-label-role="ordinary"
@@ -3235,20 +3244,20 @@
          data-station-code="105"
          data-full-official-name="중앙로"
          data-label-side="S"
-         data-node-x="1968"
-         data-node-y="1368"
+         data-node-x="540"
+         data-node-y="1080"
          data-status="active"><tspan
            class="station-main"
-           x="1968.3828"
+           x="572"
            dy="0"
            id="tspan95">중앙로</tspan></text>
       <text
          id="station-label-line1-106"
          class="station-label ordinary"
-         x="1873.2795"
-         y="1397.3906"
-         text-anchor="middle"
-         font-size="13.2px"
+         x="572"
+         y="1278"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4f5964"
          data-label-role="ordinary"
@@ -3256,20 +3265,20 @@
          data-station-code="106"
          data-full-official-name="중구청"
          data-label-side="N"
-         data-node-x="1872"
-         data-node-y="1368"
+         data-node-x="540"
+         data-node-y="1260"
          data-status="active"><tspan
            class="station-main"
-           x="1873.2795"
+           x="572"
            dy="0"
            id="tspan96">중구청</tspan></text>
       <text
          id="station-label-line1-108"
          class="station-label ordinary"
-         x="1528.00"
-         y="1206.00"
-         text-anchor="start"
-         font-size="13.2"
+         x="792"
+         y="1632"
+         text-anchor="middle"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3277,20 +3286,20 @@
          data-station-code="108"
          data-full-official-name="오룡"
          data-label-side="E"
-         data-node-x="1512"
-         data-node-y="1224"
+         data-node-x="792"
+         data-node-y="1560"
          data-status="active"><tspan
            class="station-main"
-           x="1528.00"
+           x="792"
            dy="0"
            id="tspan97">오룡</tspan></text>
       <text
          id="station-label-line1-109"
          class="station-label ordinary"
-         x="1528.00"
-         y="990.00"
+         x="1076"
+         y="1458"
          text-anchor="start"
-         font-size="13.2"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3298,20 +3307,20 @@
          data-station-code="109"
          data-full-official-name="용문"
          data-label-side="E"
-         data-node-x="1512"
-         data-node-y="984"
+         data-node-x="1044"
+         data-node-y="1440"
          data-status="active"><tspan
            class="station-main"
-           x="1528.00"
+           x="1076"
            dy="0"
            id="tspan98">용문</tspan></text>
       <text
          id="station-label-line1-110"
          class="station-label ordinary"
-         x="1528.00"
-         y="870.00"
+         x="1076"
+         y="1278"
          text-anchor="start"
-         font-size="13.2"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3319,20 +3328,20 @@
          data-station-code="110"
          data-full-official-name="탄방"
          data-label-side="E"
-         data-node-x="1512"
-         data-node-y="864"
+         data-node-x="1044"
+         data-node-y="1260"
          data-status="active"><tspan
            class="station-main"
-           x="1528.00"
+           x="1076"
            dy="0"
            id="tspan99">탄방</tspan></text>
       <text
          id="station-label-line1-111"
          class="station-label ordinary"
-         x="1528.00"
-         y="750.00"
+         x="1076"
+         y="1098"
          text-anchor="start"
-         font-size="13.2"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3340,20 +3349,20 @@
          data-station-code="111"
          data-full-official-name="시청"
          data-label-side="E"
-         data-node-x="1512"
-         data-node-y="744"
+         data-node-x="1044"
+         data-node-y="1080"
          data-status="active"><tspan
            class="station-main"
-           x="1528.00"
+           x="1076"
            dy="0"
            id="tspan100">시청</tspan></text>
       <text
          id="station-label-line1-113"
          class="station-label ordinary"
-         x="1104.00"
-         y="824.00"
-         text-anchor="middle"
-         font-size="13.2"
+         x="1076"
+         y="738"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3361,20 +3370,20 @@
          data-station-code="113"
          data-full-official-name="갈마"
          data-label-side="S"
-         data-node-x="1104"
-         data-node-y="792"
+         data-node-x="1044"
+         data-node-y="720"
          data-status="active"><tspan
            class="station-main"
-           x="1104.00"
+           x="1076"
            dy="0"
            id="tspan101">갈마</tspan></text>
       <text
          id="station-label-line1-114"
          class="station-label ordinary"
-         x="984.00"
-         y="824.00"
-         text-anchor="middle"
-         font-size="13.2"
+         x="1076"
+         y="558"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3382,20 +3391,20 @@
          data-station-code="114"
          data-full-official-name="월평"
          data-label-side="S"
-         data-node-x="984"
-         data-node-y="792"
+         data-node-x="1044"
+         data-node-y="540"
          data-status="active"><tspan
            class="station-main"
-           x="984.00"
+           x="1076"
            dy="0"
            id="tspan102">월평</tspan></text>
       <text
          id="station-label-line1-115"
          class="station-label ordinary"
-         x="864.00"
-         y="824.00"
-         text-anchor="middle"
-         font-size="13.2"
+         x="1076"
+         y="378"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3403,41 +3412,41 @@
          data-station-code="115"
          data-full-official-name="갑천"
          data-label-side="S"
-         data-node-x="864"
-         data-node-y="792"
+         data-node-x="1044"
+         data-node-y="360"
          data-status="active"><tspan
            class="station-main"
-           x="864.00"
+           x="1076"
            dy="0"
            id="tspan103">갑천</tspan></text>
       <text
          id="station-label-line1-117"
          class="station-label ordinary"
-         x="560.00"
-         y="762.00"
-         text-anchor="end"
-         font-size="13.2"
+         x="1462"
+         y="182"
+         text-anchor="middle"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
          data-line="1"
          data-station-code="117"
          data-full-official-name="구암"
-         data-label-side="W"
-         data-node-x="576"
-         data-node-y="744"
+         data-label-side="N"
+         data-node-x="1440"
+         data-node-y="240"
          data-status="active"><tspan
            class="station-main"
-           x="560.00"
+           x="1462"
            dy="0"
            id="tspan104">구암</tspan></text>
       <text
          id="station-label-line1-118"
          class="station-label ordinary"
-         x="488.00"
-         y="690.00"
-         text-anchor="end"
-         font-size="13.2"
+         x="1616"
+         y="402"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3445,20 +3454,20 @@
          data-station-code="118"
          data-full-official-name="현충원"
          data-label-side="W"
-         data-node-x="504"
-         data-node-y="672"
+         data-node-x="1584"
+         data-node-y="384"
          data-status="active"><tspan
            class="station-main"
-           x="488.00"
+           x="1616"
            dy="0"
            id="tspan105">현충원</tspan></text>
       <text
          id="station-label-line1-119"
          class="station-label ordinary"
-         x="416.00"
-         y="618.00"
-         text-anchor="end"
-         font-size="13.2"
+         x="1616"
+         y="612"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3466,20 +3475,20 @@
          data-station-code="119"
          data-full-official-name="월드컵경기장"
          data-label-side="W"
-         data-node-x="432"
-         data-node-y="600"
+         data-node-x="1584"
+         data-node-y="594"
          data-status="active"><tspan
            class="station-main"
-           x="416.00"
+           x="1616"
            dy="0"
            id="tspan106">월드컵경기장</tspan></text>
       <text
          id="station-label-line1-120"
          class="station-label ordinary"
-         x="344.00"
-         y="546.00"
-         text-anchor="end"
-         font-size="13.2"
+         x="1616"
+         y="822"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3487,20 +3496,20 @@
          data-station-code="120"
          data-full-official-name="노은"
          data-label-side="W"
-         data-node-x="360"
-         data-node-y="528"
+         data-node-x="1584"
+         data-node-y="804"
          data-status="active"><tspan
            class="station-main"
-           x="344.00"
+           x="1616"
            dy="0"
            id="tspan107">노은</tspan></text>
       <text
          id="station-label-line1-121"
          class="station-label ordinary"
-         x="272.00"
-         y="474.00"
-         text-anchor="end"
-         font-size="13.2"
+         x="1616"
+         y="1032"
+         text-anchor="start"
+         font-size="54"
          font-weight="400"
          fill="#4F5964"
          data-label-role="ordinary"
@@ -3508,20 +3517,20 @@
          data-station-code="121"
          data-full-official-name="지족"
          data-label-side="W"
-         data-node-x="288"
-         data-node-y="456"
+         data-node-x="1584"
+         data-node-y="1014"
          data-status="active"><tspan
            class="station-main"
-           x="272.00"
+           x="1616"
            dy="0"
            id="tspan108">지족</tspan></text>
       <text
          id="station-label-line1-122"
          class="station-label terminal"
-         x="216.00"
-         y="363.00"
-         text-anchor="middle"
-         font-size="14"
+         x="1616"
+         y="1243"
+         text-anchor="start"
+         font-size="57"
          font-weight="700"
          fill="#111111"
          data-label-role="terminal"
@@ -3529,11 +3538,11 @@
          data-station-code="122"
          data-full-official-name="반석"
          data-label-side="N"
-         data-node-x="216"
-         data-node-y="384"
+         data-node-x="1584"
+         data-node-y="1224"
          data-status="active"><tspan
            class="station-main"
-           x="216.00"
+           x="1616"
            dy="0"
            id="tspan109">반석</tspan></text>
       <text
@@ -3651,10 +3660,10 @@
       <text
          id="station-label-transfer-104-206"
          class="station-label transfer"
-         x="2102.5352"
-         y="1302.1578"
-         text-anchor="end"
-         font-size="14.2px"
+         x="572"
+         y="920"
+         text-anchor="start"
+         font-size="58"
          font-weight="600"
          fill="#111111"
          data-label-role="transfer"
@@ -3662,16 +3671,16 @@
          data-station-code="104/206"
          data-full-official-name="1호선 대전역 | 2호선 206 대전역(중앙시장)"
          data-label-side="NW"
-         data-node-x="2112"
-         data-node-y="1320"
+         data-node-x="540"
+         data-node-y="900"
          data-status="active"
          data-construction-lines="2"><tspan
            class="station-main"
-           x="2102.5352"
+           x="572"
            id="station-label-transfer-104-206-main">대전역</tspan><tspan
            class="station-sub"
-           x="2102.5352"
-           font-size="9.2px"
+           x="572"
+           font-size="37.58px"
            fill="#687681"
            id="station-label-transfer-104-206-sub1" /></text>
       <text
@@ -4729,10 +4738,10 @@
       <text
          id="station-label-transfer-103-208"
          class="station-label transfer"
-         x="2131.7888"
-         y="1167.1332"
-         text-anchor="end"
-         font-size="14.2px"
+         x="572"
+         y="740"
+         text-anchor="start"
+         font-size="58"
          font-weight="600"
          fill="#111111"
          data-label-role="transfer"
@@ -4740,18 +4749,18 @@
          data-station-code="103/208"
          data-full-official-name="1호선 대동 | 2호선 208 대동(하늘공원)"
          data-label-side="W"
-         data-node-x="2160"
-         data-node-y="1176"
+         data-node-x="540"
+         data-node-y="720"
          data-status="active"
          data-construction-lines="2"><tspan
            class="station-main"
-           x="2131.7888"
+           x="572"
            dy="0"
            id="tspan186">대동</tspan><tspan
            class="station-sub"
-           x="2131.7888"
-           dy="10.8"
-           font-size="9.2px"
+           x="572"
+           dy="44.11"
+           font-size="37.58px"
            fill="#687681"
            id="tspan187">하늘공원</tspan></text>
       <text
@@ -4787,10 +4796,10 @@
       <text
          id="station-label-transfer-107-202"
          class="station-label transfer"
-         x="1806.7554"
-         y="1336.8792"
-         text-anchor="middle"
-         font-size="14.2px"
+         x="572"
+         y="1460"
+         text-anchor="start"
+         font-size="58"
          font-weight="600"
          fill="#111111"
          data-label-role="transfer"
@@ -4798,27 +4807,27 @@
          data-station-code="107/202"
          data-full-official-name="1호선 서대전네거리 | 2호선 202 서대전네거리(서대전공원)"
          data-label-side="N"
-         data-node-x="1776"
-         data-node-y="1368"
+         data-node-x="540"
+         data-node-y="1440"
          data-status="active"
          data-construction-lines="2"><tspan
            class="station-main"
-           x="1806.7554"
+           x="572"
            dy="0"
            id="tspan191">서대전네거리</tspan><tspan
            class="station-sub"
-           x="1806.7554"
-           dy="10.8"
-           font-size="9.2px"
+           x="572"
+           dy="44.11"
+           font-size="37.58px"
            fill="#687681"
            id="tspan192">서대전공원</tspan></text>
       <text
          id="station-label-transfer-112-218"
          class="station-label transfer"
-         x="1512"
-         y="584.15161"
-         text-anchor="middle"
-         font-size="14.2px"
+         x="1076"
+         y="920"
+         text-anchor="start"
+         font-size="58"
          font-weight="600"
          fill="#111111"
          data-label-role="transfer"
@@ -4826,33 +4835,33 @@
          data-station-code="112/218"
          data-full-official-name="1호선 정부청사 | 2호선 218 정부청사(서구청·둔산경찰서·을지대병원)"
          data-label-side="N"
-         data-node-x="1512"
-         data-node-y="624"
+         data-node-x="1044"
+         data-node-y="900"
          data-status="active"
          data-construction-lines="2"><tspan
            class="station-main"
-           x="1512"
+           x="1076"
            dy="0"
            id="tspan193">정부청사</tspan><tspan
            class="station-sub"
-           x="1512"
-           dy="10.8"
-           font-size="9.2px"
+           x="1076"
+           dy="44.11"
+           font-size="37.58px"
            fill="#687681"
            id="tspan194">서구청·둔산경찰서</tspan><tspan
            class="station-sub"
-           x="1512"
-           dy="10.8"
-           font-size="9.2px"
+           x="1076"
+           dy="44.11"
+           font-size="37.58px"
            fill="#687681"
            id="tspan195">을지대병원</tspan></text>
       <text
          id="station-label-transfer-116-225"
          class="station-label transfer"
-         x="743.5498"
-         y="757.6955"
-         text-anchor="end"
-         font-size="14.2px"
+         x="1238"
+         y="182"
+         text-anchor="middle"
+         font-size="58"
          font-weight="600"
          fill="#111111"
          data-label-role="transfer"
@@ -4860,18 +4869,18 @@
          data-station-code="116/225"
          data-full-official-name="1호선 유성온천 | 2호선 225 유성온천(유성온천공원)"
          data-label-side="NW"
-         data-node-x="744"
-         data-node-y="792"
+         data-node-x="1260"
+         data-node-y="240"
          data-status="active"
          data-construction-lines="2"><tspan
            class="station-main"
-           x="743.5498"
+           x="1238"
            dy="0"
            id="tspan196">유성온천</tspan><tspan
            class="station-sub"
-           x="743.5498"
-           dy="10.8"
-           font-size="9.2px"
+           x="1238"
+           dy="44.11"
+           font-size="37.58px"
            fill="#687681"
            id="tspan197">유성온천공원</tspan></text>
       <text
@@ -5150,76 +5159,6 @@
        id="rail-transfer-layer"
        data-logo-mode="inline-svg-paths"
        data-source-family-file="gwangju_metro_map_sma_v1_family_transfer_v5.svg">
-      <g
-         id="daejeon-station-highspeed-rail-chip"
-         data-station-name="대전역(혁신도시)"
-         data-services="KTX,SRT"
-         data-logo-mode="inline-svg-paths"
-         data-logo-source="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
-         data-family-component="sma-v1-rail-transfer-chip"
-         data-station-code="207"
-         data-official-stop-name="대전역(혁신도시)"
-         data-transfer-targets="KTX,SRT,일반철도,BRT"
-         aria-label="207 대전역(혁신도시): KTX, SRT, 일반철도 및 BRT 환승"
-         transform="translate(-59.850751,-38.866494)">
-        <title
-           id="daejeon-station-highspeed-rail-chip-title">207 대전역(혁신도시) KTX·SRT·일반철도·BRT 환승</title>
-        <g
-           id="daejeon-station-highspeed-ktx-inline-vector"
-           transform="matrix(0.02966339,0,0,0.02719337,2130.783,1316.5274)"
-           aria-label="KTX"
-           data-logo="KTX">
-          <path
-             id="daejeon-station-highspeed-ktx-blue-path"
-             d="m 660,175 -36,37 -28,32 32,71 h 93 z m -522,-40 1,-1 1,1 -1,1 z M 0,315 h 93 l 15,-50 v -3 l 3,-7 2,-10 3,-7 4,-17 2,-3 11,-7 2,1 21,58 18,45 h 92 l -2,-8 -2,-3 -1,-5 -2,-3 -1,-5 -2,-3 -1,-5 -10,-24 -1,-5 -2,-3 -1,-5 -2,-3 -30,-81 76,-49 h 73 l 1,1 -7,21 -4,17 -3,7 -6,24 -3,7 -4,17 -3,7 -6,24 -3,7 v 3 l -20,67 h 93 l 9,-29 v -3 l 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 v -3 l 2,-2 h 85 l 4,6 24,56 25,-23 23,-19 6,-9 9,-10 2,-5 -24,-55 H 255 l -115,81 -1,-2 11,-13 19,-66 H 76 Z"
-             fill="#000055"
-             fill-rule="evenodd" />
-          <path
-             id="daejeon-station-highspeed-ktx-red-path"
-             d="m 958,0 h -9 l -1,1 -15,1 -1,1 -38,5 -25,5 -9,3 h -4 l -40,11 -43,15 -36,15 -39,19 -19,11 -30,20 -28,21 -50,43 -69,69 -46,51 -20,24 h 102 l 55,-69 46,-51 61,-59 46,-38 25,-18 28,-18 48,-25 42,-17 h 3 l 6,-3 22,-7 z"
-             fill="#e00024"
-             fill-rule="evenodd" />
-        </g>
-        <g
-           id="daejeon-station-highspeed-srt-inline-vector"
-           transform="matrix(0.0479167,0,0,0.0479167,2055.7306,1285.3187)"
-           aria-label="SRT"
-           data-logo="SRT">
-          <path
-             id="daejeon-station-highspeed-srt-path"
-             d="m 1836.6513,530.78932 h -46.1054 l -41.3592,105.66567 h 45.4273 z m -320.0256,105.66567 h 126.7898 l 0.678,-0.62157 h 6.1022 l 0.678,-0.62156 8.1363,-0.62157 11.5263,-2.48624 8.1362,-2.48626 12.2044,-6.21563 9.4923,-8.70188 4.0681,-5.59406 4.0682,-8.08032 2.034,-8.08031 v -13.05282 l -0.678,-0.62156 -0.6781,-6.21562 -4.7461,-11.8097 -8.8142,-16.16063 -4.0682,-12.43125 v -9.32344 l 3.3901,-6.8372 6.1022,-4.9725 8.8143,-3.10781 12.2043,-0.62157 0.6781,-0.62156 151.8765,0.62156 4.7461,1.24313 6.1023,3.10781 3.3901,3.10782 4.0681,7.45875 0.678,4.97251 -0.678,0.62156 -0.6781,6.21562 -5.4241,9.32344 -8.1362,7.45876 -10.1703,6.21562 -23.7307,9.32345 -14.2385,4.35093 h -2.7121 l 3.3901,8.08032 26.4429,49.72502 4.068,3.72937 4.7462,2.48626 4.7461,1.24313 h 134.9261 l 2.7121,0.62155 0.678,-0.62155 8.8142,-0.62157 6.1022,-1.86469 10.8484,-5.59407 8.1362,-7.45875 4.0681,-5.59406 5.4242,-11.18813 2.034,-6.83719 1.3561,-1.86469 2.0341,-6.83719 1.356,-1.86468 1.3561,-4.97251 1.356,-1.86469 1.356,-4.9725 1.356,-1.86468 2.0341,-6.8372 1.3561,-1.86468 21.6966,-55.94065 0.678,-0.62157 h 52.8857 l 4.068,-1.24311 4.7462,-4.35095 13.5604,-22.37626 H 2025.141 l -0.6781,0.62156 -13.5604,1.24313 -12.2043,3.10781 -10.1703,4.35094 -8.8143,5.59407 -7.4583,6.83719 -4.7461,6.21562 -5.4242,11.8097 h 25.0868 l 7.4583,-6.21563 5.4241,-2.48625 9.4923,-2.48625 h 6.7802 l 0.678,-0.62157 h 26.4428 l 0.678,0.62157 -41.3593,105.0441 -3.39,3.10781 -8.1362,2.48625 h -92.2108 l -4.7462,-8.08031 v -1.24312 l -4.0681,-6.8372 v -1.24312 l -4.0681,-6.83719 -8.8143,-18.64688 2.7121,-1.86469 6.7802,-1.86469 16.9505,-7.45875 16.2725,-9.32344 6.7802,-4.9725 7.4582,-6.8372 4.7462,-5.59406 4.0681,-6.83719 2.0341,-5.59407 0.678,-12.43125 -3.3901,-9.945 -6.1022,-8.08032 -4.0681,-3.10781 -8.1363,-4.35094 -10.8483,-3.72938 -8.1363,-1.86468 -11.5263,-1.24313 -0.678,-0.62157 h -7.4582 l -0.6781,-0.62156 h -178.3194 l -0.6779,0.62156 -10.8484,0.62157 -12.2043,2.48625 -9.4923,3.10781 -8.1363,3.72938 -8.8142,6.21563 -5.4242,6.21562 -3.3901,6.21563 -2.0341,7.45875 v 13.67438 l 2.7121,11.18814 5.4242,13.05281 7.4582,13.67438 3.3901,11.18813 v 10.56657 l -1.356,3.72937 -3.3901,4.97251 -6.1022,4.9725 -6.7802,3.10781 -6.7802,1.86469 -8.1363,0.62156 -0.6779,0.62157 h -92.8888 l -5.4242,1.86468 -4.0682,3.72938 z"
-             fill="#4c2f48"
-             fill-rule="evenodd"
-             style="stroke-width:0.649178" />
-        </g>
-      </g>
-      <g
-         id="seodaejeon-station-ktx-rail-chip"
-         data-station-name="서대전역"
-         data-services="KTX"
-         data-logo-mode="inline-svg-paths"
-         data-logo-source="gwangju_metro_map_sma_v1_family_transfer_v5.svg"
-         data-family-component="sma-v1-rail-transfer-chip"
-         transform="matrix(0.78008405,0,0,0.71336125,311.95588,426.57611)">
-        <title
-           id="seodaejeon-station-ktx-rail-chip-title">서대전역 KTX 환승</title>
-        <g
-           id="seodaejeon-station-ktx-ktx-inline-vector"
-           transform="matrix(0.04375,0,0,0.04375,1737.0582,1509.3324)"
-           aria-label="KTX"
-           data-logo="KTX">
-          <path
-             id="seodaejeon-station-ktx-ktx-blue-path"
-             d="m 660,175 -36,37 -28,32 32,71 h 93 z m -522,-40 1,-1 1,1 -1,1 z M 0,315 h 93 l 15,-50 v -3 l 3,-7 2,-10 3,-7 4,-17 2,-3 11,-7 2,1 21,58 18,45 h 92 l -2,-8 -2,-3 -1,-5 -2,-3 -1,-5 -2,-3 -1,-5 -10,-24 -1,-5 -2,-3 -1,-5 -2,-3 -30,-81 76,-49 h 73 l 1,1 -7,21 -4,17 -3,7 -6,24 -3,7 -4,17 -3,7 -6,24 -3,7 v 3 l -20,67 h 93 l 9,-29 v -3 l 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 4,-17 3,-7 4,-17 3,-7 6,-24 3,-7 v -3 l 2,-2 h 85 l 4,6 24,56 25,-23 23,-19 6,-9 9,-10 2,-5 -24,-55 H 255 l -115,81 -1,-2 11,-13 19,-66 H 76 Z"
-             fill="#000055"
-             fill-rule="evenodd" />
-          <path
-             id="seodaejeon-station-ktx-ktx-red-path"
-             d="m 958,0 h -9 l -1,1 -15,1 -1,1 -38,5 -25,5 -9,3 h -4 l -40,11 -43,15 -36,15 -39,19 -19,11 -30,20 -28,21 -50,43 -69,69 -46,51 -20,24 h 102 l 55,-69 46,-51 61,-59 46,-38 25,-18 28,-18 48,-25 42,-17 h 3 l 6,-3 22,-7 z"
-             fill="#e00024"
-             fill-rule="evenodd" />
-        </g>
-      </g>
     </g>
     <g
        id="route-number-badges-layer">

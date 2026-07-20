@@ -3,7 +3,7 @@
   "artifactKind": "route-map-license-decision",
   "issue": 1637,
   "decidedAt": "2026-07-12",
-  "summary": "부산·대구·대전·광주 노선도는 원본 SVG 이미지를 앱 렌더링 source of truth로 쓰지 않고, 역 좌표·노선 위상(사실 데이터) 기반 자체 schematic layout으로 그린다(대안 A). 원본 SVG는 좌표 검수 기준으로만 사용한다. [2026-07-13 #2068] 5권역 전부 오너 자작 SVG로 재제작 완료(#2011)되어 라이선스 리스크가 소멸함에 따라, 자작 SVG를 빌드타임 컴파일(vector_graphics)해 바탕층(basemap)으로 실제 렌더링에 사용하는 하이브리드 전략(self-drawn-hybrid-basemap)으로 전환한다. 역 탭 히트·focus 카메라·팝오버 앵커·경로 강조 등 인터랙션은 여전히 구조화 좌표(route_map_positions)가 진실 출처다 — 바탕 paint 소스(자작 SVG)와 인터랙션 진실 출처(구조화 데이터)는 서로 다른 개념이며 후자만 renderingSourceOfTruth로 고정한다.",
+  "summary": "부산·대구·대전·광주 노선도는 원본 SVG 이미지를 앱 렌더링 source of truth로 쓰지 않고, 역 좌표·노선 위상(사실 데이터) 기반 자체 schematic layout으로 그린다(대안 A). [2026-07-16 #2068] 5권역 SVG의 오너 자작 노선 형상과 기존 역·환승 심벌만 빌드타임 컴파일(vector_graphics)해 바탕층으로 사용한다. SVG의 역명·제목·범례·서비스 아이콘·브랜드 표장은 배포 .vec에서 제외하고 구조화 데이터가 라벨·인터랙션을 담당한다. 역 탭 히트·focus 카메라·팝오버 앵커·경로 강조 등 인터랙션은 구조화 좌표(route_map_positions)가 진실 출처다.",
   "renderingSourceOfTruth": "structured-data",
   "renderingSourceOfTruthNote": "renderingSourceOfTruth는 역 탭 히트·focus 카메라·팝오버 앵커·경로 강조 등 인터랙션 로직이 신뢰하는 데이터 출처를 가리키며, 화면에 그려지는 바탕(basemap) 이미지의 paint 소스와는 다른 축이다. [2026-07-13 #2068] self-drawn-hybrid-basemap 전략에서도 바탕은 자작 SVG(빌드타임 vector_graphics 컴파일)를 렌더하지만, 인터랙션은 그대로 구조화 데이터를 신뢰하므로 이 필드는 structured-data를 유지한다.",
   "reviewStatusValues": [
@@ -22,6 +22,18 @@
     "review-reference-only",
     "hybrid-basemap-source"
   ],
+  "distributedBasemapContentPolicy": {
+    "included": "각 SVG의 현재 운행 노선 형상과 기존 역·환승 심벌 포함",
+    "excluded": [
+      "SVG station-name/title/legend text",
+      "service markers",
+      "Font Awesome airport pictogram",
+      "KTX/SRT and other brand marks",
+      "planned or construction routes absent from structured catalog"
+    ],
+    "licenseEffect": "배포 .vec에는 오너 자작 노선 형상과 역 심벌만 남으므로 앱 화면 attribution은 요구되지 않는다. 원본 SVG 저장소에 포함된 제3자 아이콘·브랜드 표장의 provenance와 권리는 배포 basemap 계약과 별도로 관리한다.",
+    "buildManifest": "tools/route-map/basemap-build-manifest.json"
+  },
   "regions": [
     {
       "id": "seoul",

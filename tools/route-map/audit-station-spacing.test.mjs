@@ -71,6 +71,7 @@ test("classifyCrossings: cluster 거리로 free/knotVisible/knotCovered 3분류"
   });
   assert.deepEqual(result, {
     free: 1,
+    freeAllowlisted: 0,
     knotCovered: 1,
     knotVisible: 1,
     knot: 2,

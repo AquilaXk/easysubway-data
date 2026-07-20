@@ -66,8 +66,12 @@ const SEOUL = {
     "운서": "airport-railroad",
     "청라국제도시": "airport-railroad",
   },
-  // 마커 없는 역(라벨만 존재)을 라벨 중심으로 배정(v1 도식 안산선 꼬리 누락 보정).
-  markerlessFallback: ["안산", "고잔", "신길온천", "오이도", "중앙"],
+  // 마커 없는 역(라벨만 존재)을 라벨 중심으로 배정.
+  // v1 도식 안산선 꼬리 5역(안산·고잔·신길온천·오이도·중앙)은 실제로는 마커가
+  // 있었으나 오너 SVG의 정왕/한대앞 캡슐 복붙 재사용으로 data-station이 갱신되지
+  // 않아 "마커 없음"으로 오판됐던 것 — 속성 독립 재감사(2026-07-20)로 원인이
+  // 밝혀져 SVG를 직접 교정했으므로 이 폴백은 더 이상 필요 없다(빈 배열 유지).
+  markerlessFallback: [],
   // 도식 미수록이지만 카탈로그에는 유지되는 명시 예외(위상 보존 게이트).
   topologyExceptions: [
     { name: "도라산", reason: "오너 도식이 임진강까지 수록·도라산 제외(설계 결정). 카탈로그 유지(역 검색 가능)." },
@@ -82,7 +86,12 @@ const SEOUL = {
     if (svgName === "이수") return { name: "총신대입구" };
     return { name: svgName };
   },
-  contentBand: { minY: 340, maxY: 1720 },
+  // #2068 오너 기준본 전환(2026-07-19): 오너 v2.1은 viewBox 3800×3020(구 v2는
+  // 2400×1860)으로 캔버스 자체가 커져, 구 하드코딩(340~1720)이 실제 콘텐츠
+  // 대부분(역 y 실측 범위 334~2852)을 "범례 밖"으로 오판해 5개 노선의 stroke를
+  // 통째로 누락시켰다(build-sma-tracks.mjs 실측 — "SVG stroke 없음" 경고).
+  // 새 캔버스의 실제 역 y 범위(334~2852)에 여유를 두고 재설정한다.
+  contentBand: { minY: 300, maxY: 2900 },
 };
 
 // ── 부산(busan): #2011 2단계. 오너 자작 easy-subway-busan-v1. ─────────────────
@@ -131,11 +140,15 @@ const BUSAN = {
     name = name.replace(/\s+/g, "");
     // 역 접미 제거(부산역→부산). 카탈로그는 접미 없는 표기.
     if (name.length > 1 && name.endsWith("역")) name = name.slice(0, -1);
+    // #2068 좌천: 1호선·동해선 좌천은 별개 물리역(오병합 분리 대상). 도식이 두
+    // 노드를 각자 그리므로 노선 힌트로 각 station_id에 1:1 정합한다(broadcast 금지).
+    if (name === "좌천") return { name, disambiguateByLine: true };
     return { name };
   },
-  // 범례 노선 swatch(medY≈166, len 42px)는 콘텐츠 밴드 밖으로 배제한다. 실 노선
-  // polyline의 medY는 420~1644이므로 minY 300이면 범례만 걸러진다.
-  contentBand: { minY: 300, maxY: 2700 },
+  // 범례 노선 swatch(medY≈216, len ~107px)는 콘텐츠 밴드 밖으로 배제한다. 전면
+  // 재설계(viewBox 12000×7040) 실 노선 polyline의 medY는 2116~4780이므로 minY 300
+  // (범례 216 초과)·maxY 6000이면 범례만 걸러지고 6개 노선 stroke가 전부 포함된다.
+  contentBand: { minY: 300, maxY: 6000 },
 };
 
 // ── 대구(daegu): #2011 3단계. 오너 자작 easy-subway-daegu-v1. ─────────────────

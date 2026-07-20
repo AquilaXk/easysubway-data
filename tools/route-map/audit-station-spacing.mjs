@@ -89,11 +89,18 @@ export function clusterCentroids(graph, positions) {
  * 교차 3분류(#1789 원인 ③): 환승매듭(cluster 근접)은 구조적·실기기 시각 판정
  * 대상이고, 그중 coverRadius 내는 환승 캡슐이 가려 화면에 안 보인다. 게이트는
  * 자유공간 엉킴(free)만 수치로 잡는다.
+ *
+ * freeAllowlist(선택, #2068 부산 부전 — 오너 확정 2026-07-20): 좌표·노선쌍으로
+ * 정밀하게 특정한 "실제 무환승 교차"(환승역이 아닌데 두 노선이 그냥 지나가며
+ * 만나는 지점 — 데이터 결함이 아니라 오너가 그렇게 그린 실제 지리)를 free
+ * 카운트에서 제외한다. trackLineIds(각 트랙의 line_id, tracksPoints와 병렬)를
+ * 함께 줘야 노선쌍 매칭이 가능하다 — 포괄 완화가 아니라 (lineIds 쌍 + 좌표
+ * 반경) 둘 다 일치해야만 제외되는 정밀 예외.
  */
 export function classifyCrossings(
   tracksPoints,
   centroids,
-  { knotRadius, coverRadius = 17 },
+  { knotRadius, coverRadius = 17, trackLineIds = null, freeAllowlist = [] },
 ) {
   const segs = [];
   for (let ti = 0; ti < tracksPoints.length; ti += 1) {
@@ -102,7 +109,20 @@ export function classifyCrossings(
       segs.push({ ti, a: pts[i - 1], b: pts[i] });
     }
   }
+  const matchesAllowlist = (pt, lineIdA, lineIdB) => {
+    if (!trackLineIds || lineIdA == null || lineIdB == null) return false;
+    for (const entry of freeAllowlist) {
+      const [x, y] = entry.lineIds;
+      const pairMatches =
+        (lineIdA === x && lineIdB === y) || (lineIdA === y && lineIdB === x);
+      if (!pairMatches) continue;
+      const d = Math.hypot(pt.x - entry.point.x, pt.y - entry.point.y);
+      if (d <= (entry.toleranceRadius ?? 50)) return true;
+    }
+    return false;
+  };
   let free = 0;
+  let freeAllowlisted = 0;
   let knotCovered = 0;
   let knotVisible = 0;
   for (let i = 0; i < segs.length; i += 1) {
@@ -123,15 +143,24 @@ export function classifyCrossings(
       }
       if (nearest < coverRadius) knotCovered += 1;
       else if (nearest < knotRadius) knotVisible += 1;
-      else free += 1;
+      else if (
+        matchesAllowlist(
+          pt,
+          trackLineIds?.[segs[i].ti],
+          trackLineIds?.[segs[j].ti],
+        )
+      ) {
+        freeAllowlisted += 1;
+      } else free += 1;
     }
   }
   return {
     free,
+    freeAllowlisted,
     knotCovered,
     knotVisible,
     knot: knotCovered + knotVisible,
-    total: free + knotCovered + knotVisible,
+    total: free + knotCovered + knotVisible + freeAllowlisted,
   };
 }
 

@@ -5,6 +5,12 @@
 # spur가 없으므로 그 단계를 생략한다(1·2·3호선·대경선 모두 단일 본선). 권역 인자
 # (--region daegu)로 파라미터화된 공통 추출→canonical 정합→track→투영→enrich 체인을 재사용.
 #
+# #2068 완주 라운드(오너 직접 제작본 전환, 2026-07-20): busan(e2d2b68a)·seoul(9afd026a)이
+# 확립한 P-65 정합(팩=SVG 고정 — 역은 옮기지 않는다)으로 개정. project-nodes-to-tracks는
+# --check로 보고만 하고, respace가 --pin-stations로 역 좌표를 SVG 배정에 고정한 채 트랙만
+# 정리한다. 구방식(project-nodes가 역을 트랙 위로 이동 + respace 좌표 이동)은 제거 —
+# 오너 손배치 좌표를 파이프라인이 재이동시키는 것을 금지한다.
+#
 # 사용: tools/route-map/run-sma-pipeline-daegu.sh [svg경로] [이전버전추출JSON]
 #   svg 경로 미지정 시 반입된 정본 easy-subway-daegu-v1.svg를 쓴다.
 # 환경: Chrome/Chromium 필요(추출기). CHROME_PATH로 지정 가능.
@@ -32,12 +38,13 @@ node tools/route-map/apply-sma-svg-positions.mjs --extraction "$GEOM" --region "
 echo "[3/7] 노선 track 생성(SVG 색→슬러그→line_id 결정적 배정 + 8선형 stitch)"
 node tools/route-map/build-sma-tracks.mjs --geometry "$GEOM" --pack "$PACK" --region "$REGION_ID" --out "$TRACKS" --stitch-tolerance 40
 
-echo "[4/7] track 팩 반영 + 역 노드 track 투영(투영 게이트)"
+echo "[4/7] track 팩 반영 + 역-트랙 이탈 진단(#2068 P-65: 팩=SVG 고정 — 역은 옮기지 않는다,"
+echo "      --check로 보고만; project-nodes-to-tracks가 하던 이동은 respace --pin-stations로 대체)"
 node tools/route-map/apply-route-map-line-tracks.mjs --pack "$PACK" --index "$INDEX" --tracks "$TRACKS"
-node tools/route-map/project-nodes-to-tracks.mjs --region "$REGION_KEY" --pack "$PACK" --index "$INDEX"
+node tools/route-map/project-nodes-to-tracks.mjs --region "$REGION_KEY" --pack "$PACK" --index "$INDEX" --check
 
-echo "[5/7] 재간격 → 8선형 잔차 스냅"
-respace_out="$(node tools/route-map/respace-route-map.mjs --region "$REGION_KEY" --pack "$PACK" --index "$INDEX")"
+echo "[5/7] 재간격(역 좌표 고정, 트랙만 정리) → 8선형 잔차 스냅"
+respace_out="$(node tools/route-map/respace-route-map.mjs --region "$REGION_KEY" --pack "$PACK" --index "$INDEX" --pin-stations)"
 printf '%s\n' "$respace_out" | head -1
 node tools/route-map/snap-tracks-octolinear.mjs --region "$REGION_KEY" --pack "$PACK" --index "$INDEX"
 
