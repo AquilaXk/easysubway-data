@@ -11,6 +11,10 @@ import test from "node:test";
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { checkTimetableRideConsistency } from "./validate-timetable-ride-consistency.mjs";
 import {
+  materializeBusanRouteTopology,
+  parseCanonicalBusanStationMappings,
+} from "./materialize-busan-route-topology.mjs";
+import {
   materializeDaejeonTimetable,
   materializedPackContentHash,
 } from "./materialize-daejeon-timetable.mjs";
@@ -232,6 +236,97 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
     operatorId === "daejeon-transportation" && sourceDomain === "schedule_timetable");
   assert.deepEqual(schedule.missingFields, []);
   assert.deepEqual(schedule.sourceIds, ["daejeon-train-timetable"]);
+});
+
+test("병합된 부산·대전 admission과 공식 미지원 evidence를 83/270 terminal 기준선으로 누적한다", async (context) => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-nationwide-cumulative-baseline-"));
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  const values = await inputs();
+  const [busanSnapshot, busanStationMapCsv] = await Promise.all([
+    readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
+    readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
+  ]);
+  const busanFixture = materializeBusanRouteTopology({
+    baseFixture: values.baseFixture,
+    snapshot: busanSnapshot,
+    inventory: values.inventory,
+    canonicalStationMappings: parseCanonicalBusanStationMappings(busanStationMapCsv),
+    now: evidenceNow,
+  });
+  const fixture = materializeDaejeonTimetable({
+    ...values,
+    baseFixture: busanFixture,
+    now: evidenceNow,
+  });
+  const fixturePath = path.join(outputDir, "fixture.json");
+  const packOutput = path.join(outputDir, "pack");
+  const reportPath = path.join(outputDir, "coverage.json");
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await mkdir(packOutput, { recursive: true });
+
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  });
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs", "--fixture", fixturePath, "--output", packOutput,
+  ], {
+    cwd: root,
+    env: { ...process.env, EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey },
+  });
+  const manifest = await readJsonAbsolute(path.join(packOutput, "current.json"));
+  const sqlitePath = path.join(packOutput,
+    new URL(manifest.packs[0].url).pathname.split("/").slice(-2).join("/")).replace(/\.gz$/, "");
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE source_id = ?")
+    .get("busan-transportation-route-topology").count, 220);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE source_id = ?")
+    .get("daejeon-station-distance-fare").count, 42);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM transit_trips WHERE id LIKE 'trip-daejeon-%'")
+    .get().count, 460);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count
+    FROM transit_stop_times st
+    JOIN transit_trips t ON t.id = st.trip_id
+    WHERE t.id LIKE 'trip-daejeon-%'
+  `).get().count, 10_034);
+  database.close();
+  await execFileAsync(process.execPath, [
+    "tools/datapack/report-coverage-gaps.mjs",
+    "--targets", "tools/datapack/nationwide-coverage-targets.json",
+    "--inventory", "tools/datapack/source-inventory.json",
+    "--manifest", path.join(packOutput, "current.json"),
+    "--provenance", path.join(packOutput, "current.provenance.json"),
+    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260720.json",
+    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260720.json",
+    "--output", reportPath,
+    "--allow-gaps",
+  ], { cwd: root });
+
+  const report = await readJsonAbsolute(reportPath);
+  assert.deepEqual(report.summary.launchRequired, {
+    totalCount: 270,
+    supportedCount: 7,
+    explicitlyUnsupportedCount: 76,
+    missingCount: 187,
+    supportedRatio: 0.0259,
+    terminalResolutionRatio: 0.3074,
+    completionReady: false,
+  });
+  assert.deepEqual(report.requirements
+    .filter(({ status }) => status === "SUPPORTED")
+    .map(({ regionId, operatorId, lineId, sourceDomain }) =>
+      `${regionId}:${operatorId}:${lineId}:${sourceDomain}`)
+    .sort(), [
+    "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+    "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+    "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+    "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
+    "daejeon:daejeon-transportation:line-7051a9c2525c:route_graph_topology",
+    "daejeon:daejeon-transportation:line-7051a9c2525c:schedule_timetable",
+    "daejeon:daejeon-transportation:line-7051a9c2525c:station_line_membership",
+  ]);
 });
 
 async function readJson(relativePath) {
