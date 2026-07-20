@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 function parseArgs(argv) {
   const args = { candidates: "tools/datapack/source-candidates.json" };
@@ -176,7 +177,7 @@ function sortJson(value) {
   }
   return Object.fromEntries(
     Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => codepointCompare(left, right))
       .map(([key, entry]) => [key, sortJson(entry)]),
   );
 }

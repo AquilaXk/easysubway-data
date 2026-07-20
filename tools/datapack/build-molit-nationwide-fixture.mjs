@@ -10,6 +10,7 @@ import {
   normalizeMolitProviderLineName,
   parseMolitSvgProviderIdentity,
 } from "./lib/molit-svg-provider-identity.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const sourceId = "molit-urban-rail-full-route";
 const kricProviderCodeCatalogSourceId = "kric-provider-code-catalog-20260228";
@@ -225,9 +226,7 @@ function buildFixture(rows, svgRows, kricCodeCatalog, officialSources, sourceSha
 
   const firstEdge = networkEdges[0];
   const sortedCoverageLineOperatorScopes = [...coverageLineOperatorScopes.values()].sort((left, right) =>
-    `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
-      `${right.regionId}:${right.operatorId}:${right.lineId}`,
-    ),
+    codepointCompare(`${left.regionId}:${left.operatorId}:${left.lineId}`, `${right.regionId}:${right.operatorId}:${right.lineId}`),
   );
   const providerLineScopes = providerLineScopesFor(kricCodeCatalog, coverageLineOperatorScopes, lines);
   validateMolitProviderIdentities(svgRows, providerLineScopes);
@@ -277,7 +276,7 @@ function buildFixture(rows, svgRows, kricCodeCatalog, officialSources, sourceSha
         lines: [...lines.values()].sort(byId),
         stations: [...stations.values()].sort(byId),
         stationAliases: [],
-        stationLines: [...stationLines.values()].sort((a, b) => a.lineId.localeCompare(b.lineId) || a.lineSequence - b.lineSequence),
+        stationLines: [...stationLines.values()].sort((a, b) => codepointCompare(a.lineId, b.lineId) || a.lineSequence - b.lineSequence),
         networkEdges,
         routeMapPositions,
         stationExits: [],
@@ -1048,9 +1047,7 @@ function providerLineScopesFor(catalog, coverageScopes, lines) {
     });
   }
   return providerScopes.sort((left, right) =>
-    `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
-      `${right.regionId}:${right.operatorId}:${right.lineId}`,
-    ),
+    codepointCompare(`${left.regionId}:${left.operatorId}:${left.lineId}`, `${right.regionId}:${right.operatorId}:${right.lineId}`),
   );
 }
 
@@ -1357,7 +1354,7 @@ function hash(value) {
 }
 
 function byId(left, right) {
-  return left.id.localeCompare(right.id);
+  return codepointCompare(left.id, right.id);
 }
 
 function parseArgs(argv) {

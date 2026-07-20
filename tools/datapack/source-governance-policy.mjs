@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { deriveFreshness } from "./freshness-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const RELEASE_PROTECTION_MAX_AGE_MS = 5 * 60 * 1_000;
@@ -420,5 +421,5 @@ function sha256(value) {
 }
 
 function compareText(left, right) {
-  return left.localeCompare(right);
+  return codepointCompare(left, right);
 }

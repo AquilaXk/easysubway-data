@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const BUNDLED_CATALOG_USER_VERSION = 18;
@@ -57,7 +58,7 @@ function validateHints(hints) {
 }
 
 function canonicalHints(hints) {
-  return [...hints].sort((left, right) => left.id.localeCompare(right.id)).map((hint) => ({
+  return [...hints].sort((left, right) => codepointCompare(left.id, right.id)).map((hint) => ({
     id: hint.id,
     stationId: hint.stationId,
     lineId: hint.lineId,

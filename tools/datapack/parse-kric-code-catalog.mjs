@@ -5,6 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFileAsync = promisify(execFile);
 const MAXIMUM_SHEETS = 10;
@@ -105,7 +106,7 @@ export function buildProviderLineCatalog({ sourceId, sourceSha256, capturedAt, s
     capturedAt,
     stationRecordCount: sheet.rows.length - 1,
     providerLines: [...providerLines.values()].sort((left, right) =>
-      `${left.railOprIsttCd}:${left.lnCd}`.localeCompare(`${right.railOprIsttCd}:${right.lnCd}`),
+      codepointCompare(`${left.railOprIsttCd}:${left.lnCd}`, `${right.railOprIsttCd}:${right.lnCd}`),
     ),
   };
 }

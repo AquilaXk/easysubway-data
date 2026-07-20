@@ -16,6 +16,7 @@ import {
   purgeReportSha256,
   verifyPurgeAttestation,
 } from "./source-raw-purge-attestation.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const buildProvenanceStringFields = [
   "snapshotId",
@@ -159,7 +160,7 @@ export function validateSourceSnapshotFreshness({
   }
   const schemaFingerprintSetHash = sha256(JSON.stringify(selectedSnapshots
     .map(({ snapshotId, schemaFingerprint }) => ({ snapshotId, schemaFingerprint }))
-    .sort((left, right) => left.snapshotId.localeCompare(right.snapshotId))));
+    .sort((left, right) => codepointCompare(left.snapshotId, right.snapshotId))));
   return { snapshotSetHash, schemaFingerprintSetHash, results, governanceResults };
 }
 
@@ -483,7 +484,7 @@ function canonicalBuildProvenance(snapshots, label) {
       canonical[field] = snapshot[field];
     }
     return canonical;
-  }).sort((left, right) => left.snapshotId.localeCompare(right.snapshotId));
+  }).sort((left, right) => codepointCompare(left.snapshotId, right.snapshotId));
 }
 
 function canonicalPolicyProvenance(snapshots, label, includeGovernance) {
@@ -500,7 +501,7 @@ function canonicalPolicyProvenance(snapshots, label, includeGovernance) {
       requiredString(snapshot?.[field], `${label}[${index}].${field}`),
     ])),
   }))
-    .sort((left, right) => left.snapshotId.localeCompare(right.snapshotId))
+    .sort((left, right) => codepointCompare(left.snapshotId, right.snapshotId))
     .map((entry) => entry.provenance);
 }
 

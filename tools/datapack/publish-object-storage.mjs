@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
 
@@ -400,7 +401,7 @@ function authorizationHeader(input) {
 
 function canonicalRequest(method, requestUrl, headers, payloadHash) {
   const canonicalHeaders = Object.entries(lowercaseHeaders(headers))
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => codepointCompare(left, right))
     .map(([key, value]) => `${key}:${String(value).trim().replace(/\s+/g, " ")}`)
     .join("\n");
   return [

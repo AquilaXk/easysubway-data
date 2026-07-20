@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 18;
@@ -263,11 +264,11 @@ function deriveTopology(source) {
     throw new Error(`ITX topology requires ${EXPECTED_EDGE_COUNT} paired directed edges`);
   }
   const topology = {
-    stations: [...stations.values()].sort((left, right) => left.stationId.localeCompare(right.stationId)
-      || left.lineId.localeCompare(right.lineId)),
-    servedStations: [...servedStations.values()].sort((left, right) => left.stationId.localeCompare(right.stationId)
-      || left.lineId.localeCompare(right.lineId)),
-    edges: [...edges.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    stations: [...stations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)
+      || codepointCompare(left.lineId, right.lineId)),
+    servedStations: [...servedStations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)
+      || codepointCompare(left.lineId, right.lineId)),
+    edges: [...edges.values()].sort((left, right) => codepointCompare(left.id, right.id)),
   };
   const normalizedBytes = Buffer.from(`${JSON.stringify(topology)}\n`);
   return { ...topology, normalizedBytes, sha256: sha256(normalizedBytes) };

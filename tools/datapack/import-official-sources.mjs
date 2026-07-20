@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SUMMARY_RIDE_EDGE_PRODUCTION_POLICY = "fixture-only";
 // #1996: 게시 가능한 검증된 상태 3분류. AVAILABLE(실측 가동), UNDER_MAINTENANCE(실측 비가용),
@@ -204,9 +205,7 @@ function productionCoverageEvidenceSummary(input, selectedSources, allowedSource
   }
 
   return [...evidenceByKey.values()].sort((left, right) =>
-    coverageKey(left.regionId, left.operatorId, left.sourceDomain).localeCompare(
-      coverageKey(right.regionId, right.operatorId, right.sourceDomain),
-    ),
+    codepointCompare(coverageKey(left.regionId, left.operatorId, left.sourceDomain), coverageKey(right.regionId, right.operatorId, right.sourceDomain)),
   );
 }
 
@@ -223,7 +222,7 @@ function sourceCoverageIndex(selectedSources, supportedV1Scope = {}) {
   }
   return {
     bySourceId,
-    requiredKeys: [...requiredKeys].sort((left, right) => left.localeCompare(right)),
+    requiredKeys: [...requiredKeys].sort((left, right) => codepointCompare(left, right)),
   };
 }
 
@@ -430,7 +429,7 @@ function validateFacilityCoverageDenominator(value, stationLineCount, supportedV
 }
 
 function assertActualIdsWithinScope(actualIds, allowedIds, message) {
-  for (const id of [...actualIds].sort((left, right) => left.localeCompare(right))) {
+  for (const id of [...actualIds].sort((left, right) => codepointCompare(left, right))) {
     if (!allowedIds.has(id)) {
       throw new Error(`${message}: ${id}`);
     }
@@ -438,7 +437,7 @@ function assertActualIdsWithinScope(actualIds, allowedIds, message) {
 }
 
 function assertScopeIdsHaveRows(allowedIds, actualIds, message) {
-  for (const id of [...allowedIds].sort((left, right) => left.localeCompare(right))) {
+  for (const id of [...allowedIds].sort((left, right) => codepointCompare(left, right))) {
     if (!actualIds.has(id)) {
       throw new Error(`${message}: ${id}`);
     }
@@ -461,7 +460,7 @@ function validateSupportedFacilityCoverage(input, stationRows, stationFacilityEv
       return `${evidence.stationId}:${lineId}:${facilityType}`;
     }),
   );
-  for (const stationLineKey of [...stationLineKeys].sort((left, right) => left.localeCompare(right))) {
+  for (const stationLineKey of [...stationLineKeys].sort((left, right) => codepointCompare(left, right))) {
     for (const facilityType of requiredStringArray(requiredFacilityTypes, "supportedV1Scope.requiredFacilityTypes")) {
       const key = `${stationLineKey}:${facilityType}`;
       if (!evidenceKeys.has(key)) {
@@ -822,7 +821,7 @@ function validateProductionSummaryRideEdgePolicy(stationLines, networkEdges, pol
       return from && to && (from.lineId !== to.lineId || Math.abs(from.lineSequence - to.lineSequence) !== 1);
     })
     .map((edge) => edge.id)
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => codepointCompare(left, right));
   if (nonAdjacentExpressRideEdgeIds.length === 0) {
     return;
   }
@@ -908,17 +907,17 @@ function stationFacilityEvidenceRows(input, stationRows, facilities, isProductio
       throw new Error(`production facility evidence station-line missing: ${key}:${facility.id}`);
     }
     const current = facilitiesByCoverageKey.get(key);
-    if (!current || facility.id.localeCompare(current.id) < 0) {
+    if (!current || codepointCompare(facility.id, current.id) < 0) {
       facilitiesByCoverageKey.set(key, facility);
     }
   }
 
   const rows = [];
-  for (const stationId of [...includedStationIds].sort((left, right) => left.localeCompare(right))) {
-    for (const facilityType of [...requiredFacilityTypes].sort((left, right) => left.localeCompare(right))) {
+  for (const stationId of [...includedStationIds].sort((left, right) => codepointCompare(left, right))) {
+    for (const facilityType of [...requiredFacilityTypes].sort((left, right) => codepointCompare(left, right))) {
       for (const facility of [...facilitiesByCoverageKey.values()]
         .filter((entry) => entry.stationId === stationId && entry.type === facilityType)
-        .sort((left, right) => left.lineId.localeCompare(right.lineId))) {
+        .sort((left, right) => codepointCompare(left.lineId, right.lineId))) {
         const strictEligibility = facilityStrictRouteEligibility(facility);
         rows.push({
           stationId,

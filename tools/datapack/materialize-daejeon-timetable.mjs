@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { parseMolitDaejeonStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { materializeDaejeonRouteTopology } from "./materialize-daejeon-route-topology.mjs";
 import { DAEJEON_COVERAGE_OPERATIONS } from "./probe-daejeon-coverage-api.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SOURCE_ID = "daejeon-train-timetable";
 const TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
@@ -328,8 +329,7 @@ function reconstructTrips(events, stationByNumber, durationByStationPair) {
   if (completed.length !== EXPECTED_TRIP_COUNT) {
     throw new Error(`Daejeon timetable trip count mismatch: ${completed.length}`);
   }
-  completed.sort((left, right) => `${left.dayType}:${left.direction}:${left.originSeconds}:${left.originStationNumber}`
-    .localeCompare(`${right.dayType}:${right.direction}:${right.originSeconds}:${right.originStationNumber}`));
+  completed.sort((left, right) => codepointCompare(`${left.dayType}:${left.direction}:${left.originSeconds}:${left.originStationNumber}`, `${right.dayType}:${right.direction}:${right.originSeconds}:${right.originStationNumber}`));
   const ids = new Set();
   const stopTimes = [];
   for (const trip of completed) {

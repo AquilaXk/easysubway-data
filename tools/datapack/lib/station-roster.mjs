@@ -1,3 +1,4 @@
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 // #1701 Phase 2: importer 공용 canonical roster 매칭 헬퍼.
 //
 // roster 입력: [{ stationId, lineId, nameKo, normalizedName, aliases: [{alias, normalizedAlias}] }].
@@ -132,7 +133,7 @@ function stripDelimitedSections(value, open, close) {
 }
 
 function compareText(left, right) {
-  return String(left).localeCompare(String(right));
+  return codepointCompare(String(left), String(right));
 }
 
 function requiredRosterString(value, label) {

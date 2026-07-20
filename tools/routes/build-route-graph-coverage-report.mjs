@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -59,7 +60,7 @@ function aggregate(rows, keys) {
   }
   return [...byKey.values()]
     .map((row) => ({ ...row, ratio: ratio(row.generatedCount, row.generatedCount + row.explicitCount) }))
-    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    .sort((left, right) => codepointCompare(JSON.stringify(left), JSON.stringify(right)));
 }
 
 function strictRouteNotFound(rows) {

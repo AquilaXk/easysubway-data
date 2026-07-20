@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
 import { validateManifest } from "./lib/manifest-validation.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -8626,9 +8627,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
     assert.equal(kricCodeCatalog.redistributionAllowed, false);
   }
   const compareCoverageLineScopes = (left, right) =>
-    `${left.regionId}:${left.operatorId}:${left.lineId}`.localeCompare(
-      `${right.regionId}:${right.operatorId}:${right.lineId}`,
-    );
+    codepointCompare(`${left.regionId}:${left.operatorId}:${left.lineId}`, `${right.regionId}:${right.operatorId}:${right.lineId}`);
   assert.ok(Array.isArray(fixture.coverageLineOperatorScopes));
   assert.equal(fixture.coverageLineOperatorScopeSemantics, "UNION_OF_PACK_SCOPES");
   const packScopeUnion = [...new Map(
@@ -10652,7 +10651,7 @@ test("데이터팩 생성기는 여러 노선 service provenance를 실제 운�
   const scopes = provenance.packs[0].records
     .filter((record) => record.entityType === "service_calendar" && record.field === "service_calendar")
     .map(({ coverageScope }) => coverageScope)
-    .sort((left, right) => left.lineIds[0].localeCompare(right.lineIds[0]));
+    .sort((left, right) => codepointCompare(left.lineIds[0], right.lineIds[0]));
   assert.deepEqual(scopes, [
     {
       regionIds: ["capital"],
@@ -16758,8 +16757,8 @@ test("official OD fare 두 방향은 승인 artifact와 일치하는 SQLite row�
         ORDER BY origin_station_id, destination_station_id
       `).all();
       assert.deepEqual(rows.map((row) => ({ ...row })), [...quotes].sort((left, right) =>
-        left.originStationId.localeCompare(right.originStationId)
-          || left.destinationStationId.localeCompare(right.destinationStationId)));
+        codepointCompare(left.originStationId, right.originStationId)
+          || codepointCompare(left.destinationStationId, right.destinationStationId)));
     } finally {
       database.close();
     }

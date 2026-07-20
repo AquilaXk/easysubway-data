@@ -10,6 +10,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 
 import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
@@ -85,9 +86,9 @@ export function buildServerTimetableSnapshot({
       serviceId: namespacedItxServiceId(trip.serviceId),
       serviceClass: "ITX_CHEONGCHUN",
     }))
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => codepointCompare(left.id, right.id));
   const sortedStopTimes = [...source.transitStopTimes]
-    .sort((left, right) => left.tripId.localeCompare(right.tripId)
+    .sort((left, right) => codepointCompare(left.tripId, right.tripId)
       || left.stopSequence - right.stopSequence);
   const routeServiceArtifactEvidence = [{
     serviceClass: "ITX_CHEONGCHUN",
@@ -170,7 +171,7 @@ export function buildServerTimetableSnapshot({
       memberCount: canonicalStationIds.length,
     },
     sourceLineageSha256: sha256(Buffer.from(JSON.stringify(
-      [...source.sourceLineage].sort((left, right) => left.dayCd.localeCompare(right.dayCd)),
+      [...source.sourceLineage].sort((left, right) => codepointCompare(left.dayCd, right.dayCd)),
     ))),
     servicePatternEvidence,
     rowCounts: {
@@ -211,7 +212,7 @@ function canonicalAccessibilitySql(reviewedPackBytes, sourceSnapshotsBytes, cano
   }
   const edges = pack.networkEdges
     .filter(({ edgeType }) => edgeType === "ENTRY" || edgeType === "EXIT")
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => codepointCompare(left.id, right.id));
   if (edges.length === 0) throw new Error("canonical accessibility source has no entry or exit edges");
   const snapshotsById = new Map(sourceSnapshots.map((row) => [row.snapshotId, row]));
   const nodes = new Map();
@@ -232,7 +233,7 @@ function canonicalAccessibilitySql(reviewedPackBytes, sourceSnapshotsBytes, cano
   const snapshotStatements = [...usedSnapshots.values()]
     .map(sourceSnapshotInsert);
   const nodeStatements = [...nodes.values()]
-    .sort((left, right) => left.id.localeCompare(right.id))
+    .sort((left, right) => codepointCompare(left.id, right.id))
     .map(accessNodeInsert);
   const edgeStatements = edges.map(accessEdgeInsert);
   const evidenceStatements = edges.map((edge) => routeEdgeEvidenceInsert(edge, accessEdgeEndpoint(edge)));
@@ -413,7 +414,7 @@ function plannerIdentitySql(source, completeness) {
     }
     tripByServiceDayAndTrain.set(key, trip.id);
     return `UPDATE transit_trips SET train_no = ${sqlText(trainNumber, "train number")} WHERE id = ${sqlText(trip.id, "trip id")};`;
-  }).sort((left, right) => left.localeCompare(right));
+  }).sort((left, right) => codepointCompare(left, right));
 
   const fares = new Map();
   for (const serviceDay of completeness.serviceDays ?? []) {
@@ -437,9 +438,9 @@ function plannerIdentitySql(source, completeness) {
       fares.set(key, row);
     }
   }
-  const fareRows = [...fares.values()].sort((left, right) => left.tripId.localeCompare(right.tripId)
-    || left.originStationId.localeCompare(right.originStationId)
-    || left.destinationStationId.localeCompare(right.destinationStationId));
+  const fareRows = [...fares.values()].sort((left, right) => codepointCompare(left.tripId, right.tripId)
+    || codepointCompare(left.originStationId, right.originStationId)
+    || codepointCompare(left.destinationStationId, right.destinationStationId));
   if (fareRows.length === 0) throw new Error("complete timetable official fares are required");
   const fareStatements = fareRows.map((fare) => (
     "INSERT INTO transit_trip_official_fares "
@@ -461,7 +462,7 @@ function subwayTrainIdentitySql(baselineSql) {
       const providerTrainNo = match[1].replace(/^[A-Z](?=\d+$)/, "");
       return `UPDATE transit_trips SET train_no = ${sqlText(providerTrainNo, "subway train number")} WHERE id = ${sqlText(tripId, "subway trip id")};`;
     })
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => codepointCompare(left, right));
   if (statements.length === 0) throw new Error("subway trip train identity is missing");
   return `${statements.join("\n")}\n`;
 }
@@ -487,7 +488,7 @@ function officialSubwayFareSql(canonicalPackGzipBytes, baselineSql) {
       stopsByTrip.set(tripId, stops);
     }
     const rows = [];
-    for (const [tripId, stops] of [...stopsByTrip].sort(([left], [right]) => left.localeCompare(right))) {
+    for (const [tripId, stops] of [...stopsByTrip].sort(([left], [right]) => codepointCompare(left, right))) {
       const stationIds = orderedStationIds(stops);
       for (const quote of quotes) {
         const originIndex = stationIds.indexOf(quote.origin_station_id);
@@ -708,7 +709,7 @@ function representativeServicePatternEvidence(sql, source) {
   }
   const localTrips = trips.filter(({ servicePattern }) => servicePattern === "LOCAL");
   const expressTrips = trips.filter(({ servicePattern }) => servicePattern === "EXPRESS");
-  const local = localTrips.sort((left, right) => left.id.localeCompare(right.id))
+  const local = localTrips.sort((left, right) => codepointCompare(left.id, right.id))
     .find((candidate) => orderedStationIds(stopsByTrip.get(candidate.id)).length > 1);
   const express = representativeItxExpressPattern(source);
   if (!local || !express) {
@@ -729,7 +730,7 @@ function representativeItxExpressPattern(source) {
     stops.push({ sequence: stop.stopSequence, stationId: stop.stationId });
     stopTimesByTrip.set(stop.tripId, stops);
   }
-  for (const trip of [...source.transitTrips].sort((left, right) => left.id.localeCompare(right.id))) {
+  for (const trip of [...source.transitTrips].sort((left, right) => codepointCompare(left.id, right.id))) {
     const stopStationIds = orderedStationIds(stopTimesByTrip.get(trip.id));
     const dayCd = trip.id.split("-").at(-1);
     const roster = source.stationRosters.find((candidate) => candidate.dayCd === dayCd);
@@ -945,15 +946,15 @@ function requiredSqlColumn(row, column) {
 function canonicalStationSet(source) {
   return [...new Set(source.stationRosters.flatMap(({ stations }) => stations)
     .map(({ canonicalStationId, lineId }) => `${canonicalStationId}:${lineId}`))]
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => codepointCompare(left, right));
 }
 
 function earliestServiceDate(selectedServiceDates) {
-  return Object.values(selectedServiceDates).sort((left, right) => left.localeCompare(right))[0];
+  return Object.values(selectedServiceDates).sort((left, right) => codepointCompare(left, right))[0];
 }
 
 function latestServiceDate(selectedServiceDates) {
-  return Object.values(selectedServiceDates).sort((left, right) => left.localeCompare(right)).at(-1);
+  return Object.values(selectedServiceDates).sort((left, right) => codepointCompare(left, right)).at(-1);
 }
 
 function parseJson(bytes, label) {

@@ -5,6 +5,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ALGORITHM = "Ed25519";
 
@@ -183,8 +184,8 @@ function normalizedPolicyBindings(value) {
     }
     return { policyVersion: binding.policyVersion, policySha256: binding.policySha256 };
   }).sort((left, right) => (
-    left.policyVersion.localeCompare(right.policyVersion)
-    || left.policySha256.localeCompare(right.policySha256)
+    codepointCompare(left.policyVersion, right.policyVersion)
+    || codepointCompare(left.policySha256, right.policySha256)
   ));
   if (new Set(bindings.map((binding) => `${binding.policyVersion}:${binding.policySha256}`)).size !== bindings.length) {
     throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH: purge attestation policy bindings");

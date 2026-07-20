@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { collectKricRouteRoster } from "./collect-kric-route-roster.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 export async function collectKricNationwideRouteRosters({
   targets,
@@ -44,7 +45,7 @@ export async function collectKricNationwideRouteRosters({
     `${scope.mreaWideCd}:${scope.lnCd}`,
     { mreaWideCd: scope.mreaWideCd, lnCd: scope.lnCd },
   ])).values()].sort((left, right) => (
-    left.mreaWideCd.localeCompare(right.mreaWideCd) || left.lnCd.localeCompare(right.lnCd)
+    codepointCompare(left.mreaWideCd, right.mreaWideCd) || codepointCompare(left.lnCd, right.lnCd)
   ));
   const rosters = new Array(requests.length);
   let nextRequest = 0;

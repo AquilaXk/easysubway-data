@@ -2,6 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const severityRank = new Map([
   ["BLOCKER", 0],
@@ -508,7 +509,7 @@ function regionCoverageSummaries(stationsById, stationLines, positions) {
         ),
       };
     })
-    .sort((a, b) => a.region.localeCompare(b.region));
+    .sort((a, b) => codepointCompare(a.region, b.region));
 }
 
 function reviewedAmbiguityEntries(raw) {
@@ -976,9 +977,7 @@ function auditPack(pack, reviewedAmbiguities, options = {}) {
       if (severityDelta !== 0) {
         return severityDelta;
       }
-      return `${a.code}:${a.lineId}:${a.stationId}`.localeCompare(
-        `${b.code}:${b.lineId}:${b.stationId}`,
-      );
+      return codepointCompare(`${a.code}:${a.lineId}:${a.stationId}`, `${b.code}:${b.lineId}:${b.stationId}`);
     }),
   };
 }

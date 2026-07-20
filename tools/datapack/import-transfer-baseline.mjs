@@ -23,6 +23,7 @@ import path from "node:path";
 import { parseArgs, readJsonFile, requireArg, requiredArray, sortJson } from "./lib/ledger-admission-cli.mjs";
 import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import { buildRosterIndex } from "./lib/station-roster.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 // 1.2 m/s 산정 앵커. 환승소요시간이 공식값이므로 시간을 추정하지 않지만,
 // 데이터 산정 기준을 산출 메타데이터에 기록한다.
@@ -242,9 +243,7 @@ function buildDirectionPairReport(directionRecords) {
     });
   }
   return report.sort((left, right) =>
-    `${left.stationId}:${left.fromLineId}:${left.toLineId}`.localeCompare(
-      `${right.stationId}:${right.fromLineId}:${right.toLineId}`,
-    ),
+    codepointCompare(`${left.stationId}:${left.fromLineId}:${left.toLineId}`, `${right.stationId}:${right.fromLineId}:${right.toLineId}`),
   );
 }
 
@@ -341,7 +340,7 @@ function pathwayEdgePairKey(stationId, lineA, lineB) {
 }
 
 function compareText(left, right) {
-  return String(left).localeCompare(String(right));
+  return codepointCompare(String(left), String(right));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

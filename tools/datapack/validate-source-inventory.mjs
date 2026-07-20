@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
 import { officialOdFareAdmissionsBySource } from "./lib/official-od-fare-evidence.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
@@ -13,7 +14,7 @@ const officialOdFareAdmissionPath = optionValue("--official-od-fare-admission")
 const scopePath = optionValue("--scope");
 const governancePolicyPath = optionValue("--governance-policy");
 const freshnessPolicyPath = optionValue("--freshness-policy");
-const compareStrings = (left, right) => left.localeCompare(right);
+const compareStrings = (left, right) => codepointCompare(left, right);
 const officialOdFareFields = new Set([
   "childCardFare",
   "childCashFare",

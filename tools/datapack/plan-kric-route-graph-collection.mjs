@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DEFAULT_CANDIDATE_IDS = ["kric-subway-route-info", "kric-station-info"];
 const DEFAULT_CANDIDATES_PATH = "tools/datapack/source-candidates.json";
@@ -47,7 +48,7 @@ function planRequest(candidate, priority) {
     candidateId: candidate.id,
     endpoint: requiredText(evidence.endpoint, `${candidate.id}.evidence.endpoint`),
     url: sampleUrl,
-    expectedFields: [...(evidence.outputFields ?? [])].sort((left, right) => left.localeCompare(right)),
+    expectedFields: [...(evidence.outputFields ?? [])].sort((left, right) => codepointCompare(left, right)),
     evidenceOutput: `.codex/evidence/kric/${candidate.id}.sample.json`,
     rawArchiveOutput: `.codex/evidence/kric/${candidate.id}.raw.json`,
     sampleEvidenceStatus: candidate.sampleEvidenceStatus,

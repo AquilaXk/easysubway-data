@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo";
 const FIELDS = ["lnCd", "mreaWideCd", "railOprIsttCd", "routCd", "routNm", "stinCd", "stinConsOrdr", "stinNm"];
@@ -34,7 +35,7 @@ export async function collectKricRouteRoster({ mreaWideCd, lnCd, serviceKey, fet
       throw new Error(`KRIC route roster schema mismatch: item[${index}] scope`);
     }
     return { ...values, stinConsOrdr: order };
-  }).sort((left, right) => left.stinConsOrdr - right.stinConsOrdr || left.stinCd.localeCompare(right.stinCd));
+  }).sort((left, right) => left.stinConsOrdr - right.stinConsOrdr || codepointCompare(left.stinCd, right.stinCd));
   if (stations.length === 0) throw new Error("KRIC route roster returned zero stations");
   const stationCodes = new Map();
   for (const station of stations) {

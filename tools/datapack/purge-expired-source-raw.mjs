@@ -20,6 +20,7 @@ import {
   attachPurgeAttestation,
   purgeReportSha256,
 } from "./source-raw-purge-attestation.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ALLOWED_ARGS = new Set([
   "ledger",
@@ -410,7 +411,7 @@ export function buildPurgePlan({
     throw new Error("RAW_RETENTION_OVERDUE: ledger snapshot set mismatch");
   }
   return plan.sort((left, right) => (
-    left.sourceId.localeCompare(right.sourceId) || left.snapshotId.localeCompare(right.snapshotId)
+    codepointCompare(left.sourceId, right.sourceId) || codepointCompare(left.snapshotId, right.snapshotId)
   ));
 }
 

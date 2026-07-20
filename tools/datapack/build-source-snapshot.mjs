@@ -9,6 +9,7 @@ import {
   requiredCredentialFreeObjectUri,
 } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const DEFAULT_FRESHNESS_POLICY = "apps/mobile/release/datapack-freshness-sla.json";
 
@@ -176,13 +177,13 @@ function rowsFromRaw(raw) {
 
 function schemaFields(records) {
   return [...new Set(records.flatMap((record) => Object.keys(record)))]
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => codepointCompare(left, right));
 }
 
 function sortJson(value) {
   if (Array.isArray(value)) return value.map(sortJson);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [
+  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => codepointCompare(left, right)).map(([key, entry]) => [
     key,
     sortJson(entry),
   ]));

@@ -19,6 +19,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm, writeFile as writeTemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 // 역 라벨을 track에 근접 배정할 때의 반경(root px). 라벨은 track에서 20~35px
 // 떨어져 있어(폰트 높이 근처) 이보다 크면 이웃 노선까지 삼킨다.
@@ -466,7 +467,7 @@ async function buildLineTracks({ geometry, pack, region, snapRadius, stitchToler
     lineCount: lineIds.length,
     refinement,
     colorToLineId,
-    lines: lines.sort((a, b) => a.lineId.localeCompare(b.lineId)),
+    lines: lines.sort((a, b) => codepointCompare(a.lineId, b.lineId)),
     warnings,
   };
 }
@@ -514,7 +515,7 @@ async function buildLineTracksFromDownPath({ pack, region, stitchTolerance }) {
 
   const lines = [];
   const warnings = [];
-  const orderedLineIds = [...segmentsByLine.keys()].sort((a, b) => a.localeCompare(b));
+  const orderedLineIds = [...segmentsByLine.keys()].sort((a, b) => codepointCompare(a, b));
   for (const lineId of orderedLineIds) {
     const paths = chainDownPathSegments(segmentsByLine.get(lineId), stitchTolerance);
     if (paths.length === 0) warnings.push(`노선 ${lineId}: down_path 세그먼트가 없어 빈 track.`);

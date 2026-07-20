@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SOURCE_ID = "kric-subway-timetable";
 const SOURCE_ARTIFACT_IDS = new Set([SOURCE_ID, "kric-subway-route-info"]);
@@ -65,7 +66,7 @@ export function applySchedule(input, artifact, artifactBytes = Buffer.from(JSON.
 
   const transitTrips = [];
   const transitStopTimes = [];
-  for (const [tripId, rows] of [...stopTimesByTrip.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [tripId, rows] of [...stopTimesByTrip.entries()].sort(([left], [right]) => codepointCompare(left, right))) {
     if (rows.length !== 2) continue;
     const trip = tripsById.get(tripId);
     if (!trip) continue;
@@ -96,7 +97,7 @@ export function applySchedule(input, artifact, artifactBytes = Buffer.from(JSON.
   requireEqual(transitStopTimes.length, EXPECTED_PILOT_TRANSIT_STOP_TIME_COUNT, "pairedTransitStopTimeCount");
 
   const serviceCalendars = [...new Set(transitTrips.map((trip) => trip.serviceId))]
-    .sort((left, right) => left.localeCompare(right))
+    .sort((left, right) => codepointCompare(left, right))
     .map((serviceId) => ({ serviceId, ...requireCalendar(serviceId), startDate: START_DATE, endDate: END_DATE }));
 
   return {

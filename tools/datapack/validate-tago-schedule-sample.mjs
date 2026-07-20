@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const REQUIRED_FIELDS = [
   "subwayRouteId",
@@ -121,7 +122,7 @@ function validateTagoScheduleSample(rawText, options = {}) {
     (left, right) =>
       left.departureSeconds - right.departureSeconds ||
       left.arrivalSeconds - right.arrivalSeconds ||
-      left.rowHash.localeCompare(right.rowHash),
+      codepointCompare(left.rowHash, right.rowHash),
   );
   const providerRecordHashes = parsedRows.map(({ rowHash }) => rowHash);
   const departures = parsedRows.map(({ row: _row, rowHash: _rowHash, ...departure }) => departure);
@@ -214,7 +215,7 @@ function buildTagoScheduleCollectionSummary(collection) {
   for (const response of responses) {
     requestKeyParts(response.requestKey);
   }
-  for (const response of [...responses].sort((left, right) => left.requestKey.localeCompare(right.requestKey))) {
+  for (const response of [...responses].sort((left, right) => codepointCompare(left.requestKey, right.requestKey))) {
     if (responseRequestKeys.includes(response.requestKey)) {
       throw new Error(`duplicate requestKey: ${response.requestKey}`);
     }
@@ -233,7 +234,7 @@ function buildTagoScheduleCollectionSummary(collection) {
     rowCount += validation.rowCount;
   }
   const completedRequestKeys = [...new Set([...checkpointRequestKeys, ...responseRequestKeys])].sort(
-    (left, right) => left.localeCompare(right),
+    (left, right) => codepointCompare(left, right),
   );
 
   const evidencePayload = {
@@ -392,7 +393,7 @@ function buildTagoScheduleCollectionArtifact(plan, options, collectedAt, respons
   const failedRequestCount = failure.failedRequestKey ? 1 : 0;
   const completedRequestKeys = [
     ...new Set([...(checkpoint.completedRequestKeys ?? []), ...responses.map((response) => response.requestKey)]),
-  ].sort((left, right) => left.localeCompare(right));
+  ].sort((left, right) => codepointCompare(left, right));
   return {
     artifactKind: "tago-schedule-collection",
     sourceId: plan.sourceId,
@@ -587,7 +588,7 @@ function rejectCredentialLeak(rawText, parsed, pathParts = []) {
 }
 
 function sortObject(value) {
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => codepointCompare(left, right)));
 }
 
 function sha256(value) {

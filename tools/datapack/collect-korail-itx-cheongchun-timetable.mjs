@@ -10,6 +10,7 @@ import {
   collectTagoItxCheongchunRoster,
   validateItxServiceDates,
 } from "./collect-tago-itx-cheongchun-od.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 const API_ORIGIN = "https://apis.data.go.kr";
 const DETAIL_URL = "https://www.data.go.kr/data/15125762/openapi.do";
 const LINE_ID = "line-54a7b980b7c3";
@@ -1333,7 +1334,7 @@ export async function collectKorailItxCheongchunTimetable({
     };
     return [JSON.stringify(variant), variant];
   })).values()].sort((left, right) => (
-    left.directionCode.localeCompare(right.directionCode)
+    codepointCompare(left.directionCode, right.directionCode)
     || naturalCompare(left.originStationName, right.originStationName)
     || naturalCompare(left.destinationStationName, right.destinationStationName)
   ));
@@ -2186,7 +2187,7 @@ function nextRunDate(runDate) {
 }
 
 function freshUntil(serviceDates) {
-  const latest = Object.values(serviceDates).sort((left, right) => left.localeCompare(right)).at(-1);
+  const latest = Object.values(serviceDates).sort((left, right) => codepointCompare(left, right)).at(-1);
   const next = nextRunDate(latest);
   return `${next.slice(0, 4)}-${next.slice(4, 6)}-${next.slice(6, 8)}T00:00:00+09:00`;
 }

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const BASE = "https://apis.data.go.kr/1613000/TrainInfo";
 const DETAIL_URL = "https://www.data.go.kr/data/15098552/openapi.do";
@@ -589,7 +590,7 @@ async function fetchAll(operation, query, key, fetchImpl, requestBudget = null, 
     if (body.totalCount === undefined || body.totalCount === null || body.totalCount === "") {
       const bodyFields = Object.keys(body)
         .filter((field) => /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(field))
-        .sort((left, right) => left.localeCompare(right))
+        .sort((left, right) => codepointCompare(left, right))
         .join(",") || "NONE";
       throw new Error(`TAGO ${operation} schema mismatch: totalCount bodyFields=${bodyFields}`);
     }

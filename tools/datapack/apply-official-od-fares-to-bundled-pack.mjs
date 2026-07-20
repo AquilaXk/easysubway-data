@@ -10,6 +10,7 @@ import {
   officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,
 } from "./lib/official-od-fare-evidence.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const FARE_COLUMNS = [
@@ -127,9 +128,9 @@ function assertIntegrity(database) {
 }
 
 function canonicalQuotes(quotes) {
-  return [...quotes].sort((left, right) => left.sourceId.localeCompare(right.sourceId)
-    || left.originStationId.localeCompare(right.originStationId)
-    || left.destinationStationId.localeCompare(right.destinationStationId));
+  return [...quotes].sort((left, right) => codepointCompare(left.sourceId, right.sourceId)
+    || codepointCompare(left.originStationId, right.originStationId)
+    || codepointCompare(left.destinationStationId, right.destinationStationId));
 }
 
 function storedQuotes(database) {

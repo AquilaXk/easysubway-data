@@ -30,6 +30,7 @@ import { parseArgs, readJsonFile, requireArg, sortJson } from "./lib/ledger-admi
 import { buildTransferBaseline } from "./import-transfer-baseline.mjs";
 import { buildCarDoorHints } from "./import-car-door-hints.mjs";
 import { normalizeTransferDistanceDurationRows } from "./normalize-transfer-distance-duration-rows.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const TRANSFER_SOURCE_ID = "seoul-metro-transfer-distance-duration";
 const CAR_DOOR_SOURCE_ID = "seoul-metro-fast-exit-car-door";
@@ -533,7 +534,7 @@ function countBy(items, keyFn) {
 }
 
 function compareText(left, right) {
-  return String(left).localeCompare(String(right));
+  return codepointCompare(String(left), String(right));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

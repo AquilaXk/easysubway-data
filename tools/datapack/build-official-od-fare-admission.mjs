@@ -10,6 +10,7 @@ import {
   officialOdFareQuoteSetHash,
   validateOfficialOdFareEvidence,
 } from "./lib/official-od-fare-evidence.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const REVIEW_KEYS = [
@@ -97,7 +98,7 @@ async function buildOfficialOdFareAdmission(args) {
     admissions: [
       ...bundle.admissions.filter(({ sourceId }) => sourceId !== admission.sourceId),
       admission,
-    ].sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
+    ].sort((left, right) => codepointCompare(left.sourceId, right.sourceId)),
   };
 }
 

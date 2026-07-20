@@ -1,3 +1,4 @@
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 // Provider-중립 trip 재구성 코어.
 //
 // 입력은 특정 provider(KRIC/TAGO) 응답이 아니라 정규화된 "중간 행" 계약이다:
@@ -34,7 +35,7 @@ export function reconstructTransitTrips(rows, context) {
   const transitTrips = [];
   const transitStopTimes = [];
 
-  for (const key of [...groups.keys()].sort((left, right) => left.localeCompare(right))) {
+  for (const key of [...groups.keys()].sort((left, right) => codepointCompare(left, right))) {
     const groupRows = groups.get(key);
     const ordered = [...groupRows]
       .map((row) => ({ ...row, lineSequence: resolveLineSequence(lineSequenceByStationLine, row) }))
@@ -106,7 +107,7 @@ function resolveGroupServicePattern(groupRows, key) {
   const distinct = [...new Set(groupRows.map((row) => row.servicePattern).filter((value) => value != null && value !== ""))];
   if (distinct.length > 1) {
     throw new Error(
-      `reconstruct: inconsistent servicePattern within trip ${key}: ${[...distinct].sort((left, right) => left.localeCompare(right)).join(", ")}`,
+      `reconstruct: inconsistent servicePattern within trip ${key}: ${[...distinct].sort((left, right) => codepointCompare(left, right)).join(", ")}`,
     );
   }
   return distinct[0] ?? DEFAULT_SERVICE_PATTERN;

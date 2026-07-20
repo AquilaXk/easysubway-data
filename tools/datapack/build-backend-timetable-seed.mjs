@@ -20,6 +20,7 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SECONDS_LIMIT_EXCLUSIVE = 108000; // V29 CHECK: arrival/departure BETWEEN 0 AND 107999
 
@@ -241,7 +242,7 @@ function validateStopTimes(stopTimes, tripsById) {
 
 function deriveCalendars(trips, dayMap, startDate, endDate) {
   const serviceIds = [...new Set(trips.map((trip) => requireString(trip.serviceId, "transitTrips.serviceId")))].sort(
-    (left, right) => left.localeCompare(right),
+    (left, right) => codepointCompare(left, right),
   );
   return serviceIds.map((serviceId) => {
     const days = dayMap[serviceId];
@@ -286,7 +287,7 @@ function deriveRoutes(trips, lineId, routeRows) {
       });
     }
   }
-  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+  return [...byId.values()].sort((left, right) => codepointCompare(left.id, right.id));
 }
 
 function deriveLineIdFromRouteId(routeId) {

@@ -20,6 +20,7 @@ import {
   officialOdFareAdmissionsBySource,
   officialOdFareQuoteSetHash,
 } from "./lib/official-od-fare-evidence.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const validatedItxAdmissionPacks = new WeakSet();
@@ -509,10 +510,10 @@ function requiredSourceSnapshots(value, label) {
 
 function assertSourceSnapshotSet(sourceSnapshotIds, sourceSnapshots) {
   const ids = requiredStringArray(sourceSnapshotIds, "buildSpec.sourceSnapshotIds")
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => codepointCompare(left, right));
   const snapshotIds = sourceSnapshots
     .map((snapshot) => snapshot.snapshotId)
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => codepointCompare(left, right));
   if (JSON.stringify(ids) !== JSON.stringify(snapshotIds)) {
     throw new Error("buildSpec.sourceSnapshotIds must match buildSpec.sourceSnapshots[].snapshotId");
   }
@@ -747,9 +748,9 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     );
   }
   const scheduleOperatorIds = [...new Set([...transitRouteOperatorIds.values()].flat())].sort((left, right) =>
-    left.localeCompare(right),
+    codepointCompare(left, right),
   );
-  const scheduleLineIds = [...new Set(transitRouteLineIds.values())].sort((left, right) => left.localeCompare(right));
+  const scheduleLineIds = [...new Set(transitRouteLineIds.values())].sort((left, right) => codepointCompare(left, right));
   for (const feedInfo of pack.transitFeedInfo ?? []) {
     addRecord(feedInfo, "transit_feed_info", "feed_info", "feed_info", scheduleOperatorIds, scheduleLineIds);
   }
@@ -786,9 +787,7 @@ function packFieldProvenance(pack, { artifactKind, sqliteSha256 }) {
     sqliteSha256,
     normalizedSourceInventorySha256: sha256(Buffer.from(JSON.stringify(pack.sourceInventory ?? []))),
     records: records.sort((left, right) =>
-      `${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`.localeCompare(
-        `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`,
-      ),
+      codepointCompare(`${left.entityType}:${left.entityId}:${left.field}:${left.sourceId}`, `${right.entityType}:${right.entityId}:${right.field}:${right.sourceId}`),
     ),
   };
 }

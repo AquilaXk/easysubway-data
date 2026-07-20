@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { requiredArray, requiredString } from "./ledger-admission-cli.mjs";
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
 
 export const REQUIRED_FARE_FIELDS = [
   "childCardFare",
@@ -186,7 +187,7 @@ export function validateOfficialOdFareEvidence(evidence) {
     providerCodes.add(providerCode);
     targets.push(`${stationId}\u0000${lineId}\u0000${stationName}`);
   }
-  const sortedTargets = targets.toSorted((left, right) => left.localeCompare(right));
+  const sortedTargets = targets.toSorted((left, right) => codepointCompare(left, right));
   const profile = EVIDENCE_PROFILES.find((candidate) =>
     candidate.mappingField === mappingField
       && candidate.providerId === providerId
@@ -237,8 +238,8 @@ export function officialOdFareQuoteSetHash(quotes) {
     }
     return row;
   }).sort((left, right) =>
-    left.originStationId.localeCompare(right.originStationId)
-      || left.destinationStationId.localeCompare(right.destinationStationId));
+    codepointCompare(left.originStationId, right.originStationId)
+      || codepointCompare(left.destinationStationId, right.destinationStationId));
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 

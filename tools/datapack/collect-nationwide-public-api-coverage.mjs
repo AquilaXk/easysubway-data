@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const PUBLIC_API_ORIGINS = new Set([
   "https://api.odcloud.kr",
@@ -233,7 +234,7 @@ export function summarizeUnresolvedDiagnostics(unresolved) {
     const key = `${reason}/${detail}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, count]) => `${key}=${count}`);
+  return [...counts.entries()].sort(([left], [right]) => codepointCompare(left, right)).map(([key, count]) => `${key}=${count}`);
 }
 
 function diagnosticToken(value, pattern, fallback) {

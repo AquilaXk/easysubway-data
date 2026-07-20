@@ -7,6 +7,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 function nodeKey(node) {
   return `${node.dataStation}|${node.dataLine}`;
@@ -54,11 +55,11 @@ export function diffExtractions(oldGeom, newGeom, { moveThreshold = 4 } = {}) {
     if (before !== after) lineChanges.push({ line, before, after });
   }
 
-  const sortByStation = (a, b) => a.station.localeCompare(b.station) || a.line.localeCompare(b.line);
+  const sortByStation = (a, b) => codepointCompare(a.station, b.station) || codepointCompare(a.line, b.line);
   added.sort(sortByStation);
   removed.sort(sortByStation);
   moved.sort((a, b) => b.distance - a.distance);
-  lineChanges.sort((a, b) => a.line.localeCompare(b.line));
+  lineChanges.sort((a, b) => codepointCompare(a.line, b.line));
 
   return {
     oldSha256: oldGeom.sourceSvgSha256 ?? null,
