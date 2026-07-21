@@ -284,10 +284,10 @@ test("materialized SQLite와 provenance가 부산 route_map_positions 4건을 SU
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
     supportedCount: 19,
-    explicitlyUnsupportedCount: 76,
-    missingCount: 175,
+    explicitlyUnsupportedCount: 73,
+    missingCount: 178,
     supportedRatio: 0.0704,
-    terminalResolutionRatio: 0.3519,
+    terminalResolutionRatio: 0.3407,
     completionReady: false,
   });
 });

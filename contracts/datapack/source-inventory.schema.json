@@ -212,6 +212,7 @@
               "stationCount": { "type": "integer", "minimum": 1 },
               "edgeCount": { "type": "integer", "minimum": 1 },
               "excludedTransferCount": { "type": "integer", "minimum": 0 },
+              "depotExcludedCount": { "type": "integer", "minimum": 0 },
               "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
             }
@@ -305,7 +306,13 @@
               "rowsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "topologySourceId": { "type": "string", "minLength": 1 },
               "topologySnapshotId": { "type": "string", "minLength": 1 },
-              "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rawUpSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rawDownSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "tripsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "dayLabelNormalizedCount": { "type": "integer", "minimum": 0 },
+              "rolloverTripCount": { "type": "integer", "minimum": 0 }
             }
           },
           "officialOdFareAdmissionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },

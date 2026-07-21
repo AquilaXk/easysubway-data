@@ -239,7 +239,7 @@ test("production SQLite·field provenance가 대전 schedule requirement와 런�
   assert.deepEqual(schedule.sourceIds, ["daejeon-train-timetable"]);
 });
 
-test("병합된 부산·대전 admission과 공식 미지원 evidence를 91/270 terminal 기준선으로 누적한다", async (context) => {
+test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 terminal 기준선으로 누적한다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-nationwide-cumulative-baseline-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const values = await inputs();
@@ -325,10 +325,10 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 91/270 
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
     supportedCount: 15,
-    explicitlyUnsupportedCount: 76,
-    missingCount: 179,
+    explicitlyUnsupportedCount: 73,
+    missingCount: 182,
     supportedRatio: 0.0556,
-    terminalResolutionRatio: 0.337,
+    terminalResolutionRatio: 0.3259,
     completionReady: false,
   });
   assert.deepEqual(report.requirements

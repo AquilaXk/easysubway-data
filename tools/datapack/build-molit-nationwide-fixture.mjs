@@ -998,6 +998,41 @@ export function parseMolitGwangjuStationMappings(csvBytes) {
   });
 }
 
+const DAEGU_MEMBERSHIP_EXPECTATIONS = {
+  "1호선": { lineId: "line-5b8d9b05e7e6", stationCount: 35 },
+  "2호선": { lineId: "line-e2938a4cc492", stationCount: 29 },
+  "3호선": { lineId: "line-0ffaa95b1b5d", stationCount: 30 },
+};
+
+export function parseMolitDaeguStationMappings(csvBytes, lineName) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const expectation = DAEGU_MEMBERSHIP_EXPECTATIONS[lineName];
+  if (!expectation) throw new Error(`unknown Daegu line for membership mapping: ${lineName}`);
+  const mappings = parseCsv(new TextDecoder("euc-kr").decode(csvBytes))
+    .map(rowFromCsv)
+    .filter((row) => row?.regionName === "대구"
+      && row.operatorName === "대구교통공사"
+      && row.lineName === lineName)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((row) => ({
+      stationId: stationIdFor(row.regionName, row.stationName),
+      stationName: row.stationName,
+      sequence: row.sequence,
+    }));
+  if (lineIdFor("대구", lineName) !== expectation.lineId
+    || mappings.length !== expectation.stationCount
+    || mappings.some((mapping, index) => mapping.sequence !== index + 1)
+    || new Set(mappings.map(({ stationId }) => stationId)).size !== mappings.length) {
+    throw new Error(`MOLIT Daegu ${lineName} mapping must contain ${expectation.stationCount} unique stations in sequence`);
+  }
+  return Object.defineProperty(mappings, "sourceRawSha256", {
+    value: sha256(csvBytes),
+    enumerable: true,
+  });
+}
+
 function svgRowFromCsv(row) {
   if (row.length < 8 || row[0] === "SVG파일명") {
     return null;

@@ -85,15 +85,22 @@
       "datasetKind": "open-api",
       "coverage": "부산교통공사 1~4호선 114개 역 membership과 220개 방향성 인접 edge",
       "coverageScope": {
-        "regionIds": ["busan"],
-        "operatorIds": ["busan-transportation"],
+        "regionIds": [
+          "busan"
+        ],
+        "operatorIds": [
+          "busan-transportation"
+        ],
         "lineIds": [
           "line-ab1a041f6266",
           "line-d74614a04530",
           "line-d812a5bc1e5f",
           "line-eb7b47920390"
         ],
-        "sourceDomains": ["route_graph_topology", "station_line_membership"]
+        "sourceDomains": [
+          "route_graph_topology",
+          "station_line_membership"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -109,7 +116,14 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15001019/openapi.do"
       },
-      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters", "line", "station_name", "station_code"],
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "line",
+        "station_name",
+        "station_code"
+      ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -183,15 +197,21 @@
       "datasetKind": "open-api",
       "coverage": "부산교통공사 1~4호선 3개 요일 유형 3833개 운행과 109140개 stop time",
       "coverageScope": {
-        "regionIds": ["busan"],
-        "operatorIds": ["busan-transportation"],
+        "regionIds": [
+          "busan"
+        ],
+        "operatorIds": [
+          "busan-transportation"
+        ],
         "lineIds": [
           "line-ab1a041f6266",
           "line-d74614a04530",
           "line-d812a5bc1e5f",
           "line-eb7b47920390"
         ],
-        "sourceDomains": ["schedule_timetable"]
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -207,7 +227,11 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15000522/openapi.do"
       },
-      "fieldsProvided": ["service_calendar", "trip", "stop_time"],
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
       "capabilities": {
         "schedule": {
           "status": "SUPPORTED",
@@ -263,15 +287,21 @@
       "datasetKind": "official-web-offline-snapshot",
       "coverage": "부산교통공사 1~4호선 114개 역 노선도 좌표·label polygon·공식 연결선",
       "coverageScope": {
-        "regionIds": ["busan"],
-        "operatorIds": ["busan-transportation"],
+        "regionIds": [
+          "busan"
+        ],
+        "operatorIds": [
+          "busan-transportation"
+        ],
         "lineIds": [
           "line-ab1a041f6266",
           "line-d74614a04530",
           "line-d812a5bc1e5f",
           "line-eb7b47920390"
         ],
-        "sourceDomains": ["route_map_positions"]
+        "sourceDomains": [
+          "route_map_positions"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -287,7 +317,11 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15054957/fileData.do"
       },
-      "fieldsProvided": ["route_map_position", "route_map_label_polygon", "route_map_line_track"],
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon",
+        "route_map_line_track"
+      ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -348,10 +382,19 @@
       "datasetKind": "open-api",
       "coverage": "대전교통공사 1호선 22개 공식 역번호와 42개 방향성 인접 edge",
       "coverageScope": {
-        "regionIds": ["daejeon"],
-        "operatorIds": ["daejeon-transportation"],
-        "lineIds": ["line-7051a9c2525c"],
-        "sourceDomains": ["route_graph_topology", "station_line_membership"]
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
+        "sourceDomains": [
+          "route_graph_topology",
+          "station_line_membership"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -367,7 +410,12 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15158794/openapi.do"
       },
-      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters", "station_code"],
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "station_code"
+      ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -412,7 +460,9 @@
         "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
         "snapshotId": "molit-urban-rail-full-route-daejeon-membership-20260720",
-        "lineIds": ["line-7051a9c2525c"],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
         "verifiedAt": "2026-07-20T03:30:00.000Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
@@ -436,10 +486,18 @@
       "datasetKind": "open-api",
       "coverage": "대전교통공사 1호선 평일·휴일 460개 운행과 10034개 stop time",
       "coverageScope": {
-        "regionIds": ["daejeon"],
-        "operatorIds": ["daejeon-transportation"],
-        "lineIds": ["line-7051a9c2525c"],
-        "sourceDomains": ["schedule_timetable"]
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -455,7 +513,11 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15159278/openapi.do"
       },
-      "fieldsProvided": ["service_calendar", "trip", "stop_time"],
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
       "capabilities": {
         "schedule": {
           "status": "SUPPORTED",
@@ -511,10 +573,19 @@
       "datasetKind": "official-open-api",
       "coverage": "광주 1호선 20개 역과 38개 방향성 인접 거리·소요시간 edge",
       "coverageScope": {
-        "regionIds": ["gwangju"],
-        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
-        "lineIds": ["line-e57a361e8892"],
-        "sourceDomains": ["route_graph_topology", "station_line_membership"]
+        "regionIds": [
+          "gwangju"
+        ],
+        "operatorIds": [
+          "gwangju-metropolitan-rapid-transit"
+        ],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
+        "sourceDomains": [
+          "route_graph_topology",
+          "station_line_membership"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -530,7 +601,12 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15046044/fileData.do"
       },
-      "fieldsProvided": ["network_edges", "duration_seconds", "distance_meters", "station_code"],
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "station_code"
+      ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -575,7 +651,9 @@
         "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
         "snapshotId": "molit-urban-rail-full-route-gwangju-membership-20260720",
-        "lineIds": ["line-e57a361e8892"],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
         "verifiedAt": "2026-07-20T13:08:47.161Z",
         "stationCount": 20,
         "membershipSourceId": "molit-urban-rail-full-route",
@@ -599,10 +677,18 @@
       "datasetKind": "official-web-timetable",
       "coverage": "광주 1호선 4개 요일 유형 810개 완결 운행과 14171개 stop time",
       "coverageScope": {
-        "regionIds": ["gwangju"],
-        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
-        "lineIds": ["line-e57a361e8892"],
-        "sourceDomains": ["schedule_timetable"]
+        "regionIds": [
+          "gwangju"
+        ],
+        "operatorIds": [
+          "gwangju-metropolitan-rapid-transit"
+        ],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -618,7 +704,11 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15111298/openapi.do"
       },
-      "fieldsProvided": ["service_calendar", "trip", "stop_time"],
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
       "capabilities": {
         "schedule": {
           "status": "SUPPORTED",
@@ -674,10 +764,18 @@
       "datasetKind": "reviewed-admission-slice",
       "coverage": "국토교통부 역·노선 정본과 광주교통공사 역번호로 검증한 광주 1호선 20개 station membership",
       "coverageScope": {
-        "regionIds": ["gwangju"],
-        "operatorIds": ["gwangju-metropolitan-rapid-transit"],
-        "lineIds": ["line-e57a361e8892"],
-        "sourceDomains": ["station_line_membership"]
+        "regionIds": [
+          "gwangju"
+        ],
+        "operatorIds": [
+          "gwangju-metropolitan-rapid-transit"
+        ],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -693,7 +791,10 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15122916/fileData.do"
       },
-      "fieldsProvided": ["line", "station_name"],
+      "fieldsProvided": [
+        "line",
+        "station_name"
+      ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -724,7 +825,9 @@
         "materializer": "tools/datapack/materialize-gwangju-timetable.mjs",
         "verificationTest": "tools/datapack/materialize-gwangju-timetable.test.mjs",
         "snapshotId": "molit-urban-rail-full-route-gwangju-membership-20260720",
-        "lineIds": ["line-e57a361e8892"],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
         "verifiedAt": "2026-07-20T13:08:47.161Z",
         "stationCount": 20,
         "membershipSourceId": "molit-urban-rail-full-route",
@@ -735,6 +838,861 @@
         "stationCodeSourceId": "gwangju-transportation-route-topology",
         "stationCodeSnapshotId": "gwangju-transportation-route-topology-20260720",
         "stationCodeContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43"
+      }
+    },
+    {
+      "id": "daegu-line1-route-topology",
+      "displayName": "대구교통공사 1호선 역 구간정보",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15061836/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구 1호선 35개 역과 68개 방향성 인접 거리·소요시간 edge",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ],
+        "sourceDomains": [
+          "route_graph_topology",
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-07",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "station_code"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "daegu-line1-route-topology-20260721",
+        "snapshotPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+        "capturedAt": "2026-07-20T15:30:00.000Z",
+        "freshUntil": "2026-07-21T15:30:00.000Z",
+        "stationCount": 35,
+        "edgeCount": 68,
+        "excludedTransferCount": 0,
+        "depotExcludedCount": 2,
+        "rawSha256": "29398e8792899bc614c8e6563b0f4eaf1fec5182668b89d29045409395aae5c5",
+        "contentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f"
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daegu-line1-membership-20260721",
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ],
+        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "stationCount": 35,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
+        "stationCodesSha256": "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
+        "stationCodeSourceId": "daegu-line1-route-topology",
+        "stationCodeSnapshotId": "daegu-line1-route-topology-20260721",
+        "stationCodeContentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f"
+      }
+    },
+    {
+      "id": "daegu-line1-train-timetable",
+      "displayName": "대구교통공사 1호선 열차시각표",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15065526/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구 1호선 3개 요일 유형 상·하선 824개 운행과 27514개 stop time",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2024-10-07",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "DAEGU_LINE_1_CURRENT_COMPLETE_TRIPS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "계획 시간표이며 실시간 도착 정보가 아니다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "daegu-line1-train-timetable-20260721",
+        "snapshotPath": "tools/datapack/sources/daegu-line1-train-timetable-20260721.json",
+        "capturedAt": "2026-07-20T15:30:00.000Z",
+        "freshUntil": "2026-07-21T15:30:00.000Z",
+        "rowCount": 408,
+        "departureCount": 27514,
+        "tripCount": 824,
+        "stopTimeCount": 27514,
+        "rawSha256": "98fcb58f09a9e4f57d25ec853de05f9911a0ba01e0d184e57fe9b209d2d8c671",
+        "rowsSha256": "a3a59473840b3b03c29e7ac207ce9cefa4440aab124bd27c9bdc7ad5faff700d",
+        "topologySourceId": "daegu-line1-route-topology",
+        "topologySnapshotId": "daegu-line1-route-topology-20260721",
+        "topologyContentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
+        "rawUpSha256": "892b8d397ef917a07851d4a2b33d375a6973df4c19ddadbaff52137f84c9d4e0",
+        "rawDownSha256": "3c858a4f8f0ba792635f5bc03fd6e0e7450eb7c853147972529d72cf5ae45c43",
+        "tripsSha256": "a3a59473840b3b03c29e7ac207ce9cefa4440aab124bd27c9bdc7ad5faff700d",
+        "dayLabelNormalizedCount": 0,
+        "rolloverTripCount": 12,
+        "contentSha256": "644f241412b6706e1a554c24b01dc83f743c77ce00976def723993c78fc8d5b1"
+      }
+    },
+    {
+      "id": "molit-urban-rail-full-route-daegu-line1-membership",
+      "displayName": "국토교통부_도시철도 전체노선 대구 1호선 membership admission",
+      "owner": "국토교통부",
+      "provider": "국토교통부",
+      "providerDepartment": "도시철도 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+      "datasetKind": "reviewed-admission-slice",
+      "coverage": "국토교통부 역·노선 정본과 대구교통공사 역번호로 검증한 대구 1호선 35개 station membership",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "annual admission review",
+      "observedDataUpdatedAt": "2025-12-11",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국토교통부·대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "line",
+        "station_name"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide this capability"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daegu-line1-membership-20260721",
+        "lineIds": [
+          "line-5b8d9b05e7e6"
+        ],
+        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "stationCount": 35,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "50810515863d5566cb968d5d07bbd35f5b2f6434436a21d43e2506da7beb3312",
+        "stationCodesSha256": "2a9169367a78c7d63b99dbd3a66f95b661f54c984330564a7fa19c2ddddcb17b",
+        "stationCodeSourceId": "daegu-line1-route-topology",
+        "stationCodeSnapshotId": "daegu-line1-route-topology-20260721",
+        "stationCodeContentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f"
+      }
+    },
+    {
+      "id": "daegu-line2-route-topology",
+      "displayName": "대구교통공사 2호선 역 구간정보",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15061835/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구 2호선 29개 역과 56개 방향성 인접 거리·소요시간 edge",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-e2938a4cc492"
+        ],
+        "sourceDomains": [
+          "route_graph_topology",
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-07",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "station_code"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "daegu-line2-route-topology-20260721",
+        "snapshotPath": "tools/datapack/sources/daegu-line2-route-topology-20260721.json",
+        "capturedAt": "2026-07-20T15:30:00.000Z",
+        "freshUntil": "2026-07-21T15:30:00.000Z",
+        "stationCount": 29,
+        "edgeCount": 56,
+        "excludedTransferCount": 0,
+        "depotExcludedCount": 1,
+        "rawSha256": "80ea59d739c3a327e1242c67ae9b400f4d393b8acd202ec4a26e9e737f1123c0",
+        "contentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00"
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daegu-line2-membership-20260721",
+        "lineIds": [
+          "line-e2938a4cc492"
+        ],
+        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "stationCount": 29,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
+        "stationCodesSha256": "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
+        "stationCodeSourceId": "daegu-line2-route-topology",
+        "stationCodeSnapshotId": "daegu-line2-route-topology-20260721",
+        "stationCodeContentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00"
+      }
+    },
+    {
+      "id": "daegu-line2-train-timetable",
+      "displayName": "대구교통공사 2호선 열차시각표",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/3033376/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구 2호선 3개 요일 유형 상·하선 828개 운행과 23816개 stop time",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-e2938a4cc492"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2024-10-10",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "DAEGU_LINE_2_CURRENT_COMPLETE_TRIPS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "계획 시간표이며 실시간 도착 정보가 아니다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "daegu-line2-train-timetable-20260721",
+        "snapshotPath": "tools/datapack/sources/daegu-line2-train-timetable-20260721.json",
+        "capturedAt": "2026-07-20T15:30:00.000Z",
+        "freshUntil": "2026-07-21T15:30:00.000Z",
+        "rowCount": 336,
+        "departureCount": 23816,
+        "tripCount": 828,
+        "stopTimeCount": 23816,
+        "rawSha256": "1639bc648e4fbe02cfadc007a6c9c89801494bcc34eaefe28dd3aa5639080fcc",
+        "rowsSha256": "01e36f3d7b09cd186eee4cb7861447b44b48ca79dbe20600edf4bd3165736788",
+        "topologySourceId": "daegu-line2-route-topology",
+        "topologySnapshotId": "daegu-line2-route-topology-20260721",
+        "topologyContentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
+        "rawUpSha256": "000c341909c1628f0664b50beef60d232cfae21e38b474467689fddf3b7ad1d8",
+        "rawDownSha256": "3b0189ee63f54f313284d0ead497da9a1bb804e7c60499f2c18cf2b27c972dde",
+        "tripsSha256": "01e36f3d7b09cd186eee4cb7861447b44b48ca79dbe20600edf4bd3165736788",
+        "dayLabelNormalizedCount": 55,
+        "rolloverTripCount": 9,
+        "contentSha256": "067ec49c779ceafbeaeac0f0919b07ffbe71b66bfea854bbfe30152722aa2758"
+      }
+    },
+    {
+      "id": "molit-urban-rail-full-route-daegu-line2-membership",
+      "displayName": "국토교통부_도시철도 전체노선 대구 2호선 membership admission",
+      "owner": "국토교통부",
+      "provider": "국토교통부",
+      "providerDepartment": "도시철도 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+      "datasetKind": "reviewed-admission-slice",
+      "coverage": "국토교통부 역·노선 정본과 대구교통공사 역번호로 검증한 대구 2호선 29개 station membership",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-e2938a4cc492"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "annual admission review",
+      "observedDataUpdatedAt": "2025-12-11",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국토교통부·대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "line",
+        "station_name"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide this capability"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daegu-line2-membership-20260721",
+        "lineIds": [
+          "line-e2938a4cc492"
+        ],
+        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "stationCount": 29,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "9ce93ff604ead4a3e49ddde6d5300e17b7544fe0924994b3bf45cc791cd76129",
+        "stationCodesSha256": "b89277686bb18cc3c09b22b967cf21c290fa1c34a975260f401528cd248321ca",
+        "stationCodeSourceId": "daegu-line2-route-topology",
+        "stationCodeSnapshotId": "daegu-line2-route-topology-20260721",
+        "stationCodeContentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00"
+      }
+    },
+    {
+      "id": "daegu-line3-route-topology",
+      "displayName": "대구교통공사 3호선 역 구간정보",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15061797/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구 3호선 30개 역과 58개 방향성 인접 거리·소요시간 edge",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ],
+        "sourceDomains": [
+          "route_graph_topology",
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-07",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "station_code"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "daegu-line3-route-topology-20260721",
+        "snapshotPath": "tools/datapack/sources/daegu-line3-route-topology-20260721.json",
+        "capturedAt": "2026-07-20T15:30:00.000Z",
+        "freshUntil": "2026-07-21T15:30:00.000Z",
+        "stationCount": 30,
+        "edgeCount": 58,
+        "excludedTransferCount": 0,
+        "depotExcludedCount": 2,
+        "rawSha256": "844329649f860449b84e34e2af3841a16387fd39c9b313593bfc850f479eddf7",
+        "contentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653"
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daegu-line3-membership-20260721",
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ],
+        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "stationCount": 30,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
+        "stationCodesSha256": "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
+        "stationCodeSourceId": "daegu-line3-route-topology",
+        "stationCodeSnapshotId": "daegu-line3-route-topology-20260721",
+        "stationCodeContentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653"
+      }
+    },
+    {
+      "id": "daegu-line3-train-timetable",
+      "displayName": "대구교통공사 3호선 열차시각표",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15065532/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구 3호선 3개 요일 유형 상·하선 888개 운행과 26640개 stop time",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2024-10-07",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "DAEGU_LINE_3_CURRENT_COMPLETE_TRIPS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "계획 시간표이며 실시간 도착 정보가 아니다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "daegu-line3-train-timetable-20260721",
+        "snapshotPath": "tools/datapack/sources/daegu-line3-train-timetable-20260721.json",
+        "capturedAt": "2026-07-20T15:30:00.000Z",
+        "freshUntil": "2026-07-21T15:30:00.000Z",
+        "rowCount": 348,
+        "departureCount": 26640,
+        "tripCount": 888,
+        "stopTimeCount": 26640,
+        "rawSha256": "4d80acce97c2c474a2279561b1fc9662762f81e237b2dd02fb481fb2f30b2f61",
+        "rowsSha256": "752089ea25cc854f34be4b63db013ca396c0628c81324595ef9f46787246cfca",
+        "topologySourceId": "daegu-line3-route-topology",
+        "topologySnapshotId": "daegu-line3-route-topology-20260721",
+        "topologyContentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
+        "rawUpSha256": "092c4041cffaea99c9dff56671dda2d0de025ced143d1effdcff95c89cb1d42b",
+        "rawDownSha256": "a2a3d8ad68decc30222d431eb437799d011cdf3d7f60bff8db2f417300b20bd5",
+        "tripsSha256": "752089ea25cc854f34be4b63db013ca396c0628c81324595ef9f46787246cfca",
+        "dayLabelNormalizedCount": 0,
+        "rolloverTripCount": 6,
+        "contentSha256": "1fec09fbc8c8dcc44ed5d9b5ac7e7645d4cdbce911489276c19414a962f2d1bf"
+      }
+    },
+    {
+      "id": "molit-urban-rail-full-route-daegu-line3-membership",
+      "displayName": "국토교통부_도시철도 전체노선 대구 3호선 membership admission",
+      "owner": "국토교통부",
+      "provider": "국토교통부",
+      "providerDepartment": "도시철도 담당부서",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+      "datasetKind": "reviewed-admission-slice",
+      "coverage": "국토교통부 역·노선 정본과 대구교통공사 역번호로 검증한 대구 3호선 30개 station membership",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "annual admission review",
+      "observedDataUpdatedAt": "2025-12-11",
+      "retrievedAt": "2026-07-21",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국토교통부·대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15061836/fileData.do"
+      },
+      "fieldsProvided": [
+        "line",
+        "station_name"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide this capability"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "annual admission review",
+          "unsupportedNotes": "source does not provide this capability"
+        }
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2407,
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-timetable.test.mjs",
+        "snapshotId": "molit-urban-rail-full-route-daegu-line3-membership-20260721",
+        "lineIds": [
+          "line-0ffaa95b1b5d"
+        ],
+        "verifiedAt": "2026-07-20T15:30:00.000Z",
+        "stationCount": 30,
+        "membershipSourceId": "molit-urban-rail-full-route",
+        "membershipSourceRawSha256": "178af75ece72b2f6a58226063e05f1e1f45f50c779c7fbf2905f7df1384a9e22",
+        "membershipSourceSnapshotSha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7",
+        "mappingSha256": "d67b2e8d505fc8202c0b2522118a2254b8a143d4df52f859b281625ddee69c0d",
+        "stationCodesSha256": "ccbdac20980dd1135646a6dfdc97b0251df0df36af56de76a2fb14f1a0051afe",
+        "stationCodeSourceId": "daegu-line3-route-topology",
+        "stationCodeSnapshotId": "daegu-line3-route-topology-20260721",
+        "stationCodeContentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653"
       }
     },
     {
@@ -2100,10 +3058,18 @@
       "datasetKind": "reviewed-admission-slice",
       "coverage": "국토교통부 역·노선 정본과 대전교통공사 역번호로 검증한 대전 1호선 22개 station membership",
       "coverageScope": {
-        "regionIds": ["daejeon"],
-        "operatorIds": ["daejeon-transportation"],
-        "lineIds": ["line-7051a9c2525c"],
-        "sourceDomains": ["station_line_membership"]
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
+        "sourceDomains": [
+          "station_line_membership"
+        ]
       },
       "requiredForProductionPack": false,
       "productionUseAllowed": true,
@@ -2119,7 +3085,10 @@
         "redistributionAllowed": true,
         "evidenceUrl": "https://www.data.go.kr/data/15122916/fileData.do"
       },
-      "fieldsProvided": ["line", "station_name"],
+      "fieldsProvided": [
+        "line",
+        "station_name"
+      ],
       "capabilities": {
         "schedule": {
           "status": "UNSUPPORTED",
@@ -2150,7 +3119,9 @@
         "materializer": "tools/datapack/materialize-daejeon-route-topology.mjs",
         "verificationTest": "tools/datapack/materialize-daejeon-route-topology.test.mjs",
         "snapshotId": "molit-urban-rail-full-route-daejeon-membership-20260720",
-        "lineIds": ["line-7051a9c2525c"],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
         "verifiedAt": "2026-07-20T03:30:00.000Z",
         "stationCount": 22,
         "membershipSourceId": "molit-urban-rail-full-route",
