@@ -1638,7 +1638,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csccssssssc" />
-          <path id="terminal-route-extension-gimpo-goldline-양촌" data-role="terminal-route-extension" fill="none" stroke="#957326" stroke-linecap="round" stroke-width="13" data-line="gimpo-goldline" d="M -1219.8123 253.7020 L -1231.8123 253.7020" />
 </g>
           <g
              id="route-line-incheon-2"
@@ -1672,8 +1671,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csscsscsscccscccssssc" />
-          <path id="terminal-route-extension-incheon-2-검단오류" data-role="terminal-route-extension" fill="none" stroke="#F4A462" stroke-linecap="round" stroke-width="13" data-line="incheon-2" d="M -1226.4057 565.7899 L -1238.4057 565.7899" />
-<path id="terminal-route-extension-incheon-2-운연" data-role="terminal-route-extension" fill="none" stroke="#F4A462" stroke-linecap="round" stroke-width="13" data-line="incheon-2" d="M 441.7262 3600.9547 L 441.7262 3588.9547" />
 </g>
           <g
              id="route-line-everline"
@@ -1706,7 +1703,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-everline-전대.에버랜드" data-role="terminal-route-extension" fill="none" stroke="#44A436" stroke-linecap="round" stroke-width="13" data-line="everline" d="M 5852.7152 4192.1635 L 5840.7152 4192.2061" />
 </g>
           <g
              id="route-line-uijeongbu-lrt"
@@ -1740,8 +1736,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="cssccc" />
-          <path id="terminal-route-extension-uijeongbu-lrt-발곡" data-role="terminal-route-extension" fill="none" stroke="#F0831E" stroke-linecap="round" stroke-width="13" data-line="uijeongbu-lrt" d="M 3685.6822 -130.9134 L 3685.6822 -142.9134" />
-<path id="terminal-route-extension-uijeongbu-lrt-탑석" data-role="terminal-route-extension" fill="none" stroke="#F0831E" stroke-linecap="round" stroke-width="13" data-line="uijeongbu-lrt" d="M 1718.6492 -418.8255 L 1730.6490 -418.7499" />
 </g>
           <g
              id="route-line-sillim"
@@ -1775,7 +1769,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="cssssccscssc" />
-          <path id="terminal-route-extension-sillim-관악산" data-role="terminal-route-extension" fill="none" stroke="#5E7DBB" stroke-linecap="round" stroke-width="13" data-line="sillim" d="M 2393.3745 3156.9987 L 2405.3745 3156.9987" />
 </g>
           <g
              id="route-line-ui-sinseol"
@@ -1809,7 +1802,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="cssssscc" />
-          <path id="terminal-route-extension-ui-sinseol-북한산우이" data-role="terminal-route-extension" fill="none" stroke="#BACC50" stroke-linecap="round" stroke-width="13" data-line="ui-sinseol" d="M 3731.8360 51.5042 L 3743.8360 51.5042" />
 </g>
           <g
              id="route-line-gtx-a"
@@ -1863,8 +1855,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-gtx-a-동탄" data-role="terminal-route-extension" fill="none" stroke="#9A6292" stroke-linecap="round" stroke-width="13" data-line="gtx-a" d="M 3228.5393 3954.8009 L 3216.5395 3954.7365" />
-<path id="terminal-route-extension-gtx-a-운정중앙" data-role="terminal-route-extension" fill="none" stroke="#9A6292" stroke-linecap="round" stroke-width="13" data-line="gtx-a" d="M -1043.9881 62.4932 L -1031.9900 62.2815" />
 </g>
           <g
              id="route-line-seohae"
@@ -1900,7 +1890,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                data-line-weight-reference="everline" />
-          <path id="terminal-route-extension-seohae-원시" data-role="terminal-route-extension" fill="none" stroke="#5EAC41" stroke-linecap="round" stroke-width="13" data-line="seohae" d="M 1512.0558 4387.7679 L 1520.5414 4379.2830" />
 </g>
           <g
              id="route-line-gyeonggang"
@@ -1934,7 +1923,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csccssssssssscc" />
-          <path id="terminal-route-extension-gyeonggang-여주" data-role="terminal-route-extension" fill="none" stroke="#0B318F" stroke-linecap="round" stroke-width="13" data-line="gyeonggang" d="M 5861.5064 3994.3613 L 5861.5064 4006.3613" />
 </g>
           <g
              id="route-line-gyeongchun"
@@ -1987,7 +1975,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csssccscsscssc" />
-          <path id="terminal-route-extension-gyeongchun-춘천" data-role="terminal-route-extension" fill="none" stroke="#007A62" stroke-linecap="round" stroke-width="13" data-line="gyeongchun" d="M 5191.1767 -445.1991 L 5182.6914 -436.7138" />
 </g>
           <g
              id="route-line-airport-railroad"
@@ -2024,7 +2011,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-airport-railroad-인천공항2터미널" data-role="terminal-route-extension" fill="none" stroke="#0079AC" stroke-linecap="round" stroke-width="13" data-line="airport-railroad" d="M -923.1090 3453.7020 L -914.6237 3462.1873" />
 </g>
           <g
              id="route-line-incheon-1"
@@ -2059,8 +2045,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-incheon-1-검단호수공원" data-role="terminal-route-extension" fill="none" stroke="#B4C7E7" stroke-linecap="round" stroke-width="13" data-line="incheon-1" d="M -643.9881 438.3174 L -655.9881 438.3174" />
-<path id="terminal-route-extension-incheon-1-송도달빛축제공원" data-role="terminal-route-extension" fill="none" stroke="#B4C7E7" stroke-linecap="round" stroke-width="13" data-line="incheon-1" d="M -602.2299 4800.9547 L -590.2299 4800.9847" />
 </g>
           <g
              id="route-line-shinbundang"
@@ -2095,7 +2079,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csssssccssssscscssc" />
-          <path id="terminal-route-extension-shinbundang-광교" data-role="terminal-route-extension" fill="none" stroke="#B81B30" stroke-linecap="round" stroke-width="13" data-line="shinbundang" d="M 2575.7921 3466.8888 L 2563.7921 3466.8888" />
 </g>
           <g
              id="route-line-suin-bundang"
@@ -2207,8 +2190,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-gyeongui-jungang-임진강" data-role="terminal-route-extension" fill="none" stroke="#6AC2B3" stroke-linecap="round" stroke-width="13" data-line="gyeongui-jungang" d="M 173.5943 -730.9134 L 185.5943 -730.9156" />
-<path id="terminal-route-extension-gyeongui-jungang-지평" data-role="terminal-route-extension" fill="none" stroke="#6AC2B3" stroke-linecap="round" stroke-width="13" data-line="gyeongui-jungang" d="M 4956.0119 -388.0563 L 4947.5265 -379.5711" />
 </g>
           <g
              id="route-line-9"
@@ -2262,8 +2243,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="ccsscssssccssssssc" />
-          <path id="terminal-route-extension-9-개화" data-role="terminal-route-extension" fill="none" stroke="#A49D87" stroke-linecap="round" stroke-width="13" data-line="9" d="M -138.4936 726.2295 L -138.4936 738.2295" />
-<path id="terminal-route-extension-9-중앙보훈병원" data-role="terminal-route-extension" fill="none" stroke="#A49D87" stroke-linecap="round" stroke-width="13" data-line="9" d="M 5305.4624 2099.8558 L 5313.9477 2091.3705" />
 </g>
           <g
              id="route-line-8"
@@ -2350,7 +2329,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="cssssccsssscscsscccscscssscssssssc" />
-          <path id="terminal-route-extension-7-장암" data-role="terminal-route-extension" fill="none" stroke="#6E7E31" stroke-linecap="round" stroke-width="13" data-line="7" d="M 4030.7371 -89.1552 L 4030.7371 -77.1552" />
 </g>
           <g
              id="route-line-6"
@@ -2468,9 +2446,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-5-마천" data-role="terminal-route-extension" fill="none" stroke="#794698" stroke-linecap="round" stroke-width="13" data-line="5" d="M 5479.0888 2915.2404 L 5491.0888 2915.2404" />
-<path id="terminal-route-extension-5-방화" data-role="terminal-route-extension" fill="none" stroke="#794698" stroke-linecap="round" stroke-width="13" data-line="5" d="M -22.0101 567.9877 L -22.0101 555.9877" />
-<path id="terminal-route-extension-5-하남검단산역" data-role="terminal-route-extension" fill="none" stroke="#794698" stroke-linecap="round" stroke-width="13" data-line="5" d="M 5793.3745 1187.7679 L 5810.3451 1170.7973" />
 </g>
           <g
              id="route-line-4"
@@ -2505,7 +2480,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csscsscssssccssssscsssscsscccccsssssccsscscccsscssscsssssssc" />
-          <path id="terminal-route-extension-4-진접" data-role="terminal-route-extension" fill="none" stroke="#009BCE" stroke-linecap="round" stroke-width="13" data-line="4" d="M 5707.6602 -192.4519 L 5695.6602 -192.4519" />
 </g>
           <g
              id="route-line-3"
@@ -2539,7 +2513,6 @@
                data-geometry-system="octilinear-8dir-rounded-v1"
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1" />
-          <path id="terminal-route-extension-3-대화" data-role="terminal-route-extension" fill="none" stroke="#ED6C00" stroke-linecap="round" stroke-width="13" data-line="3" d="M -835.1969 -23.2211 L -847.1969 -23.2211" />
 </g>
           <g
              id="route-line-2"
@@ -2701,9 +2674,6 @@
                data-staircase-policy="macro-anchor-direct-or-single-dogleg"
                data-max-doglegs-per-structural-interval="1"
                sodipodi:nodetypes="csssssssccssc" />
-          <path id="terminal-route-extension-1-광명" data-role="terminal-route-extension" fill="none" stroke="#004A85" stroke-linecap="round" stroke-width="13" data-line="1" d="M 843.9240 3073.4822 L 852.4092 3064.9969" />
-<path id="terminal-route-extension-1-신창" data-role="terminal-route-extension" fill="none" stroke="#004A85" stroke-linecap="round" stroke-width="13" data-line="1" d="M 6035.1327 4416.3393 L 6047.1327 4416.3393" />
-<path id="terminal-route-extension-1-연천" data-role="terminal-route-extension" fill="none" stroke="#004A85" stroke-linecap="round" stroke-width="13" data-line="1" d="M 1525.2426 -280.3640 L 1537.2426 -280.3640" />
 </g>
           <g
              id="route-alignment-adjustments-gyeongui-seohae"
@@ -48791,128 +48761,6 @@
         </g>
       </g>
     </g>
-  </g>
-    <g id="line-terminal-badges-layer" data-name="종점 호선 마크" class="render-layer line-terminal-badge-layer">
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="9" id="line-terminal-badge-9-개화">
-  <circle cx="-138.4936" cy="738.2295" r="19.5" fill="#A49D87" data-role="line-terminal-badge" />
-  <text x="-138.4936" y="738.2295" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">9</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="incheon-2" id="line-terminal-badge-incheon-2-검단오류">
-  <rect x="-1270.8557" y="546.2899" width="64.9" height="39" rx="19.5" ry="19.5" fill="#F4A462" data-role="line-terminal-badge" />
-  <text x="-1238.4057" y="565.7899" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">인2</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="incheon-1" id="line-terminal-badge-incheon-1-검단호수공원">
-  <rect x="-688.4381" y="418.8174" width="64.9" height="39" rx="19.5" ry="19.5" fill="#B4C7E7" data-role="line-terminal-badge" />
-  <text x="-655.9881" y="438.3174" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">인1</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="sillim" id="line-terminal-badge-sillim-관악산">
-  <rect x="2372.9245" y="3137.4987" width="64.9" height="39" rx="19.5" ry="19.5" fill="#5E7DBB" data-role="line-terminal-badge" />
-  <text x="2405.3745" y="3156.9987" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">신림</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="shinbundang" id="line-terminal-badge-shinbundang-광교">
-  <rect x="2531.3421" y="3447.3888" width="64.9" height="39" rx="19.5" ry="19.5" fill="#B81B30" data-role="line-terminal-badge" />
-  <text x="2563.7921" y="3466.8888" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">신분</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="1" id="line-terminal-badge-1-광명">
-  <circle cx="852.4092" cy="3064.9969" r="19.5" fill="#004A85" data-role="line-terminal-badge" />
-  <text x="852.4092" y="3064.9969" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">1</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="3" id="line-terminal-badge-3-대화">
-  <circle cx="-847.1969" cy="-23.2211" r="19.5" fill="#ED6C00" data-role="line-terminal-badge" />
-  <text x="-847.1969" y="-23.2211" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">3</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gtx-a" id="line-terminal-badge-gtx-a-동탄">
-  <circle cx="3216.5395" cy="3954.7365" r="19.5" fill="#9A6292" data-role="line-terminal-badge" />
-  <text x="3216.5395" y="3954.7365" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">A</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="5" id="line-terminal-badge-5-마천">
-  <circle cx="5491.0888" cy="2915.2404" r="19.5" fill="#794698" data-role="line-terminal-badge" />
-  <text x="5491.0888" y="2915.2404" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">5</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="uijeongbu-lrt" id="line-terminal-badge-uijeongbu-lrt-발곡">
-  <rect x="3653.2322" y="-162.4134" width="64.9" height="39" rx="19.5" ry="19.5" fill="#F0831E" data-role="line-terminal-badge" />
-  <text x="3685.6822" y="-142.9134" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">의정</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="5" id="line-terminal-badge-5-방화">
-  <circle cx="-22.0101" cy="555.9877" r="19.5" fill="#794698" data-role="line-terminal-badge" />
-  <text x="-22.0101" y="555.9877" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">5</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="ui-sinseol" id="line-terminal-badge-ui-sinseol-북한산우이">
-  <rect x="3711.3860" y="32.0042" width="64.9" height="39" rx="19.5" ry="19.5" fill="#BACC50" data-role="line-terminal-badge" />
-  <text x="3743.8360" y="51.5042" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">우이</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="incheon-1" id="line-terminal-badge-incheon-1-송도달빛축제공원">
-  <rect x="-622.6799" y="4781.4847" width="64.9" height="39" rx="19.5" ry="19.5" fill="#B4C7E7" data-role="line-terminal-badge" />
-  <text x="-590.2299" y="4800.9847" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">인1</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="1" id="line-terminal-badge-1-신창">
-  <circle cx="6047.1327" cy="4416.3393" r="19.5" fill="#004A85" data-role="line-terminal-badge" />
-  <text x="6047.1327" y="4416.3393" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">1</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gimpo-goldline" id="line-terminal-badge-gimpo-goldline-양촌">
-  <rect x="-1264.2623" y="234.2020" width="64.9" height="39" rx="19.5" ry="19.5" fill="#957326" data-role="line-terminal-badge" />
-  <text x="-1231.8123" y="253.7020" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">김포</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gyeonggang" id="line-terminal-badge-gyeonggang-여주">
-  <rect x="5829.0564" y="3986.8613" width="64.9" height="39" rx="19.5" ry="19.5" fill="#0B318F" data-role="line-terminal-badge" />
-  <text x="5861.5064" y="4006.3613" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">경강</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="1" id="line-terminal-badge-1-연천">
-  <circle cx="1537.2426" cy="-280.3640" r="19.5" fill="#004A85" data-role="line-terminal-badge" />
-  <text x="1537.2426" y="-280.3640" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">1</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="incheon-2" id="line-terminal-badge-incheon-2-운연">
-  <rect x="409.2762" y="3569.4547" width="64.9" height="39" rx="19.5" ry="19.5" fill="#F4A462" data-role="line-terminal-badge" />
-  <text x="441.7262" y="3588.9547" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">인2</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gtx-a" id="line-terminal-badge-gtx-a-운정중앙">
-  <circle cx="-1031.9900" cy="62.2815" r="19.5" fill="#9A6292" data-role="line-terminal-badge" />
-  <text x="-1031.9900" y="62.2815" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">A</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="seohae" id="line-terminal-badge-seohae-원시">
-  <rect x="1488.0914" y="4359.7830" width="64.9" height="39" rx="19.5" ry="19.5" fill="#5EAC41" data-role="line-terminal-badge" />
-  <text x="1520.5414" y="4379.2830" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">서해</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="airport-railroad" id="line-terminal-badge-airport-railroad-인천공항2터미널">
-  <rect x="-947.0737" y="3442.6873" width="64.9" height="39" rx="19.5" ry="19.5" fill="#0079AC" data-role="line-terminal-badge" />
-  <text x="-914.6237" y="3462.1873" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">공항</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gyeongui-jungang" id="line-terminal-badge-gyeongui-jungang-임진강">
-  <rect x="153.1443" y="-750.4156" width="64.9" height="39" rx="19.5" ry="19.5" fill="#6AC2B3" data-role="line-terminal-badge" />
-  <text x="185.5943" y="-730.9156" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">경의</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="7" id="line-terminal-badge-7-장암">
-  <circle cx="4030.7371" cy="-77.1552" r="19.5" fill="#6E7E31" data-role="line-terminal-badge" />
-  <text x="4030.7371" y="-77.1552" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">7</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="everline" id="line-terminal-badge-everline-전대.에버랜드">
-  <rect x="5808.2652" y="4172.7061" width="64.9" height="39" rx="19.5" ry="19.5" fill="#44A436" data-role="line-terminal-badge" />
-  <text x="5840.7152" y="4192.2061" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">에버</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="9" id="line-terminal-badge-9-중앙보훈병원">
-  <circle cx="5313.9477" cy="2091.3705" r="19.5" fill="#A49D87" data-role="line-terminal-badge" />
-  <text x="5313.9477" y="2091.3705" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">9</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gyeongui-jungang" id="line-terminal-badge-gyeongui-jungang-지평">
-  <rect x="4915.0765" y="-399.0711" width="64.9" height="39" rx="19.5" ry="19.5" fill="#6AC2B3" data-role="line-terminal-badge" />
-  <text x="4947.5265" y="-379.5711" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">경의</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="4" id="line-terminal-badge-4-진접">
-  <circle cx="5695.6602" cy="-192.4519" r="19.5" fill="#009BCE" data-role="line-terminal-badge" />
-  <text x="5695.6602" y="-192.4519" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">4</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="gyeongchun" id="line-terminal-badge-gyeongchun-춘천">
-  <rect x="5150.2414" y="-456.2138" width="64.9" height="39" rx="19.5" ry="19.5" fill="#007A62" data-role="line-terminal-badge" />
-  <text x="5182.6914" y="-436.7138" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">경춘</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="uijeongbu-lrt" id="line-terminal-badge-uijeongbu-lrt-탑석">
-  <rect x="1698.1990" y="-438.2499" width="64.9" height="39" rx="19.5" ry="19.5" fill="#F0831E" data-role="line-terminal-badge" />
-  <text x="1730.6490" y="-418.7499" fill="#333D4B" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">의정</text>
-</g>
-<g class="line-terminal-badge" data-role="line-terminal-badge" data-line="5" id="line-terminal-badge-5-하남검단산역">
-  <circle cx="5810.3451" cy="1170.7973" r="19.5" fill="#794698" data-role="line-terminal-badge" />
-  <text x="5810.3451" y="1170.7973" fill="#FFFFFF" font-size="22.5" font-weight="900" text-anchor="middle" dominant-baseline="central" data-role="line-terminal-badge">5</text>
-</g>
   </g>
 
 

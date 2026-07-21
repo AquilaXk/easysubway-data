@@ -72,7 +72,13 @@ test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노
     if (!/gwangju|daejeon/.test(file)) {
       assert.match(normalized, /id="transfer-station-symbols-layer"/);
     }
-    assert.doesNotMatch(rendered, /station-name-labels-layer|header-|legend/);
+    // #2408: 오너 종점 칩(terminal-route-badges-layer)은 id에 "header-route-badge"
+    // 를 포함(오너가 header 배지 템플릿에서 파생). 이는 정상 렌더 대상이므로
+    // header 접두 substring이 아니라 header/legend "레이어" id 유입만 배제한다.
+    assert.doesNotMatch(
+      rendered,
+      /station-name-labels-layer|id="header-|legend/,
+    );
     assert.doesNotMatch(rendered, /<title\b/);
   }
 

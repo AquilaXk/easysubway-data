@@ -208,14 +208,30 @@ function extractMapSvg(svgText) {
   const layerIds = [
     "transfer-station-shell-underlay-layer",
     "route-lines-layer",
+    // #2408 수도권: 오너가 직접 제작한 종점 노선 심볼 연결 연장선. route-lines-layer
+    // 직후(오너 SVG 문서 순서)에 이어 노선 형상과 같은 하단 층위로 렌더한다. 숫자
+    // id(terminal-route-extension-<line>-<n>)의 octilinear 연장 path만 담고 텍스트가
+    // 없다. 다른 권역 SVG엔 이 레이어가 없어 extractGroup이 빈 문자열을 반환하므로
+    // 영향이 없다.
+    "terminal-route-extensions-layer",
     "route-endpoint-markers-layer",
     "terminal-station-symbols-layer",
     "station-symbols-layer",
     ...(!regionalSingleLine ? ["transfer-station-symbols-layer"] : []),
-    // #2068 수도권: 종점 호선 마크(대전 스타일 원+숫자/캡슐)를 전용 레이어에 담아
-    // 맨 위에 렌더한다 — 비환승 종점의 종착역 심벌(흰 r6.5 dot) 위로 배지가 덮여
-    // 숫자가 가려지지 않는다. 다른 권역 SVG엔 이 레이어가 없어(배지는
-    // route-lines-layer 내부) extractGroup이 빈 문자열을 반환하므로 영향이 없다.
+    // #2408 수도권: 오너가 직접 제작한 종점 노선 심볼(캡슐 배지). 오너 SVG 문서
+    // 순서상 최상위(route-midline-markers 다음) 배지 층위라 transfer-station-symbols
+    // -layer 뒤 맨 위에 렌더한다 — 종착역 심벌 위로 배지가 덮여 가려지지 않는다.
+    // 각 칩 그룹은 matrix(2.198,…) 축정렬 스케일을 가지므로 내부 <text> font-size가
+    // normalizeTextBaselineAndScale에서 그 그룹 스케일까지 선보정된다(아래 함수 주석
+    // 참조). 수도권만 이 레이어를 가지며(다른 권역은 extractGroup 빈 문자열) 수도권은
+    // 기계 이식 배지(line-terminal-badges-layer)를 SVG에서 걷어내고 이 오너 칩으로
+    // 대체했다.
+    "terminal-route-badges-layer",
+    // #2068 종점 호선 마크(원+숫자/캡슐). 대구는 오너 SVG가 아직 이 형식의 종점
+    // 배지를 line-terminal-badges-layer에 담아 마감하므로 그대로 컴파일한다. 수도권은
+    // #2408에서 이 레이어를 SVG에서 제거하고 위 terminal-route-badges-layer(오너 칩)로
+    // 대체했다 — 수도권 SVG엔 이 레이어가 없어 extractGroup이 빈 문자열을 반환한다.
+    // 두 레이어는 권역별로 상호배타(한 권역엔 하나만 존재)라 순서 충돌이 없다.
     "line-terminal-badges-layer",
     // #2068 KTX·SRT·공항 표장: service-tag(inline-svg-paths 벡터 로고)를 바탕층에
     // 포함한다. 마크가 라벨·심벌 위에 오도록 맨 위에 렌더한다. 텍스트 없는 벡터
@@ -1191,14 +1207,20 @@ export function extractOwnerLabels(svgText, regionId) {
 }
 
 // 종점 호선 마크 sidecar 플래그(#2068 광주 2차) — region의 원본 SVG가 자체
-// 종점 배지(<g data-role="line-terminal-badge">, route-lines-layer 내 원+숫자
-// 마감)를 그리면 앱 솔버가 같은 자리에 노선 뱃지 pill을 중복해 그리지 않도록
-// terminal role 오너 라벨 엔트리에 hasLineTerminalBadge:true를 표시한다.
-// region 단위 감지(개별 역 좌표 매칭 불필요 — 광주·대전 둘 다 노선이 1개뿐이라
-// terminal 엔트리 전부에 표시해도 의미가 동일하다). 플래그 없는 권역은 기존
-// 엔트리 그대로(추가 키 없음) — 하위 호환.
+// 종점 배지를 그리면 앱 솔버가 같은 자리에 노선 뱃지 pill을 중복해 그리지 않도록
+// terminal role 오너 라벨 엔트리에 hasLineTerminalBadge:true를 표시한다. 감지
+// 대상 자체 배지는 두 형식이다:
+//   1) 광주·대전형: route-lines-layer 내 <g data-role="line-terminal-badge"> 원+숫자.
+//   2) #2408 수도권형: 오너 직접 제작 종점 심볼(terminal-route-badges-layer의 캡슐
+//      칩). 수도권은 기계 이식 배지를 걷어내고 이 오너 칩을 렌더하므로, 같은 자리에
+//      앱 pill을 중복하지 않도록 이 레이어가 있으면 동일하게 플래그를 켠다.
+// region 단위 감지(개별 역 좌표 매칭 불필요 — terminal 엔트리 전부에 표시해도
+// 의미가 동일하다). 두 형식 모두 없는 권역은 기존 엔트리 그대로 — 하위 호환.
 export function markLineTerminalBadgeEntries(ownerLabels, sourceText) {
-  if (!/data-role="line-terminal-badge"/.test(sourceText)) {
+  const hasOwnTerminalBadges =
+    /data-role="line-terminal-badge"/.test(sourceText) ||
+    /id="terminal-route-badges-layer"/.test(sourceText);
+  if (!hasOwnTerminalBadges) {
     return ownerLabels;
   }
   return ownerLabels.map((entry) =>
@@ -1278,6 +1300,110 @@ function normalizeTextBaselineAndScale(svgText, k) {
   });
 }
 
+// tag 문자열의 y="..." 값을 shift만큼 더한다(단일 값 가정). y가 없으면 그대로 둔다.
+function shiftTextYAttr(tag, shift) {
+  const yMatch = tag.match(/\sy="(-?[\d.]+)"/);
+  if (!yMatch || !Number.isFinite(Number(yMatch[1]))) return tag;
+  return tag.replace(
+    /\sy="-?[\d.]+"/,
+    ` y="${roundCoord(Number(yMatch[1]) + shift)}"`,
+  );
+}
+
+// #2408 오너 종점 칩 그룹 스케일 선보정. 오너가 직접 배치한 종점 노선 심볼(캡슐
+// 배지)은 각 <g class="ui-chip terminal-route-badge">에 matrix(2.198,0,0,2.198,…)
+// 또는 translate(…) scale(2.198) translate(…) 축정렬 스케일 s를 걸어 배치한다.
+// vector_graphics_compiler 1.2.6은 이 축정렬 그룹 스케일을 텍스트 위치(x/y)에는
+// 반영하지만 fontSize에는 반영하지 않아(아래 normalizeTextBaselineAndScale 주석의
+// node.dart 버그) 칩 글자가 캡슐 대비 s배(≈2.198×)만큼 작게 렌더된다(#2408 실측:
+// 캡슐 ~23유닛 높이 안에 글자 잉크 ~4.6유닛). 컴파일 입력에서 각 칩의 그룹 스케일을
+// 내부 <text>/<tspan> font-size에 미리 곱해 보정한다.
+//   - baseline central/middle 보정(+0.35×fontSize)은 텍스트의 로컬 프레임에서
+//     이뤄져야 이후 컴파일러가 그룹 스케일로 그 오프셋까지 렌더에서 변환한다.
+//     따라서 여기서는 로컬 유효 font-size(그룹 스케일 곱 전) 기준으로 y를 내리고
+//     central/middle 속성을 제거한다. 이렇게 하면 뒤이은 normalizeTextBaselineAndScale
+//     은 map 스케일 k만 추가로 곱하므로 최종 fontSize=L×s×k, 렌더 baseline 오프셋=
+//     0.35×L×s×k=0.35×(렌더 fontSize)로 비반전 종점 숫자 배지와 동일한 0.35 비율에
+//     수렴한다.
+//   - 유효 로컬 font-size L은 inline style(존재 시 우선) 아니면 attr font-size를 쓴다
+//     (SVG에서 style이 presentation attribute보다 우선). font-size는 attr·style 양쪽을
+//     s배해 어느 쪽이 렌더에 쓰이든 일관되게 한다.
+//   - 칩 그룹은 rect+text만 담고 중첩 <g>가 없어 non-greedy 그룹 매치가 안전하다.
+//     축정렬(비반전) 균일 스케일만 대상으로 하며, 그 외(회전·비균일·s=1)는 건드리지
+//     않는다. 다른 권역 SVG엔 이 클래스가 없어 영향이 없다. 오너 SVG 원본은 불변이며
+//     이 정규화는 컴파일 입력 사본에만 적용된다.
+//   - #2408 리뷰 반영: inlineSimpleClassStyles 이후에 적용해야 한다 — CSS 클래스
+//     유래 font-size/baseline(단순 compound class 선택자로 인라인되는 경우)도 이
+//     함수의 attr·style 판독 대상이 되도록 하기 위함. 현재 오너 칩은 전부 속성형
+//     font-size(attr="10.5", 일부 style override)만 쓰고 관련 CSS 규칙
+//     (.ui-chip text {...})은 descendant 결합자라 애초에 inlineSimpleClassStyles가
+//     인식하지 않는 단순 선택자 요건 밖이라 순서 무관하게 현재 결과는 불변이지만,
+//     향후 단순 class 선택자로 font-size/baseline을 주는 칩이 추가되면 이 순서가
+//     아니면 fold가 그 값을 놓친다.
+function foldTerminalChipScale(svgText) {
+  return svgText.replace(
+    /<g\b[^>]*\bclass="ui-chip terminal-route-badge"[^>]*>[\s\S]*?<\/g>/g,
+    (chip) => {
+      const transform = chip.match(/\btransform="([^"]*)"/)?.[1];
+      if (!transform) return chip;
+      let s = null;
+      const matrix = transform.match(
+        /matrix\(\s*([-\d.]+)[ ,]+([-\d.]+)[ ,]+([-\d.]+)[ ,]+([-\d.]+)/,
+      );
+      if (matrix) {
+        const [a, b, c, d] = matrix.slice(1).map(Number);
+        if (Math.abs(b) < 1e-9 && Math.abs(c) < 1e-9 && Math.abs(a - d) < 1e-6) {
+          s = Math.abs(a);
+        }
+      }
+      if (s == null) {
+        const scale = transform.match(/scale\(\s*([-\d.]+)\s*\)/);
+        if (scale) s = Math.abs(Number(scale[1]));
+      }
+      if (s == null || !Number.isFinite(s) || Math.abs(s - 1) < 1e-9) {
+        return chip;
+      }
+      return chip.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, (block) => {
+        const open = block.match(/^<text\b[^>]*>/)?.[0];
+        if (!open) return block;
+        const rest = block.slice(open.length);
+        const styleFs = open.match(/font-size\s*:\s*([\d.]+)/)?.[1];
+        const attrFs = open.match(/\sfont-size="([\d.]+)(?:px)?"/)?.[1];
+        const localFontSize = Number(styleFs ?? attrFs);
+        const central =
+          /\bdominant-baseline="central"/.test(open) ||
+          /\balignment-baseline="(?:middle|central)"/.test(open);
+        let newOpen = open;
+        let newRest = rest;
+        if (central && Number.isFinite(localFontSize)) {
+          const shift = 0.35 * localFontSize;
+          newOpen = shiftTextYAttr(newOpen, shift)
+            .replace(/\sdominant-baseline="[^"]*"/g, "")
+            .replace(/\salignment-baseline="[^"]*"/g, "");
+          newRest = newRest.replace(/<tspan\b[^>]*>/g, (t) =>
+            shiftTextYAttr(t, shift),
+          );
+        }
+        // font-size(attr·style 양쪽)에 그룹 스케일 s를 곱한다. SVG에서 style이
+        // presentation attribute보다 우선하므로 어느 쪽이 렌더에 쓰이든 일관되게
+        // s배되도록 둘 다 처리한다(기존 normalizeTextBaselineAndScale의 attr·style
+        // 병행 스케일 관례와 동일).
+        newOpen = newOpen
+          .replace(
+            /(\sfont-size=")([\d.]+)(px)?(")/,
+            (_m, pre, n, px, post) =>
+              `${pre}${roundCoord(Number(n) * s)}${px ?? ""}${post}`,
+          )
+          .replace(
+            /(font-size\s*:\s*)([\d.]+)(px)?/,
+            (_m, pre, n, px) => `${pre}${roundCoord(Number(n) * s)}${px ?? ""}`,
+          );
+        return newOpen + newRest;
+      });
+    },
+  );
+}
+
 export function normalizeSvgForCompile(svgText) {
   const extracted = extractMapSvg(svgText);
   const k = scaleFromMapTransform(
@@ -1285,7 +1411,7 @@ export function normalizeSvgForCompile(svgText) {
       /<g id="compiled-map-coordinate-layer" transform="([^"]+)"/,
     )?.[1],
   );
-  const inlined = inlineSimpleClassStyles(extracted)
+  const inlined = foldTerminalChipScale(inlineSimpleClassStyles(extracted))
     .replace(
       /font-weight="(\d+)"/g,
       (_m, v) => `font-weight="${normalizeFontWeightValue(v)}"`,
