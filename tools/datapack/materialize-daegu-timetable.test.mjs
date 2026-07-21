@@ -270,8 +270,8 @@ test("materialized SQLite·provenance가 대구 membership·topology·schedule 9
     "--inventory", "tools/datapack/source-inventory.json",
     "--manifest", manifestPath,
     "--provenance", path.join(packOutput, "current.provenance.json"),
-    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260720.json",
-    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260720.json",
+    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260721.json",
+    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json",
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });
@@ -287,10 +287,10 @@ test("materialized SQLite·provenance가 대구 membership·topology·schedule 9
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
     supportedCount: 31,
-    explicitlyUnsupportedCount: 73,
-    missingCount: 166,
+    explicitlyUnsupportedCount: 4,
+    missingCount: 235,
     supportedRatio: 0.1148,
-    terminalResolutionRatio: 0.3852,
+    terminalResolutionRatio: 0.1296,
     completionReady: false,
   });
 });

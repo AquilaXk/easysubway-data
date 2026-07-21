@@ -224,8 +224,8 @@ test("materialized SQLite·provenance가 광주 membership·topology·schedule 3
     "--inventory", "tools/datapack/source-inventory.json",
     "--manifest", manifestPath,
     "--provenance", path.join(packOutput, "current.provenance.json"),
-    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260720.json",
-    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260720.json",
+    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260721.json",
+    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json",
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });
@@ -246,10 +246,10 @@ test("materialized SQLite·provenance가 광주 membership·topology·schedule 3
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
     supportedCount: 22,
-    explicitlyUnsupportedCount: 73,
-    missingCount: 175,
+    explicitlyUnsupportedCount: 4,
+    missingCount: 244,
     supportedRatio: 0.0815,
-    terminalResolutionRatio: 0.3519,
+    terminalResolutionRatio: 0.0963,
     completionReady: false,
   });
 });

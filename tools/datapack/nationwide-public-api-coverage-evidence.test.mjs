@@ -9,10 +9,10 @@ import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const planPath = "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260720.json";
-const resolutionsPath = "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260720.json";
+const planPath = "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260721.json";
+const resolutionsPath = "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json";
 
-test("전국 공공데이터 audit은 73건만 공식 미지원으로 닫고 194건은 MISSING으로 유지한다", async () => {
+test("전국 공공데이터 재감사는 4건만 공식 미지원으로 닫고 266건은 MISSING으로 재개방한다", async () => {
   const plan = JSON.parse(await readFile(path.join(root, planPath), "utf8"));
   const resolutionsText = await readFile(path.join(root, resolutionsPath), "utf8");
   const resolutions = JSON.parse(resolutionsText);
@@ -23,12 +23,12 @@ test("전국 공공데이터 audit은 73건만 공식 미지원으로 닫고 194
   assert.ok(korailEntries.every(({ queries }) => queries.every(
     ({ query }) => query.organizations[0] === "한국철도공사",
   )));
-  assert.equal(resolutions.entries.length, 73);
-  assert.equal(resolutions.unresolved.length, 194);
+  assert.equal(resolutions.entries.length, 4);
+  assert.equal(resolutions.unresolved.length, 266);
   assert.deepEqual(
     Object.fromEntries(Object.entries(Object.groupBy(resolutions.entries, ({ sourceDomain }) => sourceDomain))
       .map(([domain, entries]) => [domain, entries.length])),
-    { realtime_arrivals: 6, route_graph_topology: 28, route_map_positions: 39 },
+    { realtime_arrivals: 4 },
   );
   assert.doesNotMatch(resolutionsText, /"(?:serviceKey|secret|token)"\s*:/i);
   assert.doesNotMatch(resolutionsText, /Infuser\s+/i);
@@ -48,13 +48,13 @@ test("전국 공공데이터 audit은 73건만 공식 미지원으로 닫고 194
 
     const report = JSON.parse(await readFile(outputPath, "utf8"));
     assert.equal(report.summary.launchRequired.totalCount, 270);
-    assert.equal(report.summary.launchRequired.explicitlyUnsupportedCount, 73);
-    assert.equal(report.summary.launchRequired.missingCount, 197);
-    assert.equal(report.summary.launchRequired.terminalResolutionRatio, 0.2704);
+    assert.equal(report.summary.launchRequired.explicitlyUnsupportedCount, 4);
+    assert.equal(report.summary.launchRequired.missingCount, 266);
+    assert.equal(report.summary.launchRequired.terminalResolutionRatio, 0.0148);
 
     const workflow = await readFile(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
-    assert.match(workflow, /--resolution-plan tools\/datapack\/release\/nationwide-public-api-coverage-search-plan-20260720\.json/);
-    assert.match(workflow, /--resolutions tools\/datapack\/release\/nationwide-public-api-coverage-resolutions-20260720\.json/);
+    assert.match(workflow, /--resolution-plan tools\/datapack\/release\/nationwide-public-api-coverage-search-plan-20260721\.json/);
+    assert.match(workflow, /--resolutions tools\/datapack\/release\/nationwide-public-api-coverage-resolutions-20260721\.json/);
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }

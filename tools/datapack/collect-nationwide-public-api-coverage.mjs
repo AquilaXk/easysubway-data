@@ -142,7 +142,7 @@ function publicApiSearchQuery({ organizations, keyword, coverageScope, matchTerm
     format: "json",
     coverageScope,
     matchTermGroups,
-    query: { page: 0, size: 10_000, dataType: ["API", "FILE", "STANDARD"], organizations, keyword },
+    query: { page: 0, size: 10_000, dataType: ["API", "FILE"], organizations, keyword },
   };
 }
 

@@ -325,7 +325,7 @@ test("공공데이터 검색이 거부하는 GTX-A 문장부호는 안전한 ali
   assert.deepEqual(searchPlan.entries[0].queries[0].matchTermGroups[1], ["GTXA"]);
 });
 
-test("공공데이터 검색은 API·FILE·STANDARD dataType과 도메인 실발행처를 함께 조회한다", () => {
+test("공공데이터 검색은 API·FILE dataType과 도메인 실발행처를 함께 조회한다", () => {
   const searchPlan = buildNationwidePublicApiSearchPlan({
     targets: {
       targetVersion: "2026-07-13",
@@ -347,7 +347,7 @@ test("공공데이터 검색은 API·FILE·STANDARD dataType과 도메인 실발
   const byDomain = new Map(searchPlan.entries.map((entry) => [entry.sourceDomain, entry]));
   for (const entry of searchPlan.entries) {
     for (const { query } of entry.queries) {
-      assert.deepEqual(query.dataType, ["API", "FILE", "STANDARD"]);
+      assert.deepEqual(query.dataType, ["API", "FILE"]);
     }
   }
   // topology는 국가철도공단, positions는 국가철도공단·국토교통부를 실발행처로 함께 조회한다.
@@ -523,7 +523,7 @@ test("감사 반증 FILE dataset(국가철도공단 발행)은 교정된 질의�
     dataType: "FILE",
   }]);
   // 검출이 성립하려면 교정된 질의가 FILE dataType과 국가철도공단 발행처를 실제로 조회해야 한다.
-  assert.deepEqual(firstQuery.dataType, ["API", "FILE", "STANDARD"]);
+  assert.deepEqual(firstQuery.dataType, ["API", "FILE"]);
   assert.ok(firstQuery.organizations.includes("국가철도공단"));
 });
 
