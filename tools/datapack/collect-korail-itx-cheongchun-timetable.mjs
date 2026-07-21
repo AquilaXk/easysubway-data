@@ -1322,7 +1322,7 @@ export async function collectKorailItxCheongchunTimetable({
     passengerStopCodes,
   };
   const analyzed = analyzeKorailItxRows(materializationInput);
-  const directions = [...new Set(analyzed.stationSequences.map(({ directionCode }) => directionCode))].sort();
+  const directions = [...new Set(analyzed.stationSequences.map(({ directionCode }) => directionCode))].sort(codepointCompare);
   if (!directions.includes("U") || !directions.includes("D")) {
     throw new Error("Korail ITX roster must include both directions");
   }
@@ -1686,7 +1686,7 @@ function resolveOutsideSegmentLine(stops, start, end, trainNumber) {
     const memberships = new Set(stop.lineMemberships.map(({ lineId }) => lineId));
     return shared === null ? memberships : new Set([...shared].filter((lineId) => memberships.has(lineId)));
   }, null);
-  const candidates = [...(common ?? [])].filter((lineId) => lineId !== LINE_ID).sort();
+  const candidates = [...(common ?? [])].filter((lineId) => lineId !== LINE_ID).sort(codepointCompare);
   const selectedLineId = candidates.includes(CAPITAL_APPROACH_LINE_ID)
     ? CAPITAL_APPROACH_LINE_ID
     : candidates.length === 1 ? candidates[0] : null;

@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 
 export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
@@ -151,7 +152,7 @@ function validateOperationQuery(sourceId, query, overridden) {
     return;
   }
   if (!query || typeof query !== "object" || Array.isArray(query)
-    || Object.keys(query).sort().join(",") !== "endstnno,strstnno") {
+    || Object.keys(query).sort(codepointCompare).join(",") !== "endstnno,strstnno") {
     throw new Error("Daejeon distance query is invalid");
   }
   const from = String(query.strstnno);

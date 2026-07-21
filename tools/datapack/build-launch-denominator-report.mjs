@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
+
 const REQUIRED_IDENTITY_FIELDS = [
   "canonicalStationVersion",
   "corridorId",
@@ -385,7 +387,7 @@ function canonicalize(value) {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]),
+      Object.keys(value).sort(codepointCompare).map((key) => [key, canonicalize(value[key])]),
     );
   }
   return value;

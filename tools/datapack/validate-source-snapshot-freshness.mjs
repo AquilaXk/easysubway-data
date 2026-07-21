@@ -155,7 +155,7 @@ export function validateSourceSnapshotFreshness({
         protectionEvaluatedAt: rawState?.protectedAt ?? null,
       });
     });
-    const reasonCodes = [...new Set(governanceResults.flatMap((result) => result.reasonCodes))].sort();
+    const reasonCodes = [...new Set(governanceResults.flatMap((result) => result.reasonCodes))].sort(codepointCompare);
     if (reasonCodes.length > 0) throw new Error(reasonCodes.join(","));
   }
   const schemaFingerprintSetHash = sha256(JSON.stringify(selectedSnapshots
