@@ -244,12 +244,17 @@ test("지역 전용 provider 후보는 다른 지역의 공식 미지원 판정�
     },
   });
 
+  // route_graph_topology는 국가철도공단 전국 built-in 후보를 항상 배선한다. 지역 전용 후보(daejeon)는
+  // 자기 scope에만 더해지므로 busan은 전국 후보만, daejeon은 전국 후보 + 지역 후보를 갖는다.
   assert.deepEqual(searchPlan.entries.map(({ lineId, knownProviderCandidateIds }) => ({
     lineId,
     knownProviderCandidateIds,
   })), [
-    { lineId: "busan-1", knownProviderCandidateIds: [] },
-    { lineId: "daejeon-1", knownProviderCandidateIds: ["daejeon-station-distance-fare"] },
+    { lineId: "busan-1", knownProviderCandidateIds: ["kric-nationwide-station-interval-distance"] },
+    {
+      lineId: "daejeon-1",
+      knownProviderCandidateIds: ["daejeon-station-distance-fare", "kric-nationwide-station-interval-distance"],
+    },
   ]);
 });
 
@@ -318,6 +323,208 @@ test("공공데이터 검색이 거부하는 GTX-A 문장부호는 안전한 ali
     "실제일시",
   ]);
   assert.deepEqual(searchPlan.entries[0].queries[0].matchTermGroups[1], ["GTXA"]);
+});
+
+test("공공데이터 검색은 API·FILE·STANDARD dataType과 도메인 실발행처를 함께 조회한다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "capital", operatorId: "korail", lineId: "korail-1" }],
+      requiredSourceDomains: [
+        { id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" },
+        { id: "route_map_positions", releaseTier: "LAUNCH_REQUIRED" },
+        { id: "realtime_arrivals", releaseTier: "LAUNCH_REQUIRED" },
+      ],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "korail", nameKo: "코레일" }],
+        lines: [{ id: "korail-1", nameKo: "수도권 1호선" }],
+      }],
+    },
+  });
+
+  const byDomain = new Map(searchPlan.entries.map((entry) => [entry.sourceDomain, entry]));
+  for (const entry of searchPlan.entries) {
+    for (const { query } of entry.queries) {
+      assert.deepEqual(query.dataType, ["API", "FILE", "STANDARD"]);
+    }
+  }
+  // topology는 국가철도공단, positions는 국가철도공단·국토교통부를 실발행처로 함께 조회한다.
+  assert.deepEqual(byDomain.get("route_graph_topology").queries[0].query.organizations, ["한국철도공사", "국가철도공단"]);
+  assert.deepEqual(
+    byDomain.get("route_map_positions").queries[0].query.organizations,
+    ["한국철도공사", "국가철도공단", "국토교통부"],
+  );
+  // realtime_arrivals 도메인은 실발행처를 추가하지 않아 운영기관만 조회한다(기존 계약 유지).
+  assert.deepEqual(byDomain.get("realtime_arrivals").queries[0].query.organizations, ["한국철도공사"]);
+});
+
+test("route_graph_topology 검색은 역간거리 대체 명칭까지 후처리 term으로 검증한다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "capital", operatorId: "korail", lineId: "korail-1" }],
+      requiredSourceDomains: [{ id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" }],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "korail", nameKo: "코레일" }],
+        lines: [{ id: "korail-1", nameKo: "수도권 1호선" }],
+      }],
+    },
+  });
+
+  const domainTerms = searchPlan.entries[0].queries[0].matchTermGroups[0];
+  for (const alt of ["역간거리", "구간정보", "거리표", "역위치", "좌표", "주소데이터"]) {
+    assert.ok(domainTerms.includes(alt), `${alt} must be a topology match term`);
+  }
+});
+
+test("노선명 별칭 사전은 지선·주관기관 발행 명칭을 검색 키워드로 확장한다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [
+        { regionId: "capital", operatorId: "korail", lineId: "line-3" },
+        { regionId: "capital", operatorId: "korail", lineId: "line-4" },
+        { regionId: "busan", operatorId: "korail", lineId: "donghae" },
+        { regionId: "capital", operatorId: "gimpo-goldline", lineId: "gimpo" },
+      ],
+      requiredSourceDomains: [{ id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" }],
+    },
+    fixture: {
+      packs: [{
+        operators: [
+          { id: "korail", nameKo: "코레일" },
+          { id: "gimpo-goldline", nameKo: "김포골드라인운영" },
+        ],
+        lines: [
+          { id: "line-3", nameKo: "수도권 3호선" },
+          { id: "line-4", nameKo: "수도권 4호선" },
+          { id: "donghae", nameKo: "동해선" },
+          { id: "gimpo", nameKo: "김포골드라인" },
+        ],
+      }],
+    },
+  });
+
+  const keywordsByLine = new Map(searchPlan.entries.map((entry) => [
+    entry.lineId,
+    entry.queries.map(({ query }) => query.keyword),
+  ]));
+  assert.ok(keywordsByLine.get("line-3").includes("일산선"));
+  assert.ok(keywordsByLine.get("line-4").includes("과천선"));
+  assert.ok(keywordsByLine.get("line-4").includes("안산선"));
+  assert.ok(keywordsByLine.get("donghae").includes("부산동해선"));
+  assert.ok(keywordsByLine.get("gimpo").includes("김포도시철도"));
+});
+
+test("topology·positions는 KRIC·MOLIT 전국 후보를 배선해 catalog 0건을 미지원으로 확정하지 않는다", async () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "incheon", operatorId: "incheon-transit", lineId: "incheon-1" }],
+      requiredSourceDomains: [
+        { id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" },
+        { id: "route_map_positions", releaseTier: "LAUNCH_REQUIRED" },
+      ],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "incheon-transit", nameKo: "인천교통공사" }],
+        lines: [{ id: "incheon-1", nameKo: "인천 1호선" }],
+      }],
+    },
+  });
+
+  const byDomain = new Map(searchPlan.entries.map((entry) => [entry.sourceDomain, entry]));
+  assert.deepEqual(
+    byDomain.get("route_graph_topology").knownProviderCandidateIds,
+    ["kric-nationwide-station-interval-distance"],
+  );
+  assert.deepEqual(
+    byDomain.get("route_map_positions").knownProviderCandidateIds,
+    ["kric-nationwide-station-coordinates", "molit-nationwide-station-standard-data"],
+  );
+
+  const resolutions = await collectNationwidePublicApiCoverage({
+    searchPlan,
+    credentials: { DATA_GO_KR_SERVICE_KEY: "key" },
+    fetchImpl: async () => new Response(JSON.stringify({
+      statusCode: 200,
+      result: { sum: 0, dataCount: 0, data: [] },
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    now: new Date("2026-07-13T00:00:00.000Z"),
+  });
+
+  assert.equal(resolutions.entries.length, 0);
+  assert.deepEqual(resolutions.unresolved.map(({ sourceDomain, reasonCode, providerCandidateIds }) => ({
+    sourceDomain,
+    reasonCode,
+    providerCandidateIds,
+  })), [
+    {
+      sourceDomain: "route_graph_topology",
+      reasonCode: "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
+      providerCandidateIds: ["kric-nationwide-station-interval-distance"],
+    },
+    {
+      sourceDomain: "route_map_positions",
+      reasonCode: "KNOWN_PROVIDER_REQUIRES_LINE_VALIDATION",
+      providerCandidateIds: ["kric-nationwide-station-coordinates", "molit-nationwide-station-standard-data"],
+    },
+  ]);
+});
+
+test("감사 반증 FILE dataset(국가철도공단 발행)은 교정된 질의로 검출돼 공식 미지원을 뒤집는다", async () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "capital", operatorId: "korail", lineId: "korail-1" }],
+      requiredSourceDomains: [{ id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" }],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "korail", nameKo: "코레일" }],
+        lines: [{ id: "korail-1", nameKo: "수도권 1호선" }],
+      }],
+    },
+  });
+
+  let firstQuery;
+  const resolutions = await collectNationwidePublicApiCoverage({
+    searchPlan,
+    credentials: { DATA_GO_KR_SERVICE_KEY: "key" },
+    fetchImpl: async (_url, init) => {
+      firstQuery ??= JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        statusCode: 200,
+        result: {
+          sum: 1,
+          dataCount: 1,
+          data: [{
+            dataName: "국가철도공단_수도권1호선_역간거리",
+            organization: "국가철도공단",
+            dataType: "FILE",
+          }],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+    now: new Date("2026-07-13T00:00:00.000Z"),
+  });
+
+  // 반증 dataset이 검출되면 EXPLICITLY_UNSUPPORTED로 확정하지 않는다.
+  assert.equal(resolutions.entries.length, 0);
+  assert.equal(resolutions.unresolved[0].reasonCode, "PUBLIC_API_DATA_AVAILABLE");
+  assert.deepEqual(resolutions.unresolved[0].matches, [{
+    dataName: "국가철도공단_수도권1호선_역간거리",
+    organization: "국가철도공단",
+    dataType: "FILE",
+  }]);
+  // 검출이 성립하려면 교정된 질의가 FILE dataType과 국가철도공단 발행처를 실제로 조회해야 한다.
+  assert.deepEqual(firstQuery.dataType, ["API", "FILE", "STANDARD"]);
+  assert.ok(firstQuery.organizations.includes("국가철도공단"));
 });
 
 test("공공기관 API 정상 0건만 공식 미지원 resolution을 생성한다", async () => {
@@ -677,4 +884,36 @@ test("sanitized 진단은 reason과 transport code별 건수만 고정한다", (
     reasonCode: "PUBLIC_API_FETCH_FAILED\nnever-print-this-key",
     transportReason: "ENOTFOUND\nnever-print-this-key",
   }]).join(","), /never-print-this-key|\n/);
+});
+
+test("같은 id의 builtin과 catalog 후보 충돌 시 catalog 후보의 필드를 보존한다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "capital", operatorId: "korail", lineId: "korail-1" }],
+      requiredSourceDomains: [{ id: "route_graph_topology", releaseTier: "LAUNCH_REQUIRED" }],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "korail", nameKo: "코레일" }],
+        lines: [{ id: "korail-1", nameKo: "수도권 1호선" }],
+      }],
+    },
+    sourceCandidates: {
+      // builtin과 같은 id를 가지는 catalog 후보를 추가한다.
+      // builtin은 { id: "kric-nationwide-station-interval-distance" } 형태이고,
+      // catalog에서는 온전한 객체를 전달한다.
+      candidates: [{
+        id: "kric-nationwide-station-interval-distance",
+        domain: "route_graph_topology",
+        requestUrl: "https://openapi.kric.go.kr/api/override",
+        // coverageScope를 명시하지 않음: 필터링을 통과하고, 병합 후 builtin 필드와 함께 보존됨
+      }],
+    },
+  });
+
+  // catalog 후보가 builtin을 덮어써서, 온전한 필드들이 보존되어야 한다.
+  const candidateIds = searchPlan.entries[0].knownProviderCandidateIds;
+  assert.equal(candidateIds.length, 1);
+  assert.equal(candidateIds[0], "kric-nationwide-station-interval-distance");
 });

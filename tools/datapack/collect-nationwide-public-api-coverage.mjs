@@ -22,6 +22,25 @@ const CREDENTIAL_ENVS = new Set(["DATA_GO_KR_SERVICE_KEY", "KRIC_SERVICE_KEY", "
 const DATA_GO_ORGANIZATION_NAMES = new Map([
   ["korail", "한국철도공사"],
 ]);
+// 노선명 별칭 사전: 공공데이터 카탈로그가 실제로 사용하는 발행 노선명(개별 지선·주관기관 명칭)으로 확장한다.
+// data.go.kr 검색은 다단어를 AND로 처리해 0건을 양산하므로, 각 별칭을 단일 키워드 질의로 나눠 던지고
+// 후처리(matchTermGroups)로 노선·도메인 term을 교차 검증한다.
+const LINE_NAME_ALIASES = new Map([
+  ["3호선", ["일산선"]],
+  ["4호선", ["과천선", "안산선"]],
+  ["김포골드라인", ["김포도시철도"]],
+  ["동해선", ["부산동해선"]],
+]);
+// topology/positions 도메인의 실발행처(국가철도공단·국토교통부)를 built-in known-provider 후보로 배선한다.
+// source-candidates.json의 해당 도메인 후보는 대부분 allowlist 밖 endpoint라 indexKnownProviderCandidates가
+// 걸러내 knownProviderCandidateIds:[]가 되므로, 전국 단위 실발행처를 코드에 고정해 오탐(공식 미지원) 확정을 막는다.
+const BUILTIN_KNOWN_PROVIDER_CANDIDATES = Object.freeze({
+  route_graph_topology: [{ id: "kric-nationwide-station-interval-distance" }],
+  route_map_positions: [
+    { id: "kric-nationwide-station-coordinates" },
+    { id: "molit-nationwide-station-standard-data" },
+  ],
+});
 const SOURCE_DOMAIN_SEARCH = Object.freeze({
   station_line_membership: {
     terms: ["역정보", "역명", "역코드", "노선정보", "역사정보"],
@@ -29,7 +48,8 @@ const SOURCE_DOMAIN_SEARCH = Object.freeze({
     userMessageKo: "공공기관 API에서 역·노선 정보를 제공하지 않습니다.",
   },
   route_graph_topology: {
-    terms: ["역간거리", "이동거리", "소요시간", "운행시간"],
+    terms: ["역간거리", "이동거리", "소요시간", "운행시간", "구간정보", "거리표", "역위치", "좌표", "주소데이터"],
+    organizations: ["국가철도공단"],
     fallback: "STATIC_LOCAL",
     userMessageKo: "공공기관 API에서 경로 거리·소요시간 정보를 제공하지 않습니다.",
   },
@@ -49,7 +69,8 @@ const SOURCE_DOMAIN_SEARCH = Object.freeze({
     userMessageKo: "공공기관 API에서 시간표 정보를 제공하지 않습니다.",
   },
   route_map_positions: {
-    terms: ["노선도", "노선좌표", "역위치", "위도", "경도"],
+    terms: ["노선도", "노선좌표", "역위치", "위도", "경도", "좌표", "주소데이터"],
+    organizations: ["국가철도공단", "국토교통부"],
     fallback: "STATIC_LOCAL",
     userMessageKo: "공공기관 API에서 공식 노선도 좌표를 제공하지 않습니다.",
   },
@@ -68,12 +89,13 @@ export function buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCan
   if (!Array.isArray(targets?.activeLineScopes) || domains.length === 0) {
     throw new Error("nationwide targets active scopes and launch domains are required");
   }
-  const knownProviderCandidatesByDomain = indexKnownProviderCandidates(sourceCandidates);
+  const knownProviderCandidatesByDomain = mergeBuiltinProviderCandidates(indexKnownProviderCandidates(sourceCandidates));
   const entries = targets.activeLineScopes.flatMap((scope) => domains.map((sourceDomain) => {
     const domain = SOURCE_DOMAIN_SEARCH[sourceDomain];
     if (!domain) throw new Error(`unsupported launch source domain: ${sourceDomain}`);
     const fixtureOperatorName = requiredString(operators.get(scope.operatorId), `operator ${scope.operatorId}`);
     const operatorName = DATA_GO_ORGANIZATION_NAMES.get(scope.operatorId) ?? fixtureOperatorName;
+    const organizations = [...new Set([operatorName, ...(domain.organizations ?? [])])];
     const lineName = requiredString(lines.get(scope.lineId), `line ${scope.lineId}`);
     const lineTerms = lineSearchTerms(lineName);
     return {
@@ -86,13 +108,13 @@ export function buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCan
         .map(({ id }) => id),
       queries: [
         ...lineTerms.map((keyword) => publicApiSearchQuery({
-          operatorName,
+          organizations,
           keyword,
           coverageScope: "LINE_EVIDENCE",
           matchTermGroups: [domain.terms, lineTerms],
         })),
         ...domain.terms.map((keyword) => publicApiSearchQuery({
-          operatorName,
+          organizations,
           keyword,
           coverageScope: "OPERATOR_DISCOVERY",
           matchTermGroups: [domain.terms],
@@ -108,7 +130,7 @@ export function buildNationwidePublicApiSearchPlan({ targets, fixture, sourceCan
   };
 }
 
-function publicApiSearchQuery({ operatorName, keyword, coverageScope, matchTermGroups }) {
+function publicApiSearchQuery({ organizations, keyword, coverageScope, matchTermGroups }) {
   return {
     providerId: "data-go-search",
     endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData",
@@ -120,8 +142,17 @@ function publicApiSearchQuery({ operatorName, keyword, coverageScope, matchTermG
     format: "json",
     coverageScope,
     matchTermGroups,
-    query: { page: 0, size: 10_000, dataType: ["API"], organizations: [operatorName], keyword },
+    query: { page: 0, size: 10_000, dataType: ["API", "FILE", "STANDARD"], organizations, keyword },
   };
+}
+
+function mergeBuiltinProviderCandidates(indexed) {
+  for (const [domain, builtins] of Object.entries(BUILTIN_KNOWN_PROVIDER_CANDIDATES)) {
+    const merged = [...builtins, ...(indexed.get(domain) ?? [])];
+    indexed.set(domain, [...new Map(merged.map((candidate) => [candidate.id, candidate])).values()]
+      .sort((a, b) => alphabeticalCompare(a.id, b.id)));
+  }
+  return indexed;
 }
 
 function lineSearchTerms(lineName) {
@@ -131,6 +162,7 @@ function lineSearchTerms(lineName) {
   if (!base.endsWith("선") && !base.endsWith("호선")) aliases.push(`${base}선`);
   if (base === "공항") aliases.push("공항철도");
   if (base === "의정부") aliases.push("의정부경전철");
+  aliases.push(...(LINE_NAME_ALIASES.get(base) ?? []));
   return [...new Set(aliases)];
 }
 
