@@ -13,6 +13,15 @@ import { DatabaseSync } from "node:sqlite";
 /** 리포지토리 루트(도구는 tools/route-map/ 아래에 있다). */
 export const repoRoot = path.resolve(import.meta.dirname, "../..");
 
+/** 리포 루트 하위로만 해석되는 절대 경로를 돌려준다(`..` 탈출·루트 밖 절대경로 차단). */
+function resolveWithinRepo(relPath) {
+  const resolved = path.resolve(repoRoot, relPath);
+  if (resolved !== repoRoot && !resolved.startsWith(repoRoot + path.sep)) {
+    throw new Error(`경로가 리포지토리 루트를 벗어난다: ${relPath}`);
+  }
+  return resolved;
+}
+
 /** 버퍼의 sha256 hex 문자열. */
 export const sha256 = (buffer) =>
   createHash("sha256").update(buffer).digest("hex");
@@ -23,7 +32,7 @@ export const sha256 = (buffer) =>
  * `packRelPath`는 리포 루트 기준 상대 경로, `tmpPrefix`는 임시 디렉터리 접두.
  */
 export function openPack(packRelPath, tmpPrefix) {
-  const packPath = path.join(repoRoot, packRelPath);
+  const packPath = resolveWithinRepo(packRelPath);
   const sqliteBytes = gunzipSync(readFileSync(packPath));
   const dir = mkdtempSync(path.join(tmpdir(), tmpPrefix));
   const sqlitePath = path.join(dir, "pack.sqlite");
@@ -37,10 +46,14 @@ export function openPack(packRelPath, tmpPrefix) {
  * 갱신된 `byteSize`와 gz `sha256`을 돌려준다.
  */
 export function writePack({ sqlitePath, packPath, packRelPath, indexRelPath }) {
+  const resolvedPackPath = resolveWithinRepo(packRelPath);
+  if (path.resolve(packPath) !== resolvedPackPath) {
+    throw new Error(`packPath가 packRelPath와 일치하지 않는다: ${packPath}`);
+  }
   const sqliteBytes = readFileSync(sqlitePath);
   const gz = gzipSync(sqliteBytes, { level: 9 });
-  writeFileSync(packPath, gz);
-  const indexPath = path.join(repoRoot, indexRelPath);
+  writeFileSync(resolvedPackPath, gz);
+  const indexPath = resolveWithinRepo(indexRelPath);
   const index = JSON.parse(readFileSync(indexPath, "utf8"));
   const pack = index.packs.find((p) => packRelPath.endsWith(p.asset));
   if (pack) {
