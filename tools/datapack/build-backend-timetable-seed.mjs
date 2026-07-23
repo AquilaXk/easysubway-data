@@ -17,6 +17,7 @@
 // easysubway.timetable.seed.enabled)가 startup(Flyway 이후)에 TransactionTemplate으로 all-or-nothing 적재한다.
 // Flyway 데이터 마이그레이션을 쓰지 않는 이유: 배포 시 자동 적용이라 flag 게이트가 불가하고 ~67개 @SpringBootTest DB를
 // 오염시키며 버전 번호 경합이 있다. feed_end_date는 seed에 포함(--feed-end-date, 기본=--end-date; STALE 안전장치).
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
@@ -129,7 +130,7 @@ function validateRouteServiceEvidence(
     if (evidence && (
       evidence.serviceClass !== "ITX_CHEONGCHUN"
       || evidence.admissionStatus !== "MISSING"
-      || evidence.admissionEligible !== false
+      || !isFalseyFlag(evidence.admissionEligible)
     )) {
       throw new Error("ADMITTED evidence requires ITX_CHEONGCHUN trips");
     }
@@ -142,7 +143,7 @@ function validateRouteServiceEvidence(
   if (
     evidence?.serviceClass !== "ITX_CHEONGCHUN"
     || evidence.admissionStatus !== "ADMITTED"
-    || evidence.admissionEligible !== true
+    || !isTruthyFlag(evidence.admissionEligible)
   ) {
     throw new Error("ITX_CHEONGCHUN seed requires ADMITTED route service evidence");
   }
@@ -375,6 +376,14 @@ function bool(value) {
   return value ? "TRUE" : "FALSE";
 }
 
+function isTruthyFlag(value) {
+  return value === true || value === 1 || value === "1";
+}
+
+function isFalseyFlag(value) {
+  return value === false || value === 0 || value === "0";
+}
+
 function requireString(value, label) {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${label} must be a non-empty string`);
@@ -472,7 +481,7 @@ function parseArgs(argv) {
   return args;
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exit(1);

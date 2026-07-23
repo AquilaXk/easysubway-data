@@ -12,6 +12,7 @@
 //          [--pack apps/mobile/assets/datapacks/capital.sqlite.gz]
 //          [--angle-tolerance 0.5] [--align-threshold 0.75] [--json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -245,6 +246,6 @@ function fmt(v) {
   return v === null ? "n/a" : v.toFixed(1);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

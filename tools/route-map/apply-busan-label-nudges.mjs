@@ -16,6 +16,7 @@
 //    토폴로지(158쌍)·간격 chain 분포는 불변(간격은 track arc-length라 arm 길이만
 //    바뀌고 chain 수·구성은 그대로).
 //  - 멱등: 이미 코너에 있으면 no-op.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { parsePathVertices, verticesToPath } from "./audit-octolinearity.mjs";
 import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
@@ -159,4 +160,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

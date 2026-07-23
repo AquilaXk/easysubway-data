@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // #1789 C3: 사용자 CSV(공식 노선도 검토 좌표, gitignored)에서 멤버수별 환승 스팬 p90을
 // 집계한다. ⛔가드레일 5조: 좌표 미방출 — 집계 지표(스팬 p90)만 산출·커밋.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 
 /** nearest-rank p90. */
@@ -77,4 +78,4 @@ function main() {
   console.log("오라클 스팬 p90:", JSON.stringify(oracle));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

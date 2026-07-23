@@ -10,6 +10,7 @@
 //          --index apps/mobile/assets/datapacks/index.json
 //          --region 수도권 [--threshold 100] [--check] [--report out.json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -165,6 +166,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

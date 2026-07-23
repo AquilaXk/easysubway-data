@@ -18,6 +18,7 @@
 // 발급. route_map_positions·station_lines의 경의중앙 행만 신규 id로 재지정한다.
 //
 // 사용: node tools/route-map/split-mismerged-stations.mjs [--pack …] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { createHash } from "node:crypto";
 import {
   mutatePack,
@@ -151,6 +152,6 @@ function main() {
   } });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

@@ -3,6 +3,7 @@
 // 극단 티어로 미룬 환승 7건을 오라클 캡슐에 손배치한다. B-국소 splice 기계 재사용,
 // 그룹별 maxDist 상향으로 대변위(신사 102px) 부착. 자동 수렴 경로 기본값은 불변.
 // ⛔ 가드레일: 테이블은 targetSpan·axis만(좌표 없음). 좌표는 여기서 8선형으로 도출.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { capsuleAxis, capsuleTargets, spliceTrackToNode, transferGroups } from "./splice-transfer-convergence.mjs";
 import { parsePathVertices, verticesToPath } from "./audit-octolinearity.mjs";
@@ -19,6 +20,7 @@ export function applyOverrideGroup(group, override, tracksByLine) {
     const nt = targetByLine.get(m.lineId);
     const newPos = { x: Math.round(nt.x), y: Math.round(nt.y) };
     let attachedAny = false;
+    const memberTrackUpdates = [];
     for (const trk of tracksByLine.get(m.lineId) ?? []) {
       // override.maxDist는 nearestVertexIndex 탐색 반경도 겸한다 — 테이블은 대략 2×변위+여유로
       // 잡는다(대변위 극단역 부착용). ⚠️ 과도하게 키우면 허브서 먼 distal 정점을 잡아 기하를
@@ -27,13 +29,18 @@ export function applyOverrideGroup(group, override, tracksByLine) {
       if (attached) {
         attachedAny = true;
         if (JSON.stringify(verts) !== JSON.stringify(trk.verts)) {
-          trackUpdates.push({ lineId: m.lineId, trackIndex: trk.trackIndex, verts });
+          memberTrackUpdates.push({ lineId: m.lineId, trackIndex: trk.trackIndex, verts });
         }
       }
     }
-    if (attachedAny) positionUpdates.push({ stationId: group.stationId, lineId: m.lineId, x: newPos.x, y: newPos.y });
+    // 환승 허브는 멤버 노선 전부가 부착돼야 한다. 일부만 성공한 부분 갱신을 쓰지 않는다.
+    if (!attachedAny) {
+      return { positionUpdates: [], trackUpdates: [], incomplete: true };
+    }
+    positionUpdates.push({ stationId: group.stationId, lineId: m.lineId, x: newPos.x, y: newPos.y });
+    trackUpdates.push(...memberTrackUpdates);
   }
-  return { positionUpdates, trackUpdates };
+  return { positionUpdates, trackUpdates, incomplete: false };
 }
 
 function parseArgs(argv) {
@@ -70,8 +77,11 @@ function main() {
     for (const g of groups) {
       const ov = byStation.get(g.stationId);
       if (!ov) continue;
-      const { positionUpdates, trackUpdates } = applyOverrideGroup(g, ov, tracksByLine);
-      if (!positionUpdates.length) { console.log(`  미부착: ${g.stationId} (maxDist ${ov.maxDist} 부족)`); continue; }
+      const { positionUpdates, trackUpdates, incomplete } = applyOverrideGroup(g, ov, tracksByLine);
+      if (incomplete || positionUpdates.length !== g.members.length) {
+        console.log(`  미부착(전체 멤버 필요): ${g.stationId} (maxDist ${ov.maxDist} 부족)`);
+        continue;
+      }
       applied += 1;
       if (o.check) continue;
       for (const p of positionUpdates) posU.run(p.x, p.y, o.region, p.stationId, p.lineId);
@@ -93,4 +103,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

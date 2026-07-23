@@ -7,6 +7,7 @@
 // (원자성: track 부착한 멤버만 position 이동). CLI가 티어별로 팩에 적용(게이트 하). 가드레일
 // 5조: CSV 좌표 미사용 — 오라클은 집계 스팬만.
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { octilinearPolyline } from "./octolinearize-line-tracks.mjs";
 import { parsePathVertices, pointToSegmentDistance, verticesToPath } from "./audit-octolinearity.mjs";
@@ -313,4 +314,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

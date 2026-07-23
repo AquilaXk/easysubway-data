@@ -20,6 +20,7 @@
 // excludedStations에서 "북삼"을 제거한다.
 //
 // 사용: node tools/route-map/add-daegu-buksam-catalog.mjs [--pack …] [--index …] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { mutatePack, parsePackArgs } from "./station-surgery.mjs";
 import { createStationCatalog, insertRow, rideEdgePair } from "./lib/station-catalog.mjs";
 
@@ -152,6 +153,6 @@ function main() {
   } });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

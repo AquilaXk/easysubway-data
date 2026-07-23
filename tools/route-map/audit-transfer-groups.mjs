@@ -3,6 +3,7 @@
 // 기계 검출한다. 지도는 렌더 3모드로 방어하지만(스택/스팬/분리), 근본 원인
 // (동명이역 오병합: 양평·신촌 / 별칭 중복: 김포공항역)은 카탈로그 수술이
 // 필요하므로 리포트를 후속 이슈의 증거로 남긴다.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
@@ -279,6 +280,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

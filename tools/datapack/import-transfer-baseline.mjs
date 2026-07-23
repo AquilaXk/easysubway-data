@@ -17,6 +17,7 @@
 //   [--source-id <id>] [--snapshot-id <id>] [--verification-status <status>] \
 //   [--verified-at <ISO-8601>] [--evidence-hash <sha256>] \
 //   --output <out.json>
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -343,7 +344,7 @@ function compareText(left, right) {
   return codepointCompare(String(left), String(right));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   try {
     await main();
   } catch (error) {

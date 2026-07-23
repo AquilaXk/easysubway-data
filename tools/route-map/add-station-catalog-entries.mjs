@@ -25,6 +25,7 @@
 // KRIC 공식 레코드 반영 시 반드시 재사용한다(동일 물리역 id 분기 방지).
 //
 // 사용: node tools/route-map/add-station-catalog-entries.mjs [--pack …] [--index …] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { mutatePack, parsePackArgs } from "./station-surgery.mjs";
 import { createStationCatalog, insertRow, rideEdgePair } from "./lib/station-catalog.mjs";
 
@@ -247,6 +248,6 @@ function main() {
   } });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

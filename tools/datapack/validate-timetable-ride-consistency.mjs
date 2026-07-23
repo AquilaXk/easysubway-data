@@ -8,6 +8,7 @@
 //   --reconstruction <artifact.json> --edges <edges.json> [--abs 60] [--rel 0.25]
 //   edges.json 은 배열 또는 { networkEdges: [...] } (fromNodeId/toNodeId/edgeType/durationSeconds).
 // 위반이 있으면 exit 1.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFile } from "node:fs/promises";
 
 const DEFAULT_ABSOLUTE_TOLERANCE_SECONDS = 60;
@@ -182,7 +183,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);

@@ -21,6 +21,7 @@
 // 부역명은 병합 후 대표에 보존한다.
 //
 // 사용: node tools/route-map/merge-busan-transfers.mjs [--pack …] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   mutatePack,
   parsePackArgs,
@@ -112,6 +113,6 @@ function main() {
   } });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

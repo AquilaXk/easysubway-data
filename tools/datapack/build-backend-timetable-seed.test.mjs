@@ -203,6 +203,36 @@ test("ITX seed는 test-only timetable·canonical pack identity evidence를 같�
   );
 });
 
+test("ITX seed는 admissionEligible 정수 1도 ADMITTED evidence로 허용한다", async () => {
+  const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+  const artifact = JSON.parse(artifactBytes);
+  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+  artifact.routeServiceArtifactEvidence = [{
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId: artifact.timetableArtifactIdentity.id,
+    timetableArtifactSha256,
+    canonicalPackId: artifact.canonicalPackIdentity.id,
+    canonicalPackSha256: artifact.canonicalPackIdentity.sha256,
+    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible: 1,
+    freshUntil: artifact.freshness.freshUntil,
+    sourceIssue: 2116,
+  }];
+  const { sql } = buildBackendTimetableSeed(artifact, {
+    ...OPTIONS,
+    lineId: artifact.canonicalLineId,
+    timetableArtifactSha256,
+    canonicalPackIdentity: artifact.canonicalPackIdentity,
+    serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [
+      calendar.serviceId,
+      calendar,
+    ])),
+  });
+  assert.match(sql, /INSERT INTO route_service_artifact_evidence/);
+  assert.match(sql, /, TRUE, /);
+});
+
 test("ITX seed evidence hash가 입력 timetable artifact bytes identity와 다르면 거부한다", async () => {
   const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = JSON.parse(artifactBytes);

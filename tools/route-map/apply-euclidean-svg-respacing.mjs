@@ -35,6 +35,7 @@
 //     해당 route-line <path>의 최근접 정점/투영점을 찾아 국소 이동(기존
 //     정점이 가까우면 그 정점을, 아니면 투영점에 새 정점을 삽입)한다 — 8선형
 //     직선 run만 대상(코너 곡선 근방은 건드리지 않아 라운드 커브를 보존).
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { openPack, cleanupPackDir, repoRoot } from "./pack-io.mjs";
@@ -381,10 +382,12 @@ function main() {
       (deltas[0] ? ` · 최대 이동 ${Math.hypot(deltas[0].dx, deltas[0].dy).toFixed(1)}px(${deltas[0].name})` : ""),
   );
   if (finalViolations.length) {
-    console.log("  솔버 미수렴 잔존 위반(다체 클러스터 등 — 예외 목록 확인 필요):");
+    console.error("  솔버 미수렴 잔존 위반(다체 클러스터 등 — 예외 목록 확인 필요):");
     for (const v of finalViolations.slice(0, 20)) {
-      console.log(`    ${v.d.toFixed(1)}  ${v.a.station_id} <-> ${v.b.station_id}`);
+      console.error(`    ${v.d.toFixed(1)}  ${v.a.station_id} <-> ${v.b.station_id}`);
     }
+    console.error("미수렴 상태에서는 canonical SVG를 기록하지 않는다.");
+    process.exit(1);
   }
 
   const svgPath = path.isAbsolute(o.svg) ? o.svg : path.join(repoRoot, o.svg);
@@ -403,4 +406,4 @@ function main() {
   console.log(`쓰기 완료: ${svgPath}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

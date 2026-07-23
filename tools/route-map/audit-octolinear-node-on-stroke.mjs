@@ -43,6 +43,7 @@
 //          [--node-tolerance 1.365]
 //          [--exceptions <file>] [--json out.json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -440,6 +441,31 @@ export function findNodeOffStrokeViolations(nodes, polylinesByLine, opts = {}) {
   return { violations, checks: best.size, unmappable };
 }
 
+
+function roundCoord(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function octolinearExceptionKey(entry) {
+  return [
+    entry.lineId,
+    entry.kind,
+    roundCoord(entry.from?.x),
+    roundCoord(entry.from?.y),
+    roundCoord(entry.to?.x),
+    roundCoord(entry.to?.y),
+  ].join("|");
+}
+
+function nodeOnStrokeExceptionKey(entry) {
+  return [entry.station, entry.lineId, entry.nodeRole ?? ""].join("|");
+}
+
+function countUnlistedViolations(violations, exceptionEntries, keyFn) {
+  const allowed = new Set((exceptionEntries ?? []).map(keyFn));
+  return violations.filter((v) => !allowed.has(keyFn(v))).length;
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
@@ -550,18 +576,25 @@ function main() {
     );
   }
 
-  const octoUnlisted = octoAll.length - (exceptions.octolinear?.length ?? 0);
-  const nodeUnlisted =
-    nodeResult.violations.length - (exceptions.nodeOnStroke?.length ?? 0);
+  const octoUnlisted = countUnlistedViolations(
+    octoAll,
+    exceptions.octolinear,
+    octolinearExceptionKey,
+  );
+  const nodeUnlisted = countUnlistedViolations(
+    nodeResult.violations,
+    exceptions.nodeOnStroke,
+    nodeOnStrokeExceptionKey,
+  );
   if (octoUnlisted > 0 || nodeUnlisted > 0) {
     console.error(
-      `감사 실패 — 8선형 미등재 ${Math.max(0, octoUnlisted)} · 노드-간선 미등재 ${Math.max(0, nodeUnlisted)}`,
+      `감사 실패 — 8선형 미등재 ${octoUnlisted} · 노드-간선 미등재 ${nodeUnlisted}`,
     );
     process.exit(1);
   }
-  console.log("감사 통과 (8선형·노드-간선 위반 0).");
+  console.log("감사 통과 (8선형·노드-간선 미등재 위반 0).");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

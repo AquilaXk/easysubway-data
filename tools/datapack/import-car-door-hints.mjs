@@ -15,6 +15,7 @@
 //   --roster <roster.json> --rows <rows.json> \
 //   [--source-id <id>] [--snapshot-id <id>] [--verification-status <status>] \
 //   --output <out.json>
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -182,7 +183,7 @@ function mapFacilityType(plfmCmgFac, facPstnNm) {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   try {
     await main();
   } catch (error) {

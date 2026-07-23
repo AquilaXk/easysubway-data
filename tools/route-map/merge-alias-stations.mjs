@@ -14,6 +14,7 @@
 // 일치해야 한다(김포공항 5개).
 //
 // 사용: node tools/route-map/merge-alias-stations.mjs [--pack …] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   mutatePack,
   parsePackArgs,
@@ -132,6 +133,6 @@ function main() {
   } });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

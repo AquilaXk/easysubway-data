@@ -65,6 +65,7 @@
 //          [--region 수도권] [--min-gap 26] [--target-gap 50] [--check]
 //   (--check 지정 시 --out은 무시되며 파일을 쓰지 않고 통계만 출력한다)
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -765,7 +766,7 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   // 실패는 Node 기본 예외 처리로 표준 에러에 노출하고 비정상 종료(코드 1)한다.
   // 정의 파일 내용을 직접 로그로 재출력하지 않는다.
   main();

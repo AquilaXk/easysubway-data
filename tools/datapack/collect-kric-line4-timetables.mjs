@@ -8,6 +8,7 @@
 //         --line-id seoul-4 --output <out.json> [--day-cds 8,7,9] [--no-express]
 //
 // serviceKey는 URL 로그·산출물에 남기지 않는다(#1397 공통 규칙).
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFile, writeFile } from "node:fs/promises";
 import { buildKricLine4CollectionPlan } from "./plan-kric-line4-collection.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
@@ -322,7 +323,7 @@ async function fetchWithRetry(url, attempts = 3) {
   throw lastError;
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`);
     process.exit(1);

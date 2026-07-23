@@ -23,6 +23,7 @@
 //          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json]
 //          [--min-clearance 6] [--min-separation 2] [--json out.json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -273,6 +274,6 @@ function main() {
   console.log("감사 통과 (노드 직선통과·간선 겹침 위반 0).");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

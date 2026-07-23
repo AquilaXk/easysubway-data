@@ -32,6 +32,7 @@
 //          [--region 수도권] [--branches tools/route-map/line-branches.json]
 //          [--fillet-radius 6] [--line <slug> ...] [--all] [--dry-run] [--check]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveLineMap } from "./apply-sma-svg-positions.mjs";
@@ -373,6 +374,6 @@ function main() {
   console.log(`SVG 갱신: ${o.svg} (노선 ${report.length}개 재작도)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

@@ -19,6 +19,7 @@
 //          [--exceptions tools/route-map/route-map-euclidean-spacing-exceptions.json]
 //          [--json out.json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
@@ -168,6 +169,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

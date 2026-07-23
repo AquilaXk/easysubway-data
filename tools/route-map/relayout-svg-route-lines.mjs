@@ -31,6 +31,7 @@
 // 마커 이동은 apply-euclidean-svg-respacing.mjs와 동일한 SVG 패치 규약(4종
 // id 우선순위 + 라벨 폴백)을 재사용해 마커·라벨·KTX/SRT/ITX chip·종점 마크가
 // 함께 이동하게 한다.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { addTranslate, SVG_NAME_ALIASES } from "./apply-euclidean-svg-respacing.mjs";
 import { resolveLineMap } from "./apply-sma-svg-positions.mjs";
 import {
@@ -1453,7 +1454,7 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(error.message);
     process.exit(1);

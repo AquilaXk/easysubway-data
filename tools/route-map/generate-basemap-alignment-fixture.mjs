@@ -19,6 +19,7 @@
 // 두지 말 것 — pubspec.yaml이 그 디렉터리를 통째로(와일드카드) 앱 번들에
 // 포함시키므로 QA 전용 fixture가 실제 배포 앱에 딸려 들어간다.
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { buildAssignments } from "./apply-sma-svg-positions.mjs";
@@ -123,6 +124,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

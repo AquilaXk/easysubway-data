@@ -17,6 +17,7 @@
 // 사용: node tools/route-map/octi-to-pack.mjs \
 //         --loom /tmp/capital-loom.geojson --transform /tmp/capital-geo.transform.json \
 //         [--region 수도권] [--bundle-spacing 6] [--eps 2] [--tol 0.5] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import { makeToDesignFromParams } from "./export-loom-geojson.mjs";
 import { verticesToPath } from "./audit-octolinearity.mjs";
@@ -378,4 +379,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

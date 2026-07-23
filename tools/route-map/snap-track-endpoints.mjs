@@ -9,6 +9,7 @@
 // Usage: node tools/route-map/snap-track-endpoints.mjs
 //          --region 수도권 [--threshold 80] [--check] [--report out.json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -92,4 +93,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

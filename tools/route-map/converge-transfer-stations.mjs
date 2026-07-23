@@ -7,6 +7,7 @@
 //
 // Usage: node tools/route-map/converge-transfer-stations.mjs --region 수도권 [--check]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { cleanupPackDir, openPack, writePack } from "./pack-io.mjs";
 
 function parseArgs(argv) {
@@ -58,4 +59,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

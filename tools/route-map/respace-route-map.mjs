@@ -4,6 +4,7 @@
 // 서울시 신형 노선도의 준균일 간격 문법). 스펙:
 // docs/superpowers/specs/2026-07-06-route-map-respacing-design.md
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 const round3 = (v) => Math.round(v * 1000) / 1000;
 const EPS = 1e-6;
 const REUSE_DIST = 0.5; // 이 거리 내면 기존 정점 재사용(중복 삽입 방지).
@@ -635,4 +636,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

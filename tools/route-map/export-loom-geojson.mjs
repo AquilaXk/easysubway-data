@@ -9,6 +9,7 @@
 // 반영된다(route_map_positions·station_lines 현재 상태를 읽음).
 //
 // 사용: node tools/route-map/export-loom-geojson.mjs [--pack …] [--region 수도권] [--out capital.geojson]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { writeFileSync } from "node:fs";
 import { cleanupPackDir, openPack } from "./pack-io.mjs";
 
@@ -263,4 +264,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

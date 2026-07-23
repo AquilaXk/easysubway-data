@@ -13,6 +13,7 @@
 // (대표가 비면 흡수분에서 가져옴).
 //
 // 사용: node tools/route-map/merge-oversplit-transfers.mjs [--pack …] [--check]
+import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   mutatePack,
   parsePackArgs,
@@ -99,6 +100,6 @@ function main() {
   } });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

@@ -21,6 +21,7 @@
 //          [--pack apps/mobile/assets/datapacks/capital.sqlite.gz]
 //          [--dry-run] [--json out.json]
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { canonicalStationName, resolveLineMap } from "./apply-sma-svg-positions.mjs";
@@ -224,6 +225,6 @@ export function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }

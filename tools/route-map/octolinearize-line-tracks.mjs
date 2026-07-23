@@ -13,6 +13,7 @@
 //               junction에서 시작하는 별도 track 조각으로 그린다(#1793).
 //   --all: 지역 전 노선 재생성(baseline 전체 갱신 — 주의). --branches와 동시 사용 불가.
 
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -221,4 +222,4 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();

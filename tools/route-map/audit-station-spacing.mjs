@@ -2,6 +2,7 @@
 // #1789 재간격 감사: 간격 분포(p95/p5)·교차 증가·8선형 위반을 기계 판정한다.
 // 인접 판정은 line_sequence가 아니라 track arc-length(Task 4 chains) 기준이라
 // 1호선 분기의 가짜 인접쌍(오산—인천 등)이 원천 배제된다.
+import { isMainModule } from "../lib/is-main-module.mjs";
 import { writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -309,6 +310,6 @@ function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main();
 }
