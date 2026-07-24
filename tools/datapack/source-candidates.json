@@ -3926,6 +3926,82 @@
       "nextAction": "공식 사이버스테이션 변경 시 HTML/CSS·PNG hash와 114개 좌표·110개 연결선 snapshot을 함께 갱신한다"
     },
     {
+      "id": "seoul-metro-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": ["capital"],
+        "operatorIds": ["seoul-metro"],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ]
+      },
+      "displayName": "서울교통공사_1_8호선 역사 좌표(위경도) 정보",
+      "detailUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "seoul-metro-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "https://www.data.go.kr/data/15099316/fileData.do",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": ["CSV", "JSON"],
+        "outputFields": ["route_map_position", "route_map_label_polygon"],
+        "stationCount": 274,
+        "datasetId": "15099316",
+        "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
+        "positionsSha256": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "lineStationCounts": {
+          "1": 10,
+          "2": 51,
+          "3": 34,
+          "4": 26,
+          "5": 54,
+          "6": 39,
+          "7": 42,
+          "8": 18
+        },
+        "evidenceArtifact": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 8,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-seoul-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-seoul-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "서울교통공사 1~8호선 공식 FILE 원본 276행 중 마곡·발산 동일 위경도 2건은 OFFICIAL_DUPLICATE_LATLON으로 quarantine하고 274개만 admission한다(9호선·다른 운영사 구간 제외)",
+          "공식 FILE 위경도를 offline materializer에서 canvas 정수 좌표로 투영하며 runtime 네트워크 호출은 하지 않는다",
+          "기존 seoulmetro-cyberstation-route-map capital pilot 행은 유지하고 동일 station/line/region PK(사당·seoul-4)는 FILE 행을 건너뛴다"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot·quarantine을 함께 갱신한다"
+    },
+    {
       "id": "daejeon-station-distance-fare",
       "priority": "P0",
       "domain": "route_graph_topology",

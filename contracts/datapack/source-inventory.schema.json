@@ -219,7 +219,7 @@
           },
           "routeMapAdmissionEvidence": {
             "type": "object",
-            "description": "공식 노선도 좌표 snapshot의 production materialization 승인 근거다.",
+            "description": "공식 노선도 좌표 snapshot의 production materialization 승인 근거다. 사이버스테이션 HTML/CSS(부산)와 FILE 위경도(서울) 두 형태를 공통 필드로 수용한다.",
             "additionalProperties": false,
             "required": [
               "issue",
@@ -230,22 +230,16 @@
               "snapshotSha256",
               "capturedAt",
               "stationCount",
-              "htmlSha256",
-              "cssSha256",
-              "connectorEvidencePath",
-              "connectorEvidenceSha256",
-              "connectorAssetSetSha256",
               "rawSha256",
-              "positionsSha256",
-              "connectorsSha256",
-              "connectorCount",
-              "connectorAssetCount",
-              "topologySourceId",
-              "topologySnapshotId",
-              "topologyContentSha256"
+              "positionsSha256"
             ],
             "properties": {
               "issue": { "type": "integer", "minimum": 1 },
+              "admissionKind": {
+                "type": "string",
+                "enum": ["official-file-latlon"],
+                "description": "FILE 위경도 admission일 때 설정한다. 사이버스테이션 HTML/CSS admission은 생략한다."
+              },
               "materializer": { "type": "string", "minLength": 1 },
               "verificationTest": { "type": "string", "minLength": 1 },
               "snapshotId": { "type": "string", "minLength": 1 },
@@ -253,6 +247,7 @@
               "snapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "capturedAt": { "type": "string", "format": "date-time" },
               "stationCount": { "type": "integer", "minimum": 1 },
+              "datasetId": { "type": "string", "minLength": 1 },
               "htmlSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "cssSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "connectorEvidencePath": { "type": "string", "minLength": 1 },
@@ -260,6 +255,16 @@
               "connectorAssetSetSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "positionsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "lineIds": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "lineStationCounts": {
+                "type": "object",
+                "additionalProperties": { "type": "integer", "minimum": 1 }
+              },
+              "observedDataUpdatedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
               "connectorsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "connectorCount": { "type": "integer", "minimum": 1 },
               "connectorAssetCount": { "type": "integer", "minimum": 1 },

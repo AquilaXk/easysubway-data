@@ -3553,6 +3553,116 @@
       }
     },
     {
+      "id": "seoul-metro-route-map-positions",
+      "displayName": "서울교통공사_1_8호선 역사 좌표(위경도) 정보",
+      "owner": "서울교통공사",
+      "provider": "서울교통공사",
+      "providerDepartment": "토목처",
+      "sourceSystem": "서울교통공사·공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "서울교통공사 1~8호선 공식 위경도 좌표(원본 276행, 중복 좌표 quarantine 후 274개 admission)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "on-change",
+      "observedDataUpdatedAt": "2025-08-14",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "서울교통공사 · 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15099316/fileData.do"
+      },
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FILE_SNAPSHOT_ONLY",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2470,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-seoul-route-map-positions.mjs",
+        "verificationTest": "tools/datapack/materialize-seoul-route-map-positions.test.mjs",
+        "snapshotId": "seoul-metro-route-map-positions-20260724",
+        "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
+        "snapshotSha256": "9632acc47f76e735d40dc3346cf7b2298c7c921b61693d1f2f1cac940162633a",
+        "capturedAt": "2026-07-24T02:00:00.000Z",
+        "stationCount": 274,
+        "datasetId": "15099316",
+        "rawSha256": "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
+        "positionsSha256": "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
+        "lineIds": [
+          "line-472a81add377",
+          "seoul-2",
+          "line-41a8c75ec9d8",
+          "seoul-4",
+          "line-80fc4d5350d4",
+          "line-3f41718e0833",
+          "line-15b3b8a93259",
+          "line-2b2d9eaa53d0"
+        ],
+        "lineStationCounts": {
+          "1": 10,
+          "2": 51,
+          "3": 34,
+          "4": 26,
+          "5": 54,
+          "6": 39,
+          "7": 42,
+          "8": 18
+        },
+        "observedDataUpdatedAt": "2025-08-14"
+      }
+    },
+    {
       "id": "seoul-metro-transfer-distance-duration",
       "displayName": "서울교통공사_환승역거리 소요시간",
       "owner": "서울교통공사",
