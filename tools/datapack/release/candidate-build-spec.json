@@ -194,19 +194,43 @@
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "962fd010fc77ef35f5ac4506f3faeaf91c9739f96eaa40b5a2ef43f3fa7c8ac2",
+  "sourceInventorySha256": "0bcf856555d824a40625f52d0ff3b59c28fcc713485cc060d1cc5e483e9f3770",
   "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
   "builderVersion": "build-datapack.mjs@1",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
     "snapshotId": "seoul-metro-official-od-fares-20260712",
     "evidenceHash": "e48551c7b2d112c268882843d98c1c928b2b0e8d5f0b9654f4159d19cd5272b7",
-      "admissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
+    "admissionHash": "d7e93521cb3323f55789a14ce963828fb3bd9ac24ee1101e07fc763426f9082c",
     "quoteSetHash": "4d38df07aa8d8e9c29e523df391d94ad6fc19d78cf2ad65e4201824ab1452106",
     "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
     "quotes": [
-      { "originStationId": "station-sangnoksu", "destinationStationId": "station-sadang", "sourceId": "seoul-metro-official-od-fares", "snapshotId": "seoul-metro-official-od-fares-20260712", "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a", "gnrlCardFare": 1950, "gnrlCashFare": 2050, "yungCardFare": 1220, "yungCashFare": 2050, "childCardFare": 750, "childCashFare": 750 },
-      { "originStationId": "station-sadang", "destinationStationId": "station-sangnoksu", "sourceId": "seoul-metro-official-od-fares", "snapshotId": "seoul-metro-official-od-fares-20260712", "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a", "gnrlCardFare": 1950, "gnrlCashFare": 2050, "yungCardFare": 1220, "yungCashFare": 2050, "childCardFare": 750, "childCashFare": 750 }
+      {
+        "originStationId": "station-sangnoksu",
+        "destinationStationId": "station-sadang",
+        "sourceId": "seoul-metro-official-od-fares",
+        "snapshotId": "seoul-metro-official-od-fares-20260712",
+        "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+        "gnrlCardFare": 1950,
+        "gnrlCashFare": 2050,
+        "yungCardFare": 1220,
+        "yungCashFare": 2050,
+        "childCardFare": 750,
+        "childCashFare": 750
+      },
+      {
+        "originStationId": "station-sadang",
+        "destinationStationId": "station-sangnoksu",
+        "sourceId": "seoul-metro-official-od-fares",
+        "snapshotId": "seoul-metro-official-od-fares-20260712",
+        "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
+        "gnrlCardFare": 1950,
+        "gnrlCashFare": 2050,
+        "yungCardFare": 1220,
+        "yungCashFare": 2050,
+        "childCardFare": 750,
+        "childCashFare": 750
+      }
     ]
   }
 }

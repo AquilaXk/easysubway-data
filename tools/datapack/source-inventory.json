@@ -372,6 +372,97 @@
       }
     },
     {
+      "id": "busan-transportation-accessibility",
+      "displayName": "부산교통공사_부산도시철도 장애인 편의시설 정보",
+      "owner": "부산교통공사",
+      "provider": "부산교통공사",
+      "providerDepartment": "영업처",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15001020/openapi.do",
+      "datasetKind": "open-api",
+      "coverage": "부산교통공사 1~4호선 114개 역 엘리베이터·에스컬레이터·휠체어리프트 설치 대수",
+      "coverageScope": {
+        "regionIds": [
+          "busan"
+        ],
+        "operatorIds": [
+          "busan-transportation"
+        ],
+        "lineIds": [
+          "line-ab1a041f6266",
+          "line-d74614a04530",
+          "line-d812a5bc1e5f",
+          "line-eb7b47920390"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-24",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "KOGL-1",
+        "name": "공공누리 제1유형",
+        "attribution": "부산교통공사, 공공누리 제1유형(출처표시); 제3자 권리 포함 저작권 표시",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15001020/openapi.do"
+      },
+      "fieldsProvided": [
+        "elevator",
+        "escalator",
+        "wheelchair_lift",
+        "status",
+        "verified_at"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "BUSAN_LINES_1_TO_4_OFFICIAL_FACILITY_COUNTS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다"
+        }
+      },
+      "accessibilityAdmissionEvidence": {
+        "issue": 2374,
+        "materializer": "tools/datapack/materialize-busan-accessibility.mjs",
+        "verificationTest": "tools/datapack/materialize-busan-accessibility.test.mjs",
+        "snapshotId": "busan-transportation-accessibility-20260724",
+        "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
+        "capturedAt": "2026-07-24T00:19:05.836Z",
+        "freshUntil": "2026-07-25T00:19:05.836Z",
+        "stationCount": 114,
+        "rowCount": 114,
+        "facilityCount": 342,
+        "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+        "rowsSha256": "429c4034ab866ad78b30603e6d26b9aa092e76e3c019fc137e7f2f96bfd3dbfa",
+        "topologySourceId": "busan-transportation-route-topology",
+        "topologySnapshotId": "busan-transportation-route-topology-20260720",
+        "topologyContentSha256": "9ec95ebb6d789457060e243f079ad371465d0e5e1a309504b18b9a78e00a24cc"
+      }
+    },
+    {
       "id": "daejeon-station-distance-fare",
       "displayName": "대전교통공사_역간 소요시간/거리/요금 조회 서비스",
       "owner": "대전교통공사",

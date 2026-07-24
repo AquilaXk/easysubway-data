@@ -3587,6 +3587,103 @@
     "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
+      "id": "busan-transportation-accessibility",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "coverageScope": {
+        "regionIds": ["busan"],
+        "operatorIds": ["busan-transportation"],
+        "lineIds": [
+          "line-ab1a041f6266",
+          "line-d74614a04530",
+          "line-d812a5bc1e5f",
+          "line-eb7b47920390"
+        ]
+      },
+      "displayName": "부산교통공사_부산도시철도 장애인 편의시설 정보",
+      "detailUrl": "https://www.data.go.kr/data/15001020/openapi.do",
+      "requestUrl": "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn",
+      "operation": {
+        "method": "GET",
+        "endpoint": "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn",
+        "auth": {
+          "env": "DATA_GO_KR_SERVICE_KEY",
+          "placement": "query",
+          "parameter": "serviceKey",
+          "valueEncoding": "url-search-params-once",
+          "loadPolicy": "process-env-no-shell-parsing"
+        },
+        "requiredParameters": ["serviceKey", "scode"],
+        "fixedParameters": { "act": "xml" },
+        "responseEnvelope": "response.header + response.body",
+        "responseFields": [
+          "sname", "wl_i", "wl_o", "el_i", "el_o", "es", "blindroad", "ourbridge", "helptake", "toilet",
+          "toilet_gubun"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-busan-accessibility.mjs",
+          "arguments": [
+            "--scope-snapshot",
+            "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+            "--output",
+            "/tmp/easysubway-busan-accessibility.json"
+          ],
+          "requiredEnv": ["DATA_GO_KR_SERVICE_KEY"]
+        },
+        "secretPolicy": "env-only-redacted-output"
+      },
+      "licenseEvidenceStatus": "confirmed_attribution",
+      "sampleEvidenceStatus": "live_capture_confirmed",
+      "admissionStatus": "production_materialized",
+      "productionInventoryReferenceId": "busan-transportation-accessibility",
+      "serviceKeyHandling": "offline_collector_secret_only",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn",
+        "usePermissionRange": "공공누리 제1유형(출처표시), 제3자 권리 포함 저작권 표시",
+        "formats": ["XML"],
+        "outputFields": [
+          "sname", "wl_i", "wl_o", "el_i", "el_o", "es", "blindroad", "ourbridge", "helptake", "toilet",
+          "toilet_gubun"
+        ],
+        "applicationStatus": "approved_development_account",
+        "developmentQuota": 1000,
+        "providerRecoveryNoteKo": "2026-07-21 resultCode=20 제공기관 결함 이후 2026-07-24 114역 resultCode=00 복구 확인. 빈 count 필드는 0으로 정규화.",
+        "liveSampleRetrievedAt": "2026-07-24T00:19:05.836Z",
+        "liveSampleRowCount": 114,
+        "liveSampleStationCount": 114,
+        "liveSampleRawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+        "liveSampleEvidenceHash": "429c4034ab866ad78b30603e6d26b9aa092e76e3c019fc137e7f2f96bfd3dbfa",
+        "evidenceArtifact": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
+        "liveValidation": {
+          "snapshotId": "busan-transportation-accessibility-20260724",
+          "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
+          "capturedAt": "2026-07-24T00:19:05.836Z",
+          "freshUntil": "2026-07-25T00:19:05.836Z",
+          "requestCount": 114,
+          "stationCount": 114,
+          "rowCount": 114,
+          "facilityCount": 342,
+          "rawSha256": "1922b80c4919a62900d1c65eea57ccbdcedd23ca23b2f652923ab234f177f898",
+          "rowsSha256": "429c4034ab866ad78b30603e6d26b9aa092e76e3c019fc137e7f2f96bfd3dbfa",
+          "credentialRedacted": true,
+          "materializer": "tools/datapack/materialize-busan-accessibility.mjs",
+          "verificationTest": "tools/datapack/materialize-busan-accessibility.test.mjs",
+          "coverageSupportedCount": 4
+        },
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 4,
+          "sourceDomain": "accessibility_facilities",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-busan-accessibility.mjs",
+          "verificationTest": "tools/datapack/materialize-busan-accessibility.test.mjs"
+        }
+      },
+      "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
+    },
+    {
       "id": "busan-transportation-route-topology",
       "priority": "P0",
       "domain": "route_graph_topology",
