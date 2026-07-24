@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "69de54052bfa18f6fa6ecba68dc257e050d294e49cf0dfae03a6fe43355a55af",
-    "outputSqliteSha256": "742695b4ac7b037adc31ba1f6ca2bd89fddbfd807083b5d27426591d307a00a1",
-    "byteSize": 340744,
-    "byteSizeDelta": -18575
+    "outputSha256": "2c0f4658868c741665fb47aaa684bf11eed5445af9ccad73a9c77a0072e723a2",
+    "outputSqliteSha256": "634021d1aede4bcb615f741b2fab6d0f0ed92eaeaf9ceb929e77d0087a02d16e",
+    "byteSize": 358088,
+    "byteSizeDelta": -1231
   },
   "readmissions": [
     {
@@ -459,6 +459,37 @@
             ],
             "changed": []
           }
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-24T09:17:29.266Z",
+      "provenance": "오너 승인 2026-07-24 — #2436 capital 공식 topology + timetable-backed hop 보존(접근성 컬럼 포함), ITX 불변",
+      "previousPack": {
+        "sha256": "69de54052bfa18f6fa6ecba68dc257e050d294e49cf0dfae03a6fe43355a55af",
+        "sqliteSha256": "742695b4ac7b037adc31ba1f6ca2bd89fddbfd807083b5d27426591d307a00a1",
+        "byteSize": 340744
+      },
+      "newPack": {
+        "sha256": "2c0f4658868c741665fb47aaa684bf11eed5445af9ccad73a9c77a0072e723a2",
+        "sqliteSha256": "634021d1aede4bcb615f741b2fab6d0f0ed92eaeaf9ceb929e77d0087a02d16e",
+        "byteSize": 358088
+      },
+      "byteSizeDelta": 17344,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "network_edges",
+          "previousRowCount": 2192,
+          "newRowCount": 2178,
+          "rowsRemoved": 190,
+          "rowsAdded": 176,
+          "rowsChanged": 1362
         }
       ]
     }

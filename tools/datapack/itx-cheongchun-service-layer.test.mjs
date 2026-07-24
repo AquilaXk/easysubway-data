@@ -289,8 +289,8 @@ test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materializ
     assert.equal(evidence.admission_status, "ADMITTED");
     assert.equal(evidence.admission_eligible, 1);
     assert.equal(evidence.timetable_artifact_sha256, createHash("sha256").update(admissionBytes).digest("hex"));
-    assert.equal(evidence.canonical_pack_sha256, "69de54052bfa18f6fa6ecba68dc257e050d294e49cf0dfae03a6fe43355a55af");
-    assert.equal(evidence.canonical_pack_sqlite_sha256, "742695b4ac7b037adc31ba1f6ca2bd89fddbfd807083b5d27426591d307a00a1");
+    assert.equal(evidence.canonical_pack_sha256, "2c0f4658868c741665fb47aaa684bf11eed5445af9ccad73a9c77a0072e723a2");
+    assert.equal(evidence.canonical_pack_sqlite_sha256, "634021d1aede4bcb615f741b2fab6d0f0ed92eaeaf9ceb929e77d0087a02d16e");
   } finally {
     database.close();
   }
