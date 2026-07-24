@@ -958,6 +958,143 @@
       }
     },
     {
+      "id": "incheon-transit-station-info",
+      "displayName": "인천교통공사_도시철도역사정보",
+      "owner": "인천교통공사",
+      "provider": "인천교통공사",
+      "providerDepartment": "인천교통공사",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15083751/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "인천교통공사 1·2호선 60개 역 membership·116개 인접 topology edge·60개 route_map_positions(7호선 11행 제외, 송도달빛 역번호 3139 교정)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-42b5805f3b5a",
+          "line-98718184f016"
+        ],
+        "sourceDomains": [
+          "route_graph_topology",
+          "route_map_positions",
+          "station_line_membership"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-24",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "인천교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15083751/fileData.do"
+      },
+      "fieldsProvided": [
+        "line",
+        "station_name",
+        "station_code",
+        "network_edges",
+        "duration_seconds",
+        "distance_meters",
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "membershipAdmissionEvidence": {
+        "issue": 2481,
+        "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
+        "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
+        "snapshotId": "incheon-transit-station-info-20260724",
+        "lineIds": [
+          "line-42b5805f3b5a",
+          "line-98718184f016"
+        ],
+        "verifiedAt": "2026-07-24T06:00:00.000Z",
+        "stationCount": 60,
+        "membershipSourceId": "incheon-transit-station-info",
+        "membershipSourceRawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
+        "membershipSourceSnapshotSha256": "d706a46a5871cea4c79dbed318a178c18dba7c70ac49fc6e98bc790eb564d224",
+        "mappingSha256": "01fdad24ecc2a11bc7a83a8a5d9d25bec902cbd6b15e880ed19db1d1d06d6243",
+        "stationCodesSha256": "0a7a757a045f792bb7428aa4f6bd8e03cca707bb0ba4d6a0d8a466a4f592e773",
+        "stationCodeSourceId": "incheon-transit-station-info",
+        "stationCodeSnapshotId": "incheon-transit-station-info-20260724",
+        "stationCodeContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912"
+      },
+      "topologyAdmissionEvidence": {
+        "issue": 2481,
+        "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
+        "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
+        "snapshotId": "incheon-transit-station-info-20260724",
+        "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+        "capturedAt": "2026-07-24T06:00:00.000Z",
+        "freshUntil": "2026-07-25T06:00:00.000Z",
+        "stationCount": 60,
+        "edgeCount": 116,
+        "excludedTransferCount": 11,
+        "rawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
+        "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912"
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2481,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
+        "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
+        "snapshotId": "incheon-transit-station-info-20260724",
+        "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+        "snapshotSha256": "780ed8f5e8b1522f3334b4970deef4b64e6db9dc01a691c4f7e0be77ba54a8be",
+        "capturedAt": "2026-07-24T06:00:00.000Z",
+        "stationCount": 60,
+        "datasetId": "15083751",
+        "rawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
+        "positionsSha256": "8c7a3db3c8ad51402a280bd0a6468872537525bb3d723e099a7f48ea9120f7ee",
+        "lineIds": [
+          "line-42b5805f3b5a",
+          "line-98718184f016"
+        ],
+        "lineStationCounts": {
+          "line-98718184f016": 33,
+          "line-42b5805f3b5a": 27
+        },
+        "observedDataUpdatedAt": "2025-06-30",
+        "topologySourceId": "incheon-transit-station-info",
+        "topologySnapshotId": "incheon-transit-station-info-20260724",
+        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912"
+      }
+    },
+    {
       "id": "gwangju-transportation-cyberstation-timetable",
       "displayName": "광주교통공사 사이버스테이션 열차시각표",
       "owner": "광주교통공사",

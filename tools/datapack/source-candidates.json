@@ -5641,6 +5641,127 @@
         ]
       },
       "nextAction": "90일마다 전국 ACTIVE line-domain 검색을 재실행하고 발견 후보는 source admission으로 전달한다"
+    },
+    {
+      "id": "incheon-transit-station-info",
+      "priority": "P0",
+      "domain": "station_line_membership",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-42b5805f3b5a",
+          "line-98718184f016"
+        ]
+      },
+      "displayName": "인천교통공사_도시철도역사정보",
+      "detailUrl": "https://www.data.go.kr/data/15083751/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15083751/fileData.do",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www.data.go.kr/data/15083751/fileData.do",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [],
+        "fixedParameters": {},
+        "responseEnvelope": "official UTF-8 CSV file data 15083751",
+        "responseFields": [
+          "역번호",
+          "역사명",
+          "노선번호",
+          "노선명",
+          "영문역사명",
+          "한자역사명",
+          "환승역구분",
+          "환승노선번호",
+          "환승노선명",
+          "역위도",
+          "역경도",
+          "운영기관명",
+          "역사도로명주소",
+          "역사전화번호",
+          "데이터기준일자"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-incheon-station-info.mjs",
+          "arguments": [
+            "--input",
+            "tools/datapack/fixtures/incheon-station-info-raw/data-go-15083751.csv",
+            "--output",
+            "/tmp/easysubway-incheon-station-info.json",
+            "--captured-at",
+            "2026-07-24T06:00:00.000Z"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "production_materialized",
+      "productionInventoryReferenceId": "incheon-transit-station-info",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "https://www.data.go.kr/data/15083751/fileData.do",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "line",
+          "station_name",
+          "station_code",
+          "network_edges",
+          "duration_seconds",
+          "distance_meters",
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "liveSampleRetrievedAt": "2026-07-24T06:00:00.000Z",
+        "liveSampleRowCount": 60,
+        "liveSampleStationCount": 60,
+        "liveSampleRawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
+        "liveSampleEvidenceHash": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "evidenceArtifact": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+        "liveValidation": {
+          "snapshotId": "incheon-transit-station-info-20260724",
+          "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+          "capturedAt": "2026-07-24T06:00:00.000Z",
+          "freshUntil": "2026-07-25T06:00:00.000Z",
+          "stationCount": 60,
+          "edgeCount": 116,
+          "positionCount": 60,
+          "rawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
+          "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+          "positionsSha256": "8c7a3db3c8ad51402a280bd0a6468872537525bb3d723e099a7f48ea9120f7ee",
+          "datasetIds": [
+            "15083751"
+          ],
+          "credentialRedacted": true,
+          "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
+          "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
+          "coverageSupportedCount": 6
+        },
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 6,
+          "sourceDomains": [
+            "station_line_membership",
+            "route_graph_topology",
+            "route_map_positions"
+          ],
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
+          "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs"
+        }
+      },
+      "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
     }
   ]
 }
