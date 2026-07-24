@@ -754,6 +754,111 @@
       }
     },
     {
+      "id": "daejeon-transportation-route-map-positions",
+      "displayName": "국가철도공단 전체 도시철도역사정보 (대전교통공사)",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도데이터개방포털",
+      "sourceSystem": "국가철도공단·KRIC 철도데이터개방포털",
+      "datasetUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=32",
+      "datasetKind": "official-file-data",
+      "coverage": "대전교통공사 1호선 공식 KRIC FILE 위경도 22역을 stationCode(역번호)=topology join으로 admission한다. admitted canvas x/y는 owner-self-drawn-sma-schematic 좌표 fixture를 정규화 역명으로 결속하며, FILE 위경도는 provenance로만 유지한다",
+      "coverageScope": {
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "on-change",
+      "observedDataUpdatedAt": "2026-06-25",
+      "retrievedAt": "2026-07-25",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국가철도공단 · 대전교통공사 · 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=32"
+      },
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FILE_SNAPSHOT_ONLY",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2496,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-daejeon-route-map-positions.mjs",
+        "verificationTest": "tools/datapack/materialize-daejeon-route-map-positions.test.mjs",
+        "snapshotId": "daejeon-transportation-route-map-positions-20260725",
+        "snapshotPath": "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json",
+        "snapshotSha256": "ca8a590a531dd48ad8b7a6202ce979bd6b172ef598f5d359a8aac3668529f55c",
+        "capturedAt": "2026-07-25T03:00:00.000Z",
+        "stationCount": 22,
+        "rawStationCount": 22,
+        "quarantinedCount": 0,
+        "datasetId": "32",
+        "datasetIds": [
+          "32"
+        ],
+        "rawSha256": "cdf1d84a7e5c898b2aacd622783ba8ba9af35c40bee0561dc97d55ce8e063f94",
+        "positionsSha256": "79ec791ff5be20c44618a1a46ca608d78611fe1d74235bac37756b1ffcf823e0",
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
+        "lineStationCounts": {
+          "1": 22
+        },
+        "observedDataUpdatedAt": "2026-06-25",
+        "topologySourceId": "daejeon-station-distance-fare",
+        "topologySnapshotId": "daejeon-station-distance-fare-topology-20260720",
+        "topologyContentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+        "topologyLineages": [
+          {
+            "sourceId": "daejeon-station-distance-fare",
+            "snapshotId": "daejeon-station-distance-fare-topology-20260720",
+            "contentSha256": "111ef488fc9d1f960445844b907e7f7b6f804e4adff0867f2f8c1e43433c747f",
+            "lineId": "line-7051a9c2525c"
+          }
+        ]
+      }
+    },
+    {
       "id": "gwangju-transportation-accessibility",
       "displayName": "광주교통공사 역사별 엘리베이터·에스컬레이터 현황",
       "owner": "광주교통공사",

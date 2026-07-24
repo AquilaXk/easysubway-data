@@ -4729,6 +4729,73 @@
       "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
+      "id": "daejeon-transportation-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ]
+      },
+      "displayName": "국가철도공단 전체 도시철도역사정보 (대전교통공사)",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=32",
+      "requestUrl": "https://data.kric.go.kr/rips/dataset/download.file?type=filedata&id=32&operation=1",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "daejeon-transportation-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=32",
+        "licenseEvidenceUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=32",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "XLSX"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 22,
+        "datasetId": "32",
+        "datasetIds": [
+          "32"
+        ],
+        "rawSha256": "cdf1d84a7e5c898b2aacd622783ba8ba9af35c40bee0561dc97d55ce8e063f94",
+        "positionsSha256": "79ec791ff5be20c44618a1a46ca608d78611fe1d74235bac37756b1ffcf823e0",
+        "lineIds": [
+          "line-7051a9c2525c"
+        ],
+        "lineStationCounts": {
+          "1": 22
+        },
+        "evidenceArtifact": "tools/datapack/sources/daejeon-transportation-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-daejeon-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-daejeon-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "대전교통공사 1호선 공식 KRIC FILE(id=32) 위경도 22역을 stationCode(역번호 101–122) join으로 admission한다",
+          "다운로드 URL은 /rips/dataset/download.file?type=filedata&id=32&operation=1 만 사용한다(/rips/download.file 은 존재하지 않는 파일)",
+          "admitted canvas x/y/label*는 owner-self-drawn-sma-schematic fixture를 정규화 역명으로 결속하고, 공식 FILE 위경도는 provenance로만 유지한다(위경도 투영 금지)"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 XLSX byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
+    },
+    {
       "id": "gwangju-transportation-route-map-positions",
       "apiCatalog": false,
       "priority": "P1",
