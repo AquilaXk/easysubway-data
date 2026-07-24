@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// 인천교통공사 1·2호선 엘리베이터·에스컬레이터·휠체어리프트 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
+// 인천교통공사 1·2호선·7호선(인천·부천) 엘리베이터·에스컬레이터·휠체어리프트 공식 FILE CSV를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터(15083478·15010199·15146049)만 사용한다.
-// 7호선 CSV 행과 비상시설(환기구·대피) 행은 skip하며 seoul-metro join을 발명하지 않는다.
+// 비상시설(환기구·대피) 행은 skip하며 seoul-metro join·장비 발명을 하지 않는다.
+// topologyLineIds는 1·2호선만 유지하고, membership scope(lineIds)만 7호선(line-15)을 포함한다.
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -28,24 +29,28 @@ const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
 const TOPOLOGY_CONTENT_SHA256 = "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
-const LINE_IDS = Object.freeze([LINE2, LINE1]);
+const LINE7 = "line-15b3b8a93259";
+const LINE_IDS = Object.freeze([LINE2, LINE1, LINE7]);
+const TOPOLOGY_LINE_IDS = Object.freeze([LINE2, LINE1]);
 const CSV_LINE_TO_ID = Object.freeze({
   1: LINE1,
   2: LINE2,
+  7: LINE7,
 });
-const EXPECTED_STATION_COUNT = 60;
+const EXPECTED_STATION_COUNT = 71;
 const EXPECTED_LINE_STATION_COUNTS = Object.freeze({
   [LINE1]: 33,
   [LINE2]: 27,
+  [LINE7]: 11,
 });
 const EXPECTED_ELEVATOR_CSV_ROWS = 269;
 const EXPECTED_ESCALATOR_CSV_ROWS = 653;
 const EXPECTED_WHEELCHAIR_CSV_ROWS = 3;
-const EXPECTED_ELEVATOR_JOINED = 213;
-const EXPECTED_ESCALATOR_JOINED = 490;
+const EXPECTED_ELEVATOR_JOINED = 265;
+const EXPECTED_ESCALATOR_JOINED = 653;
 const EXPECTED_WHEELCHAIR_JOINED = 3;
-const EXPECTED_SKIPPED_LINE7_ELEVATOR = 52;
-const EXPECTED_SKIPPED_LINE7_ESCALATOR = 163;
+const EXPECTED_SKIPPED_LINE7_ELEVATOR = 0;
+const EXPECTED_SKIPPED_LINE7_ESCALATOR = 0;
 const EXPECTED_SKIPPED_NON_STATION_ELEVATOR = 4;
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const ELEVATOR_ESCALATOR_HEADERS = Object.freeze([
@@ -129,7 +134,7 @@ export function parseIncheonAccessibilityCsv({
     allowNonStationSkip: false,
   });
 
-  // topology 60 membership 전량 admit. CSV에 없는 역·시설은 공식 미게재로 count=0(장비 발명 금지).
+  // topology membership(1·2·7호선 71역) 전량 admit. CSV에 없는 역·시설은 공식 미게재로 count=0(장비 발명 금지).
   const rows = scope.map((station) => ({
     stationCode: station.stationCode,
     stationName: station.stationName,
@@ -185,12 +190,15 @@ export function collectIncheonAccessibility({
     topologySnapshot,
   });
   const scope = rows.map(({ stationCode, stationName, lineId }) => ({ stationCode, stationName, lineId }));
-  const topologyLineages = LINE_IDS.map((lineId) => ({
+  const lineageFor = (lineId) => ({
     sourceId: TOPOLOGY_SOURCE_ID,
     snapshotId: TOPOLOGY_SNAPSHOT_ID,
     contentSha256: topologySnapshot.contentSha256,
     lineId,
-  }));
+  });
+  // topology edges are admitted for 1·2 only; line-15 is membership-backed.
+  const topologyLineages = TOPOLOGY_LINE_IDS.map(lineageFor);
+  const membershipLineages = [LINE7].map(lineageFor);
   const elevatorSha256 = sha256(Buffer.from(elevatorBytes));
   const escalatorSha256 = sha256(Buffer.from(escalatorBytes));
   const wheelchairSha256 = sha256(Buffer.from(wheelchairBytes));
@@ -231,6 +239,7 @@ export function collectIncheonAccessibility({
       evidenceUrl: ELEVATOR_DETAIL_URL,
     },
     topologyLineages,
+    membershipLineages,
     scope,
     scopeSha256: sha256(JSON.stringify(scope)),
     rawSha256: sha256(JSON.stringify({
@@ -273,10 +282,6 @@ function countFacilityRows({
       throw new Error(`Incheon ${label} CSV column count mismatch at row ${rowIndex + 2}`);
     }
     const lineRaw = String(row[lineIndex] ?? "").normalize("NFKC").trim();
-    if (lineRaw === "7") {
-      skippedLine7 += 1;
-      continue;
-    }
     const lineId = CSV_LINE_TO_ID[lineRaw];
     if (!lineId) {
       throw new Error(`Incheon ${label} unexpected line at row ${rowIndex + 2}: ${lineRaw}`);
@@ -321,7 +326,8 @@ function validateTopologySnapshot(topologySnapshot) {
   if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
     || topologySnapshot.snapshotId !== TOPOLOGY_SNAPSHOT_ID
     || topologySnapshot.contentSha256 !== TOPOLOGY_CONTENT_SHA256
-    || JSON.stringify(topologySnapshot.topologyLineIds) !== JSON.stringify([...LINE_IDS])
+    || JSON.stringify(topologySnapshot.topologyLineIds) !== JSON.stringify([...TOPOLOGY_LINE_IDS])
+    || JSON.stringify(topologySnapshot.lineIds) !== JSON.stringify([...LINE_IDS])
     || topologyScope.length !== EXPECTED_STATION_COUNT) {
     throw new Error("invalid Incheon topology snapshot");
   }

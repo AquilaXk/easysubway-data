@@ -17,6 +17,7 @@ const ESCALATOR_CSV = path.join(root, "tools/datapack/fixtures/incheon-accessibi
 const WHEELCHAIR_CSV = path.join(root, "tools/datapack/fixtures/incheon-accessibility-raw/data-go-15146049.csv");
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
+const LINE7 = "line-15b3b8a93259";
 
 async function loadInputs() {
   const [elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot] = await Promise.all([
@@ -33,7 +34,7 @@ async function loadInputs() {
   return { elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot };
 }
 
-test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠체어리프트 CSV를 topology 60 membership에 join한다", async () => {
+test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠체어리프트 CSV를 topology 71 membership에 join한다", async () => {
   const inputs = await loadInputs();
   const snapshot = collectIncheonAccessibility({
     ...inputs,
@@ -47,10 +48,10 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
   assert.equal(snapshot.detailUrl, "https://www.data.go.kr/data/15083478/fileData.do");
   assert.equal(snapshot.detailUrls.escalator, "https://www.data.go.kr/data/15010199/fileData.do");
   assert.equal(snapshot.detailUrls.wheelchair_lift, "https://www.data.go.kr/data/15146049/fileData.do");
-  assert.equal(snapshot.stationCount, 60);
-  assert.equal(snapshot.rowCount, 60);
-  assert.equal(snapshot.elevatorRowCount, 213);
-  assert.equal(snapshot.escalatorRowCount, 490);
+  assert.equal(snapshot.stationCount, 71);
+  assert.equal(snapshot.rowCount, 71);
+  assert.equal(snapshot.elevatorRowCount, 265);
+  assert.equal(snapshot.escalatorRowCount, 653);
   assert.equal(snapshot.wheelchairRowCount, 3);
   assert.equal(snapshot.elevatorCsvRowCount, 269);
   assert.equal(snapshot.escalatorCsvRowCount, 653);
@@ -62,12 +63,12 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
     "대피4",
   ]);
   assert.deepEqual(snapshot.skippedLine7RowCounts, {
-    elevator: 52,
-    escalator: 163,
+    elevator: 0,
+    escalator: 0,
     wheelchair_lift: 0,
   });
-  assert.equal(snapshot.rows.length, 60);
-  assert.deepEqual(snapshot.lineIds, [LINE2, LINE1]);
+  assert.equal(snapshot.rows.length, 71);
+  assert.deepEqual(snapshot.lineIds, [LINE2, LINE1, LINE7]);
   assert.equal(snapshot.official, true);
   assert.equal(snapshot.fixture, false);
   assert.equal(snapshot.credentialRequired, false);
@@ -106,17 +107,27 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
       lineId: LINE1,
     },
   ]);
+  assert.equal(snapshot.membershipLineages.length, 1);
+  assert.deepEqual(snapshot.membershipLineages, [
+    {
+      sourceId: "incheon-transit-station-info",
+      snapshotId: "incheon-transit-station-info-20260724",
+      contentSha256: inputs.topologySnapshot.contentSha256,
+      lineId: LINE7,
+    },
+  ]);
   assert.equal(snapshot.rows.every((row) => (
-    [LINE1, LINE2].includes(row.lineId)
+    [LINE1, LINE2, LINE7].includes(row.lineId)
       && Number.isInteger(row.elevator) && row.elevator >= 0
       && Number.isInteger(row.escalator) && row.escalator >= 0
       && Number.isInteger(row.wheelchair_lift) && row.wheelchair_lift >= 0
   )), true);
-  assert.equal(snapshot.rows.reduce((sum, row) => sum + row.elevator, 0), 213);
-  assert.equal(snapshot.rows.reduce((sum, row) => sum + row.escalator, 0), 490);
+  assert.equal(snapshot.rows.reduce((sum, row) => sum + row.elevator, 0), 265);
+  assert.equal(snapshot.rows.reduce((sum, row) => sum + row.escalator, 0), 653);
   assert.equal(snapshot.rows.reduce((sum, row) => sum + row.wheelchair_lift, 0), 3);
   assert.equal(snapshot.rows.filter((row) => row.lineId === LINE1).length, 33);
   assert.equal(snapshot.rows.filter((row) => row.lineId === LINE2).length, 27);
+  assert.equal(snapshot.rows.filter((row) => row.lineId === LINE7).length, 11);
   assert.equal(
     snapshot.rows.filter((row) => row.lineId === LINE1).reduce((sum, row) => sum + row.elevator, 0),
     99,
@@ -126,12 +137,24 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
     114,
   );
   assert.equal(
+    snapshot.rows.filter((row) => row.lineId === LINE7).reduce((sum, row) => sum + row.elevator, 0),
+    52,
+  );
+  assert.equal(
     snapshot.rows.filter((row) => row.lineId === LINE1).reduce((sum, row) => sum + row.escalator, 0),
     283,
   );
   assert.equal(
     snapshot.rows.filter((row) => row.lineId === LINE2).reduce((sum, row) => sum + row.escalator, 0),
     207,
+  );
+  assert.equal(
+    snapshot.rows.filter((row) => row.lineId === LINE7).reduce((sum, row) => sum + row.escalator, 0),
+    163,
+  );
+  assert.equal(
+    snapshot.rows.filter((row) => row.lineId === LINE7).reduce((sum, row) => sum + row.wheelchair_lift, 0),
+    0,
   );
   const byCode = Object.fromEntries(snapshot.rows.map((row) => [row.stationCode, row]));
   assert.equal(byCode["3127"].stationName, "문학경기장");
@@ -149,8 +172,17 @@ test("인천 accessibility collector는 엘리베이터·에스컬레이터·휠
   assert.equal(byCode["3120"].stationName, "부평");
   assert.equal(byCode["3120"].wheelchair_lift, 2);
   assert.equal(snapshot.rows.filter((row) => row.wheelchair_lift > 0).length, 2);
+  assert.equal(byCode["3753"].stationName, "까치울");
+  assert.ok(byCode["3753"].elevator >= 1);
+  assert.ok(byCode["3753"].escalator >= 1);
+  assert.equal(byCode["3763"].stationName, "석남(거북시장)");
+  assert.ok(byCode["3763"].elevator >= 1);
+  assert.ok(byCode["3763"].escalator >= 1);
+  assert.equal(byCode["3763"].wheelchair_lift, 0);
   assert.equal(normalizedIncheonStationName("문학역"), "문학경기장");
   assert.equal(normalizedIncheonStationName("가정(루원시티)"), "가정");
+  assert.equal(normalizedIncheonStationName("석남역"), "석남");
+  assert.equal(normalizedIncheonStationName("석남(거북시장)"), "석남");
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey/i);
 });
 

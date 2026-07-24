@@ -5777,7 +5777,8 @@
         ],
         "lineIds": [
           "line-42b5805f3b5a",
-          "line-98718184f016"
+          "line-98718184f016",
+          "line-15b3b8a93259"
         ]
       },
       "displayName": "인천교통공사 역사별 엘리베이터·에스컬레이터·휠체어리프트 현황",
@@ -5844,21 +5845,21 @@
           "verified_at"
         ],
         "liveSampleRetrievedAt": "2026-07-24T07:00:00.000Z",
-        "liveSampleRowCount": 60,
-        "liveSampleStationCount": 60,
-        "liveSampleRawSha256": "5d491dfea539e91e6ba51e4a1b86ce3c703b1c0696a25039f2847593011c53cd",
-        "liveSampleEvidenceHash": "a4052b02d90d5c5c819597d170b7fd20bbc1f16a2086a6fcc2d0f451de95b172",
+        "liveSampleRowCount": 71,
+        "liveSampleStationCount": 71,
+        "liveSampleRawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+        "liveSampleEvidenceHash": "97c4ba0c32b51b5ed5d17c1e5f6ab8fff3520b9b35ffe1a05de960a5743ceec2",
         "evidenceArtifact": "tools/datapack/sources/incheon-transit-accessibility-20260724.json",
         "liveValidation": {
           "snapshotId": "incheon-transit-accessibility-20260724",
           "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260724.json",
           "capturedAt": "2026-07-24T07:00:00.000Z",
           "freshUntil": "2026-07-25T07:00:00.000Z",
-          "stationCount": 60,
-          "rowCount": 60,
-          "facilityCount": 180,
-          "rawSha256": "5d491dfea539e91e6ba51e4a1b86ce3c703b1c0696a25039f2847593011c53cd",
-          "rowsSha256": "a4052b02d90d5c5c819597d170b7fd20bbc1f16a2086a6fcc2d0f451de95b172",
+          "stationCount": 71,
+          "rowCount": 71,
+          "facilityCount": 213,
+          "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+          "rowsSha256": "97c4ba0c32b51b5ed5d17c1e5f6ab8fff3520b9b35ffe1a05de960a5743ceec2",
           "datasetIds": [
             "15083478",
             "15010199",
@@ -5867,11 +5868,11 @@
           "credentialRedacted": true,
           "materializer": "tools/datapack/materialize-incheon-accessibility.mjs",
           "verificationTest": "tools/datapack/materialize-incheon-accessibility.test.mjs",
-          "coverageSupportedCount": 2
+          "coverageSupportedCount": 3
         },
         "coverageAssessment": {
           "state": "SUPPORTED",
-          "requirementCount": 2,
+          "requirementCount": 3,
           "sourceDomain": "accessibility_facilities",
           "artifactKind": "production",
           "materializer": "tools/datapack/materialize-incheon-accessibility.mjs",

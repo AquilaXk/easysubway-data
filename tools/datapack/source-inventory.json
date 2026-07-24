@@ -1107,7 +1107,7 @@
       "sourceSystem": "공공데이터포털 파일데이터",
       "datasetUrl": "https://www.data.go.kr/data/15083478/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "인천교통공사 1·2호선 60 membership 엘리베이터·에스컬레이터·휠체어리프트 설치 대수(7호선·환기구·대피 행 skip, CSV 미게재 시설은 count=0)",
+      "coverage": "인천교통공사 1·2호선·7호선(인천·부천) 71 membership 엘리베이터·에스컬레이터·휠체어리프트 설치 대수(환기구·대피 행 skip, CSV 미게재 시설은 count=0)",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -1117,7 +1117,8 @@
         ],
         "lineIds": [
           "line-42b5805f3b5a",
-          "line-98718184f016"
+          "line-98718184f016",
+          "line-15b3b8a93259"
         ],
         "sourceDomains": [
           "accessibility_facilities"
@@ -1164,24 +1165,24 @@
         "facility": {
           "status": "SUPPORTED",
           "productionUseAllowed": true,
-          "coverageStatus": "INCHEON_LINES_1_2_OFFICIAL_FACILITY_COUNTS",
+          "coverageStatus": "INCHEON_LINES_1_2_7_OFFICIAL_FACILITY_COUNTS",
           "updateFrequency": "daily admission refresh",
-          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 7호선 CSV 행과 비역사 시설(환기구·대피) 행은 skip한다. CSV에 없는 시설은 공식 미게재로 count=0이다"
+          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 비역사 시설(환기구·대피) 행은 skip한다. CSV에 없는 시설은 공식 미게재로 count=0이다. 7호선(line-15) wheelchair CSV 행은 0건이다"
         }
       },
       "accessibilityAdmissionEvidence": {
-        "issue": 2484,
+        "issue": 2492,
         "materializer": "tools/datapack/materialize-incheon-accessibility.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-accessibility.test.mjs",
         "snapshotId": "incheon-transit-accessibility-20260724",
         "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260724.json",
         "capturedAt": "2026-07-24T07:00:00.000Z",
         "freshUntil": "2026-07-25T07:00:00.000Z",
-        "stationCount": 60,
-        "rowCount": 60,
-        "facilityCount": 180,
-        "rawSha256": "5d491dfea539e91e6ba51e4a1b86ce3c703b1c0696a25039f2847593011c53cd",
-        "rowsSha256": "a4052b02d90d5c5c819597d170b7fd20bbc1f16a2086a6fcc2d0f451de95b172",
+        "stationCount": 71,
+        "rowCount": 71,
+        "facilityCount": 213,
+        "rawSha256": "3f29b437f2c6f4145dea67535839684223f8458d610b241580ed0a6a499ba67c",
+        "rowsSha256": "97c4ba0c32b51b5ed5d17c1e5f6ab8fff3520b9b35ffe1a05de960a5743ceec2",
         "datasetIds": [
           "15083478",
           "15010199",
@@ -1202,6 +1203,14 @@
             "snapshotId": "incheon-transit-station-info-20260724",
             "contentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
             "lineId": "line-98718184f016"
+          }
+        ],
+        "membershipLineages": [
+          {
+            "sourceId": "incheon-transit-station-info",
+            "snapshotId": "incheon-transit-station-info-20260724",
+            "contentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
+            "lineId": "line-15b3b8a93259"
           }
         ]
       }

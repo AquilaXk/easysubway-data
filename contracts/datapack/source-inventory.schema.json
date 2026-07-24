@@ -390,12 +390,28 @@
               "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "topologyLineages": {
                 "type": "array",
-                "description": "다중 topology snapshot lineage(노선별). 단일 topology* 필드와 함께 사용하며 Busan 단일 lineage 호환을 유지한다.",
+                "description": "다중 topology snapshot lineage(노선별). 단일 topology* 필드와 함께 사용하며 Busan 단일 lineage 호환을 유지한다. topology edge admission된 노선만 포함한다.",
                 "minItems": 1,
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": ["sourceId", "snapshotId", "contentSha256"],
+                  "properties": {
+                    "sourceId": { "type": "string", "minLength": 1 },
+                    "snapshotId": { "type": "string", "minLength": 1 },
+                    "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "lineId": { "type": "string", "minLength": 1 }
+                  }
+                }
+              },
+              "membershipLineages": {
+                "type": "array",
+                "description": "topology edge는 미admission이지만 station_line_membership으로 facility join이 가능한 노선 lineage. topologyLineages와 중복되지 않는다.",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sourceId", "snapshotId", "contentSha256", "lineId"],
                   "properties": {
                     "sourceId": { "type": "string", "minLength": 1 },
                     "snapshotId": { "type": "string", "minLength": 1 },

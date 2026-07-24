@@ -38,12 +38,13 @@ const SOURCE_ID = "incheon-transit-accessibility";
 const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
+const LINE7 = "line-15b3b8a93259";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
-// incheon station-info 누적 fixture coverage baseline(실측): supportedCount=31 → accessibility +2 = 33.
+// incheon station-info 누적 fixture coverage baseline(실측): supportedCount=31 → accessibility +3 = 34.
 const INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT = 31;
-const ACCESSIBILITY_SUPPORTED_COUNT = INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT + 2;
+const ACCESSIBILITY_SUPPORTED_COUNT = INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT + 3;
 
 async function inputs() {
   const [
@@ -138,7 +139,7 @@ async function inputs() {
   };
 }
 
-test("인천 공식 60 membership 편의시설을 facility·evidence 180건으로 materialize한다", async () => {
+test("인천 공식 71 membership 편의시설을 facility·evidence 213건으로 materialize한다", async () => {
   const { incheonFixture, topologySnapshot, accessibilitySnapshot, inventory } = await inputs();
   const fixture = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
@@ -152,17 +153,21 @@ test("인천 공식 60 membership 편의시설을 facility·evidence 180건으�
   const evidence = pack.stationFacilityEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const source = pack.sourceInventory.find(({ id }) => id === SOURCE_ID);
 
-  assert.equal(facilities.length, 180);
-  assert.equal(evidence.length, 180);
-  assert.equal(new Set(facilities.map(({ id }) => id)).size, 180);
+  assert.equal(facilities.length, 213);
+  assert.equal(evidence.length, 213);
+  assert.equal(new Set(facilities.map(({ id }) => id)).size, 213);
   assert.equal(new Set(evidence.map(({ stationId, lineId, facilityType }) =>
-    `${stationId}:${lineId}:${facilityType}`)).size, 180);
+    `${stationId}:${lineId}:${facilityType}`)).size, 213);
   assert.deepEqual([...new Set(facilities.map(({ type }) => type))].sort(), [
     "ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT",
   ]);
-  assert.deepEqual([...new Set(facilities.map(({ lineId }) => lineId))].sort(), [LINE2, LINE1].sort());
+  assert.deepEqual(
+    [...new Set(facilities.map(({ lineId }) => lineId))].sort(),
+    [LINE2, LINE1, LINE7].sort(),
+  );
   assert.equal(facilities.filter(({ lineId }) => lineId === LINE1).length, 99);
   assert.equal(facilities.filter(({ lineId }) => lineId === LINE2).length, 81);
+  assert.equal(facilities.filter(({ lineId }) => lineId === LINE7).length, 33);
   assert.equal(facilities.filter(({ type, installationStatus }) =>
     type === "WHEELCHAIR_LIFT" && installationStatus === "INSTALLED").length, 2);
   assert.ok(facilities.some(({ type, installationStatus }) =>
@@ -181,7 +186,7 @@ test("인천 공식 60 membership 편의시설을 facility·evidence 180건으�
       && strictRouteEligible === false
   )));
   assert.equal(source.license, "공공데이터포털 이용허락범위 제한 없음");
-  assert.deepEqual(source.coverageScope.lineIds, [LINE2, LINE1]);
+  assert.deepEqual(source.coverageScope.lineIds, [LINE2, LINE1, LINE7]);
   assert.deepEqual(source.coverageScope.operatorIds, [OPERATOR_ID]);
   assert.equal(pack.minimumTableRows.facilities, pack.facilities.length);
   assert.equal(pack.minimumTableRows.station_facility_evidence, pack.stationFacilityEvidence.length);
@@ -223,14 +228,14 @@ test("인천 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /snapshot/);
 
   const badScope = structuredClone(accessibilitySnapshot);
-  badScope.rows = badScope.rows.slice(0, 59);
-  badScope.rowCount = 59;
-  badScope.stationCount = 59;
+  badScope.rows = badScope.rows.slice(0, 70);
+  badScope.rowCount = 70;
+  badScope.stationCount = 70;
   badScope.rowsSha256 = createHash("sha256").update(JSON.stringify(badScope.rows)).digest("hex");
   const badScopeInventory = structuredClone(inventory);
   Object.assign(
     badScopeInventory.sources.find(({ id }) => id === SOURCE_ID).accessibilityAdmissionEvidence,
-    { rowCount: 59, stationCount: 59, facilityCount: 177, rowsSha256: badScope.rowsSha256 },
+    { rowCount: 70, stationCount: 70, facilityCount: 210, rowsSha256: badScope.rowsSha256 },
   );
   assert.throws(() => materializeIncheonAccessibility({
     baseFixture: incheonFixture,
@@ -278,7 +283,7 @@ test("인천 accessibility admission은 freshness·hash·scope·중복을 fail c
   }), /already exists/);
 });
 
-test("materialized SQLite와 provenance가 인천 accessibility_facilities 2건을 SUPPORTED로 만든다", async (context) => {
+test("materialized SQLite와 provenance가 인천 accessibility_facilities 3건을 SUPPORTED로 만든다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-accessibility-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -312,9 +317,9 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 2건�
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM facilities WHERE source_id = ?")
-    .get(SOURCE_ID).count, 180);
+    .get(SOURCE_ID).count, 213);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_facility_evidence WHERE source_id = ?")
-    .get(SOURCE_ID).count, 180);
+    .get(SOURCE_ID).count, 213);
   assert.equal(database.prepare(`
     SELECT COUNT(DISTINCT facility_type) AS count
     FROM station_facility_evidence
@@ -331,7 +336,7 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 2건�
     assert.ok(fieldRecords.length > 0, `provenance missing field: ${field}`);
     assert.deepEqual(
       [...new Set(fieldRecords.flatMap(({ coverageScope }) => coverageScope?.lineIds ?? []))].sort(),
-      [LINE2, LINE1].sort(),
+      [LINE2, LINE1, LINE7].sort(),
     );
     assert.ok(fieldRecords.every((record) => (
       record.sourceSnapshotId === "incheon-transit-accessibility-20260724"
@@ -356,13 +361,13 @@ test("materialized SQLite와 provenance가 인천 accessibility_facilities 2건�
   const accessibilityRequirements = report.requirements.filter(
     ({ operatorId, sourceDomain, lineId }) => operatorId === OPERATOR_ID
       && sourceDomain === "accessibility_facilities"
-      && [LINE1, LINE2].includes(lineId),
+      && [LINE1, LINE2, LINE7].includes(lineId),
   );
-  assert.equal(accessibilityRequirements.length, 2);
+  assert.equal(accessibilityRequirements.length, 3);
   assert.ok(accessibilityRequirements.every(({ status }) => status === "SUPPORTED"));
   assert.deepEqual(
     accessibilityRequirements.map(({ lineId }) => lineId).sort(),
-    [LINE2, LINE1].sort(),
+    [LINE2, LINE1, LINE7].sort(),
   );
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
