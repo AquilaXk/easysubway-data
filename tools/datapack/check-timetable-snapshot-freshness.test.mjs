@@ -71,9 +71,9 @@ test("Prometheus exposition 형식은 gauge 3종을 노출한다", () => {
 test("admission service dates는 창 안의 평일·토·일을 고른다", () => {
   // 2026-07-20은 월요일(KST). 창: 07-20(월)~07-26(일).
   const dates = computeItxAdmissionServiceDates(new Date("2026-07-20T00:00:00+09:00"));
-  assert.equal(dates["8"], "2026-07-20"); // 월요일(평일)
-  assert.equal(dates["7"], "2026-07-25"); // 토요일
-  assert.equal(dates["9"], "2026-07-26"); // 일요일
+  assert.equal(dates["8"], "20260720"); // 월요일(평일)
+  assert.equal(dates["7"], "20260725"); // 토요일
+  assert.equal(dates["9"], "20260726"); // 일요일
 });
 
 test("parseArgs는 --로 시작하지만 플래그 이름 형태가 아닌 값을 값으로 인식한다", () => {
@@ -113,10 +113,11 @@ test("CLI는 evidence를 읽어 evidence/metrics/github-output를 남기고 fail
   assert.equal(exitCode, 1);
   const evidenceOut = JSON.parse(await readFile(outputPath, "utf8"));
   assert.equal(evidenceOut.artifactKind, "timetable-snapshot-freshness-alert");
-  assert.equal(evidenceOut.serviceDates["8"].length, 10);
+  assert.equal(evidenceOut.serviceDates["8"].length, 8);
+  assert.match(evidenceOut.serviceDates["8"], /^\d{8}$/);
   const ghOutput = await readFile(githubOutputPath, "utf8");
   assert.match(ghOutput, /severity=critical/);
   assert.match(ghOutput, /should_refresh=true/);
-  assert.match(ghOutput, /day8_date=\d{4}-\d{2}-\d{2}/);
+  assert.match(ghOutput, /day8_date=\d{8}/);
   assert.match(await readFile(metricsPath, "utf8"), /easysubway_timetable_snapshot_expired 0/);
 });

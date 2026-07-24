@@ -104,7 +104,8 @@ export function computeItxAdmissionServiceDates(now) {
         const yyyy = candidate.getUTCFullYear();
         const mm = String(candidate.getUTCMonth() + 1).padStart(2, "0");
         const dd = String(candidate.getUTCDate()).padStart(2, "0");
-        dates[dayCd] = `${yyyy}-${mm}-${dd}`;
+        // ITX admission / collect CLI(--day*-date) / selectedServiceDates 정본은 YYYYMMDD.
+        dates[dayCd] = `${yyyy}${mm}${dd}`;
         break;
       }
     }
