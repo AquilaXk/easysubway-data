@@ -25,6 +25,7 @@ const SOURCE_ID = "incheon-transit-accessibility";
 const ARTIFACT_KIND = "incheon-accessibility-snapshot";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
+const TOPOLOGY_CONTENT_SHA256 = "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE_IDS = Object.freeze([LINE2, LINE1]);
@@ -316,6 +317,8 @@ function countFacilityRows({
 function validateTopologySnapshot(topologySnapshot) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
   if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
+    || topologySnapshot.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || topologySnapshot.contentSha256 !== TOPOLOGY_CONTENT_SHA256
     || topologySnapshot.stationCount !== EXPECTED_STATION_COUNT
     || topologySnapshot.scope?.length !== EXPECTED_STATION_COUNT
     || JSON.stringify(topologySnapshot.lineIds) !== JSON.stringify([...LINE_IDS])) {
@@ -389,17 +392,25 @@ function parseArgs(argv) {
 
 export async function runIncheonAccessibilityCollector(argv) {
   const args = parseArgs(argv);
+  const topologyPath = args["topology-snapshot"];
+  const topologySnapshotId = path.basename(topologyPath, ".json");
+  if (topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID) {
+    throw new Error(`Incheon topology snapshot path must be ${TOPOLOGY_SNAPSHOT_ID}.json`);
+  }
   const [elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot] = await Promise.all([
     readFile(args["elevator-input"]),
     readFile(args["escalator-input"]),
     readFile(args["wheelchair-input"]),
-    readFile(args["topology-snapshot"], "utf8").then(JSON.parse),
+    readFile(topologyPath, "utf8").then(JSON.parse),
   ]);
   const snapshot = collectIncheonAccessibility({
     elevatorBytes,
     escalatorBytes,
     wheelchairBytes,
-    topologySnapshot,
+    topologySnapshot: {
+      ...topologySnapshot,
+      snapshotId: topologySnapshot.snapshotId ?? topologySnapshotId,
+    },
     now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
   });
   await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);

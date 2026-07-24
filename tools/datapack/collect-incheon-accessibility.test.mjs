@@ -24,7 +24,11 @@ async function loadInputs() {
     readFile(ESCALATOR_CSV),
     readFile(WHEELCHAIR_CSV),
     readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"), "utf8")
-      .then(JSON.parse),
+      .then(JSON.parse)
+      .then((snapshot) => ({
+        ...snapshot,
+        snapshotId: snapshot.snapshotId ?? "incheon-transit-station-info-20260724",
+      })),
   ]);
   return { elevatorBytes, escalatorBytes, wheelchairBytes, topologySnapshot };
 }
@@ -191,6 +195,16 @@ test("인천 accessibility collector는 schema·join·count 변조를 fail close
     topologySnapshot: badTopology,
     now: new Date("2026-07-24T07:00:00.000Z"),
   }), /topology snapshot|station info snapshot/);
+
+  const wrongSnapshotId = {
+    ...inputs.topologySnapshot,
+    snapshotId: "incheon-transit-station-info-20990101",
+  };
+  assert.throws(() => collectIncheonAccessibility({
+    ...inputs,
+    topologySnapshot: wrongSnapshotId,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  }), /invalid Incheon topology snapshot/);
 });
 
 test("인천 accessibility collector CLI는 absolute output 경로를 강제한다", async () => {
