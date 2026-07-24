@@ -3684,6 +3684,109 @@
       "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
     },
     {
+      "id": "daegu-transportation-accessibility",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6",
+          "line-e2938a4cc492",
+          "line-0ffaa95b1b5d"
+        ]
+      },
+      "displayName": "대구교통공사 역사별 장애인 편의시설 현황",
+      "detailUrl": "https://www.data.go.kr/data/15149872/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15149872/fileData.do",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www.data.go.kr/data/15149872/fileData.do",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [],
+        "fixedParameters": {},
+        "responseEnvelope": "official EUC-KR CSV file data 15149872",
+        "responseFields": [
+          "호선",
+          "역명",
+          "휠체어리프트(대)",
+          "엘리베이터(대)",
+          "에스컬레이터(대)"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-daegu-accessibility.mjs",
+          "arguments": [
+            "--input",
+            "tools/datapack/fixtures/daegu-accessibility-raw/data-go-15149872.csv",
+            "--sources-dir",
+            "tools/datapack/sources",
+            "--output",
+            "/tmp/easysubway-daegu-accessibility.json",
+            "--captured-at",
+            "2026-07-24T01:00:00.000Z"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "production_materialized",
+      "productionInventoryReferenceId": "daegu-transportation-accessibility",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "https://www.data.go.kr/data/15149872/fileData.do",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "elevator",
+          "escalator",
+          "wheelchair_lift",
+          "status",
+          "verified_at"
+        ],
+        "liveSampleRetrievedAt": "2026-07-24T01:00:00.000Z",
+        "liveSampleRowCount": 94,
+        "liveSampleStationCount": 94,
+        "liveSampleRawSha256": "940357c7f65336510fee7b9472e1c8577189c64558504b0a20c889b78d9a14e9",
+        "liveSampleEvidenceHash": "20ed04641d19e82b2316fe27ad3b0845805143f3f18d0a8553b615a13d1bad68",
+        "evidenceArtifact": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
+        "liveValidation": {
+          "snapshotId": "daegu-transportation-accessibility-20260724",
+          "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
+          "capturedAt": "2026-07-24T01:00:00.000Z",
+          "freshUntil": "2026-07-25T01:00:00.000Z",
+          "stationCount": 94,
+          "rowCount": 94,
+          "facilityCount": 282,
+          "rawSha256": "940357c7f65336510fee7b9472e1c8577189c64558504b0a20c889b78d9a14e9",
+          "rowsSha256": "20ed04641d19e82b2316fe27ad3b0845805143f3f18d0a8553b615a13d1bad68",
+          "credentialRedacted": true,
+          "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
+          "verificationTest": "tools/datapack/materialize-daegu-accessibility.test.mjs",
+          "coverageSupportedCount": 3
+        },
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 3,
+          "sourceDomain": "accessibility_facilities",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
+          "verificationTest": "tools/datapack/materialize-daegu-accessibility.test.mjs"
+        }
+      },
+      "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
+    },
+    {
       "id": "busan-transportation-route-topology",
       "priority": "P0",
       "domain": "route_graph_topology",

@@ -1700,6 +1700,116 @@
       }
     },
     {
+      "id": "daegu-transportation-accessibility",
+      "displayName": "대구교통공사 역사별 장애인 편의시설 현황",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "정보통신처",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15149872/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구교통공사 1·2·3호선 94개 역 엘리베이터·에스컬레이터·휠체어리프트 설치 대수",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6",
+          "line-e2938a4cc492",
+          "line-0ffaa95b1b5d"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-24",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15149872/fileData.do"
+      },
+      "fieldsProvided": [
+        "elevator",
+        "escalator",
+        "wheelchair_lift",
+        "status",
+        "verified_at"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "DAEGU_LINES_1_TO_3_OFFICIAL_FACILITY_COUNTS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다"
+        }
+      },
+      "accessibilityAdmissionEvidence": {
+        "issue": 2467,
+        "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-accessibility.test.mjs",
+        "snapshotId": "daegu-transportation-accessibility-20260724",
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
+        "capturedAt": "2026-07-24T01:00:00.000Z",
+        "freshUntil": "2026-07-25T01:00:00.000Z",
+        "stationCount": 94,
+        "rowCount": 94,
+        "facilityCount": 282,
+        "rawSha256": "940357c7f65336510fee7b9472e1c8577189c64558504b0a20c889b78d9a14e9",
+        "rowsSha256": "20ed04641d19e82b2316fe27ad3b0845805143f3f18d0a8553b615a13d1bad68",
+        "topologySourceId": "daegu-transportation-accessibility-topology-lineage",
+        "topologySnapshotId": "daegu-transportation-accessibility-topology-lineage-20260721",
+        "topologyContentSha256": "4e76459d4588f97bd55e767374b81031402c768d8f4805c69484d7c3f8771d1f",
+        "topologyLineages": [
+          {
+            "sourceId": "daegu-line1-route-topology",
+            "snapshotId": "daegu-line1-route-topology-20260721",
+            "contentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
+            "lineId": "line-5b8d9b05e7e6"
+          },
+          {
+            "sourceId": "daegu-line2-route-topology",
+            "snapshotId": "daegu-line2-route-topology-20260721",
+            "contentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
+            "lineId": "line-e2938a4cc492"
+          },
+          {
+            "sourceId": "daegu-line3-route-topology",
+            "snapshotId": "daegu-line3-route-topology-20260721",
+            "contentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
+            "lineId": "line-0ffaa95b1b5d"
+          }
+        ]
+      }
+    },
+    {
       "id": "molit-urban-rail-full-route-daegu-line3-membership",
       "displayName": "국토교통부_도시철도 전체노선 대구 3호선 membership admission",
       "owner": "국토교통부",
