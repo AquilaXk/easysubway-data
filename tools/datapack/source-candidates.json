@@ -5512,6 +5512,79 @@
       "nextAction": "공식 사이버스테이션 변경 시 HTML/CSS·PNG hash와 114개 좌표·110개 연결선 snapshot을 함께 갱신한다"
     },
     {
+      "id": "seoul-metro-line9-23-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "operator-936e454d0bfb"
+        ],
+        "lineIds": [
+          "line-f0e747248a31"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "displayName": "서울교통공사_9호선 2·3단계 역사 좌표(위경도) 정보",
+      "detailUrl": "https://www.data.go.kr/data/15099317/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15099317/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "seoul-metro-line9-23-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://www.data.go.kr/data/15099317/fileData.do",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15099317/fileData.do",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "CSV",
+          "JSON"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 13,
+        "datasetId": "15099317",
+        "datasetIds": [
+          "15099317"
+        ],
+        "rawSha256": "6a8b48ff370e9a364986ec10670fa934033ec88d569b3dc2f7f2b7b1e5acd683",
+        "positionsSha256": "a3ac35749f4910ec75aff9fad38293b6f09e5d9fb178d036b1cfa72844fc4ec8",
+        "lineIds": [
+          "line-f0e747248a31"
+        ],
+        "lineStationCounts": {
+          "9": 13
+        },
+        "evidenceArtifact": "tools/datapack/sources/seoul-metro-line9-23-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-seoul9-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-seoul9-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "서울교통공사 9호선 2·3단계 공식 FILE 위경도 13역(언주~중앙보훈병원, codes 926–938)을 provenance로 유지한다",
+          "pack station 26–38은 capital-route-topology 정규화 역명 join으로 결속하며 FILE 표기·역번호 차이는 정규화로만 처리하고 좌표 발명·추정은 하지 않는다",
+          "admitted canvas x/y/label*는 owner-self-drawn-sma-schematic fixture에서 결속하고, 공식 FILE 위경도는 provenance로만 유지한다(위경도 투영 금지)",
+          "active operator coverage는 operator-936e454d0bfb(서울시메트로9호선)이며 FILE provider(서울교통공사)와 구분한다"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
+    },
+    {
       "id": "seoul-metro-route-map-positions",
       "apiCatalog": false,
       "priority": "P1",

@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-f0e747248a31",
+  "stations": [
+    {
+      "stationCode": "926",
+      "stationName": "언주",
+      "stationId": "station-643a48a558a1",
+      "x": 2284,
+      "y": 1859,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2265,
+          "y": 1864
+        },
+        {
+          "x": 2303,
+          "y": 1864
+        },
+        {
+          "x": 2303,
+          "y": 1886
+        },
+        {
+          "x": 2265,
+          "y": 1886
+        }
+      ]
+    },
+    {
+      "stationCode": "927",
+      "stationName": "선정릉",
+      "stationId": "station-0c2937ffe0e8",
+      "x": 2349,
+      "y": 1845,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2324,
+          "y": 1850
+        },
+        {
+          "x": 2375,
+          "y": 1850
+        },
+        {
+          "x": 2375,
+          "y": 1872
+        },
+        {
+          "x": 2324,
+          "y": 1872
+        }
+      ]
+    },
+    {
+      "stationCode": "928",
+      "stationName": "삼성중앙",
+      "stationId": "station-616ee3bf66cf",
+      "x": 2398,
+      "y": 1859,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2366,
+          "y": 1864
+        },
+        {
+          "x": 2430,
+          "y": 1864
+        },
+        {
+          "x": 2430,
+          "y": 1886
+        },
+        {
+          "x": 2366,
+          "y": 1886
+        }
+      ]
+    },
+    {
+      "stationCode": "929",
+      "stationName": "봉은사",
+      "stationId": "station-80faee9a74b2",
+      "x": 2446,
+      "y": 1859,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2421,
+          "y": 1864
+        },
+        {
+          "x": 2472,
+          "y": 1864
+        },
+        {
+          "x": 2472,
+          "y": 1886
+        },
+        {
+          "x": 2421,
+          "y": 1886
+        }
+      ]
+    },
+    {
+      "stationCode": "930",
+      "stationName": "종합운동장",
+      "stationId": "station-71c84bed93c8",
+      "x": 2515,
+      "y": 1860,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2493,
+          "y": 1849
+        },
+        {
+          "x": 2570,
+          "y": 1849
+        },
+        {
+          "x": 2570,
+          "y": 1871
+        },
+        {
+          "x": 2493,
+          "y": 1871
+        }
+      ]
+    },
+    {
+      "stationCode": "931",
+      "stationName": "삼전",
+      "stationId": "station-b499fbb1b445",
+      "x": 2590,
+      "y": 1993,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2587,
+          "y": 1982
+        },
+        {
+          "x": 2625,
+          "y": 1982
+        },
+        {
+          "x": 2625,
+          "y": 2004
+        },
+        {
+          "x": 2587,
+          "y": 2004
+        }
+      ]
+    },
+    {
+      "stationCode": "932",
+      "stationName": "석촌고분",
+      "stationId": "station-942ef1404a1e",
+      "x": 2634,
+      "y": 1939,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2618,
+          "y": 1928
+        },
+        {
+          "x": 2682,
+          "y": 1928
+        },
+        {
+          "x": 2682,
+          "y": 1950
+        },
+        {
+          "x": 2618,
+          "y": 1950
+        }
+      ]
+    },
+    {
+      "stationCode": "933",
+      "stationName": "석촌",
+      "stationId": "station-17003d95f4f1",
+      "x": 2634,
+      "y": 1861,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2615,
+          "y": 1866
+        },
+        {
+          "x": 2653,
+          "y": 1866
+        },
+        {
+          "x": 2653,
+          "y": 1888
+        },
+        {
+          "x": 2615,
+          "y": 1888
+        }
+      ]
+    },
+    {
+      "stationCode": "934",
+      "stationName": "송파나루",
+      "stationId": "station-a5bca31e2a0a",
+      "x": 2745,
+      "y": 1792,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2713,
+          "y": 1797
+        },
+        {
+          "x": 2777,
+          "y": 1797
+        },
+        {
+          "x": 2777,
+          "y": 1819
+        },
+        {
+          "x": 2713,
+          "y": 1819
+        }
+      ]
+    },
+    {
+      "stationCode": "935",
+      "stationName": "한성백제",
+      "stationId": "station-b5ec82902f82",
+      "x": 2869,
+      "y": 1792,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2837,
+          "y": 1797
+        },
+        {
+          "x": 2901,
+          "y": 1797
+        },
+        {
+          "x": 2901,
+          "y": 1819
+        },
+        {
+          "x": 2837,
+          "y": 1819
+        }
+      ]
+    },
+    {
+      "stationCode": "936",
+      "stationName": "올림픽공원",
+      "stationId": "station-d38e269a314f",
+      "x": 2999,
+      "y": 1792,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2961,
+          "y": 1797
+        },
+        {
+          "x": 3038,
+          "y": 1797
+        },
+        {
+          "x": 3038,
+          "y": 1819
+        },
+        {
+          "x": 2961,
+          "y": 1819
+        }
+      ]
+    },
+    {
+      "stationCode": "937",
+      "stationName": "둔촌오륜",
+      "stationId": "station-75075bf1bc90",
+      "x": 3084,
+      "y": 1707,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3052,
+          "y": 1712
+        },
+        {
+          "x": 3116,
+          "y": 1712
+        },
+        {
+          "x": 3116,
+          "y": 1734
+        },
+        {
+          "x": 3052,
+          "y": 1734
+        }
+      ]
+    },
+    {
+      "stationCode": "938",
+      "stationName": "중앙보훈병원",
+      "stationId": "station-ffc95b468180",
+      "x": 3171,
+      "y": 1620,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3126,
+          "y": 1625
+        },
+        {
+          "x": 3216,
+          "y": 1625
+        },
+        {
+          "x": 3216,
+          "y": 1647
+        },
+        {
+          "x": 3126,
+          "y": 1647
+        }
+      ]
+    }
+  ]
+}

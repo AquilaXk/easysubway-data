@@ -4532,6 +4532,112 @@
       }
     },
     {
+      "id": "seoul-metro-line9-23-route-map-positions",
+      "displayName": "서울교통공사_9호선 2·3단계 역사 좌표(위경도) 정보",
+      "owner": "서울교통공사",
+      "provider": "서울교통공사",
+      "providerDepartment": "토목처",
+      "sourceSystem": "서울교통공사·공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15099317/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "서울교통공사 9호선 2·3단계(언주~중앙보훈병원) 공식 FILE 위경도 13역(FILE codes 926–938)을 provenance로 유지하고, pack station 26–38은 capital topology 정규화 역명 join + owner-self-drawn-sma-schematic canvas x/y로 admission한다(위경도 투영 금지). FILE·2·3단계 운영기관은 서울교통공사(seoul-metro)이며, #2138 active line scope의 line operator(서울시메트로9호선, operator-936e454d0bfb)도 coverage에 포함한다. 1단계(개화~신논현)는 이번 FILE 범위 밖이다.",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro",
+          "operator-936e454d0bfb"
+        ],
+        "lineIds": [
+          "line-f0e747248a31"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "on-change",
+      "observedDataUpdatedAt": "2026-01-31",
+      "retrievedAt": "2026-07-25",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "서울교통공사 · 서울시메트로9호선 · 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15099317/fileData.do"
+      },
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FILE_SNAPSHOT_ONLY",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2498,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-seoul9-route-map-positions.mjs",
+        "verificationTest": "tools/datapack/materialize-seoul9-route-map-positions.test.mjs",
+        "snapshotId": "seoul-metro-line9-23-route-map-positions-20260725",
+        "snapshotPath": "tools/datapack/sources/seoul-metro-line9-23-route-map-positions-20260725.json",
+        "snapshotSha256": "2db140beb94048ca65df3ef455bf45bafa2939812776d4944fe0c73da3517d53",
+        "capturedAt": "2026-07-25T04:00:00.000Z",
+        "stationCount": 13,
+        "rawStationCount": 13,
+        "quarantinedCount": 0,
+        "datasetId": "15099317",
+        "datasetIds": [
+          "15099317"
+        ],
+        "rawSha256": "6a8b48ff370e9a364986ec10670fa934033ec88d569b3dc2f7f2b7b1e5acd683",
+        "positionsSha256": "a3ac35749f4910ec75aff9fad38293b6f09e5d9fb178d036b1cfa72844fc4ec8",
+        "lineIds": [
+          "line-f0e747248a31"
+        ],
+        "lineStationCounts": {
+          "9": 13
+        },
+        "observedDataUpdatedAt": "2026-01-31",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260724",
+        "topologyContentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260724",
+            "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+            "lineId": "line-f0e747248a31"
+          }
+        ]
+      }
+    },
+    {
       "id": "seoul-metro-route-map-positions",
       "displayName": "서울교통공사_1_8호선 역사 좌표(위경도) 정보",
       "owner": "서울교통공사",

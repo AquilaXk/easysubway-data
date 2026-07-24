@@ -11,12 +11,13 @@
   ],
   "knownOperatorIds": [
     "airport-railroad",
-    "korail",
-    "incheon-transit",
     "busan-transportation",
     "daegu-transportation",
+    "daejeon-transportation",
     "gwangju-metropolitan-rapid-transit",
-    "daejeon-transportation"
+    "incheon-transit",
+    "korail",
+    "operator-936e454d0bfb"
   ],
   "knownSourceDomains": [
     "official_od_fares",
