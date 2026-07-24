@@ -1095,6 +1095,114 @@
       }
     },
     {
+      "id": "incheon-transit-accessibility",
+      "displayName": "인천교통공사 역사별 엘리베이터·에스컬레이터·휠체어리프트 현황",
+      "owner": "인천교통공사",
+      "provider": "인천교통공사",
+      "providerDepartment": "인천교통공사",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15083478/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "인천교통공사 1·2호선 60 membership 엘리베이터·에스컬레이터·휠체어리프트 설치 대수(7호선·환기구·대피 행 skip, CSV 미게재 시설은 count=0)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-42b5805f3b5a",
+          "line-98718184f016"
+        ],
+        "sourceDomains": [
+          "accessibility_facilities"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2026-07-24",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "인천교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15083478/fileData.do"
+      },
+      "fieldsProvided": [
+        "elevator",
+        "escalator",
+        "wheelchair_lift",
+        "status",
+        "verified_at"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "INCHEON_LINES_1_2_OFFICIAL_FACILITY_COUNTS",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "설치 대수 정적 정보이며 실시간 운행 상태가 아니다. 7호선 CSV 행과 비역사 시설(환기구·대피) 행은 skip한다. CSV에 없는 시설은 공식 미게재로 count=0이다"
+        }
+      },
+      "accessibilityAdmissionEvidence": {
+        "issue": 2484,
+        "materializer": "tools/datapack/materialize-incheon-accessibility.mjs",
+        "verificationTest": "tools/datapack/materialize-incheon-accessibility.test.mjs",
+        "snapshotId": "incheon-transit-accessibility-20260724",
+        "snapshotPath": "tools/datapack/sources/incheon-transit-accessibility-20260724.json",
+        "capturedAt": "2026-07-24T07:00:00.000Z",
+        "freshUntil": "2026-07-25T07:00:00.000Z",
+        "stationCount": 60,
+        "rowCount": 60,
+        "facilityCount": 180,
+        "rawSha256": "5d491dfea539e91e6ba51e4a1b86ce3c703b1c0696a25039f2847593011c53cd",
+        "rowsSha256": "a4052b02d90d5c5c819597d170b7fd20bbc1f16a2086a6fcc2d0f451de95b172",
+        "datasetIds": [
+          "15083478",
+          "15010199",
+          "15146049"
+        ],
+        "topologySourceId": "incheon-transit-station-info",
+        "topologySnapshotId": "incheon-transit-station-info-20260724",
+        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "topologyLineages": [
+          {
+            "sourceId": "incheon-transit-station-info",
+            "snapshotId": "incheon-transit-station-info-20260724",
+            "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+            "lineId": "line-42b5805f3b5a"
+          },
+          {
+            "sourceId": "incheon-transit-station-info",
+            "snapshotId": "incheon-transit-station-info-20260724",
+            "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+            "lineId": "line-98718184f016"
+          }
+        ]
+      }
+    },
+    {
       "id": "gwangju-transportation-cyberstation-timetable",
       "displayName": "광주교통공사 사이버스테이션 열차시각표",
       "owner": "광주교통공사",
