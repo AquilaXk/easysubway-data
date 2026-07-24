@@ -966,7 +966,7 @@
       "sourceSystem": "공공데이터포털 파일데이터",
       "datasetUrl": "https://www.data.go.kr/data/15083751/fileData.do",
       "datasetKind": "official-file-data",
-      "coverage": "인천교통공사 1·2호선 60개 역 membership·116개 인접 topology edge·60개 route_map_positions(7호선 11행 제외, 송도달빛 역번호 3139 교정)",
+      "coverage": "인천교통공사 1·2호선 60역 topology + 1·2·7호선 71 membership/positions(7호선 11역 capital keep stationId join, topology edge 미admission)",
       "coverageScope": {
         "regionIds": [
           "capital"
@@ -976,7 +976,8 @@
         ],
         "lineIds": [
           "line-42b5805f3b5a",
-          "line-98718184f016"
+          "line-98718184f016",
+          "line-15b3b8a93259"
         ],
         "sourceDomains": [
           "route_graph_topology",
@@ -1034,24 +1035,25 @@
         }
       },
       "membershipAdmissionEvidence": {
-        "issue": 2481,
+        "issue": 2490,
         "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
         "snapshotId": "incheon-transit-station-info-20260724",
         "lineIds": [
           "line-42b5805f3b5a",
-          "line-98718184f016"
+          "line-98718184f016",
+          "line-15b3b8a93259"
         ],
         "verifiedAt": "2026-07-24T06:00:00.000Z",
-        "stationCount": 60,
+        "stationCount": 71,
         "membershipSourceId": "incheon-transit-station-info",
         "membershipSourceRawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
-        "membershipSourceSnapshotSha256": "d706a46a5871cea4c79dbed318a178c18dba7c70ac49fc6e98bc790eb564d224",
-        "mappingSha256": "01fdad24ecc2a11bc7a83a8a5d9d25bec902cbd6b15e880ed19db1d1d06d6243",
-        "stationCodesSha256": "0a7a757a045f792bb7428aa4f6bd8e03cca707bb0ba4d6a0d8a466a4f592e773",
+        "membershipSourceSnapshotSha256": "b6c0040233f0d967b40edde161521c8e48d6767427246d94047b5b33536be154",
+        "mappingSha256": "8bf1aef72516cda6368cb6b819c58069c280dede47f25c8e055e5832caede09d",
+        "stationCodesSha256": "dff57ce3c33a43846992885945c0b509c32fb91d5317fed3873060e0fc7ee2bf",
         "stationCodeSourceId": "incheon-transit-station-info",
         "stationCodeSnapshotId": "incheon-transit-station-info-20260724",
-        "stationCodeContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912"
+        "stationCodeContentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8"
       },
       "topologyAdmissionEvidence": {
         "issue": 2481,
@@ -1063,35 +1065,37 @@
         "freshUntil": "2026-07-25T06:00:00.000Z",
         "stationCount": 60,
         "edgeCount": 116,
-        "excludedTransferCount": 11,
+        "excludedTransferCount": 0,
         "rawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
-        "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912"
+        "contentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8"
       },
       "routeMapAdmissionEvidence": {
-        "issue": 2481,
+        "issue": 2490,
         "admissionKind": "official-file-latlon",
         "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
         "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
         "snapshotId": "incheon-transit-station-info-20260724",
         "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
-        "snapshotSha256": "780ed8f5e8b1522f3334b4970deef4b64e6db9dc01a691c4f7e0be77ba54a8be",
+        "snapshotSha256": "52e5482eb42a40d7e29790a11742e59784753d1a60436ffc35cfea3be8e1b098",
         "capturedAt": "2026-07-24T06:00:00.000Z",
-        "stationCount": 60,
+        "stationCount": 71,
         "datasetId": "15083751",
         "rawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
-        "positionsSha256": "8c7a3db3c8ad51402a280bd0a6468872537525bb3d723e099a7f48ea9120f7ee",
+        "positionsSha256": "3d56d04c75db75e676516c8d3e819f67e94e8759309345505f8d451b526086bc",
         "lineIds": [
           "line-42b5805f3b5a",
-          "line-98718184f016"
+          "line-98718184f016",
+          "line-15b3b8a93259"
         ],
         "lineStationCounts": {
           "line-98718184f016": 33,
-          "line-42b5805f3b5a": 27
+          "line-42b5805f3b5a": 27,
+          "line-15b3b8a93259": 11
         },
         "observedDataUpdatedAt": "2025-06-30",
         "topologySourceId": "incheon-transit-station-info",
         "topologySnapshotId": "incheon-transit-station-info-20260724",
-        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912"
+        "topologyContentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8"
       }
     },
     {
@@ -1185,18 +1189,18 @@
         ],
         "topologySourceId": "incheon-transit-station-info",
         "topologySnapshotId": "incheon-transit-station-info-20260724",
-        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "topologyContentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
         "topologyLineages": [
           {
             "sourceId": "incheon-transit-station-info",
             "snapshotId": "incheon-transit-station-info-20260724",
-            "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+            "contentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
             "lineId": "line-42b5805f3b5a"
           },
           {
             "sourceId": "incheon-transit-station-info",
             "snapshotId": "incheon-transit-station-info-20260724",
-            "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+            "contentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
             "lineId": "line-98718184f016"
           }
         ]
@@ -1286,7 +1290,7 @@
         "rowsSha256": "cadbf0e7b064b097674769833b051ca1334b346285dbb5c2babe1d84a862fd71",
         "topologySourceId": "incheon-transit-station-info",
         "topologySnapshotId": "incheon-transit-station-info-20260724",
-        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "topologyContentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
         "rawUpSha256": "f07b4a0c314169fe8359f8ee998b47a4549177c15fd8e24782dc083313bf1891",
         "rawDownSha256": "119944b4a66c4602a425841b0528eb208838145772612d469e06383492a161d1",
         "tripsSha256": "cadbf0e7b064b097674769833b051ca1334b346285dbb5c2babe1d84a862fd71",
@@ -1379,7 +1383,7 @@
         "rowsSha256": "00558f197df117c76f3704e93bb0a53a620130c06382a5056b35e84f94285c2b",
         "topologySourceId": "incheon-transit-station-info",
         "topologySnapshotId": "incheon-transit-station-info-20260724",
-        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "topologyContentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
         "rawUpSha256": "5ff5b31fb13d165a0026cb8406c5dc213bbf2d1a28bc46daa52fccc6945d205c",
         "rawDownSha256": "7a39e1b8f7a8139db184aece45f0b6c66da0c941540481efb50f71e46021c6cd",
         "tripsSha256": "00558f197df117c76f3704e93bb0a53a620130c06382a5056b35e84f94285c2b",

@@ -36,9 +36,10 @@ const SOURCE_ID = "incheon-transit-station-info";
 const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
-// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=23 → incheon +6 = 29.
+const LINE7 = "line-15b3b8a93259";
+// gwangju accessibility 누적 fixture coverage baseline(실측): supportedCount=23 → incheon +8 = 31.
 const GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT = 23;
-const INCHEON_SUPPORTED_COUNT = GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 6;
+const INCHEON_SUPPORTED_COUNT = GWANGJU_ACCESSIBILITY_BASELINE_SUPPORTED_COUNT + 8;
 
 async function inputs() {
   const [
@@ -140,14 +141,16 @@ test("인천 station-info를 membership·topology·route_map으로 materialize�
   const positions = pack.routeMapPositions.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const stations = pack.stations.filter(({ sourceId }) => sourceId === SOURCE_ID);
 
-  assert.equal(stations.length, 59);
-  assert.equal(stationLines.length, 60);
+  assert.equal(stations.length, 69);
+  assert.equal(stationLines.length, 71);
   assert.equal(edges.length, 116);
-  assert.equal(positions.length, 60);
+  assert.equal(positions.length, 71);
   assert.equal(stationLines.filter(({ lineId }) => lineId === LINE1).length, 33);
   assert.equal(stationLines.filter(({ lineId }) => lineId === LINE2).length, 27);
+  assert.equal(stationLines.filter(({ lineId }) => lineId === LINE7).length, 11);
   assert.equal(edges.filter(({ fromNodeId }) => fromNodeId.endsWith(`:${LINE1}`)).length, 64);
   assert.equal(edges.filter(({ fromNodeId }) => fromNodeId.endsWith(`:${LINE2}`)).length, 52);
+  assert.equal(edges.filter(({ fromNodeId }) => fromNodeId.endsWith(`:${LINE7}`)).length, 0);
   assert.ok(edges.every(({ durationSeconds, distanceMeters }) => (
     durationSeconds === 120 && distanceMeters === 0
   )));
@@ -158,22 +161,45 @@ test("인천 station-info를 membership·topology·route_map으로 materialize�
     stationLines.find(({ stationCode, lineId }) => lineId === LINE1 && stationCode === "3124")?.stationId,
     stationLines.find(({ stationCode, lineId }) => lineId === LINE2 && stationCode === "3221")?.stationId,
   );
+  assert.equal(
+    stationLines.find(({ stationCode, lineId }) => lineId === LINE1 && stationCode === "3118")?.stationId,
+    stationLines.find(({ stationCode, lineId }) => lineId === LINE7 && stationCode === "3761")?.stationId,
+  );
+  assert.equal(
+    stationLines.find(({ stationCode, lineId }) => lineId === LINE7 && stationCode === "3763")?.stationId,
+    "station-57db2f1fb4f6",
+  );
+  assert.equal(
+    stationLines.find(({ stationCode, lineId }) => lineId === LINE2 && stationCode === "3213")?.stationId,
+    "station-37866f28b417",
+  );
+  assert.equal(
+    stations.filter(({ id }) => id === "station-662a880cfe7d").length,
+    1,
+  );
+  assert.equal(
+    stations.filter(({ id }) => id === "station-57db2f1fb4f6" || id === "station-37866f28b417").length,
+    2,
+  );
   assert.ok(pack.operators.some(({ id }) => id === OPERATOR_ID));
+  assert.ok(pack.lines.some(({ id, operatorId }) => id === LINE7 && operatorId === OPERATOR_ID));
   assert.deepEqual(
     pack.lines.filter(({ operatorId }) => operatorId === OPERATOR_ID).map(({ id }) => id).sort(),
-    [LINE2, LINE1].sort(),
+    [LINE2, LINE1, LINE7].sort(),
   );
-  assert.deepEqual(source.coverageScope.lineIds, [LINE2, LINE1]);
+  assert.deepEqual(source.coverageScope.lineIds, [LINE2, LINE1, LINE7]);
   assert.deepEqual(source.coverageScope.sourceDomains, [
     "route_graph_topology",
     "route_map_positions",
     "station_line_membership",
   ]);
+  assert.ok(pack.coverageLineOperatorScopes?.some((scope) => (
+    scope.operatorId === OPERATOR_ID && scope.lineId === LINE7
+  )));
   assert.equal(pack.version, "20260724");
   assert.match(pack.id, /^nationwide-incheon-station-info-[a-f0-9]{64}$/);
   assert.match(materializedIncheonPackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
   assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
-  assert.equal(JSON.stringify(pack).includes("7호선"), false);
 });
 
 test("인천 station-info materialize는 freshness·hash·중복을 fail closed한다", async () => {
@@ -214,7 +240,7 @@ test("인천 station-info materialize는 freshness·hash·중복을 fail closed�
   }), /already exists/);
 });
 
-test("materialized SQLite와 provenance가 인천 1·2호선 6 requirements를 SUPPORTED로 만든다", async (context) => {
+test("materialized SQLite와 provenance가 인천 1·2호선 6 + 7호선 membership/positions 2 requirements를 SUPPORTED로 만든다", async (context) => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-station-info-pack-"));
   context.after(() => rm(outputDir, { recursive: true, force: true }));
   const fixturePath = path.join(outputDir, "fixture.json");
@@ -247,20 +273,34 @@ test("materialized SQLite와 provenance가 인천 1·2호선 6 requirements를 S
     new URL(manifest.packs[0].url).pathname.split("/").slice(-2).join("/"),
   ).replace(/\.gz$/, "");
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_lines WHERE line_id IN (?, ?)")
-    .get(LINE1, LINE2).count, 60);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_lines WHERE line_id IN (?, ?, ?)")
+    .get(LINE1, LINE2, LINE7).count, 71);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM station_lines WHERE line_id = ?")
+    .get(LINE7).count, 11);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE source_id = ?")
     .get(SOURCE_ID).count, 116);
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM network_edges WHERE from_node_id LIKE ?")
+    .get(`%:${LINE7}`).count, 0);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM route_map_positions WHERE source_id = ?")
-    .get(SOURCE_ID).count, 60);
+    .get(SOURCE_ID).count, 71);
   assert.equal(database.prepare(`
     SELECT COUNT(*) AS count FROM station_lines
     WHERE line_id = ? AND station_code = '3139'
   `).get(LINE1).count, 1);
   assert.equal(database.prepare(`
     SELECT COUNT(*) AS count FROM station_lines
-    WHERE line_id IN (?, ?) AND station_code LIKE '37%'
-  `).get(LINE1, LINE2).count, 0);
+    WHERE line_id = ? AND station_code LIKE '37%'
+  `).get(LINE7).count, 11);
+  assert.equal(database.prepare(`
+    SELECT station_id AS stationId FROM station_lines
+    WHERE line_id = ? AND station_code = '3763'
+  `).get(LINE7).stationId, "station-57db2f1fb4f6");
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM stations WHERE id IN (?, ?)
+  `).get("station-57db2f1fb4f6", "station-37866f28b417").count, 2);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM stations WHERE id = ?
+  `).get("station-662a880cfe7d").count, 1);
   database.close();
 
   await execFileAsync(process.execPath, [
@@ -275,20 +315,26 @@ test("materialized SQLite와 provenance가 인천 1·2호선 6 requirements를 S
     "--allow-gaps",
   ], { cwd: root });
   const report = JSON.parse(await readFile(reportPath, "utf8"));
-  const incheon = report.requirements.filter(({ operatorId, lineId, sourceDomain }) => (
+  const incheon12 = report.requirements.filter(({ operatorId, lineId, sourceDomain }) => (
     operatorId === OPERATOR_ID
       && [LINE1, LINE2].includes(lineId)
       && ["station_line_membership", "route_graph_topology", "route_map_positions"].includes(sourceDomain)
   ));
-  assert.equal(incheon.length, 6);
-  assert.ok(incheon.every(({ status }) => status === "SUPPORTED"));
+  assert.equal(incheon12.length, 6);
+  assert.ok(incheon12.every(({ status }) => status === "SUPPORTED"));
+  const incheon7 = report.requirements.filter(({ operatorId, lineId, sourceDomain }) => (
+    operatorId === OPERATOR_ID
+      && lineId === LINE7
+      && ["station_line_membership", "route_map_positions", "route_graph_topology"].includes(sourceDomain)
+  ));
+  assert.equal(incheon7.length, 3);
   assert.deepEqual(
-    incheon.map(({ lineId, sourceDomain }) => `${lineId}:${sourceDomain}`).sort(),
-    [LINE1, LINE2].flatMap((lineId) => [
-      `${lineId}:route_graph_topology`,
-      `${lineId}:route_map_positions`,
-      `${lineId}:station_line_membership`,
-    ]).sort(),
+    Object.fromEntries(incheon7.map(({ sourceDomain, status }) => [sourceDomain, status])),
+    {
+      station_line_membership: "SUPPORTED",
+      route_map_positions: "SUPPORTED",
+      route_graph_topology: "MISSING",
+    },
   );
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,

@@ -25,7 +25,7 @@ const SOURCE_ID = "incheon-transit-accessibility";
 const ARTIFACT_KIND = "incheon-accessibility-snapshot";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
-const TOPOLOGY_CONTENT_SHA256 = "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912";
+const TOPOLOGY_CONTENT_SHA256 = "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE_IDS = Object.freeze([LINE2, LINE1]);
@@ -316,15 +316,16 @@ function countFacilityRows({
 
 function validateTopologySnapshot(topologySnapshot) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
+  const topologyScope = (topologySnapshot.scope ?? [])
+    .filter((station) => LINE_IDS.includes(station.lineId));
   if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
     || topologySnapshot.snapshotId !== TOPOLOGY_SNAPSHOT_ID
     || topologySnapshot.contentSha256 !== TOPOLOGY_CONTENT_SHA256
-    || topologySnapshot.stationCount !== EXPECTED_STATION_COUNT
-    || topologySnapshot.scope?.length !== EXPECTED_STATION_COUNT
-    || JSON.stringify(topologySnapshot.lineIds) !== JSON.stringify([...LINE_IDS])) {
+    || JSON.stringify(topologySnapshot.topologyLineIds) !== JSON.stringify([...LINE_IDS])
+    || topologyScope.length !== EXPECTED_STATION_COUNT) {
     throw new Error("invalid Incheon topology snapshot");
   }
-  return topologySnapshot.scope;
+  return topologyScope;
 }
 
 function parseCsv(text) {

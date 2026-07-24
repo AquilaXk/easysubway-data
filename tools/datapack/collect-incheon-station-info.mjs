@@ -2,17 +2,23 @@
 // 인천교통공사 도시철도역사정보(공식 FILE 15083751)를 결정론적 snapshot으로 수집한다.
 // API key·포털 활용신청 없이 data.go.kr 파일데이터만 사용한다.
 //
-// 범위: 인천지하철 1·2호선만 admit. 7호선(인천·부천 구간)은 seoul-metro lineId와
-// 공유되므로 전량 제외한다(fail-closed on unknown 노선명).
+// 범위: 인천지하철 1·2호선 membership·topology·positions + 7호선(인천·부천 11역)
+// membership·positions. 7호선은 seoul-metro와 공유 line-15b3b8a93259이므로
+// topology edge는 capital 정본 중복 방지를 위해 admit하지 않는다(fail-closed on
+// unknown 노선명).
 //
 // Dedup: 동일 (노선명,역번호)가 이름·위경도까지 동일하면 1건만 유지.
 // 동일 키가 서로 다른 정체성이면 fail-closed. 단, FILE이 송도달빛축제공원에
 // 국제업무지구와 같은 3138을 부여한 결함은 수도권 사이버스테이션 station-cd=3139
 // 정본으로만 교정한다(그 외 코드 발명은 금지).
 //
-// Topology: 노선별 역번호를 숫자 정렬해 인접 역을 양방향 RIDE edge로 연결한다.
-// FILE에 거리·소요시간이 없어 durationSeconds=120·distanceMeters=0 placeholder를
-// 쓴다(tools/route-map/lib/station-catalog.mjs 동일 관례). haversine 발명 금지.
+// Topology: 1·2호선만 노선별 역번호를 숫자 정렬해 인접 역을 양방향 RIDE edge로
+// 연결한다. FILE에 거리·소요시간이 없어 durationSeconds=120·distanceMeters=0
+// placeholder를 쓴다(tools/route-map/lib/station-catalog.mjs 동일 관례).
+// haversine 발명 금지. 7호선 edge·duration·distance 발명 금지.
+//
+// 석남: 인천2호선은 drop ID(station-37866f28b417), 7호선은 keep ID
+// (station-57db2f1fb4f6). 이름 정규화만으로는 구분되지 않으므로 lineId로 분기한다.
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -27,32 +33,55 @@ const OPERATOR_NAME = "인천교통공사";
 const REGION = "수도권";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const OBSERVED_DATA_UPDATED_AT = "2025-06-30";
-const SKIP_LINE_NAMES = Object.freeze(new Set(["7호선"]));
+const LINE1 = "line-98718184f016";
+const LINE2 = "line-42b5805f3b5a";
+const LINE7 = "line-15b3b8a93259";
 const LINE_BY_NAME = Object.freeze({
   "인천지하철 1호선": {
-    lineId: "line-98718184f016",
+    lineId: LINE1,
     nameKo: "인천 1호선",
     color: "#7ca8d5",
   },
   "인천지하철 2호선": {
-    lineId: "line-42b5805f3b5a",
+    lineId: LINE2,
     nameKo: "인천 2호선",
     color: "#ed8b00",
   },
+  "7호선": {
+    lineId: LINE7,
+    nameKo: "수도권 7호선",
+    color: "#657931",
+  },
 });
-const LINE_IDS = Object.freeze([
-  "line-42b5805f3b5a",
-  "line-98718184f016",
-]);
+// membership·positions 범위(공유 line-15 포함).
+const LINE_IDS = Object.freeze([LINE2, LINE1, LINE7]);
+// topology edge는 1·2호선만(7호선은 capital 53/104 재admission 금지).
+const TOPOLOGY_LINE_IDS = Object.freeze([LINE2, LINE1]);
 const EXPECTED_RAW_ROW_COUNT = 71;
 const EXPECTED_LINE7_COUNT = 11;
-const EXPECTED_ADMITTED_ROW_COUNT = 60;
-const EXPECTED_STATION_COUNT = 60;
-const EXPECTED_UNIQUE_STATION_COUNT = 59;
+const EXPECTED_EXCLUDED_LINE7_COUNT = 0;
+const EXPECTED_ADMITTED_ROW_COUNT = 71;
+const EXPECTED_STATION_COUNT = 71;
+const EXPECTED_UNIQUE_STATION_COUNT = 69;
 const EXPECTED_EDGE_COUNT = 116;
+const EXPECTED_POSITION_COUNT = 71;
 const EXPECTED_LINE_STATION_COUNTS = Object.freeze({
-  "line-98718184f016": 33,
-  "line-42b5805f3b5a": 27,
+  [LINE1]: 33,
+  [LINE2]: 27,
+  [LINE7]: 11,
+});
+const LINE7_KEEP_STATION_IDS = Object.freeze({
+  까치울: "station-899129ade388",
+  부천종합운동장: "station-28be6a80c00e",
+  춘의: "station-2558772de4e6",
+  신중동: "station-23a4489159af",
+  부천시청: "station-a8457c7435d9",
+  상동: "station-751b29075be1",
+  삼산체육관: "station-c8bd2d4016aa",
+  굴포천: "station-141f478238c0",
+  부평구청: "station-662a880cfe7d",
+  산곡: "station-6ca3b5e00e68",
+  석남: "station-57db2f1fb4f6",
 });
 const PLACEHOLDER_DURATION_SECONDS = 120;
 const PLACEHOLDER_DISTANCE_METERS = 0;
@@ -143,14 +172,32 @@ const KNOWN_STATION_IDS = Object.freeze({
   검단호수공원: "station-62fe7e203078",
   신검단중앙: "station-b78008d08d1f",
   아라: "station-996efa447ecf",
+  까치울: LINE7_KEEP_STATION_IDS.까치울,
+  부천종합운동장: LINE7_KEEP_STATION_IDS.부천종합운동장,
+  춘의: LINE7_KEEP_STATION_IDS.춘의,
+  신중동: LINE7_KEEP_STATION_IDS.신중동,
+  부천시청: LINE7_KEEP_STATION_IDS.부천시청,
+  상동: LINE7_KEEP_STATION_IDS.상동,
+  삼산체육관: LINE7_KEEP_STATION_IDS.삼산체육관,
+  굴포천: LINE7_KEEP_STATION_IDS.굴포천,
+  산곡: LINE7_KEEP_STATION_IDS.산곡,
 });
 
 export function normalizeIncheonStationName(name) {
-  return String(name).normalize("NFKC").replace(/\s+/gu, "").replace(/\([^()]*\)$/u, "");
+  return String(name)
+    .normalize("NFKC")
+    .replace(/\s+/gu, "")
+    .replace(/역$/u, "")
+    .replace(/\([^()]*\)$/u, "");
 }
 
-export function stationIdFor(stationName) {
+export function stationIdFor(stationName, lineId) {
   const normalized = normalizeIncheonStationName(stationName);
+  if (lineId === LINE7) {
+    const keep = LINE7_KEEP_STATION_IDS[normalized];
+    if (!keep) throw new Error(`Incheon line7 station id missing for ${stationName}`);
+    return keep;
+  }
   const known = KNOWN_STATION_IDS[normalized];
   if (!known) throw new Error(`Incheon station id missing for ${stationName}`);
   return known;
@@ -182,16 +229,12 @@ export function parseIncheonStationInfoCsv(csvBytes) {
 
   const indexes = Object.fromEntries(HEADERS.map((name, index) => [name, index]));
   const rawRows = [];
-  let excludedLine7Count = 0;
+  let admittedLine7Count = 0;
   for (const [rowIndex, row] of table.slice(1).entries()) {
     if (row.length !== header.length) {
       throw new Error(`Incheon station info CSV column count mismatch at row ${rowIndex + 2}`);
     }
     const lineName = String(row[indexes.노선명] ?? "").trim();
-    if (SKIP_LINE_NAMES.has(lineName)) {
-      excludedLine7Count += 1;
-      continue;
-    }
     const line = LINE_BY_NAME[lineName];
     if (!line) throw new Error(`Incheon station info unknown line: ${lineName || "(empty)"}`);
     const operatorName = String(row[indexes.운영기관명] ?? "").trim();
@@ -215,6 +258,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
       throw new Error(`Incheon station info unexpected data date: ${dataDate}`);
     }
     const stationCode = applyStationCodeCorrection(lineName, stationName, rawStationCode);
+    if (line.lineId === LINE7) admittedLine7Count += 1;
     rawRows.push({
       lineName,
       lineId: line.lineId,
@@ -226,8 +270,8 @@ export function parseIncheonStationInfoCsv(csvBytes) {
       longitude,
     });
   }
-  if (excludedLine7Count !== EXPECTED_LINE7_COUNT) {
-    throw new Error(`Incheon station info line7 exclusion count mismatch: ${excludedLine7Count}`);
+  if (admittedLine7Count !== EXPECTED_LINE7_COUNT) {
+    throw new Error(`Incheon station info line7 admission count mismatch: ${admittedLine7Count}`);
   }
   if (rawRows.length !== EXPECTED_ADMITTED_ROW_COUNT) {
     throw new Error(`Incheon station info admitted row count mismatch: ${rawRows.length}`);
@@ -258,7 +302,7 @@ export function parseIncheonStationInfoCsv(csvBytes) {
         lineId,
         stationCode: row.stationCode,
         stationName: row.stationName,
-        stationId: stationIdFor(row.stationName),
+        stationId: stationIdFor(row.stationName, lineId),
         nameEn: row.nameEn,
         latitude: row.latitude,
         longitude: row.longitude,
@@ -272,10 +316,24 @@ export function parseIncheonStationInfoCsv(csvBytes) {
   if (new Set(scope.map(({ stationId }) => stationId)).size !== EXPECTED_UNIQUE_STATION_COUNT) {
     throw new Error("Incheon station info unique station count mismatch");
   }
+  const line2Seoknam = scope.find((station) => station.lineId === LINE2 && normalizeIncheonStationName(station.stationName) === "석남");
+  const line7Seoknam = scope.find((station) => station.lineId === LINE7 && normalizeIncheonStationName(station.stationName) === "석남");
+  if (!line2Seoknam || line2Seoknam.stationId !== "station-37866f28b417") {
+    throw new Error("Incheon line2 석남 must keep drop station id");
+  }
+  if (!line7Seoknam || line7Seoknam.stationId !== "station-57db2f1fb4f6") {
+    throw new Error("Incheon line7 석남 must use keep station id");
+  }
+  if (line2Seoknam.stationId === line7Seoknam.stationId) {
+    throw new Error("Incheon 석남 line2/line7 station ids must remain distinct until transfer merge");
+  }
 
   const edges = buildAdjacentEdges(scope);
   if (edges.length !== EXPECTED_EDGE_COUNT) {
     throw new Error(`Incheon station info edge count mismatch: ${edges.length}`);
+  }
+  if (edges.some((edge) => edge.lineId === LINE7)) {
+    throw new Error("Incheon station info must not admit line7 topology edges");
   }
 
   const positions = scope.map((station) => {
@@ -295,9 +353,13 @@ export function parseIncheonStationInfoCsv(csvBytes) {
       labelPolygon: label.labelPolygon,
     };
   }).sort(comparePositions);
+  if (positions.length !== EXPECTED_POSITION_COUNT) {
+    throw new Error(`Incheon station info position count mismatch: ${positions.length}`);
+  }
 
   return {
-    excludedLine7Count,
+    excludedLine7Count: EXPECTED_EXCLUDED_LINE7_COUNT,
+    admittedLine7Count,
     scope,
     edges,
     positions,
@@ -328,11 +390,13 @@ export function collectIncheonStationInfo({ csvBytes, now = new Date() } = {}) {
     rawRowCount: EXPECTED_RAW_ROW_COUNT,
     admittedRowCount: EXPECTED_ADMITTED_ROW_COUNT,
     excludedLine7Count: parsed.excludedLine7Count,
+    admittedLine7Count: parsed.admittedLine7Count,
     excludedTransferCount: parsed.excludedLine7Count,
     stationCount: scope.length,
     uniqueStationCount: EXPECTED_UNIQUE_STATION_COUNT,
     edgeCount: edges.length,
     positionCount: positions.length,
+    topologyLineIds: [...TOPOLOGY_LINE_IDS],
     lineIds: [...LINE_IDS],
     lineStationCounts: { ...EXPECTED_LINE_STATION_COUNTS },
     operatorId: OPERATOR_ID,
@@ -365,15 +429,17 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
     || snapshot.observedDataUpdatedAt !== OBSERVED_DATA_UPDATED_AT
     || snapshot.rawRowCount !== EXPECTED_RAW_ROW_COUNT
     || snapshot.admittedRowCount !== EXPECTED_ADMITTED_ROW_COUNT
-    || snapshot.excludedLine7Count !== EXPECTED_LINE7_COUNT
-    || snapshot.excludedTransferCount !== EXPECTED_LINE7_COUNT
+    || snapshot.excludedLine7Count !== EXPECTED_EXCLUDED_LINE7_COUNT
+    || snapshot.admittedLine7Count !== EXPECTED_LINE7_COUNT
+    || snapshot.excludedTransferCount !== EXPECTED_EXCLUDED_LINE7_COUNT
     || snapshot.stationCount !== EXPECTED_STATION_COUNT
     || snapshot.uniqueStationCount !== EXPECTED_UNIQUE_STATION_COUNT
     || snapshot.edgeCount !== EXPECTED_EDGE_COUNT
-    || snapshot.positionCount !== EXPECTED_STATION_COUNT
+    || snapshot.positionCount !== EXPECTED_POSITION_COUNT
     || snapshot.scope?.length !== EXPECTED_STATION_COUNT
     || snapshot.edges?.length !== EXPECTED_EDGE_COUNT
-    || snapshot.positions?.length !== EXPECTED_STATION_COUNT
+    || snapshot.positions?.length !== EXPECTED_POSITION_COUNT
+    || JSON.stringify(snapshot.topologyLineIds) !== JSON.stringify([...TOPOLOGY_LINE_IDS])
     || JSON.stringify(snapshot.lineIds) !== JSON.stringify([...LINE_IDS])
     || JSON.stringify(snapshot.lineStationCounts) !== JSON.stringify(EXPECTED_LINE_STATION_COUNTS)
     || JSON.stringify(snapshot.fieldsProvided) !== JSON.stringify([...FIELDS_PROVIDED])
@@ -395,7 +461,7 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
   const membershipKeys = new Set();
   for (const station of snapshot.scope) {
     const key = `${station.lineId}:${station.stationCode}`;
-    if (membershipKeys.has(key) || station.stationId !== stationIdFor(station.stationName)
+    if (membershipKeys.has(key) || station.stationId !== stationIdFor(station.stationName, station.lineId)
       || !Number.isInteger(station.lineSequence) || station.lineSequence < 1
       || !Number.isFinite(station.latitude) || !Number.isFinite(station.longitude)) {
       throw new Error(`invalid Incheon station scope row: ${key}`);
@@ -414,7 +480,8 @@ export function validateIncheonStationInfoSnapshot(snapshot) {
   const edgeKeys = new Set();
   for (const edge of snapshot.edges) {
     const key = `${edge.lineId}:${edge.fromStationCode}:${edge.toStationCode}`;
-    if (edgeKeys.has(key) || edge.durationSeconds !== PLACEHOLDER_DURATION_SECONDS
+    if (edgeKeys.has(key) || !TOPOLOGY_LINE_IDS.includes(edge.lineId)
+      || edge.durationSeconds !== PLACEHOLDER_DURATION_SECONDS
       || edge.distanceMeters !== PLACEHOLDER_DISTANCE_METERS
       || Math.abs(Number(edge.fromStationCode) - Number(edge.toStationCode)) !== 1) {
       throw new Error(`invalid Incheon topology edge: ${key}`);
@@ -476,7 +543,7 @@ function dedupeRows(rows) {
 
 function buildAdjacentEdges(scope) {
   const edges = [];
-  for (const lineId of LINE_IDS) {
+  for (const lineId of TOPOLOGY_LINE_IDS) {
     const lineScope = scope.filter((station) => station.lineId === lineId);
     for (let index = 0; index < lineScope.length - 1; index += 1) {
       const left = lineScope[index];

@@ -16,15 +16,21 @@ const REGION_ID = "capital";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
-const LINE_IDS = Object.freeze([LINE2, LINE1]);
+const LINE7 = "line-15b3b8a93259";
+const OWNED_LINE_IDS = Object.freeze([LINE2, LINE1]);
+const LINE_IDS = Object.freeze([LINE2, LINE1, LINE7]);
+const TOPOLOGY_LINE_IDS = Object.freeze([LINE2, LINE1]);
 const LINE_METADATA = Object.freeze({
   [LINE1]: { nameKo: "인천 1호선", color: "#7ca8d5" },
   [LINE2]: { nameKo: "인천 2호선", color: "#ed8b00" },
+  [LINE7]: { nameKo: "수도권 7호선", color: "#657931" },
 });
-const EXPECTED_STATION_COUNT = 60;
-const EXPECTED_UNIQUE_STATION_COUNT = 59;
+const EXPECTED_STATION_COUNT = 71;
+const EXPECTED_UNIQUE_STATION_COUNT = 69;
+const EXPECTED_TOPOLOGY_STATION_COUNT = 60;
+const EXPECTED_LINE7_COUNT = 11;
 const EXPECTED_EDGE_COUNT = 116;
-const EXPECTED_POSITION_COUNT = 60;
+const EXPECTED_POSITION_COUNT = 71;
 const FIELDS_PROVIDED = Object.freeze([
   "line",
   "station_name",
@@ -54,20 +60,21 @@ export function materializeIncheonStationInfo({
     throw new Error(`${SOURCE_ID} already exists`);
   }
   if (pack.operators.some(({ id }) => id === OPERATOR_ID)
-    || LINE_IDS.some((lineId) => pack.lines.some(({ id }) => id === lineId))) {
+    || OWNED_LINE_IDS.some((lineId) => pack.lines.some(({ id }) => id === lineId))) {
     throw new Error("Incheon operator/lines already exist in base fixture");
   }
 
   const snapshotId = source.topologyAdmissionEvidence.snapshotId;
   pack.sourceInventory.push(packSource(source, snapshot));
   pack.operators.push({ id: OPERATOR_ID, nameKo: "인천교통공사", nameEn: "" });
-  pack.lines.push(...LINE_IDS.map((lineId) => ({
+  pack.lines.push(...OWNED_LINE_IDS.map((lineId) => ({
     id: lineId,
     operatorId: OPERATOR_ID,
     nameKo: LINE_METADATA[lineId].nameKo,
     nameEn: "",
     color: LINE_METADATA[lineId].color,
   })));
+  ensureSharedLine7(pack, fixture);
 
   const stationsById = new Map();
   const stationLines = [];
@@ -119,6 +126,9 @@ export function materializeIncheonStationInfo({
     || stationLines.length !== EXPECTED_STATION_COUNT) {
     throw new Error("Incheon materialized station counts are invalid");
   }
+  if (stationLines.filter(({ lineId }) => lineId === LINE7).length !== EXPECTED_LINE7_COUNT) {
+    throw new Error("Incheon materialized line7 membership count is invalid");
+  }
 
   const networkEdges = snapshot.edges.map((edge) => ({
     id: `edge-incheon-${edge.fromStationCode}-${edge.toStationCode}-${edge.lineId.slice(-6)}`,
@@ -143,7 +153,8 @@ export function materializeIncheonStationInfo({
     evidenceHash: snapshot.edgesSha256,
   }));
   if (networkEdges.length !== EXPECTED_EDGE_COUNT
-    || new Set(networkEdges.map(({ id }) => id)).size !== EXPECTED_EDGE_COUNT) {
+    || new Set(networkEdges.map(({ id }) => id)).size !== EXPECTED_EDGE_COUNT
+    || networkEdges.some((edge) => edge.fromNodeId.endsWith(`:${LINE7}`))) {
     throw new Error("Incheon materialized edge counts are invalid");
   }
 
@@ -214,6 +225,53 @@ export function materializedIncheonPackContentHash(pack, version) {
   return sha256(JSON.stringify({ version, content }));
 }
 
+function ensureSharedLine7(pack, fixture) {
+  if (!pack.lines.some(({ id }) => id === LINE7)) {
+    pack.lines.push({
+      id: LINE7,
+      operatorId: OPERATOR_ID,
+      nameKo: LINE_METADATA[LINE7].nameKo,
+      nameEn: "",
+      color: LINE_METADATA[LINE7].color,
+    });
+  }
+  const scope = {
+    regionId: REGION_ID,
+    operatorId: OPERATOR_ID,
+    lineId: LINE7,
+  };
+  const packScopes = [...(pack.coverageLineOperatorScopes ?? [])];
+  if (!packScopes.some((entry) => (
+    entry.regionId === scope.regionId
+      && entry.operatorId === scope.operatorId
+      && entry.lineId === scope.lineId
+  ))) {
+    packScopes.push(scope);
+    packScopes.sort((left, right) => (
+      `${left.regionId}:${left.operatorId}:${left.lineId}`
+        .localeCompare(`${right.regionId}:${right.operatorId}:${right.lineId}`, "en")
+    ));
+    pack.coverageLineOperatorScopes = packScopes;
+  }
+  if (fixture.coverageLineOperatorScopes !== undefined
+    || fixture.coverageLineOperatorScopeSemantics !== undefined
+    || pack.coverageLineOperatorScopes !== undefined) {
+    const union = [...new Map(
+      [...(fixture.coverageLineOperatorScopes ?? []), ...(pack.coverageLineOperatorScopes ?? [])]
+        .map((entry) => [`${entry.regionId}:${entry.operatorId}:${entry.lineId}`, entry]),
+    ).values()].sort((left, right) => (
+      `${left.regionId}:${left.operatorId}:${left.lineId}`
+        .localeCompare(`${right.regionId}:${right.operatorId}:${right.lineId}`, "en")
+    ));
+    fixture.coverageLineOperatorScopeSemantics = "UNION_OF_PACK_SCOPES";
+    fixture.coverageLineOperatorScopes = union;
+    pack.coverageLineOperatorScopes = union.filter((entry) => (
+      pack.operators.some(({ id }) => id === entry.operatorId)
+        && pack.lines.some(({ id }) => id === entry.lineId)
+    ));
+  }
+}
+
 function requiredSource(inventory, snapshot, snapshotSha256, now) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const topology = source?.topologyAdmissionEvidence;
@@ -241,12 +299,12 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
     || topology.snapshotPath !== "tools/datapack/sources/incheon-transit-station-info-20260724.json"
     || topology.capturedAt !== snapshot.capturedAt
     || topology.freshUntil !== snapshot.freshUntil
-    || topology.stationCount !== EXPECTED_STATION_COUNT
+    || topology.stationCount !== EXPECTED_TOPOLOGY_STATION_COUNT
     || topology.edgeCount !== EXPECTED_EDGE_COUNT
     || topology.excludedTransferCount !== snapshot.excludedTransferCount
     || topology.rawSha256 !== snapshot.rawSha256
     || topology.contentSha256 !== snapshot.contentSha256
-    || membership?.issue !== 2481
+    || membership?.issue !== 2490
     || membership.materializer !== topology.materializer
     || membership.verificationTest !== topology.verificationTest
     || membership.snapshotId !== topology.snapshotId
@@ -261,7 +319,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
     || membership.stationCodeSourceId !== SOURCE_ID
     || membership.stationCodeSnapshotId !== topology.snapshotId
     || membership.stationCodeContentSha256 !== snapshot.contentSha256
-    || routeMap?.issue !== 2481
+    || routeMap?.issue !== 2490
     || routeMap.admissionKind !== "official-file-latlon"
     || routeMap.materializer !== topology.materializer
     || routeMap.verificationTest !== topology.verificationTest

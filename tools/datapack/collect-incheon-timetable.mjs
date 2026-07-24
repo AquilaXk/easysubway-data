@@ -18,7 +18,7 @@ import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-in
 
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
 const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
-const TOPOLOGY_CONTENT_SHA256 = "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912";
+const TOPOLOGY_CONTENT_SHA256 = "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8";
 const ARTIFACT_KIND = "incheon-train-timetable-snapshot";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const DAY_CODES = Object.freeze(["WEEK", "HOLI"]);

@@ -40,8 +40,8 @@ const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
-// accessibility 누적 fixture coverage baseline(실측): supportedCount=31 → timetable +2 = 33.
-const ACCESSIBILITY_SUPPORTED_COUNT = 31;
+// accessibility 누적 fixture coverage baseline(실측): supportedCount=33 → timetable +2 = 35.
+const ACCESSIBILITY_SUPPORTED_COUNT = 33;
 const TIMETABLE_SUPPORTED_COUNT = ACCESSIBILITY_SUPPORTED_COUNT + 2;
 
 async function inputs() {
@@ -186,9 +186,11 @@ test("인천 1·2호선 공식 timetable을 1414 trip·40898 stop_time·WEEK/HOL
       ? calendar.saturday === false && calendar.sunday === false
       : calendar.saturday === true && calendar.sunday === true
   )));
-  assert.ok(!pack.sourceInventory.some(({ id }) => id.includes("line7") || id.includes("15b3b8a93259")));
+  assert.ok(!pack.sourceInventory.some(({ id }) => id.includes("line7") || id.includes("line7-train")));
   assert.ok(!trips.some(({ id }) => id.includes("line7")));
-  assert.ok(pack.lines.every(({ id }) => id !== LINE7));
+  // line-15 membership/positions는 station-info(#2490)가 소유. timetable은 1·2호선만.
+  assert.ok(pack.lines.some(({ id }) => id === LINE7));
+  assert.ok(!pack.sourceInventory.some(({ id }) => id.includes("line7-train-timetable")));
   assert.match(materializedIncheonTimetablePackContentHash(pack, pack.version), /^[a-f0-9]{64}$/);
 
   const maxArrival = Math.max(...stopTimes.map(({ arrivalSeconds }) => arrivalSeconds));

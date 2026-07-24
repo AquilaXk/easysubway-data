@@ -5655,7 +5655,8 @@
         ],
         "lineIds": [
           "line-42b5805f3b5a",
-          "line-98718184f016"
+          "line-98718184f016",
+          "line-15b3b8a93259"
         ]
       },
       "displayName": "인천교통공사_도시철도역사정보",
@@ -5724,33 +5725,33 @@
           "route_map_label_polygon"
         ],
         "liveSampleRetrievedAt": "2026-07-24T06:00:00.000Z",
-        "liveSampleRowCount": 60,
-        "liveSampleStationCount": 60,
+        "liveSampleRowCount": 71,
+        "liveSampleStationCount": 71,
         "liveSampleRawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
-        "liveSampleEvidenceHash": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "liveSampleEvidenceHash": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
         "evidenceArtifact": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
         "liveValidation": {
           "snapshotId": "incheon-transit-station-info-20260724",
           "snapshotPath": "tools/datapack/sources/incheon-transit-station-info-20260724.json",
           "capturedAt": "2026-07-24T06:00:00.000Z",
           "freshUntil": "2026-07-25T06:00:00.000Z",
-          "stationCount": 60,
+          "stationCount": 71,
           "edgeCount": 116,
-          "positionCount": 60,
+          "positionCount": 71,
           "rawSha256": "d8a81427028a4811033dfe48e332590f5cfc741adf887ccd908e5c99e6efc471",
-          "contentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
-          "positionsSha256": "8c7a3db3c8ad51402a280bd0a6468872537525bb3d723e099a7f48ea9120f7ee",
+          "contentSha256": "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8",
+          "positionsSha256": "3d56d04c75db75e676516c8d3e819f67e94e8759309345505f8d451b526086bc",
           "datasetIds": [
             "15083751"
           ],
           "credentialRedacted": true,
           "materializer": "tools/datapack/materialize-incheon-station-info.mjs",
           "verificationTest": "tools/datapack/materialize-incheon-station-info.test.mjs",
-          "coverageSupportedCount": 6
+          "coverageSupportedCount": 8
         },
         "coverageAssessment": {
           "state": "SUPPORTED",
-          "requirementCount": 6,
+          "requirementCount": 8,
           "sourceDomains": [
             "station_line_membership",
             "route_graph_topology",
