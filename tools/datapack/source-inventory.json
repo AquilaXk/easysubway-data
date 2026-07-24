@@ -1810,6 +1810,131 @@
       }
     },
     {
+      "id": "daegu-transportation-route-map-positions",
+      "displayName": "대구교통공사_1·2·3호선 역별 출구별 위치정보",
+      "owner": "대구교통공사",
+      "provider": "대구교통공사",
+      "providerDepartment": "AX정보팀",
+      "sourceSystem": "대구교통공사·공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15133918/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "대구교통공사 1·2·3호선 공식 출구별 위경도를 exit→station median aggregation으로 집계(429 exits → 91 joined, 0 quarantine). 환승역(명덕·반월당·청라언덕)은 동일 stationId·동일 위경도를 호선별 역명으로 공유. topology gaps: 하양연장 3역. CSV aliases: 수성운동장/어린이회관",
+      "coverageScope": {
+        "regionIds": [
+          "daegu"
+        ],
+        "operatorIds": [
+          "daegu-transportation"
+        ],
+        "lineIds": [
+          "line-5b8d9b05e7e6",
+          "line-e2938a4cc492",
+          "line-0ffaa95b1b5d"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "on-change",
+      "observedDataUpdatedAt": "2024-10-14",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "대구교통공사 · 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15133918/fileData.do"
+      },
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FILE_SNAPSHOT_ONLY",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2473,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-daegu-route-map-positions.mjs",
+        "verificationTest": "tools/datapack/materialize-daegu-route-map-positions.test.mjs",
+        "snapshotId": "daegu-transportation-route-map-positions-20260724",
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+        "snapshotSha256": "9e5df3f0bf398a45dd453d442abeb7138e289423aee721144dd743834a0c90ee",
+        "capturedAt": "2026-07-24T03:00:00.000Z",
+        "stationCount": 91,
+        "rawStationCount": 91,
+        "quarantinedCount": 0,
+        "exitRowCount": 429,
+        "datasetIds": [
+          "15133918",
+          "15133920",
+          "15133922"
+        ],
+        "rawSha256": "ff79e8ec13d5ebf22cae7afa0908263ff27349afe68a210de243f0f17db0676e",
+        "positionsSha256": "b29b538c004ef849df98fbcbc1a1bf4f7f2aff260f3995e5de07cdd81ee3ac59",
+        "lineIds": [
+          "line-5b8d9b05e7e6",
+          "line-e2938a4cc492",
+          "line-0ffaa95b1b5d"
+        ],
+        "lineStationCounts": {
+          "1": 32,
+          "2": 29,
+          "3": 30
+        },
+        "observedDataUpdatedAt": "2024-10-14",
+        "topologySourceId": "daegu-transportation-route-map-topology-lineage",
+        "topologySnapshotId": "daegu-transportation-route-map-topology-lineage-20260721",
+        "topologyLineages": [
+          {
+            "sourceId": "daegu-line1-route-topology",
+            "snapshotId": "daegu-line1-route-topology-20260721",
+            "contentSha256": "6db720b38a9bcaa5aa3493059c33c2201cdfc885d4910d4ba96e43cd3ec2546f",
+            "lineId": "line-5b8d9b05e7e6"
+          },
+          {
+            "sourceId": "daegu-line2-route-topology",
+            "snapshotId": "daegu-line2-route-topology-20260721",
+            "contentSha256": "4d6b85ad5069a7d80c19ad0c2c8ac1243539ae1f0d0dda54e821e38daafadf00",
+            "lineId": "line-e2938a4cc492"
+          },
+          {
+            "sourceId": "daegu-line3-route-topology",
+            "snapshotId": "daegu-line3-route-topology-20260721",
+            "contentSha256": "0079b0af16ba42921c012557f45b8b7dfccadf69fdcad73590d4bddc013ca653",
+            "lineId": "line-0ffaa95b1b5d"
+          }
+        ],
+        "topologyContentSha256": "4e76459d4588f97bd55e767374b81031402c768d8f4805c69484d7c3f8771d1f"
+      }
+    },
+    {
       "id": "molit-urban-rail-full-route-daegu-line3-membership",
       "displayName": "국토교통부_도시철도 전체노선 대구 3호선 membership admission",
       "owner": "국토교통부",

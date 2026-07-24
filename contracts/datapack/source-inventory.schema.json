@@ -247,7 +247,15 @@
               "snapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "capturedAt": { "type": "string", "format": "date-time" },
               "stationCount": { "type": "integer", "minimum": 1 },
+              "rawStationCount": { "type": "integer", "minimum": 0 },
+              "quarantinedCount": { "type": "integer", "minimum": 0 },
+              "exitRowCount": { "type": "integer", "minimum": 0 },
               "datasetId": { "type": "string", "minLength": 1 },
+              "datasetIds": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
               "htmlSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "cssSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "connectorEvidencePath": { "type": "string", "minLength": 1 },
@@ -270,7 +278,23 @@
               "connectorAssetCount": { "type": "integer", "minimum": 1 },
               "topologySourceId": { "type": "string", "minLength": 1 },
               "topologySnapshotId": { "type": "string", "minLength": 1 },
-              "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "topologyLineages": {
+                "type": "array",
+                "description": "다중 topology snapshot lineage(노선별). 단일 topology* 필드와 함께 사용하며 Busan 단일 lineage 호환을 유지한다.",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["sourceId", "snapshotId", "contentSha256"],
+                  "properties": {
+                    "sourceId": { "type": "string", "minLength": 1 },
+                    "snapshotId": { "type": "string", "minLength": 1 },
+                    "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "lineId": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
             }
           },
           "scheduleAdmissionEvidence": {
