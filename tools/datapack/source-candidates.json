@@ -4615,6 +4615,120 @@
       "nextAction": "#2138의 나머지 전국 requirement를 같은 production SQLite·field provenance 계약으로 계속 admission한다"
     },
     {
+      "id": "daejeon-transportation-accessibility",
+      "priority": "P0",
+      "domain": "accessibility_facilities",
+      "coverageScope": {
+        "regionIds": [
+          "daejeon"
+        ],
+        "operatorIds": [
+          "daejeon-transportation"
+        ],
+        "lineIds": [
+          "line-7051a9c2525c"
+        ]
+      },
+      "displayName": "대전교통공사 역사별 엘리베이터·에스컬레이터 현황",
+      "detailUrl": "https://www.data.go.kr/data/15041384/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15041384/fileData.do",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www.data.go.kr/data/15041384/fileData.do",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [],
+        "fixedParameters": {},
+        "responseEnvelope": "official UTF-8 CSV file data 15041384 + 15041361",
+        "responseFields": [
+          "철도운영기관명",
+          "선명",
+          "역명",
+          "출입구번호",
+          "상세위치",
+          "정원_인원",
+          "정원_중량",
+          "상하행구분",
+          "시작층",
+          "종료층"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-daejeon-accessibility.mjs",
+          "arguments": [
+            "--elevator-input",
+            "tools/datapack/fixtures/daejeon-accessibility-raw/data-go-15041384.csv",
+            "--escalator-input",
+            "tools/datapack/fixtures/daejeon-accessibility-raw/data-go-15041361.csv",
+            "--topology-snapshot",
+            "tools/datapack/sources/daejeon-route-topology-20260720.json",
+            "--molit-csv",
+            "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+            "--output",
+            "/tmp/easysubway-daejeon-accessibility.json",
+            "--captured-at",
+            "2026-07-24T02:00:00.000Z"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "production_materialized",
+      "productionInventoryReferenceId": "daejeon-transportation-accessibility",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "https://www.data.go.kr/data/15041384/fileData.do",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "elevator",
+          "escalator",
+          "wheelchair_lift",
+          "status",
+          "verified_at"
+        ],
+        "liveSampleRetrievedAt": "2026-07-24T02:00:00.000Z",
+        "liveSampleRowCount": 22,
+        "liveSampleStationCount": 22,
+        "liveSampleRawSha256": "410d713213e5923454df9367d8ba3527b4c3aedf8e5182085057e5a268bcec0e",
+        "liveSampleEvidenceHash": "fdadfa1589772521e72353828712d68104b4e4fc4f390f82c7b98d9c8d40e524",
+        "evidenceArtifact": "tools/datapack/sources/daejeon-transportation-accessibility-20260724.json",
+        "liveValidation": {
+          "snapshotId": "daejeon-transportation-accessibility-20260724",
+          "snapshotPath": "tools/datapack/sources/daejeon-transportation-accessibility-20260724.json",
+          "capturedAt": "2026-07-24T02:00:00.000Z",
+          "freshUntil": "2026-07-25T02:00:00.000Z",
+          "stationCount": 22,
+          "rowCount": 22,
+          "facilityCount": 66,
+          "rawSha256": "410d713213e5923454df9367d8ba3527b4c3aedf8e5182085057e5a268bcec0e",
+          "rowsSha256": "fdadfa1589772521e72353828712d68104b4e4fc4f390f82c7b98d9c8d40e524",
+          "datasetIds": [
+            "15041384",
+            "15041361"
+          ],
+          "credentialRedacted": true,
+          "materializer": "tools/datapack/materialize-daejeon-accessibility.mjs",
+          "verificationTest": "tools/datapack/materialize-daejeon-accessibility.test.mjs",
+          "coverageSupportedCount": 1
+        },
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "accessibility_facilities",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-daejeon-accessibility.mjs",
+          "verificationTest": "tools/datapack/materialize-daejeon-accessibility.test.mjs"
+        }
+      },
+      "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
+    },
+    {
       "id": "busan-transportation-timetable",
       "priority": "P0",
       "domain": "schedule_timetable",

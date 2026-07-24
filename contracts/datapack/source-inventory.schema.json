@@ -378,6 +378,12 @@
               "facilityCount": { "type": "integer", "minimum": 1 },
               "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "rowsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "datasetIds": {
+                "type": "array",
+                "description": "다중 official FILE dataset id(엘리베이터·에스컬레이터 분리 소스 등).",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
               "topologySourceId": { "type": "string", "minLength": 1 },
               "topologySnapshotId": { "type": "string", "minLength": 1 },
               "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
