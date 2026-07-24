@@ -854,6 +854,111 @@
       }
     },
     {
+      "id": "gwangju-transportation-route-map-positions",
+      "displayName": "광주교통공사_문화노선도 현황",
+      "owner": "광주교통공사",
+      "provider": "광주교통공사",
+      "providerDepartment": "광주교통공사",
+      "sourceSystem": "광주교통공사·공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15109340/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "광주교통공사 1호선 공식 FILE 위경도 20역을 stationCode(역번호)=topology join으로 admission한다. admitted canvas x/y는 owner-self-drawn-sma-schematic 좌표 fixture를 정규화 역명으로 결속하며, FILE 위경도는 provenance로만 유지한다",
+      "coverageScope": {
+        "regionIds": [
+          "gwangju"
+        ],
+        "operatorIds": [
+          "gwangju-metropolitan-rapid-transit"
+        ],
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "on-change",
+      "observedDataUpdatedAt": "2022-12-02",
+      "retrievedAt": "2026-07-25",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "광주교통공사 · 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15109340/fileData.do"
+      },
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FILE_SNAPSHOT_ONLY",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2494,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-gwangju-route-map-positions.mjs",
+        "verificationTest": "tools/datapack/materialize-gwangju-route-map-positions.test.mjs",
+        "snapshotId": "gwangju-transportation-route-map-positions-20260725",
+        "snapshotPath": "tools/datapack/sources/gwangju-transportation-route-map-positions-20260725.json",
+        "snapshotSha256": "64be490e30a93b082fee9cdd392cde34215765b29e99e13a3e91703b443f4387",
+        "capturedAt": "2026-07-25T02:00:00.000Z",
+        "stationCount": 20,
+        "rawStationCount": 20,
+        "quarantinedCount": 0,
+        "datasetId": "15109340",
+        "datasetIds": [
+          "15109340"
+        ],
+        "rawSha256": "ca322fe16d180edf9fd98bc01414919dacc8c0b4ecd038ebfd1a7b4184d0b176",
+        "positionsSha256": "005b98a894e10ffaddf78cb053abf9d3aad2e450960cf118c15089ee74753001",
+        "lineIds": [
+          "line-e57a361e8892"
+        ],
+        "lineStationCounts": {
+          "1": 20
+        },
+        "observedDataUpdatedAt": "2022-12-02",
+        "topologySourceId": "gwangju-transportation-route-topology",
+        "topologySnapshotId": "gwangju-transportation-route-topology-20260720",
+        "topologyContentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43",
+        "topologyLineages": [
+          {
+            "sourceId": "gwangju-transportation-route-topology",
+            "snapshotId": "gwangju-transportation-route-topology-20260720",
+            "contentSha256": "d8197488bc6dda94e595f7e350cc65c547117da804fb59b7dff85d18b3192e43",
+            "lineId": "line-e57a361e8892"
+          }
+        ]
+      }
+    },
+    {
       "id": "gwangju-transportation-route-topology",
       "displayName": "광주교통공사 도시철도 운행정보",
       "owner": "광주교통공사",
