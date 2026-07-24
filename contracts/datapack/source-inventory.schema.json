@@ -341,6 +341,7 @@
               "tripsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "dayLabelNormalizedCount": { "type": "integer", "minimum": 0 },
+              "destinationLabelNormalizedCount": { "type": "integer", "minimum": 0 },
               "rolloverTripCount": { "type": "integer", "minimum": 0 }
             }
           },

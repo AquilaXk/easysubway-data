@@ -1203,6 +1203,192 @@
       }
     },
     {
+      "id": "incheon-line1-train-timetable",
+      "displayName": "인천교통공사 1호선 열차시각표",
+      "owner": "인천교통공사",
+      "provider": "인천교통공사",
+      "providerDepartment": "인천교통공사",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15051203/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "인천 1호선 WEEK·HOLI 상·하선 574개 운행과 18392개 stop time(토요일 전용 FILE 없음, 7호선 제외)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-98718184f016"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2025-04-12",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "인천교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15051203/fileData.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "INCHEON_LINE_1_WEEK_HOLI_TIMETABLE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "토요일 전용 FILE이 없어 HOLI(토·일·공휴일) 시각표를 재사용하며 토요일 시각을 발명하지 않는다. 계획 시간표이며 실시간 도착 정보가 아니다. 7호선은 범위 밖이다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2488,
+        "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs",
+        "snapshotId": "incheon-line1-train-timetable-20260724",
+        "snapshotPath": "tools/datapack/sources/incheon-line1-train-timetable-20260724.json",
+        "capturedAt": "2026-07-24T08:00:00.000Z",
+        "freshUntil": "2026-07-25T08:00:00.000Z",
+        "rowCount": 574,
+        "departureCount": 18392,
+        "tripCount": 574,
+        "stopTimeCount": 18392,
+        "rawSha256": "f46f46df99669a59eca52ebcce44edae74d18d5d3857382b63fe4cff6d8ec39e",
+        "rowsSha256": "cadbf0e7b064b097674769833b051ca1334b346285dbb5c2babe1d84a862fd71",
+        "topologySourceId": "incheon-transit-station-info",
+        "topologySnapshotId": "incheon-transit-station-info-20260724",
+        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "rawUpSha256": "f07b4a0c314169fe8359f8ee998b47a4549177c15fd8e24782dc083313bf1891",
+        "rawDownSha256": "119944b4a66c4602a425841b0528eb208838145772612d469e06383492a161d1",
+        "tripsSha256": "cadbf0e7b064b097674769833b051ca1334b346285dbb5c2babe1d84a862fd71",
+        "rolloverTripCount": 25,
+        "contentSha256": "27a2afeef9f8f8c2224bf6f1f54e28b0c6dd4e10e2bab802a5e7f6a2dc41f50f",
+        "destinationLabelNormalizedCount": 35
+      }
+    },
+    {
+      "id": "incheon-line2-train-timetable",
+      "displayName": "인천교통공사 2호선 열차시각표",
+      "owner": "인천교통공사",
+      "provider": "인천교통공사",
+      "providerDepartment": "인천교통공사",
+      "sourceSystem": "공공데이터포털 파일데이터",
+      "datasetUrl": "https://www.data.go.kr/data/15051210/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "인천 2호선 WEEK·HOLI 상·하선 840개 운행과 22506개 stop time(토요일 전용 FILE 없음, 7호선 제외)",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-42b5805f3b5a"
+        ],
+        "sourceDomains": [
+          "schedule_timetable"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily admission refresh",
+      "observedDataUpdatedAt": "2025-06-30",
+      "retrievedAt": "2026-07-24",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "인천교통공사, 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15051210/fileData.do"
+      },
+      "fieldsProvided": [
+        "service_calendar",
+        "trip",
+        "stop_time"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "INCHEON_LINE_2_WEEK_HOLI_TIMETABLE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "토요일 전용 FILE이 없어 HOLI(토·일·공휴일) 시각표를 재사용하며 토요일 시각을 발명하지 않는다. 계획 시간표이며 실시간 도착 정보가 아니다. 7호선은 범위 밖이다"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "daily admission refresh",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "scheduleAdmissionEvidence": {
+        "issue": 2488,
+        "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
+        "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs",
+        "snapshotId": "incheon-line2-train-timetable-20260724",
+        "snapshotPath": "tools/datapack/sources/incheon-line2-train-timetable-20260724.json",
+        "capturedAt": "2026-07-24T08:00:00.000Z",
+        "freshUntil": "2026-07-25T08:00:00.000Z",
+        "rowCount": 840,
+        "departureCount": 22506,
+        "tripCount": 840,
+        "stopTimeCount": 22506,
+        "rawSha256": "c5eb85973de66e59751df32d178d82798013e91fc5a2f7fa1af15cb1ef5f4805",
+        "rowsSha256": "00558f197df117c76f3704e93bb0a53a620130c06382a5056b35e84f94285c2b",
+        "topologySourceId": "incheon-transit-station-info",
+        "topologySnapshotId": "incheon-transit-station-info-20260724",
+        "topologyContentSha256": "5ee8cc4db3b9adf313907e2919baddfb9ffad93a2329a907589a9530e526c912",
+        "rawUpSha256": "5ff5b31fb13d165a0026cb8406c5dc213bbf2d1a28bc46daa52fccc6945d205c",
+        "rawDownSha256": "7a39e1b8f7a8139db184aece45f0b6c66da0c941540481efb50f71e46021c6cd",
+        "tripsSha256": "00558f197df117c76f3704e93bb0a53a620130c06382a5056b35e84f94285c2b",
+        "rolloverTripCount": 23,
+        "contentSha256": "077fbc0d5186e19063e6082c2345417c1051d1d5fbc8d426f37f50a9b2e47ba0",
+        "destinationLabelNormalizedCount": 0
+      }
+    },
+    {
       "id": "gwangju-transportation-cyberstation-timetable",
       "displayName": "광주교통공사 사이버스테이션 열차시각표",
       "owner": "광주교통공사",

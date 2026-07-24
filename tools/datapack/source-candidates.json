@@ -5878,6 +5878,224 @@
         }
       },
       "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
+    },
+    {
+      "id": "incheon-line1-train-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-98718184f016"
+        ]
+      },
+      "displayName": "인천교통공사 1호선 열차시각표",
+      "detailUrl": "https://www.data.go.kr/data/15051203/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15051203/fileData.do",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www.data.go.kr/data/15051203/fileData.do",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [],
+        "fixedParameters": {},
+        "responseEnvelope": "official UTF-8 CSV file data 15051203 + 15051204 + 15051205 + 15051206",
+        "responseFields": [
+          "시발역",
+          "종착역",
+          "열차번호",
+          "station_columns"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-incheon-timetable.mjs",
+          "arguments": [
+            "--input-dir",
+            "tools/datapack/fixtures/incheon-timetable-raw",
+            "--topology-snapshot",
+            "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+            "--output-dir",
+            "/tmp/easysubway-incheon-timetable",
+            "--captured-at",
+            "2026-07-24T08:00:00.000Z",
+            "--line",
+            "1"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "production_materialized",
+      "productionInventoryReferenceId": "incheon-line1-train-timetable",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "https://www.data.go.kr/data/15051203/fileData.do",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "service_calendar",
+          "trip",
+          "stop_time"
+        ],
+        "liveSampleRetrievedAt": "2026-07-24T08:00:00.000Z",
+        "liveSampleRowCount": 574,
+        "liveSampleTripCount": 574,
+        "liveSampleStopTimeCount": 18392,
+        "liveSampleRawSha256": "f46f46df99669a59eca52ebcce44edae74d18d5d3857382b63fe4cff6d8ec39e",
+        "liveSampleEvidenceHash": "27a2afeef9f8f8c2224bf6f1f54e28b0c6dd4e10e2bab802a5e7f6a2dc41f50f",
+        "evidenceArtifact": "tools/datapack/sources/incheon-line1-train-timetable-20260724.json",
+        "liveValidation": {
+          "snapshotId": "incheon-line1-train-timetable-20260724",
+          "snapshotPath": "tools/datapack/sources/incheon-line1-train-timetable-20260724.json",
+          "capturedAt": "2026-07-24T08:00:00.000Z",
+          "freshUntil": "2026-07-25T08:00:00.000Z",
+          "tripCount": 574,
+          "stopTimeCount": 18392,
+          "rowCount": 574,
+          "rawSha256": "f46f46df99669a59eca52ebcce44edae74d18d5d3857382b63fe4cff6d8ec39e",
+          "tripsSha256": "cadbf0e7b064b097674769833b051ca1334b346285dbb5c2babe1d84a862fd71",
+          "contentSha256": "27a2afeef9f8f8c2224bf6f1f54e28b0c6dd4e10e2bab802a5e7f6a2dc41f50f",
+          "datasetIds": [
+            "15051203",
+            "15051204",
+            "15051205",
+            "15051206"
+          ],
+          "credentialRedacted": true,
+          "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs",
+          "coverageSupportedCount": 1,
+          "dayModel": "WEEK_HOLI_NO_SATURDAY_FILE"
+        },
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "schedule_timetable",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs"
+        }
+      },
+      "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
+    },
+    {
+      "id": "incheon-line2-train-timetable",
+      "priority": "P0",
+      "domain": "schedule_timetable",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "incheon-transit"
+        ],
+        "lineIds": [
+          "line-42b5805f3b5a"
+        ]
+      },
+      "displayName": "인천교통공사 2호선 열차시각표",
+      "detailUrl": "https://www.data.go.kr/data/15051210/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15051210/fileData.do",
+      "operation": {
+        "method": "GET",
+        "endpoint": "https://www.data.go.kr/data/15051210/fileData.do",
+        "auth": {
+          "placement": "none"
+        },
+        "requiredParameters": [],
+        "fixedParameters": {},
+        "responseEnvelope": "official UTF-8 CSV file data 15051210 + 15051208 + 15051209 + 15051207",
+        "responseFields": [
+          "시발역",
+          "종착역",
+          "순번",
+          "station_columns"
+        ],
+        "runner": {
+          "command": "node tools/datapack/collect-incheon-timetable.mjs",
+          "arguments": [
+            "--input-dir",
+            "tools/datapack/fixtures/incheon-timetable-raw",
+            "--topology-snapshot",
+            "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+            "--output-dir",
+            "/tmp/easysubway-incheon-timetable",
+            "--captured-at",
+            "2026-07-24T08:00:00.000Z",
+            "--line",
+            "2"
+          ],
+          "requiredEnv": []
+        },
+        "secretPolicy": "credential-free-output"
+      },
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_live_full_snapshot",
+      "admissionStatus": "production_materialized",
+      "productionInventoryReferenceId": "incheon-line2-train-timetable",
+      "mobileEmbeddingAllowed": false,
+      "evidence": {
+        "retrievedAt": "2026-07-24",
+        "endpoint": "https://www.data.go.kr/data/15051210/fileData.do",
+        "usePermissionRange": "이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "service_calendar",
+          "trip",
+          "stop_time"
+        ],
+        "liveSampleRetrievedAt": "2026-07-24T08:00:00.000Z",
+        "liveSampleRowCount": 840,
+        "liveSampleTripCount": 840,
+        "liveSampleStopTimeCount": 22506,
+        "liveSampleRawSha256": "c5eb85973de66e59751df32d178d82798013e91fc5a2f7fa1af15cb1ef5f4805",
+        "liveSampleEvidenceHash": "077fbc0d5186e19063e6082c2345417c1051d1d5fbc8d426f37f50a9b2e47ba0",
+        "evidenceArtifact": "tools/datapack/sources/incheon-line2-train-timetable-20260724.json",
+        "liveValidation": {
+          "snapshotId": "incheon-line2-train-timetable-20260724",
+          "snapshotPath": "tools/datapack/sources/incheon-line2-train-timetable-20260724.json",
+          "capturedAt": "2026-07-24T08:00:00.000Z",
+          "freshUntil": "2026-07-25T08:00:00.000Z",
+          "tripCount": 840,
+          "stopTimeCount": 22506,
+          "rowCount": 840,
+          "rawSha256": "c5eb85973de66e59751df32d178d82798013e91fc5a2f7fa1af15cb1ef5f4805",
+          "tripsSha256": "00558f197df117c76f3704e93bb0a53a620130c06382a5056b35e84f94285c2b",
+          "contentSha256": "077fbc0d5186e19063e6082c2345417c1051d1d5fbc8d426f37f50a9b2e47ba0",
+          "datasetIds": [
+            "15051210",
+            "15051208",
+            "15051209",
+            "15051207"
+          ],
+          "credentialRedacted": true,
+          "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs",
+          "coverageSupportedCount": 1,
+          "dayModel": "WEEK_HOLI_NO_SATURDAY_FILE"
+        },
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "schedule_timetable",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-incheon-timetable.mjs",
+          "verificationTest": "tools/datapack/materialize-incheon-timetable.test.mjs"
+        }
+      },
+      "nextAction": "24시간 admission snapshot을 갱신해 immutable production pack을 재생성한다"
     }
   ]
 }
