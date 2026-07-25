@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalJson, withoutSignature } from "./lib/manifest-validation.mjs";
 import { rsaSha256Signature, signingPrivateKey } from "./lib/manifest-signing.mjs";
+import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 
 export function buildReleaseRequestBinding(
   manifestBytes,
@@ -48,35 +49,15 @@ export function buildReleaseRequestBinding(
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const manifestBytes = await readFile(path.resolve(required(args, "manifest")));
+  const manifestBytes = await readFile(path.resolve(requiredArg(args, "manifest")));
   const binding = buildReleaseRequestBinding(
     manifestBytes,
-    required(args, "release-request-id"),
+    requiredArg(args, "release-request-id"),
     signingPrivateKey(),
     process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID?.trim() || "production-v1",
     args.get("release-outcome") ?? "PUBLISHED_AND_VERIFIED",
   );
-  await writeFile(path.resolve(required(args, "output")), `${JSON.stringify(binding, null, 2)}\n`);
-}
-
-function parseArgs(argv) {
-  const args = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
-    if (!key?.startsWith("--") || value === undefined || value.startsWith("--")) {
-      throw new Error(`invalid argument near ${key ?? "<end>"}`);
-    }
-    if (args.has(key.slice(2))) throw new Error(`duplicate argument: ${key}`);
-    args.set(key.slice(2), value);
-  }
-  return args;
-}
-
-function required(args, name) {
-  const value = args.get(name);
-  if (!value) throw new Error(`--${name} is required`);
-  return value;
+  await writeFile(path.resolve(requiredArg(args, "output")), `${JSON.stringify(binding, null, 2)}\n`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

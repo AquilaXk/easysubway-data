@@ -390,6 +390,33 @@ jobs:
             "${API_BASE}/admin/api/datapack/release-requests/${releaseRequestId}" > release-request.json
           echo "RELEASE_REQUEST_PATH=release-request.json" >> "$GITHUB_ENV"
 
+      # release request ↔ build spec 결속을 pack 빌드 전에 fail-closed로 확인한다.
+      # decide-datapack-release의 validApproval도 같은 술어를 보지만 그 시점은 빌드 이후이고
+      # MATERIAL_CHANGE_UNAPPROVED만 남는다. 이 스텝은 어긋난 필드를 지목하고 즉시 종료한다.
+      # 결속 검증을 모든 PR(repository-contract)이 아니라 이 release 경로에만 두는 근거는
+      # tools/datapack/verify-release-request-binding.mjs 상단 주석 참조.
+      - name: Data Pack Release / Verify release request binding
+        if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
+        run: |
+          set -euo pipefail
+          release_request_path="${RELEASE_REQUEST_PATH:-${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}}"
+          if [[ -z "${release_request_path}" ]]; then
+            echo "production-publish requires a release request path (API fetch or file input)" >&2
+            exit 1
+          fi
+          if [[ ! -f "${release_request_path}" ]]; then
+            echo "release request not found: ${release_request_path}" >&2
+            exit 1
+          fi
+          if [[ -z "${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID:-}" ]]; then
+            echo "production-publish requires a release request id" >&2
+            exit 1
+          fi
+          node tools/datapack/verify-release-request-binding.mjs \
+            --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
+            --release-request "${release_request_path}" \
+            --expected-approval-id "${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID}"
+
       - name: Data Pack Release / Fetch rollback approval
         if: ${{ steps.release-mode.outputs.mode == 'rollback' }}
         env:

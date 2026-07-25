@@ -62,6 +62,34 @@ test("production-publish는 release request 조회 스텝과 !cancelled() 콜백
   assert.doesNotMatch(yml, /steps\.evidence-bundle\.outputs\.manifestSha256/);
 });
 
+test("production-publish는 pack 빌드 전에 release request ↔ build spec 결속을 확인한다", () => {
+  const verifyStep = yml.match(
+    /- name: Data Pack Release \/ Verify release request binding[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(verifyStep, "release request binding 검증 스텝을 찾지 못함");
+  assert.match(verifyStep, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' \}\}/);
+  assert.match(verifyStep, /verify-release-request-binding\.mjs/);
+  assert.match(verifyStep, /--build-spec "\$\{EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH\}"/);
+  assert.match(verifyStep, /--release-request/);
+  // API 조회 경로(RELEASE_REQUEST_PATH)와 파일 입력 경로 양쪽을 모두 검증해야 한다.
+  assert.match(verifyStep, /RELEASE_REQUEST_PATH:-\$\{EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-\}/);
+  // approvalId ↔ 요청 ID 대조는 인라인 검사가 파일 입력 경로에만 걸어 두었던 항목이다.
+  assert.match(verifyStep, /--expected-approval-id "\$\{EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID\}"/);
+  // 사전 조건 실패는 exit code만 남기지 말고 원인을 로그에 남겨야 한다.
+  assert.match(verifyStep, /release request path \(API fetch or file input\)[^\n]*>&2/);
+  assert.match(verifyStep, /release request not found: \$\{release_request_path\}"? >&2/);
+  // release request를 확보한 뒤, 그러나 pack을 빌드하고 판정하기 전에 놓여야 앞당긴 fail-closed가 된다.
+  const stepAt = (name) => yml.indexOf(`- name: ${name}`);
+  const fetchRequest = stepAt("Data Pack Release / Fetch release request");
+  const verify = stepAt("Data Pack Release / Verify release request binding");
+  const buildPacks = stepAt("Data Pack Release / Build data packs");
+  const decide = stepAt("Data Pack Release / Decide conditional publish");
+  assert.ok(fetchRequest >= 0, "Fetch release request 스텝을 찾지 못함");
+  assert.ok(verify > fetchRequest, "결속 검증은 release request 확보 뒤여야 한다");
+  assert.ok(buildPacks > verify, "결속 검증은 pack 빌드 전이어야 한다");
+  assert.ok(decide > buildPacks, "판정은 pack 빌드 뒤여야 한다");
+});
+
 test("production callback은 bounded sender 증적을 항상 보존하고 실패를 fail-closed한다", () => {
   const productionPublishStep = yml.match(
     /- name: Data Pack Release \/ Publish staged data packs to object storage[\s\S]*?\n\s+- name:/,
