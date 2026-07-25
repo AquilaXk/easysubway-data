@@ -194,7 +194,7 @@
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "183bb049d4d115424eb5958cdd69926b27e47d478ca4a851ff0fd22ae2df8336",
+  "sourceInventorySha256": "2c8dbaf1cede84368156af3b06dc6ac608d77a4caee7b61841c51ca717cf2aba",
   "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
   "builderVersion": "build-datapack.mjs@1",
   "officialOdFareEvidence": {

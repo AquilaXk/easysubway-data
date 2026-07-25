@@ -1,0 +1,683 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-f0e747248a31",
+  "stations": [
+    {
+      "stationCode": "901",
+      "stationName": "개화",
+      "stationId": "station-2822d957f4b1",
+      "x": 694,
+      "y": 995,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 675,
+          "y": 1000
+        },
+        {
+          "x": 713,
+          "y": 1000
+        },
+        {
+          "x": 713,
+          "y": 1022
+        },
+        {
+          "x": 675,
+          "y": 1022
+        }
+      ]
+    },
+    {
+      "stationCode": "902",
+      "stationName": "김포공항",
+      "stationId": "station-1f38f0831cb1",
+      "x": 766,
+      "y": 1055,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 734,
+          "y": 1060
+        },
+        {
+          "x": 798,
+          "y": 1060
+        },
+        {
+          "x": 798,
+          "y": 1082
+        },
+        {
+          "x": 734,
+          "y": 1082
+        }
+      ]
+    },
+    {
+      "stationCode": "903",
+      "stationName": "공항시장",
+      "stationId": "station-be7467404d16",
+      "x": 835,
+      "y": 1055,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 803,
+          "y": 1060
+        },
+        {
+          "x": 867,
+          "y": 1060
+        },
+        {
+          "x": 867,
+          "y": 1082
+        },
+        {
+          "x": 803,
+          "y": 1082
+        }
+      ]
+    },
+    {
+      "stationCode": "904",
+      "stationName": "신방화",
+      "stationId": "station-8509d44bd570",
+      "x": 884,
+      "y": 1087,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 875,
+          "y": 1076
+        },
+        {
+          "x": 926,
+          "y": 1076
+        },
+        {
+          "x": 926,
+          "y": 1098
+        },
+        {
+          "x": 875,
+          "y": 1098
+        }
+      ]
+    },
+    {
+      "stationCode": "905",
+      "stationName": "마곡나루",
+      "stationId": "station-db4c1121869d",
+      "x": 925,
+      "y": 1133,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 893,
+          "y": 1138
+        },
+        {
+          "x": 957,
+          "y": 1138
+        },
+        {
+          "x": 957,
+          "y": 1160
+        },
+        {
+          "x": 893,
+          "y": 1160
+        }
+      ]
+    },
+    {
+      "stationCode": "906",
+      "stationName": "양천향교",
+      "stationId": "station-5e67c1dbe6ce",
+      "x": 973,
+      "y": 1180,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 957,
+          "y": 1169
+        },
+        {
+          "x": 1021,
+          "y": 1169
+        },
+        {
+          "x": 1021,
+          "y": 1191
+        },
+        {
+          "x": 957,
+          "y": 1191
+        }
+      ]
+    },
+    {
+      "stationCode": "907",
+      "stationName": "가양",
+      "stationId": "station-998660561ce9",
+      "x": 1020,
+      "y": 1228,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1017,
+          "y": 1217
+        },
+        {
+          "x": 1055,
+          "y": 1217
+        },
+        {
+          "x": 1055,
+          "y": 1239
+        },
+        {
+          "x": 1017,
+          "y": 1239
+        }
+      ]
+    },
+    {
+      "stationCode": "908",
+      "stationName": "증미",
+      "stationId": "station-b02fea51ac91",
+      "x": 1064,
+      "y": 1274,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1061,
+          "y": 1263
+        },
+        {
+          "x": 1099,
+          "y": 1263
+        },
+        {
+          "x": 1099,
+          "y": 1285
+        },
+        {
+          "x": 1061,
+          "y": 1285
+        }
+      ]
+    },
+    {
+      "stationCode": "909",
+      "stationName": "등촌",
+      "stationId": "station-0d7d2b65a0b8",
+      "x": 1110,
+      "y": 1321,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1107,
+          "y": 1310
+        },
+        {
+          "x": 1145,
+          "y": 1310
+        },
+        {
+          "x": 1145,
+          "y": 1332
+        },
+        {
+          "x": 1107,
+          "y": 1332
+        }
+      ]
+    },
+    {
+      "stationCode": "910",
+      "stationName": "염창",
+      "stationId": "station-9dd82aab76c9",
+      "x": 1155,
+      "y": 1367,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1136,
+          "y": 1372
+        },
+        {
+          "x": 1174,
+          "y": 1372
+        },
+        {
+          "x": 1174,
+          "y": 1394
+        },
+        {
+          "x": 1136,
+          "y": 1394
+        }
+      ]
+    },
+    {
+      "stationCode": "911",
+      "stationName": "신목동",
+      "stationId": "station-b50d2a360327",
+      "x": 1202,
+      "y": 1413,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1177,
+          "y": 1418
+        },
+        {
+          "x": 1228,
+          "y": 1418
+        },
+        {
+          "x": 1228,
+          "y": 1440
+        },
+        {
+          "x": 1177,
+          "y": 1440
+        }
+      ]
+    },
+    {
+      "stationCode": "912",
+      "stationName": "선유도",
+      "stationId": "station-28df1efa11e4",
+      "x": 1248,
+      "y": 1458,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1223,
+          "y": 1463
+        },
+        {
+          "x": 1274,
+          "y": 1463
+        },
+        {
+          "x": 1274,
+          "y": 1485
+        },
+        {
+          "x": 1223,
+          "y": 1485
+        }
+      ]
+    },
+    {
+      "stationCode": "913",
+      "stationName": "당산",
+      "stationId": "station-83e71295d9e9",
+      "x": 1295,
+      "y": 1497,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1292,
+          "y": 1486
+        },
+        {
+          "x": 1330,
+          "y": 1486
+        },
+        {
+          "x": 1330,
+          "y": 1508
+        },
+        {
+          "x": 1292,
+          "y": 1508
+        }
+      ]
+    },
+    {
+      "stationCode": "914",
+      "stationName": "국회의사당",
+      "stationId": "station-9dc26a1622bb",
+      "x": 1396,
+      "y": 1605,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1358,
+          "y": 1610
+        },
+        {
+          "x": 1435,
+          "y": 1610
+        },
+        {
+          "x": 1435,
+          "y": 1632
+        },
+        {
+          "x": 1358,
+          "y": 1632
+        }
+      ]
+    },
+    {
+      "stationCode": "915",
+      "stationName": "여의도",
+      "stationId": "station-b2cbb36a5868",
+      "x": 1486,
+      "y": 1693,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1461,
+          "y": 1698
+        },
+        {
+          "x": 1512,
+          "y": 1698
+        },
+        {
+          "x": 1512,
+          "y": 1720
+        },
+        {
+          "x": 1461,
+          "y": 1720
+        }
+      ]
+    },
+    {
+      "stationCode": "916",
+      "stationName": "샛강",
+      "stationId": "station-c98162ac99c4",
+      "x": 1576,
+      "y": 1714,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1557,
+          "y": 1719
+        },
+        {
+          "x": 1595,
+          "y": 1719
+        },
+        {
+          "x": 1595,
+          "y": 1741
+        },
+        {
+          "x": 1557,
+          "y": 1741
+        }
+      ]
+    },
+    {
+      "stationCode": "917",
+      "stationName": "노량진",
+      "stationId": "station-3abacea8104e",
+      "x": 1674,
+      "y": 1718,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1649,
+          "y": 1723
+        },
+        {
+          "x": 1700,
+          "y": 1723
+        },
+        {
+          "x": 1700,
+          "y": 1745
+        },
+        {
+          "x": 1649,
+          "y": 1745
+        }
+      ]
+    },
+    {
+      "stationCode": "918",
+      "stationName": "노들",
+      "stationId": "station-2a6b08a0a383",
+      "x": 1746,
+      "y": 1718,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1727,
+          "y": 1723
+        },
+        {
+          "x": 1765,
+          "y": 1723
+        },
+        {
+          "x": 1765,
+          "y": 1745
+        },
+        {
+          "x": 1727,
+          "y": 1745
+        }
+      ]
+    },
+    {
+      "stationCode": "919",
+      "stationName": "흑석",
+      "stationId": "station-e814517ade89",
+      "x": 1817,
+      "y": 1718,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1798,
+          "y": 1723
+        },
+        {
+          "x": 1836,
+          "y": 1723
+        },
+        {
+          "x": 1836,
+          "y": 1745
+        },
+        {
+          "x": 1798,
+          "y": 1745
+        }
+      ]
+    },
+    {
+      "stationCode": "920",
+      "stationName": "동작",
+      "stationId": "station-e95f8616788c",
+      "x": 1894,
+      "y": 1717,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1875,
+          "y": 1722
+        },
+        {
+          "x": 1913,
+          "y": 1722
+        },
+        {
+          "x": 1913,
+          "y": 1744
+        },
+        {
+          "x": 1875,
+          "y": 1744
+        }
+      ]
+    },
+    {
+      "stationCode": "921",
+      "stationName": "구반포",
+      "stationId": "station-e9eb3bce0dfa",
+      "x": 1953,
+      "y": 1766,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1944,
+          "y": 1755
+        },
+        {
+          "x": 1995,
+          "y": 1755
+        },
+        {
+          "x": 1995,
+          "y": 1777
+        },
+        {
+          "x": 1944,
+          "y": 1777
+        }
+      ]
+    },
+    {
+      "stationCode": "922",
+      "stationName": "신반포",
+      "stationId": "station-8b49fca3d8a2",
+      "x": 2005,
+      "y": 1822,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1980,
+          "y": 1827
+        },
+        {
+          "x": 2031,
+          "y": 1827
+        },
+        {
+          "x": 2031,
+          "y": 1849
+        },
+        {
+          "x": 1980,
+          "y": 1849
+        }
+      ]
+    },
+    {
+      "stationCode": "923",
+      "stationName": "고속터미널",
+      "stationId": "station-18a5f1c674d8",
+      "x": 2111,
+      "y": 1863,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2073,
+          "y": 1868
+        },
+        {
+          "x": 2150,
+          "y": 1868
+        },
+        {
+          "x": 2150,
+          "y": 1890
+        },
+        {
+          "x": 2073,
+          "y": 1890
+        }
+      ]
+    },
+    {
+      "stationCode": "924",
+      "stationName": "사평",
+      "stationId": "station-3ec4583f2db5",
+      "x": 2165,
+      "y": 1859,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2146,
+          "y": 1864
+        },
+        {
+          "x": 2184,
+          "y": 1864
+        },
+        {
+          "x": 2184,
+          "y": 1886
+        },
+        {
+          "x": 2146,
+          "y": 1886
+        }
+      ]
+    },
+    {
+      "stationCode": "925",
+      "stationName": "신논현",
+      "stationId": "station-7ab006406857",
+      "x": 2219,
+      "y": 1851,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2194,
+          "y": 1856
+        },
+        {
+          "x": 2245,
+          "y": 1856
+        },
+        {
+          "x": 2245,
+          "y": 1878
+        },
+        {
+          "x": 2194,
+          "y": 1878
+        }
+      ]
+    }
+  ]
+}

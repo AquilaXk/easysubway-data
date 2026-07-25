@@ -3267,6 +3267,111 @@
       }
     },
     {
+      "id": "kric-seoul-metro-line9-1-route-map-positions",
+      "displayName": "국가철도공단_수도권9호선_역위치(1단계)",
+      "owner": "국가철도공단",
+      "provider": "국가철도공단",
+      "providerDepartment": "철도산업정보센터",
+      "sourceSystem": "국가철도공단·공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15041335/fileData.do",
+      "datasetKind": "official-file-data",
+      "coverage": "국가철도공단 data.go.kr FILE 15041335 수도권 9호선 역위치 CSV 전 구간 38행 중 1단계(개화~신논현) 25역만 admit한다. FILE codes 901–925는 canonical map으로 부여하고 pack station 1–25는 capital topology 정규화 역명 join + owner-self-drawn-sma-schematic canvas x/y로 admission한다(위경도 투영 금지). 2·3단계 13역(언주~중앙보훈병원)은 이번 범위에서 무시한다. coverage operator는 active line operator(서울시메트로9호선, operator-936e454d0bfb)이며 FILE publisher(국가철도공단)는 attribution에만 기록한다.",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "operator-936e454d0bfb"
+        ],
+        "lineIds": [
+          "line-f0e747248a31"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": true,
+      "updateFrequency": "on-change",
+      "observedDataUpdatedAt": "2025-06-30",
+      "retrievedAt": "2026-07-25",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "공공데이터포털 이용허락범위 제한 없음",
+        "attribution": "국가철도공단 · 서울시메트로9호선 · 공공데이터포털 이용허락범위 제한 없음",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15041335/fileData.do"
+      },
+      "fieldsProvided": [
+        "route_map_position",
+        "route_map_label_polygon"
+      ],
+      "capabilities": {
+        "schedule": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide scheduled timetable data"
+        },
+        "realtime": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "liveEtaEligible": false,
+          "rateLimitStatus": "NOT_APPLICABLE",
+          "coverageStatus": "OFFLINE_FILE_SNAPSHOT_ONLY",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide realtime arrivals"
+        },
+        "facility": {
+          "status": "UNSUPPORTED",
+          "productionUseAllowed": false,
+          "coverageStatus": "NOT_PROVIDED_BY_SOURCE",
+          "updateFrequency": "on-change",
+          "unsupportedNotes": "source does not provide accessibility facility records"
+        }
+      },
+      "routeMapAdmissionEvidence": {
+        "issue": 2500,
+        "admissionKind": "official-file-latlon",
+        "materializer": "tools/datapack/materialize-seoul9-phase1-route-map-positions.mjs",
+        "verificationTest": "tools/datapack/materialize-seoul9-phase1-route-map-positions.test.mjs",
+        "snapshotId": "kric-seoul-metro-line9-1-route-map-positions-20260725",
+        "snapshotPath": "tools/datapack/sources/kric-seoul-metro-line9-1-route-map-positions-20260725.json",
+        "snapshotSha256": "c42e4430e3d25f0d821324e96080235713c70811230ccde8881ffac97f4c23ac",
+        "capturedAt": "2026-07-25T05:00:00.000Z",
+        "stationCount": 25,
+        "rawStationCount": 25,
+        "quarantinedCount": 0,
+        "datasetId": "15041335",
+        "datasetIds": [
+          "15041335"
+        ],
+        "rawSha256": "94dc9303e292472e63b8630781a17cdd58423c04dfe4488214e0d84b6a935fe6",
+        "positionsSha256": "f6de4b582a96a33e35f3439ee0e4133b71b80e9432f52922d6adf4c14ce79de9",
+        "lineIds": [
+          "line-f0e747248a31"
+        ],
+        "lineStationCounts": {
+          "9": 25
+        },
+        "observedDataUpdatedAt": "2025-06-30",
+        "topologySourceId": "capital-route-topology",
+        "topologySnapshotId": "capital-route-topology-20260724",
+        "topologyContentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+        "topologyLineages": [
+          {
+            "sourceId": "capital-route-topology",
+            "snapshotId": "capital-route-topology-20260724",
+            "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+            "lineId": "line-f0e747248a31"
+          }
+        ]
+      }
+    },
+    {
       "id": "kric-station-elevator",
       "displayName": "국가철도공단_역사별 엘리베이터 현황",
       "owner": "국가철도공단",
