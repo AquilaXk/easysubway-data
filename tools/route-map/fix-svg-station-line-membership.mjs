@@ -16,8 +16,8 @@
 // 제외한다(오표기가 아니라 설계).
 //
 // Usage: node tools/route-map/fix-svg-station-line-membership.mjs
-//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg]
-//          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json]
+//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg]
+//          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json]
 //          [--pack apps/mobile/assets/datapacks/capital.sqlite.gz]
 //          [--dry-run] [--json out.json]
 
@@ -120,8 +120,8 @@ export function resolvePrimarySlug(dataLine, sortedTrueSlugs) {
 export function main() {
   const argv = process.argv.slice(2);
   const o = {
-    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
-    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json",
+    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
     dryRun: false,
     json: null,

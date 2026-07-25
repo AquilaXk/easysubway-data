@@ -32,7 +32,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { DAEJEON, DAEGU, BUSAN } from "./sma-region-configs.mjs";
+import { DAEJEON, DAEGU, BUSAN, SEOUL } from "./sma-region-configs.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const svgSourceDir = path.join(
@@ -53,7 +53,7 @@ const buildManifestPath = path.join(
 
 // manifest maps[].id → 원본 SVG 파일명. .vec 파일명은 manifest id를 따른다.
 const regions = [
-  { id: "seoul", svg: "easy-subway-sma-v2.svg" },
+  { id: "seoul", svg: "easy-subway-sma-v4.svg" },
   { id: "busan", svg: "easy-subway-busan-v3.svg" },
   { id: "daegu", svg: "easy-subway-daegu-v3.svg" },
   { id: "daejeon", svg: "easy-subway-daejeon-v1.svg" },
@@ -1010,7 +1010,19 @@ function ownerLabelStationKey(textOpenTag, textBlock, canonicalize) {
     const canonical = DAEJEON.canonicalRules(fullOfficialName)?.name;
     if (canonical) return canonical;
   }
-  const textContent = ownerLabelTextContent(textBlock);
+  // #2068 오너 v4 실측: 오너가 라벨에 직접 단 data-station이 역 신원의 제1
+  // 원천이다. v2까지는 렌더 텍스트가 그 값과 (콜론 접미 표기를 빼면) 항상
+  // 같아 텍스트만 써도 됐지만, v4의 성신여대입구는 오너가 둘째 줄 tspan
+  // ("입구")을 걷어내 렌더 텍스트가 "성신여대"가 됐다 — 텍스트를 키로 쓰면
+  // 카탈로그 "성신여대입구"와 어긋나 그 역만 폴백 미니 크기로 회귀한다
+  // (#2068 광주송정역 사례와 동형). 명시 신원 속성을 우선한다.
+  // 실측 영향 범위: seoul v4 1건(성신여대입구)뿐 — busan은 147건 전부
+  // 텍스트와 동일하고, daegu·daejeon·gwangju 라벨엔 이 속성이 없어 기존
+  // 텍스트 경로를 그대로 탄다(산출물 불변).
+  const dataStation =
+    firstAttr(textOpenTag, "data-station") ??
+    firstAttr(textOpenTag, "data-station-name");
+  const textContent = dataStation || ownerLabelTextContent(textBlock);
   if (canonicalize) {
     const canonical = canonicalize(textContent)?.name;
     if (canonical) return canonical;
@@ -1190,12 +1202,18 @@ export function extractOwnerLabels(svgText, regionId) {
   // 파이프라인 노드 매칭이 이미 쓰는 정본 규칙(DAEGU/BUSAN.canonicalRules)을 그대로
   // sidecar 키에 적용해 매칭 실패(폴백 미니) 회귀를 없앤다. daejeon은
   // data-full-official-name 경로라 여기 canonicalize를 타지 않는다.
+  // #2068 수도권 추가(2026-07-25): seoul 라벨 키에도 파이프라인 노드 매칭이 쓰는
+  // 정본 규칙을 그대로 적용한다. 적용 전에는 오너 라벨 키가 도식 표기 그대로라
+  // 카탈로그 표기와 어긋나는 3역(총신대입구(이수)·신촌(경의중앙선)·하남검단산)이
+  // 오너 라벨 대신 솔버 폴백(미니 크기)으로 렌더됐다 — 성신여대입구와 동일 논리.
   const canonicalize =
     regionId === "daegu"
       ? DAEGU.canonicalRules
       : regionId === "busan"
         ? BUSAN.canonicalRules
-        : null;
+        : regionId === "seoul"
+          ? SEOUL.canonicalRules
+          : null;
 
   const entries = [];
   const textRe = new RegExp(
@@ -1324,12 +1342,22 @@ function scaleStyleFontSize(tag, k) {
 //      반전) central 텍스트에만 적용되며 반전 프레임 특례가 필요 없다.
 // inlineSimpleClassStyles 이후에 적용해 class에서 온 font-size·baseline도 속성으로
 // 정리된 상태를 다룬다. text·tspan 이외 요소는 건드리지 않으며, 텍스트 내용은 불변이다.
+// #2408/#2068 종점 칩 텍스트 표식. foldTerminalChipScale이 이미 렌더 배율을
+// 반영해 둔 텍스트라, normalizeTextBaselineAndScale의 전역 font-size ×k 패스에서
+// 제외해야 한다(이중 적용 방지). 컴파일 입력 사본에만 붙고 정규화 마지막 단계에서
+// 제거되므로 산출 .vec에는 남지 않는다.
+const TERMINAL_CHIP_FONT_EXEMPT_ATTR = "data-basemap-chip-font-exempt";
+
 function normalizeTextBaselineAndScale(svgText, k) {
   const withStyleFontSizeScaled = svgText.replace(
     /<(?:text|tspan)\b[^>]*>/g,
-    (tag) => scaleStyleFontSize(tag, k),
+    (tag) =>
+      tag.includes(TERMINAL_CHIP_FONT_EXEMPT_ATTR) ? tag : scaleStyleFontSize(tag, k),
   );
   return withStyleFontSizeScaled.replace(/<text\b[^>]*>/g, (tag) => {
+    // 종점 칩 텍스트는 foldTerminalChipScale이 이미 렌더 배율을 반영했다 —
+    // 여기서 다시 k를 곱하면 이중 적용이 된다(#2068 v4 실측).
+    if (tag.includes(TERMINAL_CHIP_FONT_EXEMPT_ATTR)) return tag;
     const fontSizeMatch = tag.match(/\sfont-size="([\d.]+)(?:px)?"/);
     if (!fontSizeMatch) return tag;
     const fontSizeLocal = Number(fontSizeMatch[1]);
@@ -1441,20 +1469,42 @@ function foldTerminalChipScale(svgText) {
             shiftTextYAttr(t, shift),
           );
         }
-        // font-size(attr·style 양쪽)에 그룹 스케일 s를 곱한다. SVG에서 style이
-        // presentation attribute보다 우선하므로 어느 쪽이 렌더에 쓰이든 일관되게
-        // s배되도록 둘 다 처리한다(기존 normalizeTextBaselineAndScale의 attr·style
-        // 병행 스케일 관례와 동일).
-        newOpen = newOpen
-          .replace(
-            /(\sfont-size=")([\d.]+)(px)?(")/,
-            (_m, pre, n, px, post) =>
-              `${pre}${roundCoord(Number(n) * s)}${px ?? ""}${post}`,
-          )
-          .replace(
-            /(font-size\s*:\s*)([\d.]+)(px)?/,
-            (_m, pre, n, px) => `${pre}${roundCoord(Number(n) * s)}${px ?? ""}`,
-          );
+        // #2068 오너 v4(2026-07-25) 픽셀 실측 교정 — **칩 텍스트 font-size는
+        // 아무 배율도 곱하지 않는다.** 렌더러가 칩 텍스트에 적용하는 실효 배율은
+        // (칩 그룹 스케일 s × 맵 레이어 스케일 k)이므로, 최종 렌더 em이 오너
+        // 의도값 L×s×k가 되려면 .vec에 적힌 값이 로컬 원값 L 그대로여야 한다.
+        // 그래서 여기서 s를 곱하지 않고, 뒤이은 normalizeTextBaselineAndScale의
+        // ×k 패스에서도 이 텍스트를 제외한다(아래 표식 속성).
+        //
+        // v2까지 `×s`가 통했던 이유는 우연이다 — v2 칩은 s=2.198, k=0.455라
+        // s×k=1.00009로 사실상 1이어서 `L×s×k ≈ L`이었다. 오너가 v4에서 칩
+        // 배치를 matrix(2.7475,…)로 키우며 s×k=1.25011이 되자 이 우연이 깨져
+        // 칩 숫자가 1.25배 커지고 캡슐 중심에서 1.85design px 위로 떠올랐다
+        // (route_map_basemap_badge_center_test 실측: 신창 ratio -0.19 > 0.15).
+        // 실측 대조(신창 "1" 잉크, design px):
+        //   v2(정상)            높이 7.79  · bbox 중심 -0.06 · ratio -0.035
+        //   v4 `×s`(결함)       높이 12.04 · bbox 중심 -1.85 · ratio -0.190
+        //   v4 스케일 면제(교정) 높이 9.63  · bbox 중심 -0.06 · ratio -0.044
+        // 교정본 높이 9.63 = v2 높이 × 1.25(오너가 키운 배율) — 오너 디자인을
+        // 그대로 렌더한다. baseline shift(0.35×L, 위)는 로컬 프레임 값이라
+        // 렌더에서 0.35×L×s×k = 0.35×(렌더 em)이 돼 중심 정렬이 유지된다.
+        //
+        // s는 이제 font-size 산술에는 쓰이지 않지만, "축정렬 균일 스케일 그룹만
+        // 대상"이라는 적용 범위 판정에는 그대로 쓴다(회전·비균일 그룹은 이 모델이
+        // 성립하지 않으므로 손대지 않는다).
+        // 면제 표식은 `<text>`뿐 아니라 **칩 내부 `<tspan>`에도** 붙인다.
+        // 소비 측 scaleStyleFontSize는 `/<(?:text|tspan)\b[^>]*>/`로 tspan까지
+        // 대상으로 잡으므로, tspan에 표식이 없으면 그 style font-size만 ×k돼
+        // 한 칩 안에 로컬 원값과 ×k 값 두 배율이 섞인다(v4 실측 해당 tspan 0건 —
+        // 잠복 결함 선차단). 산출물에는 남지 않는다(normalizeSvgForCompile 말미 제거).
+        newOpen = newOpen.replace(
+          /^<text\b/,
+          `<text ${TERMINAL_CHIP_FONT_EXEMPT_ATTR}="true"`,
+        );
+        newRest = newRest.replace(
+          /<tspan\b/g,
+          `<tspan ${TERMINAL_CHIP_FONT_EXEMPT_ATTR}="true"`,
+        );
         return newOpen + newRest;
       });
     },
@@ -1484,7 +1534,11 @@ export function normalizeSvgForCompile(svgText) {
         return `${boundary}${attr}="${first}"`;
       },
     );
-  return normalizeTextBaselineAndScale(inlined, k);
+  // 칩 폰트 스케일 면제 표식은 정규화 파이프라인 내부용이라 컴파일 입력에서 지운다.
+  return normalizeTextBaselineAndScale(inlined, k).replaceAll(
+    ` ${TERMINAL_CHIP_FONT_EXEMPT_ATTR}="true"`,
+    "",
+  );
 }
 
 // vector_graphics_compiler를 apps/mobile 컨텍스트에서 실행한다. `--packages`가

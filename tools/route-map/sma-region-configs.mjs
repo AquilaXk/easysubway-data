@@ -18,7 +18,14 @@
 // 수도권 값은 #1950/#2011(v2) 정본과 byte-identical 회귀를 위해 apply-sma-svg-positions의
 // 기존 하드코딩과 100% 동일하게 유지한다(회귀 게이트).
 
-// ── 수도권(seoul): #1950/#2011 정본. 기존 하드코딩과 동일. ─────────────────────
+// #2068 수도권 동명 별개역: 이름은 같지만 카탈로그에 각각 별도 station_id로 실재해
+// 좌표 broadcast를 금지하고 노선으로 1:1 해소해야 하는 역(신촌 2호선/경의중앙,
+// 양평 5호선/경의중앙). v2는 data-station 콜론 표기가 이 힌트를 담았으나 v4는
+// 콜론을 걷어냈다 — 목록을 넓힐 때는 반드시 카탈로그 실측(동일 이름 2행이 서로
+// 다른 물리역인지)으로 확인한다.
+const SEOUL_DISTINCT_SAME_NAME_STATIONS = new Set(["신촌", "양평"]);
+
+// ── 수도권(seoul): #1950/#2011 정본. #2068 오너 재제작 v4로 교체. ─────────────
 const SEOUL = {
   id: "seoul",
   regionKey: "수도권",
@@ -26,7 +33,7 @@ const SEOUL = {
   svgSource: {
     sourceId: "owner-self-drawn-sma-schematic",
     sourceName: "오너 자작 수도권 8선형 정본 도식",
-    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
+    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
     license: "self-drawn",
     licenseStatus: "confirmed",
     commercialUseAllowed: true,
@@ -78,13 +85,42 @@ const SEOUL = {
   ],
   // 정합 대상에서 제외할 SVG data-station(범례 등). 수도권 도식엔 없음.
   excludedStations: [],
+  // 한 station_id에 기본 상한(100px)을 넘게 떨어진 노드가 복수 배정 후보로 잡히는
+  // 알려진 예외. **실측(2026-07-26, v4 geometry + 재생성 팩): 복수 후보 역 0건 ·
+  // 최대 spread 0.0px** — 예외가 필요 없다. 새로 생기면 파이프라인이 실패해야 한다
+  // (#2068 김포공항 픽토그램 오배정 방어).
+  scatteredCandidateExceptions: [],
+  // 동명 별개역 목록(위 SEOUL_DISTINCT_SAME_NAME_STATIONS)을 설정 객체로도
+  // 노출한다 — 카탈로그의 실제 권역 내 중복 이름 집합과 일치하는지 테스트가
+  // 팩 SELECT로 대조해 목록 갱신 누락을 자동 방어한다.
+  distinctSameNameStations: SEOUL_DISTINCT_SAME_NAME_STATIONS,
   // canonical 정합 규칙(#1950 대조표): SVG 이름 → {name, disambiguateByLine?}.
+  //
+  // #2068 v4 실측 표기 변경(v2 → v4):
+  //   - `신촌:2호선`/`신촌:경의중앙선` → `신촌`/`신촌(경의중앙선)`
+  //   - `양평:5호선`/`양평:경의중앙선` → 둘 다 `양평`
+  //   - `이수` → `총신대입구(이수)`
+  //   - `시청.용인대`/`전대.에버랜드` → `시청·용인대`/`전대·에버랜드`(가운뎃점)
+  // 콜론 표기가 사라져 신촌·양평의 동명 별개역 힌트가 data-station에서 없어졌다.
+  // 두 역은 카탈로그에 각각 2행(2호선/경의중앙, 5호선/경의중앙)으로 실재하는
+  // **별개 물리역**이라 broadcast(같은 좌표를 두 station_id에 복사)하면 신원이
+  // 뒤섞인다. SEOUL_DISTINCT_SAME_NAME_STATIONS 명시 목록으로 노선 1:1 해소를
+  // 유지한다(v2 콜론 규칙과 동일 의미). 두 노드 모두 data-line을 정확히 들고
+  // 있어 해소가 결정적이다.
   canonicalRules: (svgName) => {
+    // v2 콜론 표기 하위호환(구 geometry 재처리·회귀 대조용).
     const colon = svgName.indexOf(":");
     if (colon >= 0) return { name: svgName.slice(0, colon), disambiguateByLine: true };
-    if (svgName === "하남검단산") return { name: "하남검단산역" };
-    if (svgName === "이수") return { name: "총신대입구" };
-    return { name: svgName };
+    // 가운뎃점(U+00B7)을 카탈로그 표기(마침표)로 정규화 — 시청·용인대·전대·에버랜드.
+    let name = svgName.replace(/·/g, ".");
+    // 괄호 부제 제거 — 총신대입구(이수)→총신대입구, 신촌(경의중앙선)→신촌.
+    name = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    if (name === "하남검단산") name = "하남검단산역";
+    if (name === "이수") name = "총신대입구";
+    if (SEOUL_DISTINCT_SAME_NAME_STATIONS.has(name)) {
+      return { name, disambiguateByLine: true };
+    }
+    return { name };
   },
   // #2068 오너 기준본 전환(2026-07-19): 오너 v2.1은 viewBox 3800×3020(구 v2는
   // 2400×1860)으로 캔버스 자체가 커져, 구 하드코딩(340~1720)이 실제 콘텐츠
@@ -128,6 +164,45 @@ const BUSAN = {
   topologyExceptions: [],
   // 범례 노드(data-station="범례")는 카탈로그 역이 아니므로 정합 대상에서 제외.
   excludedStations: ["범례"],
+  // #2068 산발 후보 게이트 명시 예외(선재 결함 2건 — **원인이 서로 다르다**).
+  // 둘 다 origin/main에도 있던 선재 상태이고, 근본 해소는 #2068 범위 밖이라
+  // 여기서는 명시 면제만 한다(팩 실측 근거는 각 reason 참조).
+  //
+  //  · 동래 — 진짜 카탈로그 오병합. `station-dbfe9e072d98` **하나**가 1호선·
+  //    4호선·동해 3노선을 다 물고 있는데, 도식은 1·4호선 동래와 동해선 동래를
+  //    660.9px 떨어진 별개 노드로 그린다. 해소하려면 카탈로그를 두 역으로
+  //    분리해야 한다.
+  //  · 부전 — 오병합이 **아니다**. 카탈로그는 이미 1호선 `station-9acc028dded4`와
+  //    동해 `station-ee8407a487c2`로 분리돼 있다. 문제는 BUSAN에 노선 1:1 해소
+  //    (disambiguateByLine)가 없어 resolveStationIds가 이름만으로 두 id를 모두
+  //    반환하고, 도식의 두 노드가 서로의 id까지 broadcast한다는 것이다 — 문서
+  //    순서상 동해선 노드가 먼저 배정돼 1호선 부전까지 (5817,3938)로 끌려간다
+  //    (1호선 실제 노드는 (6233,4157) — 470.1px 어긋남). seoul의
+  //    distinctSameNameStations/disambiguateByLine 기법을 부산에도 적용하면
+  //    해소되지만, 부산 팩 좌표가 바뀌므로 별도 이슈로 뺀다.
+  //
+  // maxSpreadPx는 "알려진 결함이 만드는 spread"의 실측값에 소폭 여유를 둔 상한이다.
+  // 면제를 무제한으로 두면 그 역에서 김포공항형 새 오배정이 생겨도 게이트가 침묵한다.
+  // 실측(2026-07-26, busan v3 geometry): 동래 660.9px · 부전 470.1px(2 id 동일).
+  // 그 밖의 부산 복수 후보는 공항 2.2px 1건으로 기본 상한 안이라 예외가 필요 없다.
+  scatteredCandidateExceptions: [
+    {
+      name: "동래",
+      maxSpreadPx: 700,
+      reason:
+        "카탈로그 오병합: 단일 station_id(station-dbfe9e072d98)가 1·4호선·동해를 " +
+        "모두 물고 있고 도식은 660.9px 떨어진 별개 노드 2개로 그린다. 카탈로그 분리 필요(후속).",
+    },
+    {
+      name: "부전",
+      maxSpreadPx: 500,
+      reason:
+        "노선 1:1 해소 부재로 인한 broadcast: 카탈로그는 1호선(station-9acc028dded4)/" +
+        "동해(station-ee8407a487c2)로 이미 분리돼 있으나, BUSAN에 disambiguateByLine이 " +
+        "없어 두 노드가 두 id에 모두 broadcast돼 1호선 부전이 동해선 좌표로 470.1px " +
+        "끌려간다(선재). seoul식 동명 별개역 해소 적용이 정답 — 부산 팩 좌표가 바뀌므로 후속.",
+    },
+  ],
   // canonical 정합 규칙(부산 카탈로그 실측 6건):
   //   벡스코 (시립미술관)→벡스코, 괘법 르네시떼→괘법르네시떼,
   //   서부산 유통지구→서부산유통지구, 부산역→부산, 가운뎃점(·)→마침표(.).
@@ -188,6 +263,10 @@ const DAEGU = {
   //   범례(비역 노드)만 제외. 북삼(대경선 개통역)은 #2019에서 카탈로그에 정식
   //   반영(왜관↔사곡 사이 seq 6)했으므로 이제 도식 노드가 카탈로그와 매핑된다.
   excludedStations: ["범례"],
+  // 산발 후보 게이트 명시 예외. **실측(2026-07-26, daegu v3 geometry): 복수 후보 역 0건 ·
+  // 최대 spread 0.0px** — 예외 없음. 소비처 `?? []` 폴백에 기대지 않고 권역마다
+  // 명시해 게이트 커버리지를 균일하게 둔다.
+  scatteredCandidateExceptions: [],
   // canonical 정합 규칙(대구 카탈로그 실측): 괄호 부제 제거(부호(경일대·호산대)→부호,
   // 하양(대구가톨릭대)→하양), 서대구→서대구역.
   canonicalRules: (svgName) => {
@@ -237,6 +316,10 @@ const DAEJEON = {
   missingLineHint: {},
   markerlessFallback: [],
   topologyExceptions: [],
+  // 산발 후보 게이트 명시 예외. **실측(2026-07-26, daejeon v1 geometry): 복수 후보 역 0건 ·
+  // 최대 spread 0.0px** — 예외 없음. 소비처 `?? []` 폴백에 기대지 않고 권역마다
+  // 명시해 게이트 커버리지를 균일하게 둔다.
+  scatteredCandidateExceptions: [],
   excludedStations: [],
   // 1호선 실역만 정합 대상으로 남긴다. (a) data-line=1·active, (b) data-line=transfer·
   // active이며 이름이 "1호선 "으로 시작(1호선 환승역). 나머지(2호선·광역철도·미개통·
@@ -302,6 +385,10 @@ const GWANGJU = {
   missingLineHint: {},
   markerlessFallback: [],
   topologyExceptions: [],
+  // 산발 후보 게이트 명시 예외. **실측(2026-07-26, gwangju v1 geometry): 복수 후보 역 0건 ·
+  // 최대 spread 0.0px** — 예외 없음. 소비처 `?? []` 폴백에 기대지 않고 권역마다
+  // 명시해 게이트 커버리지를 균일하게 둔다.
+  scatteredCandidateExceptions: [],
   excludedStations: [],
   // 1호선 실역만 정합 대상으로 남긴다: label group 코드가 1xx(순수 1호선) 또는
   // 1xx-2xx(1호선-2호선 복합 코드 환승: 남광주 103-214·상무 113-203)인 노드.

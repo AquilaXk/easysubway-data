@@ -37,10 +37,19 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
     id: "test-only-itx-cheongchun-admitted-v1",
     sha256Source: "FIXTURE_FILE_BYTES",
   });
+  // #2068 노선도 재설계로 번들 pack이 바뀌면 이 test-only fixture의 pack pin도
+  // 함께 갱신해야 한다(build-datapack의 --test-only-itx-admission 검증이
+  // 라이브 pack 바이트와 대조한다). production evidence가 아니라 fixture 격리
+  // 계약이므로, 값은 현재 번들 pack에서 직접 계산해 대조한다.
+  const canonicalPackGzip = await readFile(
+    new URL("../../apps/mobile/assets/datapacks/capital.sqlite.gz", import.meta.url),
+  );
   assert.deepEqual(fixture.canonicalPackIdentity, {
     id: "capital",
-    sha256: "b0f8caafa8ab8b71c57dc05461138c0fb7ac58fe4f9df7045e5d4a729dcae1f7",
-    sqliteSha256: "d261231c0f05ef2ab1974375b0434eec4d38a90b7df9ee5679fe6815cdcf1d37",
+    sha256: createHash("sha256").update(canonicalPackGzip).digest("hex"),
+    sqliteSha256: createHash("sha256")
+      .update(gunzipSync(canonicalPackGzip))
+      .digest("hex"),
   });
 
   const forbiddenProductionSurfaces = [

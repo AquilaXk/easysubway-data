@@ -11,8 +11,8 @@
 //
 //   node tools/route-map/apply-euclidean-svg-respacing.mjs \
 //     [--pack apps/mobile/assets/datapacks/capital.sqlite.gz] \
-//     [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg] \
-//     [--geometry tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json] \
+//     [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg] \
+//     [--geometry tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json] \
 //     [--region 수도권] [--threshold 48] [--target 52] [--dry-run]
 //
 // 3단계 결합:
@@ -345,7 +345,7 @@ export function applyDeltasToSvg(svg, deltas, { mapScale = 0.455 } = {}) {
 function parseArgs(argv) {
   const o = {
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
+    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
     region: "수도권",
     threshold: 48,
     target: 52,

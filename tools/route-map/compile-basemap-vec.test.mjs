@@ -75,7 +75,7 @@ test("자기폐쇄 태그로 마감된 빈 레이어가 뒤따르는 형제 레�
 test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노선을 제외한다", () => {
   const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
   const files = [
-    "easy-subway-sma-v2.svg",
+    "easy-subway-sma-v4.svg",
     "easy-subway-busan-v3.svg",
     "easy-subway-daegu-v3.svg",
     "easy-subway-daejeon-v1.svg",
@@ -524,11 +524,14 @@ test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개�
   const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
   const expected = {
     // #2068 오너 v3(최종 디자인) 통합(2026-07-20): 오너가 처음부터 새로 그린
-    // 확정본으로 easy-subway-sma-v2.svg 자체가 교체됐다 — 이 수는 실측치라
-    // 새 소스의 실제 라벨 구성을 그대로 반영한다(ordinary 502→501, v3 자체
-    // 라벨 구성 차이. transfer는 불변. terminal 30은 이식한 종점 마크 30개와
-    // 정확히 일치 — 형상 비침습 기계 이식, 위치는 v3 역 좌표 기준 재계산).
-    "easy-subway-sma-v2.svg": { ordinary: 501, transfer: 124, terminal: 30 },
+    // 확정본으로 수도권 소스 자체가 교체됐다 — 이 수는 실측치라 새 소스의 실제
+    // 라벨 구성을 그대로 반영한다(ordinary 502→501, v3 자체 라벨 구성 차이.
+    // transfer는 불변. terminal 30은 이식한 종점 마크 30개와 정확히 일치 —
+    // 형상 비침습 기계 이식, 위치는 v3 역 좌표 기준 재계산).
+    // #2068 v4 반입(2026-07-25): 세 role 개수 모두 v2와 동일(501/124/30) —
+    // v4의 변경은 라벨 개수가 아니라 표기 정규화(신촌·양평 콜론 제거 등)와
+    // 좌표 재배치라는 실측 근거.
+    "easy-subway-sma-v4.svg": { ordinary: 501, transfer: 124, terminal: 30 },
     // #2068 벡스코 병합: 2호선·동해선을 단일 환승 station_id로 합치면서, 동해선
     // 노드용 중복 ordinary 라벨(벡스코_DH)을 제거했다(단일 환승 캡슐이 전사 라벨을
     // 이미 가지므로 중복 표기 불필요) → ordinary 129→128.
@@ -1128,4 +1131,98 @@ test("extractServiceTagObstacles·extractRailTransferChipObstacles: main-map-sca
       `${id}: mapScale 리팩토링 전후 obstacle 좌표가 달라졌습니다`,
     );
   }
+});
+
+// #2068 오너 v4 회귀 가드 — 종점 칩 글자 크기 이중 스케일.
+//
+// 렌더러가 칩 텍스트에 적용하는 실효 배율은 (칩 그룹 스케일 s × 맵 레이어 스케일
+// k)다. 따라서 .vec에 적히는 font-size는 로컬 원값 L이어야 최종 렌더 em이 오너
+// 의도값 L×s×k가 된다. v2는 s×k≈1(2.198×0.455)이라 어떤 계수를 써도 티가 안
+// 났지만, v4(matrix 2.7475, s×k=1.25)에서 `×s` 계수가 칩 숫자를 1.25배 키우고
+// 캡슐 중심 위로 띄웠다(badge center 게이트 실측 ratio -0.19).
+test("foldTerminalChipScale: 칩 텍스트 font-size는 그룹 스케일과 무관하게 로컬 원값이다", () => {
+  const chipSvg = (chipTransform) => `
+    <svg id="seoul-metro-map" viewBox="0 0 100 100">
+      <g id="main-map-scaled-layer" transform="translate(10 20) scale(0.455)">
+        <g id="route-lines-layer"></g>
+        <g id="terminal-route-badges-layer">
+          <g class="ui-chip terminal-route-badge" transform="${chipTransform}">
+            <rect x="0" y="0" width="30" height="23" rx="11.5" fill="#004a85" />
+            <text x="15" y="11.5" font-size="10.5" text-anchor="middle"
+                  dominant-baseline="central">1</text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `;
+  const fontSizeOf = (svg) =>
+    Number(
+      /<text\b[^>]*\bfont-size="([\d.]+)"/.exec(normalizeSvgForCompile(svg))[1],
+    );
+  const yOf = (svg) =>
+    Number(/<text\b[^>]*\sy="([\d.]+)"/.exec(normalizeSvgForCompile(svg))[1]);
+
+  // v4형(matrix)·v2형(translate scale translate) 모두 로컬 원값 10.5로 남는다.
+  assert.equal(fontSizeOf(chipSvg("matrix(2.7475,0,0,2.7475,5,7)")), 10.5);
+  assert.equal(
+    fontSizeOf(chipSvg("translate(5 7) scale(2.198) translate(-15 -11.5)")),
+    10.5,
+  );
+  // central baseline 보정은 로컬 프레임 기준 0.35×L만큼 y를 내린다(그룹 스케일 무관).
+  assert.equal(yOf(chipSvg("matrix(2.7475,0,0,2.7475,5,7)")), 11.5 + 0.35 * 10.5);
+});
+
+test("easy-subway-sma-v4: 종점 칩 라벨은 오너 로컬 font-size를 그대로 컴파일한다", () => {
+  const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
+  const normalized = normalizeSvgForCompile(
+    readFileSync(path.join(sources, "easy-subway-sma-v4.svg"), "utf8"),
+  );
+  const label = /<text\b[^>]*\bid="terminal-1-56-header-route-badge-1-label"[^>]*>/.exec(
+    normalized,
+  );
+  assert.ok(label, "신창(1호선) 종점 칩 라벨을 찾지 못했습니다.");
+  assert.equal(Number(/\bfont-size="([\d.]+)"/.exec(label[0])[1]), 10.5);
+  assert.equal(
+    Number(/\sy="([\d.]+)"/.exec(label[0])[1]),
+    Number((88.134506 + 0.35 * 10.5).toFixed(4)),
+  );
+});
+
+// #2068 리뷰 A6: 칩 폰트 면제 표식이 <text>에만 붙으면, 소비 측
+// scaleStyleFontSize가 <text|tspan> 양쪽을 대상으로 잡으므로 칩 내부 tspan의
+// style font-size만 ×k돼 한 칩 안에 두 배율이 섞인다(v4 실측 해당 tspan 0건 —
+// 잠복 결함). 표식이 tspan에도 붙어 로컬 원값이 유지되는지 고정한다.
+test("foldTerminalChipScale: 칩 내부 tspan의 style font-size도 맵 스케일 ×k에서 면제된다", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg id="seoul-metro-map" viewBox="0 0 100 100">
+      <g id="main-map-scaled-layer" transform="translate(10 20) scale(0.455)">
+        <g id="route-lines-layer"></g>
+        <g id="terminal-route-badges-layer">
+          <g class="ui-chip terminal-route-badge" transform="matrix(2.7475,0,0,2.7475,5,7)">
+            <rect x="0" y="0" width="30" height="23" rx="11.5" fill="#004a85" />
+            <text x="15" y="11.5" font-size="10.5" text-anchor="middle"
+                  dominant-baseline="central"><tspan x="15" y="11.5"
+                  style="font-size:10.5px">1</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const tspan = /<tspan\b[^>]*>/.exec(normalized)[0];
+  // 로컬 원값 10.5 그대로여야 한다(×k = 4.7775가 되면 안 된다).
+  assert.match(tspan, /font-size:10\.5px/);
+  // 면제 표식은 컴파일 입력에 남지 않는다.
+  assert.doesNotMatch(normalized, /data-basemap-chip-font-exempt/);
+  // 칩 밖 텍스트는 기존대로 ×k 된다(면제가 전역으로 새지 않는지 대조).
+  const outside = normalizeSvgForCompile(`
+    <svg id="seoul-metro-map" viewBox="0 0 100 100">
+      <g id="main-map-scaled-layer" transform="translate(10 20) scale(0.455)">
+        <g id="route-lines-layer"></g>
+        <g id="station-symbols-layer">
+          <text x="5" y="5" font-size="10"><tspan x="5" y="5" style="font-size:10px">A</tspan></text>
+        </g>
+      </g>
+    </svg>
+  `);
+  assert.match(outside, /font-size:4\.55px/);
 });

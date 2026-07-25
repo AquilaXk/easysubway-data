@@ -27,7 +27,7 @@
 // 도구와 동일 방어 — 재구현하지 않고 import).
 //
 // Usage: node tools/route-map/octolinearize-svg-route-lines.mjs
-//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg]
+//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg]
 //          [--pack apps/mobile/assets/datapacks/capital.sqlite.gz]
 //          [--region 수도권] [--branches tools/route-map/line-branches.json]
 //          [--fillet-radius 6] [--line <slug> ...] [--all] [--dry-run] [--check]
@@ -288,7 +288,7 @@ export function buildLineRuns(db, region, lineId, branches) {
 
 function parseArgs(argv) {
   const o = {
-    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
+    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
     region: "수도권",
     branches: "tools/route-map/line-branches.json",

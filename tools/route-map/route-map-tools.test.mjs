@@ -402,7 +402,7 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
 
   // v3: 역 노드(data-station+data-node-role)를 조상 transform 체인 정규화한 root 중심으로.
   const nodesByName = new Map(output.stationNodes.map((node) => [node.dataStation, node]));
-  assert.equal(output.stationNodes.length, 2);
+  assert.equal(output.stationNodes.length, 5);
   const ordinary = nodesByName.get("노드역");
   assert.equal(ordinary.nodeRole, "ordinary");
   assert.equal(ordinary.dataLine, "1");
@@ -415,8 +415,38 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
   assert.equal(transfer.dataLine, "2");
   // 회전 그룹 중심(30,30)은 회전 pivot이라 root에서 (4+60, 6+60)=(64,66) 근처.
   assert.ok(Math.abs(transfer.x - 64) < 2 && Math.abs(transfer.y - 66) < 2);
-  // 결정적 정렬: dataLine 사전순(1 < 2).
-  assert.deepEqual(output.stationNodes.map((node) => node.dataLine), ["1", "2"]);
+  // #2068 C1(v4 김포공항 형상): 중간 <g> 래퍼가 잉크(circle)와 x/y 없는 빈 <text>를
+  // 함께 품어도 노드 중심은 circle 중심이어야 한다.
+  //
+  // 회귀 실증(구 코드 재현본 실행으로 확인) — 이 형상에서만 old-fail/new-pass가
+  // 갈린다:
+  //   · 통짜 element.getBBox()        → (48,60)  실패
+  //   · "퇴화 자손만 배제" 필터        → (48,60)  실패 (래퍼 자신은 퇴화가 아니다)
+  //   · leaf 렌더 요소만 합집합(현행)  → (84,106) 통과
+  // 래퍼가 빈 <text>"만" 품으면 래퍼 bbox까지 퇴화해 구 필터에서도 배제돼
+  // old-pass가 된다 — 회귀를 잡으려면 잉크를 래퍼 **안**에 둬야 한다.
+  const emptyTextNode = nodesByName.get("빈텍스트노드");
+  assert.equal(emptyTextNode.x, 84); // 4 + 40*2
+  assert.equal(emptyTextNode.y, 106); // 6 + 50*2
+
+  // #2068 C2: 자기 심벌 잉크를 가진 노드가 따로 있는 역의 장식 아이콘 노드는
+  // 좌표 후보에서 배제된다(중복역은 circle 노드 1개만 남는다).
+  const duplicated = output.stationNodes.filter((node) => node.dataStation === "중복역");
+  assert.equal(duplicated.length, 1);
+  assert.equal(duplicated[0].id, "transfer-station-symbol-중복역");
+  assert.equal(duplicated[0].x, 124); // 4 + 60*2
+  assert.equal(duplicated[0].y, 46); // 6 + 20*2
+
+  // 반대로 아이콘이 그 역의 유일한 마커면 노드로 남는다(인천공항1·2터미널·부산 공항).
+  const iconOnly = nodesByName.get("아이콘단독역");
+  assert.ok(iconOnly, "아이콘만 가진 단독 마커 역은 노드로 유지돼야 한다");
+  assert.equal(iconOnly.id, "transfer-station-symbol-아이콘단독역");
+
+  // 결정적 정렬: dataLine 사전순(1 < 2 < 3 < 4 < 5).
+  assert.deepEqual(
+    output.stationNodes.map((node) => node.dataLine),
+    ["1", "2", "3", "4", "5"],
+  );
 });
 
 test("SVG label polygon join applies only unambiguous station labels", async () => {

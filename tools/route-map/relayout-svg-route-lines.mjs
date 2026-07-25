@@ -1206,7 +1206,7 @@ function countExistingCurvesForSlug(svgText, slug) {
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   const branchesJson = JSON.parse(readFileSync(resolveRepo(o.branches), "utf8"));
-  const svgPath = resolveRepo(o.svg ?? "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg");
+  const svgPath = resolveRepo(o.svg ?? "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg");
   let svgText = readFileSync(svgPath, "utf8");
   const transform = parseScaledLayerTransform(svgText);
 

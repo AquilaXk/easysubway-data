@@ -36,8 +36,8 @@
 // 목록·JSON 산출 골격은 audit-station-euclidean-spacing.mjs와 동형이다.
 //
 // Usage: node tools/route-map/audit-octolinear-node-on-stroke.mjs
-//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg]
-//          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json]
+//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg]
+//          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json]
 //          [--angle-tolerance 0.5] [--min-segment-len 0.5]
 //          [--max-corner-chord 20]
 //          [--node-tolerance 1.365]
@@ -470,8 +470,8 @@ function countUnlistedViolations(violations, exceptionEntries, keyFn) {
 
 function parseArgs(argv) {
   const o = {
-    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
-    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json",
+    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
     angleTolerance: 0.5,
     minSegmentLen: 0.5,
     maxCornerChord: 20,

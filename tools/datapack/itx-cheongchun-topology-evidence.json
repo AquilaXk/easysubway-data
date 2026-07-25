@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "b0f8caafa8ab8b71c57dc05461138c0fb7ac58fe4f9df7045e5d4a729dcae1f7",
-    "outputSqliteSha256": "d261231c0f05ef2ab1974375b0434eec4d38a90b7df9ee5679fe6815cdcf1d37",
-    "byteSize": 346659,
-    "byteSizeDelta": -12660
+    "outputSha256": "72be80d58dd1aaa04f69d24da458e9ff8d0fcadd28ed58b9a9761cf55f34197c",
+    "outputSqliteSha256": "5732c55c9bc06570f1ab6010e601df509ba32f50744156dc5888c05857a3d2fe",
+    "byteSize": 349783,
+    "byteSizeDelta": -9536
   },
   "readmissions": [
     {
@@ -855,6 +855,45 @@
           "rowsRemoved": 0,
           "rowsAdded": 0,
           "rowsChanged": 260
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-25T17:33:26.699Z",
+      "provenance": "오너 승인 2026-07-25 — #2068 수도권 v4 오너 재제작 노선도 반입에 따른 route_map 좌표 재생성(ITX 위상 불변)",
+      "previousPack": {
+        "sha256": "b0f8caafa8ab8b71c57dc05461138c0fb7ac58fe4f9df7045e5d4a729dcae1f7",
+        "sqliteSha256": "d261231c0f05ef2ab1974375b0434eec4d38a90b7df9ee5679fe6815cdcf1d37",
+        "byteSize": 346659
+      },
+      "newPack": {
+        "sha256": "72be80d58dd1aaa04f69d24da458e9ff8d0fcadd28ed58b9a9761cf55f34197c",
+        "sqliteSha256": "5732c55c9bc06570f1ab6010e601df509ba32f50744156dc5888c05857a3d2fe",
+        "byteSize": 349783
+      },
+      "byteSizeDelta": 3124,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "route_map_line_tracks",
+          "previousRowCount": 52,
+          "newRowCount": 52,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 36
+        },
+        {
+          "table": "route_map_positions",
+          "previousRowCount": 1102,
+          "newRowCount": 1102,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 800
         }
       ]
     }

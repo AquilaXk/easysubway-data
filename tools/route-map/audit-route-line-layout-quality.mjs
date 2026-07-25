@@ -19,8 +19,8 @@
 //                    번들 오프셋 관례 절반)을 넘겨야 통과.
 //
 // Usage: node tools/route-map/audit-route-line-layout-quality.mjs
-//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg]
-//          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json]
+//          [--svg tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg]
+//          [--geometry tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json]
 //          [--min-clearance 6] [--min-separation 2] [--json out.json]
 
 import { isMainModule } from "../lib/is-main-module.mjs";
@@ -188,8 +188,8 @@ export function findLineOverlapViolations(segmentsByLine, opts = {}) {
 
 function parseArgs(argv) {
   const o = {
-    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v2.svg",
-    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json",
+    svg: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
     minClearance: 6,
     minSeparation: 2,
     exceptions: null,

@@ -11,7 +11,7 @@
 //
 // Usage: node tools/route-map/generate-basemap-alignment-fixture.mjs
 //   [--pack apps/mobile/assets/datapacks/capital.sqlite.gz]
-//   [--geometry tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json]
+//   [--geometry tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json]
 //   [--region 수도권]
 //   [--out tools/route-map/route-map-defs/seoul-alignment-fixture.json]
 //
@@ -29,7 +29,7 @@ import { getRegionConfig } from "./sma-region-configs.mjs";
 function parseArgs(argv) {
   const o = {
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v2-geometry.json",
+    geometry: "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
     region: "수도권",
     out: "tools/route-map/route-map-defs/seoul-alignment-fixture.json",
   };

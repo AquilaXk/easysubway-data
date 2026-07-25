@@ -421,9 +421,112 @@ function browserExtractorExpression(svg) {
       });
     }
 
+    // #2068 오너 v4 실측: 편집기가 남긴 **빈 <text>/<tspan>**(내용 없는 라인
+    // 자리표시자)이 환승 캡슐 <g> 안에 섞여 들어오는 경우가 있다. Chrome의
+    // getBBox()는 그 퇴화 박스(width=height=0, 대개 로컬 원점)까지 합집합에
+    // 넣으므로 그룹 bbox가 통째로 원점까지 끌려가고, 중심이 실제 캡슐에서
+    // 수백 px 벗어난다(v4 보라매 692.7px·마곡나루 242.0px 실측 — 캡슐 도형
+    // 자체는 v2와 같은 자리에 있다. 오너 도식 문제가 아니라 측정 문제다).
+    // 그래서 그룹은 통짜 getBBox가 아니라 **잉크를 직접 그리는 leaf 요소의
+    // 박스만** 그룹 로컬 좌표계로 모아 합집합한다.
+    //
+    // 중간 <g> 래퍼를 합집합에 넣으면 안 된다 — 래퍼의 getBBox는 그 안의 퇴화
+    // 박스까지 이미 삼킨 오염된 값이라, 자손 단위로 퇴화 박스를 걸러도 래퍼를
+    // 통해 그대로 되돌아온다(실증: v4 김포공항 환승 캡슐이 참값 (763,1055)
+    // 대신 (763.3,863.6)으로 191px 오염). 래퍼는 자기 leaf 자손이 이미 대표
+    // 하므로 배제해도 잉크 손실이 없다.
+    //
+    // leaf 판정은 태그 화이트리스트로 한다(컨테이너 g/svg/a/switch/defs/…를
+    // 자동 배제). <text>는 tspan 자손이 있으면 그 tspan들이 같은 잉크를 이미
+    // 덮고, tspan이 없으면 <text> 자신이 leaf라 어느 쪽이든 정확하다.
+    // 면적 있는 leaf가 하나도 없으면 기존 getBBox로 폴백한다
+    // (회귀 0 — v2·busan v3·daegu v3 전 노드 Δ<0.002px 실측).
+    const RENDER_LEAF_TAGS = new Set([
+      "path",
+      "rect",
+      "circle",
+      "ellipse",
+      "line",
+      "polyline",
+      "polygon",
+      "image",
+      "use",
+      "text",
+      "tspan",
+      "textpath",
+    ]);
+    function renderableBBoxLocal(element) {
+      const ownMatrix = element.getScreenCTM();
+      if (!ownMatrix) return null;
+      const ownInverse = ownMatrix.inverse();
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const child of element.querySelectorAll("*")) {
+        if (!RENDER_LEAF_TAGS.has(child.tagName.toLowerCase())) continue;
+        if (typeof child.getBBox !== "function") continue;
+        let childBox;
+        try {
+          childBox = child.getBBox();
+        } catch {
+          continue;
+        }
+        // 퇴화 박스(가로·세로 모두 0)는 렌더 잉크가 없다 — 합집합에서 배제.
+        if (!(childBox.width > 0) && !(childBox.height > 0)) continue;
+        const childMatrix = child.getScreenCTM();
+        if (!childMatrix) continue;
+        const toOwn = ownInverse.multiply(childMatrix);
+        const corners = [
+          [childBox.x, childBox.y],
+          [childBox.x + childBox.width, childBox.y],
+          [childBox.x, childBox.y + childBox.height],
+          [childBox.x + childBox.width, childBox.y + childBox.height],
+        ];
+        for (const [x, y] of corners) {
+          const point = matrixPoint(toOwn, x, y);
+          if (point.x < minX) minX = point.x;
+          if (point.x > maxX) maxX = point.x;
+          if (point.y < minY) minY = point.y;
+          if (point.y > maxY) maxY = point.y;
+        }
+      }
+      if (!(minX <= maxX) || !(minY <= maxY)) return null;
+      return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }
+
+    // #2068 오너 v4 실측: 오너가 공항 픽토그램(Bootstrap Icons airplane-fill)을
+    // 담은 장식 그룹에도 역 마커와 똑같은 `data-node-role`·`data-station`을
+    // 달았다(`g#transfer-station-symbol-김포공항-0`, 자식은 airplane path 2개).
+    // 그대로 두면 그 아이콘 중심이 역 좌표 후보가 되고, 배정 순서에 따라 팩의
+    // 김포공항 5개 노선 행이 통째로 아이콘 자리로 끌려간다(실측 (870,1033) —
+    // 캡슐 참값은 (763,1055)).
+    //
+    // 판별은 id·이름 매칭 같은 취약한 규칙이 아니라 **오너가 이미 붙여 둔 출처
+    // 표기**로 한다: 렌더 잉크가 전부 `[data-icon-source]`(외부 아이콘 반입
+    // 표기) 서브트리 안에만 있으면 그 노드는 자기 역 심벌 잉크가 없다.
+    //
+    // 다만 "아이콘만 있다"는 것만으로 버리면 안 된다 — 아이콘이 그 역의
+    // **유일한 마커**인 경우가 실재한다(수도권 인천공항1터미널·인천공항2터미널,
+    // 부산 공항). 그래서 배제는 **같은 data-station에 자기 심벌 잉크를 가진
+    // 다른 노드가 있을 때만** 한다: 그 경우에만 아이콘 노드가 "이미 마킹된 역을
+    // 덧그린 장식 중복"이다(v4 김포공항). 단독이면 그대로 역 마커로 쓴다.
+    function hasOnlyBorrowedIconInk(element) {
+      const iconRoots = [...element.querySelectorAll("[data-icon-source]")];
+      if (iconRoots.length === 0) return false;
+      for (const child of element.querySelectorAll("*")) {
+        if (!RENDER_LEAF_TAGS.has(child.tagName.toLowerCase())) continue;
+        if (!iconRoots.some((iconRoot) => iconRoot.contains(child))) {
+          return false; // 아이콘 밖에 자기 잉크가 있다 = 진짜 역 심벌.
+        }
+      }
+      return true;
+    }
+
     // 역 노드: data-station + data-node-role를 가진 요소(circle/g/path)의 root 좌표
     // 중심을 조상 transform 체인(scaled-layer + 그룹 로컬 rotate/translate/matrix)까지
-    // 합성해 산출한다. circle은 cx/cy를, 그 외는 getBBox 중심을 로컬 기준점으로 쓴다.
+    // 합성해 산출한다. circle은 cx/cy를, 그 외는 잉크 있는 자손 bbox 합집합(없으면
+    // getBBox) 중심을 로컬 기준점으로 쓴다.
     // 상위 요소가 이미 data-station을 들고 있으면 자식은 건너뛴다(그룹 대표 1노드).
     function nodeCenterLocal(element) {
       const tag = element.tagName.toLowerCase();
@@ -433,29 +536,42 @@ function browserExtractorExpression(svg) {
           y: Number.parseFloat(element.getAttribute("cy") || "0"),
         };
       }
-      let bbox;
-      try {
-        bbox = element.getBBox();
-      } catch {
-        return null;
+      let bbox = renderableBBoxLocal(element);
+      if (!bbox) {
+        try {
+          bbox = element.getBBox();
+        } catch {
+          return null;
+        }
       }
       if (!(bbox.width >= 0) || !(bbox.height >= 0)) return null;
       return { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 };
     }
     const stationNodes = [];
+    const nodeCandidates = [];
+    const ownSymbolInkByStation = new Map();
     for (const element of root.querySelectorAll("[data-node-role][data-station]")) {
       if (element.closest("defs")) continue;
       // 조상 중 이미 data-station 노드가 있으면(예: transfer-symbol g 내부의 circle)
       // 대표는 최상위 그 하나뿐 — 자식 중복은 배제한다.
       const owner = element.parentElement?.closest("[data-node-role][data-station]");
       if (owner) continue;
+      const dataStation = element.getAttribute("data-station") || "";
+      const iconOnly = hasOnlyBorrowedIconInk(element);
+      if (!iconOnly) ownSymbolInkByStation.set(dataStation, true);
+      nodeCandidates.push({ element, dataStation, iconOnly });
+    }
+    for (const { element, dataStation, iconOnly } of nodeCandidates) {
+      // 같은 역에 자기 심벌 잉크를 가진 노드가 따로 있으면 아이콘 노드는 장식
+      // 중복이다(v4 김포공항) — 좌표 후보에서 배제. 아이콘이 그 역의 유일한
+      // 마커면(인천공항1·2터미널, 부산 공항) 그대로 쓴다.
+      if (iconOnly && ownSymbolInkByStation.get(dataStation)) continue;
       const local = nodeCenterLocal(element);
       if (!local) continue;
       const elementMatrix = element.getScreenCTM();
       if (!elementMatrix) continue;
       const matrix = rootInverse.multiply(elementMatrix);
       const center = matrixPoint(matrix, local.x, local.y);
-      const dataStation = element.getAttribute("data-station") || "";
       const dataName = element.getAttribute("data-name") || dataStation;
       stationNodes.push({
         dataStation,
@@ -523,11 +639,15 @@ function browserExtractorExpression(svg) {
       const name = element.getAttribute("data-station-name") || "";
       const code = element.getAttribute("data-station") || "";
       if (!name) continue;
-      let bbox;
-      try {
-        bbox = element.getBBox();
-      } catch {
-        continue;
+      // 위 nodeCenterLocal과 같은 규칙(퇴화 자식 박스 배제)을 대칭 적용한다 —
+      // 이 경로도 <g> 통짜 getBBox라 같은 잠복 결함을 갖는다.
+      let bbox = renderableBBoxLocal(element);
+      if (!bbox) {
+        try {
+          bbox = element.getBBox();
+        } catch {
+          continue;
+        }
       }
       if (!(bbox.width >= 0) || !(bbox.height >= 0)) continue;
       const elementMatrix = element.getScreenCTM();
