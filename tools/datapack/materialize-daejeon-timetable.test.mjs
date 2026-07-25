@@ -315,8 +315,8 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 
     "--inventory", "tools/datapack/source-inventory.json",
     "--manifest", path.join(packOutput, "current.json"),
     "--provenance", path.join(packOutput, "current.provenance.json"),
-    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260721.json",
-    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json",
+    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
+    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });

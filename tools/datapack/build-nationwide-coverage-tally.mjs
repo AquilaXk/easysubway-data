@@ -36,7 +36,7 @@
 // 사용: node tools/datapack/build-nationwide-coverage-tally.mjs \
 //   --targets tools/datapack/nationwide-coverage-targets.json \
 //   --inventory tools/datapack/source-inventory.json \
-//   --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json \
+//   --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json \
 //   --expected-launch-required-total 270 \
 //   --output tools/datapack/reports/nationwide-coverage-tally.json
 import { createHash } from "node:crypto";
@@ -48,7 +48,7 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { parseArgs, requireArg, sortJson } from "./lib/ledger-admission-cli.mjs";
 
 export const DEFAULT_RESOLUTIONS_PATH =
-  "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json";
+  "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json";
 // 재생성 명령에 기록하는 tracked ledger 경로. --output이 임시 경로여도 산출 바이트가 달라지지
 // 않도록 명령 문자열은 이 상수를 쓴다(재현성 검증이 임시 출력으로 가능해야 한다).
 export const LEDGER_PATH = "tools/datapack/reports/nationwide-coverage-tally.json";
@@ -132,7 +132,13 @@ export function buildNationwideCoverageTally({
       pairedUpdateKo:
         "targets·inventory·resolutions를 바꾸는 PR은 이 명령으로 ledger를 함께 재생성하고, "
         + "tools/datapack/build-nationwide-coverage-tally.test.mjs의 집계 기대 상수(admitted/EU/missing)도 "
-        + "같은 커밋에서 갱신해야 한다. 재생성 누락은 datapack 도구 테스트에서 fail closed 된다.",
+        + "같은 커밋에서 갱신해야 한다. 재생성 누락은 datapack 도구 테스트에서 fail closed 된다. "
+        + "inventory admission만 늘리는 PR은 search plan·resolutions를 재발행하지 않아도 된다 — 계획은 "
+        + "미admission requirement를 전부 덮기만 하면 되고(포함 관계, "
+        + "tools/datapack/nationwide-public-api-coverage-evidence.test.mjs가 검증), 계획에 남은 admitted "
+        + "entry는 다음 정기 재생성에서 정리한다. 계획을 재생성하면 resolutions의 searchPlanSha256이 "
+        + "어긋나므로 live 재크롤로 두 아티팩트를 같은 커밋에서 함께 재발행해야 한다"
+        + "(tools/datapack/collect-nationwide-public-api-coverage.mjs 헤더의 재발행 절차 참조).",
     },
     statusAxis: {
       values: [...TALLY_STATUSES],

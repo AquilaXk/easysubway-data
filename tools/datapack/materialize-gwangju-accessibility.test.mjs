@@ -324,8 +324,8 @@ test("materialized SQLite와 provenance가 광주 accessibility_facilities 1건�
     "--inventory", "tools/datapack/source-inventory.json",
     "--manifest", manifestPath,
     "--provenance", path.join(packOutput, "current.provenance.json"),
-    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260721.json",
-    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json",
+    "--resolution-plan", "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
+    "--resolutions", "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
     "--output", reportPath,
     "--allow-gaps",
   ], { cwd: root });

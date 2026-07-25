@@ -516,8 +516,8 @@ jobs:
             tools/datapack/report-coverage-gaps.mjs
             --targets tools/datapack/nationwide-coverage-targets.json
             --inventory tools/datapack/source-inventory.json
-            --resolution-plan tools/datapack/release/nationwide-public-api-coverage-search-plan-20260721.json
-            --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json
+            --resolution-plan tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json
+            --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json
             --output "${EASYSUBWAY_COVERAGE_GAP_REPORT}"
           )
           # release 모드(release-candidate/production-publish)는 게시 차단 판정을 게시 범위(production-datapack-scope.json의

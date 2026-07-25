@@ -14,7 +14,7 @@ const root = path.resolve(import.meta.dirname, "../..");
 const TOOL_PATH = "tools/datapack/build-nationwide-coverage-tally.mjs";
 const TARGETS_PATH = "tools/datapack/nationwide-coverage-targets.json";
 const INVENTORY_PATH = "tools/datapack/source-inventory.json";
-const RESOLUTIONS_PATH = "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260721.json";
+const RESOLUTIONS_PATH = "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json";
 const INPUT_PATHS = [TARGETS_PATH, INVENTORY_PATH, RESOLUTIONS_PATH];
 const EXPECTED_LAUNCH_REQUIRED_TOTAL = "270";
 
@@ -191,7 +191,7 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
     });
     assert.equal(ledger.launchRequired.terminalCount, 87);
     assert.equal(ledger.launchRequired.supportStartedResolutionCount, 0);
-    assert.equal(ledger.launchRequired.earliestResolutionNextReviewAt, "2026-10-19T02:43:09.257Z");
+    assert.equal(ledger.launchRequired.earliestResolutionNextReviewAt, "2026-10-23T09:12:39.105Z");
     assert.equal(ledger.launchRequired.requirements.length, 270);
     assert.equal(ledger.enhancement.totalCount, 45);
     assert.equal(ledger.enhancement.earliestResolutionNextReviewAt, null);

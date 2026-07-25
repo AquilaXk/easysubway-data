@@ -97,6 +97,240 @@ test("전국 target과 fixture에서 line AND domain 실제 검색 계획을 만
   ]]);
 });
 
+const admissionTargets = {
+  targetVersion: "2026-07-13",
+  regions: [{ id: "busan", displayName: "부산", operatorIds: ["busan-transportation"] }],
+  activeLineScopes: [
+    { regionId: "busan", operatorId: "busan-transportation", lineId: "busan-1" },
+    { regionId: "busan", operatorId: "busan-transportation", lineId: "busan-2" },
+  ],
+  requiredSourceDomains: [
+    {
+      id: "schedule_timetable",
+      releaseTier: "LAUNCH_REQUIRED",
+      requiredFields: ["service_calendar", "trip"],
+      blockingThreshold: { minimumOfficialFieldCoverageRatio: 1 },
+    },
+    {
+      id: "realtime_arrivals",
+      releaseTier: "LAUNCH_REQUIRED",
+      requiredFields: ["realtime_arrival_reference"],
+      blockingThreshold: { minimumOfficialFieldCoverageRatio: 1 },
+    },
+  ],
+};
+
+const admissionFixture = {
+  packs: [{
+    operators: [{ id: "busan-transportation", nameKo: "부산교통공사" }],
+    lines: [{ id: "busan-1", nameKo: "부산 1호선" }, { id: "busan-2", nameKo: "부산 2호선" }],
+  }],
+};
+
+function admissionCoverageScope(overrides = {}) {
+  return {
+    regionIds: ["busan"],
+    operatorIds: ["busan-transportation"],
+    lineIds: ["busan-1"],
+    sourceDomains: ["schedule_timetable"],
+    ...overrides,
+  };
+}
+
+function admissionInventory(sources) {
+  return { schemaVersion: 1, sources };
+}
+
+test("이미 admission된 requirement는 재크롤 계획에서 빠진다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: admissionTargets,
+    fixture: admissionFixture,
+    inventory: admissionInventory([
+      {
+        id: "busan-timetable",
+        coverageScope: admissionCoverageScope(),
+        fieldsProvided: ["service_calendar", "trip"],
+      },
+      // 필수 field를 일부만 채우는 소스는 admission이 아니므로 재크롤 대상으로 남는다.
+      {
+        id: "busan-2-timetable-partial",
+        coverageScope: admissionCoverageScope({ lineIds: ["busan-2"] }),
+        fieldsProvided: ["service_calendar"],
+      },
+    ]),
+  });
+
+  assert.deepEqual(searchPlan.entries.map(({ lineId, sourceDomain }) => `${lineId}:${sourceDomain}`), [
+    "busan-1:realtime_arrivals",
+    "busan-2:schedule_timetable",
+    "busan-2:realtime_arrivals",
+  ]);
+  // inventory를 주지 않으면 전량 감사 계획이 된다.
+  assert.equal(
+    buildNationwidePublicApiSearchPlan({ targets: admissionTargets, fixture: admissionFixture }).entries.length,
+    4,
+  );
+});
+
+test("빈 lineIds coverageScope는 재크롤 제외의 와일드카드가 아니다", () => {
+  const coverageScope = admissionCoverageScope({ sourceDomains: ["realtime_arrivals"] });
+  delete coverageScope.lineIds;
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: admissionTargets,
+    fixture: admissionFixture,
+    inventory: admissionInventory([{
+      id: "busan-realtime",
+      coverageScope,
+      fieldsProvided: ["realtime_arrival_reference"],
+    }]),
+  });
+
+  assert.equal(searchPlan.entries.length, 4);
+});
+
+// admission 판정 입력은 tally(build-nationwide-coverage-tally.mjs normalizeSource)와 같은 수준으로 막는다.
+// 오타가 조용한 미매칭으로 흐르면 collect는 재크롤을 부풀리고 tally는 hard fail해 두 도구 판정이 갈린다.
+test("admission 판정 inventory의 계약 위반은 fail closed다", async (context) => {
+  const rejections = [
+    [
+      "schemaVersion 위반",
+      { schemaVersion: 2, sources: [{ id: "s", coverageScope: admissionCoverageScope(), fieldsProvided: ["trip"] }] },
+      /source inventory schemaVersion must be 1/,
+    ],
+    ["빈 sources", admissionInventory([]), /source inventory sources must be a non-empty array/],
+    [
+      "빈 regionIds",
+      admissionInventory([{
+        id: "s",
+        coverageScope: admissionCoverageScope({ regionIds: [] }),
+        fieldsProvided: ["trip"],
+      }]),
+      /coverageScope\.regionIds must be a non-empty string array/,
+    ],
+    [
+      "sourceDomains 누락",
+      admissionInventory([{
+        id: "s",
+        coverageScope: { regionIds: ["busan"], operatorIds: ["busan-transportation"], lineIds: ["busan-1"] },
+        fieldsProvided: ["trip"],
+      }]),
+      /coverageScope\.sourceDomains must be a non-empty string array/,
+    ],
+    [
+      "fieldsProvided 누락",
+      admissionInventory([{ id: "s", coverageScope: admissionCoverageScope() }]),
+      /fieldsProvided must be a non-empty string array/,
+    ],
+    [
+      "미등록 region",
+      admissionInventory([{
+        id: "s",
+        coverageScope: admissionCoverageScope({ regionIds: ["busn"] }),
+        fieldsProvided: ["trip"],
+      }]),
+      /coverageScope\.regionIds contains undefined region: busn/,
+    ],
+    [
+      "미등록 operator",
+      admissionInventory([{
+        id: "s",
+        coverageScope: admissionCoverageScope({ operatorIds: ["busan-transport"] }),
+        fieldsProvided: ["trip"],
+      }]),
+      /coverageScope\.operatorIds contains undefined operator: busan-transport/,
+    ],
+    [
+      "미등록 line",
+      admissionInventory([{
+        id: "s",
+        coverageScope: admissionCoverageScope({ lineIds: ["busan-9"] }),
+        fieldsProvided: ["trip"],
+      }]),
+      /coverageScope\.lineIds contains undefined line: busan-9/,
+    ],
+    [
+      "미등록 source domain",
+      admissionInventory([{
+        id: "s",
+        coverageScope: admissionCoverageScope({ sourceDomains: ["schedule_timetabel"] }),
+        fieldsProvided: ["trip"],
+      }]),
+      /coverageScope\.sourceDomains contains undefined source domain: schedule_timetabel/,
+    ],
+  ];
+  for (const [name, inventory, expected] of rejections) {
+    await context.test(name, () => {
+      assert.throws(
+        () => buildNationwidePublicApiSearchPlan({
+          targets: admissionTargets,
+          fixture: admissionFixture,
+          inventory,
+        }),
+        expected,
+      );
+    });
+  }
+});
+
+test("후보 coverageScope의 sourceDomains가 candidate.domain과 어긋나면 fail closed다", () => {
+  assert.throws(
+    () => buildNationwidePublicApiSearchPlan({
+      targets: {
+        targetVersion: "2026-07-13",
+        activeLineScopes: [{ regionId: "capital", operatorId: "korail", lineId: "korail-1" }],
+        requiredSourceDomains: [{ id: "route_map_positions", releaseTier: "LAUNCH_REQUIRED" }],
+      },
+      fixture: {
+        packs: [{
+          operators: [{ id: "korail", nameKo: "코레일" }],
+          lines: [{ id: "korail-1", nameKo: "수도권 1호선" }],
+        }],
+      },
+      sourceCandidates: {
+        candidates: [{
+          id: "kric-korail-1-route-map-positions",
+          domain: "route_map_positions",
+          requestUrl: "https://api.odcloud.kr/api/15041331/v1/example",
+          coverageScope: { lineIds: ["korail-1"], sourceDomains: ["route_graph_topology"] },
+        }],
+      },
+    }),
+    /sourceDomains must include the candidate domain: route_map_positions/,
+  );
+});
+
+test("후보 coverageScope의 sourceDomains는 허용하되 도메인 색인은 candidate.domain을 따른다", () => {
+  const searchPlan = buildNationwidePublicApiSearchPlan({
+    targets: {
+      targetVersion: "2026-07-13",
+      activeLineScopes: [{ regionId: "capital", operatorId: "korail", lineId: "korail-1" }],
+      requiredSourceDomains: [
+        { id: "route_map_positions", releaseTier: "LAUNCH_REQUIRED" },
+        { id: "schedule_timetable", releaseTier: "LAUNCH_REQUIRED" },
+      ],
+    },
+    fixture: {
+      packs: [{
+        operators: [{ id: "korail", nameKo: "코레일" }],
+        lines: [{ id: "korail-1", nameKo: "수도권 1호선" }],
+      }],
+    },
+    sourceCandidates: {
+      candidates: [{
+        id: "kric-korail-1-route-map-positions",
+        domain: "route_map_positions",
+        requestUrl: "https://api.odcloud.kr/api/15041331/v1/example",
+        coverageScope: { lineIds: ["korail-1"], sourceDomains: ["route_map_positions"] },
+      }],
+    },
+  });
+
+  const byDomain = new Map(searchPlan.entries.map((entry) => [entry.sourceDomain, entry]));
+  assert.ok(byDomain.get("route_map_positions").knownProviderCandidateIds
+    .includes("kric-korail-1-route-map-positions"));
+  assert.deepEqual(byDomain.get("schedule_timetable").knownProviderCandidateIds, []);
+});
+
 test("KORAIL 검색은 공공데이터포털 정식 기관명을 사용한다", () => {
   const searchPlan = buildNationwidePublicApiSearchPlan({
     targets: {
