@@ -12953,8 +12953,11 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
       entry.lineId === "seoul-4" &&
       entry.sourceDomain === "route_map_positions",
   );
-  assert.equal(capitalRouteMapCoverage.status, "MISSING");
-  assert.deepEqual(capitalRouteMapCoverage.missingFields, ["route_map_position", "route_map_label_polygon"]);
+  // #2514 B0: seoulmetro-cyberstation-route-map coverageScope의 seoul-4 line-scope 재기술로 이 requirement가
+  // 전국 게이트에서 SUPPORTED로 전이한다. 재기술 이전에는 operator-scope provenance만 나와 MISSING이었다.
+  assert.equal(capitalRouteMapCoverage.status, "SUPPORTED");
+  assert.deepEqual(capitalRouteMapCoverage.missingFields, []);
+  assert.deepEqual(capitalRouteMapCoverage.sourceIds, ["seoulmetro-cyberstation-route-map"]);
 
   // #1999: release-scope 평가 모드는 게시 차단을 게시 범위(capital·seoul-metro × capitalPilotTargets domains) 내 gap만
   // 기준으로 판정한다. 현행 인벤토리는 전국 gap 다수 + scope 내 gap 0이므로, --allow-gaps 없이도 exit 0으로 통과하되

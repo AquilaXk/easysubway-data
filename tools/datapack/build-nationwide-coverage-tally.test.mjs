@@ -196,6 +196,19 @@ test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 �
     assert.equal(ledger.enhancement.totalCount, 45);
     assert.equal(ledger.enhancement.earliestResolutionNextReviewAt, null);
     assert.equal(ledger.enhancement.requirements.length, 45);
+
+    // #2514 B0 파일럿: candidate 게이트가 SUPPORTED로 전이시킨 requirement는 이 ledger에서도 같은 소스로
+    // INVENTORY_ADMITTED여야 한다(두 판정 축이 반대 결론을 내지 않도록 고정).
+    const pilot = ledger.launchRequired.requirements.find((entry) =>
+      entry.regionId === "capital"
+      && entry.operatorId === "seoul-metro"
+      && entry.lineId === "seoul-4"
+      && entry.sourceDomain === "route_map_positions");
+    assert.equal(pilot.status, "INVENTORY_ADMITTED");
+    assert.deepEqual(pilot.admittedSourceIds, [
+      "seoul-metro-route-map-positions",
+      "seoulmetro-cyberstation-route-map",
+    ]);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "nationwide-candidate-pack-spec",
+  "issue": 2514,
+  "parentIssues": [2510, 2138],
+  "candidateId": "nationwide-candidate-20260725",
+  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다.",
+  "harness": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs",
+  "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다.",
+  "inheritsFrom": {
+    "path": "tools/datapack/release/capital-production-reviewed-pack.json",
+    "packId": "capital",
+    "packVersion": "1",
+    "reasonKo": "capital production pack 데이터를 그대로 승계한다. 1MB에 가까운 production 데이터를 복제하지 않고 참조로 승계해 원본과의 무성 drift를 구조적으로 막는다. 하네스가 이 spec을 적용해 candidate fixture를 결정적으로 조립하며, production 트랙 파일은 어떤 경로로도 수정하지 않는다."
+  },
+  "manifest": {
+    "manifestVersion": 2,
+    "channel": "candidate",
+    "releaseSequence": 1,
+    "publishedAt": "2026-07-25T00:00:00.000Z",
+    "expiresAt": "2026-08-24T00:00:00.000Z",
+    "keyId": "candidate-v1",
+    "ttlSeconds": 3600,
+    "pinnedTimeKo": "releaseSequence·publishedAt·expiresAt를 고정해 candidate 빌드가 wall-clock이나 CI 실행 번호에 의존하지 않게 한다."
+  },
+  "pack": {
+    "id": "nationwide-candidate",
+    "version": "1",
+    "artifactKind": "production",
+    "url": "https://easysubway-datapack-candidate.invalid/catalog/nationwide-candidate-v1.sqlite.gz",
+    "artifactKindReasonKo": "게이트는 required root pack의 field provenance artifactKind가 production일 때만 coverage를 인정한다(그 외는 fail closed). candidate도 production artifactKind로 조립하되 url은 게시가 불가능한 예약 도메인(.invalid)을 써서 실제 게시물과 혼동될 수 없게 한다.",
+    "metadataOverrides": {
+      "activePack": "nationwide-candidate"
+    }
+  },
+  "lineScopeRedescriptions": [
+    {
+      "sourceId": "seoulmetro-cyberstation-route-map",
+      "sourceDomain": "route_map_positions",
+      "lineIds": ["seoul-4"],
+      "requirementKeys": ["capital:seoul-metro:seoul-4:route_map_positions"],
+      "reasonKo": "B0 파일럿 1건. 이 소스는 admission이 완결(admissionEvidence.decision=APPROVED)돼 있고 승계 pack에 seoul-4 route_map_positions 행 2건(derivationKind=OFFICIAL, labelPolygon 포함)이 이미 있다. coverageScope에 lineIds가 있어야 build-datapack.mjs recordCoverageScopes가 (operator, line) 단일 pair line-scoped provenance를 낸다.",
+      "inventorySyncKo": "같은 lineIds를 tools/datapack/source-inventory.json의 같은 소스 coverageScope에도 적어야 한다. 하네스가 두 정본의 lineIds 일치를 fail closed로 확인한다."
+    }
+  ]
+}

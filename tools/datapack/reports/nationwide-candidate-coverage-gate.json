@@ -1,0 +1,207 @@
+{
+  "artifactKind": "nationwide-candidate-coverage-gate-evidence",
+  "candidatePack": {
+    "artifactKind": "production",
+    "candidateId": "nationwide-candidate-20260725",
+    "id": "nationwide-candidate",
+    "inheritsFrom": {
+      "packId": "capital",
+      "packVersion": "1",
+      "path": "tools/datapack/release/capital-production-reviewed-pack.json"
+    },
+    "manifestChannel": "candidate",
+    "rootPackRuleKo": "게이트는 manifest의 required root pack(emergencyOverride + activePack/default)만 판정하고 각 root pack이 단독으로 coverage 계약을 만족해야 한다. candidate manifest는 이 pack 하나만 root로 둔다.",
+    "version": "1"
+  },
+  "determinism": {
+    "excludedAxes": [
+      "candidate.manifestSha256",
+      "manifest.signature",
+      "packs[].signature",
+      "packs[].sqliteSha256",
+      "summary.*.explicitlyUnsupportedCount",
+      "summary.*.missingCount",
+      "summary.*.terminalResolutionRatio"
+    ],
+    "excludedAxesReasonKo": "manifest·pack 서명과 그 서명이 포함된 manifest sha256은 실행마다 새로 만드는 임시 RSA 키에 좌우되고, sqliteSha256은 런타임 SQLite 구현에 좌우된다. EXPLICITLY_UNSUPPORTED·MISSING 집계는 게이트가 resolutions nextReviewAt을 wall-clock으로 판정하므로 시간이 지나면 같은 입력에서도 값이 갈린다.",
+    "packPayloadIdenticalAcrossVariants": true,
+    "packPayloadIdenticalReasonKo": "line-scope 재기술은 소스 coverageScope 기술만 바꾸고 pack row 데이터를 바꾸지 않는다 — 두 variant의 sqliteSha256이 같은 실행에서 동일함을 하네스가 확인한다.",
+    "recordedAxesKo": "SUPPORTED 판정(requirement 키·필드 근거·소스)과 tier 분모만 기록한다. 이 축은 tracked 입력만으로 오프라인·서명 키 없이 바이트 단위 재현된다."
+  },
+  "harness": {
+    "builder": "tools/datapack/build-datapack.mjs",
+    "gate": "tools/datapack/report-coverage-gaps.mjs",
+    "offlineKo": "네트워크 호출이 없다. 입력은 전부 tracked 파일이고 산출물은 임시 작업 디렉터리에만 쓴다.",
+    "signing": {
+      "keyIdKo": "production artifactKind pack은 RSA 서명이 필수라 실행마다 임시 RSA-2048 키쌍을 만들어 자식 프로세스 env로만 주입한다. 저장소·CI 비밀에 서명 키가 필요 없고 키는 디스크에 남지 않는다.",
+      "mode": "EPHEMERAL_RSA_2048"
+    },
+    "tool": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs"
+  },
+  "inputs": {
+    "inheritedPack": {
+      "path": "tools/datapack/release/capital-production-reviewed-pack.json",
+      "sha256": "6b64e5e9f16306e7602a52fd47247c770b2b192c058f1f07a718aaf2dab2ff4a"
+    },
+    "inventory": {
+      "path": "tools/datapack/source-inventory.json",
+      "sha256": "8856a81a49f8f3814c9abd1a54fca7451dbcd1b5a3c2613e6427c3f1a3f49ff8"
+    },
+    "resolutionPlan": {
+      "path": "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
+      "sha256": "2af5546bdfc0b7873b5165a551153cf945abd4741686acbe30486abc4d29b6c2"
+    },
+    "resolutions": {
+      "path": "tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json",
+      "sha256": "c71318595eac2c9f478f06ad4b1901d2602d8b5952d5e94c0718209d80dc555a"
+    },
+    "spec": {
+      "path": "tools/datapack/nationwide-candidate-pack-spec.json",
+      "sha256": "a2a867bfc59c8959b735435badadb689e74e9de16477634f37317966cda8607d"
+    },
+    "targets": {
+      "path": "tools/datapack/nationwide-coverage-targets.json",
+      "sha256": "2715e0bb28a25b2103add14747e74742fcb88f61e4cf357ed68453f20cf6cfc5"
+    }
+  },
+  "issue": 2514,
+  "lineScopeRedescriptions": [
+    {
+      "lineIds": [
+        "seoul-4"
+      ],
+      "requirementKeys": [
+        "capital:seoul-metro:seoul-4:route_map_positions"
+      ],
+      "sourceDomain": "route_map_positions",
+      "sourceId": "seoulmetro-cyberstation-route-map"
+    }
+  ],
+  "parentIssues": [
+    2510,
+    2138
+  ],
+  "readingGuide": {
+    "denominatorSemanticsKo": "pilotRequirements의 denominator·coveredFields는 domain requiredFields 개수이지 데이터 행 수가 아니다. route_map_positions의 denominator 2는 필수 필드 2개(route_map_position·route_map_label_polygon)를 뜻하며 역 2개나 행 2개를 뜻하지 않는다. 실제로 그 판정을 뒷받침한 provenance 행 수는 필드별 supportingRecordCountByField에 따로 기록한다.",
+    "supportedScopeKo": "이 evidence는 SUPPORTED 축만 기록하므로 전국 gap 총량 판독에 쓰면 안 된다. 전국 진행 집계는 tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
+    "variantComparisonKo": "전이 판정은 두 variant의 상대 비교다. baseline SUPPORTED 총량은 승계 팩의 다른 소스가 line-scope를 갖게 되면 함께 늘어날 수 있고, 하네스는 파일럿 키가 baseline에 없고 lineScoped가 baseline ∪ 파일럿 키와 정확히 같은지만 fail closed로 본다."
+  },
+  "regeneration": {
+    "command": "node tools/datapack/run-nationwide-candidate-coverage-gate.mjs --spec tools/datapack/nationwide-candidate-pack-spec.json --targets tools/datapack/nationwide-coverage-targets.json --inventory tools/datapack/source-inventory.json --resolution-plan tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json --output tools/datapack/reports/nationwide-candidate-coverage-gate.json",
+    "evidencePath": "tools/datapack/reports/nationwide-candidate-coverage-gate.json",
+    "pairedUpdateKo": "spec·targets·inventory·resolutions·search plan을 바꾸는 PR은 이 명령으로 evidence를 함께 재생성해야 한다. inventory를 바꾸면 tools/datapack/reports/nationwide-coverage-tally.json도 그 ledger의 regeneration.command로 같이 재생성한다. 재생성 누락은 datapack 도구 테스트에서 fail closed 된다."
+  },
+  "schemaVersion": 1,
+  "targetVersion": "2026-07-13",
+  "transitions": [
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
+      "sourceIds": [
+        "seoulmetro-cyberstation-route-map"
+      ]
+    }
+  ],
+  "variants": {
+    "baseline": {
+      "descriptionKo": "line-scope 재기술 이전 상태. 재기술 대상 소스의 coverageScope.lineIds를 candidate fixture와 inventory 사본에서 함께 지워 operator-scope provenance만 나오게 한 실행이다.",
+      "enhancement": {
+        "supportedCount": 0,
+        "supportedRatio": 0,
+        "totalCount": 45
+      },
+      "launchRequired": {
+        "supportedCount": 0,
+        "supportedRatio": 0,
+        "totalCount": 270
+      },
+      "pilotRequirements": [
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
+          }
+        }
+      ],
+      "supportedRequirementKeys": []
+    },
+    "lineScoped": {
+      "descriptionKo": "line-scope 재기술 이후 상태. candidate fixture와 tracked source-inventory.json이 같은 lineIds를 기술해 (operator, line) 단일 pair provenance가 나온 실행이다.",
+      "enhancement": {
+        "supportedCount": 0,
+        "supportedRatio": 0,
+        "totalCount": 45
+      },
+      "launchRequired": {
+        "supportedCount": 1,
+        "supportedRatio": 0.0037,
+        "totalCount": 270
+      },
+      "pilotRequirements": [
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "seoulmetro-cyberstation-route-map"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "seoulmetro-cyberstation-route-map"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
+          "sourceIds": [
+            "seoulmetro-cyberstation-route-map"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 2,
+            "route_map_position": 2
+          }
+        }
+      ],
+      "supportedRequirementKeys": [
+        "capital:seoul-metro:seoul-4:route_map_positions"
+      ]
+    }
+  }
+}
