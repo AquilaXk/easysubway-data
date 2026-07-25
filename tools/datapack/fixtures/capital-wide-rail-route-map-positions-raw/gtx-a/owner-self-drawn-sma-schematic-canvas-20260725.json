@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-8604048b6430",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "수서",
+      "stationId": "station-11b135e75c83",
+      "x": 2717.981,
+      "y": 2145.912,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2715,
+          "y": 2135
+        },
+        {
+          "x": 2753,
+          "y": 2135
+        },
+        {
+          "x": 2753,
+          "y": 2157
+        },
+        {
+          "x": 2715,
+          "y": 2157
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "성남",
+      "stationId": "station-7d47928260ef",
+      "x": 2612,
+      "y": 2290,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2593,
+          "y": 2295
+        },
+        {
+          "x": 2631,
+          "y": 2295
+        },
+        {
+          "x": 2631,
+          "y": 2317
+        },
+        {
+          "x": 2593,
+          "y": 2317
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "구성",
+      "stationId": "station-a99587157d2e",
+      "x": 2181,
+      "y": 2391,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2178,
+          "y": 2380
+        },
+        {
+          "x": 2216,
+          "y": 2380
+        },
+        {
+          "x": 2216,
+          "y": 2402
+        },
+        {
+          "x": 2178,
+          "y": 2402
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "동탄",
+      "stationId": "station-0fdb9cfd58c7",
+      "x": 2226,
+      "y": 2464,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2223,
+          "y": 2453
+        },
+        {
+          "x": 2261,
+          "y": 2453
+        },
+        {
+          "x": 2261,
+          "y": 2475
+        },
+        {
+          "x": 2223,
+          "y": 2475
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "서울역",
+      "stationId": "station-2af75c3d707b",
+      "x": 1662,
+      "y": 1333,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1653,
+          "y": 1322
+        },
+        {
+          "x": 1704,
+          "y": 1322
+        },
+        {
+          "x": 1704,
+          "y": 1344
+        },
+        {
+          "x": 1653,
+          "y": 1344
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "연신내",
+      "stationId": "station-33476e92e4e7",
+      "x": 1166,
+      "y": 677,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1141,
+          "y": 682
+        },
+        {
+          "x": 1192,
+          "y": 682
+        },
+        {
+          "x": 1192,
+          "y": 704
+        },
+        {
+          "x": 1141,
+          "y": 704
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "대곡",
+      "stationId": "station-a935653a9a38",
+      "x": 724,
+      "y": 678,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 705,
+          "y": 683
+        },
+        {
+          "x": 743,
+          "y": 683
+        },
+        {
+          "x": 743,
+          "y": 705
+        },
+        {
+          "x": 705,
+          "y": 705
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "킨텍스",
+      "stationId": "station-3cdfc30d6e28",
+      "x": 395,
+      "y": 695,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 370,
+          "y": 700
+        },
+        {
+          "x": 421,
+          "y": 700
+        },
+        {
+          "x": 421,
+          "y": 722
+        },
+        {
+          "x": 370,
+          "y": 722
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "운정중앙",
+      "stationId": "station-81c83769f883",
+      "x": 282,
+      "y": 693,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 250,
+          "y": 698
+        },
+        {
+          "x": 314,
+          "y": 698
+        },
+        {
+          "x": 314,
+          "y": 720
+        },
+        {
+          "x": 250,
+          "y": 720
+        }
+      ]
+    }
+  ]
+}

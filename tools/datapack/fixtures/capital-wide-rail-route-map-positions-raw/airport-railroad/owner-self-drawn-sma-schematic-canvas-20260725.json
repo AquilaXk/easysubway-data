@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-e9e9a5b520a4",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "서울역",
+      "stationId": "station-2af75c3d707b",
+      "x": 1662,
+      "y": 1333,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1653,
+          "y": 1322
+        },
+        {
+          "x": 1704,
+          "y": 1322
+        },
+        {
+          "x": 1704,
+          "y": 1344
+        },
+        {
+          "x": 1653,
+          "y": 1344
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "공덕",
+      "stationId": "station-239460025840",
+      "x": 1540,
+      "y": 1480,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1521,
+          "y": 1485
+        },
+        {
+          "x": 1559,
+          "y": 1485
+        },
+        {
+          "x": 1559,
+          "y": 1507
+        },
+        {
+          "x": 1521,
+          "y": 1507
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "홍대입구",
+      "stationId": "station-0f50a307ac33",
+      "x": 1322,
+      "y": 1274,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1290,
+          "y": 1279
+        },
+        {
+          "x": 1354,
+          "y": 1279
+        },
+        {
+          "x": 1354,
+          "y": 1301
+        },
+        {
+          "x": 1290,
+          "y": 1301
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "디지털미디어시티",
+      "stationId": "station-f6474f3aa572",
+      "x": 1167,
+      "y": 1122,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1109,
+          "y": 1127
+        },
+        {
+          "x": 1225,
+          "y": 1127
+        },
+        {
+          "x": 1225,
+          "y": 1149
+        },
+        {
+          "x": 1109,
+          "y": 1149
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "마곡나루",
+      "stationId": "station-db4c1121869d",
+      "x": 925,
+      "y": 1133,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 893,
+          "y": 1138
+        },
+        {
+          "x": 957,
+          "y": 1138
+        },
+        {
+          "x": 957,
+          "y": 1160
+        },
+        {
+          "x": 893,
+          "y": 1160
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "김포공항",
+      "stationId": "station-1f38f0831cb1",
+      "x": 766,
+      "y": 1055,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 734,
+          "y": 1060
+        },
+        {
+          "x": 798,
+          "y": 1060
+        },
+        {
+          "x": 798,
+          "y": 1082
+        },
+        {
+          "x": 734,
+          "y": 1082
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "계양",
+      "stationId": "station-2671dacf496f",
+      "x": 553.032,
+      "y": 1055.311,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 534,
+          "y": 1060
+        },
+        {
+          "x": 572,
+          "y": 1060
+        },
+        {
+          "x": 572,
+          "y": 1082
+        },
+        {
+          "x": 534,
+          "y": 1082
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "검암",
+      "stationId": "station-12984a8c7a35",
+      "x": 437.385,
+      "y": 1086.691,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 434,
+          "y": 1076
+        },
+        {
+          "x": 472,
+          "y": 1076
+        },
+        {
+          "x": 472,
+          "y": 1098
+        },
+        {
+          "x": 434,
+          "y": 1098
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "청라국제도시",
+      "stationId": "station-007e4c97db14",
+      "x": 336,
+      "y": 1409,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 307,
+          "y": 1398
+        },
+        {
+          "x": 397,
+          "y": 1398
+        },
+        {
+          "x": 397,
+          "y": 1420
+        },
+        {
+          "x": 307,
+          "y": 1420
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "영종",
+      "stationId": "station-02ad27f1b834",
+      "x": 337,
+      "y": 1894,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 334,
+          "y": 1883
+        },
+        {
+          "x": 372,
+          "y": 1883
+        },
+        {
+          "x": 372,
+          "y": 1905
+        },
+        {
+          "x": 334,
+          "y": 1905
+        }
+      ]
+    },
+    {
+      "stationCode": "11",
+      "stationName": "운서",
+      "stationId": "station-2535b721e97f",
+      "x": 337,
+      "y": 1984,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 334,
+          "y": 1973
+        },
+        {
+          "x": 372,
+          "y": 1973
+        },
+        {
+          "x": 372,
+          "y": 1995
+        },
+        {
+          "x": 334,
+          "y": 1995
+        }
+      ]
+    },
+    {
+      "stationCode": "12",
+      "stationName": "공항화물청사",
+      "stationId": "station-1f6ac5d3880a",
+      "x": 336,
+      "y": 2062,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 307,
+          "y": 2051
+        },
+        {
+          "x": 397,
+          "y": 2051
+        },
+        {
+          "x": 397,
+          "y": 2073
+        },
+        {
+          "x": 307,
+          "y": 2073
+        }
+      ]
+    },
+    {
+      "stationCode": "13",
+      "stationName": "인천공항1터미널",
+      "stationId": "station-fce26411d581",
+      "x": 337,
+      "y": 2143,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 295,
+          "y": 2132
+        },
+        {
+          "x": 411,
+          "y": 2132
+        },
+        {
+          "x": 411,
+          "y": 2154
+        },
+        {
+          "x": 295,
+          "y": 2154
+        }
+      ]
+    },
+    {
+      "stationCode": "14",
+      "stationName": "인천공항2터미널",
+      "stationId": "station-00ac443982bf",
+      "x": 337,
+      "y": 2236,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 295,
+          "y": 2225
+        },
+        {
+          "x": 411,
+          "y": 2225
+        },
+        {
+          "x": 411,
+          "y": 2247
+        },
+        {
+          "x": 295,
+          "y": 2247
+        }
+      ]
+    }
+  ]
+}

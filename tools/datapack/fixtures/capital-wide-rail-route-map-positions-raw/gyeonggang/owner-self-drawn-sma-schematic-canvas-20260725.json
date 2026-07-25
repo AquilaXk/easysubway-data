@@ -1,0 +1,332 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-e4939a4b4713",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "판교",
+      "stationId": "station-5ba75cc204b9",
+      "x": 2414,
+      "y": 2286,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2395,
+          "y": 2291
+        },
+        {
+          "x": 2433,
+          "y": 2291
+        },
+        {
+          "x": 2433,
+          "y": 2313
+        },
+        {
+          "x": 2395,
+          "y": 2313
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "성남",
+      "stationId": "station-7d47928260ef",
+      "x": 2611.865,
+      "y": 2290.18,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2609,
+          "y": 2279
+        },
+        {
+          "x": 2647,
+          "y": 2279
+        },
+        {
+          "x": 2647,
+          "y": 2301
+        },
+        {
+          "x": 2609,
+          "y": 2301
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "이매",
+      "stationId": "station-ea48bd3f46f2",
+      "x": 2701,
+      "y": 2386,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2698,
+          "y": 2375
+        },
+        {
+          "x": 2736,
+          "y": 2375
+        },
+        {
+          "x": 2736,
+          "y": 2397
+        },
+        {
+          "x": 2698,
+          "y": 2397
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "삼동",
+      "stationId": "station-e993cc934504",
+      "x": 2772,
+      "y": 2462,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2753,
+          "y": 2467
+        },
+        {
+          "x": 2791,
+          "y": 2467
+        },
+        {
+          "x": 2791,
+          "y": 2489
+        },
+        {
+          "x": 2753,
+          "y": 2489
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "경기광주",
+      "stationId": "station-3bee6a854747",
+      "x": 2852,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2820,
+          "y": 2487
+        },
+        {
+          "x": 2884,
+          "y": 2487
+        },
+        {
+          "x": 2884,
+          "y": 2509
+        },
+        {
+          "x": 2820,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "초월",
+      "stationId": "station-fcfde6365f80",
+      "x": 2933,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2914,
+          "y": 2487
+        },
+        {
+          "x": 2952,
+          "y": 2487
+        },
+        {
+          "x": 2952,
+          "y": 2509
+        },
+        {
+          "x": 2914,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "곤지암",
+      "stationId": "station-b44cb129a80e",
+      "x": 3015,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2990,
+          "y": 2487
+        },
+        {
+          "x": 3041,
+          "y": 2487
+        },
+        {
+          "x": 3041,
+          "y": 2509
+        },
+        {
+          "x": 2990,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "신둔도예촌",
+      "stationId": "station-11e3c2bb6715",
+      "x": 3096,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3058,
+          "y": 2487
+        },
+        {
+          "x": 3135,
+          "y": 2487
+        },
+        {
+          "x": 3135,
+          "y": 2509
+        },
+        {
+          "x": 3058,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "이천",
+      "stationId": "station-6e9d9057b9f8",
+      "x": 3177,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3158,
+          "y": 2487
+        },
+        {
+          "x": 3196,
+          "y": 2487
+        },
+        {
+          "x": 3196,
+          "y": 2509
+        },
+        {
+          "x": 3158,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "부발",
+      "stationId": "station-9962dc552778",
+      "x": 3259,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3240,
+          "y": 2487
+        },
+        {
+          "x": 3278,
+          "y": 2487
+        },
+        {
+          "x": 3278,
+          "y": 2509
+        },
+        {
+          "x": 3240,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "11",
+      "stationName": "세종대왕릉",
+      "stationId": "station-f8b144d198db",
+      "x": 3340,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3302,
+          "y": 2487
+        },
+        {
+          "x": 3379,
+          "y": 2487
+        },
+        {
+          "x": 3379,
+          "y": 2509
+        },
+        {
+          "x": 3302,
+          "y": 2509
+        }
+      ]
+    },
+    {
+      "stationCode": "12",
+      "stationName": "여주",
+      "stationId": "station-7b086a7c477a",
+      "x": 3424,
+      "y": 2482,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 3405,
+          "y": 2487
+        },
+        {
+          "x": 3443,
+          "y": 2487
+        },
+        {
+          "x": 3443,
+          "y": 2509
+        },
+        {
+          "x": 3405,
+          "y": 2509
+        }
+      ]
+    }
+  ]
+}

@@ -294,6 +294,32 @@
                     "lineId": { "type": "string", "minLength": 1 }
                   }
                 }
+              },
+              "overlayDatasetId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "primary FILE 결측 위경도를 채운 동일 공단 공식 overlay dataset id (예: KRIC 1294)."
+              },
+              "overlayDetailUrl": {
+                "type": "string",
+                "minLength": 1,
+                "description": "overlay dataset 공식 detail URL."
+              },
+              "overlayRawSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "overlay raw fixture SHA-256."
+              },
+              "overlayStationNames": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "overlay로 lat/lon을 채운 역명 목록."
+              },
+              "swappedCoordinateCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "공식 FILE 위경도 컬럼 스왑을 결정론 정규화한 행 수."
               }
             }
           },

@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-62096860ab09",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "발곡",
+      "stationId": "station-4b115ed64c31",
+      "x": 2434,
+      "y": 605,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2431,
+          "y": 594
+        },
+        {
+          "x": 2469,
+          "y": 594
+        },
+        {
+          "x": 2469,
+          "y": 616
+        },
+        {
+          "x": 2431,
+          "y": 616
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "회룡",
+      "stationId": "station-5e767000012b",
+      "x": 2435,
+      "y": 540,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2432,
+          "y": 529
+        },
+        {
+          "x": 2470,
+          "y": 529
+        },
+        {
+          "x": 2470,
+          "y": 551
+        },
+        {
+          "x": 2432,
+          "y": 551
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "범골",
+      "stationId": "station-70407ad089cf",
+      "x": 2413,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2394,
+          "y": 482
+        },
+        {
+          "x": 2432,
+          "y": 482
+        },
+        {
+          "x": 2432,
+          "y": 504
+        },
+        {
+          "x": 2394,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "경전철의정부",
+      "stationId": "station-b7b7f2b83b59",
+      "x": 2341,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2296,
+          "y": 482
+        },
+        {
+          "x": 2386,
+          "y": 482
+        },
+        {
+          "x": 2386,
+          "y": 504
+        },
+        {
+          "x": 2296,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "의정부시청",
+      "stationId": "station-95dd211ccf50",
+      "x": 2267,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2229,
+          "y": 482
+        },
+        {
+          "x": 2306,
+          "y": 482
+        },
+        {
+          "x": 2306,
+          "y": 504
+        },
+        {
+          "x": 2229,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "흥선",
+      "stationId": "station-8410a91533a0",
+      "x": 2193,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2174,
+          "y": 482
+        },
+        {
+          "x": 2212,
+          "y": 482
+        },
+        {
+          "x": 2212,
+          "y": 504
+        },
+        {
+          "x": 2174,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "의정부중앙",
+      "stationId": "station-7b93fe0d1a82",
+      "x": 2119,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2081,
+          "y": 482
+        },
+        {
+          "x": 2158,
+          "y": 482
+        },
+        {
+          "x": 2158,
+          "y": 504
+        },
+        {
+          "x": 2081,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "동오",
+      "stationId": "station-4962e445159a",
+      "x": 2045,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2026,
+          "y": 482
+        },
+        {
+          "x": 2064,
+          "y": 482
+        },
+        {
+          "x": 2064,
+          "y": 504
+        },
+        {
+          "x": 2026,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "새말",
+      "stationId": "station-26a33ca517c1",
+      "x": 1971,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1952,
+          "y": 482
+        },
+        {
+          "x": 1990,
+          "y": 482
+        },
+        {
+          "x": 1990,
+          "y": 504
+        },
+        {
+          "x": 1952,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "경기도청북부청사",
+      "stationId": "station-2c0cffe8bea5",
+      "x": 1898,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1840,
+          "y": 482
+        },
+        {
+          "x": 1956,
+          "y": 482
+        },
+        {
+          "x": 1956,
+          "y": 504
+        },
+        {
+          "x": 1840,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "11",
+      "stationName": "효자",
+      "stationId": "station-b5f0619552cd",
+      "x": 1824,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1805,
+          "y": 482
+        },
+        {
+          "x": 1843,
+          "y": 482
+        },
+        {
+          "x": 1843,
+          "y": 504
+        },
+        {
+          "x": 1805,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "12",
+      "stationName": "곤제",
+      "stationId": "station-0a6053205694",
+      "x": 1750,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1731,
+          "y": 482
+        },
+        {
+          "x": 1769,
+          "y": 482
+        },
+        {
+          "x": 1769,
+          "y": 504
+        },
+        {
+          "x": 1731,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "13",
+      "stationName": "어룡",
+      "stationId": "station-e5e3cfd160a1",
+      "x": 1676,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1657,
+          "y": 482
+        },
+        {
+          "x": 1695,
+          "y": 482
+        },
+        {
+          "x": 1695,
+          "y": 504
+        },
+        {
+          "x": 1657,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "14",
+      "stationName": "송산",
+      "stationId": "station-6635e381f37c",
+      "x": 1602,
+      "y": 477,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1583,
+          "y": 482
+        },
+        {
+          "x": 1621,
+          "y": 482
+        },
+        {
+          "x": 1621,
+          "y": 504
+        },
+        {
+          "x": 1583,
+          "y": 504
+        }
+      ]
+    },
+    {
+      "stationCode": "15",
+      "stationName": "탑석",
+      "stationId": "station-765a14f4d6c4",
+      "x": 1539,
+      "y": 474,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1520,
+          "y": 479
+        },
+        {
+          "x": 1558,
+          "y": 479
+        },
+        {
+          "x": 1558,
+          "y": 501
+        },
+        {
+          "x": 1520,
+          "y": 501
+        }
+      ]
+    }
+  ]
+}
