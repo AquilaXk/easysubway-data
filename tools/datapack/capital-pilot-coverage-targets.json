@@ -17,10 +17,15 @@
     "gwangju-metropolitan-rapid-transit",
     "incheon-transit",
     "korail",
+    "operator-10d7cf275a80",
     "operator-29e323a78a93",
+    "operator-2e23276dfa94",
+    "operator-3c623bf1a427",
     "operator-5ca780d7dee1",
     "operator-8134e61f8dbd",
-    "operator-936e454d0bfb"
+    "operator-936e454d0bfb",
+    "operator-b2d80436b438",
+    "seoul-metro"
   ],
   "knownSourceDomains": [
     "official_od_fares",

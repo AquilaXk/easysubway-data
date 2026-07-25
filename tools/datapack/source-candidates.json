@@ -3,7 +3,7 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-07-20",
+  "updatedAt": "2026-07-25",
   "candidates": [
     {
       "id": "busan-transportation-accessibility",
@@ -2414,6 +2414,142 @@
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
     },
     {
+      "id": "kric-everline-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "operator-b2d80436b438"
+        ],
+        "lineIds": [
+          "line-828f04afc588"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "displayName": "국가철도공단_용인에버라인_역위치",
+      "detailUrl": "https://www.data.go.kr/data/15041326/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15041326/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "kric-everline-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://www.data.go.kr/data/15041326/fileData.do",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15041326/fileData.do",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 14,
+        "datasetId": "15041326",
+        "datasetIds": [
+          "15041326"
+        ],
+        "rawSha256": "2160020177352775418c863ebd9846ab5cc0df08c1da0f4b435dbf599b214187",
+        "positionsSha256": "cda5fa54ab66e79de7b6fa025c81c7276a3dbd21dbcf8d57db6a4097e3f2651a",
+        "lineIds": [
+          "line-828f04afc588"
+        ],
+        "lineStationCounts": {
+          "everline": 14
+        },
+        "evidenceArtifact": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "data.go.kr FILE 15041326 용인에버라인 14역 admit(전대·에버랜드 잉여 무시)"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
+    },
+    {
+      "id": "kric-gimpo-goldline-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "operator-2e23276dfa94"
+        ],
+        "lineIds": [
+          "line-5500c1600f71"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "displayName": "국가철도공단_김포골드라인_역사정보(KRIC 1294)",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+      "requestUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "kric-gimpo-goldline-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+        "licenseEvidenceUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 10,
+        "datasetId": "1294",
+        "datasetIds": [
+          "1294"
+        ],
+        "rawSha256": "4008595334630331f68e0fe4aebe3ed5ed8d1cd102ad9b14ea6e0c604fab578d",
+        "positionsSha256": "55a4d8fe62a6b58b9e1f4fe0854566ffe6d95a69d4f3255a4794c4a5dcc3361a",
+        "lineIds": [
+          "line-5500c1600f71"
+        ],
+        "lineStationCounts": {
+          "gimpo": 10
+        },
+        "evidenceArtifact": "tools/datapack/sources/kric-gimpo-goldline-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "KRIC id=1294 김포골드라인 필터 10역 admit"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
+    },
+    {
       "id": "kric-gtx-a-route-map-positions",
       "apiCatalog": false,
       "priority": "P1",
@@ -2901,6 +3037,143 @@
           "admitted canvas x/y/label*는 owner-self-drawn-sma-schematic fixture에서 결속하고, 공식 FILE 위경도는 provenance로만 유지한다(위경도 투영 금지)",
           "2·3단계 13역(언주~중앙보훈병원)은 이번 FILE admission 범위에서 무시한다",
           "active operator coverage는 operator-936e454d0bfb(서울시메트로9호선)이며 FILE publisher(국가철도공단)는 attribution에만 기록한다"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
+    },
+    {
+      "id": "kric-shinbundang-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "seoul-metro"
+        ],
+        "lineIds": [
+          "shinbundang"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "displayName": "국가철도공단_신분당선_역위치",
+      "detailUrl": "https://www.data.go.kr/data/15041337/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15041337/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "kric-shinbundang-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://www.data.go.kr/data/15041337/fileData.do",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15041337/fileData.do",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 16,
+        "datasetId": "15041337",
+        "datasetIds": [
+          "15041337",
+          "1294"
+        ],
+        "rawSha256": "3be638e4c7e6272263abdf2803cd16b9c351bd027356cb10f348574ce4d1dea6",
+        "positionsSha256": "6053dba152cad6350366e768da897b21fc1dbafe8436169d8cd9e4aac6068502",
+        "lineIds": [
+          "shinbundang"
+        ],
+        "lineStationCounts": {
+          "shinbundang": 16
+        },
+        "evidenceArtifact": "tools/datapack/sources/kric-shinbundang-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "data.go.kr FILE 15041337 신분당선 16역 admit(상현 KRIC 1294 overlay)"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
+    },
+    {
+      "id": "kric-sillim-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "operator-10d7cf275a80"
+        ],
+        "lineIds": [
+          "line-aefa08ccc0a9"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "displayName": "국가철도공단_신림선_역사정보(KRIC 1294)",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+      "requestUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "kric-sillim-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+        "licenseEvidenceUrl": "https://data.kric.go.kr/rips/M_01_01/detail.do?id=1294",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "CSV"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 11,
+        "datasetId": "1294",
+        "datasetIds": [
+          "1294"
+        ],
+        "rawSha256": "cea37a7e668eca50d6fbeda97b8c7e0d9bcf6b763046b005238e5143a02cac77",
+        "positionsSha256": "a2b314a313c6131806b1a29c509483b64c4fd9e75d8ce100db018299fa931485",
+        "lineIds": [
+          "line-aefa08ccc0a9"
+        ],
+        "lineStationCounts": {
+          "sillim": 11
+        },
+        "evidenceArtifact": "tools/datapack/sources/kric-sillim-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "KRIC id=1294 신림선 필터 11역 admit"
         ]
       },
       "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
@@ -4930,6 +5203,76 @@
           "unsupportedNotes": "candidate facility coverage requires live sample evidence and inventory admission before production use"
         }
       }
+    },
+    {
+      "id": "kric-ui-sinseol-route-map-positions",
+      "apiCatalog": false,
+      "priority": "P1",
+      "domain": "route_map_positions",
+      "coverageScope": {
+        "regionIds": [
+          "capital"
+        ],
+        "operatorIds": [
+          "operator-3c623bf1a427"
+        ],
+        "lineIds": [
+          "line-30886152e4f8"
+        ],
+        "sourceDomains": [
+          "route_map_positions"
+        ]
+      },
+      "displayName": "국가철도공단_우이신설선_역사정보",
+      "detailUrl": "https://www.data.go.kr/data/15041324/fileData.do",
+      "requestUrl": "https://www.data.go.kr/data/15041324/fileData.do",
+      "licenseEvidenceStatus": "confirmed_unrestricted_public_data_free_use",
+      "sampleEvidenceStatus": "validated_official_full_snapshot",
+      "admissionStatus": "production_route_map_positions_materialized",
+      "productionInventoryReferenceId": "kric-ui-sinseol-route-map-positions",
+      "serviceKeyHandling": "not_required",
+      "mobileEmbeddingAllowed": true,
+      "evidence": {
+        "retrievedAt": "2026-07-25",
+        "endpoint": "https://www.data.go.kr/data/15041324/fileData.do",
+        "licenseEvidenceUrl": "https://www.data.go.kr/data/15041324/fileData.do",
+        "usePermissionRange": "공공데이터포털 이용허락범위 제한 없음",
+        "formats": [
+          "XLSX",
+          "CSV"
+        ],
+        "outputFields": [
+          "route_map_position",
+          "route_map_label_polygon"
+        ],
+        "stationCount": 12,
+        "datasetId": "15041324",
+        "datasetIds": [
+          "15041324",
+          "1294"
+        ],
+        "rawSha256": "fe2d8d0b24d16561c8fbbafe1b2b8bf1bb67bb24ca0c200bae222f502fefe055",
+        "positionsSha256": "432088124437b63148bcacf7274472d02147f53d5e32a310c0c065f5e4cbd8ed",
+        "lineIds": [
+          "line-30886152e4f8"
+        ],
+        "lineStationCounts": {
+          "ui": 12
+        },
+        "evidenceArtifact": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
+        "coverageAssessment": {
+          "state": "SUPPORTED",
+          "requirementCount": 1,
+          "sourceDomain": "route_map_positions",
+          "artifactKind": "production",
+          "materializer": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.mjs",
+          "verificationTest": "tools/datapack/materialize-kric-capital-light-rail-route-map-positions.test.mjs"
+        },
+        "coverageLimitations": [
+          "data.go.kr FILE 15041324 우이신설 12역 admit(신설동 잉여 무시, 위경도 KRIC 1294 overlay)"
+        ]
+      },
+      "nextAction": "공식 FILE 갱신 시 CSV byte hash와 admitted 좌표 snapshot을 함께 갱신한다"
     },
     {
       "id": "kric-uijeongbu-route-map-positions",

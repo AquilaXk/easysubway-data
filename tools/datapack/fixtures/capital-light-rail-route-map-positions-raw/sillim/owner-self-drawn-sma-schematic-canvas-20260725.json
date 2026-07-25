@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-aefa08ccc0a9",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "샛강",
+      "stationId": "station-c98162ac99c4",
+      "x": 1576,
+      "y": 1714,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1557,
+          "y": 1719
+        },
+        {
+          "x": 1595,
+          "y": 1719
+        },
+        {
+          "x": 1595,
+          "y": 1741
+        },
+        {
+          "x": 1557,
+          "y": 1741
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "대방",
+      "stationId": "station-2005a7f81a41",
+      "x": 1526,
+      "y": 1757,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1507,
+          "y": 1762
+        },
+        {
+          "x": 1545,
+          "y": 1762
+        },
+        {
+          "x": 1545,
+          "y": 1784
+        },
+        {
+          "x": 1507,
+          "y": 1784
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "서울지방병무청",
+      "stationId": "station-3ca2f3437282",
+      "x": 1485,
+      "y": 1798,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1450,
+          "y": 1787
+        },
+        {
+          "x": 1553,
+          "y": 1787
+        },
+        {
+          "x": 1553,
+          "y": 1809
+        },
+        {
+          "x": 1450,
+          "y": 1809
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "보라매",
+      "stationId": "station-db6cce397204",
+      "x": 1462,
+      "y": 1867,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1453,
+          "y": 1856
+        },
+        {
+          "x": 1504,
+          "y": 1856
+        },
+        {
+          "x": 1504,
+          "y": 1878
+        },
+        {
+          "x": 1453,
+          "y": 1878
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "보라매공원",
+      "stationId": "station-49a3c5577336",
+      "x": 1489,
+      "y": 1896,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1451,
+          "y": 1901
+        },
+        {
+          "x": 1528,
+          "y": 1901
+        },
+        {
+          "x": 1528,
+          "y": 1923
+        },
+        {
+          "x": 1451,
+          "y": 1923
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "보라매병원",
+      "stationId": "station-49f7436ac1a3",
+      "x": 1523,
+      "y": 1930,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1501,
+          "y": 1919
+        },
+        {
+          "x": 1578,
+          "y": 1919
+        },
+        {
+          "x": 1578,
+          "y": 1941
+        },
+        {
+          "x": 1501,
+          "y": 1941
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "당곡",
+      "stationId": "station-e791bcc8d4c8",
+      "x": 1560,
+      "y": 1968,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 1557,
+          "y": 1957
+        },
+        {
+          "x": 1595,
+          "y": 1957
+        },
+        {
+          "x": 1595,
+          "y": 1979
+        },
+        {
+          "x": 1557,
+          "y": 1979
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "신림",
+      "stationId": "station-13a12c16a3c0",
+      "x": 1599,
+      "y": 2009,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1580,
+          "y": 2014
+        },
+        {
+          "x": 1618,
+          "y": 2014
+        },
+        {
+          "x": 1618,
+          "y": 2036
+        },
+        {
+          "x": 1580,
+          "y": 2036
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "서원",
+      "stationId": "station-94ca17c12364",
+      "x": 1665,
+      "y": 2071,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1646,
+          "y": 2076
+        },
+        {
+          "x": 1684,
+          "y": 2076
+        },
+        {
+          "x": 1684,
+          "y": 2098
+        },
+        {
+          "x": 1646,
+          "y": 2098
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "서울대벤처타운",
+      "stationId": "station-b391548619ee",
+      "x": 1737,
+      "y": 2101,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1686,
+          "y": 2106
+        },
+        {
+          "x": 1789,
+          "y": 2106
+        },
+        {
+          "x": 1789,
+          "y": 2128
+        },
+        {
+          "x": 1686,
+          "y": 2128
+        }
+      ]
+    },
+    {
+      "stationCode": "11",
+      "stationName": "관악산",
+      "stationId": "station-5ce6b7330265",
+      "x": 1846,
+      "y": 2101,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1821,
+          "y": 2106
+        },
+        {
+          "x": 1872,
+          "y": 2106
+        },
+        {
+          "x": 1872,
+          "y": 2128
+        },
+        {
+          "x": 1821,
+          "y": 2128
+        }
+      ]
+    }
+  ]
+}

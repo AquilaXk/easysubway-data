@@ -1,0 +1,440 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "shinbundang",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "신사",
+      "stationId": "station-9707f89c740a",
+      "x": 2111,
+      "y": 1750,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2092,
+          "y": 1755
+        },
+        {
+          "x": 2130,
+          "y": 1755
+        },
+        {
+          "x": 2130,
+          "y": 1777
+        },
+        {
+          "x": 2092,
+          "y": 1777
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "논현",
+      "stationId": "station-4a2c2985d3b7",
+      "x": 2218,
+      "y": 1751,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2215,
+          "y": 1740
+        },
+        {
+          "x": 2253,
+          "y": 1740
+        },
+        {
+          "x": 2253,
+          "y": 1762
+        },
+        {
+          "x": 2215,
+          "y": 1762
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "신논현",
+      "stationId": "station-7ab006406857",
+      "x": 2219,
+      "y": 1851,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2210,
+          "y": 1840
+        },
+        {
+          "x": 2261,
+          "y": 1840
+        },
+        {
+          "x": 2261,
+          "y": 1862
+        },
+        {
+          "x": 2210,
+          "y": 1862
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "강남",
+      "stationId": "station-gangnam",
+      "x": 2220,
+      "y": 2008,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2217,
+          "y": 1997
+        },
+        {
+          "x": 2255,
+          "y": 1997
+        },
+        {
+          "x": 2255,
+          "y": 2019
+        },
+        {
+          "x": 2217,
+          "y": 2019
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "양재",
+      "stationId": "station-d36bf076a6e4",
+      "x": 2220,
+      "y": 2096,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2217,
+          "y": 2085
+        },
+        {
+          "x": 2255,
+          "y": 2085
+        },
+        {
+          "x": 2255,
+          "y": 2107
+        },
+        {
+          "x": 2217,
+          "y": 2107
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "양재시민의숲",
+      "stationId": "station-63b33bf3a6ab",
+      "x": 2286,
+      "y": 2163,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2241,
+          "y": 2168
+        },
+        {
+          "x": 2331,
+          "y": 2168
+        },
+        {
+          "x": 2331,
+          "y": 2190
+        },
+        {
+          "x": 2241,
+          "y": 2190
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "청계산입구",
+      "stationId": "station-c569e665bbac",
+      "x": 2355,
+      "y": 2229,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2317,
+          "y": 2234
+        },
+        {
+          "x": 2394,
+          "y": 2234
+        },
+        {
+          "x": 2394,
+          "y": 2256
+        },
+        {
+          "x": 2317,
+          "y": 2256
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "판교",
+      "stationId": "station-5ba75cc204b9",
+      "x": 2414,
+      "y": 2286,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 2411,
+          "y": 2275
+        },
+        {
+          "x": 2449,
+          "y": 2275
+        },
+        {
+          "x": 2449,
+          "y": 2297
+        },
+        {
+          "x": 2411,
+          "y": 2297
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "정자",
+      "stationId": "station-jeongja",
+      "x": 2496,
+      "y": 2386,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2477,
+          "y": 2391
+        },
+        {
+          "x": 2515,
+          "y": 2391
+        },
+        {
+          "x": 2515,
+          "y": 2413
+        },
+        {
+          "x": 2477,
+          "y": 2413
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "미금",
+      "stationId": "station-810f79bc1737",
+      "x": 2431,
+      "y": 2386,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2412,
+          "y": 2391
+        },
+        {
+          "x": 2450,
+          "y": 2391
+        },
+        {
+          "x": 2450,
+          "y": 2413
+        },
+        {
+          "x": 2412,
+          "y": 2413
+        }
+      ]
+    },
+    {
+      "stationCode": "11",
+      "stationName": "동천",
+      "stationId": "station-583d6088d20b",
+      "x": 2242,
+      "y": 2341,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2223,
+          "y": 2346
+        },
+        {
+          "x": 2261,
+          "y": 2346
+        },
+        {
+          "x": 2261,
+          "y": 2368
+        },
+        {
+          "x": 2223,
+          "y": 2368
+        }
+      ]
+    },
+    {
+      "stationCode": "12",
+      "stationName": "수지구청",
+      "stationId": "station-eb09c73c19f1",
+      "x": 2191,
+      "y": 2290,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2159,
+          "y": 2295
+        },
+        {
+          "x": 2223,
+          "y": 2295
+        },
+        {
+          "x": 2223,
+          "y": 2317
+        },
+        {
+          "x": 2159,
+          "y": 2317
+        }
+      ]
+    },
+    {
+      "stationCode": "13",
+      "stationName": "성복",
+      "stationId": "station-472c37cdb731",
+      "x": 2129,
+      "y": 2245,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2110,
+          "y": 2250
+        },
+        {
+          "x": 2148,
+          "y": 2250
+        },
+        {
+          "x": 2148,
+          "y": 2272
+        },
+        {
+          "x": 2110,
+          "y": 2272
+        }
+      ]
+    },
+    {
+      "stationCode": "14",
+      "stationName": "상현",
+      "stationId": "station-3178d4e46cab",
+      "x": 2062,
+      "y": 2245,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 2043,
+          "y": 2250
+        },
+        {
+          "x": 2081,
+          "y": 2250
+        },
+        {
+          "x": 2081,
+          "y": 2272
+        },
+        {
+          "x": 2043,
+          "y": 2272
+        }
+      ]
+    },
+    {
+      "stationCode": "15",
+      "stationName": "광교중앙",
+      "stationId": "station-865564447c8f",
+      "x": 1995,
+      "y": 2245,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1963,
+          "y": 2250
+        },
+        {
+          "x": 2027,
+          "y": 2250
+        },
+        {
+          "x": 2027,
+          "y": 2272
+        },
+        {
+          "x": 1963,
+          "y": 2272
+        }
+      ]
+    },
+    {
+      "stationCode": "16",
+      "stationName": "광교",
+      "stationId": "station-436777779124",
+      "x": 1929,
+      "y": 2242,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 1910,
+          "y": 2247
+        },
+        {
+          "x": 1948,
+          "y": 2247
+        },
+        {
+          "x": 1948,
+          "y": 2269
+        },
+        {
+          "x": 1910,
+          "y": 2269
+        }
+      ]
+    }
+  ]
+}

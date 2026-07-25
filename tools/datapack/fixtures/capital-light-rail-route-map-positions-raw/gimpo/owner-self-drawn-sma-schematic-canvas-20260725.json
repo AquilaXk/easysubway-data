@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "owner-self-drawn-sma-schematic-canvas-subset",
+  "sourceId": "owner-self-drawn-sma-schematic",
+  "lineId": "line-5500c1600f71",
+  "stations": [
+    {
+      "stationCode": "1",
+      "stationName": "양촌",
+      "stationId": "station-d5a5fd830f25",
+      "x": 202,
+      "y": 780,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 183,
+          "y": 785
+        },
+        {
+          "x": 221,
+          "y": 785
+        },
+        {
+          "x": 221,
+          "y": 807
+        },
+        {
+          "x": 183,
+          "y": 807
+        }
+      ]
+    },
+    {
+      "stationCode": "2",
+      "stationName": "구래",
+      "stationId": "station-604d61a99f1c",
+      "x": 255,
+      "y": 783,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 236,
+          "y": 788
+        },
+        {
+          "x": 274,
+          "y": 788
+        },
+        {
+          "x": 274,
+          "y": 810
+        },
+        {
+          "x": 236,
+          "y": 810
+        }
+      ]
+    },
+    {
+      "stationCode": "3",
+      "stationName": "마산",
+      "stationId": "station-85eacdca1feb",
+      "x": 320,
+      "y": 783,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 301,
+          "y": 788
+        },
+        {
+          "x": 339,
+          "y": 788
+        },
+        {
+          "x": 339,
+          "y": 810
+        },
+        {
+          "x": 301,
+          "y": 810
+        }
+      ]
+    },
+    {
+      "stationCode": "4",
+      "stationName": "장기",
+      "stationId": "station-34cfe16c889e",
+      "x": 385,
+      "y": 783,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 366,
+          "y": 788
+        },
+        {
+          "x": 404,
+          "y": 788
+        },
+        {
+          "x": 404,
+          "y": 810
+        },
+        {
+          "x": 366,
+          "y": 810
+        }
+      ]
+    },
+    {
+      "stationCode": "5",
+      "stationName": "운양",
+      "stationId": "station-399edb9ee0bd",
+      "x": 450,
+      "y": 783,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 431,
+          "y": 788
+        },
+        {
+          "x": 469,
+          "y": 788
+        },
+        {
+          "x": 469,
+          "y": 810
+        },
+        {
+          "x": 431,
+          "y": 810
+        }
+      ]
+    },
+    {
+      "stationCode": "6",
+      "stationName": "걸포북변",
+      "stationId": "station-365056cd53a7",
+      "x": 515,
+      "y": 783,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 483,
+          "y": 788
+        },
+        {
+          "x": 547,
+          "y": 788
+        },
+        {
+          "x": 547,
+          "y": 810
+        },
+        {
+          "x": 483,
+          "y": 810
+        }
+      ]
+    },
+    {
+      "stationCode": "7",
+      "stationName": "사우",
+      "stationId": "station-ee9d893df118",
+      "x": 596,
+      "y": 808,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 593,
+          "y": 797
+        },
+        {
+          "x": 631,
+          "y": 797
+        },
+        {
+          "x": 631,
+          "y": 819
+        },
+        {
+          "x": 593,
+          "y": 819
+        }
+      ]
+    },
+    {
+      "stationCode": "8",
+      "stationName": "풍무",
+      "stationId": "station-fb7a14cef862",
+      "x": 642,
+      "y": 855,
+      "labelDx": 0,
+      "labelDy": 16,
+      "labelPolygon": [
+        {
+          "x": 623,
+          "y": 860
+        },
+        {
+          "x": 661,
+          "y": 860
+        },
+        {
+          "x": 661,
+          "y": 882
+        },
+        {
+          "x": 623,
+          "y": 882
+        }
+      ]
+    },
+    {
+      "stationCode": "9",
+      "stationName": "고촌",
+      "stationId": "station-db415bd35441",
+      "x": 688,
+      "y": 901,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 685,
+          "y": 890
+        },
+        {
+          "x": 723,
+          "y": 890
+        },
+        {
+          "x": 723,
+          "y": 912
+        },
+        {
+          "x": 685,
+          "y": 912
+        }
+      ]
+    },
+    {
+      "stationCode": "10",
+      "stationName": "김포공항",
+      "stationId": "station-1f38f0831cb1",
+      "x": 766,
+      "y": 1055,
+      "labelDx": 16,
+      "labelDy": 0,
+      "labelPolygon": [
+        {
+          "x": 750,
+          "y": 1044
+        },
+        {
+          "x": 814,
+          "y": 1044
+        },
+        {
+          "x": 814,
+          "y": 1066
+        },
+        {
+          "x": 750,
+          "y": 1066
+        }
+      ]
+    }
+  ]
+}
