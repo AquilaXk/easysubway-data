@@ -13,12 +13,12 @@
 # 수도권에서 최대 638px 역 이동을 유발한 이력).
 #
 # 사용: tools/route-map/run-sma-pipeline-busan.sh [svg경로] [이전버전추출JSON]
-#   svg 경로 미지정 시 반입된 정본 easy-subway-busan-v1.svg를 쓴다.
+#   svg 경로 미지정 시 반입된 정본 easy-subway-busan-v3.svg를 쓴다.
 # 환경: Chrome/Chromium 필요(추출기). CHROME_PATH로 지정 가능.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SVG="${1:-$ROOT/tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v1.svg}"
+SVG="${1:-$ROOT/tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg}"
 PREV_GEOM="${2:-}"
 PACK="apps/mobile/assets/datapacks/capital.sqlite.gz"
 INDEX="apps/mobile/assets/datapacks/index.json"

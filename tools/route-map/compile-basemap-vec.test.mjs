@@ -9,6 +9,7 @@ import {
   extractRailTransferChipObstacles,
   extractServiceTagObstacles,
   markLineTerminalBadgeEntries,
+  matchingGroupEnd,
   normalizeSvgForCompile,
   parseSvgNumbers,
 } from "./compile-basemap-vec.mjs";
@@ -50,12 +51,33 @@ test("컴파일 전에 단순 class 스타일을 SVG 속성으로 인라인한�
   assert.doesNotMatch(normalized, /\/\s+[\w-]+="/);
 });
 
+// #2068 오너 v3 반입 회귀: 빈 레이어를 자기폐쇄 태그로 마감한 SVG(busan v3의
+// service-tags-layer)에서 extractGroup의 depth 카운터가 다음 형제 레이어를 삼켜
+// allow-list 밖 레이어(역명 라벨)가 바탕층에 딸려 들어갔다.
+test("자기폐쇄 태그로 마감된 빈 레이어가 뒤따르는 형제 레이어를 삼키지 않는다", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="route-lines-layer">
+        <polyline class="route-line" points="0,0 10,10" />
+      </g>
+      <g id="service-tags-layer" class="render-layer service-tag-layer" />
+      <g id="station-name-labels-layer">
+        <text id="station-label-test">테스트역</text>
+      </g>
+    </svg>
+  `);
+
+  assert.match(normalized, /id="route-lines-layer"/);
+  assert.match(normalized, /id="service-tags-layer"/);
+  assert.doesNotMatch(normalized, /station-name-labels-layer|테스트역/);
+});
+
 test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노선을 제외한다", () => {
   const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
   const files = [
     "easy-subway-sma-v2.svg",
-    "easy-subway-busan-v1.svg",
-    "easy-subway-daegu-v1.svg",
+    "easy-subway-busan-v3.svg",
+    "easy-subway-daegu-v3.svg",
     "easy-subway-daejeon-v1.svg",
     "easy-subway-gwangju-v1.svg",
   ];
@@ -510,8 +532,8 @@ test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개�
     // #2068 벡스코 병합: 2호선·동해선을 단일 환승 station_id로 합치면서, 동해선
     // 노드용 중복 ordinary 라벨(벡스코_DH)을 제거했다(단일 환승 캡슐이 전사 라벨을
     // 이미 가지므로 중복 표기 불필요) → ordinary 129→128.
-    "easy-subway-busan-v1.svg": { ordinary: 128, transfer: 12, terminal: 7 },
-    "easy-subway-daegu-v1.svg": { ordinary: 84, transfer: 5, terminal: 8 },
+    "easy-subway-busan-v3.svg": { ordinary: 128, transfer: 12, terminal: 7 },
+    "easy-subway-daegu-v3.svg": { ordinary: 84, transfer: 5, terminal: 8 },
     // daejeon: SVG상 ordinary/transfer/terminal 64건 중 39건이 미개통(2호선
     // 트램) data-status="construction"이라 제외 → 25건(15/8/2)만 남는다.
     "easy-subway-daejeon-v1.svg": { ordinary: 15, transfer: 8, terminal: 2 },
@@ -743,14 +765,341 @@ test("extractServiceTagObstacles: main-map-scaled-layer 안 chip은 mapScale·ma
   assert.equal(obstacle.halfHeight, 100 * 0.455);
 });
 
+test("extractServiceTagObstacles: 표장 레이어 자신의 transform도 체인에 합성한다", () => {
+  // 레이어 <g>와 표장 <g>가 각자 transform을 가지면 SVG 렌더는 둘을 합성한다
+  // (레이어가 바깥). 레이어 transform을 빠뜨리면 obstacle이 실제 렌더 위치에서
+  // 어긋난다(#2068 대구 동대구역 KTX·SRT 유령 겹침의 원인).
+  const svgText = `
+    <svg>
+      <g id="service-tags-layer" transform="matrix(2,0,0,3,100,200)">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"
+           transform="translate(10 20)">
+          <rect x="0" y="0" width="5" height="7" />
+        </g>
+      </g>
+    </svg>`;
+  const [obstacle] = extractServiceTagObstacles(svgText);
+  // 로컬 rect [0,5]×[0,7] → tag translate → 레이어 matrix.
+  // x: 2*(0+10)+100 = 120 … 2*(5+10)+100 = 130 → center 125 halfWidth 5
+  // y: 3*(0+20)+200 = 260 … 3*(7+20)+200 = 281 → center 270.5 halfHeight 10.5
+  assert.equal(obstacle.station, "테스트역");
+  assert.equal(obstacle.x, 125);
+  assert.equal(obstacle.y, 270.5);
+  assert.equal(obstacle.halfWidth, 5);
+  assert.equal(obstacle.halfHeight, 10.5);
+});
+
+// #2068 리뷰 지적(2026-07-25): 자기폐쇄 `<g …/>`를 depth로 세던 결함이 표장
+// 추출기 두 곳에 남아 있었다 — 균형이 깨지면 조용히 빈 배열이 되어 표장 회피가
+// 통째로 사라져도 게이트가 green이었다. 아래 4건이 그 시나리오를 고정한다.
+test("extractServiceTagObstacles: 앞선 자기폐쇄 빈 레이어가 표장 레이어 인식을 깨뜨리지 않는다", () => {
+  const svgText = `
+    <svg>
+      <g id="terminal-route-badges-layer" class="render-layer" />
+      <g id="service-tags-layer">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  const obstacles = extractServiceTagObstacles(svgText);
+  assert.equal(obstacles.length, 1);
+  assert.equal(obstacles[0].station, "테스트역");
+  assert.equal(obstacles[0].halfWidth, 5);
+  assert.equal(obstacles[0].halfHeight, 2);
+});
+
+test("extractServiceTagObstacles·extractRailTransferChipObstacles: 레이어 안의 자기폐쇄 <g/>가 표장을 잃게 하지 않는다", () => {
+  const serviceSvg = `
+    <svg>
+      <g id="service-tags-layer">
+        <g id="spacer" data-note="빈 자리표시" />
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+      <g id="station-name-labels-layer"><text>테스트역</text></g>
+    </svg>`;
+  const serviceObstacles = extractServiceTagObstacles(serviceSvg);
+  assert.equal(serviceObstacles.length, 1);
+  assert.equal(serviceObstacles[0].station, "테스트역");
+
+  const railSvg = `
+    <svg>
+      <g id="rail-transfer-layer">
+        <g id="spacer" data-note="빈 자리표시" />
+        <g id="chip-1" data-services="KTX" data-station-name="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  const railObstacles = extractRailTransferChipObstacles(railSvg);
+  assert.equal(railObstacles.length, 1);
+  assert.equal(railObstacles[0].station, "테스트역");
+});
+
+// #2068 리뷰 후속: 레이어 한 단계 아래 "블록 스캐너"(service-tag 블록·rail chip
+// 블록·collectShapeBoundsRecursive의 중첩 <g>)에도 같은 규칙을 적용했다. 후속
+// PR이 반입할 수도권 SVG에 자기폐쇄 <g/>가 다수라 실제로 밟히는 경로다.
+test("표장 블록 안의 자기폐쇄 <g/>가 obstacle을 버리거나 bbox를 부풀리지 않는다", () => {
+  const serviceSvg = `
+    <svg>
+      <g id="service-tags-layer">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <g id="spacer" data-note="빈 자리표시" />
+          <g id="logo" transform="translate(100 200)">
+            <rect x="0" y="0" width="10" height="4" />
+          </g>
+        </g>
+        <g id="service-tag-ktx-2" class="service-tag" data-station="다음역">
+          <rect x="500" y="500" width="10" height="10" />
+        </g>
+      </g>
+    </svg>`;
+  const obstacles = extractServiceTagObstacles(serviceSvg);
+  // 자기폐쇄 <g/>를 depth로 세면 첫 블록이 다음 형제까지 삼켜 bbox가 부풀거나
+  // 균형을 못 찾아 통째로 버려진다. 두 표장이 각자 정확한 bbox로 나와야 한다.
+  assert.equal(obstacles.length, 2);
+  assert.deepEqual(obstacles[0], {
+    station: "테스트역",
+    x: 105,
+    y: 202,
+    halfWidth: 5,
+    halfHeight: 2,
+  });
+  assert.deepEqual(obstacles[1], {
+    station: "다음역",
+    x: 505,
+    y: 505,
+    halfWidth: 5,
+    halfHeight: 5,
+  });
+
+  const railSvg = `
+    <svg>
+      <g id="rail-transfer-layer">
+        <g id="chip-1" data-services="KTX" data-station-name="테스트역">
+          <g id="spacer" data-note="빈 자리표시" />
+          <g id="logo" transform="translate(100 200)">
+            <rect x="0" y="0" width="10" height="4" />
+          </g>
+        </g>
+      </g>
+    </svg>`;
+  const railObstacles = extractRailTransferChipObstacles(railSvg);
+  assert.equal(railObstacles.length, 1);
+  assert.deepEqual(railObstacles[0], {
+    station: "테스트역",
+    x: 105,
+    y: 202,
+    halfWidth: 5,
+    halfHeight: 2,
+  });
+});
+
+// 블록·중첩 층위의 fail-closed 가드는 공개 진입점으로 도달할 수 없다 — 레이어
+// 슬라이스가 균형을 이루면 그 안은 well-nested가 보장돼, 블록이 닫히지 않은
+// 입력은 레이어 스캔이 먼저 잡는다. 아래 첫 테스트가 그 사실을 실측으로 고정하고
+// (어떤 배치든 예외가 레이어 층위에서 난다), 둘째 테스트가 블록·중첩 층위 가드를
+// matchingGroupEnd 직접 호출로 덮는다.
+test("블록 미종료 입력은 어떤 배치든 레이어 층위 fail-closed가 먼저 잡는다", () => {
+  const layerMessage = /service-tags-layer의 닫는 태그를 찾지 못했습니다/;
+  // 블록만 닫히지 않은 형태(레이어 닫는 태그를 블록이 흡수한다).
+  assert.throws(
+    () =>
+      extractServiceTagObstacles(
+        '<svg><g id="service-tags-layer"><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><rect x="0" y="0" width="10" height="4" /></g>',
+      ),
+    layerMessage,
+  );
+  // 블록 안 중첩 <g> 2개가 닫히지 않은 형태.
+  assert.throws(
+    () =>
+      extractServiceTagObstacles(
+        '<svg><g id="service-tags-layer"><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><g id="a"><g id="b"></g></g></g></svg>',
+      ),
+    layerMessage,
+  );
+  // 잉여 </g>가 블록 앞에 온 형태 — 레이어 슬라이스가 블록 전에 끝나 표장 0건.
+  assert.deepEqual(
+    extractServiceTagObstacles(
+      '<svg><g id="service-tags-layer"></g><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><rect x="0" y="0" width="10" height="4" /></g></svg>',
+    ),
+    [],
+  );
+});
+
+test("matchingGroupEnd: 블록·중첩 층위 가드 — 자기폐쇄는 태그 끝, 미종료는 실패한다", () => {
+  // 자기폐쇄 여는 태그는 그 태그 하나가 곧 빈 그룹이다.
+  const selfClosing = '<g id="spacer" data-note="빈 자리표시" /><rect />';
+  assert.equal(
+    matchingGroupEnd(selfClosing, 0, "블록"),
+    '<g id="spacer" data-note="빈 자리표시" />'.length,
+  );
+
+  // 내부 자기폐쇄 <g/>는 depth를 올리지 않는다 — 형제까지 삼키지 않는다.
+  const withInnerSelfClosing =
+    '<g id="a"><g id="spacer" /><rect /></g><g id="b"></g>';
+  assert.equal(
+    matchingGroupEnd(withInnerSelfClosing, 0, "블록"),
+    withInnerSelfClosing.indexOf("</g>") + "</g>".length,
+  );
+
+  // 닫는 태그가 없으면 부분 슬라이스로 넘기지 않고 실패한다(fail-closed).
+  assert.throws(
+    () =>
+      matchingGroupEnd(
+        '<g id="service-tag-ktx-1"><rect />',
+        0,
+        "service-tag 블록(테스트역)",
+      ),
+    /service-tag 블록\(테스트역\)의 닫는 태그를 찾지 못했습니다/,
+  );
+  // 중첩이 하나 더 열려 균형이 모자란 경우도 동일하다.
+  assert.throws(
+    () => matchingGroupEnd('<g id="a"><g id="b"></g>', 0, "중첩 <g>(a)"),
+    /중첩 <g>\(a\)의 닫는 태그를 찾지 못했습니다/,
+  );
+  // 여는 <g> 태그로 시작하지 않으면 해석 실패로 알린다.
+  assert.throws(
+    () => matchingGroupEnd("<rect />", 0, "블록"),
+    /블록의 여는 <g> 태그를 해석하지 못했습니다/,
+  );
+});
+
+test("extractServiceTagObstacles: service-tag <g>의 id가 첫 속성이 아니어도 인식한다(속성 순서 무관)", () => {
+  const svgText = `
+    <svg>
+      <g id="service-tags-layer">
+        <g class="service-tag" transform="translate(10 20)" data-station="테스트역" id="service-tag-ktx-9">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  const obstacles = extractServiceTagObstacles(svgText);
+  assert.equal(obstacles.length, 1);
+  assert.equal(obstacles[0].station, "테스트역");
+  assert.deepEqual(obstacles[0], {
+    station: "테스트역",
+    x: 15,
+    y: 22,
+    halfWidth: 5,
+    halfHeight: 2,
+  });
+});
+
+test("parseTransformChain: 미지원 transform 함수(rotate·skew)는 항등 무시가 아니라 실패한다", () => {
+  const rotatedLayer = `
+    <svg>
+      <g id="service-tags-layer" transform="rotate(-90,100,200)">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  assert.throws(
+    () => extractServiceTagObstacles(rotatedLayer),
+    /지원하지 않는 transform 함수 rotate\(\.\.\.\)/,
+  );
+
+  const skewedChip = `
+    <svg>
+      <g id="rail-transfer-layer">
+        <g id="chip-1" data-services="KTX" data-station-name="테스트역" transform="skewX(10)">
+          <rect x="0" y="0" width="10" height="4" />
+        </g>
+      </g>
+    </svg>`;
+  assert.throws(
+    () => extractRailTransferChipObstacles(skewedChip),
+    /지원하지 않는 transform 함수 skewX\(\.\.\.\)/,
+  );
+
+  // 지원 함수 조합은 그대로 통과한다(회귀 가드).
+  const supported = `
+    <svg>
+      <g id="service-tags-layer" transform="matrix(2,0,0,3,100,200)">
+        <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역" transform="translate(10 20) scale(2)">
+          <rect x="0" y="0" width="5" height="1" />
+        </g>
+      </g>
+    </svg>`;
+  const [obstacle] = extractServiceTagObstacles(supported);
+  assert.equal(obstacle.station, "테스트역");
+  assert.equal(obstacle.halfWidth, 10); // 5 × scale 2 × matrix a 2 → 폭 20.
+  assert.equal(obstacle.halfHeight, 3); // 1 × 2 × 3 → 높이 6.
+});
+
+test("extractServiceTagObstacles·extractRailTransferChipObstacles: 닫히지 않은 표장 레이어는 빈 배열이 아니라 실패한다(fail-closed)", () => {
+  const serviceSvg =
+    '<svg><g id="service-tags-layer"><g id="service-tag-ktx-1" class="service-tag" data-station="테스트역"><rect x="0" y="0" width="10" height="4" /></g></svg>';
+  assert.throws(
+    () => extractServiceTagObstacles(serviceSvg),
+    /service-tags-layer의 닫는 태그를 찾지 못했습니다/,
+  );
+  const railSvg =
+    '<svg><g id="rail-transfer-layer"><g id="chip-1" data-services="KTX"><rect x="0" y="0" width="10" height="4" /></g></svg>';
+  assert.throws(
+    () => extractRailTransferChipObstacles(railSvg),
+    /rail-transfer-layer의 닫는 태그를 찾지 못했습니다/,
+  );
+});
+
+test("extractServiceTagObstacles: 자기폐쇄로 마감된 빈 표장 레이어는 빈 목록이다(부산 v3 실 SVG)", () => {
+  const svgText = readFileSync(
+    path.join(
+      import.meta.dirname,
+      "route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+    ),
+    "utf8",
+  );
+  assert.match(svgText, /<g\b[^>]*\bid="service-tags-layer"[^>]*?\/>/);
+  assert.deepEqual(extractServiceTagObstacles(svgText), []);
+});
+
+test("extractServiceTagObstacles: 대구 동대구역 KTX·SRT 표장 bbox가 Chrome 실측과 일치한다", () => {
+  // Chrome(headless, getBBox/getScreenCTM) 실측 — root viewBox 사용자 좌표.
+  // 이 값은 오너 도식이 실제로 렌더하는 위치이며, 동대구역 환승 라벨 실측
+  // bbox(minX=2344.771)와 4.19px 떨어져 있어 겹치지 않는다.
+  const svgText = readFileSync(
+    path.join(
+      import.meta.dirname,
+      "route-map-defs/svg-sources/easy-subway-daegu-v3.svg",
+    ),
+    "utf8",
+  );
+  const [obstacle] = extractServiceTagObstacles(svgText);
+  assert.equal(obstacle.station, "동대구역");
+  const measured = {
+    minX: 2277.7148,
+    minY: 839.9228,
+    maxX: 2340.5828,
+    maxY: 866.0353,
+  };
+  const actual = {
+    minX: obstacle.x - obstacle.halfWidth,
+    minY: obstacle.y - obstacle.halfHeight,
+    maxX: obstacle.x + obstacle.halfWidth,
+    maxY: obstacle.y + obstacle.halfHeight,
+  };
+  for (const edge of ["minX", "minY", "maxX", "maxY"]) {
+    assert.ok(
+      Math.abs(actual[edge] - measured[edge]) < 0.01,
+      `${edge}: 산정 ${actual[edge]} vs Chrome 실측 ${measured[edge]}`,
+    );
+  }
+  // 표장 오른쪽 끝이 라벨 왼쪽 끝(실측 2344.771)보다 왼쪽 — 겹침 없음.
+  assert.ok(actual.maxX < 2344.771);
+});
+
 test("extractServiceTagObstacles·extractRailTransferChipObstacles: main-map-scaled-layer가 없는 권역(busan·daegu·daejeon·gwangju)은 mapScale=1로 obstacle 좌표가 항등 변환된다(회귀 가드)", () => {
   const svgSourceDir = path.join(
     import.meta.dirname,
     "route-map-defs/svg-sources",
   );
   for (const [id, file] of [
-    ["busan", "easy-subway-busan-v1.svg"],
-    ["daegu", "easy-subway-daegu-v1.svg"],
+    ["busan", "easy-subway-busan-v3.svg"],
+    ["daegu", "easy-subway-daegu-v3.svg"],
     ["daejeon", "easy-subway-daejeon-v1.svg"],
     ["gwangju", "easy-subway-gwangju-v1.svg"],
   ]) {

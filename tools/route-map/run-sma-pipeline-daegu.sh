@@ -12,12 +12,12 @@
 # 오너 손배치 좌표를 파이프라인이 재이동시키는 것을 금지한다.
 #
 # 사용: tools/route-map/run-sma-pipeline-daegu.sh [svg경로] [이전버전추출JSON]
-#   svg 경로 미지정 시 반입된 정본 easy-subway-daegu-v1.svg를 쓴다.
+#   svg 경로 미지정 시 반입된 정본 easy-subway-daegu-v3.svg를 쓴다.
 # 환경: Chrome/Chromium 필요(추출기). CHROME_PATH로 지정 가능.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SVG="${1:-$ROOT/tools/route-map/route-map-defs/svg-sources/easy-subway-daegu-v1.svg}"
+SVG="${1:-$ROOT/tools/route-map/route-map-defs/svg-sources/easy-subway-daegu-v3.svg}"
 PREV_GEOM="${2:-}"
 PACK="apps/mobile/assets/datapacks/capital.sqlite.gz"
 INDEX="apps/mobile/assets/datapacks/index.json"

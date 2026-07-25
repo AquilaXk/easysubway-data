@@ -39,8 +39,8 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
   });
   assert.deepEqual(fixture.canonicalPackIdentity, {
     id: "capital",
-    sha256: "2c0f4658868c741665fb47aaa684bf11eed5445af9ccad73a9c77a0072e723a2",
-    sqliteSha256: "634021d1aede4bcb615f741b2fab6d0f0ed92eaeaf9ceb929e77d0087a02d16e",
+    sha256: "b0f8caafa8ab8b71c57dc05461138c0fb7ac58fe4f9df7045e5d4a729dcae1f7",
+    sqliteSha256: "d261231c0f05ef2ab1974375b0434eec4d38a90b7df9ee5679fe6815cdcf1d37",
   });
 
   const forbiddenProductionSurfaces = [

@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "artifactKind": "server-timetable-snapshot-evidence",
   "schemaIdentity": "backend-timetable-snapshot-v1",
-  "snapshotId": "server-timetable-snapshot-b8a429da947b5ec2",
-  "snapshotSha256": "b8a429da947b5ec2fe9829fec3c743ab180cb30586fee5729b616bcaba91d76e",
+  "snapshotId": "server-timetable-snapshot-845c7d05735cbeed",
+  "snapshotSha256": "845c7d05735cbeed2a53a7c1091a108cb3171a74eb99751f9f9423a8da5c2698",
   "snapshotSqlByteSize": 9714509,
-  "snapshotGzipSha256": "c76a1dc70593d39bfa229f18ab30cfb80268cd27e3fe3ba37d016b0997eca0e9",
-  "snapshotGzipByteSize": 348025,
+  "snapshotGzipSha256": "c620764e2f5e9312552ead53041b174d22dac1ccaba0df528834b15890a5fe7e",
+  "snapshotGzipByteSize": 348016,
   "freshUntil": "2026-07-27T00:00:00+09:00",
   "serviceIdentity": {
     "serviceId": "ITX_CHEONGCHUN",
@@ -21,11 +21,11 @@
   },
   "canonicalPackIdentity": {
     "id": "capital",
-    "sha256": "2c0f4658868c741665fb47aaa684bf11eed5445af9ccad73a9c77a0072e723a2",
-    "sqliteSha256": "634021d1aede4bcb615f741b2fab6d0f0ed92eaeaf9ceb929e77d0087a02d16e"
+    "sha256": "b0f8caafa8ab8b71c57dc05461138c0fb7ac58fe4f9df7045e5d4a729dcae1f7",
+    "sqliteSha256": "d261231c0f05ef2ab1974375b0434eec4d38a90b7df9ee5679fe6815cdcf1d37"
   },
   "canonicalPackLineage": {
-    "topologyEvidenceSha256": "e6f7e824a794b2567bdd08abb7a4a628041ec1180c7f87f9e63f35f3304d403f",
+    "topologyEvidenceSha256": "9b1fc6574e06ebc26e4a708644341e4b816cc1491fa04c6208d47c1fbfcaadb8",
     "topologySha256": "d9afca0a844a5967ca19768b8b13fe2ccf83947a7d18c9cb8406ccb7aa4babff",
     "admittedInputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "admittedInputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc"
@@ -123,5 +123,5 @@
     "transferRules": 0,
     "routeEdgeEvidence": 4
   },
-  "evidenceHash": "5c0f47ba7e60b7646b200dd98b6db2dbd255c31f7d9428b27803994dc1de027c"
+  "evidenceHash": "8629eee0a025cf4a99a8571aa3b17397e96cc7a33e4fb90ded6c62dfcab3b2cb"
 }

@@ -2,7 +2,7 @@
   "artifactKind": "basemap-alignment-fixture",
   "region": "대구권",
   "generatedFrom": {
-    "geometry": "tools/route-map/route-map-defs/easy-subway-daegu-v1-geometry.json",
+    "geometry": "tools/route-map/route-map-defs/easy-subway-daegu-v3-geometry.json",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz"
   },
   "stationCount": 102,
@@ -183,9 +183,9 @@
       "stationId": "station-3de9d5097085",
       "lineId": "line-0ffaa95b1b5d",
       "name": "청라언덕",
-      "svgX": 1800,
+      "svgX": 1822,
       "svgY": 1500,
-      "packX": 1800,
+      "packX": 1822,
       "packY": 1500,
       "deltaPx": 0
     },
@@ -203,10 +203,10 @@
       "stationId": "station-a94cb65fc5ee",
       "lineId": "line-0ffaa95b1b5d",
       "name": "명덕",
-      "svgX": 2101,
-      "svgY": 1621,
-      "packX": 2101,
-      "packY": 1621,
+      "svgX": 2122,
+      "svgY": 1620,
+      "packX": 2122,
+      "packY": 1620,
       "deltaPx": 0
     },
     {
@@ -453,20 +453,20 @@
       "stationId": "station-a94cb65fc5ee",
       "lineId": "line-5b8d9b05e7e6",
       "name": "명덕",
-      "svgX": 2101,
-      "svgY": 1621,
-      "packX": 2101,
-      "packY": 1621,
+      "svgX": 2122,
+      "svgY": 1620,
+      "packX": 2122,
+      "packY": 1620,
       "deltaPx": 0
     },
     {
       "stationId": "station-44dc03b65cae",
       "lineId": "line-5b8d9b05e7e6",
       "name": "반월당",
-      "svgX": 2103,
-      "svgY": 1499,
-      "packX": 2103,
-      "packY": 1499,
+      "svgX": 2123,
+      "svgY": 1501,
+      "packX": 2123,
+      "packY": 1501,
       "deltaPx": 0
     },
     {
@@ -873,9 +873,9 @@
       "stationId": "station-3de9d5097085",
       "lineId": "line-e2938a4cc492",
       "name": "청라언덕",
-      "svgX": 1800,
+      "svgX": 1822,
       "svgY": 1500,
-      "packX": 1800,
+      "packX": 1822,
       "packY": 1500,
       "deltaPx": 0
     },
@@ -883,10 +883,10 @@
       "stationId": "station-44dc03b65cae",
       "lineId": "line-e2938a4cc492",
       "name": "반월당",
-      "svgX": 2103,
-      "svgY": 1499,
-      "packX": 2103,
-      "packY": 1499,
+      "svgX": 2123,
+      "svgY": 1501,
+      "packX": 2123,
+      "packY": 1501,
       "deltaPx": 0
     },
     {

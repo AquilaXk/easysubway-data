@@ -2,22 +2,22 @@
   "artifactKind": "basemap-alignment-fixture",
   "region": "부산권",
   "generatedFrom": {
-    "geometry": "tools/route-map/route-map-defs/easy-subway-busan-v1-geometry.json",
+    "geometry": "tools/route-map/route-map-defs/easy-subway-busan-v3-geometry.json",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz"
   },
   "stationCount": 158,
   "unmatchedCount": 0,
-  "maxDeltaPx": 501.02,
+  "maxDeltaPx": 501,
   "entries": [
     {
       "stationId": "station-080c154ce646",
       "lineId": "line-eb7b47920390",
       "name": "국제금융센터.부산은행",
-      "svgX": 6597,
+      "svgX": 7098,
       "svgY": 4425,
-      "packX": 7098,
-      "packY": 4430,
-      "deltaPx": 501.02
+      "packX": 6597,
+      "packY": 4425,
+      "deltaPx": 501
     },
     {
       "stationId": "station-b431a8d55aa7",
@@ -53,20 +53,20 @@
       "stationId": "station-93af39750738",
       "lineId": "line-ab1a041f6266",
       "name": "신장림",
-      "svgX": 1787,
-      "svgY": 5725,
-      "packX": 1787,
-      "packY": 5725,
+      "svgX": 2102,
+      "svgY": 5723,
+      "packX": 2102,
+      "packY": 5723,
       "deltaPx": 0
     },
     {
       "stationId": "station-22e1ce63a0c3",
       "lineId": "line-ab1a041f6266",
       "name": "장림",
-      "svgX": 2102,
-      "svgY": 5723,
-      "packX": 2102,
-      "packY": 5723,
+      "svgX": 1787,
+      "svgY": 5725,
+      "packX": 1787,
+      "packY": 5725,
       "deltaPx": 0
     },
     {
@@ -163,16 +163,6 @@
       "stationId": "station-0fd829604524",
       "lineId": "line-ab1a041f6266",
       "name": "토성",
-      "svgX": 5388,
-      "svgY": 4859,
-      "packX": 5388,
-      "packY": 4859,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-4dba07424143",
-      "lineId": "line-ab1a041f6266",
-      "name": "자갈치",
       "svgX": 3570,
       "svgY": 4860,
       "packX": 3570,
@@ -180,9 +170,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-154e5b09c1c2",
+      "stationId": "station-4dba07424143",
       "lineId": "line-ab1a041f6266",
-      "name": "남포",
+      "name": "자갈치",
       "svgX": 3939,
       "svgY": 4860,
       "packX": 3939,
@@ -190,9 +180,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-d431c38b23f7",
+      "stationId": "station-154e5b09c1c2",
       "lineId": "line-ab1a041f6266",
-      "name": "중앙",
+      "name": "남포",
       "svgX": 4304,
       "svgY": 4859,
       "packX": 4304,
@@ -200,19 +190,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-92919c918183",
+      "stationId": "station-d431c38b23f7",
       "lineId": "line-ab1a041f6266",
-      "name": "부산",
-      "svgX": 5721,
-      "svgY": 4860,
-      "packX": 5721,
-      "packY": 4860,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-8ae726ea67a7",
-      "lineId": "line-ab1a041f6266",
-      "name": "초량",
+      "name": "중앙",
       "svgX": 4700,
       "svgY": 4860,
       "packX": 4700,
@@ -220,12 +200,32 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-9ee5de7ee6a2",
+      "stationId": "station-92919c918183",
       "lineId": "line-ab1a041f6266",
-      "name": "부산진",
+      "name": "부산",
       "svgX": 5054,
       "svgY": 4860,
       "packX": 5054,
+      "packY": 4860,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-8ae726ea67a7",
+      "lineId": "line-ab1a041f6266",
+      "name": "초량",
+      "svgX": 5388,
+      "svgY": 4859,
+      "packX": 5388,
+      "packY": 4859,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-9ee5de7ee6a2",
+      "lineId": "line-ab1a041f6266",
+      "name": "부산진",
+      "svgX": 5721,
+      "svgY": 4860,
+      "packX": 5721,
       "packY": 4860,
       "deltaPx": 0
     },
@@ -263,10 +263,10 @@
       "stationId": "station-1fc7a7c971c8",
       "lineId": "line-ab1a041f6266",
       "name": "서면",
-      "svgX": 6235,
-      "svgY": 4419,
-      "packX": 6235,
-      "packY": 4419,
+      "svgX": 6263,
+      "svgY": 4423,
+      "packX": 6263,
+      "packY": 4423,
       "deltaPx": 0
     },
     {
@@ -303,10 +303,10 @@
       "stationId": "station-803200d76012",
       "lineId": "line-ab1a041f6266",
       "name": "연산",
-      "svgX": 6237,
-      "svgY": 3417,
-      "packX": 6237,
-      "packY": 3417,
+      "svgX": 6261,
+      "svgY": 3420,
+      "packX": 6261,
+      "packY": 3420,
       "deltaPx": 0
     },
     {
@@ -314,9 +314,9 @@
       "lineId": "line-ab1a041f6266",
       "name": "교대",
       "svgX": 6234,
-      "svgY": 3058,
+      "svgY": 3060,
       "packX": 6234,
-      "packY": 3058,
+      "packY": 3060,
       "deltaPx": 0
     },
     {
@@ -343,10 +343,10 @@
       "stationId": "station-4fb530dab818",
       "lineId": "line-ab1a041f6266",
       "name": "온천장",
-      "svgX": 6233,
-      "svgY": 2116,
-      "packX": 6233,
-      "packY": 2116,
+      "svgX": 6232,
+      "svgY": 2290,
+      "packX": 6232,
+      "packY": 2290,
       "deltaPx": 0
     },
     {
@@ -354,9 +354,9 @@
       "lineId": "line-ab1a041f6266",
       "name": "부산대",
       "svgX": 6233,
-      "svgY": 1365,
+      "svgY": 2116,
       "packX": 6233,
-      "packY": 1365,
+      "packY": 2116,
       "deltaPx": 0
     },
     {
@@ -364,9 +364,9 @@
       "lineId": "line-ab1a041f6266",
       "name": "장전",
       "svgX": 6233,
-      "svgY": 1665,
+      "svgY": 1956,
       "packX": 6233,
-      "packY": 1665,
+      "packY": 1956,
       "deltaPx": 0
     },
     {
@@ -374,9 +374,9 @@
       "lineId": "line-ab1a041f6266",
       "name": "구서",
       "svgX": 6233,
-      "svgY": 1521,
+      "svgY": 1810,
       "packX": 6233,
-      "packY": 1521,
+      "packY": 1810,
       "deltaPx": 0
     },
     {
@@ -384,9 +384,9 @@
       "lineId": "line-ab1a041f6266",
       "name": "두실",
       "svgX": 6233,
-      "svgY": 1810,
+      "svgY": 1665,
       "packX": 6233,
-      "packY": 1810,
+      "packY": 1665,
       "deltaPx": 0
     },
     {
@@ -394,19 +394,19 @@
       "lineId": "line-ab1a041f6266",
       "name": "남산",
       "svgX": 6233,
-      "svgY": 1956,
+      "svgY": 1521,
       "packX": 6233,
-      "packY": 1956,
+      "packY": 1521,
       "deltaPx": 0
     },
     {
       "stationId": "station-3cffeefeb0cd",
       "lineId": "line-ab1a041f6266",
       "name": "범어사",
-      "svgX": 6232,
-      "svgY": 2290,
-      "packX": 6232,
-      "packY": 2290,
+      "svgX": 6233,
+      "svgY": 1365,
+      "packX": 6233,
+      "packY": 1365,
       "deltaPx": 0
     },
     {
@@ -463,10 +463,10 @@
       "stationId": "station-803200d76012",
       "lineId": "line-d74614a04530",
       "name": "연산",
-      "svgX": 6237,
-      "svgY": 3417,
-      "packX": 6237,
-      "packY": 3417,
+      "svgX": 6261,
+      "svgY": 3420,
+      "packX": 6261,
+      "packY": 3420,
       "deltaPx": 0
     },
     {
@@ -613,20 +613,20 @@
       "stationId": "station-0c0ef20d9898",
       "lineId": "line-d812a5bc1e5f",
       "name": "수안",
-      "svgX": 6997,
-      "svgY": 2574,
-      "packX": 6997,
-      "packY": 2574,
+      "svgX": 6425,
+      "svgY": 2704,
+      "packX": 6425,
+      "packY": 2704,
       "deltaPx": 0
     },
     {
       "stationId": "station-d6ef0caa7ce6",
       "lineId": "line-d812a5bc1e5f",
       "name": "낙민",
-      "svgX": 6425,
-      "svgY": 2704,
-      "packX": 6425,
-      "packY": 2704,
+      "svgX": 6622,
+      "svgY": 2703,
+      "packX": 6622,
+      "packY": 2703,
       "deltaPx": 0
     },
     {
@@ -643,16 +643,26 @@
       "stationId": "station-5dd45513392c",
       "lineId": "line-d812a5bc1e5f",
       "name": "명장",
-      "svgX": 6622,
-      "svgY": 2703,
-      "packX": 6622,
-      "packY": 2703,
+      "svgX": 6997,
+      "svgY": 2574,
+      "packX": 6997,
+      "packY": 2574,
       "deltaPx": 0
     },
     {
       "stationId": "station-789aff91ad14",
       "lineId": "line-d812a5bc1e5f",
       "name": "서동",
+      "svgX": 7162,
+      "svgY": 2407,
+      "packX": 7162,
+      "packY": 2407,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-cf026711a27b",
+      "lineId": "line-d812a5bc1e5f",
+      "name": "금사",
       "svgX": 7321,
       "svgY": 2245,
       "packX": 7321,
@@ -660,9 +670,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-cf026711a27b",
+      "stationId": "station-17176f764fbb",
       "lineId": "line-d812a5bc1e5f",
-      "name": "금사",
+      "name": "반여농산물시장",
       "svgX": 7476,
       "svgY": 2088,
       "packX": 7476,
@@ -670,9 +680,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-17176f764fbb",
+      "stationId": "station-cc451a982d9e",
       "lineId": "line-d812a5bc1e5f",
-      "name": "반여농산물시장",
+      "name": "석대",
       "svgX": 7619,
       "svgY": 1945,
       "packX": 7619,
@@ -680,29 +690,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-cc451a982d9e",
-      "lineId": "line-d812a5bc1e5f",
-      "name": "석대",
-      "svgX": 7870,
-      "svgY": 1696,
-      "packX": 7870,
-      "packY": 1696,
-      "deltaPx": 0
-    },
-    {
       "stationId": "station-36096b01b4df",
       "lineId": "line-d812a5bc1e5f",
       "name": "영산대",
-      "svgX": 7997,
-      "svgY": 1569,
-      "packX": 7997,
-      "packY": 1569,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-a22931042a2b",
-      "lineId": "line-d812a5bc1e5f",
-      "name": "윗반송",
       "svgX": 7738,
       "svgY": 1825,
       "packX": 7738,
@@ -710,13 +700,23 @@
       "deltaPx": 0
     },
     {
+      "stationId": "station-a22931042a2b",
+      "lineId": "line-d812a5bc1e5f",
+      "name": "윗반송",
+      "svgX": 7870,
+      "svgY": 1696,
+      "packX": 7870,
+      "packY": 1696,
+      "deltaPx": 0
+    },
+    {
       "stationId": "station-9a238630a4a9",
       "lineId": "line-d812a5bc1e5f",
       "name": "고촌",
-      "svgX": 7162,
-      "svgY": 2407,
-      "packX": 7162,
-      "packY": 2407,
+      "svgX": 7997,
+      "svgY": 1569,
+      "packX": 7997,
+      "packY": 1569,
       "deltaPx": 0
     },
     {
@@ -733,10 +733,10 @@
       "stationId": "station-2d67389c6338",
       "lineId": "line-e4cce88f0d7f",
       "name": "사상",
-      "svgX": 3495,
-      "svgY": 4416,
-      "packX": 3495,
-      "packY": 4416,
+      "svgX": 3496,
+      "svgY": 4417,
+      "packX": 3496,
+      "packY": 4417,
       "deltaPx": 0
     },
     {
@@ -803,20 +803,20 @@
       "stationId": "station-571c8e6bc346",
       "lineId": "line-e4cce88f0d7f",
       "name": "평강",
-      "svgX": 1145,
-      "svgY": 2705,
-      "packX": 1145,
-      "packY": 2705,
+      "svgX": 1355,
+      "svgY": 2704,
+      "packX": 1355,
+      "packY": 2704,
       "deltaPx": 0
     },
     {
       "stationId": "station-c79ac532bdfa",
       "lineId": "line-e4cce88f0d7f",
       "name": "대사",
-      "svgX": 1355,
-      "svgY": 2704,
-      "packX": 1355,
-      "packY": 2704,
+      "svgX": 1145,
+      "svgY": 2705,
+      "packX": 1145,
+      "packY": 2705,
       "deltaPx": 0
     },
     {
@@ -834,85 +834,15 @@
       "lineId": "line-e4cce88f0d7f",
       "name": "지내",
       "svgX": 804,
-      "svgY": 1298,
+      "svgY": 2549,
       "packX": 804,
-      "packY": 1298,
+      "packY": 2549,
       "deltaPx": 0
     },
     {
       "stationId": "station-d3be5b37ad52",
       "lineId": "line-e4cce88f0d7f",
       "name": "김해대학",
-      "svgX": 806,
-      "svgY": 1412,
-      "packX": 806,
-      "packY": 1412,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-0be7cd0e273f",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "인제대",
-      "svgX": 805,
-      "svgY": 1527,
-      "packX": 805,
-      "packY": 1527,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-1806943be025",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "김해시청",
-      "svgX": 805,
-      "svgY": 1657,
-      "packX": 805,
-      "packY": 1657,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-2a3fab03e5f9",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "부원",
-      "svgX": 806,
-      "svgY": 1786,
-      "packX": 806,
-      "packY": 1786,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-d160a08dae3a",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "봉황",
-      "svgX": 805,
-      "svgY": 1923,
-      "packX": 805,
-      "packY": 1923,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-91717e8b259a",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "수로왕릉",
-      "svgX": 803,
-      "svgY": 2055,
-      "packX": 803,
-      "packY": 2055,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-96d565b359c7",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "박물관",
-      "svgX": 804,
-      "svgY": 2221,
-      "packX": 804,
-      "packY": 2221,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-3c78814d18ba",
-      "lineId": "line-e4cce88f0d7f",
-      "name": "연지공원",
       "svgX": 804,
       "svgY": 2381,
       "packX": 804,
@@ -920,13 +850,83 @@
       "deltaPx": 0
     },
     {
+      "stationId": "station-0be7cd0e273f",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "인제대",
+      "svgX": 804,
+      "svgY": 2221,
+      "packX": 804,
+      "packY": 2221,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-1806943be025",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "김해시청",
+      "svgX": 803,
+      "svgY": 2055,
+      "packX": 803,
+      "packY": 2055,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-2a3fab03e5f9",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "부원",
+      "svgX": 805,
+      "svgY": 1923,
+      "packX": 805,
+      "packY": 1923,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-d160a08dae3a",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "봉황",
+      "svgX": 806,
+      "svgY": 1786,
+      "packX": 806,
+      "packY": 1786,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-91717e8b259a",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "수로왕릉",
+      "svgX": 805,
+      "svgY": 1657,
+      "packX": 805,
+      "packY": 1657,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-96d565b359c7",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "박물관",
+      "svgX": 805,
+      "svgY": 1527,
+      "packX": 805,
+      "packY": 1527,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-3c78814d18ba",
+      "lineId": "line-e4cce88f0d7f",
+      "name": "연지공원",
+      "svgX": 806,
+      "svgY": 1412,
+      "packX": 806,
+      "packY": 1412,
+      "deltaPx": 0
+    },
+    {
       "stationId": "station-4eaad8637599",
       "lineId": "line-e4cce88f0d7f",
       "name": "장신대",
       "svgX": 804,
-      "svgY": 2549,
+      "svgY": 1298,
       "packX": 804,
-      "packY": 2549,
+      "packY": 1298,
       "deltaPx": 0
     },
     {
@@ -1023,56 +1023,6 @@
       "stationId": "station-681847516e66",
       "lineId": "line-eb7b47920390",
       "name": "광안",
-      "svgX": 7573,
-      "svgY": 4425,
-      "packX": 7573,
-      "packY": 4425,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-9deb0a18571a",
-      "lineId": "line-eb7b47920390",
-      "name": "금련산",
-      "svgX": 7964,
-      "svgY": 4427,
-      "packX": 7964,
-      "packY": 4427,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-18239a50e42e",
-      "lineId": "line-eb7b47920390",
-      "name": "남천",
-      "svgX": 8319,
-      "svgY": 4428,
-      "packX": 8319,
-      "packY": 4428,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-8484545485bd",
-      "lineId": "line-eb7b47920390",
-      "name": "경성대.부경대",
-      "svgX": 9077,
-      "svgY": 4311,
-      "packX": 9077,
-      "packY": 4311,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-8cf6a35a9070",
-      "lineId": "line-eb7b47920390",
-      "name": "대연",
-      "svgX": 9075,
-      "svgY": 4132,
-      "packX": 9075,
-      "packY": 4132,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-52200f1f22ae",
-      "lineId": "line-eb7b47920390",
-      "name": "못골",
       "svgX": 9074,
       "svgY": 3955,
       "packX": 9074,
@@ -1080,9 +1030,29 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-54ca563ad4ab",
+      "stationId": "station-9deb0a18571a",
       "lineId": "line-eb7b47920390",
-      "name": "지게골",
+      "name": "금련산",
+      "svgX": 9075,
+      "svgY": 4132,
+      "packX": 9075,
+      "packY": 4132,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-18239a50e42e",
+      "lineId": "line-eb7b47920390",
+      "name": "남천",
+      "svgX": 9077,
+      "svgY": 4311,
+      "packX": 9077,
+      "packY": 4311,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-8484545485bd",
+      "lineId": "line-eb7b47920390",
+      "name": "경성대.부경대",
       "svgX": 8950,
       "svgY": 4430,
       "packX": 8950,
@@ -1090,9 +1060,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-f2046c4a2f21",
+      "stationId": "station-8cf6a35a9070",
       "lineId": "line-eb7b47920390",
-      "name": "문현",
+      "name": "대연",
       "svgX": 8624,
       "svgY": 4430,
       "packX": 8624,
@@ -1100,12 +1070,42 @@
       "deltaPx": 0
     },
     {
+      "stationId": "station-52200f1f22ae",
+      "lineId": "line-eb7b47920390",
+      "name": "못골",
+      "svgX": 8319,
+      "svgY": 4428,
+      "packX": 8319,
+      "packY": 4428,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-54ca563ad4ab",
+      "lineId": "line-eb7b47920390",
+      "name": "지게골",
+      "svgX": 7964,
+      "svgY": 4427,
+      "packX": 7964,
+      "packY": 4427,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-f2046c4a2f21",
+      "lineId": "line-eb7b47920390",
+      "name": "문현",
+      "svgX": 7573,
+      "svgY": 4425,
+      "packX": 7573,
+      "packY": 4425,
+      "deltaPx": 0
+    },
+    {
       "stationId": "station-61f6dbfb5d4b",
       "lineId": "line-eb7b47920390",
       "name": "전포",
-      "svgX": 7098,
+      "svgX": 6597,
       "svgY": 4425,
-      "packX": 7098,
+      "packX": 6597,
       "packY": 4425,
       "deltaPx": 0
     },
@@ -1113,10 +1113,10 @@
       "stationId": "station-1fc7a7c971c8",
       "lineId": "line-eb7b47920390",
       "name": "서면",
-      "svgX": 6235,
-      "svgY": 4419,
-      "packX": 6235,
-      "packY": 4419,
+      "svgX": 6263,
+      "svgY": 4423,
+      "packX": 6263,
+      "packY": 4423,
       "deltaPx": 0
     },
     {
@@ -1193,10 +1193,10 @@
       "stationId": "station-2d67389c6338",
       "lineId": "line-eb7b47920390",
       "name": "사상",
-      "svgX": 3495,
-      "svgY": 4416,
-      "packX": 3495,
-      "packY": 4416,
+      "svgX": 3496,
+      "svgY": 4417,
+      "packX": 3496,
+      "packY": 4417,
       "deltaPx": 0
     },
     {
@@ -1263,46 +1263,6 @@
       "stationId": "station-dce200bd2bc7",
       "lineId": "line-eb7b47920390",
       "name": "수정",
-      "svgX": 3488,
-      "svgY": 2166,
-      "packX": 3488,
-      "packY": 2166,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-ef31f2078617",
-      "lineId": "line-eb7b47920390",
-      "name": "화명",
-      "svgX": 3490,
-      "svgY": 1625,
-      "packX": 3490,
-      "packY": 1625,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-602fbd451cb3",
-      "lineId": "line-eb7b47920390",
-      "name": "율리",
-      "svgX": 3489,
-      "svgY": 1881,
-      "packX": 3489,
-      "packY": 1881,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-11a36100ff15",
-      "lineId": "line-eb7b47920390",
-      "name": "동원",
-      "svgX": 3489,
-      "svgY": 1761,
-      "packX": 3489,
-      "packY": 1761,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-701ad51eeee6",
-      "lineId": "line-eb7b47920390",
-      "name": "금곡",
       "svgX": 3489,
       "svgY": 2465,
       "packX": 3489,
@@ -1310,9 +1270,9 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-2eff43eab0ec",
+      "stationId": "station-ef31f2078617",
       "lineId": "line-eb7b47920390",
-      "name": "호포",
+      "name": "화명",
       "svgX": 3488,
       "svgY": 2320,
       "packX": 3488,
@@ -1320,9 +1280,19 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-2bb759021fa3",
+      "stationId": "station-602fbd451cb3",
       "lineId": "line-eb7b47920390",
-      "name": "증산",
+      "name": "율리",
+      "svgX": 3488,
+      "svgY": 2166,
+      "packX": 3488,
+      "packY": 2166,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-11a36100ff15",
+      "lineId": "line-eb7b47920390",
+      "name": "동원",
       "svgX": 3490,
       "svgY": 2015,
       "packX": 3490,
@@ -1330,13 +1300,43 @@
       "deltaPx": 0
     },
     {
+      "stationId": "station-701ad51eeee6",
+      "lineId": "line-eb7b47920390",
+      "name": "금곡",
+      "svgX": 3489,
+      "svgY": 1881,
+      "packX": 3489,
+      "packY": 1881,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-2eff43eab0ec",
+      "lineId": "line-eb7b47920390",
+      "name": "호포",
+      "svgX": 3489,
+      "svgY": 1761,
+      "packX": 3489,
+      "packY": 1761,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-2bb759021fa3",
+      "lineId": "line-eb7b47920390",
+      "name": "증산",
+      "svgX": 3490,
+      "svgY": 1625,
+      "packX": 3490,
+      "packY": 1625,
+      "deltaPx": 0
+    },
+    {
       "stationId": "station-d62eb26277ea",
       "lineId": "line-eb7b47920390",
       "name": "부산대양산캠퍼스",
       "svgX": 3488,
-      "svgY": 1336,
+      "svgY": 1489,
       "packX": 3488,
-      "packY": 1336,
+      "packY": 1489,
       "deltaPx": 0
     },
     {
@@ -1344,9 +1344,9 @@
       "lineId": "line-eb7b47920390",
       "name": "남양산",
       "svgX": 3488,
-      "svgY": 1489,
+      "svgY": 1336,
       "packX": 3488,
-      "packY": 1489,
+      "packY": 1336,
       "deltaPx": 0
     },
     {
@@ -1394,9 +1394,9 @@
       "lineId": "line-f52eb59d8497",
       "name": "교대",
       "svgX": 6234,
-      "svgY": 3058,
+      "svgY": 3060,
       "packX": 6234,
-      "packY": 3058,
+      "packY": 3060,
       "deltaPx": 0
     },
     {
@@ -1563,20 +1563,20 @@
       "stationId": "station-ce6a08fa670d",
       "lineId": "line-f52eb59d8497",
       "name": "덕하",
-      "svgX": 10694,
-      "svgY": 1680,
-      "packX": 10694,
-      "packY": 1680,
+      "svgX": 10590,
+      "svgY": 1784,
+      "packX": 10590,
+      "packY": 1784,
       "deltaPx": 0
     },
     {
       "stationId": "station-d61cf8c42576",
       "lineId": "line-f52eb59d8497",
       "name": "개운포",
-      "svgX": 10590,
-      "svgY": 1784,
-      "packX": 10590,
-      "packY": 1784,
+      "svgX": 10694,
+      "svgY": 1680,
+      "packX": 10694,
+      "packY": 1680,
       "deltaPx": 0
     },
     {
