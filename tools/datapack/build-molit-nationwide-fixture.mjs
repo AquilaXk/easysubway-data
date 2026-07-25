@@ -971,6 +971,34 @@ export function parseMolitDaejeonStationMappings(csvBytes) {
   });
 }
 
+// #2138 activeLineScopes의 evidenceRef(source:molit-urban-rail-full-route) 원본에서
+// (regionId, operatorId, lineId) scope별 역명 roster를 그대로 복원한다.
+// source-inventory coverageScope의 dual-operator 주장을 기계 검증하는 회귀(#2508)가 소비한다.
+export function parseMolitLineOperatorRosters(csvBytes) {
+  if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
+    throw new Error("MOLIT nationwide station CSV bytes are required");
+  }
+  const rosters = new Map();
+  for (const row of parseCsv(new TextDecoder("euc-kr").decode(csvBytes)).map(rowFromCsv)) {
+    if (!row) {
+      continue;
+    }
+    const scope = {
+      regionId: coverageRegionId(row.regionName),
+      operatorId: operatorIdFor(row.operatorName),
+      lineId: lineIdFor(row.regionName, row.lineName),
+    };
+    const key = `${scope.regionId}:${scope.operatorId}:${scope.lineId}`;
+    const roster = rosters.get(key) ?? { ...scope, operatorName: row.operatorName, stationNames: [] };
+    roster.stationNames.push(row.stationName);
+    rosters.set(key, roster);
+  }
+  if (rosters.size === 0) {
+    throw new Error("MOLIT nationwide station CSV has no line-operator rosters");
+  }
+  return rosters;
+}
+
 export function parseMolitGwangjuStationMappings(csvBytes) {
   if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
     throw new Error("MOLIT nationwide station CSV bytes are required");
