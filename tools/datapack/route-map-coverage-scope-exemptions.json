@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "route-map-coverage-scope-exemptions",
+  "issue": 2516,
+  "domain": "route_map_positions",
+  "rosterPath": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+  "rosterDatasetUrl": "https://www.data.go.kr/data/15122916/fileData.do",
+  "policy": "별칭은 같은 역의 표기 차이에만 쓴다(결측 은폐 금지). 결측은 quarantine 기록·공식 원문 결함처럼 실측 가능한 근거가 있을 때만 ledger로 남긴다. 그 외 불일치는 fail-closed.",
+  "approvedStationNameAliases": [
+    {
+      "scopeKey": "daegu:daegu-transportation:line-5b8d9b05e7e6",
+      "snapshotStationName": "명덕1",
+      "rosterStationName": "명덕(2.28민주운동기념회관)",
+      "reasonCode": "OFFICIAL_LINE_ORDINAL_SUFFIX",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15133918/fileData.do",
+        "note": "대구교통공사 공식 출입구 좌표 파일과 pack topology는 환승역을 역명+호선번호로 표기한다(1호선 명덕=명덕1). MOLIT roster는 부역명을 병기한 명덕(2.28민주운동기념회관)."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-5b8d9b05e7e6",
+      "snapshotStationName": "반월당1",
+      "rosterStationName": "반월당",
+      "reasonCode": "OFFICIAL_LINE_ORDINAL_SUFFIX",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15133918/fileData.do",
+        "note": "대구교통공사 공식 출입구 좌표 파일은 1·2호선 환승역 반월당을 호선별로 반월당1·반월당2로 싣는다."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-e2938a4cc492",
+      "snapshotStationName": "반월당2",
+      "rosterStationName": "반월당",
+      "reasonCode": "OFFICIAL_LINE_ORDINAL_SUFFIX",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15133920/fileData.do",
+        "note": "대구교통공사 공식 출입구 좌표 파일은 1·2호선 환승역 반월당을 호선별로 반월당1·반월당2로 싣는다."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-e2938a4cc492",
+      "snapshotStationName": "청라언덕2",
+      "rosterStationName": "청라언덕",
+      "reasonCode": "OFFICIAL_LINE_ORDINAL_SUFFIX",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15133920/fileData.do",
+        "note": "대구교통공사 공식 출입구 좌표 파일은 2·3호선 환승역 청라언덕을 호선별로 청라언덕2·청라언덕3으로 싣는다."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-e2938a4cc492",
+      "snapshotStationName": "성서산단",
+      "rosterStationName": "성서산업단지",
+      "reasonCode": "OFFICIAL_ABBREVIATION",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15061835/fileData.do",
+        "note": "대구교통공사 2호선 역 구간정보 공식 파일이 성서산단을 정본 표기로 쓴다. 출입구 좌표 파일·MOLIT roster는 성서산업단지 표기."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-0ffaa95b1b5d",
+      "snapshotStationName": "청라언덕3",
+      "rosterStationName": "청라언덕",
+      "reasonCode": "OFFICIAL_LINE_ORDINAL_SUFFIX",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15133922/fileData.do",
+        "note": "대구교통공사 공식 출입구 좌표 파일은 2·3호선 환승역 청라언덕을 호선별로 청라언덕2·청라언덕3으로 싣는다."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-0ffaa95b1b5d",
+      "snapshotStationName": "명덕3",
+      "rosterStationName": "명덕(2.28민주운동기념회관)",
+      "reasonCode": "OFFICIAL_LINE_ORDINAL_SUFFIX",
+      "evidence": {
+        "issue": 2473,
+        "officialUrl": "https://www.data.go.kr/data/15133922/fileData.do",
+        "note": "대구교통공사 공식 출입구 좌표 파일은 1·3호선 환승역 명덕을 호선별로 명덕1·명덕3으로 싣는다."
+      }
+    },
+    {
+      "scopeKey": "capital:seoul-metro:seoul-4",
+      "snapshotStationName": "당고개",
+      "rosterStationName": "불암산(당고개)",
+      "reasonCode": "OFFICIAL_RENAME",
+      "evidence": {
+        "issue": 2470,
+        "renamedAt": "2025-05-15",
+        "officialUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+        "note": "서울시 지명위원회 의결(2024-10-10) 뒤 2025-05-15 시행으로 4호선 당고개역이 불암산역이 됐다. 공식 역사 좌표 파일(2025-08-14 기준)은 변경 전 표기 당고개를 유지하고, MOLIT roster는 불암산(당고개)로 옛 역명을 부역명에 병기한다.",
+        "crossCheck": "ROSTER_SUBNAME"
+      }
+    },
+    {
+      "scopeKey": "capital:seoul-metro:line-15b3b8a93259",
+      "snapshotStationName": "뚝섬유원지",
+      "rosterStationName": "자양(뚝섬한강공원)",
+      "reasonCode": "OFFICIAL_RENAME",
+      "evidence": {
+        "issue": 2470,
+        "renamedAt": "2024-02-29",
+        "officialUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+        "note": "서울특별시고시 제2024-109호(서울시보 제3956호, 2024-02-29 확정고시·시행)로 7호선 뚝섬유원지역이 자양(뚝섬한강공원)역이 됐다. 공식 역사 좌표 파일(2025-08-14 기준)은 변경 전 표기를 유지하며 건대입구와 청담 사이 같은 위치다.",
+        "crossCheck": "OFFICIAL_FILE_STALE_NAME",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
+        "officialRawPath": "tools/datapack/fixtures/seoul-route-map-positions-raw/data-go-15099316.csv"
+      }
+    },
+    {
+      "scopeKey": "capital:operator-b2d80436b438:line-828f04afc588",
+      "snapshotStationName": "용인중앙시장",
+      "rosterStationName": "운동장.송담대",
+      "reasonCode": "OFFICIAL_RENAME",
+      "evidence": {
+        "issue": 2505,
+        "renamedAt": "2024-01-29",
+        "officialUrl": "https://www.data.go.kr/data/15041326/fileData.do",
+        "note": "용인종합운동장 폐장에 따라 2024-01-29 시행으로 에버라인 운동장·송담대역이 용인중앙시장역이 됐다. 공식 역위치 파일(2024-10-15 기준)과 MOLIT roster는 변경 전 표기를 유지하고, admission에서 공식 rename join으로 결속했다(tools/datapack/collect-kric-capital-light-rail-route-map-positions.mjs).",
+        "crossCheck": "PACK_TOPOLOGY_ADOPTED_NAME",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json"
+      }
+    }
+  ],
+  "documentedCoverageGaps": [
+    {
+      "scopeKey": "daegu:daegu-transportation:line-5b8d9b05e7e6",
+      "rosterStationName": "대구한의대병원",
+      "reasonCode": "OFFICIAL_FILE_ROW_ABSENT",
+      "evidence": {
+        "issue": 2473,
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+        "packTopologyPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+        "officialUrl": "https://www.data.go.kr/data/15133918/fileData.do",
+        "note": "대구 1호선 안심~하양 연장 구간. pack topology(35역)에는 있으나 공식 출입구 좌표 파일(2024-10-14 기준, 32역)에 행이 없어 snapshot topologyGaps로 기록된 결측이다. 해소는 별도 admission 배치."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-5b8d9b05e7e6",
+      "rosterStationName": "부호",
+      "reasonCode": "OFFICIAL_FILE_ROW_ABSENT",
+      "evidence": {
+        "issue": 2473,
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+        "packTopologyPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+        "officialUrl": "https://www.data.go.kr/data/15133918/fileData.do",
+        "note": "대구 1호선 안심~하양 연장 구간. pack topology(35역)에는 있으나 공식 출입구 좌표 파일(2024-10-14 기준, 32역)에 행이 없어 snapshot topologyGaps로 기록된 결측이다. 해소는 별도 admission 배치."
+      }
+    },
+    {
+      "scopeKey": "daegu:daegu-transportation:line-5b8d9b05e7e6",
+      "rosterStationName": "하양",
+      "reasonCode": "OFFICIAL_FILE_ROW_ABSENT",
+      "evidence": {
+        "issue": 2473,
+        "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+        "packTopologyPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+        "officialUrl": "https://www.data.go.kr/data/15133918/fileData.do",
+        "note": "대구 1호선 안심~하양 연장 구간. pack topology(35역)에는 있으나 공식 출입구 좌표 파일(2024-10-14 기준, 32역)에 행이 없어 snapshot topologyGaps로 기록된 결측이다. 해소는 별도 admission 배치."
+      }
+    },
+    {
+      "scopeKey": "capital:seoul-metro:line-80fc4d5350d4",
+      "rosterStationName": "마곡",
+      "reasonCode": "ADMISSION_QUARANTINED",
+      "evidence": {
+        "issue": 2470,
+        "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
+        "quarantineReasonCode": "OFFICIAL_DUPLICATE_LATLON",
+        "note": "공식 역사 좌표 파일이 5호선 마곡·발산에 동일 위경도를 실어 admission에서 OFFICIAL_DUPLICATE_LATLON으로 quarantine했다(#2470·#2471). snapshot quarantinedPositions에 기록이 남아 있다.",
+        "officialUrl": "https://www.data.go.kr/data/15099316/fileData.do"
+      }
+    },
+    {
+      "scopeKey": "capital:seoul-metro:line-80fc4d5350d4",
+      "rosterStationName": "발산",
+      "reasonCode": "ADMISSION_QUARANTINED",
+      "evidence": {
+        "issue": 2470,
+        "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
+        "quarantineReasonCode": "OFFICIAL_DUPLICATE_LATLON",
+        "note": "공식 역사 좌표 파일이 5호선 마곡·발산에 동일 위경도를 실어 admission에서 OFFICIAL_DUPLICATE_LATLON으로 quarantine했다(#2470·#2471). snapshot quarantinedPositions에 기록이 남아 있다.",
+        "officialUrl": "https://www.data.go.kr/data/15099316/fileData.do"
+      }
+    },
+    {
+      "scopeKey": "capital:seoul-metro:line-2b2d9eaa53d0",
+      "rosterStationName": "암사역사공원",
+      "reasonCode": "OFFICIAL_FILE_ROW_ABSENT",
+      "evidence": {
+        "issue": 2470,
+        "snapshotPath": "tools/datapack/sources/seoul-metro-route-map-positions-20260724.json",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
+        "officialUrl": "https://www.data.go.kr/data/15099316/fileData.do",
+        "note": "8호선 연장 구간 암사역사공원. pack topology에는 있으나 공식 역사 좌표 파일(2025-08-14 기준)의 8호선 행 18건에 포함되지 않는다. 원본 행은 admitted 274 + quarantined 2 = 276으로 전부 회계된다."
+      }
+    },
+    {
+      "scopeKey": "capital:operator-b2d80436b438:line-828f04afc588",
+      "rosterStationName": "전대.에버랜드",
+      "reasonCode": "PACK_SCOPE_ABSENT",
+      "evidence": {
+        "issue": 2505,
+        "snapshotPath": "tools/datapack/sources/kric-everline-route-map-positions-20260725.json",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
+        "officialUrl": "https://www.data.go.kr/data/15041326/fileData.do",
+        "note": "공식 역위치 파일에는 행이 있으나 pack 노선 topology(14역)가 이 역을 싣지 않아 admission에서 잉여 행으로 제외했다(allowExtraFileRows). pack scope 확장은 별도 배치."
+      }
+    },
+    {
+      "scopeKey": "capital:operator-3c623bf1a427:line-30886152e4f8",
+      "rosterStationName": "신설동",
+      "reasonCode": "PACK_SCOPE_ABSENT",
+      "evidence": {
+        "issue": 2505,
+        "snapshotPath": "tools/datapack/sources/kric-ui-sinseol-route-map-positions-20260725.json",
+        "packTopologyPath": "tools/datapack/sources/capital-route-topology-20260724.json",
+        "officialUrl": "https://www.data.go.kr/data/15041324/fileData.do",
+        "note": "공식 역위치 파일에는 행이 있으나 pack 노선 topology(12역)가 우이신설 남단 종점을 싣지 않아 admission에서 잉여 행으로 제외했다(allowExtraFileRows). pack scope 확장은 별도 배치."
+      }
+    }
+  ],
+  "renamedAtBasis": "renamedAt은 공식 역명 변경 시행일(고시와 시행이 같은 날이면 그 날)을 단일 기준으로 적는다."
+}
