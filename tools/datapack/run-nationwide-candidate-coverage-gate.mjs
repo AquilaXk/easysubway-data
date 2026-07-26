@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// #2514 (#2510 B0) 전국 candidate pack 게이트 하네스. #2549 (#2510 B1)에서 지역 데이터 편입으로 확장.
+// #2514 (#2510 B0) 전국 candidate pack 게이트 하네스. #2549 (#2510 B1)에서 지역 데이터 편입으로 확장하고,
+// #2580 (#2510 B2-a)에서 편입 스키마를 다도메인 체인으로 일반화했다.
 //
 // candidate spec → candidate fixture 조립 → build-datapack.mjs --fixture → report-coverage-gaps.mjs
 // 실행을 한 명령으로 묶고, line-scope 재기술 전(baseline)/후(lineScoped) 두 variant를 같은 실행에서
@@ -58,6 +59,8 @@ import { isMainModule } from "../lib/is-main-module.mjs";
 import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { parseArgs, requireArg, sortJson } from "./lib/ledger-admission-cli.mjs";
+import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
+import { materializeDaeguRouteMapPositions } from "./materialize-daegu-route-map-positions.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -86,9 +89,29 @@ const CANDIDATE_MANIFEST_CHANNEL = "candidate";
 const NON_PUBLISHABLE_HOST = "easysubway-datapack-candidate.invalid";
 const SIGNING_MODE = "EPHEMERAL_RSA_2048";
 // spec이 가리킬 수 있는 지역 데이터 materializer 목록. spec 편집만으로 임의 모듈을 실행시킬 수 없다.
+// 항목마다 어댑터와 입력 형상을 함께 등재한다(#2580) — materializer가 실제로 읽는 경로 키만 spec에
+// 요구해야 한 지역에 여러 도메인 편입을 체인할 수 있다. 형상을 하네스 전역에 하나로 못박으면 대구
+// 시각표 한 건의 형상이 다른 도메인·지역 편입을 표현 불가능하게 만든다.
 const PACK_DATA_MATERIALIZERS = new Map([
-  ["tools/datapack/materialize-daegu-timetable.mjs", materializeDaeguInclusion],
+  ["tools/datapack/materialize-daegu-timetable.mjs", {
+    materialize: materializeDaeguTimetableInclusion,
+    inputs: { paths: ["stationMapPath"], linePaths: ["topologySnapshotPath", "timetableSnapshotPath"] },
+  }],
+  ["tools/datapack/materialize-daegu-route-map-positions.mjs", {
+    materialize: materializeDaeguRouteMapInclusion,
+    inputs: { paths: ["snapshotPath"], linePaths: ["topologySnapshotPath"] },
+  }],
+  ["tools/datapack/materialize-daegu-accessibility.mjs", {
+    materialize: materializeDaeguAccessibilityInclusion,
+    inputs: { paths: ["snapshotPath"], linePaths: ["topologySnapshotPath"] },
+  }],
 ]);
+// 형상과 무관하게 모든 편입 레코드가 갖는 키. 나머지 허용 키는 등재 형상의 경로 키와 아래 서술 키뿐이다.
+const INCLUSION_BASE_KEYS = Object.freeze(["regionId", "materializer", "materializedAt", "lines", "addedRows"]);
+const INCLUSION_LINE_BASE_KEYS = Object.freeze(["lineNumber", "lineId"]);
+// 편입 레코드에 허용하는 서술 키. "*Ko 접미사면 통과"로 열어 두면 snapshotPathKo 같은 죽은 선언이 그대로
+// 통과해(실측) 선언과 실제 결속이 갈린 채 무성으로 남는다 — 실제로 쓰는 키만 명시로 연다.
+const INCLUSION_NARRATIVE_KEYS = Object.freeze(["reasonKo", "materializedAtReasonKo", "addedRowsKo"]);
 
 export async function runNationwideCandidateCoverageGate({
   spec,
@@ -199,18 +222,23 @@ async function applyPackDataInclusions(spec, inherited, inventory, materializers
   };
   const records = [];
   for (const inclusion of spec.packDataInclusions ?? []) {
-    const materialize = materializers.get(inclusion.materializer);
-    if (!materialize) throw new Error(`unknown pack data materializer: ${inclusion.materializer}`);
+    const entry = materializers.get(inclusion.materializer);
+    if (!entry) throw new Error(`unknown pack data materializer: ${inclusion.materializer}`);
     const inputs = new Map();
-    const readTracked = (relativePath) => readTrackedBytes(relativePath, inputs);
+    const label = inclusionLabel(inclusion);
+    // 경로 키 이름을 함께 넘긴다 — 등재 형상이 어댑터가 실제로 읽는 키보다 좁으면 결측 값이 여기까지
+    // 들어오는데, 그때 진단이 spec 검사와 같은 "<편입>.<키> is required" 형식으로 나와야 한다.
+    const readTracked = (relativePath, key) => readTrackedBytes(relativePath, inputs, `${label}.${key}`);
+    // 승계 스냅샷을 편입마다 다시 뜬다 — 체인의 n번째 편입에게 직전 편입 결과가 곧 승계 원본이므로
+    // 앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다.
     const inheritedSnapshot = inheritedRowSnapshot(fixture.packs[0]);
-    fixture = await materialize(fixture, inclusion, { readTracked, inventory });
+    fixture = await entry.materialize(fixture, inclusion, { readTracked, inventory });
     if (!Array.isArray(fixture?.packs) || fixture.packs.length !== 1) {
       throw new Error(`${inclusion.materializer} must keep the candidate pack single`);
     }
     const addedRows = subtractRowCounts(packRowCounts(fixture.packs[0]), inheritedSnapshot.counts);
     assertDeclaredRows(inclusion, addedRows);
-    assertInheritedRowsUnchanged(inclusion.regionId, inheritedSnapshot, fixture.packs[0]);
+    assertInheritedRowsUnchanged(label, inheritedSnapshot, fixture.packs[0]);
     records.push({
       regionId: inclusion.regionId,
       materializer: inclusion.materializer,
@@ -222,35 +250,46 @@ async function applyPackDataInclusions(spec, inherited, inventory, materializers
   return { pack: fixture.packs[0], records };
 }
 
-// 대구 1·2·3호선 편입 어댑터. snapshot·역명 매핑 경로는 spec이 선언하고 이 어댑터가 tracked 경로로만 읽는다.
+// 대구 1·2·3호선 노선 선언 대조와 topology snapshot 로딩. 세 대구 어댑터가 공유한다.
 // 노선 구성(lineNumber·lineId)은 저장소 정본(DAEGU_LINES)과 대조해 spec 선언이 데이터와 갈리면 fail closed 한다.
-async function materializeDaeguInclusion(fixture, inclusion, { readTracked, inventory }) {
+async function daeguTopologySnapshots(inclusion, readTracked) {
   const declaredLines = inclusion.lines;
   if (declaredLines.length !== DAEGU_LINES.length) {
     throw new Error("daegu pack data inclusion must declare every tracked Daegu line");
   }
-  const stationMapBytes = await readTracked(inclusion.stationMapPath);
   const topologySnapshots = {};
-  const timetableSnapshots = {};
-  const canonicalStationMappings = {};
   for (const [index, line] of declaredLines.entries()) {
     const config = DAEGU_LINES[index];
     if (line.lineNumber !== config.lineNumber || line.lineId !== config.lineId) {
       throw new Error(`daegu pack data inclusion line ${index} does not match the tracked line config`);
     }
     topologySnapshots[config.lineNumber] = parseJsonBytes(
-      await readTracked(line.topologySnapshotPath),
+      await readTracked(line.topologySnapshotPath, "lines[].topologySnapshotPath"),
       line.topologySnapshotPath,
     );
+  }
+  return topologySnapshots;
+}
+
+// 대구 시각표 편입 어댑터. snapshot·역명 매핑 경로는 spec이 선언하고 이 어댑터가 tracked 경로로만 읽는다.
+//
+// materializedAt은 snapshot 포착 시각대에 고정한다. materializer의 freshness 판정이 wall-clock을 쓰면
+// 같은 tracked 입력에서 오늘 되는 조립이 내일 깨져 evidence 재현이 불가능해진다. 임의 시각을 넣어도
+// materializer가 [capturedAt, freshUntil) 밖이면 fail closed 하므로 이 pin은 snapshot에 묶여 있다.
+// 창은 소스마다 다르므로 pin도 편입마다 따로 둔다.
+async function materializeDaeguTimetableInclusion(fixture, inclusion, { readTracked, inventory }) {
+  const topologySnapshots = await daeguTopologySnapshots(inclusion, readTracked);
+  const stationMapBytes = await readTracked(inclusion.stationMapPath, "stationMapPath");
+  const timetableSnapshots = {};
+  const canonicalStationMappings = {};
+  for (const [index, line] of inclusion.lines.entries()) {
+    const config = DAEGU_LINES[index];
     timetableSnapshots[config.lineNumber] = parseJsonBytes(
-      await readTracked(line.timetableSnapshotPath),
+      await readTracked(line.timetableSnapshotPath, "lines[].timetableSnapshotPath"),
       line.timetableSnapshotPath,
     );
     canonicalStationMappings[config.lineNumber] = parseMolitDaeguStationMappings(stationMapBytes, config.lineName);
   }
-  // materializedAt은 snapshot 포착 시각대에 고정한다. materializer의 freshness 판정이 wall-clock을 쓰면
-  // 같은 tracked 입력에서 오늘 되는 조립이 내일 깨져 evidence 재현이 불가능해진다. 임의 시각을 넣어도
-  // materializer가 [capturedAt, freshUntil) 밖이면 fail closed 하므로 이 pin은 snapshot에 묶여 있다.
   return materializeDaeguTimetable({
     baseFixture: fixture,
     topologySnapshots,
@@ -259,6 +298,67 @@ async function materializeDaeguInclusion(fixture, inclusion, { readTracked, inve
     canonicalStationMappings,
     now: new Date(inclusion.materializedAt),
   });
+}
+
+// 대구 노선도 좌표 편입 어댑터(#2580). materializer가 snapshot 바이트 정체성(snapshotSha256)을 admission
+// 정본과 대조하므로 하네스가 evidence에 남기는 입력 해시와 같은 바이트가 판정 근거가 된다. 다만 바이트
+// 축만으로는 저장소 안 다른 경로에 둔 바이트 동일 사본을 가리켜도 통과한다(실측) — 편의시설 편입과 같이
+// 정본 snapshotPath에도 결속해 두 편입의 결속 축을 경로·바이트 양방향으로 맞춘다.
+async function materializeDaeguRouteMapInclusion(fixture, inclusion, { readTracked, inventory }) {
+  assertAdmissionSnapshotPath(
+    inventory,
+    "daegu-transportation-route-map-positions",
+    "routeMapAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
+  const topologySnapshots = await daeguTopologySnapshots(inclusion, readTracked);
+  const snapshotBytes = await readTracked(inclusion.snapshotPath, "snapshotPath");
+  return materializeDaeguRouteMapPositions({
+    baseFixture: fixture,
+    snapshot: parseJsonBytes(snapshotBytes, inclusion.snapshotPath),
+    snapshotSha256: sha256Hex(snapshotBytes),
+    topologySnapshots,
+    inventory,
+    now: new Date(inclusion.materializedAt),
+  });
+}
+
+// 대구 교통약자 편의시설 편입 어댑터(#2580).
+//
+// accessibility 정본에는 바이트 축이 아예 없다 — rawSha256·rowsSha256은 snapshot 내용에서 파생돼 재직렬화
+// 사본도 같은 값을 낸다(실측: 사본이 그대로 조립을 통과했다). materializer에 검사 지점이 없으므로 하네스가
+// 편입이 읽는 경로를 admission 정본의 snapshotPath에 결속한다(노선도 편입과 같은 축). 그 경로에서 실제로
+// 읽은 바이트 해시는 evidence inputs에 남으므로, 정본 경로 파일 자체가 재직렬화되면 evidence 바이트 재생성
+// 회귀가 잡는다.
+async function materializeDaeguAccessibilityInclusion(fixture, inclusion, { readTracked, inventory }) {
+  assertAdmissionSnapshotPath(
+    inventory,
+    "daegu-transportation-accessibility",
+    "accessibilityAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
+  const topologySnapshots = await daeguTopologySnapshots(inclusion, readTracked);
+  return materializeDaeguAccessibility({
+    baseFixture: fixture,
+    accessibilitySnapshot: parseJsonBytes(
+      await readTracked(inclusion.snapshotPath, "snapshotPath"),
+      inclusion.snapshotPath,
+    ),
+    topologySnapshots,
+    inventory,
+    now: new Date(inclusion.materializedAt),
+  });
+}
+
+// 편입이 읽는 snapshot 경로를 admission 정본이 선언한 경로와 결속한다(바이트 축이 없는 소스의 대칭 보완).
+function assertAdmissionSnapshotPath(inventory, sourceId, evidenceKey, snapshotPath) {
+  const declared = inventory?.sources?.find(({ id }) => id === sourceId)?.[evidenceKey]?.snapshotPath;
+  if (typeof declared !== "string" || declared !== snapshotPath) {
+    throw new Error(
+      `pack data inclusion snapshotPath must match the ${sourceId} admission evidence snapshotPath: `
+        + `expected ${declared}, got ${snapshotPath}`,
+    );
+  }
 }
 
 // 집계 대상 표를 상수로 못박지 않고 pack 자신의 배열 필드에서 끌어온다. 고정 목록은 목록 밖 표
@@ -291,25 +391,31 @@ function subtractRowCounts(after, before) {
   return Object.fromEntries(tables.map((table) => [table, (after[table] ?? 0) - (before[table] ?? 0)]));
 }
 
+// 한 지역에 여러 도메인 편입을 체인하면 regionId만으로는 어느 편입이 걸렸는지 알 수 없다 — 편입 정체성
+// 단위(regionId, materializer)를 그대로 진단 라벨로 쓴다.
+function inclusionLabel(inclusion) {
+  return `${inclusion.regionId}:${inclusion.materializer}`;
+}
+
 // 편입이 실제로 실은 행수가 spec 선언과 다르면 조립을 멈춘다 — snapshot drift나 선언하지 않은 표로의
 // 주입이 candidate 구성을 조용히 바꾸지 못하게 하는 축이다.
 function assertDeclaredRows(inclusion, addedRows) {
   if (JSON.stringify(sortJson(addedRows)) !== JSON.stringify(sortJson(inclusion.addedRows))) {
     throw new Error(
-      `${inclusion.regionId} pack data inclusion added rows do not match the spec declaration: `
+      `${inclusionLabel(inclusion)} pack data inclusion added rows do not match the spec declaration: `
         + `expected ${JSON.stringify(sortJson(inclusion.addedRows))}, got ${JSON.stringify(sortJson(addedRows))}`,
     );
   }
 }
 
-export function assertInheritedRowsUnchanged(regionId, snapshot, pack) {
+export function assertInheritedRowsUnchanged(label, snapshot, pack) {
   for (const [table, fingerprint] of Object.entries(snapshot.fingerprints)) {
     const rows = pack[table];
     if (!Array.isArray(rows) || rows.length < snapshot.counts[table]) {
-      throw new Error(`${regionId} pack data inclusion dropped inherited rows: ${table}`);
+      throw new Error(`${label} pack data inclusion dropped inherited rows: ${table}`);
     }
     if (sha256Hex(JSON.stringify(rows.slice(0, snapshot.counts[table]))) !== fingerprint) {
-      throw new Error(`${regionId} pack data inclusion modified inherited rows: ${table}`);
+      throw new Error(`${label} pack data inclusion modified inherited rows: ${table}`);
     }
   }
 }
@@ -317,7 +423,11 @@ export function assertInheritedRowsUnchanged(regionId, snapshot, pack) {
 // 편입 입력은 저장소 안 상대 경로만 허용한다(절대 경로·경로 이탈 fail closed). 문자열 containment만
 // 보면 저장소 안 symlink가 밖을 가리킬 때 통과하므로, 링크를 해석한 실경로로 containment를 다시 본다.
 // git tracked 여부까지 보지는 않는다 — 그 축은 입력 바이트 해시를 evidence에 남기는 것으로 대신한다.
-async function readTrackedBytes(relativePath, inputs) {
+async function readTrackedBytes(relativePath, inputs, label) {
+  // 등재 형상의 경로 키 목록이 어댑터가 실제로 읽는 것보다 좁으면 spec 검사가 그 키를 요구하지 않아
+  // undefined가 여기까지 들어온다. 무검사로 path.resolve에 넘기면 fail closed는 유지되지만 진단이
+  // TypeError("paths[1] argument must be of type string") 스택으로 붕괴한다 — 결측을 그 자리에서 되돌린다.
+  requiredString(relativePath, label);
   const resolved = path.resolve(root, relativePath);
   if (path.isAbsolute(relativePath) || !resolved.startsWith(`${root}${path.sep}`)) {
     throw new Error(`pack data inclusion input must be a repository-relative path inside the repo: ${relativePath}`);
@@ -641,6 +751,13 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
       variantParityKo:
         "편입 행은 두 variant에 동일하게 들어간다. 편입은 line-scope 재기술과 독립이며, variant를 가르는 "
         + "축은 재기술뿐이다.",
+      chainKo:
+        "entries는 적용 순서다. 한 지역에 여러 도메인을 편입하면 뒤 편입의 승계 원본은 앞 편입 결과이므로 "
+        + "앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다. 순서를 조립이 강제하는 구간은 선행 조건이 "
+        + "있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 "
+        + "검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입"
+        + "(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 "
+        + "축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다.",
       entries: packDataInclusions,
     },
     lineScopeRedescriptions: spec.lineScopeRedescriptions.map((redescription) => ({
@@ -840,48 +957,95 @@ function validatePackDataInclusions(spec, materializers) {
   if (!Array.isArray(spec.packDataInclusions)) {
     throw new Error("candidate spec packDataInclusions must be an array");
   }
-  const regionIds = new Set();
+  // 중복 금지 단위는 (regionId, materializer)다(#2580). 한 지역의 여러 도메인을 체인 편입하려면
+  // regionId 단독 유일성이 성립할 수 없고, 같은 materializer를 같은 지역에 두 번 싣는 이중 편입은
+  // 그대로 막아야 한다(대상 materializer들은 소스 재등재를 자체적으로도 거부하지만 spec 단계에서 끊는다).
+  const inclusionKeys = new Set();
   for (const inclusion of spec.packDataInclusions) {
     const regionId = requiredString(inclusion?.regionId, "packDataInclusions.regionId");
-    if (regionIds.has(regionId)) throw new Error(`duplicate pack data inclusion: ${regionId}`);
-    regionIds.add(regionId);
     const materializer = requiredString(inclusion.materializer, `${regionId}.materializer`);
-    if (!materializers.has(materializer)) {
+    const entry = materializers.get(materializer);
+    if (!entry) {
       throw new Error(`unknown pack data materializer: ${materializer}`);
     }
+    const label = inclusionLabel(inclusion);
+    if (inclusionKeys.has(label)) throw new Error(`duplicate pack data inclusion: ${label}`);
+    inclusionKeys.add(label);
     // offset 없는 값(예: "2026-07-20T16:00:00")은 new Date()가 로컬 타임존으로 해석해 같은 tracked
     // 입력이 머신 타임존에 따라 조립 성공/실패로 갈린다 — UTC ISO-8601 왕복을 강제해 검사와 메시지를 맞춘다.
-    const materializedAt = requiredString(inclusion.materializedAt, `${regionId}.materializedAt`);
+    const materializedAt = requiredString(inclusion.materializedAt, `${label}.materializedAt`);
     if (!Number.isFinite(Date.parse(materializedAt))
       || new Date(materializedAt).toISOString() !== materializedAt) {
-      throw new Error(`${regionId}.materializedAt must be a UTC ISO-8601 timestamp`);
+      throw new Error(`${label}.materializedAt must be a UTC ISO-8601 timestamp`);
     }
-    requiredString(inclusion.stationMapPath, `${regionId}.stationMapPath`);
-    if (!Array.isArray(inclusion.lines) || inclusion.lines.length === 0) {
-      throw new Error(`${regionId}.lines must be a non-empty array`);
-    }
-    for (const line of inclusion.lines) {
-      if (!Number.isInteger(line?.lineNumber) || line.lineNumber <= 0) {
-        throw new Error(`${regionId}.lines[].lineNumber must be a positive integer`);
-      }
-      requiredString(line.lineId, `${regionId}.lines[].lineId`);
-      requiredString(line.topologySnapshotPath, `${regionId}.lines[].topologySnapshotPath`);
-      requiredString(line.timetableSnapshotPath, `${regionId}.lines[].timetableSnapshotPath`);
-    }
+    validateInclusionInputs(inclusion, entry.inputs, label);
     // 표 목록은 pack 자신에서 끌어오므로 여기서 정적으로 고정하지 않는다. "선언이 pack의 모든 표를
     // 빠짐없이 덮는가"는 assertDeclaredRows가 실제 산출 map과 전키 비교로 강제한다.
     const addedRows = inclusion.addedRows;
     if (!addedRows || typeof addedRows !== "object" || Array.isArray(addedRows)) {
-      throw new Error(`${regionId}.addedRows must be an object`);
+      throw new Error(`${label}.addedRows must be an object`);
     }
     if (Object.keys(addedRows).length === 0) {
-      throw new Error(`${regionId}.addedRows must declare every pack row table`);
+      throw new Error(`${label}.addedRows must declare every pack row table`);
     }
     for (const [table, count] of Object.entries(addedRows)) {
       if (!Number.isInteger(count) || count < 0) {
-        throw new Error(`${regionId}.addedRows.${table} must be a non-negative integer`);
+        throw new Error(`${label}.addedRows.${table} must be a non-negative integer`);
       }
     }
+  }
+}
+
+// 편입 입력 형상은 allowlist 항목이 등재한 경로 키만 요구한다. 선언한 경로는 전부 어댑터가 readTracked로
+// 읽어 저장소 안 실경로 강제와 입력 해시 결속을 받으므로, 형상을 넓혀도 안전 경계는 그대로다.
+// lines는 형상과 무관하게 편입이 선언한 노선 범위라 어느 materializer에서도 요구한다.
+//
+// 허용 키는 등재 형상이 정하고 그 밖의 키는 거부한다. 미등재 키를 조용히 무시하면 spec이 선언한 입력이
+// 읽히지도 해시되지도 않은 채 evidence를 통과해(예: 노선도 편입에 남은 시각표 경로), 선언과 실제 결속이
+// 갈린 상태가 무성으로 남는다. 서술 키는 INCLUSION_NARRATIVE_KEYS에 등재된 것만 연다.
+function validateInclusionInputs(inclusion, inputs, label) {
+  const { paths, linePaths } = materializerInputShape(inclusion.materializer, inputs);
+  for (const key of paths) {
+    requiredString(inclusion[key], `${label}.${key}`);
+  }
+  assertKnownKeys(inclusion, [...INCLUSION_BASE_KEYS, ...INCLUSION_NARRATIVE_KEYS, ...paths], label);
+  if (!Array.isArray(inclusion.lines) || inclusion.lines.length === 0) {
+    throw new Error(`${label}.lines must be a non-empty array`);
+  }
+  for (const line of inclusion.lines) {
+    if (!Number.isInteger(line?.lineNumber) || line.lineNumber <= 0) {
+      throw new Error(`${label}.lines[].lineNumber must be a positive integer`);
+    }
+    requiredString(line.lineId, `${label}.lines[].lineId`);
+    for (const key of linePaths) {
+      requiredString(line[key], `${label}.lines[].${key}`);
+    }
+    assertKnownKeys(line, [...INCLUSION_LINE_BASE_KEYS, ...linePaths], `${label}.lines[]`);
+  }
+}
+
+// allowlist 항목의 형상 자체도 검사한다. 무검사 구조분해는 형상이 빠진 항목에서 TypeError로 터져
+// 진단이 "무엇이 잘못됐나" 대신 스택으로 붕괴한다(in-process seam으로 항목을 넘기는 경로가 그렇다).
+function materializerInputShape(materializer, inputs) {
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)
+    || !isPathKeyList(inputs.paths) || !isPathKeyList(inputs.linePaths)) {
+    throw new Error(`pack data materializer inputs shape is invalid: ${materializer}`);
+  }
+  return { paths: inputs.paths, linePaths: inputs.linePaths };
+}
+
+// 경로 키 목록은 비어 있어도 된다(그 층에 경로 입력이 없는 materializer). 항목은 전부 비어 있지 않은 문자열이어야 한다.
+function isPathKeyList(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry.trim() !== "");
+}
+
+function assertKnownKeys(record, knownKeys, label) {
+  const known = new Set(knownKeys);
+  const unknown = Object.keys(record)
+    .filter((key) => !known.has(key))
+    .sort(codepointCompare);
+  if (unknown.length > 0) {
+    throw new Error(`${label} has unknown keys: ${unknown.join(",")}`);
   }
 }
 

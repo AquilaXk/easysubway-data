@@ -57,14 +57,14 @@
     },
     "spec": {
       "path": "tools/datapack/nationwide-candidate-pack-spec.json",
-      "sha256": "760656a39affb35889484cba066dbd485dc7040c87f5488f820ef830ed79af88"
+      "sha256": "346d7c617a02cc450229a3fdc9fd8671ca7ef68c936a8ec908dc9745dea05f39"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
       "sha256": "2715e0bb28a25b2103add14747e74742fcb88f61e4cf357ed68453f20cf6cfc5"
     }
   },
-  "issue": 2549,
+  "issue": 2580,
   "lineScopeRedescriptions": [
     {
       "lineIds": [
@@ -195,9 +195,38 @@
       ],
       "sourceDomain": "schedule_timetable",
       "sourceId": "daegu-line3-train-timetable"
+    },
+    {
+      "lineIds": [
+        "line-5b8d9b05e7e6",
+        "line-e2938a4cc492",
+        "line-0ffaa95b1b5d"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:route_map_positions",
+        "daegu:daegu-transportation:line-e2938a4cc492:route_map_positions",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions"
+      ],
+      "sourceDomain": "route_map_positions",
+      "sourceId": "daegu-transportation-route-map-positions"
+    },
+    {
+      "lineIds": [
+        "line-5b8d9b05e7e6",
+        "line-e2938a4cc492",
+        "line-0ffaa95b1b5d"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:accessibility_facilities",
+        "daegu:daegu-transportation:line-e2938a4cc492:accessibility_facilities",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities"
+      ],
+      "sourceDomain": "accessibility_facilities",
+      "sourceId": "daegu-transportation-accessibility"
     }
   ],
   "packDataInclusions": {
+    "chainKo": "entries는 적용 순서다. 한 지역에 여러 도메인을 편입하면 뒤 편입의 승계 원본은 앞 편입 결과이므로 앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다. 순서를 조립이 강제하는 구간은 선행 조건이 있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다.",
     "entries": [
       {
         "addedRows": {
@@ -259,6 +288,104 @@
         "materializedAt": "2026-07-20T16:00:00.000Z",
         "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
         "regionId": "daegu"
+      },
+      {
+        "addedRows": {
+          "facilities": 0,
+          "lines": 0,
+          "movementPathCandidates": 0,
+          "networkEdges": 0,
+          "officialOdFareQuotes": 0,
+          "operators": 0,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapPositions": 91,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 0,
+          "serviceCalendars": 0,
+          "sourceInventory": 1,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 0,
+          "stationLines": 0,
+          "stations": 0,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 0,
+          "transitStopTimes": 0,
+          "transitTrips": 0
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+            "sha256": "a3ebdac628d6487a3527281db8936bccde8036b2beeae0ca74bda09f682050a9"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line2-route-topology-20260721.json",
+            "sha256": "ad29a9b324f9fd4b33438ba8748581820e03be4ae13b7691054e1e3f3495d8a6"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line3-route-topology-20260721.json",
+            "sha256": "d7e97d51e9379a2694e2b4aa5b2638d9d5a4a55ff2b0724abb1d58dc42b1341d"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+            "sha256": "9e5df3f0bf398a45dd453d442abeb7138e289423aee721144dd743834a0c90ee"
+          }
+        ],
+        "materializedAt": "2026-07-24T03:00:00.000Z",
+        "materializer": "tools/datapack/materialize-daegu-route-map-positions.mjs",
+        "regionId": "daegu"
+      },
+      {
+        "addedRows": {
+          "facilities": 282,
+          "lines": 0,
+          "movementPathCandidates": 0,
+          "networkEdges": 0,
+          "officialOdFareQuotes": 0,
+          "operators": 0,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapPositions": 0,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 0,
+          "serviceCalendars": 0,
+          "sourceInventory": 1,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 282,
+          "stationLines": 0,
+          "stations": 0,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 0,
+          "transitStopTimes": 0,
+          "transitTrips": 0
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+            "sha256": "a3ebdac628d6487a3527281db8936bccde8036b2beeae0ca74bda09f682050a9"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line2-route-topology-20260721.json",
+            "sha256": "ad29a9b324f9fd4b33438ba8748581820e03be4ae13b7691054e1e3f3495d8a6"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line3-route-topology-20260721.json",
+            "sha256": "d7e97d51e9379a2694e2b4aa5b2638d9d5a4a55ff2b0724abb1d58dc42b1341d"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
+            "sha256": "4e9b4a646d082133292dc5617ea7c2e90b55129866182b6ecc3eac3ac90b5a85"
+          }
+        ],
+        "materializedAt": "2026-07-24T01:00:00.000Z",
+        "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
+        "regionId": "daegu"
       }
     ],
     "modelKo": "승계 원본에 없는 지역 행은 tracked materializer가 tracked snapshot을 재생해 조립한다. 저장소에 행을 복제하지 않으므로 아래 입력 해시가 candidate 구성의 유일한 결속 축이며, 실제로 실린 행수(addedRows)가 spec 선언과 다르면(또는 승계 행이 바뀌면) 조립이 fail closed 된다.",
@@ -295,11 +422,31 @@
     {
       "after": "SUPPORTED",
       "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
+      "sourceIds": [
+        "daegu-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
       "coveredFields": 3,
       "denominator": 3,
       "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
       "sourceIds": [
         "daegu-line3-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions",
+      "sourceIds": [
+        "daegu-transportation-route-map-positions"
       ]
     },
     {
@@ -326,11 +473,31 @@
     {
       "after": "SUPPORTED",
       "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:accessibility_facilities",
+      "sourceIds": [
+        "daegu-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
       "coveredFields": 3,
       "denominator": 3,
       "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology",
       "sourceIds": [
         "daegu-line1-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_map_positions",
+      "sourceIds": [
+        "daegu-transportation-route-map-positions"
       ]
     },
     {
@@ -357,11 +524,31 @@
     {
       "after": "SUPPORTED",
       "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:accessibility_facilities",
+      "sourceIds": [
+        "daegu-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
       "coveredFields": 3,
       "denominator": 3,
       "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology",
       "sourceIds": [
         "daegu-line2-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_map_positions",
+      "sourceIds": [
+        "daegu-transportation-route-map-positions"
       ]
     },
     {
@@ -434,6 +621,57 @@
           "blockingThreshold": 1,
           "coverageRatio": 0,
           "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 3,
           "fieldCoverage": [
             {
@@ -465,6 +703,36 @@
             "distance_meters": 0,
             "duration_seconds": 0,
             "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
@@ -545,6 +813,57 @@
           "blockingThreshold": 1,
           "coverageRatio": 0,
           "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 3,
           "fieldCoverage": [
             {
@@ -576,6 +895,36 @@
             "distance_meters": 0,
             "duration_seconds": 0,
             "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
@@ -656,6 +1005,57 @@
           "blockingThreshold": 1,
           "coverageRatio": 0,
           "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
           "denominator": 3,
           "fieldCoverage": [
             {
@@ -687,6 +1087,36 @@
             "distance_meters": 0,
             "duration_seconds": 0,
             "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
           }
         },
         {
@@ -774,8 +1204,8 @@
         "totalCount": 45
       },
       "launchRequired": {
-        "supportedCount": 10,
-        "supportedRatio": 0.037,
+        "supportedCount": 16,
+        "supportedRatio": 0.0593,
         "totalCount": 270
       },
       "pilotRequirements": [
@@ -810,6 +1240,63 @@
           "supportingRecordCountByField": {
             "route_map_label_polygon": 2,
             "route_map_position": 2
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
+          "sourceIds": [
+            "daegu-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 30,
+            "escalator": 30,
+            "status": 90,
+            "verified_at": 90,
+            "wheelchair_lift": 30
           }
         },
         {
@@ -851,6 +1338,39 @@
             "distance_meters": 58,
             "duration_seconds": 58,
             "network_edges": 58
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "daegu-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "daegu-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions",
+          "sourceIds": [
+            "daegu-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 30,
+            "route_map_position": 30
           }
         },
         {
@@ -939,6 +1459,63 @@
         {
           "blockingThreshold": 1,
           "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:accessibility_facilities",
+          "sourceIds": [
+            "daegu-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 35,
+            "escalator": 35,
+            "status": 105,
+            "verified_at": 105,
+            "wheelchair_lift": 35
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
           "coveredFields": 3,
           "denominator": 3,
           "fieldCoverage": [
@@ -975,6 +1552,39 @@
             "distance_meters": 68,
             "duration_seconds": 68,
             "network_edges": 68
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "daegu-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "daegu-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_map_positions",
+          "sourceIds": [
+            "daegu-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 32,
+            "route_map_position": 32
           }
         },
         {
@@ -1063,6 +1673,63 @@
         {
           "blockingThreshold": 1,
           "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "daegu-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:accessibility_facilities",
+          "sourceIds": [
+            "daegu-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 29,
+            "escalator": 29,
+            "status": 87,
+            "verified_at": 87,
+            "wheelchair_lift": 29
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
           "coveredFields": 3,
           "denominator": 3,
           "fieldCoverage": [
@@ -1099,6 +1766,39 @@
             "distance_meters": 56,
             "duration_seconds": 56,
             "network_edges": 56
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "daegu-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "daegu-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_map_positions",
+          "sourceIds": [
+            "daegu-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 29,
+            "route_map_position": 29
           }
         },
         {
@@ -1187,13 +1887,19 @@
       ],
       "supportedRequirementKeys": [
         "capital:seoul-metro:seoul-4:route_map_positions",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership",
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:accessibility_facilities",
         "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology",
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:route_map_positions",
         "daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable",
         "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership",
+        "daegu:daegu-transportation:line-e2938a4cc492:accessibility_facilities",
         "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology",
+        "daegu:daegu-transportation:line-e2938a4cc492:route_map_positions",
         "daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable",
         "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership"
       ]

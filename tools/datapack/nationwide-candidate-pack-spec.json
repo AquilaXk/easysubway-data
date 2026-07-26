@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-pack-spec",
-  "issue": 2549,
+  "issue": 2580,
   "parentIssues": [2510, 2138],
   "candidateId": "nationwide-candidate-20260725",
-  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입한다.",
+  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올린다.",
   "harness": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs",
   "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다. 지역 데이터 편입(packDataInclusions)도 candidate 조립분에서만 일어나며 게시 fixture·release-request는 어떤 경로로도 바뀌지 않는다.",
   "inheritsFrom": {
@@ -88,6 +88,108 @@
       },
       "reasonKo": "승계 원본(capital production pack)에는 수도권 밖 행이 없어 대구 requirement가 판정에 오를 수 없다. 이미 admission이 끝난 대구 snapshot(공식 topology·시각표·MOLIT 역명 매핑)을 tracked materializer로 재생해 candidate root pack에 싣는다. 신규 admission·재수집은 하지 않으며, 저장소에 78k stop_time 행을 복제하지 않고도 같은 바이트가 언제든 재현된다.",
       "materializedAtReasonKo": "materializer의 snapshot freshness 판정은 wall-clock을 쓴다. 기준 시각을 snapshot 포착 시각대(capturedAt 2026-07-20T15:30:00Z, freshUntil 2026-07-21T15:30:00Z)로 고정하지 않으면 같은 tracked 입력에서 오늘 되는 조립이 내일 깨져 evidence 재현이 불가능해진다. 임의 시각을 넣어도 materializer가 [capturedAt, freshUntil) 밖이면 fail closed 하므로 이 pin은 snapshot에 묶여 있다. candidate는 게시 대상이 아니므로 이 pin이 게시물의 신선도 판정을 우회하지 않는다."
+    },
+    {
+      "regionId": "daegu",
+      "materializer": "tools/datapack/materialize-daegu-route-map-positions.mjs",
+      "materializedAt": "2026-07-24T03:00:00.000Z",
+      "snapshotPath": "tools/datapack/sources/daegu-transportation-route-map-positions-20260724.json",
+      "lines": [
+        {
+          "lineNumber": 1,
+          "lineId": "line-5b8d9b05e7e6",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json"
+        },
+        {
+          "lineNumber": 2,
+          "lineId": "line-e2938a4cc492",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line2-route-topology-20260721.json"
+        },
+        {
+          "lineNumber": 3,
+          "lineId": "line-0ffaa95b1b5d",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line3-route-topology-20260721.json"
+        }
+      ],
+      "addedRows": {
+        "operators": 0,
+        "lines": 0,
+        "stations": 0,
+        "stationLines": 0,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 0,
+        "routeMapPositions": 91,
+        "facilities": 0,
+        "stationFacilityEvidence": 0,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 0,
+        "serviceCalendarDates": 0,
+        "transitRoutes": 0,
+        "transitTrips": 0,
+        "transitStopTimes": 0,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 1
+      },
+      "reasonKo": "#2580 B2-a. 대구 3노선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 pack.sourceInventory에 대구 시각표 소스가 이미 있을 것을 선행 조건으로 검사하므로 시각표 편입 뒤에 체인한다. 신규 admission·재수집은 없고 이미 admission이 끝난 snapshot(#2473)을 재생한다.",
+      "materializedAtReasonKo": "이 snapshot의 capturedAt은 2026-07-24T03:00:00Z이고 materializer는 기준 시각이 capturedAt 이전이면 fail closed 한다. 소스마다 포착 시각대가 다르므로 pin도 편입마다 따로 둔다."
+    },
+    {
+      "regionId": "daegu",
+      "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
+      "materializedAt": "2026-07-24T01:00:00.000Z",
+      "snapshotPath": "tools/datapack/sources/daegu-transportation-accessibility-20260724.json",
+      "lines": [
+        {
+          "lineNumber": 1,
+          "lineId": "line-5b8d9b05e7e6",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json"
+        },
+        {
+          "lineNumber": 2,
+          "lineId": "line-e2938a4cc492",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line2-route-topology-20260721.json"
+        },
+        {
+          "lineNumber": 3,
+          "lineId": "line-0ffaa95b1b5d",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line3-route-topology-20260721.json"
+        }
+      ],
+      "addedRows": {
+        "operators": 0,
+        "lines": 0,
+        "stations": 0,
+        "stationLines": 0,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 0,
+        "routeMapPositions": 0,
+        "facilities": 282,
+        "stationFacilityEvidence": 282,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 0,
+        "serviceCalendarDates": 0,
+        "transitRoutes": 0,
+        "transitTrips": 0,
+        "transitStopTimes": 0,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 1
+      },
+      "reasonKo": "#2580 B2-a. 대구 3노선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 대구 시각표 소스를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T01:00:00Z ~ freshUntil 2026-07-25T01:00:00Z이며 materializer가 그 밖의 기준 시각을 fail closed 한다. 창은 소스마다 다르고 상한 유무도 갈린다 — 시각표는 [capturedAt, freshUntil) 양끝을 검사하지만 노선도 materializer는 하한(capturedAt 이후)만 검사해 상한이 없다. 시각표 창은 이 창과 서로소이고 노선도 창은 이 창과 겹치므로, 편입 하나의 창만 보고 pin을 묶으면 그 소스의 snapshot이 갱신될 때 다른 편입의 기준 시각까지 함께 흔들린다. pin을 편입마다 따로 두면 각 pin이 자기 소스의 창에만 묶인다."
     }
   ],
   "lineScopeRedescriptions": [
@@ -193,6 +295,30 @@
       "lineIds": ["line-0ffaa95b1b5d"],
       "requirementKeys": ["daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable"],
       "reasonKo": "B1. 대구 3호선 service_calendar·trip·stop_time을 대는 공식 시각표 snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-transportation-route-map-positions",
+      "sourceDomain": "route_map_positions",
+      "lineIds": ["line-5b8d9b05e7e6", "line-e2938a4cc492", "line-0ffaa95b1b5d"],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:route_map_positions",
+        "daegu:daegu-transportation:line-e2938a4cc492:route_map_positions",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:route_map_positions"
+      ],
+      "reasonKo": "B2-a. 대구 3노선 route_map_position·route_map_label_polygon을 대는 공식 좌표 snapshot 소스다. 이 소스는 collector snapshot 모델로 admission이 완결돼 있어(routeMapAdmissionEvidence.snapshotPath 실재) route_map containment 감사 대상 scope를 이미 만들고 있으며, 재기술은 admission 정본의 line-scope를 그대로 승계한다(inventory 변경 없음).",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-transportation-accessibility",
+      "sourceDomain": "accessibility_facilities",
+      "lineIds": ["line-5b8d9b05e7e6", "line-e2938a4cc492", "line-0ffaa95b1b5d"],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:accessibility_facilities",
+        "daegu:daegu-transportation:line-e2938a4cc492:accessibility_facilities",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities"
+      ],
+      "reasonKo": "B2-a. 대구 3노선 elevator·escalator·wheelchair_lift·status·verified_at을 대는 공식 편의시설 snapshot 소스다.",
       "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
     }
   ]
