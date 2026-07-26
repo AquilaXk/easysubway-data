@@ -269,10 +269,26 @@ export function validatePackUrlMatchesStagedPath(packUrl, pack, label) {
   }
 }
 
+// 이슈 #2531(DP-05): 서명 객체는 서명 대상 정준 문자열 밖에 있는 유일한 자리라
+// 그 안의 값은 어떤 것도 서명되지 않는다. 모바일 파서가 미지 키를 거부하므로
+// 생산자도 같은 규칙으로 닫는다. 한쪽만 닫으면 파이프라인이 초록으로 내보낸
+// 매니페스트를 단말이 전량 거부한다.
+//
+// 스키마 선언(`schema/manifest.schema.json`의 중첩 `additionalProperties: false`)만으로는
+// 강제되지 않는다. `validateManifestJsonSchema`가 최상위 키만 훑기 때문이다.
+function validateSignatureFieldNames(signature, label) {
+  for (const key of Object.keys(signature)) {
+    if (key !== "algorithm" && key !== "value") {
+      throw new Error(`${label} additional field is unsupported: ${key}`);
+    }
+  }
+}
+
 function validateSignature(signature, label, manifestVersion, artifactKind) {
   if (!signature || typeof signature !== "object") {
     throw new Error(`${label} signature must be an object`);
   }
+  validateSignatureFieldNames(signature, `${label} signature`);
   const algorithm = requiredString(signature.algorithm, "signature.algorithm");
   const expectedAlgorithm = artifactKind === "production"
     ? (manifestVersion === 2 ? "rsa-sha256-pack-manifest-v2" : "rsa-sha256-pack-manifest-v1")
@@ -455,6 +471,7 @@ function validateRepresentativeRouteRegressionSignature(signature, label) {
   if (!signature || typeof signature !== "object") {
     throw new Error(`${label} representativeRouteRegressionSignature must be an object`);
   }
+  validateSignatureFieldNames(signature, `${label} representativeRouteRegressionSignature`);
   const algorithm = requiredString(signature.algorithm, "representativeRouteRegressionSignature.algorithm");
   if (algorithm !== "sha256-route-regression-v1" && algorithm !== "rsa-sha256-route-regression-v1") {
     throw new Error(`${label} representativeRouteRegressionSignature algorithm is unsupported`);
@@ -537,6 +554,7 @@ export function validateManifestV2Envelope(manifest) {
   if (!manifest.signature || typeof manifest.signature !== "object") {
     throw new Error("manifest.signature must be an object");
   }
+  validateSignatureFieldNames(manifest.signature, "manifest.signature");
   const algorithm = requiredString(manifest.signature.algorithm, "manifest.signature.algorithm");
   if (algorithm !== "sha256-manifest-v2" && algorithm !== "rsa-sha256-manifest-v2") {
     throw new Error("manifest.signature algorithm is unsupported");

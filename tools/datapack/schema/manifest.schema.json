@@ -51,6 +51,7 @@
     "signature": {
       "type": "object",
       "required": ["algorithm", "value"],
+      "additionalProperties": false,
       "properties": {
         "algorithm": {
           "enum": [
@@ -154,6 +155,7 @@
           "signature": {
             "type": "object",
             "required": ["algorithm", "value"],
+            "additionalProperties": false,
             "properties": {
               "algorithm": {
                 "enum": [
@@ -233,6 +235,7 @@
           "representativeRouteRegressionSignature": {
             "type": "object",
             "required": ["algorithm", "value"],
+            "additionalProperties": false,
             "properties": {
               "algorithm": {
                 "enum": [

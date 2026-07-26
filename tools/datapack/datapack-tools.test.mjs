@@ -15649,6 +15649,52 @@ test("매니페스트 rollout은 percentage 0~100·seed hex32만 허용한다", 
   );
 });
 
+test("매니페스트 서명 객체는 algorithm·value 외 필드를 거부한다", () => {
+  // 이슈 #2531(DP-05). 서명 객체는 서명 대상 정준 문자열 밖에 있는 유일한 자리라 그
+  // 안의 값은 서명되지 않는다. 모바일 파서가 미지 키를 거부하므로 생산자도 같은
+  // 규칙으로 닫는다 — 한쪽만 닫으면 파이프라인이 초록으로 내보낸 매니페스트를 단말이
+  // 전량 거부한다.
+  //
+  // 스키마의 중첩 `additionalProperties: false`만으로는 강제되지 않는다
+  // (`validateManifestJsonSchema`가 최상위 키만 훑는다). 그래서 코드 검사로 닫았고,
+  // 이 테스트가 그 검사를 고정한다.
+  const base = minimalFixtureManifest();
+  assert.doesNotThrow(() => validateManifest(base));
+
+  const packSignatureTrace = minimalFixtureManifest();
+  packSignatureTrace.packs[0].signature.unsignedTrace = "issue-2531";
+  assert.throws(() => validateManifest(packSignatureTrace), /signature additional field is unsupported: unsignedTrace/);
+
+  const routeRegressionTrace = minimalFixtureManifest();
+  routeRegressionTrace.packs[0].representativeRouteRegressionSignature.unsignedTrace = "issue-2531";
+  assert.throws(
+    () => validateManifest(routeRegressionTrace),
+    /representativeRouteRegressionSignature additional field is unsupported: unsignedTrace/,
+  );
+});
+
+test("v2 봉투 서명 객체도 algorithm·value 외 필드를 거부한다", () => {
+  const manifest = {
+    ...minimalFixtureManifest(),
+    manifestVersion: 2,
+    channel: "production",
+    releaseSequence: 42,
+    publishedAt: "2026-07-01T00:00:00.000Z",
+    expiresAt: "2026-07-02T00:00:00.000Z",
+    keyId: "fixture-key",
+  };
+  manifest.packs[0].signature = { algorithm: "sha256-pack-manifest-v2", value: "a".repeat(64) };
+  manifest.signature = { algorithm: "sha256-manifest-v2", value: canonicalManifestSelfHash(manifest) };
+  assert.doesNotThrow(() => validateManifest(manifest));
+
+  manifest.signature = { ...manifest.signature, unsignedTrace: "issue-2531" };
+  assert.throws(() => validateManifest(manifest), /manifest\.signature additional field is unsupported: unsignedTrace/);
+});
+
+function canonicalManifestSelfHash(manifest) {
+  return createHash("sha256").update(canonicalJson(withoutSignature(manifest))).digest("hex");
+}
+
 test("releases 게시 대상 매니페스트에 rollout이 있으면 거부한다", () => {
   const base = minimalFixtureManifest();
   const withRollout = { ...base, rollout: { percentage: 10, seed: "a".repeat(32) } };

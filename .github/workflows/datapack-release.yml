@@ -563,6 +563,14 @@ jobs:
               --root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
               --require-production
             node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (manifest.channel !== process.env.EASYSUBWAY_DATAPACK_TARGET_CHANNEL) throw new Error('manifest channel must match targetChannel');"
+            # 이슈 #2531: 앱이 심고 나가는 수락 순번 하한 아래로는 publish하지 않는다.
+            # 이 게이트가 'live >= 하한' 불변식을 지켜 하한을 심은 빌드가 현재 매니페스트를
+            # 거부하는 상태를 막는다. 하한은 정책이 선언한 채널(production)의 매니페스트에만
+            # 적용되고, 그 판정은 스크립트가 매니페스트 channel로 직접 한다 — release-candidate의
+            # 기본 대상 채널은 production이 아니다(위 target_channel 기본값 dev).
+            # 비교 방향·채널 적용 범위·실패 동작은 스크립트 단위 테스트가 고정한다.
+            node tools/datapack/check-manifest-acceptance-floor.mjs \
+              --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
           fi
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
