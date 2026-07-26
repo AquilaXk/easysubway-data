@@ -4,6 +4,10 @@
 //
 // Usage: node tools/route-map/diff-sma-versions.mjs --old <geomN.json> --new <geomN1.json>
 //          [--move-threshold 4] [--out report.json]
+//
+// 구버전 추출 JSON(geomN)은 저장소에 상주하지 않는다 — #2571로 구버전 SVG 보관
+// 조항이 폐기됐다. 필요하면 git 히스토리에서 해당 버전을 꺼내 추출한 뒤 --old로
+// 넘긴다. 이 도구 자체는 두 추출 JSON만 받으므로 경로 출처와 무관하게 동작한다.
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";

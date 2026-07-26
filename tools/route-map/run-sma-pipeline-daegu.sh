@@ -13,6 +13,9 @@
 #
 # 사용: tools/route-map/run-sma-pipeline-daegu.sh [svg경로] [이전버전추출JSON]
 #   svg 경로 미지정 시 반입된 정본 easy-subway-daegu-v3.svg를 쓴다.
+#   [이전버전추출JSON]은 선택 인자다. 구버전 추출 JSON은 저장소에 상주하지 않으므로
+#   (#2571 보관 조항 폐기) 필요하면 git 히스토리에서 꺼내 경로로 넘긴다. 생략하면
+#   diff 단계를 건너뛴다.
 # 환경: Chrome/Chromium 필요(추출기). CHROME_PATH로 지정 가능.
 set -euo pipefail
 

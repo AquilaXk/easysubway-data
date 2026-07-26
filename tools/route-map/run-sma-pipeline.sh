@@ -4,6 +4,9 @@
 # 오너가 v(N+1) SVG를 주면:
 #   1) 새 SVG를 tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v<N>.svg로 복사
 #   2) tools/route-map/run-sma-pipeline.sh <svg경로> [이전버전추출JSON]
+#   [이전버전추출JSON]은 선택 인자다. 구버전 추출 JSON은 저장소에 상주하지 않으므로
+#   (#2571 보관 조항 폐기) 필요하면 git 히스토리에서 꺼내 경로로 넘긴다. 생략하면
+#   diff 단계를 건너뛴다.
 # 하면 추출→canonical 정합→track→투영→enrich(팩 재빌드)까지 재실행하고,
 # 이전 추출 JSON을 주면 버전 diff 리포트까지 산출한다.
 #
