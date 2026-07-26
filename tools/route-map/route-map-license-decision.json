@@ -3,7 +3,7 @@
   "artifactKind": "route-map-license-decision",
   "issue": 1637,
   "decidedAt": "2026-07-12",
-  "summary": "부산·대구·대전·광주 노선도는 원본 SVG 이미지를 앱 렌더링 source of truth로 쓰지 않고, 역 좌표·노선 위상(사실 데이터) 기반 자체 schematic layout으로 그린다(대안 A). [2026-07-16 #2068] 5권역 SVG의 오너 자작 노선 형상과 기존 역·환승 심벌만 빌드타임 컴파일(vector_graphics)해 바탕층으로 사용한다. SVG의 역명·제목·범례·서비스 아이콘·브랜드 표장은 배포 .vec에서 제외하고 구조화 데이터가 라벨·인터랙션을 담당한다. 역 탭 히트·focus 카메라·팝오버 앵커·경로 강조 등 인터랙션은 구조화 좌표(route_map_positions)가 진실 출처다.",
+  "summary": "부산·대구·대전·광주 노선도는 원본 SVG 이미지를 앱 렌더링 source of truth로 쓰지 않고, 역 좌표·노선 위상(사실 데이터) 기반 자체 schematic layout으로 그린다(대안 A). [2026-07-16 #2068] 5권역 SVG의 오너 자작 노선 형상과 기존 역·환승 심벌만 빌드타임 컴파일(vector_graphics)해 바탕층으로 사용한다. SVG의 역명·제목·범례·서비스 아이콘·브랜드 표장은 배포 .vec에서 제외하고 구조화 데이터가 라벨·인터랙션을 담당한다. [2026-07-26 #2068] 오너 결정으로 배포 범위가 바뀌었다 — 역명 라벨과 KTX·SRT 표장을 포함한 **지도 본문 요소 전수**를 배포 .vec에 굽고(\"글자도 복붙\"), 제목·헤더·범례·상단 설명 박스 같은 **캔버스 장식은 계속 제외**한다(\"장식 제거\"). 라이선스 판단은 바뀌지 않는다(5권역 SVG 전부 오너 자작·자체 라이선스라 attribution 불요) — 바뀐 것은 \"무엇이 배포되는가\"의 사실 기술이다. 역 탭 히트·focus 카메라·팝오버 앵커·경로 강조 등 인터랙션은 구조화 좌표(route_map_positions)가 진실 출처다.",
   "renderingSourceOfTruth": "structured-data",
   "renderingSourceOfTruthNote": "renderingSourceOfTruth는 역 탭 히트·focus 카메라·팝오버 앵커·경로 강조 등 인터랙션 로직이 신뢰하는 데이터 출처를 가리키며, 화면에 그려지는 바탕(basemap) 이미지의 paint 소스와는 다른 축이다. [2026-07-13 #2068] self-drawn-hybrid-basemap 전략에서도 바탕은 자작 SVG(빌드타임 vector_graphics 컴파일)를 렌더하지만, 인터랙션은 그대로 구조화 데이터를 신뢰하므로 이 필드는 structured-data를 유지한다.",
   "reviewStatusValues": [
@@ -23,16 +23,26 @@
     "hybrid-basemap-source"
   ],
   "distributedBasemapContentPolicy": {
-    "included": "각 SVG의 현재 운행 노선 형상과 기존 역·환승 심벌 포함",
+    "revisedAt": "2026-07-26",
+    "revisionNote": "[2026-07-26 #2068] 오너 결정(\"글자도 복붙\"·\"장식 제거\")으로 배포 .vec의 포함 범위를 지도 본문 요소 전수로 넓혔다. 이 개정은 라이선스 판단의 변경이 아니라 **무엇이 배포되는가**에 대한 사실 기술의 갱신이다 — 5권역 SVG가 전부 오너 자작·자체 라이선스(LicenseRef-Self-Drawn)라는 전제는 그대로이고, 그 전제에서 attribution 불요·상용 허용 결론도 그대로다. 종전 excluded 목록은 실제 배포물과 어긋난 채 남아 있었고 이를 고정하는 계약 테스트가 없어 드리프트가 조용히 발생했다(리뷰 M1). 아래 두 목록은 route-map-license-decision.test.mjs가 실제 컴파일 입력과 대조해 고정한다.",
+    "included": [
+      "현재 운행 노선 형상(route-lines·terminal-route-extensions)",
+      "역·환승·종점 심벌(station-symbols·transfer-station-symbols·terminal-station-symbols)",
+      "노선 배지(terminal-route-badges·line-terminal-badges·route-midline-markers·route-number-badges)",
+      "SVG station-name label text",
+      "KTX/SRT service marks drawn by the owner in the map body"
+    ],
     "excluded": [
-      "SVG station-name/title/legend text",
-      "service markers",
-      "Font Awesome airport pictogram",
-      "KTX/SRT and other brand marks",
+      "map title, header bar and status chips",
+      "legend and top route-line explanation box",
+      "card background, border and page background",
+      "component spec library samples (display:none)",
+      "header legend samples of KTX/SRT logos",
       "planned or construction routes absent from structured catalog"
     ],
-    "licenseEffect": "배포 .vec에는 오너 자작 노선 형상과 역 심벌만 남으므로 앱 화면 attribution은 요구되지 않는다. 원본 SVG 저장소에 포함된 제3자 아이콘·브랜드 표장의 provenance와 권리는 배포 basemap 계약과 별도로 관리한다.",
-    "buildManifest": "tools/route-map/basemap-build-manifest.json"
+    "licenseEffect": "배포 .vec에는 오너 자작 SVG의 지도 본문 요소(노선 형상·역 심벌·배지·역명 라벨·오너가 직접 배치한 KTX·SRT 표장)가 담긴다. 5권역 SVG가 전부 오너 자작(LicenseRef-Self-Drawn)이므로 앱 화면 attribution은 요구되지 않는다. KTX·SRT는 제3자 상표이며 오너가 도식에 서비스 안내 목적으로 직접 그려 넣은 표장이 배포물에 포함된다 — 상표의 명목적 사용(nominative use, 해당 역의 고속철 환승 안내)이라는 전제이고, 이 전제가 흔들리면 표장을 EXCLUDED_DECOR 계약으로 옮겨 다시 제외할 수 있다(compile-basemap-vec.mjs의 명시 목록). 원본 SVG 저장소에 포함된 제3자 아이콘의 provenance는 배포 basemap 계약과 별도로 관리한다.",
+    "buildManifest": "tools/route-map/basemap-build-manifest.json",
+    "contractTest": "tools/route-map/route-map-license-decision.test.mjs"
   },
   "regions": [
     {

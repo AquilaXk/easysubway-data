@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "dae626b7d782da5c00a228284fbb8fdcdb05df77ff842d245ba4d372b09b53c2",
-    "outputSqliteSha256": "d190d92a261d94707c93a0cd7e6c66cd8cc271de51d5566c7d6e165ab6a9e862",
-    "byteSize": 344607,
-    "byteSizeDelta": -14712
+    "outputSha256": "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
+    "outputSqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
+    "byteSize": 345541,
+    "byteSizeDelta": -13778
   },
   "readmissions": [
     {
@@ -1064,6 +1064,235 @@
           "rowsRemoved": 0,
           "rowsAdded": 0,
           "rowsChanged": 42
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-26T05:26:54.129Z",
+      "provenance": "오너 승인 2026-07-26 — #2068 SVG 충실도 트랙: 부산 v3 재수정본 무수정 재반입에 따른 route_map 좌표·track 재생성(ITX 위상 불변)",
+      "previousPack": {
+        "sha256": "dae626b7d782da5c00a228284fbb8fdcdb05df77ff842d245ba4d372b09b53c2",
+        "sqliteSha256": "d190d92a261d94707c93a0cd7e6c66cd8cc271de51d5566c7d6e165ab6a9e862",
+        "byteSize": 344607
+      },
+      "newPack": {
+        "sha256": "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
+        "sqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
+        "byteSize": 345541
+      },
+      "byteSizeDelta": 934,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "route_map_line_tracks",
+          "previousRowCount": 48,
+          "newRowCount": 48,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 6,
+          "detail": {
+            "removed": [],
+            "added": [],
+            "changed": [
+              {
+                "previous": {
+                  "region": "부산권",
+                  "line_id": "line-f52eb59d8497",
+                  "track_index": 0,
+                  "path": "M 5817 4060.853 L 5817 3938 L 5817 3665 L 5817 3418 L 5817 3117 L 5924.62 3009.38 L 6232 2702 L 6232 3060 L 7258 3060 L 7762 3060 L 8259 3060 L 8783 3060 L 9236 3060 L 9236 3095 L 9280 3095 L 9425 2950 L 9566.5 2808.5 L 9697.5 2677.5 L 9819.5 2555.5 L 9921.5 2453.5 L 10040 2335 L 10152.5 2222.5 L 10262 2113 L 10377 1998 L 10484.5 1890.5 L 10590.5 1784.5 L 10694.5 1680.5 L 10798.5 1576.5 L 10932.584 1442.416",
+                  "svg_color": "#1c63b7",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784985386
+                },
+                "new": {
+                  "region": "부산권",
+                  "line_id": "line-f52eb59d8497",
+                  "track_index": 0,
+                  "path": "M 5817 4060.853 L 5817 3938 L 5817 3665 L 5817 3418 L 5817 3117 L 5924.62 3009.38 L 6232 2702 L 6232 3060 L 7258 3060 L 7762 3060 L 8259 3060 L 8783 3060 L 9236 3060 L 9236 3095 L 9280 3095 L 9425 2950 L 9566.5 2808.5 L 9697.5 2677.5 L 9819.5 2555.5 L 9921.5 2453.5 L 10040 2335 L 10152.5 2222.5 L 10262 2113 L 10377 1998 L 10484.5 1890.5 L 10590.5 1784.5 L 10694.5 1680.5 L 10798.5 1576.5 L 10932.584 1442.416",
+                  "svg_color": "#1c63b7",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785042014
+                }
+              },
+              {
+                "previous": {
+                  "region": "부산권",
+                  "line_id": "line-e4cce88f0d7f",
+                  "track_index": 0,
+                  "path": "M 3499.258 4420.258 L 3496 4417 L 2920 4417 L 2156 4417 L 1737.8 4417 L 1574.5 4253.7 L 1574.5 4046 L 1574.5 3449 L 1574.5 3000 L 1574.5 2700 L 1561.246 2700 L 1355 2700 L 1145 2700 L 924 2700 L 889.603 2700 L 807.5 2617.897 L 807.5 2549 L 807.5 2381 L 807.5 2221 L 807.5 2055 L 807.5 1923 L 807.5 1786 L 807.5 1657 L 807.5 1527 L 807.5 1412 L 807.5 1298 L 807.5 1184 L 807.5 1055.389",
+                  "svg_color": "#854eac",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784985386
+                },
+                "new": {
+                  "region": "부산권",
+                  "line_id": "line-e4cce88f0d7f",
+                  "track_index": 0,
+                  "path": "M 3499.258 4420.258 L 3496 4417 L 2920 4417 L 2156 4417 L 1737.8 4417 L 1574.5 4253.7 L 1574.5 4046 L 1574.5 3449 L 1574.5 3000 L 1574.5 2700 L 1561.246 2700 L 1355 2700 L 1145 2700 L 924 2700 L 889.603 2700 L 807.5 2617.897 L 807.5 2549 L 807.5 2381 L 807.5 2221 L 807.5 2055 L 807.5 1923 L 807.5 1786 L 807.5 1657 L 807.5 1527 L 807.5 1412 L 807.5 1298 L 807.5 1184 L 807.5 1055.389",
+                  "svg_color": "#854eac",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785042014
+                }
+              },
+              {
+                "previous": {
+                  "region": "부산권",
+                  "line_id": "line-d812a5bc1e5f",
+                  "track_index": 0,
+                  "path": "M 5557.301 2704 L 5514 2704 L 6230 2704 L 6425 2704 L 6622 2704 L 6777.042 2704 L 6867 2704 L 6997 2574 L 7163 2408 L 7323.5 2247.5 L 7479.5 2091.5 L 7622.5 1948.5 L 7742 1829 L 7872.5 1698.5 L 7999.5 1571.5 L 8128.5 1442.5 L 8254.457 1316.543",
+                  "svg_color": "#7189c5",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784985386
+                },
+                "new": {
+                  "region": "부산권",
+                  "line_id": "line-d812a5bc1e5f",
+                  "track_index": 0,
+                  "path": "M 5557.301 2704 L 5514 2704 L 6230 2704 L 6425 2704 L 6622 2704 L 6777.042 2704 L 6867 2704 L 6997 2574 L 7163 2408 L 7323.5 2247.5 L 7479.5 2091.5 L 7622.5 1948.5 L 7742 1829 L 7872.5 1698.5 L 7999.5 1571.5 L 8128.5 1442.5 L 8254.457 1316.543",
+                  "svg_color": "#7189c5",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785042014
+                }
+              },
+              {
+                "previous": {
+                  "region": "부산권",
+                  "line_id": "line-d74614a04530",
+                  "track_index": 0,
+                  "path": "M 1570 2703.03 L 1570 2700 L 2077 2700 L 2532 2700 L 3019 2700 L 3482 2700 L 4035 2700 L 4512 2700 L 4992 2700 L 5404.314 2700 L 5514 2700 L 5514 2802.75 L 5514 2951 L 5514 3254 L 5514 3315.395 L 5618.605 3420 L 5813 3420 L 6261 3420 L 6802 3420 L 7545 3420 L 8224 3420 L 8687.664 3420 L 8733.828 3466.164 L 8733.828 3681.598 L 8780.98 3728.75 L 9072 3728.75 L 9072 3733.905",
+                  "svg_color": "#d49329",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784985386
+                },
+                "new": {
+                  "region": "부산권",
+                  "line_id": "line-d74614a04530",
+                  "track_index": 0,
+                  "path": "M 1570 2703.03 L 1570 2700 L 2077 2700 L 2532 2700 L 3019 2700 L 3482 2700 L 4035 2700 L 4512 2700 L 4992 2700 L 5404.314 2700 L 5514 2700 L 5514 2802.75 L 5514 2951 L 5514 3254 L 5514 3315.395 L 5618.605 3420 L 5813 3420 L 6261 3420 L 6802 3420 L 7545 3420 L 8224 3420 L 8687.664 3420 L 8733.828 3466.164 L 8733.828 3681.598 L 8780.98 3728.75 L 9072 3728.75 L 9072 3733.905",
+                  "svg_color": "#d49329",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785042014
+                }
+              },
+              {
+                "previous": {
+                  "region": "부산권",
+                  "line_id": "line-eb7b47920390",
+                  "track_index": 0,
+                  "path": "M 3488 1103.482 L 3488 1208 L 3488 1336 L 3488 1489 L 3488 1625 L 3488 1761 L 3488 1881 L 3488 2015 L 3488 2166 L 3488 2320 L 3488 2465 L 3488 2705 L 3488 2980 L 3488 3280 L 3488 3569 L 3488 3814 L 3488 4092 L 3488 4417 L 3496 4417 L 3885 4417 L 4159 4417 L 4495 4417 L 4834 4417 L 5171 4417 L 5510 4417 L 5852 4417 L 6263 4417 L 6597 4417 L 7098 4417 L 7573 4417 L 7964 4417 L 8319 4417 L 8624 4417 L 8950 4417 L 8976.574 4417 L 9079.787 4313.787 L 9075 4313.787 L 9075 4132 L 9075 3955 L 9075 3727 L 9075 3493 L 9075 3269 L 9140.21 3203.79 L 9185.47 3158.53 L 9242.5 3101.5 L 9523 3101.5 L 9819 3101.5 L 10126 3101.5 L 10419 3101.5 L 10567.467 3101.5",
+                  "svg_color": "#a6da53",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784985386
+                },
+                "new": {
+                  "region": "부산권",
+                  "line_id": "line-eb7b47920390",
+                  "track_index": 0,
+                  "path": "M 3488 1103.482 L 3488 1208 L 3488 1336 L 3488 1489 L 3488 1625 L 3488 1761 L 3488 1881 L 3488 2015 L 3488 2166 L 3488 2320 L 3488 2465 L 3488 2705 L 3488 2980 L 3488 3280 L 3488 3569 L 3488 3814 L 3488 4092 L 3488 4417 L 3496 4417 L 3885 4417 L 4159 4417 L 4495 4417 L 4834 4417 L 5171 4417 L 5510 4417 L 5852 4417 L 6263 4417 L 6597 4417 L 7098 4417 L 7573 4417 L 7964 4417 L 8319 4417 L 8624 4417 L 8950 4417 L 8976.574 4417 L 9079.787 4313.787 L 9075 4313.787 L 9075 4132 L 9075 3955 L 9075 3727 L 9075 3493 L 9075 3269 L 9140.21 3203.79 L 9185.47 3158.53 L 9242.5 3101.5 L 9523 3101.5 L 9819 3101.5 L 10126 3101.5 L 10419 3101.5 L 10567.467 3101.5",
+                  "svg_color": "#a6da53",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785042014
+                }
+              },
+              {
+                "previous": {
+                  "region": "부산권",
+                  "line_id": "line-ab1a041f6266",
+                  "track_index": 0,
+                  "path": "M 3322.687 5724 L 3052 5724 L 2680 5724 L 2402 5724 L 2102 5724 L 1787 5724 L 1773 5724 L 1654.738 5605.738 L 1627.5 5578.5 L 1627.5 5385 L 1627.5 5215 L 1627.5 5010 L 1658.708 4978.792 L 1774.25 4863.25 L 1846 4863.25 L 2148 4863.25 L 2453 4863.25 L 2794 4863.25 L 3179 4863.25 L 3570 4863.25 L 3939 4863.25 L 4304 4863.25 L 4700 4863.25 L 5054 4863.25 L 5388 4863.25 L 5721 4863.25 L 6052 4863.25 L 6139.036 4863.25 L 6235.625 4766.661 L 6235.625 4725 L 6235.625 4562 L 6235.625 4423 L 5783.813 3971.188 L 6233 3971.188 L 6233 3654 L 6233 3420 L 6233 3060 L 6233 2700 L 6233 2457 L 6233 2290 L 6233 2116 L 6233 1956 L 6233 1810 L 6233 1665 L 6233 1521 L 6233 1365 L 6233 1207 L 6233 1072.488",
+                  "svg_color": "#f68712",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784985386
+                },
+                "new": {
+                  "region": "부산권",
+                  "line_id": "line-ab1a041f6266",
+                  "track_index": 0,
+                  "path": "M 3322.687 5724 L 3052 5724 L 2680 5724 L 2402 5724 L 2102 5724 L 1787 5724 L 1773 5724 L 1654.738 5605.738 L 1627.5 5578.5 L 1627.5 5385 L 1627.5 5215 L 1627.5 5010 L 1658.708 4978.792 L 1774.25 4863.25 L 1846 4863.25 L 2148 4863.25 L 2453 4863.25 L 2794 4863.25 L 3179 4863.25 L 3570 4863.25 L 3939 4863.25 L 4304 4863.25 L 4700 4863.25 L 5054 4863.25 L 5388 4863.25 L 5721 4863.25 L 6052 4863.25 L 6139.036 4863.25 L 6235.625 4766.661 L 6235.625 4725 L 6235.625 4562 L 6235.625 4423 L 5783.813 3971.188 L 6233 3971.188 L 6233 3654 L 6233 3420 L 6233 3060 L 6233 2700 L 6233 2457 L 6233 2290 L 6233 2116 L 6233 1956 L 6233 1810 L 6233 1665 L 6233 1521 L 6233 1365 L 6233 1207 L 6233 1072.488",
+                  "svg_color": "#f68712",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785042014
+                }
+              }
+            ]
+          }
         }
       ]
     }

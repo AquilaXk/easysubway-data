@@ -46,6 +46,13 @@ const outDir = path.join(
 );
 const dartBin = process.env.DART_BIN ?? "dart";
 const compilerVersion = "1.2.6";
+// 바탕층 컴파일 파이프라인의 산출 의미 개정 번호(#2068 리뷰 M2, 2026-07-26).
+// compiler.version(=pubspec.lock에 잠긴 vector_graphics_compiler 패키지 버전)과
+// 분리해, "무엇을 굽는가"가 바뀔 때만 올린다.
+//   1 — 노선 형상 + 역 심벌만 굽던 시기(라벨은 앱 솔버가 그림)
+//   2 — 지도 본문 레이어 전수(역명 라벨·표장·중간표기·노선번호 배지 포함)를 굽고
+//       캔버스 장식은 명시 계약으로 제외(오너 결정 "글자도 복붙"·"장식 제거")
+const basemapPipelineRevision = 2;
 const buildManifestPath = path.join(
   root,
   "tools/route-map/basemap-build-manifest.json",
@@ -83,7 +90,10 @@ function normalizeFontWeightValue(raw) {
 //   1) 비표준 font-weight: 속성형·CSS 선언형 모두 가장 가까운 100 배수로.
 //   2) 다중값 x/y/dx/dy(예: <text dy="0 0 0 0">의 per-glyph 리스트): 컴파일러의
 //      DoubleOrPercentage.fromString은 단일 double만 파싱하므로 첫 토큰만 남긴다.
-//      (자작 SVG의 해당 값은 전부 0 리스트라 첫 토큰 축약이 시각적으로 무해하다.)
+//      (#2068 2026-07-26 정정: "해당 값은 전부 0 리스트"는 더 이상 사실이 아니다 —
+//      busan v3 벡스코가 `dy="0 0 … 59.27"`(19값)를 쓴다. 다만 그 라벨의 글자
+//      수(3)가 0이 아닌 값의 인덱스(18)보다 작아 렌더 결과는 여전히 동일하다.
+//      sidecar 추출도 firstCoordinateToken으로 같은 "첫 토큰만" 규칙을 쓴다.)
 //      `\b`가 아니라 앞에 `[\s"']` 경계를 둬 viewBox 등 다른 속성명은 건드리지 않는다.
 const supportedClassStyleProperties = new Set([
   "alignment-baseline",
@@ -216,21 +226,428 @@ function mapWrapperTransform(svgText) {
   return parts.length ? parts.join(" ") : undefined;
 }
 
-// #2068 대전·광주 v3: 오너가 KTX·SRT 마크를 별도 레이어가 아니라 역명 라벨
-// 레이어(station-name-labels-layer) 안 역 앵커 그룹
-// `<g id="rail-service-marks-…" class="rail-service-marks" data-services="KTX,SRT">`
-// 으로 옮겼다(v1의 rail-transfer-layer는 두 권역 모두 내용이 빈 껍데기였다 —
-// 실측). 역명 라벨 레이어는 바탕층 allow-list 밖(역명은 구조화 오버레이 담당)
-// 이라 그대로 두면 마크가 통째로 사라진다. 부산·대구가 service-tags-layer로
-// 반입하는 것과 같은 성격의 지도 본문 심벌이므로 그 그룹만 골라 최상단에
-// 반입한다(마크가 라벨·심벌 위에 오도록). 이 클래스가 없는 권역은 빈 문자열.
-function extractRailServiceMarkGroups(svgText) {
-  return [
-    ...svgText.matchAll(/<g\b[^>]*\bid="(rail-service-marks-[^"]+)"[^>]*>/g),
-  ]
-    .map((match) => extractGroup(svgText, match[1]))
-    .filter(Boolean)
-    .join("\n");
+// ── 지도 본문 / 캔버스 장식 분류 계약(#2068 오너 결정 2026-07-26) ─────────────
+//
+// 오너 판정: "버그 전부 SVG를 그대로 가져다 쓰지 않아서 발생". 바탕층(.vec)은
+// 오너 SVG의 **지도 본문 요소 전수**(노선·심벌·배지·표장·역명 라벨)를 그대로
+// 굽는다. 반대로 캔버스 장식(제목·헤더·범례·상단 설명 박스·카드 배경/테두리)은
+// 앱이 자체 UI로 그리므로 반입하지 않는다(오너 추가 지시 2026-07-26).
+//
+// 두 목록을 **명시 계약**으로 선언한다 — 화이트리스트에 "없어서" 조용히 빠지는
+// 구조를 금지한다. 새 레이어가 오너 SVG에 생기면 세 목록 어디에도 없어서
+// classifyLayerId가 "unclassified"를 내고 분류 완전성 게이트
+// (compile-basemap-vec.test.mjs)가 실패한다 — 사람이 본문/장식/구조 래퍼를
+// 판정해 등재해야 한다. 반대 방향(장식이 조용히 반입되는 것)도 같은 게이트가
+// 컴파일 산출 안에 장식 id가 없음을 확인해 막는다.
+
+// 역명 라벨 레이어 자리표시자 — 실제 id가 권역마다 달라(아래
+// resolveStationNameLabelLayerId) 런타임에 해석한다. 반입 순서(z-순서)에서의
+// 위치만 이 상수로 고정한다.
+const LABEL_LAYER_PLACEHOLDER_ID = "@station-name-labels-layer";
+
+// 지도 본문 레이어 — 아래 순서대로 이어붙여 컴파일한다(= 렌더 z-순서, 오너 SVG
+// 문서 순서와 동일). 미보유 권역은 extractGroup이 빈 문자열을 내 영향이 없다.
+const MAP_BODY_LAYER_IDS = [
+  "transfer-station-shell-underlay-layer",
+  "route-lines-layer",
+  // #2408 수도권: 오너가 직접 제작한 종점 노선 심볼 연결 연장선. route-lines-layer
+  // 직후(오너 SVG 문서 순서)에 이어 노선 형상과 같은 하단 층위로 렌더한다.
+  "terminal-route-extensions-layer",
+  "route-endpoint-markers-layer",
+  "terminal-station-symbols-layer",
+  "station-symbols-layer",
+  "transfer-station-symbols-layer",
+  // #2068 SVG 충실도(2026-07-26): 수도권 노선 중간 표기(route-midline-markers-v2).
+  // 지도 본문 심벌인데도 allow-list에 없어 조용히 누락돼 있었다 — 오너 도식에는
+  // 있고 앱에는 없던 차이. 오너 문서 순서대로 환승 심벌 위·종점 배지 아래에 둔다.
+  "route-midline-markers-layer",
+  // #2408 수도권: 오너 직접 제작 종점 노선 심볼(캡슐 배지). 각 칩 그룹의 축정렬
+  // 스케일은 foldTerminalChipScale이 선보정한다.
+  "terminal-route-badges-layer",
+  // #2068 종점 호선 마크(원+숫자/캡슐) — 대구 전용. 수도권은 #2408에서 이 레이어를
+  // 걷어내고 terminal-route-badges-layer(오너 칩)로 대체했다(상호배타).
+  "line-terminal-badges-layer",
+  // #2068 KTX·SRT·공항 표장: service-tag(inline-svg-paths 벡터 로고) 레이어.
+  "service-tags-layer",
+  // #2068 대전·광주 v1 형식의 rail chip 레이어(v3 재제작본에서는 비었거나 없음).
+  "rail-transfer-layer",
+  // #2068 SVG 충실도(2026-07-26, 오너 결정): **역명 라벨도 바탕층에 그대로 굽는다.**
+  // "글자도 복붙" — 화면이 SVG와 픽셀 동일해야 한다. 이 레이어는 권역마다 id가
+  // 달라(id 또는 class=label-layer) resolveStationNameLabelLayerId가 해석한다.
+  // 대전·광주의 KTX·SRT 표장(rail-service-marks)이 이 레이어 안에 있어 함께 반입된다.
+  LABEL_LAYER_PLACEHOLDER_ID,
+  // #2068 대전: 지도 본문 위 노선 번호 배지(map-line-number-badge). 오너 문서
+  // 순서상 역명 라벨 다음(최상단)이다.
+  "route-number-badges-layer",
+];
+
+// 좌표계를 옮기기만 하는 구조 래퍼 — 그 자체는 본문도 장식도 아니고, 자식이
+// 각각 분류된다. compiled-map-coordinate-layer(mapWrapperTransform)가 이 변환을
+// 흡수한다.
+const STRUCTURAL_WRAPPER_LAYER_IDS = [
+  "map-card-clipped-content-layer",
+  "main-map-scaled-layer",
+  "map-content-positioned-layer",
+  "subway-map-all-current-lines-layer",
+];
+
+// 캔버스 장식 — 바탕층에 절대 반입하지 않는다(오너 지시 2026-07-26). 앱이 자체
+// 헤더·범례 UI로 그리는 영역이라 바탕층에 들어가면 지도 위에 유령 텍스트로 남는다.
+const EXCLUDED_DECOR_LAYERS = [
+  {
+    id: "header-title-legend-and-status-layer",
+    reason: "제목·상태 배지 헤더 바 — 앱 앱바가 담당",
+  },
+  {
+    id: "header-complete-route-badges-layer",
+    reason: "헤더 전체 노선 약어 배지 — 앱 범례 UI가 담당",
+  },
+  {
+    id: "top-route-line-explanation-layer",
+    reason: "상단 간선 노선 설명 박스(범례) — 앱 범례 UI가 담당",
+  },
+  { id: "legend-layer", reason: "광주 범례 — 앱 범례 UI가 담당" },
+  {
+    id: "route-label-badges-layer",
+    reason:
+      "오너가 display:none으로 폐기한 구버전 노선 중간표기(route-midline-markers-v2로 대체)",
+  },
+  {
+    id: "sma-v4-component-spec-library",
+    reason: "컴포넌트 규격 견본(display:none) — 지도 본문 아님",
+  },
+  { id: "header-line-chip", reason: "광주 헤더 노선 칩" },
+  { id: "header-status-chip", reason: "광주 헤더 상태 칩" },
+];
+
+const EXCLUDED_DECOR_LAYER_ID_SET = new Set(
+  EXCLUDED_DECOR_LAYERS.map((layer) => layer.id),
+);
+
+// 역명 라벨 레이어 id는 권역마다 다르다(실측):
+//   busan·daegu·daejeon·gwangju : id="station-name-labels-layer"
+//   seoul                        : id="station-label-group-전곡"(Inkscape가 첫 역명
+//                                  그룹 id를 상속시킨 사고성 이름) — 공통 표식은
+//                                  class="label-layer"뿐이다.
+// id 우선, 없으면 class=label-layer로 해석한다. 둘 다 없으면 null(라벨 레이어
+// 미보유 권역 — 현행 5권역엔 없음).
+export function resolveStationNameLabelLayerId(svgText) {
+  if (svgText.includes('id="station-name-labels-layer"')) {
+    return "station-name-labels-layer";
+  }
+  const classMatch = svgText.match(
+    /<g\b(?=[^>]*\bclass="[^"]*\blabel-layer\b[^"]*")[^>]*\bid="([^"]+)"[^>]*>/,
+  );
+  return classMatch ? classMatch[1] : null;
+}
+
+/**
+ * 레이어 id 하나를 본문/장식/구조 래퍼로 분류한다. 세 목록 어디에도 없으면
+ * "unclassified" — 분류 완전성 게이트가 실패한다(조용한 누락·조용한 반입 금지).
+ */
+export function classifyLayerId(layerId, labelLayerId) {
+  if (layerId === labelLayerId) return "map-body";
+  if (MAP_BODY_LAYER_IDS.includes(layerId)) return "map-body";
+  if (EXCLUDED_DECOR_LAYER_ID_SET.has(layerId)) return "decor";
+  if (STRUCTURAL_WRAPPER_LAYER_IDS.includes(layerId)) return "structural";
+  return "unclassified";
+}
+
+/** 권역 SVG의 레이어 후보 id 전수(= 분류 게이트 입력). */
+export function svgLayerCandidateIds(svgText) {
+  const ids = new Set();
+  for (const match of svgText.matchAll(/<g\b[^>]*>/g)) {
+    const tag = match[0];
+    const id = (tag.match(/\bid="([^"]*)"/) || [])[1];
+    if (!id) continue;
+    const className = (tag.match(/\bclass="([^"]*)"/) || [])[1] ?? "";
+    const classes = className.split(/\s+/);
+    if (
+      id.endsWith("-layer") ||
+      classes.includes("render-layer") ||
+      classes.includes("label-layer")
+    ) {
+      ids.add(id);
+    }
+  }
+  return [...ids].sort(codepointCompare);
+}
+
+// ── KTX·SRT 표장 전수 수집(#2068 오너 지적 2026-07-26) ────────────────────────
+//
+// 종전 구현은 수도권 표장을 id 정규식 두 개
+// (`logo-ktx-inline-vector-footer-0-6-9-\d+` · `logo-srt-inline-vector-footer-2-6-2-\d+`)
+// 로만 잡았다. 오너가 v4에서 일부 마크를 `<g id="rail-service-logo-chip-ktx-srt">`
+// 안으로 옮기면서 그 id들이 패턴을 벗어나 **실제 역 표장 6건이 조용히 누락**됐다
+// (실측: 반입 18/24 — 누락분은 전부 chip 안의 비어 있지 않은 로고 그룹).
+// 패턴 나열을 버리고 **문서 전수 수집 + 명시 제외**로 뒤집는다.
+//
+// 표장 판정(오너 지시 그대로): `<g>`의 id/class에 logo-ktx·logo-srt가 있거나,
+// id가 rail-service-marks-로 시작하거나, class에 rail-service-marks·service-tag가
+// 있거나, data-services 속성이 있는 요소.
+const MARK_ID_PATTERN = /logo-ktx|logo-srt|^rail-service-marks-/;
+const MARK_CLASS_NAMES = ["rail-service-marks", "service-tag"];
+
+function isServiceMarkOpenTag(openTag) {
+  const id = (openTag.match(/\bid="([^"]*)"/) || [])[1] ?? "";
+  const className = (openTag.match(/\bclass="([^"]*)"/) || [])[1] ?? "";
+  if (/\bdata-services="/.test(openTag)) return true;
+  if (MARK_ID_PATTERN.test(id)) return true;
+  if (/logo-ktx|logo-srt/.test(className)) return true;
+  return className.split(/\s+/).some((name) => MARK_CLASS_NAMES.includes(name));
+}
+
+// SVG 요소 트리(여는 태그 스트림 기반). 표장 전수 수집과 장식 bbox 판정만
+// 사용한다 — 기존 레이어 슬라이스 경로(extractGroup)는 그대로 둔다.
+function buildSvgTree(svgText) {
+  const root = {
+    name: "#root",
+    openTag: "",
+    start: 0,
+    end: svgText.length,
+    children: [],
+    parent: null,
+  };
+  const stack = [root];
+  for (const match of svgText.matchAll(
+    /<(\/?)([A-Za-z][\w:.-]*)\b([^>]*?)(\/?)>/g,
+  )) {
+    const [full, closing, name, , selfClosing] = match;
+    if (closing) {
+      if (stack.length > 1) {
+        stack[stack.length - 1].end = match.index + full.length;
+        stack.pop();
+      }
+      continue;
+    }
+    const node = {
+      name,
+      openTag: full,
+      start: match.index,
+      end: match.index + full.length,
+      children: [],
+      parent: stack[stack.length - 1],
+    };
+    stack[stack.length - 1].children.push(node);
+    if (!selfClosing) stack.push(node);
+  }
+  return root;
+}
+
+function nodeAttr(node, name) {
+  return (node.openTag.match(new RegExp(`\\b${name}="([^"]*)"`)) || [])[1];
+}
+
+function isHiddenNode(node) {
+  if (nodeAttr(node, "display") === "none") return true;
+  const style = nodeAttr(node, "style") ?? "";
+  return /display\s*:\s*none/.test(style);
+}
+
+/** 조상(자기 자신 제외) transform 체인을 합성한 행렬. */
+function ancestorMatrixOf(node) {
+  const chain = [];
+  for (let p = node.parent; p && p.name !== "#root"; p = p.parent) chain.unshift(p);
+  let matrix = IDENTITY_MATRIX;
+  for (const ancestor of chain) {
+    const transform = nodeAttr(ancestor, "transform");
+    if (transform) matrix = composeMatrix(matrix, parseTransformChain(transform));
+  }
+  return matrix;
+}
+
+/** 여는 태그와 닫는 태그 사이의 본문 텍스트(자기폐쇄면 빈 문자열). */
+function nodeInnerText(svgText, node) {
+  if (node.openTag.endsWith("/>")) return "";
+  const innerStart = node.start + node.openTag.length;
+  const innerEnd = Math.max(node.end - `</${node.name}>`.length, innerStart);
+  return svgText.slice(innerStart, innerEnd);
+}
+
+function nodeBounds(svgText, node, matrix) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const ownTransform = nodeAttr(node, "transform");
+  const own = ownTransform
+    ? composeMatrix(matrix, parseTransformChain(ownTransform))
+    : matrix;
+  collectShapeBoundsRecursive(nodeInnerText(svgText, node), own, (x, y) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  });
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+// ── 장식 표장 견본 명시 목록(#2068 리뷰 M5, 2026-07-26) ──────────────────────
+//
+// 오너 수도권 v4는 헤더 범례용 KTX·SRT 로고 **견본** 2건을 지도 본문 마크 6건과
+// **같은 chip 그룹 안**(`rail-service-logo-chip-ktx-srt`)에 담았다 — 컨테이너
+// 소속으로는 못 가른다. 종전 구현은 오직 기하 규칙(장식 레이어 bbox 안이면 장식)
+// 하나로 갈랐는데, 실측 여유가 **148단위(viewBox 높이의 4.9%)** 뿐이라
+// (최상단 본문 표장 `logo-ktx-inline-vector-footer-0-6-9-4`의 minY=388.23 vs
+// 상단 설명 박스 하단 240) 오너가 상단 설명 박스를 키우거나 도면 최상단 역에
+// 표장을 추가하면 **본문 표장이 조용히 장식으로 오판**돼 바탕층에서 사라진다.
+//
+// 그래서 판정을 두 단계로 나눈다:
+//   1) **명시 견본 목록**(아래) — id가 확정된 장식 견본만 무조건 제외한다.
+//      오너가 견본을 어디로 옮겨도 제외가 유지되고, 반대로 본문 표장이 장식
+//      영역에 가까워져도 이 목록에 없으면 절대 제외되지 않는다.
+//   2) **기하 판정**(장식 레이어 bbox 안) — 목록에 없는 표장이 장식 영역에
+//      들어앉으면 **조용히 빼지 않고 실패**시킨다(fail-closed). 새 장식 견본이
+//      생기면 사람이 아래 목록에 사유와 함께 등재해야 한다.
+// 두 규칙의 조합으로 "조용한 누락 금지" 원칙이 기하 여유와 무관하게 성립한다.
+export const DECOR_SERVICE_MARK_SAMPLE_IDS = [
+  {
+    id: "logo-ktx-inline-vector-footer-0",
+    reason:
+      "수도권 헤더 상단 설명 박스의 KTX 범례 견본(translate(1400 0)로 헤더 배지 프레임에 얹혀 있다) — 지도 본문 표장 아님",
+  },
+  {
+    id: "logo-srt-inline-vector-footer-2",
+    reason:
+      "수도권 헤더 상단 설명 박스의 SRT 범례 견본(위와 같은 프레임) — 지도 본문 표장 아님",
+  },
+];
+
+const DECOR_SERVICE_MARK_SAMPLE_ID_SET = new Set(
+  DECOR_SERVICE_MARK_SAMPLE_IDS.map((sample) => sample.id),
+);
+
+/**
+ * 장식 레이어들의 절대 bbox 합집합. 명시 견본 목록 밖의 표장이 이 영역에
+ * 들어앉으면 fail-closed로 빌드를 실패시키는 데 쓴다(위 주석 참고).
+ */
+export function decorLayerBoundsOf(svgText) {
+  return decorBoundsOf(svgText, buildSvgTree(svgText));
+}
+
+function decorBoundsOf(svgText, root) {
+  const bounds = [];
+  (function walk(node) {
+    for (const child of node.children) {
+      const id = nodeAttr(child, "id");
+      if (id && EXCLUDED_DECOR_LAYER_ID_SET.has(id)) {
+        // 렌더되지 않는 장식(display:none)은 화면에 영역을 차지하지 않으므로
+        // 판정 영역에서 뺀다 — 넣으면 수도권 route-label-badges-layer(폐기된
+        // 구버전 중간표기, 지도 본문 전역에 걸쳐 있다)의 bbox가 지도 대부분을
+        // 덮어 정상 표장까지 장식으로 오판한다(실측: 수도권 표장 17→4).
+        if (!isHiddenNode(child)) {
+          const box = nodeBounds(svgText, child, ancestorMatrixOf(child));
+          if (box) bounds.push(box);
+        }
+        continue; // 장식 레이어 내부는 더 볼 필요 없다.
+      }
+      walk(child);
+    }
+  })(root);
+  return bounds;
+}
+
+function centerInsideAny(box, boxes) {
+  const cx = (box.minX + box.maxX) / 2;
+  const cy = (box.minY + box.maxY) / 2;
+  return boxes.some(
+    (b) => cx >= b.minX && cx <= b.maxX && cy >= b.minY && cy <= b.maxY,
+  );
+}
+
+/**
+ * 지도 본문 표장 전수(문서 순서). 반환 항목:
+ *   { id, markup, ancestorTransform, bounds, insideBodyLayer }
+ * - `insideBodyLayer`: 이미 본문 레이어 슬라이스로 반입되는 표장(부산 station-symbols
+ *   -layer, 대구 service-tags-layer, 대전·광주 역명 라벨 레이어). 중복 반입을
+ *   막으려고 별도 반입은 하지 않지만 전수 대조 게이트의 분모에는 포함한다.
+ * - 제외: display:none(자신·조상), 시각 내용이 없는 빈 그룹, 장식 레이어 소속·
+ *   장식 영역 안(헤더 범례 견본), 이미 표장으로 잡힌 요소의 하위 서브그룹.
+ */
+export function collectServiceMarks(svgText) {
+  const root = buildSvgTree(svgText);
+  const labelLayerId = resolveStationNameLabelLayerId(svgText);
+  const bodyLayerIds = new Set(
+    MAP_BODY_LAYER_IDS.filter((id) => id !== LABEL_LAYER_PLACEHOLDER_ID),
+  );
+  if (labelLayerId) bodyLayerIds.add(labelLayerId);
+  const decorBounds = decorBoundsOf(svgText, root);
+  const marks = [];
+
+  (function walk(node, inDecor, inBodyLayer) {
+    for (const child of node.children) {
+      if (child.name === "defs" || child.name === "style") continue;
+      const id = nodeAttr(child, "id") ?? "";
+      const childInDecor = inDecor || EXCLUDED_DECOR_LAYER_ID_SET.has(id);
+      const childInBody = inBodyLayer || bodyLayerIds.has(id);
+      if (isHiddenNode(child)) continue; // display:none 견본·폐기 레이어.
+      // 표장 그룹을 더 담고 있는 `<g>`는 마크가 아니라 컨테이너다(수도권
+      // `rail-service-logo-chip-ktx-srt`는 data-services를 달고 있으면서 안에
+      // 로고 그룹 8개를 담는다 — 컨테이너를 마크로 세면 지도 절반을 덮는 bbox
+      // 하나가 되고 실제 마크 8건이 통째로 사라진다). 내부 마크를 개별로 센다.
+      if (
+        child.name === "g" &&
+        isServiceMarkOpenTag(child.openTag) &&
+        !containsNestedServiceMark(child)
+      ) {
+        const bounds = nodeBounds(svgText, child, ancestorMatrixOf(child));
+        // 시각 내용이 없는 빈 표장(오너 소스의 잔재 `<g/>`)은 반입 대상이 아니다.
+        if (!bounds) {
+          walk(child, childInDecor, childInBody);
+          continue;
+        }
+        // (1) 명시 견본 목록 — id가 확정된 장식 견본만 무조건 제외한다.
+        if (DECOR_SERVICE_MARK_SAMPLE_ID_SET.has(id)) continue;
+        // (2) 장식 레이어 소속이면 제외(레이어 단위 계약).
+        if (childInDecor) continue;
+        // (3) 명시 목록에 없는데 장식 영역에 들어앉았다 — 조용히 빼지 않고
+        //     실패시킨다. 종전에는 여기서 조용히 제외해, 오너가 상단 설명 박스를
+        //     키우거나 도면 최상단에 표장을 추가하면 본문 표장이 소리 없이
+        //     사라졌다(#2068 리뷰 M5). 새 장식 견본이면 사람이
+        //     DECOR_SERVICE_MARK_SAMPLE_IDS에 사유와 함께 등재해야 한다.
+        if (centerInsideAny(bounds, decorBounds)) {
+          throw new Error(
+            `표장 ${id || "(id 없음)"}가 장식 레이어 영역 안에 있습니다 ` +
+              `(bbox [${bounds.minX.toFixed(1)},${bounds.minY.toFixed(1)} .. ` +
+              `${bounds.maxX.toFixed(1)},${bounds.maxY.toFixed(1)}]). ` +
+              "지도 본문 표장이면 장식 레이어 bbox와 겹치지 않게 오너 SVG를 확인하고, " +
+              "장식 견본이면 DECOR_SERVICE_MARK_SAMPLE_IDS에 사유와 함께 등재하세요 " +
+              "— 조용히 누락시키지 않고 실패합니다.",
+          );
+        }
+        marks.push({
+          id,
+          markup: svgText.slice(child.start, child.end),
+          ancestorTransform: ancestorTransformValue(child),
+          bounds,
+          insideBodyLayer: childInBody,
+        });
+        continue; // 하위 서브그룹(로고 path 묶음)은 이 마크에 포함된다.
+      }
+      walk(child, childInDecor, childInBody);
+    }
+  })(root, false, false);
+
+  return marks;
+}
+
+/** 자손에 표장 `<g>`가 하나라도 있으면 true(= 이 노드는 마크가 아니라 컨테이너). */
+function containsNestedServiceMark(node) {
+  return node.children.some(
+    (child) =>
+      (child.name === "g" && isServiceMarkOpenTag(child.openTag)) ||
+      containsNestedServiceMark(child),
+  );
+}
+
+/** 조상 transform 속성값들을 바깥→안 순서로 이어 붙인 문자열(없으면 ""). */
+function ancestorTransformValue(node) {
+  const values = [];
+  for (let p = node.parent; p && p.name !== "#root"; p = p.parent) {
+    const transform = nodeAttr(p, "transform");
+    if (transform) values.unshift(transform);
+  }
+  return values.join(" ");
 }
 
 function extractMapSvg(svgText) {
@@ -256,47 +673,18 @@ function extractMapSvg(svgText) {
           : { color: "#00975A", radius: "15", strokeWidth: "4.5" },
       )
     : "";
-  const layerIds = [
-    "transfer-station-shell-underlay-layer",
-    "route-lines-layer",
-    // #2408 수도권: 오너가 직접 제작한 종점 노선 심볼 연결 연장선. route-lines-layer
-    // 직후(오너 SVG 문서 순서)에 이어 노선 형상과 같은 하단 층위로 렌더한다. 숫자
-    // id(terminal-route-extension-<line>-<n>)의 octilinear 연장 path만 담고 텍스트가
-    // 없다. 다른 권역 SVG엔 이 레이어가 없어 extractGroup이 빈 문자열을 반환하므로
-    // 영향이 없다.
-    "terminal-route-extensions-layer",
-    "route-endpoint-markers-layer",
-    "terminal-station-symbols-layer",
-    "station-symbols-layer",
-    ...(!regionalSingleLine ? ["transfer-station-symbols-layer"] : []),
-    // #2408 수도권: 오너가 직접 제작한 종점 노선 심볼(캡슐 배지). 오너 SVG 문서
-    // 순서상 최상위(route-midline-markers 다음) 배지 층위라 transfer-station-symbols
-    // -layer 뒤 맨 위에 렌더한다 — 종착역 심벌 위로 배지가 덮여 가려지지 않는다.
-    // 각 칩 그룹은 matrix(2.198,…) 축정렬 스케일을 가지므로 내부 <text> font-size가
-    // normalizeTextBaselineAndScale에서 그 그룹 스케일까지 선보정된다(아래 함수 주석
-    // 참조). 수도권만 이 레이어를 가지며(다른 권역은 extractGroup 빈 문자열) 수도권은
-    // 기계 이식 배지(line-terminal-badges-layer)를 SVG에서 걷어내고 이 오너 칩으로
-    // 대체했다.
-    "terminal-route-badges-layer",
-    // #2068 종점 호선 마크(원+숫자/캡슐). 대구는 오너 SVG가 아직 이 형식의 종점
-    // 배지를 line-terminal-badges-layer에 담아 마감하므로 그대로 컴파일한다. 수도권은
-    // #2408에서 이 레이어를 SVG에서 제거하고 위 terminal-route-badges-layer(오너 칩)로
-    // 대체했다 — 수도권 SVG엔 이 레이어가 없어 extractGroup이 빈 문자열을 반환한다.
-    // 두 레이어는 권역별로 상호배타(한 권역엔 하나만 존재)라 순서 충돌이 없다.
-    "line-terminal-badges-layer",
-    // #2068 KTX·SRT·공항 표장: service-tag(inline-svg-paths 벡터 로고)를 바탕층에
-    // 포함한다. 마크가 라벨·심벌 위에 오도록 맨 위에 렌더한다. 텍스트 없는 벡터
-    // path라 폰트 정규화·baseline 경로와 무관하다. 미보유 권역은 빈 문자열.
-    "service-tags-layer",
-    // #2068 대전·광주 고속철 표장: 재설계된 두 권역 SVG는 service-tag 마크업
-    // (class="service-tag"·data-station) 대신 rail-transfer-layer 안 rail chip
-    // (data-services·data-station-name·<title> 역명) 형식으로 KTX·SRT 로고를
-    // 담는다. 부산·대구형 인식기가 못 잡던 이 표장을 바탕층 최상단에 반입한다.
-    // 다른 권역엔 이 레이어가 없어(extractGroup 빈 문자열) 영향이 없다.
-    // (v3 재제작본은 이 레이어를 걷어내고 역명 라벨 레이어 안 rail-service-marks
-    //  그룹으로 옮겼다 — extractRailServiceMarkGroups가 이어서 반입한다.)
-    "rail-transfer-layer",
-  ];
+  // 지도 본문 레이어 목록은 MAP_BODY_LAYER_IDS(명시 계약)를 그대로 쓴다.
+  // 라벨 레이어 자리표시자만 권역별 실제 id로 치환하고, 광주·대전 단일노선
+  // 권역은 미개통 환승 심벌을 별도 경로로 합성하므로 transfer-station-symbols
+  // -layer를 건너뛴다(기존 동작 유지).
+  const labelLayerId = resolveStationNameLabelLayerId(svgText);
+  const layerIds = MAP_BODY_LAYER_IDS.map((id) =>
+    id === LABEL_LAYER_PLACEHOLDER_ID ? labelLayerId : id,
+  ).filter(
+    (id) =>
+      Boolean(id) &&
+      !(regionalSingleLine && id === "transfer-station-symbols-layer"),
+  );
   const mapGroup = [
     ...layerIds.map((id) => {
       const group = extractGroup(svgText, id);
@@ -306,7 +694,6 @@ function extractMapSvg(svgText) {
       }
       return group;
     }),
-    extractRailServiceMarkGroups(svgText),
   ]
     .filter(Boolean)
     .join("\n")
@@ -336,28 +723,26 @@ function extractMapSvg(svgText) {
   if (!mapGroup.includes('id="route-lines-layer"')) {
     throw new Error("route-lines-layer를 SVG에서 찾지 못했습니다.");
   }
-  // #2068 오너 v3 KTX·SRT 마크(정정): 오너가 직접 배치한 표장은 우리 관례
-  // (service-tags-layer/rail-transfer-layer, main-map-scaled-layer 안 로컬
-  // 좌표)를 따르지 않고, main-map-scaled-layer 밖 최상위 형제 요소로 이미
-  // 최종 root viewBox 좌표에 배치돼 있다(각 <g>의 matrix(...) e,f가 그 자체로
-  // 렌더 좌표). 오너 마크를 옮기지 않고(요청 조건) 렌더 대상에만 포함하려면
-  // 그 좌표계를 그대로 보존해야 하므로, 다른 layerIds와 달리 mapTransform(k
-  // 스케일) 밖 형제로 이어붙인다 — 안에 넣으면 좌표가 이중 스케일된다.
-  // id 패턴은 오너 SVG 실측(도구용 legend/chip 사본과 실제 역 마크를 구분):
-  // legend 사본은 "-footer-0-6-9"·"-footer-2-6-2"에서 끝나고(추가 숫자 접미
-  // 없음), 실제 역 마크만 그 뒤에 "-<숫자>"가 더 붙는다.
-  const ownerRailMarks = [
-    ...svgText.matchAll(
-      /<g\s+id="logo-ktx-inline-vector-footer-0-6-9-\d+"[^>]*>[\s\S]*?<\/g>/g,
-    ),
-    ...svgText.matchAll(
-      /<g\s+id="logo-srt-inline-vector-footer-2-6-2-\d+"[^>]*>[\s\S]*?<\/g>/g,
-    ),
-  ]
-    .map((m) => m[0])
-    .join("\n");
-  if (ownerRailMarks) {
-    renderedMap = `${renderedMap}\n<g id="owner-rail-service-marks-layer" data-name="오너 KTX·SRT 마크(원본 root 좌표 보존)">\n${ownerRailMarks}\n</g>`;
+  // #2068 표장 전수 반입(2026-07-26): 오너가 직접 배치한 KTX·SRT 표장 중 본문
+  // 레이어 밖(수도권은 main-map-scaled-layer 밖 최상위 형제, 일부는
+  // `<g id="rail-service-logo-chip-ktx-srt">` 안)에 있는 것들을 여기서 이어
+  // 붙인다. 각 마크는 자기 조상 transform 체인을 그대로 두른 래퍼 `<g>`에 담아
+  // mapTransform 밖 형제로 넣는다 — 조상 변환을 포함한 절대 좌표가 보존되고,
+  // 안에 넣었을 때 생기는 이중 스케일이 없다. 본문 레이어 안에 이미 있는 표장
+  // (부산 station-symbols-layer, 대구 service-tags-layer, 대전·광주 역명 라벨
+  // 레이어)은 insideBodyLayer로 걸러 중복 반입하지 않는다.
+  const outsideMarks = collectServiceMarks(svgText).filter(
+    (mark) => !mark.insideBodyLayer,
+  );
+  if (outsideMarks.length) {
+    const wrapped = outsideMarks
+      .map((mark) =>
+        mark.ancestorTransform
+          ? `<g transform="${mark.ancestorTransform}">\n${mark.markup}\n</g>`
+          : mark.markup,
+      )
+      .join("\n");
+    renderedMap = `${renderedMap}\n<g id="owner-rail-service-marks-layer" data-name="오너 KTX·SRT 마크(원본 root 좌표 보존)">\n${wrapped}\n</g>`;
   }
   return `${svgStart}\n${defs || styles}\n${renderedMap}\n</svg>`;
 }
@@ -615,13 +1000,24 @@ function applyMatrix([a, b, c, d, e, f], x, y) {
  * 거의 미스케일된 채로 절대화돼 바운딩박스가 터무니없이 커진다(#2068 마감
  * 라운드 실측: 센텀·태화강·공항 KTX/AIR 로고가 `scale(0.036)`류를 쓴다).
  */
-// 이 체인 파서가 아는 transform 함수. 그 밖(rotate·skewX·skewY 등)을 만나면
-// 조용히 항등 취급하지 않고 실패한다(#2068 리뷰): 표장 obstacle bbox는 게이트가
-// 교차 검증할 수단이 없어서, 무시된 회전 하나가 회피 영역을 통째로 엉뚱한 곳에
-// 놓아도 label overlap 게이트는 green으로 통과한다. 반입된 오너 SVG에 rotate가
-// 이미 존재하므로(부산 v3·대구 v3·수도권 v2) 표장 경로로 들어오는 순간 잘못된
-// 좌표가 아니라 빌드 실패로 드러나야 한다.
-const SUPPORTED_TRANSFORM_FUNCTIONS = new Set(["translate", "matrix", "scale"]);
+// 이 체인 파서가 아는 transform 함수. 그 밖(skewX·skewY 등)을 만나면 조용히
+// 항등 취급하지 않고 실패한다(#2068 리뷰): 표장 obstacle bbox는 게이트가
+// 교차 검증할 수단이 없어서, 무시된 변환 하나가 회피 영역을 통째로 엉뚱한 곳에
+// 놓아도 label overlap 게이트는 green으로 통과한다. 잘못된 좌표가 아니라 빌드
+// 실패로 드러나야 한다.
+//
+// #2068 SVG 충실도(2026-07-26): rotate를 "미지원 → throw"에서 **정확한 회전
+// 행렬 지원**으로 승격한다. 오너 부산 v3 재수정본이 환승 심벌·종점 배지에
+// rotate(±90,cx,cy)를 쓰고(실측 5건), 이후 도입하는 표장 전수 수집·장식 레이어
+// bbox 판정이 그 요소들을 지나가므로, throw로 두면 정상 소스에서 빌드가 죽는다.
+// rotate(a)와 rotate(a,cx,cy) 두 형식 모두 SVG 스펙대로 translate·rotate·
+// translate⁻¹로 합성한다(항등 취급이 아니라 실제 계산 — 조용한 오차 없음).
+const SUPPORTED_TRANSFORM_FUNCTIONS = new Set([
+  "translate",
+  "matrix",
+  "scale",
+  "rotate",
+]);
 
 function parseTransformChain(transformValue) {
   let M = IDENTITY_MATRIX;
@@ -644,6 +1040,18 @@ function parseTransformChain(transformValue) {
       const sx = args[0];
       const sy = args[1] ?? sx;
       T = [sx, 0, 0, sy, 0, 0];
+    } else if (fn === "rotate") {
+      const radians = (args[0] * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const rotation = [cos, sin, -sin, cos, 0, 0];
+      T =
+        args.length >= 3
+          ? composeMatrix(
+              composeMatrix([1, 0, 0, 1, args[1], args[2]], rotation),
+              [1, 0, 0, 1, -args[1], -args[2]],
+            )
+          : rotation;
     } else {
       T = args;
     }
@@ -1032,6 +1440,19 @@ function stationLabelFontSizesByRole(svgText) {
   return byRole;
 }
 
+// SVG x/y/dx/dy는 **글리프별 값 리스트**가 올 수 있다(예: 부산 벡스코 첫 줄
+// tspan의 dy="0 0 0 … 59.27" — 3글자 라벨에 19개 값). 첫 값이 그 청크(줄)의
+// 위치를 결정하고 나머지는 뒤 글리프 개별 이동이다. Number("0 0 … 59.27")은
+// NaN이라 그대로 쓰면 그 줄이 조용히 버려진다(#2068 벡스코 실측: 다줄 라벨
+// "벡스코"/"(시립미술관)" 중 첫 줄이 NaN으로 탈락해 lines가 1건→빈 배열이
+// 되고 둘째 줄이 통째로 사라졌다). 컴파일 입력 정규화(normalizeSvgForCompile)가
+// 같은 규칙으로 첫 토큰만 남기므로 .vec과 sidecar가 같은 값을 본다.
+function firstCoordinateToken(value) {
+  if (value == null) return null;
+  const first = value.trim().split(/[\s,]+/)[0];
+  return first === "" ? null : first;
+}
+
 function ownerLabelTextContent(textBlock) {
   return textBlock
     .replace(/^<text\b[^>]*>/, "")
@@ -1111,25 +1532,35 @@ function ownerLabelStationKey(textOpenTag, textBlock, canonicalize) {
 // 반환이 2줄 미만이면 호출부가 entry에 lines를 붙이지 않는다(스키마 최소화 —
 // 기존 단일 줄 엔트리·매치 키(ownerLabelStationKey는 무관)와 100% 호환).
 function extractOwnerLabelLineLocalPositions(textOpenTag, textBlock) {
-  const leafTspanRe = /<tspan\b([^>]*)>([^<]*)</g;
+  // 다음 `<`는 **선행 탐색으로만** 확인하고 소비하지 않는다(#2068 벡스코 실측):
+  // 소비하면 wrapper tspan을 건너뛴 직후 그 안쪽 leaf tspan의 여는 `<`까지 함께
+  // 먹어 leaf 줄 하나가 통째로 사라진다. 부산 벡스코가 정확히 이 형태
+  // (`<tspan role=line><tspan dy=…>벡스코</tspan></tspan><tspan …>(시립미술관)`)
+  // 라 첫 줄 "벡스코"를 잃고 남은 1줄이 임계(2줄) 미만이 돼 다줄 정보가 통째로
+  // 비었다.
+  const leafTspanRe = /<tspan\b([^>]*)>([^<]*)(?=<)/g;
   let cursorX = firstAttr(textOpenTag, "x");
   let cursorY = firstAttr(textOpenTag, "y");
   const lines = [];
   for (const match of textBlock.matchAll(leafTspanRe)) {
     const tspanAttrs = match[1];
     const rawText = match[2];
-    if (!rawText || !rawText.trim()) continue; // wrapper-only(빈 텍스트) 제외.
-    if ((firstAttr(tspanAttrs, "class") ?? "").includes("station-sub")) {
-      continue; // 부기 캡션 제외.
-    }
-    const tspanX = firstAttr(tspanAttrs, "x");
+    // 커서 갱신은 **빈 텍스트 wrapper tspan에도** 적용한다 — SVG에서 x/y를 단
+    // tspan은 자기 텍스트가 없어도 그 자리에서 새 텍스트 청크를 연다. 종전처럼
+    // 먼저 continue하면 wrapper가 준 위치를 잃고 안쪽 leaf 줄이 부모 <text>의
+    // x/y로 되돌아간다(부산 벡스코 wrapper x=9301.377 / text x=9646).
+    const tspanX = firstCoordinateToken(firstAttr(tspanAttrs, "x"));
     if (tspanX != null) cursorX = tspanX;
-    const tspanY = firstAttr(tspanAttrs, "y");
-    const tspanDy = firstAttr(tspanAttrs, "dy");
+    const tspanY = firstCoordinateToken(firstAttr(tspanAttrs, "y"));
+    const tspanDy = firstCoordinateToken(firstAttr(tspanAttrs, "dy"));
     if (tspanY != null) {
       cursorY = tspanY;
     } else if (tspanDy != null && cursorY != null) {
       cursorY = String(Number(cursorY) + Number(tspanDy));
+    }
+    if (!rawText || !rawText.trim()) continue; // wrapper-only(빈 텍스트) 제외.
+    if ((firstAttr(tspanAttrs, "class") ?? "").includes("station-sub")) {
+      continue; // 부기 캡션 제외.
     }
     if (cursorX == null || cursorY == null) continue; // 위치 미상 줄은 제외.
     const localX = Number(cursorX);
@@ -1163,10 +1594,18 @@ function ownerLabelEntryFrom(
   ) {
     return null;
   }
-  const groupTranslate = groupOpenTag
-    ? parseTranslate(firstAttr(groupOpenTag, "transform"))
-    : { dx: 0, dy: 0 };
-  const textTranslate = parseTranslate(firstAttr(textOpenTag, "transform"));
+  // #2068 SVG 충실도(2026-07-26): 라벨 로컬 변환은 translate 합이 아니라 **행렬
+  // 합성**으로 계산한다. 오너 수도권 v4는 라벨 10건에 `transform="rotate(±0.1~0.7)"`
+  // (미세 기울임)을 쓰는데, translate만 더하던 종전 계산은 그 회전을 통째로
+  // 무시해 앵커가 로컬 기준 최대 (-54, +33) → 최종 좌표계로 약 25px 어긋났다
+  // (병점·동오·새말·경기도청북부청사·효자·곤제·어룡·송산·범골·흥선 — 전수 대조
+  // 게이트가 실측으로 잡아냈다). translate만 있는 라벨은 결과가 완전히 동일하다.
+  const localMatrix = composeMatrix(
+    parseTransformChain(
+      groupOpenTag ? firstAttr(groupOpenTag, "transform") : null,
+    ),
+    parseTransformChain(firstAttr(textOpenTag, "transform")),
+  );
   // 첫 tspan이 스스로 x/y를 선언하면 SVG 텍스트 청크 규칙상 그 지점이 실제
   // 앵커 기준이다(text-anchor는 그 청크 기준으로 계산됨) — 부모 <text>의 x/y
   // 보다 우선한다. 일반 라벨은 tspan이 부모와 같은 x/y를 반복해(무의미) 결과가
@@ -1175,15 +1614,25 @@ function ownerLabelEntryFrom(
   // 쓰면 앵커가 실제보다 오른쪽으로 밀려 이웃 라벨과 오탐 겹침을 만들었다.
   // tspan에 x/y가 없으면(daegu 등 transform 전용 다음 줄 tspan 관례, 뚝섬형
   // 위치형 포함) 부모 값을 그대로 쓴다.
+  // 글리프별 좌표 리스트(`x="9301.4 9355.9 9410.5"`)는 entry-level x/y에도 올 수
+  // 있다 — 줄 단위 경로(extractOwnerLabelLineLocalPositions)에만
+  // firstCoordinateToken을 적용하면 비대칭이 되고, 리스트를 만난 라벨은
+  // Number()가 NaN을 내 아래 유한성 검사에서 엔트리가 통째로 사라진다(lines는
+  // 정상 좌표인데 entry만 없어지는 자기모순). 컴파일 입력 정규화
+  // (normalizeSvgForCompile)가 이미 같은 "첫 토큰만" 규칙을 쓰므로 .vec와
+  // sidecar가 같은 값을 본다.
   const firstTspan = textBlock.match(/<tspan\b[^>]*>/)?.[0] ?? null;
   const x =
-    (firstTspan && firstAttr(firstTspan, "x")) ??
-    firstAttr(textOpenTag, "x");
+    firstCoordinateToken(firstTspan && firstAttr(firstTspan, "x")) ??
+    firstCoordinateToken(firstAttr(textOpenTag, "x"));
   const y =
-    (firstTspan && firstAttr(firstTspan, "y")) ??
-    firstAttr(textOpenTag, "y");
-  const localX = groupTranslate.dx + textTranslate.dx + Number(x ?? NaN);
-  const localY = groupTranslate.dy + textTranslate.dy + Number(y ?? NaN);
+    firstCoordinateToken(firstTspan && firstAttr(firstTspan, "y")) ??
+    firstCoordinateToken(firstAttr(textOpenTag, "y"));
+  const [localX, localY] = applyMatrix(
+    localMatrix,
+    Number(x ?? NaN),
+    Number(y ?? NaN),
+  );
   // text-anchor는 속성형(`text-anchor="middle"`)뿐 아니라 style 선언 안
   // (`style="text-align:center;text-anchor:middle"`, Inkscape 수작업 라벨 —
   // sma-v2 6건 실측: 영등포구청·이수·부천종합운동장·송도달빛축제공원·
@@ -1195,8 +1644,17 @@ function ownerLabelEntryFrom(
   const styleAnchorRaw = styleValue?.match(
     /text-anchor\s*:\s*(start|middle|end)/,
   )?.[1];
+  // #2068 벡스코 오배치 원인(2026-07-26 실측 확정): SVG/CSS 명세상 **style
+  // 선언이 동명 presentation attribute를 이긴다**. 종전 코드는 속성을 먼저 읽어
+  // 두 값이 어긋나는 라벨에서 앵커를 뒤집었다. 부산 벡스코는
+  // `text-anchor="start"` + `style="text-align:end;text-anchor:end"`라 실제
+  // 렌더는 end(=x가 오른쪽 끝)인데 sidecar는 start로 기록돼, 앱이 앵커 x에서
+  // **오른쪽으로** 라벨 폭(4자×54.6px ≈ 218px)만큼 밀어 그렸다 — 오너가 왼쪽에
+  // 배치한 라벨이 노드 반대편에 찍혀 "완전히 다른 곳"으로 보였다.
+  // 실측 영향 범위: busan 4건(벡스코·부산대양산캠퍼스·서부산유통지구·괘법르네시떼)
+  // + daegu 3건 = 7건. 나머지 권역은 두 값이 일치하거나 한쪽만 있어 산출 불변.
   const anchorRaw =
-    firstAttr(textOpenTag, "text-anchor") ?? styleAnchorRaw ?? "start";
+    styleAnchorRaw ?? firstAttr(textOpenTag, "text-anchor") ?? "start";
   const anchor = ["start", "middle", "end"].includes(anchorRaw)
     ? anchorRaw
     : "start";
@@ -1214,26 +1672,27 @@ function ownerLabelEntryFrom(
     return null;
   }
   // 2줄 이상일 때만 lines에 항목을 채운다(#2068 다줄 라벨 렌더) — entry-level
-  // x/y와 같은 변환 파이프라인(groupTranslate+textTranslate 후
-  // ×mapScale+mapTranslate)을 줄마다 적용해 최종 좌표계(entry.x/y와 동일 단위)
-  // 로 낸다. 단일 줄이면 빈 배열(스키마 항상 존재, 호출부가 length로 분기).
+  // x/y와 같은 변환 파이프라인(localMatrix 합성 후 ×mapScale+mapTranslate)을
+  // 줄마다 적용해 최종 좌표계(entry.x/y와 동일 단위)로 낸다. 단일 줄이면 빈
+  // 배열(스키마 항상 존재, 호출부가 length로 분기).
   const lineLocalPositions = extractOwnerLabelLineLocalPositions(
     textOpenTag,
     textBlock,
   );
   const lines =
     lineLocalPositions.length >= 2
-      ? lineLocalPositions.map((line) => ({
-          text: line.text,
-          x: roundCoord(
-            mapTranslate.dx +
-              (groupTranslate.dx + textTranslate.dx + line.localX) * mapScale,
-          ),
-          y: roundCoord(
-            mapTranslate.dy +
-              (groupTranslate.dy + textTranslate.dy + line.localY) * mapScale,
-          ),
-        }))
+      ? lineLocalPositions.map((line) => {
+          const [lineX, lineY] = applyMatrix(
+            localMatrix,
+            line.localX,
+            line.localY,
+          );
+          return {
+            text: line.text,
+            x: roundCoord(mapTranslate.dx + lineX * mapScale),
+            y: roundCoord(mapTranslate.dy + lineY * mapScale),
+          };
+        })
       : [];
   return {
     station,
@@ -1573,6 +2032,51 @@ function foldTerminalChipScale(svgText) {
   );
 }
 
+// 여는 태그 [startIndex]에 대응하는 요소 끝 인덱스(자기폐쇄면 그 태그 끝).
+// matchingGroupEnd의 태그명 일반화판 — display:none 제거가 `<g>`뿐 아니라
+// `<text>`·`<path>` 등 어떤 요소에도 적용돼야 하기 때문이다.
+function matchingElementEnd(text, startIndex, tagName) {
+  const openTag = text.slice(startIndex).match(/^<[A-Za-z][\w:.-]*\b[^>]*>/)?.[0];
+  if (!openTag) {
+    throw new Error(`${tagName} 여는 태그를 해석하지 못했습니다.`);
+  }
+  if (openTag.endsWith("/>")) return startIndex + openTag.length;
+  const tagRe = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, "g");
+  tagRe.lastIndex = startIndex;
+  let depth = 0;
+  for (let m = tagRe.exec(text); m; m = tagRe.exec(text)) {
+    if (m[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) return tagRe.lastIndex;
+    } else if (!m[0].endsWith("/>")) {
+      depth += 1;
+    }
+  }
+  throw new Error(
+    `${tagName}의 닫는 태그를 찾지 못했습니다 — 조용히 건너뛰지 않고 실패합니다.`,
+  );
+}
+
+// #2068 SVG 충실도(2026-07-26): display:none 요소를 컴파일 입력에서 제거한다.
+// 오너가 숨긴 요소는 오너 도식에 **보이지 않는다** — 바탕층에도 없어야 한다.
+// 역명 라벨 레이어를 반입하면서 대구 역번호 라벨 17건(class="station-code"
+// display="none")이 컴파일 입력에 들어오는데, vector_graphics_compiler가 이
+// 속성을 존중하는지에 산출 충실도를 의존시키지 않고 여기서 결정적으로 잘라낸다
+// (수도권 경의중앙선 숨김 path 2건·환승 베이스 레이어도 같은 처리). CSS 클래스가
+// 준 display:none도 잡히도록 inlineSimpleClassStyles 뒤에 적용한다.
+// `<style>`/`<defs>` 자체는 속성에 display가 없어 대상이 아니다.
+export function stripHiddenElements(markup) {
+  let result = markup;
+  for (;;) {
+    const match = result.match(
+      /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/,
+    );
+    if (!match) return result;
+    const end = matchingElementEnd(result, match.index, match[1]);
+    result = result.slice(0, match.index) + result.slice(end);
+  }
+}
+
 export function normalizeSvgForCompile(svgText) {
   const extracted = extractMapSvg(svgText);
   const k = scaleFromMapTransform(
@@ -1580,7 +2084,9 @@ export function normalizeSvgForCompile(svgText) {
       /<g id="compiled-map-coordinate-layer" transform="([^"]+)"/,
     )?.[1],
   );
-  const inlined = foldTerminalChipScale(inlineSimpleClassStyles(extracted))
+  const inlined = stripHiddenElements(
+    foldTerminalChipScale(inlineSimpleClassStyles(extracted)),
+  )
     .replace(
       /font-weight="(\d+)"/g,
       (_m, v) => `font-weight="${normalizeFontWeightValue(v)}"`,
@@ -1743,10 +2249,22 @@ function main() {
           package: "vector_graphics_compiler",
           version: compilerVersion,
         },
+        // #2068 리뷰 M2(2026-07-26): compiler.version은 pubspec.lock에 잠긴
+        // **패키지 버전 그대로**를 적는 필드다(현재 1.2.6). 컴파일 의미가 바뀌었다고
+        // 이 값을 올리면 패키지 버전에 대한 거짓말이 되므로 올리지 않고, 산출 의미의
+        // 개정은 아래 pipelineRevision으로 따로 기록한다.
+        pipelineRevision: basemapPipelineRevision,
         content: {
-          svgLayer: "route-lines-and-station-symbols",
+          // #2068 SVG 충실도(2026-07-26): 실태 갱신. 이제 노선·역 심벌만이 아니라
+          // 오너 SVG의 **지도 본문 레이어 전수**(MAP_BODY_LAYER_IDS)를 굽는다.
+          svgLayer: "owner-svg-map-body-layers",
           stationSymbols: "owner-svg",
-          labels: "owner-svg-anchor-with-solver-fallback",
+          // 앱의 오너 앵커 고정 배치도 솔버 폴백도 바탕층 모드에서 실행되지 않는다
+          // — 역명 글자는 .vec에 구워져 있다(오너 결정 "글자도 복붙").
+          labels: "baked-into-vec",
+          // 캔버스 장식(헤더·범례·상단 설명 박스·카드 배경·규격 견본)은 반입 금지
+          // (EXCLUDED_DECOR_LAYERS 명시 계약 + 분류 완전성 게이트).
+          decoration: "excluded",
           interaction: "route_map_positions",
         },
         ownerLabelsSidecar: {

@@ -5,15 +5,17 @@
     "package": "vector_graphics_compiler",
     "version": "1.2.6"
   },
+  "pipelineRevision": 2,
   "content": {
-    "svgLayer": "route-lines-and-station-symbols",
+    "svgLayer": "owner-svg-map-body-layers",
     "stationSymbols": "owner-svg",
-    "labels": "owner-svg-anchor-with-solver-fallback",
+    "labels": "baked-into-vec",
+    "decoration": "excluded",
     "interaction": "route_map_positions"
   },
   "ownerLabelsSidecar": {
     "path": "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
-    "sha256": "b5198fcd4e2204742dd2a674e68405345cce087c04618471e02e175ba82eca1f"
+    "sha256": "8a158fe6d7e51712884cdc02d2c1bd290d5657ac0aa3e060f22c780262e7bb2d"
   },
   "maps": [
     {
@@ -21,8 +23,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.vec",
       "sourceSvgSha256": "030bd5833c126455025af3a98f771f28268b3130fb7a5ce89d7027d3bf9e4b68",
-      "normalizedSvgSha256": "e2e3dfa49f8b79ad4848b3cbba5a641c737d0665dca73f1428cb5920857807f8",
-      "compiledVectorSha256": "d877e21da4bb1265b4774d9b04f34de3b293fd64ba2734b0f897b0b1225df21d",
+      "normalizedSvgSha256": "d8c04e74bbe50be778f65d352e2238a4d62926120b7acf4ffa056094e9d0e6da",
+      "compiledVectorSha256": "03911b1b11fdd8bf81c214458c0229c5d69f55d5a0a2c28ac2940837ce7ca677",
       "viewBox": [
         0,
         0,
@@ -35,9 +37,9 @@
       "id": "busan",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.vec",
-      "sourceSvgSha256": "c6527a1d1d677ed0eb49830e739e89b86589fa65073bef997dfc5264fb5c700c",
-      "normalizedSvgSha256": "ddce9cd08879777fe63df0db4d82d4b23e31d4ee7719814e19a234aacc75f2e2",
-      "compiledVectorSha256": "cf3a47e3d67725ffc88b9fad134d71cfbb772388dee1d96d061a0e4a8ddbc251",
+      "sourceSvgSha256": "3c6c9e997e46e5ad4cbfba8aa883a623358ef10b643da87ece67b9fb63bdf5f8",
+      "normalizedSvgSha256": "287109e528517d235a92b5f81fb06841020e03d49767a3255c4e6c8ff64e16d4",
+      "compiledVectorSha256": "230ac97e85f32926a4120d851912b1f853b3a4208804efd48cc74c94b3ea0c4a",
       "viewBox": [
         0,
         0,
@@ -51,8 +53,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daegu-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.vec",
       "sourceSvgSha256": "561d8a27c4e12472f7f36aa45257e41e3dc8be141c8654078e777af00fcb4826",
-      "normalizedSvgSha256": "aeefd8b7ff4edc1549772c15b7e24cbdd471c937f71d6f745619a4337f716299",
-      "compiledVectorSha256": "0ef78e018910c117489ee7cf84d45221cd6a108bb37858f2fc4f6970aeb896e1",
+      "normalizedSvgSha256": "4fcac7525dfce05e900de3cb8249467768bccb357576c11276c2cb2cd1c8de42",
+      "compiledVectorSha256": "1da270017ee7c4c7d797e195d91927ea2af954a70b7ea457a9aa3ac90479623d",
       "viewBox": [
         0,
         0,
@@ -66,8 +68,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daejeon-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daejeon.vec",
       "sourceSvgSha256": "ff8d14dcf7da5aafd8fcfabcfb2ee8a56273ef682243bd5b30ea0ff50bafbc00",
-      "normalizedSvgSha256": "3b32b8ac7fa639511d65a5c37ef780a92cacc354ba962278fde56c1237366d24",
-      "compiledVectorSha256": "c160bf296e1c937faef96a945c50c781a5868eda5dd23bb78ed96716671900ae",
+      "normalizedSvgSha256": "4928de43214d33bd5f49a3eaf00ea0bc2235b9f6d8ff2c3282e604c18e66a9d5",
+      "compiledVectorSha256": "670a2740fbb27d3e01868be5e987612ea397bd51e62441f87d33e82c1b69ac23",
       "viewBox": [
         0,
         0,
@@ -81,8 +83,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-gwangju-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/gwangju.vec",
       "sourceSvgSha256": "23f8c766bd92c345a3599815efcf2e97b53b2c7935ff387b81570217ff7a745f",
-      "normalizedSvgSha256": "5a7e8f9723920d875eaef47b2b10a77f51f6814a929877a9a8c3bfbb54fe072b",
-      "compiledVectorSha256": "f2aee1153d65208773df8ae56b5d45709ca8ce5a9f8cbf6a4da81b751ac5803f",
+      "normalizedSvgSha256": "78610c943259c319ef367e8019b282efc7924333d8f1d6461f7b2110ef2eaf4c",
+      "compiledVectorSha256": "bfc303ee2b4891447cb741cdfbf5e22c144740680590a0753c1ea23b95ce688c",
       "viewBox": [
         0,
         0,

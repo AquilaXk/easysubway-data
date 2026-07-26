@@ -211,3 +211,123 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   }
   assert.ok(decision.references.length >= 3);
 });
+
+// #2068 리뷰 M1(2026-07-26) — 배포 basemap 콘텐츠 정책을 **실제 컴파일 산출과
+// 대조해** 고정한다. 종전에는 이 블록을 검사하는 계약 테스트가 없어, 배포물이
+// 바뀌었는데도 결정문의 excluded 목록이 낡은 채 남는 드리프트가 조용히 발생했다.
+// 라이선스 판단(오너 자작·attribution 불요)은 이 테스트의 대상이 아니다 —
+// "무엇이 배포되는가"가 문서와 일치하는지만 기계적으로 확인한다.
+test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다(#2068 M1 드리프트 방지)", async () => {
+  const decision = readJson("tools/route-map/route-map-license-decision.json");
+  const policy = decision.distributedBasemapContentPolicy;
+
+  assert.equal(policy.revisedAt, "2026-07-26");
+  assert.equal(
+    policy.contractTest,
+    "tools/route-map/route-map-license-decision.test.mjs",
+  );
+  assert.deepEqual(policy.included, [
+    "현재 운행 노선 형상(route-lines·terminal-route-extensions)",
+    "역·환승·종점 심벌(station-symbols·transfer-station-symbols·terminal-station-symbols)",
+    "노선 배지(terminal-route-badges·line-terminal-badges·route-midline-markers·route-number-badges)",
+    "SVG station-name label text",
+    "KTX/SRT service marks drawn by the owner in the map body",
+  ]);
+  assert.deepEqual(policy.excluded, [
+    "map title, header bar and status chips",
+    "legend and top route-line explanation box",
+    "card background, border and page background",
+    "component spec library samples (display:none)",
+    "header legend samples of KTX/SRT logos",
+    "planned or construction routes absent from structured catalog",
+  ]);
+
+  const {
+    collectServiceMarks,
+    normalizeSvgForCompile,
+    resolveStationNameLabelLayerId,
+    DECOR_SERVICE_MARK_SAMPLE_IDS,
+  } = await import("./compile-basemap-vec.mjs");
+
+  const sources = path.join(root, "tools/route-map/route-map-defs/svg-sources");
+  const regionSvgs = [
+    "easy-subway-sma-v4.svg",
+    "easy-subway-busan-v3.svg",
+    "easy-subway-daegu-v3.svg",
+    "easy-subway-daejeon-v3.svg",
+    "easy-subway-gwangju-v3.svg",
+  ];
+
+  for (const file of regionSvgs) {
+    const svgText = readFileSync(path.join(sources, file), "utf8");
+    const normalized = normalizeSvgForCompile(svgText);
+
+    // included: 역명 라벨 레이어와 오너 표장이 실제로 배포물에 있다.
+    const labelLayerId = resolveStationNameLabelLayerId(svgText);
+    assert.match(
+      normalized,
+      new RegExp(`id="${labelLayerId}"`),
+      `${file}: 정책이 included로 선언한 역명 라벨이 컴파일 입력에 없습니다.`,
+    );
+    const marks = collectServiceMarks(svgText);
+    assert.ok(
+      marks.length > 0,
+      `${file}: 정책이 included로 선언한 KTX·SRT 표장이 0건입니다.`,
+    );
+
+    // excluded: 장식 요소가 실제로 배포물에 없다.
+    const rendered = normalized.includes("</defs>")
+      ? normalized.slice(normalized.lastIndexOf("</defs>") + 7)
+      : normalized;
+    for (const marker of [
+      /id="header-title-legend-and-status-layer"/,
+      /id="header-complete-route-badges-layer"/,
+      /id="top-route-line-explanation-layer"/,
+      /id="legend-layer"/,
+      /id="header-line-chip"/,
+      /id="header-status-chip"/,
+      /id="page-background"/,
+      /id="main-map-card-background"/,
+      /spec-library/,
+    ]) {
+      assert.doesNotMatch(
+        rendered,
+        marker,
+        `${file}: 정책이 excluded로 선언한 장식이 컴파일 입력에 있습니다 — ${marker}`,
+      );
+    }
+    // 헤더 범례 KTX/SRT 견본은 명시 목록으로 제외된다.
+    for (const sample of DECOR_SERVICE_MARK_SAMPLE_IDS) {
+      assert.ok(
+        !marks.some((mark) => mark.id === sample.id),
+        `${file}: 헤더 범례 견본 ${sample.id}가 배포 표장 목록에 있습니다.`,
+      );
+    }
+  }
+
+  // 컴파일 입력뿐 아니라 **실제 배포 바이트(.vec)** 로도 확인한다 — 정책이
+  // 기술하는 대상은 배포물이다.
+  const basemapDir = path.join(
+    root,
+    "apps/mobile/assets/datapacks/metro_map_pack/basemap",
+  );
+  const distributed = {
+    "seoul.vec": { present: ["전곡", "뚝섬"], absent: ["통합 노선도", "간선 색상별"] },
+    "busan.vec": { present: ["벡스코", "서면"], absent: ["통합 노선도"] },
+  };
+  for (const [vecName, expectation] of Object.entries(distributed)) {
+    const bytes = readFileSync(path.join(basemapDir, vecName), "latin1");
+    for (const text of expectation.present) {
+      assert.ok(
+        bytes.includes(Buffer.from(text, "utf8").toString("latin1")),
+        `${vecName}: 정책이 included로 선언한 역명 "${text}"가 배포 .vec에 없습니다.`,
+      );
+    }
+    for (const text of expectation.absent) {
+      assert.ok(
+        !bytes.includes(Buffer.from(text, "utf8").toString("latin1")),
+        `${vecName}: 정책이 excluded로 선언한 장식 텍스트 "${text}"가 배포 .vec에 있습니다.`,
+      );
+    }
+  }
+});

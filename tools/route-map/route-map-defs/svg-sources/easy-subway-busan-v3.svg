@@ -31,7 +31,7 @@
    data-asset-policy="self-contained SVG vectors and text only; no raster image elements"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    inkscape:docname="busan-metro-map-2026-daegu-v1-final.svg"
-   sodipodi:docname="easy-subway-busan-v1_sma-v4-verified.svg"
+   sodipodi:docname="easy_subway_busan_v3.svg"
    data-size-reference="easy_subway_sma_v4.svg"
    data-size-match-policy="same-rendered-width-normalization; positions-and-colors-preserved"
    data-spec-route-width="25.863158"
@@ -55,15 +55,15 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="0.44894265"
-     inkscape:cx="5437.2201"
-     inkscape:cy="4095.1778"
+     inkscape:zoom="0.15257468"
+     inkscape:cx="1042.1126"
+     inkscape:cy="3660.5024"
      inkscape:window-width="1459"
      inkscape:window-height="1022"
      inkscape:window-x="372"
      inkscape:window-y="30"
      inkscape:window-maximized="0"
-     inkscape:current-layer="transfer-station-symbols-layer" />
+     inkscape:current-layer="g33" />
   <defs
      id="sma-v1-family-definitions">
     <clipPath
@@ -3991,16 +3991,17 @@
            data-line="line2"
            data-line-color="#A6DA53"
            data-slot-index="1"
-           id="g31">
+           id="g31"
+           transform="rotate(-90,7974.4551,4660)">
           <circle
-             cx="7974.455163"
+             cx="7974.4551"
              cy="4660"
              r="23.970798"
              fill="#a6da53"
              class="ourclass-transfer-badge-circle"
              id="circle30" />
           <text
-             x="7974.455163"
+             x="7974.4551"
              y="4660"
              class="ourclass-transfer-badge-label"
              fill="#344258"
@@ -4010,23 +4011,24 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text30"
-             style="font-size:31.859244px">2</text>
+             style="font-size:31.8592px">2</text>
         </g>
         <g
            class="ourclass-transfer-badge"
            data-line="line3"
            data-line-color="#D49329"
            data-slot-index="2"
-           id="g32">
+           id="g32"
+           transform="rotate(-90,8025.5449,4660)">
           <circle
-             cx="8025.544837"
+             cx="8025.5449"
              cy="4660"
              r="23.970798"
              fill="#d49329"
              class="ourclass-transfer-badge-circle"
              id="circle31" />
           <text
-             x="8025.544837"
+             x="8025.5449"
              y="4660"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -4036,7 +4038,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text31"
-             style="font-size:31.859244px">3</text>
+             style="font-size:31.8592px">3</text>
         </g>
       </g>
     </g>
@@ -4085,16 +4087,17 @@
            data-line="line2"
            data-line-color="#A6DA53"
            data-slot-index="1"
-           id="g35">
+           id="g35"
+           transform="rotate(90,9174.4551,3660)">
           <circle
-             cx="9174.455163"
+             cx="9174.4551"
              cy="3660"
              r="23.970798"
              fill="#a6da53"
              class="ourclass-transfer-badge-circle"
              id="circle34" />
           <text
-             x="9174.455163"
+             x="9174.4551"
              y="3660"
              class="ourclass-transfer-badge-label"
              fill="#344258"
@@ -4104,23 +4107,24 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text34"
-             style="font-size:31.859244px">2</text>
+             style="font-size:31.8592px">2</text>
         </g>
         <g
            class="ourclass-transfer-badge"
            data-line="donghae"
            data-line-color="#1C63B7"
            data-slot-index="2"
-           id="g36">
+           id="g36"
+           transform="rotate(90,9225.5449,3660)">
           <circle
-             cx="9225.544837"
+             cx="9225.5449"
              cy="3660"
              r="23.970798"
              fill="#1c63b7"
              class="ourclass-transfer-badge-circle"
              id="circle35" />
           <text
-             x="9225.544837"
+             x="9225.5449"
              y="3660"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -4130,7 +4134,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text35"
-             style="font-size:21.052632px">동해</text>
+             style="font-size:21.0526px">동해</text>
         </g>
       </g>
     </g>

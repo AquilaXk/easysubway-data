@@ -64,12 +64,23 @@ test("자기폐쇄 태그로 마감된 빈 레이어가 뒤따르는 형제 레�
       <g id="station-name-labels-layer">
         <text id="station-label-test">테스트역</text>
       </g>
+      <g id="legend-layer"><text id="legend-caption">범례캡션</text></g>
     </svg>
   `);
 
   assert.match(normalized, /id="route-lines-layer"/);
   assert.match(normalized, /id="service-tags-layer"/);
-  assert.doesNotMatch(normalized, /station-name-labels-layer|테스트역/);
+  // #2068 SVG 충실도(2026-07-26 오너 결정): 역명 라벨은 이제 바탕층에 굽는다.
+  // 자기폐쇄 빈 레이어가 뒤 형제를 삼키지 않는지는 "라벨 레이어가 정확히 한 번만
+  // 들어오는지"로 확인한다 — 삼키면 service-tags-layer 슬라이스에도 딸려 들어와
+  // 두 번 나온다.
+  assert.equal(
+    (normalized.match(/id="station-name-labels-layer"/g) ?? []).length,
+    1,
+  );
+  assert.match(normalized, /테스트역/);
+  // 장식(범례)은 계약대로 반입되지 않는다.
+  assert.doesNotMatch(normalized, /legend-layer|범례캡션/);
 });
 
 test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노선을 제외한다", () => {
@@ -97,9 +108,12 @@ test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노
     // #2408: 오너 종점 칩(terminal-route-badges-layer)은 id에 "header-route-badge"
     // 를 포함(오너가 header 배지 템플릿에서 파생). 이는 정상 렌더 대상이므로
     // header 접두 substring이 아니라 header/legend "레이어" id 유입만 배제한다.
+    // #2068(2026-07-26): 역명 라벨 레이어는 이제 **본문**이라 반드시 있어야 하고,
+    // 캔버스 장식(헤더 바·범례·상단 설명 박스·규격 견본)은 여전히 없어야 한다.
+    assert.match(rendered, /id="(?:station-name-labels-layer|station-label-group-)/);
     assert.doesNotMatch(
       rendered,
-      /station-name-labels-layer|id="header-|legend/,
+      /id="header-(?:title|line-chip|status-chip|complete-route-badges|background-pill)|id="legend-layer"|id="top-route-line-explanation-layer"|spec-library|id="route-label-badges-layer"/,
     );
     assert.doesNotMatch(rendered, /<title\b/);
   }
@@ -463,7 +477,10 @@ test("extractOwnerLabels: <g data-label-role> 감싸인 gwangju형 다줄 라벨
   assert.equal(entry.lines[1].y, 964); // 944 + 20.
 });
 
-test("extractOwnerLabels: 속성형 text-anchor가 style형보다 우선한다", () => {
+// #2068 벡스코 오배치(2026-07-26 실측 확정): SVG/CSS 명세상 style 선언이 동명
+// presentation attribute를 이긴다. 종전 구현이 반대로 읽어 부산 벡스코 등 7건의
+// 앵커가 뒤집혔고, 앱이 라벨을 폭만큼 반대쪽으로 그렸다.
+test("extractOwnerLabels: style형 text-anchor가 속성형보다 우선한다(SVG 명세)", () => {
   const entries = extractOwnerLabels(`
     <svg>
       <text data-station="가야" data-label-role="ordinary" text-anchor="end"
@@ -471,7 +488,44 @@ test("extractOwnerLabels: 속성형 text-anchor가 style형보다 우선한다",
             >가야</text>
     </svg>
   `);
+  assert.equal(entries[0].anchor, "middle");
+});
+
+test("extractOwnerLabels: style에 text-anchor가 없으면 속성형을 쓴다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="가야" data-label-role="ordinary" text-anchor="end"
+            font-size="12.5" x="1958" y="1430" style="text-align:end"
+            >가야</text>
+    </svg>
+  `);
   assert.equal(entries[0].anchor, "end");
+});
+
+// #2068 벡스코 실측: 첫 줄 tspan이 wrapper(자기 텍스트 없음)이고 그 안 leaf
+// tspan이 글리프별 dy 리스트를 가지면, 종전 구현은 (1) wrapper 매치가 다음 `<`를
+// 소비해 leaf 줄을 통째로 잃고 (2) Number("0 0 … 59.27")=NaN으로 그 줄을 버려
+// 다줄 라벨이 통째로 빈 배열이 됐다.
+test("extractOwnerLabels: wrapper tspan + 글리프별 dy 리스트여도 두 줄을 모두 뽑는다", () => {
+  const entries = extractOwnerLabels(`
+    <svg>
+      <text data-station="벡스코" data-label-role="transfer" font-size="54.6"
+            x="9646" y="2928" text-anchor="start"
+            style="text-align:end;text-anchor:end"><tspan
+        sodipodi:role="line" x="9301.377" y="2928.2429"><tspan
+        x="9301.377" dy="0 0 0 59.27">벡스코</tspan></tspan><tspan
+        sodipodi:role="line" x="9299.9766" y="3000.8716">(시립미술관)</tspan></text>
+    </svg>
+  `);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].anchor, "end");
+  assert.deepEqual(
+    entries[0].lines.map((line) => line.text),
+    ["벡스코", "(시립미술관)"],
+  );
+  assert.equal(entries[0].lines[0].x, 9301.377);
+  assert.equal(entries[0].lines[0].y, 2928.2429);
+  assert.equal(entries[0].lines[1].y, 3000.8716);
 });
 
 test("extractOwnerLabels: <g data-label-role>에 감싸인 gwangju형은 g의 transform도 더하고 CSS class font-size로 폴백한다", () => {
@@ -628,7 +682,14 @@ test("rail-service-marks(대전·광주 v3 KTX·SRT)는 바탕층에 반입되�
   const normalized = normalizeSvgForCompile(svgText);
   assert.match(normalized, /id="rail-service-marks-line1-104"/);
   assert.match(normalized, /id="rail-service-ktx-line1-104"/);
-  assert.doesNotMatch(normalized, /station-name-labels-layer|대전역<|<title\b/);
+  // #2068(2026-07-26): 역명 라벨 레이어 자체가 본문이 됐다 — 표장은 그 레이어의
+  // 일부로 정확히 한 번만 반입되고(중복 반입 금지), 역명 텍스트도 함께 온다.
+  assert.equal(
+    (normalized.match(/id="rail-service-marks-line1-104"/g) ?? []).length,
+    1,
+  );
+  assert.match(normalized, /대전역</);
+  assert.doesNotMatch(normalized, /<title\b/);
 
   const [obstacle] = extractRailTransferChipObstacles(svgText);
   assert.equal(obstacle.station, "대전역");
@@ -774,11 +835,25 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
       "utf8",
     ),
   );
+  // #2068 리뷰 M2: compiler.version은 pubspec.lock에 잠긴 **패키지 버전**이어야
+  // 한다(하드코딩 상수와 lock 양쪽을 대조해 드리프트를 막는다). 산출 의미의 개정은
+  // 별도 pipelineRevision이 기록한다.
   assert.equal(manifest.compiler.version, "1.2.6");
+  const lockedCompilerVersion = readFileSync(
+    path.join(root, "apps/mobile/pubspec.lock"),
+    "utf8",
+  ).match(/vector_graphics_compiler:[\s\S]*?version: "([^"]+)"/)?.[1];
+  assert.equal(
+    manifest.compiler.version,
+    lockedCompilerVersion,
+    "manifest.compiler.version은 pubspec.lock의 vector_graphics_compiler 버전과 같아야 합니다.",
+  );
+  assert.equal(manifest.pipelineRevision, 2);
   assert.deepEqual(manifest.content, {
-    svgLayer: "route-lines-and-station-symbols",
+    svgLayer: "owner-svg-map-body-layers",
     stationSymbols: "owner-svg",
-    labels: "owner-svg-anchor-with-solver-fallback",
+    labels: "baked-into-vec",
+    decoration: "excluded",
     interaction: "route_map_positions",
   });
   assert.equal(manifest.maps.length, 5);
@@ -1204,20 +1279,29 @@ test("extractServiceTagObstacles: service-tag <g>의 id가 첫 속성이 아니�
   });
 });
 
-test("parseTransformChain: 미지원 transform 함수(rotate·skew)는 항등 무시가 아니라 실패한다", () => {
+// #2068 SVG 충실도(2026-07-26): rotate는 "미지원 → throw"가 아니라 정확한 회전
+// 행렬로 지원한다 — 오너 부산 v3 재수정본이 환승 심벌·종점 배지에 rotate(±90,cx,cy)를
+// 쓰기 때문이다. skew 등 나머지는 여전히 fail-closed(조용한 항등 무시 금지).
+test("parseTransformChain: rotate(a,cx,cy)를 정확히 합성한다(항등 무시도 실패도 아님)", () => {
   const rotatedLayer = `
     <svg>
       <g id="service-tags-layer" transform="rotate(-90,100,200)">
         <g id="service-tag-ktx-1" class="service-tag" data-station="테스트역">
-          <rect x="0" y="0" width="10" height="4" />
+          <rect x="100" y="200" width="10" height="4" />
         </g>
       </g>
     </svg>`;
-  assert.throws(
-    () => extractServiceTagObstacles(rotatedLayer),
-    /지원하지 않는 transform 함수 rotate\(\.\.\.\)/,
-  );
+  // 회전 중심 (100,200) 기준 -90°: 로컬 [100,110]×[200,204] →
+  // (x,y) → (cx + (y-cy), cy - (x-cx)) = [100,104]×[190,200].
+  const [rotated] = extractServiceTagObstacles(rotatedLayer);
+  assert.equal(rotated.station, "테스트역");
+  assert.ok(Math.abs(rotated.x - 102) < 1e-6, `x=${rotated.x}`);
+  assert.ok(Math.abs(rotated.y - 195) < 1e-6, `y=${rotated.y}`);
+  assert.ok(Math.abs(rotated.halfWidth - 2) < 1e-6);
+  assert.ok(Math.abs(rotated.halfHeight - 5) < 1e-6);
+});
 
+test("parseTransformChain: 여전히 미지원인 transform(skew)은 항등 무시가 아니라 실패한다", () => {
   const skewedChip = `
     <svg>
       <g id="rail-transfer-layer">
