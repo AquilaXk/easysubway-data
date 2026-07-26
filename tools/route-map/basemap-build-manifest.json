@@ -23,8 +23,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.vec",
       "sourceSvgSha256": "030bd5833c126455025af3a98f771f28268b3130fb7a5ce89d7027d3bf9e4b68",
-      "normalizedSvgSha256": "d8c04e74bbe50be778f65d352e2238a4d62926120b7acf4ffa056094e9d0e6da",
-      "compiledVectorSha256": "03911b1b11fdd8bf81c214458c0229c5d69f55d5a0a2c28ac2940837ce7ca677",
+      "normalizedSvgSha256": "8adc2553e93bb8a2643edf7e6419f2976cb2f51ac358c7dc87bb5820bb543a8f",
+      "compiledVectorSha256": "641f987b6296beb75684c22d6f38e6d57417dbe20a21b7d39ae4f6af4fce5235",
       "viewBox": [
         0,
         0,
@@ -38,8 +38,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.vec",
       "sourceSvgSha256": "3c6c9e997e46e5ad4cbfba8aa883a623358ef10b643da87ece67b9fb63bdf5f8",
-      "normalizedSvgSha256": "287109e528517d235a92b5f81fb06841020e03d49767a3255c4e6c8ff64e16d4",
-      "compiledVectorSha256": "230ac97e85f32926a4120d851912b1f853b3a4208804efd48cc74c94b3ea0c4a",
+      "normalizedSvgSha256": "9dee98664478ef1cf6d811ebe7b0c8e7c8891bc741aeaa7fb95e05e9c45e0e64",
+      "compiledVectorSha256": "9c3376a9bb4ca92c2d2ee51d2d1a292f848f84434a33e959e04fb5f524cc6c63",
       "viewBox": [
         0,
         0,
@@ -53,8 +53,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daegu-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.vec",
       "sourceSvgSha256": "561d8a27c4e12472f7f36aa45257e41e3dc8be141c8654078e777af00fcb4826",
-      "normalizedSvgSha256": "4fcac7525dfce05e900de3cb8249467768bccb357576c11276c2cb2cd1c8de42",
-      "compiledVectorSha256": "1da270017ee7c4c7d797e195d91927ea2af954a70b7ea457a9aa3ac90479623d",
+      "normalizedSvgSha256": "82941702c360e1c95c28b48329804c9f3eda88d3a62f3a14b9843d9c7192ea3c",
+      "compiledVectorSha256": "b8f313f92e057328fbfd3b6e79b9a706e8b02d27173eac047e013b00f588ce45",
       "viewBox": [
         0,
         0,

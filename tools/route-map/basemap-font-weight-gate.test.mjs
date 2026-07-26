@@ -19,7 +19,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { normalizeSvgForCompile } from "./compile-basemap-vec.mjs";
+import {
+  normalizeSvgForCompile,
+  PAINT_ORDER_STROKE_COPY_ATTR,
+} from "./compile-basemap-vec.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sourcesDir = path.join(
@@ -64,6 +67,11 @@ export function appliedFontWeights(normalizedSvg) {
   );
   const counts = new Map();
   for (const tag of withoutStyleBlocks.matchAll(/<[A-Za-z][\w:.-]*\b[^>]*>/g)) {
+    // #2068 paint-order 분해가 만든 halo 사본은 같은 오너 요소의 stroke 레이어라
+    // 굵기 구성에 두 번 세지 않는다(글자 사본이 원본 요소를 그대로 유지한다).
+    if (new RegExp(`\\s${PAINT_ORDER_STROKE_COPY_ATTR}="true"`).test(tag[0])) {
+      continue;
+    }
     const attr = tag[0].match(/\sfont-weight="(\d+)"/)?.[1];
     const styled = tag[0]
       .match(/\bstyle="([^"]*)"/)?.[1]
