@@ -653,6 +653,156 @@ test("map-content-positioned-layer 래퍼 transform을 흡수한다(#2068 대전
   assert.equal(entry.y, 288); // 200 + 88 — 노드(360+88=448)와 같은 좌표계.
 });
 
+// ── 텍스트 위치 선언 완결화(#2068 대전 라벨 이중 이동, 2026-07-26) ───────────
+// vector_graphics_compiler 1.2.6은 x·y(또는 dx·dy)가 **둘 다** 선언된 텍스트 위치
+// 노드에서만 조상 transform을 좌표로 흡수한다. 오너 라벨의
+// `<text x y><tspan x dy="0">`은 부모만 흡수하고 자식은 transform을 .vec에 실어,
+// 런타임이 같은 변환을 한 번 더 적용했다(대전 +88px·부산 최대 +968px).
+test("transform이 걸린 <text> 안의 부분 선언 tspan을 절대 x·y로 완결한다(#2068 이중 적용 차단)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="1608.404" y="607.727"
+                  data-full-official-name="월드컵경기장"><tspan class="station-main"
+                  x="1608.404" dy="0">월드컵경기장</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const tspan = normalized.match(/<tspan\b[^>]*>/)[0];
+  assert.match(tspan, /\sx="1608\.404"/);
+  assert.match(tspan, /\sy="607\.727"/);
+  assert.doesNotMatch(tspan, /\sdy=/, "dy는 절대 y로 접혀 사라져야 한다");
+});
+
+test("여러 줄 라벨의 dy는 누적 절대 y로 접힌다(줄 간격 보존)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="두줄"><tspan x="100" dy="0">첫째</tspan><tspan
+                  x="100" dy="40">둘째</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const tspans = [...normalized.matchAll(/<tspan\b[^>]*>/g)].map((m) => m[0]);
+  assert.match(tspans[0], /\sy="200"/);
+  assert.match(tspans[1], /\sy="240"/);
+});
+
+// 오너 소스의 실제 형태(수도권 총신대입구·부산 벡스코·광주 광주송정역)는 중첩
+// tspan이다 — 바깥 껍데기 tspan이 줄(x·y)을 잡고 안쪽 tspan이 글자를 담는다.
+// 안쪽 tspan은 x만 선언하므로 완결화 대상이고, 그 y는 바깥 껍데기가 옮겨 놓은
+// 펜 위치에서 와야 한다(부모 <text>의 y가 아니다).
+test("중첩 tspan(껍데기 줄 + 안쪽 글자)도 바깥이 옮긴 펜 y를 상속해 완결된다", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="transfer" font-size="34" x="9646.0859" y="2928.2429"
+                  data-full-official-name="벡스코"><tspan id="line1" x="9301.377"
+                  y="2928.2429"><tspan id="glyph1" x="9301.377" dy="0">벡스코</tspan></tspan><tspan
+                  id="line2" x="9299.9766" y="3000.8716">(시립미술관)</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const openTagOf = (id) =>
+    normalized.match(new RegExp(`<tspan\\b[^>]*\\bid="${id}"[^>]*>`))[0];
+  // 껍데기 줄은 이미 완전 선언이라 불변.
+  assert.match(openTagOf("line1"), /\sy="2928\.2429"/);
+  assert.doesNotMatch(openTagOf("line1"), /\sdy=/);
+  // 안쪽 글자는 부모 <text>의 y가 아니라 껍데기가 옮긴 펜 y를 상속한다.
+  assert.match(openTagOf("glyph1"), /\sx="9301\.377"/);
+  assert.match(openTagOf("glyph1"), /\sy="2928\.2429"/);
+  assert.doesNotMatch(openTagOf("glyph1"), /\sdy=/);
+  // 중첩에서 빠져나온 다음 형제 줄은 자기 절대 y를 그대로 유지한다.
+  assert.match(openTagOf("line2"), /\sy="3000\.8716"/);
+});
+
+test("중첩 tspan의 dy는 바깥 줄 y에서 누적된다(펜이 <text> y로 되돌아가지 않는다)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="중첩"><tspan id="outer" x="100"
+                  y="300"><tspan id="inner" x="100" dy="40">중첩</tspan></tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  const inner = normalized.match(/<tspan\b[^>]*\bid="inner"[^>]*>/)[0];
+  assert.match(inner, /\sy="340"/); // 300(바깥 줄) + 40(dy) — 200(부모 text)이 아니다.
+  assert.doesNotMatch(inner, /\sdy=/);
+});
+
+test("조상 transform이 항등이면 tspan 선언을 건드리지 않는다(정합 권역 산출 불변)", () => {
+  const tspan = normalizeSvgForCompile(`
+    <svg>
+      <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+      <g id="station-name-labels-layer">
+        <text data-label-role="ordinary" font-size="34" x="100" y="200"
+              data-full-official-name="항등"><tspan x="100" dy="0">항등</tspan></text>
+      </g>
+    </svg>
+  `).match(/<tspan\b[^>]*>/)[0];
+  assert.match(tspan, /\sdy="0"/, "항등 변환에서는 흡수 판정이 갈리지 않아 원문 그대로다");
+  assert.doesNotMatch(tspan, /\sy="/);
+});
+
+test("이미 x·y를 둘 다 선언한 tspan은 그대로 둔다(수도권 산출 바이트 보존)", () => {
+  const normalized = normalizeSvgForCompile(`
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="완전"><tspan x="120" y="220">완전</tspan></text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `);
+  assert.match(normalized.match(/<tspan\b[^>]*>/)[0], /<tspan x="120" y="220">/);
+});
+
+test("transform이 걸린 <text> 안에서 x를 선언하지 않은 tspan은 조용히 넘기지 않고 실패한다", () => {
+  assert.throws(
+    () =>
+      normalizeSvgForCompile(`
+        <svg>
+          <g id="map-card-clipped-content-layer">
+            <g id="map-content-positioned-layer" transform="translate(0 88)">
+              <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+              <g id="station-name-labels-layer">
+                <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                      id="station-label-x-less"><tspan dy="0">x없음</tspan></text>
+              </g>
+            </g>
+          </g>
+        </svg>
+      `),
+    /x를 선언하지 않은 <tspan>/,
+  );
+});
+
 // #2068 대전·광주 v3: KTX·SRT 마크가 rail-transfer-layer(v1에선 빈 레이어)에서
 // station-name-labels-layer 안 역 앵커 그룹(class="rail-service-marks")으로
 // 옮겨졌다. 그 레이어는 바탕층 allow-list 밖이라 손대지 않으면 ① 마크가 .vec에서

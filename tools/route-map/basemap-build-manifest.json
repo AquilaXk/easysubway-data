@@ -38,8 +38,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.vec",
       "sourceSvgSha256": "3c6c9e997e46e5ad4cbfba8aa883a623358ef10b643da87ece67b9fb63bdf5f8",
-      "normalizedSvgSha256": "9dee98664478ef1cf6d811ebe7b0c8e7c8891bc741aeaa7fb95e05e9c45e0e64",
-      "compiledVectorSha256": "9c3376a9bb4ca92c2d2ee51d2d1a292f848f84434a33e959e04fb5f524cc6c63",
+      "normalizedSvgSha256": "182397ec6f3a935812ae0aeac225d01e09fba337319864084fc98b62a6db4fb2",
+      "compiledVectorSha256": "c9ea176ccf88bfa7d2bad2e170e5d6cc6f22a6258656e4884523af2f361169d1",
       "viewBox": [
         0,
         0,
@@ -68,8 +68,8 @@
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daejeon-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daejeon.vec",
       "sourceSvgSha256": "ff8d14dcf7da5aafd8fcfabcfb2ee8a56273ef682243bd5b30ea0ff50bafbc00",
-      "normalizedSvgSha256": "4928de43214d33bd5f49a3eaf00ea0bc2235b9f6d8ff2c3282e604c18e66a9d5",
-      "compiledVectorSha256": "670a2740fbb27d3e01868be5e987612ea397bd51e62441f87d33e82c1b69ac23",
+      "normalizedSvgSha256": "af92a4004a32b26664ae1921c5c57dd55ac427cf494bc05b651f47255f4732b2",
+      "compiledVectorSha256": "37c730df75e586e05b5fcf4595dd1a621081045644ba1377b1b9270df0b6b31a",
       "viewBox": [
         0,
         0,

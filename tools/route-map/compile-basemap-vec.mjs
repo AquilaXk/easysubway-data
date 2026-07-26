@@ -1906,6 +1906,152 @@ function normalizeTextBaselineAndScale(svgText, k) {
   });
 }
 
+// ── 텍스트 위치 선언 완결화(#2068 대전 라벨 이중 이동, 2026-07-26) ───────────
+//
+// vector_graphics_compiler 1.2.6의 `TextPositionNode.computeTextPosition`
+// (src/svg/node.dart)은 그 노드가 **x·y(또는 dx·dy)를 둘 다** 선언했을 때만
+// 조상 transform을 좌표에 흡수한다(consumeTransform). 흡수하지 못하면 그
+// transform을 .vec 텍스트 위치 명령에 그대로 싣고, vector_graphics 1.2.2 런타임
+// (src/listener.dart의 `_flushPendingTextChunk`)이 그리기 직전
+// `canvas.transform(...)`으로 한 번 더 적용한다.
+//
+// 오너 역명 라벨 마크업은 `<text x y …><tspan x dy="0">역명</tspan></text>`
+// 형식이라 부모 `<text>`는 x·y를 둘 다 가져 흡수하는데, 자식 `<tspan>`은 x만
+// 있고 y가 없어 흡수하지 못한다 — **같은 transform이 부모에서 한 번(좌표),
+// 자식에서 또 한 번(캔버스) 적용**돼 이중 이동이 된다. 실측(2026-07-26,
+// .vec 디코드 + 런타임 청크 로직 재현):
+//   daejeon 22건 — map-content-positioned-layer의 translate(0 88)가 두 번.
+//     월드컵경기장 baseline y 695.727(기대) → 783.727(실측, +88).
+//   busan  63건 — 라벨 자신의 transform="translate(dx dy)"가 두 번.
+//     김해대학 y 2395.725(기대) → 3364.091(실측, +968.366).
+//   gwangju·daegu — 라벨 조상 transform이 항등이라 흡수 판정이 갈리지 않는다(정합).
+//   seoul — 래퍼 행렬에 미세 회전 성분이 남아 부모도 흡수하지 못한다(둘 다
+//     미흡수 → transform 1회 적용, 정합). 게다가 tspan이 이미 x·y를 둘 다 갖는다.
+//
+// 교정은 컴파일 입력에서 **부분 선언 `<tspan>`을 완전한 절대 x·y 쌍으로 채우는
+// 것**이다. 부모와 자식이 같은 흡수 판정을 받으므로 이중 적용이 구조적으로
+// 불가능해진다 — 컴파일러가 흡수하면 양쪽 다 좌표에 반영되고, 흡수하지 않으면
+// 양쪽 다 transform으로 남아 런타임이 정확히 한 번 적용한다. 즉 컴파일러 내부
+// 판정(encodableInRect 등)에 의존하지 않는다. 조상 transform이 항등인 텍스트는
+// 애초에 갈릴 판정이 없어 건드리지 않는다(gwangju·daegu 산출 바이트 불변).
+// 오너 SVG 원본은 불변이며 이 정규화는 컴파일 입력 사본에만 적용된다.
+
+function isIdentityMatrix(matrix) {
+  return matrix.every(
+    (value, index) => Math.abs(value - IDENTITY_MATRIX[index]) < 1e-12,
+  );
+}
+
+// 여는 태그의 x/y/dx/dy를 지우고 절대 x·y만 남긴다(자기폐쇄 형태 보존).
+function withAbsoluteTextPosition(openTag, x, y) {
+  const name = openTag.match(/^<([A-Za-z][\w:.-]*)/)?.[1];
+  if (!name) {
+    throw new Error(`텍스트 위치 태그를 해석하지 못했습니다: ${openTag}`);
+  }
+  const selfClosing = /\/\s*>$/.test(openTag);
+  const attributes = openTag
+    .slice(1 + name.length)
+    .replace(/\s*\/?>$/, "")
+    .replace(/\s+(?:dx|dy|x|y)="[^"]*"/g, "");
+  return `<${name}${attributes} x="${x}" y="${y}"${selfClosing ? " /" : ""}>`;
+}
+
+// [textNode] 한 그루의 `<tspan>` 위치 선언을 완결화하는 편집 목록을 모은다.
+function collectTextPositionEdits(textNode, edits) {
+  const matrix = composeMatrix(
+    ancestorMatrixOf(textNode),
+    parseTransformChain(firstAttr(textNode.openTag, "transform")),
+  );
+  // 조상·자신 transform이 항등이면 흡수 판정이 갈릴 여지가 없다(산출 불변).
+  if (isIdentityMatrix(matrix)) return;
+  // 부모 `<text>`가 x·y를 둘 다 선언하지 않으면 부모도 흡수하지 않는다 — 자식과
+  // 판정이 갈리지 않으므로 그대로 둔다(수도권 "뚝섬형" transform 배치 라벨).
+  const textX = firstCoordinateToken(firstAttr(textNode.openTag, "x"));
+  const textY = firstCoordinateToken(firstAttr(textNode.openTag, "y"));
+  if (textX == null || textY == null) return;
+  let penY = Number(textY);
+  if (!Number.isFinite(Number(textX)) || !Number.isFinite(penY)) return;
+
+  (function walk(node) {
+    for (const child of node.children) {
+      if (child.name !== "tspan") {
+        walk(child);
+        continue;
+      }
+      // 자기폐쇄 `<tspan/>`은 컴파일러가 위치 노드를 만들지 않는다(parser.dart의
+      // textOrTspan이 isSelfClosing에서 즉시 반환) — 펜도 움직이지 않는다.
+      if (child.openTag.endsWith("/>")) continue;
+      const rawX = firstCoordinateToken(firstAttr(child.openTag, "x"));
+      const rawY = firstCoordinateToken(firstAttr(child.openTag, "y"));
+      const rawDx = firstCoordinateToken(firstAttr(child.openTag, "dx"));
+      const rawDy = firstCoordinateToken(firstAttr(child.openTag, "dy"));
+      if (rawX == null) {
+        // x를 스스로 선언하지 않는 tspan의 절대 x는 **직전 글리프들의 진행폭**에
+        // 달려 있어 폰트 메트릭 없이는 계산할 수 없다. 조용히 넘기면 그 라벨만
+        // transform이 이중 적용된 채 배포되므로 실패시킨다(현행 5권역 소스에는
+        // 이 형태가 0건 — 오너 SVG에 새로 생기면 사람이 판정해야 한다).
+        throw new Error(
+          `x를 선언하지 않은 <tspan>이 transform이 걸린 <text>(${firstAttr(textNode.openTag, "id") ?? "id 없음"}) 안에 있습니다 ` +
+            "— 절대 x를 계산할 수 없어 텍스트 위치 완결화가 불가능합니다. " +
+            "오너 SVG에서 해당 tspan에 x를 명시하거나 이 정규화를 확장하세요.",
+        );
+      }
+      const x = Number(rawX) + (rawDx == null ? 0 : Number(rawDx));
+      const y =
+        (rawY == null ? penY : Number(rawY)) +
+        (rawDy == null ? 0 : Number(rawDy));
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        walk(child);
+        continue;
+      }
+      penY = y;
+      // 이미 완전 선언(x·y만 있고 상대 이동 없음)이면 손대지 않는다 — 수도권처럼
+      // 정합인 권역의 산출 바이트를 흔들지 않기 위함이다.
+      const alreadyComplete = rawY != null && rawDx == null && rawDy == null;
+      if (!alreadyComplete) {
+        edits.push({
+          start: child.start,
+          length: child.openTag.length,
+          openTag: withAbsoluteTextPosition(
+            child.openTag,
+            rawDx == null ? rawX : roundCoord(x),
+            rawY != null && rawDy == null ? rawY : roundCoord(y),
+          ),
+        });
+      }
+      walk(child);
+    }
+  })(textNode);
+}
+
+/**
+ * 컴파일 입력의 `<tspan>` 위치 선언을 완전한 절대 x·y 쌍으로 정규화한다
+ * (위 주석의 이중 transform 적용 방지). 텍스트 내용·순서·그 밖의 속성은 불변.
+ */
+export function completePartialTextPositions(svgText) {
+  const root = buildSvgTree(svgText);
+  const edits = [];
+  (function walk(node) {
+    for (const child of node.children) {
+      if (child.name === "text") {
+        collectTextPositionEdits(child, edits);
+        continue;
+      }
+      walk(child);
+    }
+  })(root);
+  if (edits.length === 0) return svgText;
+  let result = svgText;
+  // 뒤에서부터 치환해 앞쪽 인덱스가 어긋나지 않게 한다.
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    result =
+      result.slice(0, edit.start) +
+      edit.openTag +
+      result.slice(edit.start + edit.length);
+  }
+  return result;
+}
+
 // tag 문자열의 y="..." 값을 shift만큼 더한다(단일 값 가정). y가 없으면 그대로 둔다.
 function shiftTextYAttr(tag, shift) {
   const yMatch = tag.match(/\sy="(-?[\d.]+)"/);
@@ -2320,10 +2466,15 @@ export function normalizeSvgForCompile(svgText) {
     ` ${TERMINAL_CHIP_FONT_EXEMPT_ATTR}="true"`,
     "",
   );
+  // 텍스트 위치 완결화는 foldTerminalChipScale·normalizeTextBaselineAndScale이
+  // `<text>` y를 최종값으로 옮겨 놓은 **뒤**라야 한다 — 그 값에서 파생한 tspan y가
+  // 부모와 같은 기준선을 갖는다. 동시에 paint-order 분해보다는 **앞**이다(분해가
+  // 복제하는 마크업이 이미 완결된 위치 선언을 담고 있어야 두 사본이 동일하다).
+  const positioned = completePartialTextPositions(normalized);
   // paint-order 분해는 마지막에 둔다 — 앞선 정규화(폰트 굵기·baseline·font-size
-  // 스케일·좌표 단일화)를 모두 마친 마크업을 복제해야 두 사본이 paint 선언을
-  // 제외하고 완전히 동일해진다.
-  return decomposePaintOrder(normalized);
+  // 스케일·좌표 단일화·텍스트 위치 완결화)를 모두 마친 마크업을 복제해야 두 사본이
+  // paint 선언을 제외하고 완전히 동일해진다.
+  return decomposePaintOrder(positioned);
 }
 
 // vector_graphics_compiler를 apps/mobile 컨텍스트에서 실행한다. `--packages`가
