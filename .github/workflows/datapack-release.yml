@@ -135,7 +135,7 @@ jobs:
           SOURCE_GOVERNANCE_EVALUATION_AT_INPUT: ${{ steps.args.outputs.sourceGovernanceEvaluationAt }}
           SCHEDULED_PUBLISH_ENABLED: ${{ vars.DATAPACK_SCHEDULED_PUBLISH_ENABLED }}
           SCHEDULED_BUILD_SPEC_PATH: ${{ vars.DATAPACK_SCHEDULED_BUILD_SPEC_PATH }}
-          SCHEDULED_RELEASE_REQUEST_ID: ${{ vars.DATAPACK_SCHEDULED_RELEASE_REQUEST_ID }}
+          SCHEDULED_RELEASE_REQUEST_PATH: ${{ vars.DATAPACK_SCHEDULED_RELEASE_REQUEST_PATH }}
           SCHEDULED_ANDROID_EVIDENCE_PATH: ${{ vars.DATAPACK_SCHEDULED_ANDROID_EVIDENCE_PATH }}
           SCHEDULED_STRICT_ROUTE_REGRESSION_PATH: ${{ vars.DATAPACK_SCHEDULED_STRICT_ROUTE_REGRESSION_PATH }}
         run: |
@@ -150,18 +150,60 @@ jobs:
           strict_route_regression_path="${STRICT_ROUTE_REGRESSION_PATH_INPUT:-}"
           source_governance_evaluation_at="${SOURCE_GOVERNANCE_EVALUATION_AT_INPUT:-}"
 
+          # release request 경로도 build spec과 같은 기준을 받는다: 체크아웃 안의 상대 경로여야 하고
+          # fixture 계열은 금지한다. "단일 진실 원본은 리포 파일"을 경로 수준에서 기계적으로 강제한다.
+          assert_release_request_path() {
+            if [[ "$1" == /* || "$1" == *..* ]]; then
+              echo "release request path must be a repo-relative path: $1" >&2
+              exit 1
+            fi
+            if [[ "$1" =~ (fixture|debug|demo|sample) || "$1" == tools/datapack/fixtures/* ]]; then
+              echo "release mode cannot use fixture input" >&2
+              exit 1
+            fi
+          }
+
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" && "${SCHEDULED_PUBLISH_ENABLED:-}" == "true" ]]; then
             mode=production-publish
             target_channel=production
             allow_gaps=false
             build_spec="${SCHEDULED_BUILD_SPEC_PATH:-}"
-            release_request_id="${SCHEDULED_RELEASE_REQUEST_ID:-}"
+            release_request_path="${SCHEDULED_RELEASE_REQUEST_PATH:-}"
             android_evidence_path="${SCHEDULED_ANDROID_EVIDENCE_PATH:-}"
             strict_route_regression_path="${SCHEDULED_STRICT_ROUTE_REGRESSION_PATH:-}"
-            if [[ -z "${build_spec}" || -z "${release_request_id}" || -z "${android_evidence_path}" || -z "${strict_route_regression_path}" ]]; then
+            if [[ -z "${build_spec}" || -z "${release_request_path}" || -z "${android_evidence_path}" || -z "${strict_route_regression_path}" ]]; then
               echo "scheduled production publish requires configured approval evidence" >&2
               exit 1
             fi
+            assert_release_request_path "${release_request_path}"
+            if [[ ! -f "${release_request_path}" ]]; then
+              echo "scheduled release request not found: ${release_request_path}" >&2
+              exit 1
+            fi
+            # release request의 단일 원본은 리포 파일이므로 승인 식별자도 그 파일에서 읽는다.
+            # 파생값은 아래에서 GITHUB_ENV·GITHUB_OUTPUT으로 흘러가므로 "Parse modeArgs"의 개행 가드와
+            # 같은 수준으로 단일 토큰만 허용한다 — 개행이 섞이면 후행 중복 키가 앞서 확정된
+            # mode·build spec 경로를 덮어써 release-mode 게이트를 우회시킬 수 있다.
+            release_request_id="$(RELEASE_REQUEST_FILE="${release_request_path}" node -e "
+              const fs = require('fs');
+              const file = process.env.RELEASE_REQUEST_FILE;
+              let request;
+              try {
+                request = JSON.parse(fs.readFileSync(file, 'utf8'));
+              } catch {
+                console.error('scheduled release request is not valid JSON: ' + file);
+                process.exit(1);
+              }
+              if (typeof request.approvalId !== 'string' || request.approvalId === '') {
+                console.error('scheduled release request approvalId is required');
+                process.exit(1);
+              }
+              if (!/^[A-Za-z0-9._-]+\$/.test(request.approvalId)) {
+                console.error('scheduled release request approvalId must be a single [A-Za-z0-9._-] token');
+                process.exit(1);
+              }
+              process.stdout.write(request.approvalId);
+            ")"
           fi
 
           if [[ -z "${allow_gaps}" ]]; then
@@ -180,6 +222,9 @@ jobs:
               echo "release mode cannot use fixture input" >&2
               exit 1
             fi
+            if [[ -n "${release_request_path}" ]]; then
+              assert_release_request_path "${release_request_path}"
+            fi
             test -n "${release_request_id}"
             test -f "${build_spec}"
             test -n "${android_evidence_path}"
@@ -187,10 +232,15 @@ jobs:
             test -n "${strict_route_regression_path}"
             test -f "${strict_route_regression_path}"
             if [[ "${mode}" == "production-publish" ]]; then
-              if [[ -n "${release_request_path}" ]]; then
-                test -f "${release_request_path}"
-              else
-                test -n "${release_request_id}" # ID만 있으면 release request는 API에서 조회한다
+              # release request의 단일 원본은 리포 파일이다(오너 결정 2026-07-26). backend API 조회 경로는
+              # git과 갈라진 레코드가 release 입력이 될 수 있어 제거했다 — 경로가 없으면 fail-closed.
+              if [[ -z "${release_request_path}" ]]; then
+                echo "production-publish requires a release request file path (modeArgs.releaseRequestPath)" >&2
+                exit 1
+              fi
+              if [[ ! -f "${release_request_path}" ]]; then
+                echo "release request not found: ${release_request_path}" >&2
+                exit 1
               fi
             fi
             node - "${build_spec}" "${release_request_id}" "${release_request_path}" "${target_channel}" "${mode}" "${source_governance_evaluation_at}" <<'NODE'
@@ -372,24 +422,6 @@ jobs:
             --github-env "${GITHUB_ENV}" \
             --github-output "${GITHUB_OUTPUT}"
 
-      - name: Data Pack Release / Fetch release request
-        if: ${{ steps.release-mode.outputs.mode == 'production-publish' && steps.release-mode.outputs.release_request_id != '' && steps.args.outputs.releaseRequestPath == '' }}
-        env:
-          API_BASE: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
-          releaseRequestId: ${{ steps.release-mode.outputs.release_request_id }}
-        run: |
-          set -euo pipefail
-          _envfile_val() {
-            [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]] && { printf ''; return; }
-            local line
-            line="$(grep -m1 "^$1=" "${EASYSUBWAY_ENV_FILE}" 2>/dev/null || true)"
-            printf '%s' "${line#$1=}"
-          }
-          token="$(_envfile_val EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN)"
-          curl -fsS -H "Authorization: Bearer ${token}" \
-            "${API_BASE}/admin/api/datapack/release-requests/${releaseRequestId}" > release-request.json
-          echo "RELEASE_REQUEST_PATH=release-request.json" >> "$GITHUB_ENV"
-
       # release request ↔ build spec 결속을 pack 빌드 전에 fail-closed로 확인한다.
       # decide-datapack-release의 validApproval도 같은 술어를 보지만 그 시점은 빌드 이후이고
       # MATERIAL_CHANGE_UNAPPROVED만 남는다. 이 스텝은 어긋난 필드를 지목하고 즉시 종료한다.
@@ -399,9 +431,9 @@ jobs:
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
         run: |
           set -euo pipefail
-          release_request_path="${RELEASE_REQUEST_PATH:-${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}}"
+          release_request_path="${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}"
           if [[ -z "${release_request_path}" ]]; then
-            echo "production-publish requires a release request path (API fetch or file input)" >&2
+            echo "production-publish requires a release request file path" >&2
             exit 1
           fi
           if [[ ! -f "${release_request_path}" ]]; then
@@ -851,7 +883,7 @@ jobs:
           if [[ -f "${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}" ]]; then
             decision_args+=(--current-manifest "${EASYSUBWAY_DATAPACK_CURRENT_MANIFEST}")
           fi
-          release_request_path="${RELEASE_REQUEST_PATH:-${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}}"
+          release_request_path="${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}"
           if [[ -n "${release_request_path}" && -f "${release_request_path}" ]]; then
             decision_args+=(--release-request "${release_request_path}")
           fi
@@ -1006,7 +1038,7 @@ jobs:
           REMOTE_VALIDATION_OUTCOME: ${{ steps.remote-validation.outcome }}
         run: |
           set -euo pipefail
-          release_request_path="${RELEASE_REQUEST_PATH:-${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}}"
+          release_request_path="${EASYSUBWAY_DATAPACK_RELEASE_REQUEST_PATH:-}"
           candidate_manifest="${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
           publish_attempted=true
           expected_outcome=PUBLISHED_AND_VERIFIED

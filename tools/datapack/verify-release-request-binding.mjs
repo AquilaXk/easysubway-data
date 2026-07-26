@@ -22,8 +22,10 @@ import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 // decide-datapack-release.mjs의 validApproval()과 같은 술어를 검사한다.
 // 여기서 통과하고 거기서 막히는 경우가 없도록 항목을 일치시킨다.
 // expectedApprovalId를 넘기면 "요청된 release request ID == release request의 approvalId" 대조까지
-// 더한다. workflow의 인라인 대조(datapack-release.yml)가 파일 입력 경로에만 걸려 있어 API 조회
-// 경로에서는 아무도 보지 않던 항목이라, 이 인자로 preflight가 기존 검사의 실제 상위집합이 된다.
+// 더해 preflight가 validApproval()의 실제 상위집합이 된다. 도입 시점(#2521)에는 workflow의 인라인
+// 대조(datapack-release.yml)가 파일 입력 경로에만 걸려 있어 API 조회 경로에서 이 항목을 아무도 보지
+// 않는 비대칭이 있었고, #2565가 그 조회 경로 자체를 제거해 지금은 release request 입력이 리포 파일
+// 하나뿐이다. 대조는 그대로 유지된다 — dispatch가 넘긴 ID와 파일의 approvalId가 어긋나면 막는다.
 export function releaseRequestBindingViolations({
   buildSpec, buildSpecSha256, releaseRequest, expectedApprovalId = null,
 }) {
