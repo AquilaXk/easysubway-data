@@ -62,7 +62,7 @@
       "note": "파일 기반 경로는 backend candidate 행을 우회하므로 리포에 고정 명명 계약 없음. fixture 선례(capital-pilot-candidate-fixture)+snapshot 날짜 관례로 명명. release-request.candidateId와 동일(자체 정합)."
     },
     "approvalId": {
-      "value": "release-request-2026-07-18-01",
+      "value": "release-request-2026-07-26-01",
       "note": "파일 기반 경로 임의 고유 문자열 허용(workflow 183행은 modeArgs.releaseRequestId와 일치만 강제). 선행 조사 문서의 날짜+연번 관례."
     }
   },
