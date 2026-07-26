@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-pack-spec",
-  "issue": 2514,
+  "issue": 2549,
   "parentIssues": [2510, 2138],
   "candidateId": "nationwide-candidate-20260725",
-  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다.",
+  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입한다.",
   "harness": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs",
-  "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다.",
+  "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다. 지역 데이터 편입(packDataInclusions)도 candidate 조립분에서만 일어나며 게시 fixture·release-request는 어떤 경로로도 바뀌지 않는다.",
   "inheritsFrom": {
     "path": "tools/datapack/release/capital-production-reviewed-pack.json",
     "packId": "capital",
@@ -33,6 +33,63 @@
       "activePack": "nationwide-candidate"
     }
   },
+  "packDataInclusions": [
+    {
+      "regionId": "daegu",
+      "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+      "materializedAt": "2026-07-20T16:00:00.000Z",
+      "stationMapPath": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+      "lines": [
+        {
+          "lineNumber": 1,
+          "lineId": "line-5b8d9b05e7e6",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+          "timetableSnapshotPath": "tools/datapack/sources/daegu-line1-train-timetable-20260721.json"
+        },
+        {
+          "lineNumber": 2,
+          "lineId": "line-e2938a4cc492",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line2-route-topology-20260721.json",
+          "timetableSnapshotPath": "tools/datapack/sources/daegu-line2-train-timetable-20260721.json"
+        },
+        {
+          "lineNumber": 3,
+          "lineId": "line-0ffaa95b1b5d",
+          "topologySnapshotPath": "tools/datapack/sources/daegu-line3-route-topology-20260721.json",
+          "timetableSnapshotPath": "tools/datapack/sources/daegu-line3-train-timetable-20260721.json"
+        }
+      ],
+      "addedRowsKo": "편입 전후로 pack의 배열 표 전체를 세어 대조한다(집계 목록은 pack 자신에서 끌어오므로 새 표가 생겨도 자동으로 축에 들어온다). 0으로 선언한 표에 행이 들어오거나 승계 행이 in-place로 바뀌면 조립이 fail closed 된다 — route_map_positions·accessibility_facilities·fare 도메인 판정을 직접 뒷받침하는 표가 여기 포함된다.",
+      "addedRows": {
+        "operators": 1,
+        "lines": 3,
+        "stations": 91,
+        "stationLines": 94,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 182,
+        "routeMapPositions": 0,
+        "facilities": 0,
+        "stationFacilityEvidence": 0,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 9,
+        "serviceCalendarDates": 126,
+        "transitRoutes": 6,
+        "transitTrips": 2540,
+        "transitStopTimes": 77970,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 9
+      },
+      "reasonKo": "승계 원본(capital production pack)에는 수도권 밖 행이 없어 대구 requirement가 판정에 오를 수 없다. 이미 admission이 끝난 대구 snapshot(공식 topology·시각표·MOLIT 역명 매핑)을 tracked materializer로 재생해 candidate root pack에 싣는다. 신규 admission·재수집은 하지 않으며, 저장소에 78k stop_time 행을 복제하지 않고도 같은 바이트가 언제든 재현된다.",
+      "materializedAtReasonKo": "materializer의 snapshot freshness 판정은 wall-clock을 쓴다. 기준 시각을 snapshot 포착 시각대(capturedAt 2026-07-20T15:30:00Z, freshUntil 2026-07-21T15:30:00Z)로 고정하지 않으면 같은 tracked 입력에서 오늘 되는 조립이 내일 깨져 evidence 재현이 불가능해진다. 임의 시각을 넣어도 materializer가 [capturedAt, freshUntil) 밖이면 fail closed 하므로 이 pin은 snapshot에 묶여 있다. candidate는 게시 대상이 아니므로 이 pin이 게시물의 신선도 판정을 우회하지 않는다."
+    }
+  ],
   "lineScopeRedescriptions": [
     {
       "sourceId": "seoulmetro-cyberstation-route-map",
@@ -41,6 +98,102 @@
       "requirementKeys": ["capital:seoul-metro:seoul-4:route_map_positions"],
       "reasonKo": "B0 파일럿 1건. 이 소스는 admission이 완결(admissionEvidence.decision=APPROVED)돼 있고 승계 pack에 seoul-4 route_map_positions 행 2건(derivationKind=OFFICIAL, labelPolygon 포함)이 이미 있다. coverageScope에 lineIds가 있어야 build-datapack.mjs recordCoverageScopes가 (operator, line) 단일 pair line-scoped provenance를 낸다.",
       "inventorySyncKo": "같은 lineIds를 tools/datapack/source-inventory.json의 같은 소스 coverageScope에도 적어야 한다. 하네스가 두 정본의 lineIds 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "molit-urban-rail-full-route-daegu-line1-membership",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-5b8d9b05e7e6"],
+      "requirementKeys": ["daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership"],
+      "reasonKo": "B1. 대구 1호선 membership의 line·station_name 필드를 대는 소스다. tracked source-inventory가 이미 이 노선 단일 line-scope로 기술하고 있어 재기술은 admission 정본을 그대로 승계한다(inventory 변경 없음).",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line1-route-topology",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-5b8d9b05e7e6"],
+      "requirementKeys": ["daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership"],
+      "reasonKo": "B1. 이 소스는 membership의 station_code 필드를 댄다(coverageScope.sourceDomains가 route_graph_topology와 station_line_membership 둘 다를 덮는다). membership requirement는 이 소스와 molit membership 소스가 함께 뒷받침해야 필수 필드 3개가 모두 covered 된다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line1-route-topology",
+      "sourceDomain": "route_graph_topology",
+      "lineIds": ["line-5b8d9b05e7e6"],
+      "requirementKeys": ["daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology"],
+      "reasonKo": "B1. 대구 1호선 network_edges·duration_seconds·distance_meters를 대는 공식 topology snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line1-train-timetable",
+      "sourceDomain": "schedule_timetable",
+      "lineIds": ["line-5b8d9b05e7e6"],
+      "requirementKeys": ["daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable"],
+      "reasonKo": "B1. 대구 1호선 service_calendar·trip·stop_time을 대는 공식 시각표 snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "molit-urban-rail-full-route-daegu-line2-membership",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-e2938a4cc492"],
+      "requirementKeys": ["daegu:daegu-transportation:line-e2938a4cc492:station_line_membership"],
+      "reasonKo": "B1. 대구 2호선 membership의 line·station_name 필드를 대는 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line2-route-topology",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-e2938a4cc492"],
+      "requirementKeys": ["daegu:daegu-transportation:line-e2938a4cc492:station_line_membership"],
+      "reasonKo": "B1. 대구 2호선 membership의 station_code 필드를 대는 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line2-route-topology",
+      "sourceDomain": "route_graph_topology",
+      "lineIds": ["line-e2938a4cc492"],
+      "requirementKeys": ["daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology"],
+      "reasonKo": "B1. 대구 2호선 network_edges·duration_seconds·distance_meters를 대는 공식 topology snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line2-train-timetable",
+      "sourceDomain": "schedule_timetable",
+      "lineIds": ["line-e2938a4cc492"],
+      "requirementKeys": ["daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable"],
+      "reasonKo": "B1. 대구 2호선 service_calendar·trip·stop_time을 대는 공식 시각표 snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "molit-urban-rail-full-route-daegu-line3-membership",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-0ffaa95b1b5d"],
+      "requirementKeys": ["daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership"],
+      "reasonKo": "B1. 대구 3호선 membership의 line·station_name 필드를 대는 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line3-route-topology",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-0ffaa95b1b5d"],
+      "requirementKeys": ["daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership"],
+      "reasonKo": "B1. 대구 3호선 membership의 station_code 필드를 대는 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line3-route-topology",
+      "sourceDomain": "route_graph_topology",
+      "lineIds": ["line-0ffaa95b1b5d"],
+      "requirementKeys": ["daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology"],
+      "reasonKo": "B1. 대구 3호선 network_edges·duration_seconds·distance_meters를 대는 공식 topology snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "daegu-line3-train-timetable",
+      "sourceDomain": "schedule_timetable",
+      "lineIds": ["line-0ffaa95b1b5d"],
+      "requirementKeys": ["daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable"],
+      "reasonKo": "B1. 대구 3호선 service_calendar·trip·stop_time을 대는 공식 시각표 snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
     }
   ]
 }

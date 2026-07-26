@@ -57,14 +57,14 @@
     },
     "spec": {
       "path": "tools/datapack/nationwide-candidate-pack-spec.json",
-      "sha256": "a2a867bfc59c8959b735435badadb689e74e9de16477634f37317966cda8607d"
+      "sha256": "760656a39affb35889484cba066dbd485dc7040c87f5488f820ef830ed79af88"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
       "sha256": "2715e0bb28a25b2103add14747e74742fcb88f61e4cf357ed68453f20cf6cfc5"
     }
   },
-  "issue": 2514,
+  "issue": 2549,
   "lineScopeRedescriptions": [
     {
       "lineIds": [
@@ -75,13 +75,201 @@
       ],
       "sourceDomain": "route_map_positions",
       "sourceId": "seoulmetro-cyberstation-route-map"
+    },
+    {
+      "lineIds": [
+        "line-5b8d9b05e7e6"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "molit-urban-rail-full-route-daegu-line1-membership"
+    },
+    {
+      "lineIds": [
+        "line-5b8d9b05e7e6"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "daegu-line1-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-5b8d9b05e7e6"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology"
+      ],
+      "sourceDomain": "route_graph_topology",
+      "sourceId": "daegu-line1-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-5b8d9b05e7e6"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable"
+      ],
+      "sourceDomain": "schedule_timetable",
+      "sourceId": "daegu-line1-train-timetable"
+    },
+    {
+      "lineIds": [
+        "line-e2938a4cc492"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "molit-urban-rail-full-route-daegu-line2-membership"
+    },
+    {
+      "lineIds": [
+        "line-e2938a4cc492"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "daegu-line2-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-e2938a4cc492"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology"
+      ],
+      "sourceDomain": "route_graph_topology",
+      "sourceId": "daegu-line2-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-e2938a4cc492"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable"
+      ],
+      "sourceDomain": "schedule_timetable",
+      "sourceId": "daegu-line2-train-timetable"
+    },
+    {
+      "lineIds": [
+        "line-0ffaa95b1b5d"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "molit-urban-rail-full-route-daegu-line3-membership"
+    },
+    {
+      "lineIds": [
+        "line-0ffaa95b1b5d"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "daegu-line3-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-0ffaa95b1b5d"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology"
+      ],
+      "sourceDomain": "route_graph_topology",
+      "sourceId": "daegu-line3-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-0ffaa95b1b5d"
+      ],
+      "requirementKeys": [
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable"
+      ],
+      "sourceDomain": "schedule_timetable",
+      "sourceId": "daegu-line3-train-timetable"
     }
   ],
+  "packDataInclusions": {
+    "entries": [
+      {
+        "addedRows": {
+          "facilities": 0,
+          "lines": 3,
+          "movementPathCandidates": 0,
+          "networkEdges": 182,
+          "officialOdFareQuotes": 0,
+          "operators": 1,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapPositions": 0,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 126,
+          "serviceCalendars": 9,
+          "sourceInventory": 9,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 0,
+          "stationLines": 94,
+          "stations": 91,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 6,
+          "transitStopTimes": 77970,
+          "transitTrips": 2540
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/daegu-line1-route-topology-20260721.json",
+            "sha256": "a3ebdac628d6487a3527281db8936bccde8036b2beeae0ca74bda09f682050a9"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line1-train-timetable-20260721.json",
+            "sha256": "0f59a00d8a8cd7996ccf9d37cb567f5c03e79e1fbb54de864cf8b7a408b35b2b"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line2-route-topology-20260721.json",
+            "sha256": "ad29a9b324f9fd4b33438ba8748581820e03be4ae13b7691054e1e3f3495d8a6"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line2-train-timetable-20260721.json",
+            "sha256": "019dd971b15d961ab70e16bb13093c3cc3ab41c01f7a293eeb85d70fa384c5c7"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line3-route-topology-20260721.json",
+            "sha256": "d7e97d51e9379a2694e2b4aa5b2638d9d5a4a55ff2b0724abb1d58dc42b1341d"
+          },
+          {
+            "path": "tools/datapack/sources/daegu-line3-train-timetable-20260721.json",
+            "sha256": "0113ad53d4ab6df6af374d3c9cba42f746b55d539fa943184a166efbc02931dd"
+          },
+          {
+            "path": "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+            "sha256": "3f08fb398bcb16e8ff047ec17f094a28590ec8d5aa1b8df2d6e9cec85ed0f6e7"
+          }
+        ],
+        "materializedAt": "2026-07-20T16:00:00.000Z",
+        "materializer": "tools/datapack/materialize-daegu-timetable.mjs",
+        "regionId": "daegu"
+      }
+    ],
+    "modelKo": "승계 원본에 없는 지역 행은 tracked materializer가 tracked snapshot을 재생해 조립한다. 저장소에 행을 복제하지 않으므로 아래 입력 해시가 candidate 구성의 유일한 결속 축이며, 실제로 실린 행수(addedRows)가 spec 선언과 다르면(또는 승계 행이 바뀌면) 조립이 fail closed 된다.",
+    "variantParityKo": "편입 행은 두 variant에 동일하게 들어간다. 편입은 line-scope 재기술과 독립이며, variant를 가르는 축은 재기술뿐이다."
+  },
   "parentIssues": [
     2510,
     2138
   ],
   "readingGuide": {
+    "baselineSemanticsKo": "baseline은 저장소의 특정 과거 커밋 상태가 아니라 '등재된 재기술을 걷어낸' counterfactual이다. 아래 lineScopeRedescriptions에 등재된 소스의 coverageScope.lineIds만 fixture와 inventory 사본에서 지운 실행이며, 편입 행은 두 variant에 동일하게 들어간다. 따라서 이 evidence의 전이는 '어떤 소스의 line-scope 기술이 그 requirement를 여는가'를 뜻하고, 그 소스의 line-scope가 admission 정본에 언제 들어왔는지(대구 소스는 #2549 이전부터 line-scope였다)와는 다른 축이다. 전이를 뒷받침한 소스가 등재 목록과 정확히 같은지는 하네스가 fail closed로 확인한다.",
     "denominatorSemanticsKo": "pilotRequirements의 denominator·coveredFields는 domain requiredFields 개수이지 데이터 행 수가 아니다. route_map_positions의 denominator 2는 필수 필드 2개(route_map_position·route_map_label_polygon)를 뜻하며 역 2개나 행 2개를 뜻하지 않는다. 실제로 그 판정을 뒷받침한 provenance 행 수는 필드별 supportingRecordCountByField에 따로 기록한다.",
     "supportedScopeKo": "이 evidence는 SUPPORTED 축만 기록하므로 전국 gap 총량 판독에 쓰면 안 된다. 전국 진행 집계는 tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
     "variantComparisonKo": "전이 판정은 두 variant의 상대 비교다. baseline SUPPORTED 총량은 승계 팩의 다른 소스가 line-scope를 갖게 되면 함께 늘어날 수 있고, 하네스는 파일럿 키가 baseline에 없고 lineScoped가 baseline ∪ 파일럿 키와 정확히 같은지만 fail closed로 본다."
@@ -102,6 +290,99 @@
       "requirementKey": "capital:seoul-metro:seoul-4:route_map_positions",
       "sourceIds": [
         "seoulmetro-cyberstation-route-map"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
+      "sourceIds": [
+        "daegu-line3-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable",
+      "sourceIds": [
+        "daegu-line3-train-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership",
+      "sourceIds": [
+        "daegu-line3-route-topology",
+        "molit-urban-rail-full-route-daegu-line3-membership"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology",
+      "sourceIds": [
+        "daegu-line1-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable",
+      "sourceIds": [
+        "daegu-line1-train-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership",
+      "sourceIds": [
+        "daegu-line1-route-topology",
+        "molit-urban-rail-full-route-daegu-line1-membership"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology",
+      "sourceIds": [
+        "daegu-line2-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable",
+      "sourceIds": [
+        "daegu-line2-train-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership",
+      "sourceIds": [
+        "daegu-line2-route-topology",
+        "molit-urban-rail-full-route-daegu-line2-membership"
       ]
     }
   ],
@@ -148,6 +429,339 @@
             "route_map_label_polygon": 0,
             "route_map_position": 0
           }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
         }
       ],
       "supportedRequirementKeys": []
@@ -160,8 +774,8 @@
         "totalCount": 45
       },
       "launchRequired": {
-        "supportedCount": 1,
-        "supportedRatio": 0.0037,
+        "supportedCount": 10,
+        "supportedRatio": 0.037,
         "totalCount": 270
       },
       "pilotRequirements": [
@@ -197,10 +811,391 @@
             "route_map_label_polygon": 2,
             "route_map_position": 2
           }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "daegu-line3-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "daegu-line3-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "daegu-line3-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
+          "sourceIds": [
+            "daegu-line3-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 58,
+            "duration_seconds": 58,
+            "network_edges": 58
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "daegu-line3-train-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "daegu-line3-train-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "daegu-line3-train-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable",
+          "sourceIds": [
+            "daegu-line3-train-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 26640,
+            "trip": 888
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "molit-urban-rail-full-route-daegu-line3-membership"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "molit-urban-rail-full-route-daegu-line3-membership"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "daegu-line3-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership",
+          "sourceIds": [
+            "daegu-line3-route-topology",
+            "molit-urban-rail-full-route-daegu-line3-membership"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 30,
+            "station_code": 30,
+            "station_name": 28
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "daegu-line1-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "daegu-line1-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "daegu-line1-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology",
+          "sourceIds": [
+            "daegu-line1-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 68,
+            "duration_seconds": 68,
+            "network_edges": 68
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "daegu-line1-train-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "daegu-line1-train-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "daegu-line1-train-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable",
+          "sourceIds": [
+            "daegu-line1-train-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 27514,
+            "trip": 824
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "molit-urban-rail-full-route-daegu-line1-membership"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "molit-urban-rail-full-route-daegu-line1-membership"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "daegu-line1-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership",
+          "sourceIds": [
+            "daegu-line1-route-topology",
+            "molit-urban-rail-full-route-daegu-line1-membership"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 35,
+            "station_code": 35,
+            "station_name": 35
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "daegu-line2-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "daegu-line2-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "daegu-line2-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology",
+          "sourceIds": [
+            "daegu-line2-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 56,
+            "duration_seconds": 56,
+            "network_edges": 56
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "daegu-line2-train-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "daegu-line2-train-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "daegu-line2-train-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable",
+          "sourceIds": [
+            "daegu-line2-train-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 23816,
+            "trip": 828
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "molit-urban-rail-full-route-daegu-line2-membership"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "molit-urban-rail-full-route-daegu-line2-membership"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "daegu-line2-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership",
+          "sourceIds": [
+            "daegu-line2-route-topology",
+            "molit-urban-rail-full-route-daegu-line2-membership"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 29,
+            "station_code": 29,
+            "station_name": 28
+          }
         }
       ],
       "supportedRequirementKeys": [
-        "capital:seoul-metro:seoul-4:route_map_positions"
+        "capital:seoul-metro:seoul-4:route_map_positions",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:schedule_timetable",
+        "daegu:daegu-transportation:line-0ffaa95b1b5d:station_line_membership",
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:route_graph_topology",
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:schedule_timetable",
+        "daegu:daegu-transportation:line-5b8d9b05e7e6:station_line_membership",
+        "daegu:daegu-transportation:line-e2938a4cc492:route_graph_topology",
+        "daegu:daegu-transportation:line-e2938a4cc492:schedule_timetable",
+        "daegu:daegu-transportation:line-e2938a4cc492:station_line_membership"
       ]
     }
   }
