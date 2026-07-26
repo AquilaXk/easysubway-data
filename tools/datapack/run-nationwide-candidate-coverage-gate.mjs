@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // #2514 (#2510 B0) 전국 candidate pack 게이트 하네스. #2549 (#2510 B1)에서 지역 데이터 편입으로 확장하고,
-// #2580 (#2510 B2-a)에서 편입 스키마를 다도메인 체인으로 일반화했다.
+// #2580 (#2510 B2-a)에서 편입 스키마를 다도메인 체인으로 일반화했으며, #2587 (#2510 B2-b)에서 그 스키마로
+// 두 번째 지역(부산 4노선 5도메인)을 편입했다.
 //
 // candidate spec → candidate fixture 조립 → build-datapack.mjs --fixture → report-coverage-gaps.mjs
 // 실행을 한 명령으로 묶고, line-scope 재기술 전(baseline)/후(lineScoped) 두 variant를 같은 실행에서
@@ -57,8 +58,16 @@ import { promisify } from "node:util";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { parseMolitDaeguStationMappings } from "./build-molit-nationwide-fixture.mjs";
+import { BUSAN_LINES } from "./collect-busan-route-topology.mjs";
 import { DAEGU_LINES } from "./collect-daegu-datapack-sources.mjs";
 import { parseArgs, requireArg, sortJson } from "./lib/ledger-admission-cli.mjs";
+import { materializeBusanAccessibility } from "./materialize-busan-accessibility.mjs";
+import { materializeBusanRouteMapPositions } from "./materialize-busan-route-map-positions.mjs";
+import {
+  materializeBusanRouteTopology,
+  parseCanonicalBusanStationMappings,
+} from "./materialize-busan-route-topology.mjs";
+import { materializeBusanTimetable } from "./materialize-busan-timetable.mjs";
 import { materializeDaeguAccessibility } from "./materialize-daegu-accessibility.mjs";
 import { materializeDaeguRouteMapPositions } from "./materialize-daegu-route-map-positions.mjs";
 import { materializeDaeguTimetable } from "./materialize-daegu-timetable.mjs";
@@ -105,7 +114,31 @@ const PACK_DATA_MATERIALIZERS = new Map([
     materialize: materializeDaeguAccessibilityInclusion,
     inputs: { paths: ["snapshotPath"], linePaths: ["topologySnapshotPath"] },
   }],
+  // 부산 편입 4종(#2587). 부산 topology snapshot은 4노선을 한 파일에 담으므로 대구와 달리 노선별 경로가
+  // 없고 편입 층 경로 키만 쓴다 — 등재 형상이 어댑터가 실제로 읽는 키와 정확히 같아야 한다는 규약 그대로다.
+  ["tools/datapack/materialize-busan-route-topology.mjs", {
+    materialize: materializeBusanRouteTopologyInclusion,
+    inputs: { paths: ["snapshotPath", "stationMapPath"], linePaths: [] },
+  }],
+  ["tools/datapack/materialize-busan-timetable.mjs", {
+    materialize: materializeBusanTimetableInclusion,
+    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+  }],
+  ["tools/datapack/materialize-busan-route-map-positions.mjs", {
+    materialize: materializeBusanRouteMapInclusion,
+    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+  }],
+  ["tools/datapack/materialize-busan-accessibility.mjs", {
+    materialize: materializeBusanAccessibilityInclusion,
+    inputs: { paths: ["snapshotPath", "topologySnapshotPath"], linePaths: [] },
+  }],
 ]);
+// 부산 편입이 admission 정본을 찾을 때 쓰는 소스 id. 네 편입 모두 상수로 두어 문자열이 어댑터마다
+// 인라인으로 흩어지지 않게 한다.
+const BUSAN_TOPOLOGY_SOURCE_ID = "busan-transportation-route-topology";
+const BUSAN_TIMETABLE_SOURCE_ID = "busan-transportation-timetable";
+const BUSAN_ROUTE_MAP_SOURCE_ID = "busan-transportation-route-map-positions";
+const BUSAN_ACCESSIBILITY_SOURCE_ID = "busan-transportation-accessibility";
 // 형상과 무관하게 모든 편입 레코드가 갖는 키. 나머지 허용 키는 등재 형상의 경로 키와 아래 서술 키뿐이다.
 const INCLUSION_BASE_KEYS = Object.freeze(["regionId", "materializer", "materializedAt", "lines", "addedRows"]);
 const INCLUSION_LINE_BASE_KEYS = Object.freeze(["lineNumber", "lineId"]);
@@ -345,6 +378,125 @@ async function materializeDaeguAccessibilityInclusion(fixture, inclusion, { read
       inclusion.snapshotPath,
     ),
     topologySnapshots,
+    inventory,
+    now: new Date(inclusion.materializedAt),
+  });
+}
+
+// 부산 편입 4종이 공유하는 노선 선언 대조. 노선 구성(lineNumber·lineId)은 저장소 정본(BUSAN_LINES)과
+// 대조해 spec 선언이 데이터와 갈리면 fail closed 한다 — 대조가 없으면 lines 선언이 죽은 채로 통과한다.
+function assertBusanLines(inclusion) {
+  const declared = inclusion.lines;
+  if (declared.length !== BUSAN_LINES.length
+    || declared.some((line, index) => line.lineNumber !== BUSAN_LINES[index].lineNumber
+      || line.lineId !== BUSAN_LINES[index].lineId)) {
+    throw new Error(`${inclusionLabel(inclusion)} pack data inclusion must declare every tracked Busan line`);
+  }
+}
+
+// 부산 시각표·노선도·편의시설 편입이 공유하는 topology snapshot 로딩. 세 materializer는 topology 계보를
+// contentSha256으로 대조하는데 그 해시는 snapshot 내용에서 파생돼 재직렬화 사본도 같은 값을 낸다 —
+// 경로도 admission 정본에 결속해 편입이 읽는 파일을 정본 하나로 못박는다.
+async function busanTopologySnapshot(inclusion, readTracked, inventory) {
+  assertAdmissionSnapshotPath(
+    inventory,
+    BUSAN_TOPOLOGY_SOURCE_ID,
+    "topologyAdmissionEvidence",
+    inclusion.topologySnapshotPath,
+  );
+  return parseJsonBytes(
+    await readTracked(inclusion.topologySnapshotPath, "topologySnapshotPath"),
+    inclusion.topologySnapshotPath,
+  );
+}
+
+// 부산 topology 편입 어댑터(#2587). 체인의 첫 부산 편입이며 운영기관·노선·역·구간을 함께 싣는다.
+// 나머지 세 부산 편입은 이 편입이 실은 소스 등재·station_lines·network_edges를 선행 조건으로 검사하므로
+// 순서를 바꾸면 조립이 fail closed 된다.
+async function materializeBusanRouteTopologyInclusion(fixture, inclusion, { readTracked, inventory }) {
+  assertBusanLines(inclusion);
+  assertAdmissionSnapshotPath(
+    inventory,
+    BUSAN_TOPOLOGY_SOURCE_ID,
+    "topologyAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
+  const stationMapBytes = await readTracked(inclusion.stationMapPath, "stationMapPath");
+  return materializeBusanRouteTopology({
+    baseFixture: fixture,
+    snapshot: parseJsonBytes(
+      await readTracked(inclusion.snapshotPath, "snapshotPath"),
+      inclusion.snapshotPath,
+    ),
+    inventory,
+    canonicalStationMappings: parseCanonicalBusanStationMappings(stationMapBytes.toString("utf8")),
+    now: new Date(inclusion.materializedAt),
+  });
+}
+
+// 부산 시각표 편입 어댑터(#2587).
+async function materializeBusanTimetableInclusion(fixture, inclusion, { readTracked, inventory }) {
+  assertBusanLines(inclusion);
+  assertAdmissionSnapshotPath(
+    inventory,
+    BUSAN_TIMETABLE_SOURCE_ID,
+    "scheduleAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
+  const topologySnapshot = await busanTopologySnapshot(inclusion, readTracked, inventory);
+  return materializeBusanTimetable({
+    baseFixture: fixture,
+    timetableSnapshot: parseJsonBytes(
+      await readTracked(inclusion.snapshotPath, "snapshotPath"),
+      inclusion.snapshotPath,
+    ),
+    topologySnapshot,
+    inventory,
+    now: new Date(inclusion.materializedAt),
+  });
+}
+
+// 부산 노선도 좌표 편입 어댑터(#2587). materializer가 snapshot 바이트 정체성(snapshotSha256)을 admission
+// 정본과 대조하지만 바이트 축만으로는 저장소 안 바이트 동일 사본도 통과한다 — 대구 편입과 같이 정본
+// snapshotPath에도 결속한다.
+async function materializeBusanRouteMapInclusion(fixture, inclusion, { readTracked, inventory }) {
+  assertBusanLines(inclusion);
+  assertAdmissionSnapshotPath(
+    inventory,
+    BUSAN_ROUTE_MAP_SOURCE_ID,
+    "routeMapAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
+  const topologySnapshot = await busanTopologySnapshot(inclusion, readTracked, inventory);
+  const snapshotBytes = await readTracked(inclusion.snapshotPath, "snapshotPath");
+  return materializeBusanRouteMapPositions({
+    baseFixture: fixture,
+    snapshot: parseJsonBytes(snapshotBytes, inclusion.snapshotPath),
+    snapshotSha256: sha256Hex(snapshotBytes),
+    topologySnapshot,
+    inventory,
+    now: new Date(inclusion.materializedAt),
+  });
+}
+
+// 부산 교통약자 편의시설 편입 어댑터(#2587). 대구 편의시설과 같이 정본에 바이트 축이 없어(rawSha256·
+// rowsSha256이 snapshot 내용에서 파생된다) 경로 결속이 유일한 정체성 축이다.
+async function materializeBusanAccessibilityInclusion(fixture, inclusion, { readTracked, inventory }) {
+  assertBusanLines(inclusion);
+  assertAdmissionSnapshotPath(
+    inventory,
+    BUSAN_ACCESSIBILITY_SOURCE_ID,
+    "accessibilityAdmissionEvidence",
+    inclusion.snapshotPath,
+  );
+  const topologySnapshot = await busanTopologySnapshot(inclusion, readTracked, inventory);
+  return materializeBusanAccessibility({
+    baseFixture: fixture,
+    accessibilitySnapshot: parseJsonBytes(
+      await readTracked(inclusion.snapshotPath, "snapshotPath"),
+      inclusion.snapshotPath,
+    ),
+    topologySnapshot,
     inventory,
     now: new Date(inclusion.materializedAt),
   });
@@ -757,7 +909,14 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         + "있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 "
         + "검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입"
         + "(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 "
-        + "축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다.",
+        + "축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다. 부산은 선행 "
+        + "구조가 대구와 다르다 — 승계 원본에 부산 운영기관·노선·역이 아예 없어 topology 편입이 그 셋을 "
+        + "함께 싣고, 나머지 세 편입(시각표·노선도·편의시설)이 모두 그 소스 등재와 station_lines·"
+        + "network_edges 계보를 선행 조건으로 검사한다. 즉 부산 구간에서 선행 조건이 강제하는 것은 "
+        + "topology가 먼저라는 것뿐이다. 다만 부산 노선도 편입은 승계 원본에 없던 표"
+        + "(routeMapLineTracks)를 새로 만들기 때문에 뒤 세 편입끼리의 교환도 조립을 통과하지 못한다"
+        + "(실측) — 그 표를 0으로 선언해야 하는 편입이 순서에 따라 갈려 선언 행수 대조에서 걸리며, "
+        + "이는 선행 조건 위반과 다른 축이다.",
       entries: packDataInclusions,
     },
     lineScopeRedescriptions: spec.lineScopeRedescriptions.map((redescription) => ({

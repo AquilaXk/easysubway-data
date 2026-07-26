@@ -57,14 +57,14 @@
     },
     "spec": {
       "path": "tools/datapack/nationwide-candidate-pack-spec.json",
-      "sha256": "346d7c617a02cc450229a3fdc9fd8671ca7ef68c936a8ec908dc9745dea05f39"
+      "sha256": "6424e03e1e311b8055efccaeb34bf50b3092233d810190a9dd62d010869ae59f"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
       "sha256": "2715e0bb28a25b2103add14747e74742fcb88f61e4cf357ed68453f20cf6cfc5"
     }
   },
-  "issue": 2580,
+  "issue": 2587,
   "lineScopeRedescriptions": [
     {
       "lineIds": [
@@ -223,10 +223,90 @@
       ],
       "sourceDomain": "accessibility_facilities",
       "sourceId": "daegu-transportation-accessibility"
+    },
+    {
+      "lineIds": [
+        "line-ab1a041f6266",
+        "line-d74614a04530",
+        "line-d812a5bc1e5f",
+        "line-eb7b47920390"
+      ],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
+        "busan:busan-transportation:line-d74614a04530:station_line_membership",
+        "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
+        "busan:busan-transportation:line-eb7b47920390:station_line_membership"
+      ],
+      "sourceDomain": "station_line_membership",
+      "sourceId": "busan-transportation-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-ab1a041f6266",
+        "line-d74614a04530",
+        "line-d812a5bc1e5f",
+        "line-eb7b47920390"
+      ],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+        "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+        "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+        "busan:busan-transportation:line-eb7b47920390:route_graph_topology"
+      ],
+      "sourceDomain": "route_graph_topology",
+      "sourceId": "busan-transportation-route-topology"
+    },
+    {
+      "lineIds": [
+        "line-ab1a041f6266",
+        "line-d74614a04530",
+        "line-d812a5bc1e5f",
+        "line-eb7b47920390"
+      ],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+        "busan:busan-transportation:line-d74614a04530:schedule_timetable",
+        "busan:busan-transportation:line-d812a5bc1e5f:schedule_timetable",
+        "busan:busan-transportation:line-eb7b47920390:schedule_timetable"
+      ],
+      "sourceDomain": "schedule_timetable",
+      "sourceId": "busan-transportation-timetable"
+    },
+    {
+      "lineIds": [
+        "line-ab1a041f6266",
+        "line-d74614a04530",
+        "line-d812a5bc1e5f",
+        "line-eb7b47920390"
+      ],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:route_map_positions",
+        "busan:busan-transportation:line-d74614a04530:route_map_positions",
+        "busan:busan-transportation:line-d812a5bc1e5f:route_map_positions",
+        "busan:busan-transportation:line-eb7b47920390:route_map_positions"
+      ],
+      "sourceDomain": "route_map_positions",
+      "sourceId": "busan-transportation-route-map-positions"
+    },
+    {
+      "lineIds": [
+        "line-ab1a041f6266",
+        "line-d74614a04530",
+        "line-d812a5bc1e5f",
+        "line-eb7b47920390"
+      ],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
+        "busan:busan-transportation:line-d74614a04530:accessibility_facilities",
+        "busan:busan-transportation:line-d812a5bc1e5f:accessibility_facilities",
+        "busan:busan-transportation:line-eb7b47920390:accessibility_facilities"
+      ],
+      "sourceDomain": "accessibility_facilities",
+      "sourceId": "busan-transportation-accessibility"
     }
   ],
   "packDataInclusions": {
-    "chainKo": "entries는 적용 순서다. 한 지역에 여러 도메인을 편입하면 뒤 편입의 승계 원본은 앞 편입 결과이므로 앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다. 순서를 조립이 강제하는 구간은 선행 조건이 있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다.",
+    "chainKo": "entries는 적용 순서다. 한 지역에 여러 도메인을 편입하면 뒤 편입의 승계 원본은 앞 편입 결과이므로 앞선 편입이 실은 행도 뒤 편입의 불변 대상이 된다. 순서를 조립이 강제하는 구간은 선행 조건이 있는 쌍뿐이다 — 대구 route_map·accessibility는 pack에 대구 시각표 소스가 이미 있을 것을 검사하므로 시각표 편입보다 앞서면 fail closed 되지만, 서로 선행 조건이 없는 두 편입(route_map↔accessibility)은 순서를 바꿔도 조립이 통과한다. 따라서 기록된 전체 순서를 고정하는 축은 조립 fail closed가 아니라 이 entries 배열 순서를 그대로 대조하는 회귀다. 부산은 선행 구조가 대구와 다르다 — 승계 원본에 부산 운영기관·노선·역이 아예 없어 topology 편입이 그 셋을 함께 싣고, 나머지 세 편입(시각표·노선도·편의시설)이 모두 그 소스 등재와 station_lines·network_edges 계보를 선행 조건으로 검사한다. 즉 부산 구간에서 선행 조건이 강제하는 것은 topology가 먼저라는 것뿐이다. 다만 부산 노선도 편입은 승계 원본에 없던 표(routeMapLineTracks)를 새로 만들기 때문에 뒤 세 편입끼리의 교환도 조립을 통과하지 못한다(실측) — 그 표를 0으로 선언해야 하는 편입이 순서에 따라 갈려 선언 행수 대조에서 걸리며, 이는 선행 조건 위반과 다른 축이다.",
     "entries": [
       {
         "addedRows": {
@@ -386,6 +466,172 @@
         "materializedAt": "2026-07-24T01:00:00.000Z",
         "materializer": "tools/datapack/materialize-daegu-accessibility.mjs",
         "regionId": "daegu"
+      },
+      {
+        "addedRows": {
+          "facilities": 0,
+          "lines": 4,
+          "movementPathCandidates": 0,
+          "networkEdges": 220,
+          "officialOdFareQuotes": 0,
+          "operators": 1,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapPositions": 0,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 0,
+          "serviceCalendars": 0,
+          "sourceInventory": 1,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 0,
+          "stationLines": 114,
+          "stations": 108,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 0,
+          "transitStopTimes": 0,
+          "transitTrips": 0
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+            "sha256": "cc266692cddf5d7ae77af8c28803cac3bf5397610e667c28d766066ad955c655"
+          },
+          {
+            "path": "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv",
+            "sha256": "b1d7305fa0c8ccaf5a52450595987d7ab9e1ef0146545f420921d682f253e902"
+          }
+        ],
+        "materializedAt": "2026-07-19T18:13:31.841Z",
+        "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
+        "regionId": "busan"
+      },
+      {
+        "addedRows": {
+          "facilities": 0,
+          "lines": 0,
+          "movementPathCandidates": 0,
+          "networkEdges": 0,
+          "officialOdFareQuotes": 0,
+          "operators": 0,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapPositions": 0,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 36,
+          "serviceCalendars": 3,
+          "sourceInventory": 1,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 0,
+          "stationLines": 0,
+          "stations": 0,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 8,
+          "transitStopTimes": 109140,
+          "transitTrips": 3833
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+            "sha256": "cc266692cddf5d7ae77af8c28803cac3bf5397610e667c28d766066ad955c655"
+          },
+          {
+            "path": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
+            "sha256": "5288d310f04d2a5771f2bc43f1dc089940b4904da44f7159c38dc6c0cb1d8640"
+          }
+        ],
+        "materializedAt": "2026-07-20T08:37:16.931Z",
+        "materializer": "tools/datapack/materialize-busan-timetable.mjs",
+        "regionId": "busan"
+      },
+      {
+        "addedRows": {
+          "facilities": 0,
+          "lines": 0,
+          "movementPathCandidates": 0,
+          "networkEdges": 0,
+          "officialOdFareQuotes": 0,
+          "operators": 0,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapLineTracks": 4,
+          "routeMapPositions": 114,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 0,
+          "serviceCalendars": 0,
+          "sourceInventory": 1,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 0,
+          "stationLines": 0,
+          "stations": 0,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 0,
+          "transitStopTimes": 0,
+          "transitTrips": 0
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
+            "sha256": "6ef6db7e6127c4628ead06fb5d8140ea3ec209b5a60ea08316c592245a45cf53"
+          },
+          {
+            "path": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+            "sha256": "cc266692cddf5d7ae77af8c28803cac3bf5397610e667c28d766066ad955c655"
+          }
+        ],
+        "materializedAt": "2026-07-20T11:13:18.000Z",
+        "materializer": "tools/datapack/materialize-busan-route-map-positions.mjs",
+        "regionId": "busan"
+      },
+      {
+        "addedRows": {
+          "facilities": 342,
+          "lines": 0,
+          "movementPathCandidates": 0,
+          "networkEdges": 0,
+          "officialOdFareQuotes": 0,
+          "operators": 0,
+          "representativeRouteRegressions": 0,
+          "requiredTables": 0,
+          "routeMapLineTracks": 0,
+          "routeMapPositions": 0,
+          "routeServiceArtifactEvidence": 0,
+          "serviceCalendarDates": 0,
+          "serviceCalendars": 0,
+          "sourceInventory": 1,
+          "stationAccessibilitySummaries": 0,
+          "stationAliases": 0,
+          "stationExits": 0,
+          "stationFacilityEvidence": 342,
+          "stationLines": 0,
+          "stations": 0,
+          "transitFeedInfo": 0,
+          "transitFrequencies": 0,
+          "transitRoutes": 0,
+          "transitStopTimes": 0,
+          "transitTrips": 0
+        },
+        "inputs": [
+          {
+            "path": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
+            "sha256": "ba64f8ce46c441b80733f91eb3cf8c35e96cef82780dd8f1f10d428378a55ca4"
+          },
+          {
+            "path": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+            "sha256": "cc266692cddf5d7ae77af8c28803cac3bf5397610e667c28d766066ad955c655"
+          }
+        ],
+        "materializedAt": "2026-07-24T00:19:05.836Z",
+        "materializer": "tools/datapack/materialize-busan-accessibility.mjs",
+        "regionId": "busan"
       }
     ],
     "modelKo": "승계 원본에 없는 지역 행은 tracked materializer가 tracked snapshot을 재생해 조립한다. 저장소에 행을 복제하지 않으므로 아래 입력 해시가 candidate 구성의 유일한 결속 축이며, 실제로 실린 행수(addedRows)가 spec 선언과 다르면(또는 승계 행이 바뀌면) 조립이 fail closed 된다.",
@@ -409,6 +655,206 @@
   "schemaVersion": 1,
   "targetVersion": "2026-07-13",
   "transitions": [
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
+      "sourceIds": [
+        "busan-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "busan:busan-transportation:line-ab1a041f6266:route_map_positions",
+      "sourceIds": [
+        "busan-transportation-route-map-positions"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "busan:busan-transportation:line-d74614a04530:accessibility_facilities",
+      "sourceIds": [
+        "busan-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "busan:busan-transportation:line-d74614a04530:route_map_positions",
+      "sourceIds": [
+        "busan-transportation-route-map-positions"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-d74614a04530:schedule_timetable",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-d74614a04530:station_line_membership",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:accessibility_facilities",
+      "sourceIds": [
+        "busan-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:route_map_positions",
+      "sourceIds": [
+        "busan-transportation-route-map-positions"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:schedule_timetable",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 5,
+      "denominator": 5,
+      "requirementKey": "busan:busan-transportation:line-eb7b47920390:accessibility_facilities",
+      "sourceIds": [
+        "busan-transportation-accessibility"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 2,
+      "denominator": 2,
+      "requirementKey": "busan:busan-transportation:line-eb7b47920390:route_map_positions",
+      "sourceIds": [
+        "busan-transportation-route-map-positions"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-eb7b47920390:schedule_timetable",
+      "sourceIds": [
+        "busan-transportation-timetable"
+      ]
+    },
+    {
+      "after": "SUPPORTED",
+      "before": "MISSING",
+      "coveredFields": 3,
+      "denominator": 3,
+      "requirementKey": "busan:busan-transportation:line-eb7b47920390:station_line_membership",
+      "sourceIds": [
+        "busan-transportation-route-topology"
+      ]
+    },
     {
       "after": "SUPPORTED",
       "before": "MISSING",
@@ -587,6 +1033,774 @@
         "totalCount": 270
       },
       "pilotRequirements": [
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "status",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "elevator",
+            "escalator",
+            "wheelchair_lift",
+            "status",
+            "verified_at"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:accessibility_facilities",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "elevator": 0,
+            "escalator": 0,
+            "status": 0,
+            "verified_at": 0,
+            "wheelchair_lift": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "network_edges",
+            "duration_seconds",
+            "distance_meters"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "distance_meters": 0,
+            "duration_seconds": 0,
+            "network_edges": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "route_map_position",
+            "route_map_label_polygon"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:route_map_positions",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 0,
+            "route_map_position": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "service_calendar",
+            "trip",
+            "stop_time"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:schedule_timetable",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "service_calendar": 0,
+            "stop_time": 0,
+            "trip": 0
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 0,
+          "coveredFields": 0,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [],
+              "status": "missing"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [],
+              "status": "missing"
+            }
+          ],
+          "missingFields": [
+            "line",
+            "station_name",
+            "station_code"
+          ],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:station_line_membership",
+          "sourceIds": [],
+          "status": "MISSING",
+          "supportingRecordCountByField": {
+            "line": 0,
+            "station_code": 0,
+            "station_name": 0
+          }
+        },
         {
           "blockingThreshold": 1,
           "coverageRatio": 0,
@@ -1204,11 +2418,863 @@
         "totalCount": 45
       },
       "launchRequired": {
-        "supportedCount": 16,
-        "supportedRatio": 0.0593,
+        "supportedCount": 36,
+        "supportedRatio": 0.1333,
         "totalCount": 270
       },
       "pilotRequirements": [
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
+          "sourceIds": [
+            "busan-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 40,
+            "escalator": 40,
+            "status": 120,
+            "verified_at": 120,
+            "wheelchair_lift": 40
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 78,
+            "duration_seconds": 78,
+            "network_edges": 78
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:route_map_positions",
+          "sourceIds": [
+            "busan-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 40,
+            "route_map_position": 40
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+          "sourceIds": [
+            "busan-transportation-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 40509,
+            "trip": 1047
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 40,
+            "station_code": 40,
+            "station_name": 40
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:accessibility_facilities",
+          "sourceIds": [
+            "busan-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 17,
+            "escalator": 17,
+            "status": 51,
+            "verified_at": 51,
+            "wheelchair_lift": 17
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 32,
+            "duration_seconds": 32,
+            "network_edges": 32
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:route_map_positions",
+          "sourceIds": [
+            "busan-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 17,
+            "route_map_position": 17
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:schedule_timetable",
+          "sourceIds": [
+            "busan-transportation-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 15368,
+            "trip": 904
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d74614a04530:station_line_membership",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 17,
+            "station_code": 17,
+            "station_name": 17
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:accessibility_facilities",
+          "sourceIds": [
+            "busan-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 14,
+            "escalator": 14,
+            "status": 42,
+            "verified_at": 42,
+            "wheelchair_lift": 14
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 26,
+            "duration_seconds": 26,
+            "network_edges": 26
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:route_map_positions",
+          "sourceIds": [
+            "busan-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 14,
+            "route_map_position": 14
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:schedule_timetable",
+          "sourceIds": [
+            "busan-transportation-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 12376,
+            "trip": 884
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 14,
+            "station_code": 14,
+            "station_name": 14
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 5,
+          "denominator": 5,
+          "fieldCoverage": [
+            {
+              "field": "elevator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "escalator",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "wheelchair_lift",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "status",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "verified_at",
+              "sourceIds": [
+                "busan-transportation-accessibility"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:accessibility_facilities",
+          "sourceIds": [
+            "busan-transportation-accessibility"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "elevator": 43,
+            "escalator": 43,
+            "status": 129,
+            "verified_at": 129,
+            "wheelchair_lift": 43
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "network_edges",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "duration_seconds",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "distance_meters",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "distance_meters": 84,
+            "duration_seconds": 84,
+            "network_edges": 84
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 2,
+          "denominator": 2,
+          "fieldCoverage": [
+            {
+              "field": "route_map_position",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "route_map_label_polygon",
+              "sourceIds": [
+                "busan-transportation-route-map-positions"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:route_map_positions",
+          "sourceIds": [
+            "busan-transportation-route-map-positions"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "route_map_label_polygon": 43,
+            "route_map_position": 43
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "service_calendar",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "trip",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "stop_time",
+              "sourceIds": [
+                "busan-transportation-timetable"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:schedule_timetable",
+          "sourceIds": [
+            "busan-transportation-timetable"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "service_calendar": 3,
+            "stop_time": 40887,
+            "trip": 998
+          }
+        },
+        {
+          "blockingThreshold": 1,
+          "coverageRatio": 1,
+          "coveredFields": 3,
+          "denominator": 3,
+          "fieldCoverage": [
+            {
+              "field": "line",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_name",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            },
+            {
+              "field": "station_code",
+              "sourceIds": [
+                "busan-transportation-route-topology"
+              ],
+              "status": "covered"
+            }
+          ],
+          "missingFields": [],
+          "releaseTier": "LAUNCH_REQUIRED",
+          "requirementKey": "busan:busan-transportation:line-eb7b47920390:station_line_membership",
+          "sourceIds": [
+            "busan-transportation-route-topology"
+          ],
+          "status": "SUPPORTED",
+          "supportingRecordCountByField": {
+            "line": 43,
+            "station_code": 43,
+            "station_name": 43
+          }
+        },
         {
           "blockingThreshold": 1,
           "coverageRatio": 1,
@@ -1886,6 +3952,26 @@
         }
       ],
       "supportedRequirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
+        "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+        "busan:busan-transportation:line-ab1a041f6266:route_map_positions",
+        "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+        "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
+        "busan:busan-transportation:line-d74614a04530:accessibility_facilities",
+        "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+        "busan:busan-transportation:line-d74614a04530:route_map_positions",
+        "busan:busan-transportation:line-d74614a04530:schedule_timetable",
+        "busan:busan-transportation:line-d74614a04530:station_line_membership",
+        "busan:busan-transportation:line-d812a5bc1e5f:accessibility_facilities",
+        "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+        "busan:busan-transportation:line-d812a5bc1e5f:route_map_positions",
+        "busan:busan-transportation:line-d812a5bc1e5f:schedule_timetable",
+        "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
+        "busan:busan-transportation:line-eb7b47920390:accessibility_facilities",
+        "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
+        "busan:busan-transportation:line-eb7b47920390:route_map_positions",
+        "busan:busan-transportation:line-eb7b47920390:schedule_timetable",
+        "busan:busan-transportation:line-eb7b47920390:station_line_membership",
         "capital:seoul-metro:seoul-4:route_map_positions",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities",
         "daegu:daegu-transportation:line-0ffaa95b1b5d:route_graph_topology",

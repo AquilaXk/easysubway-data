@@ -16,12 +16,17 @@ const NORMALIZED_EDGE_FIELDS = [
   "edgeId", "lineId", "fromStationCode", "fromStationName", "toStationCode", "toStationName",
   "distanceMeters", "durationSeconds", "stoppingSeconds", "exchange",
 ].sort(compareText);
-const LINE_IDS = Object.freeze({
-  1: "line-ab1a041f6266",
-  2: "line-eb7b47920390",
-  3: "line-d74614a04530",
-  4: "line-d812a5bc1e5f",
-});
+// 부산 노선 구성 정본. 조립 하네스가 spec 선언(lineNumber·lineId)을 이 목록과 대조해 선언이 데이터와
+// 갈리면 fail closed 하도록 내보낸다(대구의 DAEGU_LINES와 같은 축).
+export const BUSAN_LINES = Object.freeze([
+  Object.freeze({ lineNumber: 1, lineId: "line-ab1a041f6266" }),
+  Object.freeze({ lineNumber: 2, lineId: "line-eb7b47920390" }),
+  Object.freeze({ lineNumber: 3, lineId: "line-d74614a04530" }),
+  Object.freeze({ lineNumber: 4, lineId: "line-d812a5bc1e5f" }),
+]);
+const LINE_IDS = Object.freeze(Object.fromEntries(
+  BUSAN_LINES.map(({ lineNumber, lineId }) => [lineNumber, lineId]),
+));
 const EXPECTED_LINE_IDS = Object.values(LINE_IDS).sort((left, right) => left.localeCompare(right, "en"));
 const XML_CONTENT_TYPES = new Set(["application/xml", "text/xml"]);
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1000;

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "artifactKind": "nationwide-candidate-pack-spec",
-  "issue": 2580,
+  "issue": 2587,
   "parentIssues": [2510, 2138],
   "candidateId": "nationwide-candidate-20260725",
-  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올린다.",
+  "trackKo": "전국 candidate 트랙의 조립 정본이다. production 게시 트랙(capital pilot)과 분리되며 게시 대상이 아니다. 정본 게이트(report-coverage-gaps.mjs)는 manifest의 required root pack이 단독으로 coverage 계약을 만족해야 한다고 판정하므로 candidate는 root가 되는 단일 pack으로 조립한다. #2514 B0가 파일럿 1 scope 전환을 실증했고, #2549 B1이 대구 1·2·3호선 9 requirement를 같은 승계 모델로 편입했으며, #2580 B2-a가 같은 지역의 route_map_positions·accessibility_facilities 6 requirement를 B1 편입 뒤에 체인으로 올렸다. #2587 B2-b가 그 스키마로 두 번째 지역(부산 1·2·3·4호선 5도메인 20 requirement)을 편입한다 — 승계 원본에 부산 운영기관·노선·역이 아예 없어 topology 편입이 그 셋을 먼저 싣고 나머지 세 도메인이 그 뒤에 체인된다.",
   "harness": "tools/datapack/run-nationwide-candidate-coverage-gate.mjs",
   "productionTrackInvarianceKo": "승계 원본(capital-production-reviewed-pack.json)의 pack.sourceInventory는 게시 시점 스냅샷이므로 operator-scope 기술을 그대로 둔다. line-scope 재기술은 candidate 조립분과 admission 정본(tools/datapack/source-inventory.json)에만 반영한다. 게시 차단 판정(report-coverage-gaps.mjs --release-scope)은 capital pilot targets(schemaVersion 1)로 평가돼 lineIds 기술 유무에 영향을 받지 않으므로 두 정본의 이 차이는 게시 동작을 바꾸지 않는다. 지역 데이터 편입(packDataInclusions)도 candidate 조립분에서만 일어나며 게시 fixture·release-request는 어떤 경로로도 바뀌지 않는다.",
   "inheritsFrom": {
@@ -190,6 +190,174 @@
       },
       "reasonKo": "#2580 B2-a. 대구 3노선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 대구 시각표 소스를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
       "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T01:00:00Z ~ freshUntil 2026-07-25T01:00:00Z이며 materializer가 그 밖의 기준 시각을 fail closed 한다. 창은 소스마다 다르고 상한 유무도 갈린다 — 시각표는 [capturedAt, freshUntil) 양끝을 검사하지만 노선도 materializer는 하한(capturedAt 이후)만 검사해 상한이 없다. 시각표 창은 이 창과 서로소이고 노선도 창은 이 창과 겹치므로, 편입 하나의 창만 보고 pin을 묶으면 그 소스의 snapshot이 갱신될 때 다른 편입의 기준 시각까지 함께 흔들린다. pin을 편입마다 따로 두면 각 pin이 자기 소스의 창에만 묶인다."
+    },
+    {
+      "regionId": "busan",
+      "materializer": "tools/datapack/materialize-busan-route-topology.mjs",
+      "materializedAt": "2026-07-19T18:13:31.841Z",
+      "snapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+      "stationMapPath": "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv",
+      "lines": [
+        { "lineNumber": 1, "lineId": "line-ab1a041f6266" },
+        { "lineNumber": 2, "lineId": "line-eb7b47920390" },
+        { "lineNumber": 3, "lineId": "line-d74614a04530" },
+        { "lineNumber": 4, "lineId": "line-d812a5bc1e5f" }
+      ],
+      "addedRows": {
+        "operators": 1,
+        "lines": 4,
+        "stations": 108,
+        "stationLines": 114,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 220,
+        "routeMapPositions": 0,
+        "facilities": 0,
+        "stationFacilityEvidence": 0,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 0,
+        "serviceCalendarDates": 0,
+        "transitRoutes": 0,
+        "transitTrips": 0,
+        "transitStopTimes": 0,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 1
+      },
+      "addedRowsKo": "역 108행은 노선 수(4)가 아니라 정본 station id 기준 고유 역 수다 — 환승역이 여러 노선에 걸쳐 station_lines 114행을 만들지만 station 자체는 한 번만 실린다.",
+      "reasonKo": "#2587 B2-b. 부산 4노선 route_graph_topology·station_line_membership requirement를 판정에 올리려면 candidate root pack이 공식 구간·역 소속 행을 담아야 한다. 승계 원본에는 수도권 밖 행이 없어 부산 운영기관·노선·역이 아예 없으므로 이 편입이 그 셋을 함께 싣고, 부산의 나머지 세 도메인 편입이 전부 이 편입 결과를 선행 조건으로 검사한다. 신규 admission·재수집은 없고 이미 admission이 끝난 snapshot(#2319·#2363)을 재생한다.",
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-19T18:13:31.841Z ~ freshUntil 2026-07-20T18:13:31.841Z이며 admitBusanRouteTopology가 [capturedAt, freshUntil) 밖의 기준 시각을 fail closed 한다. 부산 4소스의 창은 서로 다르므로 pin도 편입마다 따로 두고 각 pin을 그 소스의 창 하한(capturedAt)에 맞춘다."
+    },
+    {
+      "regionId": "busan",
+      "materializer": "tools/datapack/materialize-busan-timetable.mjs",
+      "materializedAt": "2026-07-20T08:37:16.931Z",
+      "snapshotPath": "tools/datapack/sources/busan-transportation-timetable-20260720.json",
+      "topologySnapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+      "lines": [
+        { "lineNumber": 1, "lineId": "line-ab1a041f6266" },
+        { "lineNumber": 2, "lineId": "line-eb7b47920390" },
+        { "lineNumber": 3, "lineId": "line-d74614a04530" },
+        { "lineNumber": 4, "lineId": "line-d812a5bc1e5f" }
+      ],
+      "addedRows": {
+        "operators": 0,
+        "lines": 0,
+        "stations": 0,
+        "stationLines": 0,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 0,
+        "routeMapPositions": 0,
+        "facilities": 0,
+        "stationFacilityEvidence": 0,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 3,
+        "serviceCalendarDates": 36,
+        "transitRoutes": 8,
+        "transitTrips": 3833,
+        "transitStopTimes": 109140,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 1
+      },
+      "reasonKo": "#2587 B2-b. 부산 4노선 schedule_timetable requirement를 판정에 올리려면 candidate root pack이 공식 시각표 행을 담아야 한다. materializer가 pack.sourceInventory의 부산 topology 소스와 그 소스가 실은 network_edges 계보를 선행 조건으로 검사하므로 topology 편입 뒤에 체인한다. 이미 admission이 끝난 snapshot(#2368)을 재생하며 109,140 stop_time을 저장소에 복제하지 않는다.",
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-20T08:37:16.931Z ~ freshUntil 2026-07-21T08:37:16.931Z이며 materializer가 [capturedAt, freshUntil) 양끝을 검사한다. topology 창과 겹치는 구간이 있지만 두 창이 같지 않으므로 pin을 묶지 않는다 — 묶으면 한 소스의 snapshot 갱신이 다른 편입의 기준 시각까지 흔든다."
+    },
+    {
+      "regionId": "busan",
+      "materializer": "tools/datapack/materialize-busan-route-map-positions.mjs",
+      "materializedAt": "2026-07-20T11:13:18.000Z",
+      "snapshotPath": "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json",
+      "topologySnapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+      "lines": [
+        { "lineNumber": 1, "lineId": "line-ab1a041f6266" },
+        { "lineNumber": 2, "lineId": "line-eb7b47920390" },
+        { "lineNumber": 3, "lineId": "line-d74614a04530" },
+        { "lineNumber": 4, "lineId": "line-d812a5bc1e5f" }
+      ],
+      "addedRows": {
+        "operators": 0,
+        "lines": 0,
+        "stations": 0,
+        "stationLines": 0,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 0,
+        "routeMapPositions": 114,
+        "routeMapLineTracks": 4,
+        "facilities": 0,
+        "stationFacilityEvidence": 0,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 0,
+        "serviceCalendarDates": 0,
+        "transitRoutes": 0,
+        "transitTrips": 0,
+        "transitStopTimes": 0,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 1
+      },
+      "addedRowsKo": "이 편입은 승계 원본에 없던 표(routeMapLineTracks)를 새로 만든다. 집계 목록을 pack 자신에서 끌어오므로 새 표도 자동으로 대조 축에 들어오며, 선언하지 않으면 조립이 fail closed 된다. 이후 편입은 그 표를 0으로 선언해야 한다.",
+      "reasonKo": "#2587 B2-b. 부산 4노선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 부산 topology 소스 등재와 station_lines·network_edges 계보를 선행 조건으로 검사하므로 topology 편입 뒤에 체인한다. 이미 admission이 끝난 snapshot(#2379)을 재생한다.",
+      "materializedAtReasonKo": "이 snapshot의 admission 정본에는 freshUntil이 없고 materializer도 하한(capturedAt 2026-07-20T11:13:18Z 이후)만 검사해 상한이 없다 — 대구 노선도 편입과 같은 비대칭이며 상한 도입은 materializer 쪽 판단이라 이 spec의 축이 아니다. pin은 그 하한에 맞춘다."
+    },
+    {
+      "regionId": "busan",
+      "materializer": "tools/datapack/materialize-busan-accessibility.mjs",
+      "materializedAt": "2026-07-24T00:19:05.836Z",
+      "snapshotPath": "tools/datapack/sources/busan-transportation-accessibility-20260724.json",
+      "topologySnapshotPath": "tools/datapack/sources/busan-transportation-route-topology-20260720.json",
+      "lines": [
+        { "lineNumber": 1, "lineId": "line-ab1a041f6266" },
+        { "lineNumber": 2, "lineId": "line-eb7b47920390" },
+        { "lineNumber": 3, "lineId": "line-d74614a04530" },
+        { "lineNumber": 4, "lineId": "line-d812a5bc1e5f" }
+      ],
+      "addedRows": {
+        "operators": 0,
+        "lines": 0,
+        "stations": 0,
+        "stationLines": 0,
+        "stationAliases": 0,
+        "stationExits": 0,
+        "networkEdges": 0,
+        "routeMapPositions": 0,
+        "routeMapLineTracks": 0,
+        "facilities": 342,
+        "stationFacilityEvidence": 342,
+        "stationAccessibilitySummaries": 0,
+        "officialOdFareQuotes": 0,
+        "serviceCalendars": 0,
+        "serviceCalendarDates": 0,
+        "transitRoutes": 0,
+        "transitTrips": 0,
+        "transitStopTimes": 0,
+        "transitFrequencies": 0,
+        "transitFeedInfo": 0,
+        "routeServiceArtifactEvidence": 0,
+        "movementPathCandidates": 0,
+        "representativeRouteRegressions": 0,
+        "requiredTables": 0,
+        "sourceInventory": 1
+      },
+      "reasonKo": "#2587 B2-b. 부산 4노선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 114 역·노선 쌍 × 3종(엘리베이터·에스컬레이터·휠체어리프트) = 342행이며 미설치도 NOT_EXISTS 근거로 함께 싣는다 — 정본 station id 기준 고유 역은 108이라 두 노선에 걸친 환승역 6곳은 6행씩 낸다. 이 materializer도 부산 topology 계보를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 이미 admission이 끝난 snapshot(#2374)을 재생한다.",
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T00:19:05.836Z ~ freshUntil 2026-07-25T00:19:05.836Z이며 materializer가 [capturedAt, freshUntil) 양끝을 검사한다. 창은 소스마다 다르고 상한 유무도 갈린다 — topology·시각표는 [capturedAt, freshUntil) 양끝을 검사하지만 노선도 materializer는 하한(capturedAt 이후)만 검사해 상한이 없다. topology·시각표 창은 이 창과 서로소이고 노선도 창은 상한이 없어 이 창을 통째로 품으므로, 편입 하나의 창만 보고 pin을 묶으면 그 소스의 snapshot이 갱신될 때 다른 편입의 기준 시각까지 함께 흔들린다. pin을 편입마다 따로 두면 각 pin이 자기 소스의 창에만 묶인다."
     }
   ],
   "lineScopeRedescriptions": [
@@ -319,6 +487,71 @@
         "daegu:daegu-transportation:line-0ffaa95b1b5d:accessibility_facilities"
       ],
       "reasonKo": "B2-a. 대구 3노선 elevator·escalator·wheelchair_lift·status·verified_at을 대는 공식 편의시설 snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "busan-transportation-route-topology",
+      "sourceDomain": "station_line_membership",
+      "lineIds": ["line-ab1a041f6266", "line-d74614a04530", "line-d812a5bc1e5f", "line-eb7b47920390"],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:station_line_membership",
+        "busan:busan-transportation:line-d74614a04530:station_line_membership",
+        "busan:busan-transportation:line-d812a5bc1e5f:station_line_membership",
+        "busan:busan-transportation:line-eb7b47920390:station_line_membership"
+      ],
+      "reasonKo": "B2-b. 이 한 소스가 membership 필수 필드 3개(line·station_name·station_code)를 전부 댄다 — 대구가 molit 소속 소스와 topology 소스의 합산으로 3개를 채우는 것과 다른 구조라 재기술도 소스 하나로 등재한다. 이 소스의 coverageScope.sourceDomains는 route_graph_topology와 station_line_membership 둘 다를 덮으므로 도메인별로 재기술 항목을 따로 두되 lineIds는 두 항목이 동일해야 한다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다. 부산 4소스는 이미 4노선 line-scope로 기술돼 있어 재기술은 admission 정본을 그대로 승계한다(inventory 변경 없음)."
+    },
+    {
+      "sourceId": "busan-transportation-route-topology",
+      "sourceDomain": "route_graph_topology",
+      "lineIds": ["line-ab1a041f6266", "line-d74614a04530", "line-d812a5bc1e5f", "line-eb7b47920390"],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:route_graph_topology",
+        "busan:busan-transportation:line-d74614a04530:route_graph_topology",
+        "busan:busan-transportation:line-d812a5bc1e5f:route_graph_topology",
+        "busan:busan-transportation:line-eb7b47920390:route_graph_topology"
+      ],
+      "reasonKo": "B2-b. 부산 4노선 network_edges·duration_seconds·distance_meters를 대는 공식 topology snapshot 소스다. membership 항목과 같은 소스이지만 claim 단위를 requirement 단위와 맞추기 위해 도메인마다 항목을 따로 둔다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "busan-transportation-timetable",
+      "sourceDomain": "schedule_timetable",
+      "lineIds": ["line-ab1a041f6266", "line-d74614a04530", "line-d812a5bc1e5f", "line-eb7b47920390"],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:schedule_timetable",
+        "busan:busan-transportation:line-d74614a04530:schedule_timetable",
+        "busan:busan-transportation:line-d812a5bc1e5f:schedule_timetable",
+        "busan:busan-transportation:line-eb7b47920390:schedule_timetable"
+      ],
+      "reasonKo": "B2-b. 부산 4노선 service_calendar·trip·stop_time을 대는 공식 시각표 snapshot 소스다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "busan-transportation-route-map-positions",
+      "sourceDomain": "route_map_positions",
+      "lineIds": ["line-ab1a041f6266", "line-d74614a04530", "line-d812a5bc1e5f", "line-eb7b47920390"],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:route_map_positions",
+        "busan:busan-transportation:line-d74614a04530:route_map_positions",
+        "busan:busan-transportation:line-d812a5bc1e5f:route_map_positions",
+        "busan:busan-transportation:line-eb7b47920390:route_map_positions"
+      ],
+      "reasonKo": "B2-b. 부산 4노선 route_map_position·route_map_label_polygon을 대는 공식 좌표 snapshot 소스다. 이 소스는 routeMapAdmissionEvidence.snapshotPath가 실재해 route_map containment 감사 대상 scope를 이미 만들고 있으며(4 scope 감사 중), 재기술은 admission 정본의 line-scope를 그대로 승계한다.",
+      "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
+    },
+    {
+      "sourceId": "busan-transportation-accessibility",
+      "sourceDomain": "accessibility_facilities",
+      "lineIds": ["line-ab1a041f6266", "line-d74614a04530", "line-d812a5bc1e5f", "line-eb7b47920390"],
+      "requirementKeys": [
+        "busan:busan-transportation:line-ab1a041f6266:accessibility_facilities",
+        "busan:busan-transportation:line-d74614a04530:accessibility_facilities",
+        "busan:busan-transportation:line-d812a5bc1e5f:accessibility_facilities",
+        "busan:busan-transportation:line-eb7b47920390:accessibility_facilities"
+      ],
+      "reasonKo": "B2-b. 부산 4노선 elevator·escalator·wheelchair_lift·status·verified_at을 대는 공식 편의시설 snapshot 소스다.",
       "inventorySyncKo": "하네스가 spec lineIds와 tracked source-inventory coverageScope.lineIds의 일치를 fail closed로 확인한다."
     }
   ]
