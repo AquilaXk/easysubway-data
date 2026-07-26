@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "pack-app-schema-parity-allowlist",
+  "packs": [
+    {
+      "packId": "capital",
+      "assetPath": "apps/mobile/assets/datapacks/capital.sqlite.gz",
+      "missingTables": [
+        {
+          "name": "fare_zones",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "요금 구역. 앱 lib에 이 테이블을 읽는 쿼리가 없다(경로 화면 요금은 official_od_fare_quotes에서 온다). 앱이 쓰는 쪽은 수도권 baseline 요금 backfill뿐이라 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        },
+        {
+          "name": "fare_rules",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "요금 규칙. 앱 lib에 이 테이블을 읽는 쿼리가 없다. 앱이 쓰는 쪽은 수도권 baseline 요금 backfill뿐이라 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        },
+        {
+          "name": "fare_discounts",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "요금 할인. 앱 lib에 이 테이블을 읽는 쿼리가 없다. 앱이 쓰는 쪽은 수도권 baseline 요금 backfill뿐이라 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        },
+        {
+          "name": "station_fare_zones",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "역-요금구역 매핑. 앱 lib에 이 테이블을 읽는 쿼리가 없다. 앱이 쓰는 쪽은 수도권 baseline 요금 backfill뿐이라 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        },
+        {
+          "name": "station_facility_evidence",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "시설 근거. 비어 있으면 접근성 근거 없음으로 강등되며, 이는 현행 결측 가드가 이미 만드는 상태와 같다."
+        },
+        {
+          "name": "facility_status_snapshots",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "시설 상태 스냅샷. 비어 있으면 시설 상태 근거 없음으로 강등되며, 이는 현행 결측 가드가 이미 만드는 상태와 같다."
+        },
+        {
+          "name": "station_pathway_nodes",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "역 내부 경로 노드. 앱 lib에 이 테이블을 읽는 쿼리가 없어 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        },
+        {
+          "name": "station_pathway_edges",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "역 내부 경로 간선. 앱 lib에 이 테이블을 읽는 쿼리가 없어 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        },
+        {
+          "name": "transfer_rules",
+          "disposition": "APP_RESCUE",
+          "issue": "#2527",
+          "reason": "환승 규칙. 앱 lib에 이 테이블을 읽는 쿼리가 없어 빈 테이블이 어떤 조회 결과도 바꾸지 않는다."
+        }
+      ],
+      "missingIndexes": [
+        {
+          "name": "idx_facility_status_snapshots_facility",
+          "disposition": "MISSING_TABLE_DEPENDENT",
+          "issue": "#2527",
+          "reason": "대상 테이블 facility_status_snapshots가 팩에 없어 인덱스도 없다. 팩이 그 테이블을 담으면 함께 해소된다."
+        },
+        {
+          "name": "idx_station_facility_evidence_station",
+          "disposition": "MISSING_TABLE_DEPENDENT",
+          "issue": "#2527",
+          "reason": "대상 테이블 station_facility_evidence가 팩에 없어 인덱스도 없다. 팩이 그 테이블을 담으면 함께 해소된다."
+        },
+        {
+          "name": "idx_station_pathway_nodes_station",
+          "disposition": "MISSING_TABLE_DEPENDENT",
+          "issue": "#2527",
+          "reason": "대상 테이블 station_pathway_nodes가 팩에 없어 인덱스도 없다. 팩이 그 테이블을 담으면 함께 해소된다."
+        },
+        {
+          "name": "idx_station_pathway_edges_from",
+          "disposition": "MISSING_TABLE_DEPENDENT",
+          "issue": "#2527",
+          "reason": "대상 테이블 station_pathway_edges가 팩에 없어 인덱스도 없다. 팩이 그 테이블을 담으면 함께 해소된다."
+        },
+        {
+          "name": "idx_transfer_rules_from_line",
+          "disposition": "MISSING_TABLE_DEPENDENT",
+          "issue": "#2527",
+          "reason": "대상 테이블 transfer_rules가 팩에 없어 인덱스도 없다. 팩이 그 테이블을 담으면 함께 해소된다."
+        },
+        {
+          "name": "idx_out_of_station_transfer_links_from",
+          "disposition": "MISSING_TABLE_DEPENDENT",
+          "issue": "#2527",
+          "reason": "대상 테이블 out_of_station_transfer_links가 팩에 없어 인덱스도 없다. 이 테이블은 앱 drift 선언에도 없어 앱 구제 대상이 아니며 팩 재빌드로만 해소된다."
+        },
+        {
+          "name": "idx_route_map_line_tracks_region_line",
+          "disposition": "PACK_REBUILD_PENDING",
+          "issue": "#2527",
+          "reason": "대상 테이블 route_map_line_tracks가 이미 팩에 있으므로 앱이 인덱스를 덧붙일 자리가 아니라 팩 재빌드로 고칠 결측이다. 앱이 만드는 인덱스는 자기가 구제한 빈 테이블에 onCreate와 같은 인덱스를 붙이는 경우로 한정한다. 팩 스키마 원본(tools/datapack/schema/catalog-schema.sql)으로 팩을 재빌드할 때 해소하며, 그때 이 항목은 stale 판정으로 실패해 정리가 강제된다."
+        }
+      ]
+    }
+  ]
+}

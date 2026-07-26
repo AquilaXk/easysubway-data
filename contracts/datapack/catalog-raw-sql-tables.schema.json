@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "easysubway/contracts/datapack/catalog-raw-sql-tables",
+  "title": "drift 선언 밖에서 raw SQL로 읽는 카탈로그 테이블",
+  "description": "팩↔앱 스키마 정합 게이트의 판정 기준집합을 drift 선언 너머로 확장하는 목록. 항목마다 사유와 읽기 지점이 필수다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactKind", "description", "sourceRoot", "tables", "ignoredTokens"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "artifactKind": { "type": "string", "const": "catalog-raw-sql-tables" },
+    "description": { "type": "string", "minLength": 10 },
+    "sourceRoot": { "type": "string", "const": "apps/mobile/lib" },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "disposition", "issue", "readSites", "reason"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "disposition": { "type": "string", "enum": ["APP_RESCUE", "ABSENCE_TOLERATED", "PACK_REQUIRED"] },
+          "issue": { "type": "string", "pattern": "^#[0-9]+$" },
+          "readSites": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "reason": { "type": "string", "minLength": 10 }
+        }
+      }
+    },
+    "ignoredTokens": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token", "reason"],
+        "properties": {
+          "token": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+          "reason": { "type": "string", "minLength": 10 }
+        }
+      }
+    }
+  }
+}

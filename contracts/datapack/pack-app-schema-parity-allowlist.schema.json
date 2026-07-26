@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "easysubway/contracts/datapack/pack-app-schema-parity-allowlist",
+  "title": "팩↔앱 카탈로그 스키마 정합 게이트 예외 allowlist",
+  "description": "tools/ci/check-pack-app-schema-parity.mjs가 허용하는 결측 테이블·인덱스. 항목마다 사유가 필수이며, 등재되지 않은 결측과 더 이상 결측이 아닌 항목은 모두 게이트 실패다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactKind", "packs"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "artifactKind": { "type": "string", "const": "pack-app-schema-parity-allowlist" },
+    "packs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["packId", "assetPath", "missingTables", "missingIndexes"],
+        "properties": {
+          "packId": { "type": "string", "minLength": 1 },
+          "assetPath": { "type": "string", "pattern": "^apps/mobile/assets/datapacks/[A-Za-z0-9_.-]+\\.sqlite\\.gz$" },
+          "missingTables": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "disposition", "issue", "reason"],
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+                "disposition": { "type": "string", "enum": ["APP_RESCUE"] },
+                "issue": { "type": "string", "pattern": "^#[0-9]+$" },
+                "reason": { "type": "string", "minLength": 10 }
+              }
+            }
+          },
+          "missingIndexes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "disposition", "issue", "reason"],
+              "properties": {
+                "name": { "type": "string", "pattern": "^idx_[a-z0-9_]+$" },
+                "disposition": { "type": "string", "enum": ["MISSING_TABLE_DEPENDENT", "PACK_REBUILD_PENDING"] },
+                "issue": { "type": "string", "pattern": "^#[0-9]+$" },
+                "reason": { "type": "string", "minLength": 10 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

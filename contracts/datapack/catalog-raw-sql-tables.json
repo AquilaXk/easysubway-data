@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "catalog-raw-sql-tables",
+  "description": "앱이 drift 선언(@DriftDatabase tables) 밖에서 raw SQL로만 읽는 카탈로그 테이블. 정합 게이트의 판정 기준집합은 drift 선언 ∪ 이 목록이며, tools/ci/check-pack-app-schema-parity.mjs가 apps/mobile/lib의 raw SQL을 훑어 이 목록과 실제 코드가 어긋나면 실패한다. 앱 런타임 분류(rescuableCatalogTableNames·absenceTolerantCatalogTableNames)와도 대조한다. 다운로드 팩 manifest의 requiredTables는 서버가 팩별로 선언하는 별개 검사다.",
+  "sourceRoot": "apps/mobile/lib",
+  "tables": [
+    {
+      "name": "route_map_positions",
+      "disposition": "APP_RESCUE",
+      "issue": "#2527",
+      "readSites": ["features/stations/data/drift_station_repository.dart"],
+      "reason": "노선도 화면의 구동 테이블이다. 비면 그 화면이 빈 상태가 되지만 역 검색·경로 탐색·시간표 등 다른 도메인의 정상 데이터는 소거되지 않는다. 결측이면 조회가 예외로 죽으므로 빈 테이블 구제가 현행보다 안전하고, 앱에 _createRouteMapPositionsTable() 선례가 있다."
+    },
+    {
+      "name": "route_map_line_tracks",
+      "disposition": "APP_RESCUE",
+      "issue": "#2527",
+      "readSites": ["features/stations/data/drift_station_repository.dart"],
+      "reason": "노선 track polyline을 읽는 유일한 테이블이다. 비면 노선도에서 track만 빠지고 다른 조회는 영향이 없다. 앱에 _createRouteMapLineTracksTable() 선례가 있고 구팩에서도 열리도록 이미 IF NOT EXISTS로 만들어 왔다."
+    },
+    {
+      "name": "transit_feed_info",
+      "disposition": "ABSENCE_TOLERATED",
+      "issue": "#2530",
+      "readSites": [
+        "core/database/catalog/station_timetable_query.dart",
+        "features/home_widget/next_train_widget_repository.dart"
+      ],
+      "reason": "빈 테이블을 만들면 시간표 쿼리의 EXISTS (SELECT 1 FROM transit_feed_info ...) 필터가 항상 거짓이 되어 시간표가 전부 사라지므로 구제 대상이 될 수 없다. 반대로 결측을 이유로 팩 전체를 거부하면 과잉 대응이며, 결측 시 필터를 생략하는 쿼리 가드 대칭화는 #2530이 맡는다. 만들지도 막지도 않는다."
+    }
+  ],
+  "ignoredTokens": [
+    {
+      "token": "sqlite_master",
+      "reason": "SQLite 내부 카탈로그. 데이터팩이 담는 테이블이 아니다."
+    },
+    {
+      "token": "sqlite_schema",
+      "reason": "sqlite_master의 별칭. 데이터팩이 담는 테이블이 아니다."
+    },
+    {
+      "token": "in",
+      "reason": "Dart의 for-in 반복문이 'for (final table in allTables)' 형태로 잡히는 오탐이다."
+    },
+    {
+      "token": "set",
+      "reason": "upsert 구문 'ON CONFLICT(...) DO UPDATE SET'의 SQL 키워드다."
+    },
+    {
+      "token": "name",
+      "reason": "예외 메시지 'Invalid data pack table name.' 문장이 잡히는 오탐이다."
+    },
+    {
+      "token": "row",
+      "reason": "예외 메시지 'Invalid minimum table row entry.' 문장이 잡히는 오탐이다."
+    },
+    {
+      "token": "rows",
+      "reason": "예외 메시지 'Invalid minimum table rows.' 문장이 잡히는 오탐이다."
+    },
+    {
+      "token": "customer",
+      "reason": "에셋 저작자 표기 문장 'illustration from Customer Relation Vectors'가 잡히는 오탐이다."
+    },
+    {
+      "token": "svg",
+      "reason": "에셋 라이선스 표기 문장 'converted from SVG to PNG'가 잡히는 오탐이다."
+    }
+  ]
+}
