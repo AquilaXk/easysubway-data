@@ -172,7 +172,7 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   // 아니게 되어 attribution을 해제하고 상용 승격했다(위 self-drawn 루프에 포함).
   const gwangjuRegion = decisionById.get("gwangju");
   assert.equal(gwangjuRegion.reviewStatus, "self-drawn-confirmed");
-  assert.equal(gwangjuRegion.selfDrawnSource, "easy-subway-gwangju-v1.svg");
+  assert.equal(gwangjuRegion.selfDrawnSource, "easy-subway-gwangju-v3.svg");
 
   // 광주 ShareAlike 결론이 사실≠저작물 근거와 함께 기록된다(연혁 근거로 보존).
   const gwangju = decision.gwangjuShareAlikeConclusion;

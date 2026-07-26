@@ -32,7 +32,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { DAEJEON, DAEGU, BUSAN, SEOUL } from "./sma-region-configs.mjs";
+import { DAEJEON, DAEGU, BUSAN, GWANGJU, SEOUL } from "./sma-region-configs.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const svgSourceDir = path.join(
@@ -56,8 +56,8 @@ const regions = [
   { id: "seoul", svg: "easy-subway-sma-v4.svg" },
   { id: "busan", svg: "easy-subway-busan-v3.svg" },
   { id: "daegu", svg: "easy-subway-daegu-v3.svg" },
-  { id: "daejeon", svg: "easy-subway-daejeon-v1.svg" },
-  { id: "gwangju", svg: "easy-subway-gwangju-v1.svg" },
+  { id: "daejeon", svg: "easy-subway-daejeon-v3.svg" },
+  { id: "gwangju", svg: "easy-subway-gwangju-v3.svg" },
 ];
 
 function sha256(filePath) {
@@ -190,6 +190,49 @@ function currentLineStationsFromFutureTransfers(svgText, config) {
   ].join("\n");
 }
 
+// 지도 본문을 통째로 감싸는 래퍼 레이어 id(바깥 → 안 순서). 권역마다 이름이
+// 다르지만 성격은 같다 — 그 안의 모든 좌표가 래퍼 transform을 거쳐 최종 root
+// 좌표가 되므로, 컴파일(.vec)·오너 라벨 sidecar·표장 obstacle이 전부 같은
+// 변환을 흡수해야 팩 좌표(route_map_positions)와 한 좌표계에 놓인다.
+//   - main-map-scaled-layer      : seoul(translate + scale(0.455))
+//   - map-content-positioned-layer: daejeon v3(translate(0 88) — 오너가 상단
+//     안내 영역과의 겹침을 피하려고 본문을 88px 내렸다. #2068 실측)
+// 두 래퍼가 한 SVG에 함께 오면 SVG transform 합성 규칙과 같은 순서로 이어
+// 붙인다(현행 5권역 소스에는 각각 하나씩만 존재).
+const MAP_WRAPPER_LAYER_IDS = [
+  "main-map-scaled-layer",
+  "map-content-positioned-layer",
+];
+
+function mapWrapperTransform(svgText) {
+  const parts = MAP_WRAPPER_LAYER_IDS.map(
+    (layerId) =>
+      svgText.match(
+        new RegExp(
+          `<g\\b(?=[^>]*\\bid="${layerId}")(?=[^>]*\\btransform="([^"]+)")[^>]*>`,
+        ),
+      )?.[1],
+  ).filter(Boolean);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+// #2068 대전·광주 v3: 오너가 KTX·SRT 마크를 별도 레이어가 아니라 역명 라벨
+// 레이어(station-name-labels-layer) 안 역 앵커 그룹
+// `<g id="rail-service-marks-…" class="rail-service-marks" data-services="KTX,SRT">`
+// 으로 옮겼다(v1의 rail-transfer-layer는 두 권역 모두 내용이 빈 껍데기였다 —
+// 실측). 역명 라벨 레이어는 바탕층 allow-list 밖(역명은 구조화 오버레이 담당)
+// 이라 그대로 두면 마크가 통째로 사라진다. 부산·대구가 service-tags-layer로
+// 반입하는 것과 같은 성격의 지도 본문 심벌이므로 그 그룹만 골라 최상단에
+// 반입한다(마크가 라벨·심벌 위에 오도록). 이 클래스가 없는 권역은 빈 문자열.
+function extractRailServiceMarkGroups(svgText) {
+  return [
+    ...svgText.matchAll(/<g\b[^>]*\bid="(rail-service-marks-[^"]+)"[^>]*>/g),
+  ]
+    .map((match) => extractGroup(svgText, match[1]))
+    .filter(Boolean)
+    .join("\n");
+}
+
 function extractMapSvg(svgText) {
   const svgStart = svgText.match(/<svg\b[^>]*>/)?.[0];
   if (!svgStart) throw new Error("SVG 루트 태그를 찾지 못했습니다.");
@@ -202,9 +245,7 @@ function extractMapSvg(svgText) {
     : [...svgText.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)]
         .map((match) => match[0])
         .join("\n");
-  const mapTransform = svgText.match(
-    /<g\b(?=[^>]*\bid="main-map-scaled-layer")(?=[^>]*\btransform="([^"]+)")[^>]*>/,
-  )?.[1];
+  const mapTransform = mapWrapperTransform(svgText);
   const regionalSingleLine = /id="(?:gwangju|daejeon)-metro-/.test(svgStart);
   const gwangju = svgStart.includes('id="gwangju-metro-');
   const currentLineTransferStations = regionalSingleLine
@@ -252,17 +293,21 @@ function extractMapSvg(svgText) {
     // (data-services·data-station-name·<title> 역명) 형식으로 KTX·SRT 로고를
     // 담는다. 부산·대구형 인식기가 못 잡던 이 표장을 바탕층 최상단에 반입한다.
     // 다른 권역엔 이 레이어가 없어(extractGroup 빈 문자열) 영향이 없다.
+    // (v3 재제작본은 이 레이어를 걷어내고 역명 라벨 레이어 안 rail-service-marks
+    //  그룹으로 옮겼다 — extractRailServiceMarkGroups가 이어서 반입한다.)
     "rail-transfer-layer",
   ];
-  const mapGroup = layerIds
-    .map((id) => {
+  const mapGroup = [
+    ...layerIds.map((id) => {
       const group = extractGroup(svgText, id);
       if (id === "route-lines-layer") return roundRouteStrokes(group);
       if (gwangju && id === "station-symbols-layer") {
         return keepGwangjuLine1Stations(group);
       }
       return group;
-    })
+    }),
+    extractRailServiceMarkGroups(svgText),
+  ]
     .filter(Boolean)
     .join("\n")
     .replace(
@@ -616,9 +661,7 @@ function parseTransformChain(transformValue) {
 // 없는 권역(busan·daegu·daejeon·gwangju)은 mapScale=1·mapTranslate=(0,0)이라
 // 항등 변환 — 기존 obstacle 좌표는 완전히 불변이다(회귀 테스트로 실증).
 function mapScaleAndTranslateFrom(svgText) {
-  const mapTransform = svgText.match(
-    /<g\b(?=[^>]*\bid="main-map-scaled-layer")(?=[^>]*\btransform="([^"]+)")[^>]*>/,
-  )?.[1];
+  const mapTransform = mapWrapperTransform(svgText);
   return {
     mapScale: scaleFromMapTransform(mapTransform),
     mapTranslate: parseTranslate(mapTransform),
@@ -794,52 +837,66 @@ export function extractServiceTagObstacles(svgText) {
 // 서브그룹은 data-logo만 가져 제외됨), 역 앵커는 data-station-name(없으면 <g>
 // id)으로 잡는다. bbox는 extractServiceTagObstacles와 같은 transform 체인 합성·
 // 재귀 도형 수집으로 절대 좌표화한다. 표장이 없는 권역은 빈 배열.
-export function extractRailTransferChipObstacles(svgText) {
-  const layer = extractObstacleLayerSlice(svgText, "rail-transfer-layer");
-  if (layer === null) return [];
-  const layerTransform = layerOwnTransform(layer);
+//
+// #2068 대전·광주 v3 실측: 오너가 재제작하며 rail chip을 rail-transfer-layer
+// (v1에선 두 권역 모두 내용이 빈 껍데기였다)에서 station-name-labels-layer 안
+// `<g class="rail-service-marks" data-services="KTX,SRT" data-station-name="…">`
+// 로 옮겼다. 마크업 문법(data-services + data-station-name)은 그대로라 인식기는
+// 재사용하고 스캔 대상 레이어만 넓힌다. 다른 권역은 이 레이어에 data-services
+// chip이 없어(부산 0 · 대구는 service-tags-layer에 있음 · 수도권은 레이어 자체
+// 부재) 산출물이 불변이다 — 회귀 가드 테스트가 커밋된 labels.json과 대조한다.
+const RAIL_CHIP_LAYER_IDS = ["rail-transfer-layer", "station-name-labels-layer"];
 
+export function extractRailTransferChipObstacles(svgText) {
   const obstacles = [];
-  const tagOpenRe = /<g\b[^>]*>/g;
-  for (const tm of layer.matchAll(tagOpenRe)) {
-    const openTag = tm[0];
-    if (!/\bdata-services="/.test(openTag)) continue; // chip <g>만(로고 서브그룹 제외).
-    const station =
-      (openTag.match(/\bdata-station-name="([^"]*)"/) || [])[1] ??
-      (openTag.match(/\bid="([^"]*)"/) || [])[1] ??
-      "";
-    const rootTransform =
-      (openTag.match(/\btransform="([^"]*)"/) || [])[1] ?? "";
-    const blockStart = tm.index;
-    const blockEnd = matchingGroupEnd(
-      layer,
-      blockStart,
-      `rail chip 블록(${station || "id 없음"})`,
-    );
-    const block = layer.slice(blockStart + openTag.length, blockEnd);
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    const visit = (x, y) => {
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-    };
-    collectShapeBoundsRecursive(
-      block,
-      parseTransformChain(composeTransformValues(layerTransform, rootTransform)),
-      visit,
-    );
-    if (!Number.isFinite(minX)) continue; // 시각 내용 없는 빈 chip — 회피 대상 아님.
-    obstacles.push({
-      station,
-      x: (minX + maxX) / 2,
-      y: (minY + maxY) / 2,
-      halfWidth: (maxX - minX) / 2,
-      halfHeight: (maxY - minY) / 2,
-    });
+  for (const layerId of RAIL_CHIP_LAYER_IDS) {
+    const layer = extractObstacleLayerSlice(svgText, layerId);
+    if (layer === null) continue;
+    const layerTransform = layerOwnTransform(layer);
+
+    const tagOpenRe = /<g\b[^>]*>/g;
+    for (const tm of layer.matchAll(tagOpenRe)) {
+      const openTag = tm[0];
+      if (!/\bdata-services="/.test(openTag)) continue; // chip <g>만(로고 서브그룹 제외).
+      const station =
+        (openTag.match(/\bdata-station-name="([^"]*)"/) || [])[1] ??
+        (openTag.match(/\bid="([^"]*)"/) || [])[1] ??
+        "";
+      const rootTransform =
+        (openTag.match(/\btransform="([^"]*)"/) || [])[1] ?? "";
+      const blockStart = tm.index;
+      const blockEnd = matchingGroupEnd(
+        layer,
+        blockStart,
+        `rail chip 블록(${station || "id 없음"})`,
+      );
+      const block = layer.slice(blockStart + openTag.length, blockEnd);
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      const visit = (x, y) => {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      };
+      collectShapeBoundsRecursive(
+        block,
+        parseTransformChain(
+          composeTransformValues(layerTransform, rootTransform),
+        ),
+        visit,
+      );
+      if (!Number.isFinite(minX)) continue; // 시각 내용 없는 빈 chip — 회피 대상 아님.
+      obstacles.push({
+        station,
+        x: (minX + maxX) / 2,
+        y: (minY + maxY) / 2,
+        halfWidth: (maxX - minX) / 2,
+        halfHeight: (maxY - minY) / 2,
+      });
+    }
   }
   return applyMapScaleToObstacles(obstacles, svgText);
 }
@@ -984,31 +1041,34 @@ function ownerLabelTextContent(textBlock) {
     .trim();
 }
 
-// station 키 결정: daejeon 환승 라벨(5역)은 텍스트 내용이 메인+부기 tspan을
+// station 키 결정: daejeon 환승 라벨(v1 5역)은 텍스트 내용이 메인+부기 tspan을
 // 이어붙인 복합 표기("1호선 대동"+"하늘공원" → "대동하늘공원")라 카탈로그 표기
 // ("대동")와 매치되지 않는다(#2068 실기기 확정 — 좌열 왼쪽 폴백 배치로 화면 밖
-// 잘림). daejeon <text>에만 있는 data-full-official-name("1호선 대동 | 2호선
-// 208 대동(하늘공원)")은 sma-region-configs.mjs DAEJEON.canonicalRules가 이미
-// 정확히 같은 정규화(파이프 앞 "1호선 " 접두 제거·괄호 제거·"역" 접미 제거)를
-// 파이프라인 노드 매칭에 쓰고 있으므로 그 정본 규칙을 그대로 재사용해 station
-// 키를 뽑는다 — 텍스트 flatten보다 우선한다. 다른 권역 SVG는 <text>에
-// data-full-official-name이 없으므로(daejeon 전용 마크업) 이 분기는 daejeon
-// 외에는 발동하지 않는다(그 외 권역 회귀 0).
+// 잘림). 오너가 <text>에 직접 단 data-full-official-name("1호선 대동 | 2호선
+// 208 대동(하늘공원)")이 역 신원의 제1 원천이고, sma-region-configs.mjs의 권역
+// canonicalRules가 이미 정확히 같은 정규화를 파이프라인 노드 매칭에 쓰고 있으므로
+// 그 정본 규칙을 그대로 재사용해 station 키를 뽑는다 — 텍스트 flatten보다
+// 우선한다.
+//
+// #2068 대전·광주 v3(2026-07-25): 오너가 재제작하며 **광주 라벨도** 이 속성으로
+// 통일했다(대전 22건·광주 20건). 규칙을 DAEJEON.canonicalRules로 고정해 두면
+// 광주가 대전 규칙(역 접미 제거·가운뎃점 보존)으로 뽑혀 카탈로그와 어긋난다 —
+// 광주송정역→"광주송정"(카탈로그 "광주송정역"), 학동·증심사입구는 가운뎃점이
+// 남아 "학동증심사입구"와 불일치. 두 역만 조용히 폴백 미니 크기로 회귀하는
+// #2068 광주송정역 사례와 동형이라, 권역 규칙([canonicalize])으로 뽑는다.
+// [canonicalize]가 없으면(regionId 미지정 호출) 마크업 값을 그대로 쓴다.
 //
 // daegu/busan(#2068 QA): 오너 라벨 <text> 내용이 카탈로그 name_ko와 어긋나는
 // 역이 data-full-official-name 없이 순수 <text> 내용으로만 온다 — daegu 3역
 // (부호(경일대·호산대)→부호, 하양(대구가톨릭대)→하양, 서대구→서대구역), busan
 // 4역(벡스코(시립미술관)→벡스코, 부산역→부산, 경성대·부경대→경성대.부경대,
-// 국제금융센터·부산은행→국제금융센터.부산은행). daejeon처럼 파이프라인 노드
-// 매칭에 이미 쓰는 정본 규칙(DAEGU/BUSAN.canonicalRules)을 그대로 flatten
+// 국제금융센터·부산은행→국제금융센터.부산은행). 같은 정본 규칙을 flatten
 // 텍스트에 적용해 station 키를 카탈로그 표기와 맞춘다 — 매칭 실패로 앱이 폴백
-// 미니 크기로 잘못 배치하던 회귀(실기기)를 없앤다. [canonicalize]는 daegu/busan
-// 에서만 넘어오므로(extractOwnerLabels가 regionId로 판정) 다른 권역 불변.
+// 미니 크기로 잘못 배치하던 회귀(실기기)를 없앤다.
 function ownerLabelStationKey(textOpenTag, textBlock, canonicalize) {
   const fullOfficialName = firstAttr(textOpenTag, "data-full-official-name");
   if (fullOfficialName) {
-    const canonical = DAEJEON.canonicalRules(fullOfficialName)?.name;
-    if (canonical) return canonical;
+    return canonicalize?.(fullOfficialName)?.name ?? fullOfficialName;
   }
   // #2068 오너 v4 실측: 오너가 라벨에 직접 단 data-station이 역 신원의 제1
   // 원천이다. v2까지는 렌더 텍스트가 그 값과 (콜론 접미 표기를 빼면) 항상
@@ -1186,34 +1246,36 @@ function ownerLabelEntryFrom(
   };
 }
 
+// 오너 라벨 sidecar의 station 키를 카탈로그 표기로 정규화하는 권역별 정본 규칙.
+// 파이프라인 노드 매칭(apply-sma-svg-positions)이 이미 쓰는 그 규칙을 그대로
+// 재사용한다 — 도식 표기와 카탈로그 표기가 다른 역이 매칭에 실패하면 그 역만
+// 조용히 솔버 폴백(미니 크기)으로 렌더되기 때문이다(#2068 광주송정역 사례).
+// 실측 교정 이력:
+//   daegu  — 부호(경일대·호산대)→부호 · 하양(대구가톨릭대)→하양 · 서대구→서대구역
+//   busan  — 벡스코(시립미술관)→벡스코 · 부산역→부산 · 경성대·부경대→경성대.부경대 ·
+//            국제금융센터·부산은행→국제금융센터.부산은행
+//   seoul  — 총신대입구(이수)→총신대입구 · 신촌(경의중앙선)→신촌 · 하남검단산→하남검단산역
+//   daejeon— "1호선 대동 | 2호선 208 대동(하늘공원)"→대동 · 대전역→대전
+//   gwangju— 광주송정역(유지) · 학동·증심사입구→학동증심사입구 ·
+//            김대중컨벤션센터(마륵)→김대중컨벤션센터 · 문화전당(구도청)→문화전당
+// regionId를 넘기지 않는 호출(단위 테스트 등)은 null이라 마크업 값을 그대로 쓴다.
+const OWNER_LABEL_CANONICAL_RULES = {
+  seoul: SEOUL.canonicalRules,
+  busan: BUSAN.canonicalRules,
+  daegu: DAEGU.canonicalRules,
+  daejeon: DAEJEON.canonicalRules,
+  gwangju: GWANGJU.canonicalRules,
+};
+
 // 원본 svgText(정규화·레이어 추출 이전)에서 오너 라벨 앵커 목록을 뽑는다.
 // 반환은 station 오름차순(로케일 정렬) → role 오름차순으로 정렬해 결정적이다.
 export function extractOwnerLabels(svgText, regionId) {
-  const mapTransform = svgText.match(
-    /<g\b(?=[^>]*\bid="main-map-scaled-layer")(?=[^>]*\btransform="([^"]+)")[^>]*>/,
-  )?.[1];
+  const mapTransform = mapWrapperTransform(svgText);
   const mapScale = scaleFromMapTransform(mapTransform);
   const mapTranslate = parseTranslate(mapTransform);
   const cssFontSizeByRole = stationLabelFontSizesByRole(svgText);
   const rolePattern = ownerLabelRoles.join("|");
-  // #2068 대구/부산: flatten 텍스트 station 키를 카탈로그 표기로 정규화한다.
-  //   daegu(부호/하양/서대구역), busan(벡스코(시립미술관)→벡스코·부산역→부산·
-  //   경성대·부경대→경성대.부경대·국제금융센터·부산은행→국제금융센터.부산은행).
-  // 파이프라인 노드 매칭이 이미 쓰는 정본 규칙(DAEGU/BUSAN.canonicalRules)을 그대로
-  // sidecar 키에 적용해 매칭 실패(폴백 미니) 회귀를 없앤다. daejeon은
-  // data-full-official-name 경로라 여기 canonicalize를 타지 않는다.
-  // #2068 수도권 추가(2026-07-25): seoul 라벨 키에도 파이프라인 노드 매칭이 쓰는
-  // 정본 규칙을 그대로 적용한다. 적용 전에는 오너 라벨 키가 도식 표기 그대로라
-  // 카탈로그 표기와 어긋나는 3역(총신대입구(이수)·신촌(경의중앙선)·하남검단산)이
-  // 오너 라벨 대신 솔버 폴백(미니 크기)으로 렌더됐다 — 성신여대입구와 동일 논리.
-  const canonicalize =
-    regionId === "daegu"
-      ? DAEGU.canonicalRules
-      : regionId === "busan"
-        ? BUSAN.canonicalRules
-        : regionId === "seoul"
-          ? SEOUL.canonicalRules
-          : null;
+  const canonicalize = OWNER_LABEL_CANONICAL_RULES[regionId] ?? null;
 
   const entries = [];
   const textRe = new RegExp(

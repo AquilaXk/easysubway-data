@@ -18,8 +18,8 @@
   },
   "canonicalPackIdentity": {
     "id": "capital",
-    "sha256": "72be80d58dd1aaa04f69d24da458e9ff8d0fcadd28ed58b9a9761cf55f34197c",
-    "sqliteSha256": "5732c55c9bc06570f1ab6010e601df509ba32f50744156dc5888c05857a3d2fe"
+    "sha256": "dae626b7d782da5c00a228284fbb8fdcdb05df77ff842d245ba4d372b09b53c2",
+    "sqliteSha256": "d190d92a261d94707c93a0cd7e6c66cd8cc271de51d5566c7d6e165ab6a9e862"
   },
   "canonicalStations": [
     {

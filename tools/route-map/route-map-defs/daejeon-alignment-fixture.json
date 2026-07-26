@@ -1,0 +1,233 @@
+{
+  "artifactKind": "basemap-alignment-fixture",
+  "region": "대전권",
+  "generatedFrom": {
+    "geometry": "tools/route-map/route-map-defs/easy-subway-daejeon-v3-geometry.json",
+    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz"
+  },
+  "stationCount": 22,
+  "unmatchedCount": 0,
+  "maxDeltaPx": 0,
+  "entries": [
+    {
+      "stationId": "station-1a68b52a9b0d",
+      "lineId": "line-7051a9c2525c",
+      "name": "판암",
+      "svgX": 540,
+      "svgY": 448,
+      "packX": 540,
+      "packY": 448,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-8fa8dda24824",
+      "lineId": "line-7051a9c2525c",
+      "name": "신흥",
+      "svgX": 540,
+      "svgY": 628,
+      "packX": 540,
+      "packY": 628,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-4a9886a49721",
+      "lineId": "line-7051a9c2525c",
+      "name": "대동",
+      "svgX": 540,
+      "svgY": 808,
+      "packX": 540,
+      "packY": 808,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a8e6a45c3c35",
+      "lineId": "line-7051a9c2525c",
+      "name": "대전",
+      "svgX": 540,
+      "svgY": 988,
+      "packX": 540,
+      "packY": 988,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-102781067ad4",
+      "lineId": "line-7051a9c2525c",
+      "name": "중앙로",
+      "svgX": 540,
+      "svgY": 1168,
+      "packX": 540,
+      "packY": 1168,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-4f6b91cd4b74",
+      "lineId": "line-7051a9c2525c",
+      "name": "중구청",
+      "svgX": 540,
+      "svgY": 1348,
+      "packX": 540,
+      "packY": 1348,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-ee3cc9d04ee7",
+      "lineId": "line-7051a9c2525c",
+      "name": "서대전네거리",
+      "svgX": 540,
+      "svgY": 1528,
+      "packX": 540,
+      "packY": 1528,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-49f924643e04",
+      "lineId": "line-7051a9c2525c",
+      "name": "오룡",
+      "svgX": 792,
+      "svgY": 1648,
+      "packX": 792,
+      "packY": 1648,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-8c3f83ab1056",
+      "lineId": "line-7051a9c2525c",
+      "name": "용문",
+      "svgX": 1044,
+      "svgY": 1528,
+      "packX": 1044,
+      "packY": 1528,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-961042c194fb",
+      "lineId": "line-7051a9c2525c",
+      "name": "탄방",
+      "svgX": 1044,
+      "svgY": 1348,
+      "packX": 1044,
+      "packY": 1348,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-0e902d05cec4",
+      "lineId": "line-7051a9c2525c",
+      "name": "시청",
+      "svgX": 1044,
+      "svgY": 1168,
+      "packX": 1044,
+      "packY": 1168,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-b35cc28f2c19",
+      "lineId": "line-7051a9c2525c",
+      "name": "정부청사",
+      "svgX": 1044,
+      "svgY": 988,
+      "packX": 1044,
+      "packY": 988,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-e0293fcce108",
+      "lineId": "line-7051a9c2525c",
+      "name": "갈마",
+      "svgX": 1044,
+      "svgY": 808,
+      "packX": 1044,
+      "packY": 808,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-9affffdcaf16",
+      "lineId": "line-7051a9c2525c",
+      "name": "월평",
+      "svgX": 1044,
+      "svgY": 628,
+      "packX": 1044,
+      "packY": 628,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-18ba692610bf",
+      "lineId": "line-7051a9c2525c",
+      "name": "갑천",
+      "svgX": 1044,
+      "svgY": 448,
+      "packX": 1044,
+      "packY": 448,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-6423e0901f89",
+      "lineId": "line-7051a9c2525c",
+      "name": "유성온천",
+      "svgX": 1260,
+      "svgY": 328,
+      "packX": 1260,
+      "packY": 328,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-11db8e56e157",
+      "lineId": "line-7051a9c2525c",
+      "name": "구암",
+      "svgX": 1440,
+      "svgY": 328,
+      "packX": 1440,
+      "packY": 328,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-5cfb7a665888",
+      "lineId": "line-7051a9c2525c",
+      "name": "현충원",
+      "svgX": 1584,
+      "svgY": 472,
+      "packX": 1584,
+      "packY": 472,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-7ee5ea397b9d",
+      "lineId": "line-7051a9c2525c",
+      "name": "월드컵경기장",
+      "svgX": 1584,
+      "svgY": 682,
+      "packX": 1584,
+      "packY": 682,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-70f297332b8c",
+      "lineId": "line-7051a9c2525c",
+      "name": "노은",
+      "svgX": 1584,
+      "svgY": 892,
+      "packX": 1584,
+      "packY": 892,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-f5572903bf54",
+      "lineId": "line-7051a9c2525c",
+      "name": "지족",
+      "svgX": 1584,
+      "svgY": 1102,
+      "packX": 1584,
+      "packY": 1102,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-c94180e4d057",
+      "lineId": "line-7051a9c2525c",
+      "name": "반석",
+      "svgX": 1584,
+      "svgY": 1312,
+      "packX": 1584,
+      "packY": 1312,
+      "deltaPx": 0
+    }
+  ]
+}

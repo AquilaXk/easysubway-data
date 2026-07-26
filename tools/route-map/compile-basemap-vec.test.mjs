@@ -78,8 +78,8 @@ test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노
     "easy-subway-sma-v4.svg",
     "easy-subway-busan-v3.svg",
     "easy-subway-daegu-v3.svg",
-    "easy-subway-daejeon-v1.svg",
-    "easy-subway-gwangju-v1.svg",
+    "easy-subway-daejeon-v3.svg",
+    "easy-subway-gwangju-v3.svg",
   ];
 
   for (const file of files) {
@@ -104,23 +104,36 @@ test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노
     assert.doesNotMatch(rendered, /<title\b/);
   }
 
+  // #2068 v3: 오너가 두 도식에서 미개통 노선(대전 2호선 트램·충청권 광역철도,
+  // 광주 2호선)을 통째로 걷어냈다 — 미개통 마크업 자체가 0건이고, 그래서
+  // "미개통 환승 노드에서 뽑아 오던 현재 노선 역 심벌"(v1 대전 5·광주 2)도 0건이
+  // 된다(환승 캡슐 없이 실역 circle만 남는 구조).
   const daejeon = normalizeSvgForCompile(
-    readFileSync(path.join(sources, "easy-subway-daejeon-v1.svg"), "utf8"),
+    readFileSync(path.join(sources, "easy-subway-daejeon-v3.svg"), "utf8"),
   );
   assert.doesNotMatch(daejeon, /data-state="construction"/);
   assert.equal(
     (daejeon.match(/data-role="current-line-station"/g) ?? []).length,
-    5,
+    0,
   );
+  // 대전 v3는 지도 본문을 map-content-positioned-layer(translate(0 88))로 감쌌다 —
+  // 흡수하지 않으면 .vec가 팩 좌표보다 88px 위에 그려진다(#2068 실측).
+  assert.match(
+    daejeon,
+    /<g id="compiled-map-coordinate-layer" transform="translate\(0 88\)"/,
+  );
+  // 오너가 대전역에 배치한 KTX·SRT 마크는 바탕층에 반입된다(레이어 이동 대응).
+  assert.match(daejeon, /id="rail-service-marks-line1-104"/);
 
   const gwangju = normalizeSvgForCompile(
-    readFileSync(path.join(sources, "easy-subway-gwangju-v1.svg"), "utf8"),
+    readFileSync(path.join(sources, "easy-subway-gwangju-v3.svg"), "utf8"),
   );
   assert.doesNotMatch(gwangju, /data-line="line2-phase/);
   assert.equal(
     (gwangju.match(/data-role="current-line-station"/g) ?? []).length,
-    2,
+    0,
   );
+  assert.match(gwangju, /id="rail-service-marks-line1-117"/);
   const gwangjuStations = gwangju.match(
     /id="station-symbols-layer"[\s\S]*?<\/g>/,
   )?.[0];
@@ -404,14 +417,17 @@ test("extractOwnerLabels: 절대 y 없이 dy만 있는 다음 줄(daegu/busan/da
 });
 
 test("extractOwnerLabels: class=station-sub(daejeon 부기 캡션)는 lines에서 제외돼 단일 줄로 남는다 — lines 필드 자체가 없다(#2068 대동 사례)", () => {
-  const entries = extractOwnerLabels(`
+  const entries = extractOwnerLabels(
+    `
     <svg>
       <text data-label-role="transfer" font-size="58" x="572" y="740"
             data-full-official-name="1호선 대동 | 2호선 208 대동(하늘공원)"
             ><tspan class="station-main" x="572" dy="0">대동</tspan><tspan
              class="station-sub" x="572" dy="44.11" font-size="37.58px">하늘공원</tspan></text>
     </svg>
-  `);
+  `,
+    "daejeon",
+  );
   assert.equal(entries.length, 1);
   const [entry] = entries;
   assert.equal(entry.station, "대동"); // canonical 매치 키 불변.
@@ -500,7 +516,8 @@ test("extractOwnerLabels: code role과 construction/planned 상태는 제외한�
 });
 
 test("extractOwnerLabels: daejeon 환승 복합 표기는 data-full-official-name의 canonical 1호선 역명을 station 키로 쓴다(#2068 실기기 확정 — 텍스트 flatten 대신)", () => {
-  const entries = extractOwnerLabels(`
+  const entries = extractOwnerLabels(
+    `
     <svg>
       <text data-label-role="transfer" font-size="14.2" x="0" y="0"
             data-full-official-name="1호선 대동 | 2호선 208 대동(하늘공원)"
@@ -511,13 +528,116 @@ test("extractOwnerLabels: daejeon 환승 복합 표기는 data-full-official-nam
       <text data-label-role="ordinary" font-size="13.2" x="0" y="0"
             data-full-official-name="구암">구암</text>
     </svg>
-  `);
+  `,
+    "daejeon",
+  );
   const byStation = Object.fromEntries(entries.map((e) => [e.station, e]));
   assert.ok(byStation["대동"], "복합 표기 flatten(대동하늘공원) 대신 canonical 키(대동)여야 한다");
   assert.ok(!byStation["대동하늘공원"]);
   assert.ok(byStation["대전"], "역 접미 정규화(대전역→대전)까지 적용돼야 한다");
   assert.ok(!byStation["대전역"]);
   assert.ok(byStation["구암"], "data-full-official-name이 단순 역명이면 그대로 유지");
+});
+
+// #2068 대전·광주 v3: 오너가 두 권역 라벨 신원 속성을 data-full-official-name
+// 하나로 통일했다. 이 분기가 DAEJEON.canonicalRules에 고정돼 있으면 광주 라벨이
+// 대전 규칙(역 접미 제거·가운뎃점 보존)으로 뽑혀 카탈로그 표기와 어긋난다
+// (광주송정역→광주송정, 학동·증심사입구 그대로) — 그 두 역만 폴백 미니 크기로
+// 회귀한다(#2068 광주송정역 사례와 동형). 권역 규칙으로 뽑아야 한다.
+test("extractOwnerLabels: gwangju data-full-official-name 라벨 키는 GWANGJU.canonicalRules로 뽑는다(DAEJEON 규칙 고정 금지)", () => {
+  const svgText = `
+    <svg>
+      <g id="station-name-labels-layer">
+        <text data-label-role="ordinary" font-size="34" x="0" y="0"
+              data-full-official-name="광주송정역">광주송정역 </text>
+        <text data-label-role="ordinary" font-size="34" x="0" y="10"
+              data-full-official-name="학동·증심사입구">학동·증심사입구</text>
+        <text data-label-role="ordinary" font-size="34" x="0" y="20"
+              data-full-official-name="김대중컨벤션센터(마륵)">김대중컨벤션센터</text>
+      </g>
+    </svg>
+  `;
+  assert.deepEqual(
+    new Set(extractOwnerLabels(svgText, "gwangju").map((e) => e.station)),
+    new Set(["광주송정역", "학동증심사입구", "김대중컨벤션센터"]),
+  );
+  // 같은 마크업이라도 대전 규칙으로 뽑으면 두 역이 카탈로그와 어긋난다(회귀 대조).
+  assert.deepEqual(
+    new Set(extractOwnerLabels(svgText, "daejeon").map((e) => e.station)),
+    new Set(["광주송정", "학동·증심사입구", "김대중컨벤션센터"]),
+  );
+});
+
+// #2068 대전 v3: 오너가 상단 안내 영역과의 겹침을 피하려고 지도 본문을
+// <g id="map-content-positioned-layer" transform="translate(0 88)">로 감쌌다.
+// seoul의 main-map-scaled-layer와 같은 "지도 본문 래퍼"인데 id가 달라 흡수되지
+// 않으면 ① .vec가 88px 위에 그려지고 ② 오너 라벨 sidecar 좌표도 88px 어긋나
+// 바탕↔인터랙션 정합(<5px 하드 게이트)이 통째로 깨진다.
+test("map-content-positioned-layer 래퍼 transform을 흡수한다(#2068 대전 v3 — .vec·라벨 sidecar 동시)", () => {
+  const svgText = `
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-symbols-layer">
+            <circle cx="540" cy="360" r="9" />
+          </g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="판암">판암</text>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `;
+  assert.match(
+    normalizeSvgForCompile(svgText),
+    /<g id="compiled-map-coordinate-layer" transform="translate\(0 88\)"/,
+  );
+  const [entry] = extractOwnerLabels(svgText, "daejeon");
+  assert.equal(entry.x, 100);
+  assert.equal(entry.y, 288); // 200 + 88 — 노드(360+88=448)와 같은 좌표계.
+});
+
+// #2068 대전·광주 v3: KTX·SRT 마크가 rail-transfer-layer(v1에선 빈 레이어)에서
+// station-name-labels-layer 안 역 앵커 그룹(class="rail-service-marks")으로
+// 옮겨졌다. 그 레이어는 바탕층 allow-list 밖이라 손대지 않으면 ① 마크가 .vec에서
+// 통째로 사라지고 ② 라벨 회피 obstacle도 0건이 된다.
+test("rail-service-marks(대전·광주 v3 KTX·SRT)는 바탕층에 반입되고 라벨 회피 obstacle이 된다", () => {
+  const svgText = `
+    <svg>
+      <g id="map-card-clipped-content-layer">
+        <g id="map-content-positioned-layer" transform="translate(0 88)">
+          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
+          <g id="station-name-labels-layer">
+            <text data-label-role="ordinary" font-size="34" x="100" y="200"
+                  data-full-official-name="대전역">대전역</text>
+            <g id="rail-service-marks-line1-104" class="rail-service-marks"
+               data-station-name="대전역" data-services="KTX,SRT">
+              <title>대전역 KTX·SRT 고속철도 환승</title>
+              <g id="rail-service-ktx-line1-104" data-logo="KTX"
+                 transform="matrix(0.05,0,0,0.05,660,880)">
+                <path d="M 0 0 L 200 0 L 200 100 L 0 100 Z" />
+              </g>
+            </g>
+          </g>
+        </g>
+      </g>
+    </svg>
+  `;
+  const normalized = normalizeSvgForCompile(svgText);
+  assert.match(normalized, /id="rail-service-marks-line1-104"/);
+  assert.match(normalized, /id="rail-service-ktx-line1-104"/);
+  assert.doesNotMatch(normalized, /station-name-labels-layer|대전역<|<title\b/);
+
+  const [obstacle] = extractRailTransferChipObstacles(svgText);
+  assert.equal(obstacle.station, "대전역");
+  // 로컬 path [0,200]×[0,100] → matrix(0.05,…,660,880) → [660,670]×[880,885],
+  // 그 위에 지도 본문 래퍼 translate(0 88).
+  assert.equal(obstacle.x, 665);
+  assert.equal(obstacle.y, 882.5 + 88);
+  assert.equal(obstacle.halfWidth, 5);
+  assert.equal(obstacle.halfHeight, 2.5);
 });
 
 test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개수가 실측과 일치한다", () => {
@@ -537,10 +657,14 @@ test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개�
     // 이미 가지므로 중복 표기 불필요) → ordinary 129→128.
     "easy-subway-busan-v3.svg": { ordinary: 128, transfer: 12, terminal: 7 },
     "easy-subway-daegu-v3.svg": { ordinary: 84, transfer: 5, terminal: 8 },
-    // daejeon: SVG상 ordinary/transfer/terminal 64건 중 39건이 미개통(2호선
-    // 트램) data-status="construction"이라 제외 → 25건(15/8/2)만 남는다.
-    "easy-subway-daejeon-v1.svg": { ordinary: 15, transfer: 8, terminal: 2 },
-    "easy-subway-gwangju-v1.svg": { ordinary: 53, transfer: 7, terminal: 2 },
+    // #2068 대전·광주 v3 반입(2026-07-25): 오너가 두 도식을 전면 재제작하며
+    // 카탈로그 밖 노선(대전 2호선 트램·충청권 광역철도, 광주 2호선)을 도식에서
+    // 통째로 걷어냈다 — 라벨이 카탈로그 실역만 남는다(대전 22 = 운영 22역,
+    // 광주 20 = 운영 20역). v1의 25(15/8/2)·62(53/7/2)에는 미개통 노선 라벨과
+    // 환승 role 표기가 섞여 있었다. 두 권역 모두 활성 환승역이 0이라 transfer
+    // role은 0이고, 종점 2역(대전 판암·반석, 광주 평동·녹동)만 terminal이다.
+    "easy-subway-daejeon-v3.svg": { ordinary: 20, transfer: 0, terminal: 2 },
+    "easy-subway-gwangju-v3.svg": { ordinary: 18, transfer: 0, terminal: 2 },
   };
   for (const [file, counts] of Object.entries(expected)) {
     const entries = extractOwnerLabels(
@@ -556,6 +680,90 @@ test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개�
       assert.ok(["start", "middle", "end"].includes(entry.anchor), file);
     }
   }
+});
+
+// #2068 대전·광주 v3 반입 회귀 가드 — 컴파일러를 손댈 때(권역별 canonicalRules
+// 확장·지도 본문 래퍼 흡수·rail-service-marks 반입) 산출물이 정말 그대로인지
+// 커밋된 파일과 직접 대조한다. 라벨 sidecar와 정규화 SVG(=.vec 입력) 양쪽을
+// 본다 — 둘 다 같으면 .vec 바이트도 같다(결정적 컴파일).
+//
+// **5권역 전부**를 돈다. 미변경 3권역(seoul·busan·daegu)은 "건드리지 않았음"을,
+// 변경 2권역(daejeon·gwangju)은 "의도한 값으로 고정됐음"을 각각 고정한다 —
+// 이 PR이 새로 도입한 두 축이 정확히 sidecar의 station 키(권역별
+// OWNER_LABEL_CANONICAL_RULES)와 x/y(MAP_WRAPPER_LAYER_IDS의 대전
+// translate(0 88) 흡수)를 결정하므로, 두 권역을 빼면 그 두 축의 회귀를
+// node 층에서 아무도 못 잡는다(개수·부가 필드만 보던 상태).
+test("5권역 오너 라벨 sidecar·정규화 SVG가 커밋된 산출물과 완전히 동일하다", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const manifest = JSON.parse(
+    readFileSync(
+      path.join(import.meta.dirname, "basemap-build-manifest.json"),
+      "utf8",
+    ),
+  );
+  const sidecar = JSON.parse(
+    readFileSync(
+      path.join(
+        root,
+        "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+      ),
+      "utf8",
+    ),
+  );
+  for (const id of ["seoul", "busan", "daegu", "daejeon", "gwangju"]) {
+    const map = manifest.maps.find((entry) => entry.id === id);
+    assert.ok(map, `${id}: build manifest 항목 없음`);
+    const source = readFileSync(path.join(root, map.source), "utf8");
+    assert.deepEqual(
+      markLineTerminalBadgeEntries(extractOwnerLabels(source, id), source),
+      sidecar.regions[id],
+      `${id}: 오너 라벨 sidecar가 달라졌습니다(station 키·x/y 포함)`,
+    );
+    assert.equal(
+      createHash("sha256")
+        .update(normalizeSvgForCompile(source))
+        .digest("hex"),
+      map.normalizedSvgSha256,
+      `${id}: 컴파일 입력(정규화 SVG)이 달라졌습니다`,
+    );
+  }
+});
+
+// #2068 대전·광주 v3: canonicalRules 변환이 걸린 4건이 **카탈로그 표기**로
+// 떨어지는지 직접 못 박는다. 위 sidecar deepEqual이 값 전체를 고정하지만, 그
+// 고정값이 왜 그 문자열이어야 하는지(=카탈로그와 매칭되어야 앱이 오너 라벨로
+// 렌더한다)는 드러나지 않는다 — 변환 전 마크업 원문이 키로 남으면 그 역만
+// 조용히 폴백 미니 크기가 되는 #2068 광주송정역 사례라, 원문 표기가 키에
+// 없다는 것까지 함께 고정한다.
+test("대전·광주 sidecar 키는 마크업 원문이 아니라 카탈로그 표기다(canonicalRules 변환 4건)", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const sidecar = JSON.parse(
+    readFileSync(
+      path.join(
+        root,
+        "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
+      ),
+      "utf8",
+    ),
+  );
+  // [권역, 마크업 data-full-official-name, 카탈로그 표기]
+  const conversions = [
+    ["daejeon", "대전역", "대전"],
+    ["gwangju", "김대중컨벤션센터(마륵)", "김대중컨벤션센터"],
+    ["gwangju", "문화전당(구도청)", "문화전당"],
+    ["gwangju", "학동·증심사입구", "학동증심사입구"],
+  ];
+  for (const [id, markup, catalog] of conversions) {
+    const keys = new Set(sidecar.regions[id].map((entry) => entry.station));
+    assert.ok(keys.has(catalog), `${id}: 카탈로그 표기 '${catalog}' 키가 없다`);
+    assert.ok(
+      !keys.has(markup),
+      `${id}: 마크업 원문 '${markup}'이 키로 남았다(권역 규칙 미적용 회귀)`,
+    );
+  }
+  // 나머지 키는 변환 없이 마크업 표기 그대로다(대전 21 / 광주 17).
+  assert.equal(sidecar.regions.daejeon.length, 22);
+  assert.equal(sidecar.regions.gwangju.length, 20);
 });
 
 test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다", () => {
@@ -584,7 +792,12 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     assert.equal(map.normalizedSvgSha256, hash(normalized));
     assert.equal(map.compiledVectorSha256, hash(vec));
     assert.equal(map.viewBox.length, 4);
-    const ownerLabels = extractOwnerLabels(source.toString("utf8"));
+    // #2068: 프로덕션 경로(main())가 extractOwnerLabels(sourceText, region.id)로
+    // 권역 규칙을 태우므로 계약 테스트도 같은 인자를 넘겨야 한다. regionId를
+    // 빼면 daejeon·gwangju는 data-full-official-name 원문이 키가 돼(대전역·
+    // 학동·증심사입구·문화전당(구도청)·김대중컨벤션센터(마륵)) 프로덕션과 다른
+    // 코드 경로를 검증하게 된다 — 개수만 비교해 통과하던 사각지대.
+    const ownerLabels = extractOwnerLabels(source.toString("utf8"), map.id);
     assert.equal(map.ownerLabelCount, ownerLabels.length);
   }
 
@@ -1095,7 +1308,7 @@ test("extractServiceTagObstacles: 대구 동대구역 KTX·SRT 표장 bbox가 Ch
   assert.ok(actual.maxX < 2344.771);
 });
 
-test("extractServiceTagObstacles·extractRailTransferChipObstacles: main-map-scaled-layer가 없는 권역(busan·daegu·daejeon·gwangju)은 mapScale=1로 obstacle 좌표가 항등 변환된다(회귀 가드)", () => {
+test("extractServiceTagObstacles·extractRailTransferChipObstacles: 비수도권 4권역 obstacle 좌표가 커밋된 sidecar와 일치한다(회귀 가드)", () => {
   const svgSourceDir = path.join(
     import.meta.dirname,
     "route-map-defs/svg-sources",
@@ -1103,8 +1316,8 @@ test("extractServiceTagObstacles·extractRailTransferChipObstacles: main-map-sca
   for (const [id, file] of [
     ["busan", "easy-subway-busan-v3.svg"],
     ["daegu", "easy-subway-daegu-v3.svg"],
-    ["daejeon", "easy-subway-daejeon-v1.svg"],
-    ["gwangju", "easy-subway-gwangju-v1.svg"],
+    ["daejeon", "easy-subway-daejeon-v3.svg"],
+    ["gwangju", "easy-subway-gwangju-v3.svg"],
   ]) {
     const svgText = readFileSync(path.join(svgSourceDir, file), "utf8");
     assert.doesNotMatch(

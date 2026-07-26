@@ -279,19 +279,24 @@ const DAEGU = {
   contentBand: { minY: 300, maxY: 1800 },
 };
 
-// ── 대전(daejeon): #2011 3단계. 오너 자작 easy-subway-daejeon-v1. ─────────────
-// 문법 차이(수도권·부산·대구 대비): 역 마커 g(station-symbol)는 data-node-role
-// 없이 data-line·data-station-code만 들고, 역 정체(이름)와 노드 좌표는 <text>
+// ── 대전(daejeon): #2011 3단계. 오너 자작 easy-subway-daejeon-v3(#2068 재제작본). ──
+// 문법 차이(수도권·부산·대구 대비): 역 마커 g(station-symbol)는 역 정체(이름)를
+// data-official-station-name으로만 들고, 정합에 쓰는 역 정체와 노드 좌표는 <text>
 // station-label의 data-full-official-name·data-node-x·data-node-y에 실린다.
 // 추출기의 라벨 앵커 노드 소스(data-node-x/y+data-full-official-name)가 이를
-// stationNodes로 승격한다. 도식은 카탈로그 밖 노선까지 그린다: 대전 2호선(도시철도
-// 순환2호선, data-line="2", 전부 construction), 충청권 광역철도(regional,
-// construction), 미개통 라벨(construction/planned). 카탈로그는 대전 1호선 1개
-// (22역)뿐이므로 nodeFilter로 1호선 실역만 남긴다.
-// 1호선 역은 두 갈래로 실린다: (a) data-line="1"·active 라벨 17개, (b) 환승역은
-// data-line="transfer"·active 라벨로 그려지며 이름이 "1호선 <역명> | 2호선 …"
-// 복합 표기다(5개: 대전역·대동·서대전네거리·정부청사·유성온천). canonicalRules가
-// 복합 표기에서 1호선 역명을 뽑고 카탈로그 표기로 정규화(대전역→대전 등).
+// stationNodes로 승격한다.
+//
+// #2068 v3 재제작 실측(v1 대비):
+//   - `data-station` 전면 제거. 역 심벌 id가 station-node-* → station-symbol-line{N}-{id}.
+//   - 카탈로그 밖 노선(도시철도 순환2호선 data-line="2"·충청권 광역철도 regional)을
+//     도식에서 통째로 걷어냈다 — construction/planned 마크업 0건이라 nodeFilter의
+//     미개통 배제 분기는 발동하지 않는다(v1 호환용으로 유지).
+//   - 22개 운영역 전부가 data-line="1"·data-status="active" 라벨 단일 갈래로 실린다
+//     (v1의 "1호선 <역명> | 2호선 …" 복합 표기 환승 라벨 5건은 소멸). canonicalRules는
+//     v1 geometry 재처리 호환을 위해 복합 표기 분해를 그대로 남긴다.
+//   - 지도 본문이 <g id="map-content-positioned-layer" transform="translate(0 88)">로
+//     한 겹 감싸였다(상단 안내 영역 겹침 회피). 추출기는 CTM으로 자연 흡수하고,
+//     컴파일러는 compile-basemap-vec.mjs의 MAP_WRAPPER_LAYER_IDS로 흡수한다.
 const DAEJEON = {
   id: "daejeon",
   regionKey: "대전권",
@@ -299,7 +304,7 @@ const DAEJEON = {
   svgSource: {
     sourceId: "owner-self-drawn-sma-schematic",
     sourceName: "오너 자작 대전 8선형 정본 도식",
-    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v3.svg",
     license: "self-drawn",
     licenseStatus: "confirmed",
     commercialUseAllowed: true,
@@ -324,6 +329,8 @@ const DAEJEON = {
   // 1호선 실역만 정합 대상으로 남긴다. (a) data-line=1·active, (b) data-line=transfer·
   // active이며 이름이 "1호선 "으로 시작(1호선 환승역). 나머지(2호선·광역철도·미개통·
   // 1호선 미개통 식장산)는 fail-closed로 배제한다(카탈로그 미수록).
+  // v3는 22역 전부 (a)에 해당하고 미개통 마크업이 0건이라 (b)·status 분기가 발동하지
+  // 않는다 — v1 geometry 재처리 호환을 위해 그대로 남긴다.
   nodeFilter: (node) => {
     const status = node.dataStatus || "";
     const line = node.dataLine || "";
@@ -349,19 +356,32 @@ const DAEJEON = {
     return { name };
   },
   // 대전 도식 노드 좌표(data-node-x/y)는 콘텐츠 밴드 제약이 track 추출에만 적용된다.
-  // 1호선 stroke의 medY 범위를 포함하도록 넉넉히 둔다.
-  contentBand: { minY: 0, maxY: 1800 },
+  // #2068 v3 실측 교정: 상단 안내 카드(top-route-line-explanation-layer)의 1호선
+  // 색 범례 stroke가 medY 158로 그려져 minY:0이면 buildTracksDoc이 그것을 1호선
+  // track으로 삼는다(v1은 같은 범례 stroke 3개 + 라벨 장식 2개가 실제로 팩
+  // route_map_line_tracks에 5행 중 4행으로 들어가 있었다 — 선재 결함). 실 노선
+  // path의 medY는 1438이므로 광주(minY 340)·수도권(300)과 같은 하한을 두면 범례만
+  // 걸러지고 본선은 그대로 남는다.
+  contentBand: { minY: 300, maxY: 1800 },
 };
 
-// ── 광주(gwangju): #2011 3단계. 오너 자작 easy-subway-gwangju-v1. ─────────────
-// 문법 차이(수도권·부산·대구·대전 대비): 역 정체(코드+이름)가 label group
-// <g id="station-label-group-NNN" data-label-role data-station(코드) data-station-name(이름)>에
-// 실리고, 마커 dot(circle.station-node)은 정체 없이 stroke 색만 든다. 추출기의
-// 라벨 그룹 노드 소스(g[data-label-role])가 라벨 그룹 bbox 중심을 노드 좌표로
-// 승격한다(광주에만 존재하는 선택자라 타 권역 무영향). 코드 1xx=1호선, 2xx=2호선.
-// 카탈로그는 광주 1호선 1개(20역)뿐이라 nodeFilter로 코드 1xx(또는 1호선-2호선
-// 복합 코드 1xx-2xx 환승)만 남긴다. 라이선스 특례: 기존 CC BY-SA 2.0 KR(attribution
-// 필수) 데이터가 자작 도식으로 대체되므로 attribution을 자작 기준으로 전환한다.
+// ── 광주(gwangju): #2011 3단계. 오너 자작 easy-subway-gwangju-v3(#2068 재제작본). ──
+// 라이선스 특례: 기존 CC BY-SA 2.0 KR(attribution 필수) 데이터가 자작 도식으로
+// 대체되므로 attribution을 자작 기준으로 전환한다.
+//
+// #2068 v3 재제작 실측(v1 대비): 대전 v3와 같은 규격(easy_subway_sma_v4 패밀리)으로
+// 통일됐다.
+//   - v1은 역 정체(코드+이름)를 label group <g data-label-role data-station(코드)
+//     data-station-name(이름)>에 실어 추출기의 "라벨 그룹 노드 소스"가 그룹 bbox
+//     중심을 노드 좌표로 승격했다. v3는 `data-station` 전면 제거 + <text> 라벨의
+//     data-full-official-name·data-node-x·data-node-y로 통일 — 대전과 같은 "라벨
+//     앵커 노드 소스"를 타고, 좌표가 bbox 근사가 아니라 오너가 명시한 노드 좌표다.
+//   - 역 심벌 id가 station-node-* → station-symbol-line{N}-{id}, 코드는
+//     data-station-code(100~119).
+//   - 카탈로그 밖 2호선(phase1/2/3)을 도식에서 통째로 걷어냈다 — nodeFilter의
+//     1xx 필터는 전 노드를 통과시킨다(계약은 그대로 유지).
+//   - KTX·SRT 마크가 rail-transfer-layer(v1은 빈 껍데기)에서 station-name-labels-layer
+//     안 <g class="rail-service-marks" data-services data-station-name>으로 이동.
 const GWANGJU = {
   id: "gwangju",
   regionKey: "광주권",
@@ -369,7 +389,7 @@ const GWANGJU = {
   svgSource: {
     sourceId: "owner-self-drawn-sma-schematic",
     sourceName: "오너 자작 광주 8선형 정본 도식",
-    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-gwangju-v1.svg",
+    sourceUrl: "internal:route-map/route-map-defs/svg-sources/easy-subway-gwangju-v3.svg",
     license: "self-drawn",
     licenseStatus: "confirmed",
     commercialUseAllowed: true,
@@ -390,16 +410,21 @@ const GWANGJU = {
   // 명시해 게이트 커버리지를 균일하게 둔다.
   scatteredCandidateExceptions: [],
   excludedStations: [],
-  // 1호선 실역만 정합 대상으로 남긴다: label group 코드가 1xx(순수 1호선) 또는
-  // 1xx-2xx(1호선-2호선 복합 코드 환승: 남광주 103-214·상무 113-203)인 노드.
-  // 2xx(2호선 전용)·transfer-capsule(모두 2xx)은 fail-closed로 배제(카탈로그 미수록).
+  // 1호선 실역만 정합 대상으로 남긴다: 라벨 코드(data-station-code)가 1xx(순수
+  // 1호선) 또는 1xx-2xx(1호선-2호선 복합 코드 환승: v1의 남광주 103-214·상무
+  // 113-203)인 노드. 2xx(2호선 전용)·transfer-capsule(모두 2xx)은 fail-closed로
+  // 배제(카탈로그 미수록). v3는 2호선이 도식에서 빠져 전 노드(100~119)가 통과한다.
   nodeFilter: (node) => {
     const code = node.dataStationCode || "";
     return /^1\d\d($|-)/.test(code);
   },
   // canonical 정합 규칙(광주 카탈로그 실측):
   //   가운뎃점(·) 제거(학동·증심사입구→학동증심사입구·금남로4가 등 그대로),
-  //   광주송정→광주송정역, 괄호 부제 제거.
+  //   광주송정→광주송정역, 괄호 부제 제거(김대중컨벤션센터(마륵)→김대중컨벤션센터,
+  //   문화전당(구도청)→문화전당).
+  // #2068: compile-basemap-vec.mjs의 오너 라벨 sidecar 키도 이 규칙을 그대로 쓴다
+  // (OWNER_LABEL_CANONICAL_RULES) — v3가 라벨 신원을 data-full-official-name으로
+  // 통일해, 대전 규칙으로 뽑으면 광주송정역·학동증심사입구 2역이 카탈로그와 어긋난다.
   canonicalRules: (svgName) => {
     let name = svgName.replace(/·/g, "").trim();
     if (name === "광주송정") name = "광주송정역";

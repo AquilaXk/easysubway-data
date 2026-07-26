@@ -13,7 +13,7 @@
   },
   "ownerLabelsSidecar": {
     "path": "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
-    "sha256": "49688e76124aa86fe2243fc36fd48ced2c0527869e173edd206e67d3bc737842"
+    "sha256": "b5198fcd4e2204742dd2a674e68405345cce087c04618471e02e175ba82eca1f"
   },
   "maps": [
     {
@@ -63,33 +63,33 @@
     },
     {
       "id": "daejeon",
-      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daejeon-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daejeon.vec",
-      "sourceSvgSha256": "87267074b0a7f50d90f7a40f158dc6096f418ce0438391497b7c73658b6edb04",
-      "normalizedSvgSha256": "a065fb99be8c5751587c7519c1a7600b579111adb895839e49d14d27efa68041",
-      "compiledVectorSha256": "c68acd47c97cbcb39925a34613822a2b0d61752067974139656079685e654f86",
+      "sourceSvgSha256": "ff8d14dcf7da5aafd8fcfabcfb2ee8a56273ef682243bd5b30ea0ff50bafbc00",
+      "normalizedSvgSha256": "3b32b8ac7fa639511d65a5c37ef780a92cacc354ba962278fde56c1237366d24",
+      "compiledVectorSha256": "c160bf296e1c937faef96a945c50c781a5868eda5dd23bb78ed96716671900ae",
       "viewBox": [
         0,
         0,
         2400,
         1800
       ],
-      "ownerLabelCount": 25
+      "ownerLabelCount": 22
     },
     {
       "id": "gwangju",
-      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-gwangju-v1.svg",
+      "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-gwangju-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/gwangju.vec",
-      "sourceSvgSha256": "23b419ecadba432b481961fdf40f7678abe5b469950cf53c028f85a8f5ea398b",
-      "normalizedSvgSha256": "d6ce6f067bca1883f06c4b2cb0d36bbfab68ed10237167117ee4ebb733701293",
-      "compiledVectorSha256": "e5e2b71ea789b2794ab2ab2b1feb9b8c76d2c4e933ffff1cbf11259124c7f254",
+      "sourceSvgSha256": "23f8c766bd92c345a3599815efcf2e97b53b2c7935ff387b81570217ff7a745f",
+      "normalizedSvgSha256": "5a7e8f9723920d875eaef47b2b10a77f51f6814a929877a9a8c3bfbb54fe072b",
+      "compiledVectorSha256": "f2aee1153d65208773df8ae56b5d45709ca8ce5a9f8cbf6a4da81b751ac5803f",
       "viewBox": [
         0,
         0,
         2400,
         1800
       ],
-      "ownerLabelCount": 62
+      "ownerLabelCount": 20
     }
   ]
 }

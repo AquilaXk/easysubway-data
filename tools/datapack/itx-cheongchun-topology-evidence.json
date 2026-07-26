@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "72be80d58dd1aaa04f69d24da458e9ff8d0fcadd28ed58b9a9761cf55f34197c",
-    "outputSqliteSha256": "5732c55c9bc06570f1ab6010e601df509ba32f50744156dc5888c05857a3d2fe",
-    "byteSize": 349783,
-    "byteSizeDelta": -9536
+    "outputSha256": "dae626b7d782da5c00a228284fbb8fdcdb05df77ff842d245ba4d372b09b53c2",
+    "outputSqliteSha256": "d190d92a261d94707c93a0cd7e6c66cd8cc271de51d5566c7d6e165ab6a9e862",
+    "byteSize": 344607,
+    "byteSizeDelta": -14712
   },
   "readmissions": [
     {
@@ -894,6 +894,176 @@
           "rowsRemoved": 0,
           "rowsAdded": 0,
           "rowsChanged": 800
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-25T19:36:34.906Z",
+      "provenance": "오너 승인 2026-07-26 — #2068 대전·광주 v3 오너 재제작 노선도 반입에 따른 route_map 좌표·track 재생성(ITX 위상 불변)",
+      "previousPack": {
+        "sha256": "72be80d58dd1aaa04f69d24da458e9ff8d0fcadd28ed58b9a9761cf55f34197c",
+        "sqliteSha256": "5732c55c9bc06570f1ab6010e601df509ba32f50744156dc5888c05857a3d2fe",
+        "byteSize": 349783
+      },
+      "newPack": {
+        "sha256": "dae626b7d782da5c00a228284fbb8fdcdb05df77ff842d245ba4d372b09b53c2",
+        "sqliteSha256": "d190d92a261d94707c93a0cd7e6c66cd8cc271de51d5566c7d6e165ab6a9e862",
+        "byteSize": 344607
+      },
+      "byteSizeDelta": -5176,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "route_map_line_tracks",
+          "previousRowCount": 52,
+          "newRowCount": 48,
+          "rowsRemoved": 4,
+          "rowsAdded": 0,
+          "rowsChanged": 2,
+          "detail": {
+            "removed": [
+              {
+                "region": "대전권",
+                "line_id": "line-7051a9c2525c",
+                "track_index": 1,
+                "path": "M 1680 158 L 1722 158",
+                "svg_color": "#00975a",
+                "source_id": "owner-self-drawn-sma-schematic",
+                "source_name": "오너 자작 대전 8선형 정본 도식",
+                "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+                "license": "self-drawn",
+                "license_status": "confirmed",
+                "commercial_use_allowed": 1,
+                "attribution_required": 0,
+                "updated_at": 1784203726
+              },
+              {
+                "region": "대전권",
+                "line_id": "line-7051a9c2525c",
+                "track_index": 2,
+                "path": "M 540 234 L 540 360 L 540 540 L 540 720 L 540 900 L 540 1080 L 540 1260 L 540 1440 L 660 1560 L 792 1560 L 924 1560 L 1044 1440 L 1044 1260 L 1044 1080 L 1044 900 L 1044 720 L 1044 540 L 1044 360 L 1164 240 L 1260 240 L 1440 240 L 1464 240 L 1584 360 L 1584 384 L 1584 594 L 1584 804 L 1584 1014 L 1584 1224 L 1584 1350",
+                "svg_color": "#00975a",
+                "source_id": "owner-self-drawn-sma-schematic",
+                "source_name": "오너 자작 대전 8선형 정본 도식",
+                "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+                "license": "self-drawn",
+                "license_status": "confirmed",
+                "commercial_use_allowed": 1,
+                "attribution_required": 0,
+                "updated_at": 1784203726
+              },
+              {
+                "region": "대전권",
+                "line_id": "line-7051a9c2525c",
+                "track_index": 3,
+                "path": "M 896 1076 L 940 1076",
+                "svg_color": "#00975a",
+                "source_id": "owner-self-drawn-sma-schematic",
+                "source_name": "오너 자작 대전 8선형 정본 도식",
+                "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+                "license": "self-drawn",
+                "license_status": "confirmed",
+                "commercial_use_allowed": 1,
+                "attribution_required": 0,
+                "updated_at": 1784203726
+              },
+              {
+                "region": "대전권",
+                "line_id": "line-7051a9c2525c",
+                "track_index": 4,
+                "path": "M 2232 1344 L 2232 1440",
+                "svg_color": "#00975a",
+                "source_id": "owner-self-drawn-sma-schematic",
+                "source_name": "오너 자작 대전 8선형 정본 도식",
+                "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+                "license": "self-drawn",
+                "license_status": "confirmed",
+                "commercial_use_allowed": 1,
+                "attribution_required": 0,
+                "updated_at": 1784203726
+              }
+            ],
+            "added": [],
+            "changed": [
+              {
+                "previous": {
+                  "region": "대전권",
+                  "line_id": "line-7051a9c2525c",
+                  "track_index": 0,
+                  "path": "M 260 158 L 302 158",
+                  "svg_color": "#00975a",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 대전 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v1.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784203726
+                },
+                "new": {
+                  "region": "대전권",
+                  "line_id": "line-7051a9c2525c",
+                  "track_index": 0,
+                  "path": "M 540 322 L 540 448 L 540 628 L 540 808 L 540 988 L 540 1168 L 540 1348 L 540 1528 L 660 1648 L 792 1648 L 924 1648 L 1044 1528 L 1044 1348 L 1044 1168 L 1044 988 L 1044 808 L 1044 628 L 1044 448 L 1164 328 L 1260 328 L 1440 328 L 1464 328 L 1584 448 L 1584 472 L 1584 682 L 1584 892 L 1584 1102 L 1584 1312 L 1584 1438",
+                  "svg_color": "#00975a",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 대전 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-daejeon-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785008146
+                }
+              },
+              {
+                "previous": {
+                  "region": "광주권",
+                  "line_id": "line-e57a361e8892",
+                  "track_index": 0,
+                  "path": "M 272.413 273.807 L 272.413 398.664 L 272.413 579.294 L 272.413 759.437 L 272.413 939.243 L 272.413 1118.55 L 272.413 1323.867 L 272.413 1499.284 L 272.413 1533.601 L 405.123 1666.312 L 674.318 1666.312 L 943.101 1666.312 L 1082.085 1527.327 L 1082.085 1489.513 L 1082.085 1303.602 L 1082.085 1119.303 L 1082.085 934.087 L 1082.085 744.569 L 1082.085 544.277 L 1082.085 426.079 L 1224.119 284.045 L 1483.811 284.045 L 1751.06 284.045 L 1881.438 414.424 L 1881.438 468.396 L 1881.438 655.244 L 1881.438 895.637 L 1881.438 1078.807 L 1881.438 1288.356 L 1881.438 1415.561",
+                  "svg_color": "#009088",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 광주 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-gwangju-v1.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1784209089
+                },
+                "new": {
+                  "region": "광주권",
+                  "line_id": "line-e57a361e8892",
+                  "track_index": 0,
+                  "path": "M 470 300 L 470 420 L 470 580 L 470 740 L 470 900 L 470 1060 L 470 1220 L 470 1380 L 470 1400 L 600 1530 L 790 1530 L 980 1530 L 1110 1400 L 1110 1380 L 1110 1220 L 1110 1060 L 1110 900 L 1110 740 L 1110 580 L 1110 440 L 1240 310 L 1415 310 L 1590 310 L 1720 440 L 1720 500 L 1720 680 L 1720 860 L 1720 1080 L 1720 1300 L 1720 1420",
+                  "svg_color": "#009088",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 광주 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-gwangju-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785008157
+                }
+              }
+            ]
+          }
+        },
+        {
+          "table": "route_map_positions",
+          "previousRowCount": 1102,
+          "newRowCount": 1102,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 42
         }
       ]
     }
