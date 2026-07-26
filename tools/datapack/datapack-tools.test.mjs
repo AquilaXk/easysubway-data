@@ -10,7 +10,9 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
-import { validateManifest } from "./lib/manifest-validation.mjs";
+// 정준 직렬화는 검증 대상 구현을 그대로 쓴다. 테스트가 규칙을 복제하면 3언어
+// 분열(이슈 #2528)을 구조적으로 검출할 수 없다.
+import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -15567,26 +15569,6 @@ function resignProductionManifest(manifest) {
 
 function rsaSha256Signature(value) {
   return createSign("RSA-SHA256").update(value).sign(testPrivateKeyPem).toString("base64url");
-}
-
-function withoutSignature(value) {
-  const copy = { ...value };
-  delete copy.signature;
-  return copy;
-}
-
-function canonicalJson(value) {
-  return JSON.stringify(canonicalValue(value));
-}
-
-function canonicalValue(value) {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map(canonicalValue);
-  }
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
 }
 
 function representativeRouteRegressionPayload(routes) {

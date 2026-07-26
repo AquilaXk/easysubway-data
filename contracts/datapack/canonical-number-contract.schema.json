@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "easysubway/contracts/datapack/canonical-number-contract",
+  "title": "매니페스트 정준 JSON 숫자 표기 3언어 계약",
+  "description": "Node(tools/datapack)·Java(backend)·Dart(apps/mobile) 정준 직렬화가 공유하는 숫자 표기 fixture. 각 항목의 canonical 문자열은 세 런타임 실측으로 고정된 상수이며 구현을 복제해 생성하지 않는다.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "specification",
+    "policy",
+    "maxSafeIntegerMagnitude",
+    "formatting",
+    "rejectedLiterals",
+    "rejectedSpecialValues",
+    "nonCanonicalLiterals",
+    "roundTripSamples"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "specification": { "type": "string", "minLength": 1 },
+    "policy": { "type": "string", "minLength": 1 },
+    "maxSafeIntegerMagnitude": { "type": "integer", "const": 9007199254740991 },
+    "formatting": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "literal", "canonical", "withinSafeRange", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "literal": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][-+]?[0-9]+)?$" },
+          "canonical": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?(e[-+][0-9]+)?$" },
+          "withinSafeRange": { "type": "boolean" },
+          "note": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "rejectedLiterals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "literal", "reason", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "literal": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][-+]?[0-9]+)?$" },
+          "reason": { "type": "string", "enum": ["precisionLoss", "nonFinite"] },
+          "note": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "rejectedSpecialValues": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "value", "reason", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "value": { "type": "string", "enum": ["Infinity", "-Infinity", "NaN"] },
+          "reason": { "type": "string", "enum": ["nonFinite"] },
+          "note": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "nonCanonicalLiterals": {
+      "description": "배정도의 최단 왕복 표기가 아닌 리터럴. Node·Dart는 파서가 값을 배정도로 접어 doubleCanonical을 만들고, 리터럴을 그대로 들고 있는 Java는 거부한다.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "literal", "doubleCanonical", "note"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "literal": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][-+]?[0-9]+)?$" },
+          "doubleCanonical": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?(e[-+][0-9]+)?$" },
+          "note": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "roundTripSamples": {
+      "description": "Node JSON.stringify가 산출한 정준 표기 표본. 세 구현이 각각 파싱해 다시 정준화하면 자기 자신으로 돌아와야 한다.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?(e[-+][0-9]+)?$" }
+    }
+  }
+}

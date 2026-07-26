@@ -96,26 +96,85 @@ export function withoutSignature(value) {
   return copy;
 }
 
-export function canonicalJson(value) {
-  return JSON.stringify(canonicalValue(value));
+// 정준 숫자 표기 계약: contracts/datapack/canonical-number-contract.json
+// Node는 JSON 숫자를 IEEE-754 배정도로만 표현하므로 안전 정수 범위 밖 리터럴을
+// 왕복시키지 못한다. Java는 리터럴의 정확한 십진 값을 유지하므로 같은 매니페스트에서
+// 서로 다른 정준 문자열이 나온다. 범위 밖 숫자는 세 구현 모두 fail closed로 거부한다.
+export const MAX_SAFE_CANONICAL_NUMBER_MAGNITUDE = Number.MAX_SAFE_INTEGER;
+
+// ECMAScript Number::toString 표기. Java ecmascriptNumber(BigDecimal), Dart
+// ecmascriptNumberText와 대응하는 Node 쪽 포맷터이며 canonicalJson의 직렬화 경로가
+// 이 함수를 직접 거친다. JSON.stringify에 숫자 표기를 맡기면 계약 fixture가 production
+// 표기를 구속하지 못하고 두 경로로 갈라진다.
+export function ecmascriptNumber(value) {
+  if (!Number.isFinite(value)) {
+    throw new Error("manifest canonical number must be finite");
+  }
+  return String(value);
 }
 
-function canonicalValue(value) {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
+export function canonicalJson(value) {
+  const parts = [];
+  writeCanonical(value, parts);
+  return parts.join("");
+}
+
+function writeCanonical(value, out) {
+  if (value === null) {
+    out.push("null");
+    return;
+  }
+  if (typeof value === "boolean") {
+    out.push(value ? "true" : "false");
+    return;
+  }
+  if (typeof value === "number") {
+    out.push(canonicalNumber(value));
+    return;
+  }
+  if (typeof value === "string") {
+    out.push(JSON.stringify(value));
+    return;
   }
   if (Array.isArray(value)) {
-    return value.map(canonicalValue);
+    out.push("[");
+    value.forEach((item, index) => {
+      if (index > 0) out.push(",");
+      writeCanonical(item, out);
+    });
+    out.push("]");
+    return;
   }
   if (typeof value === "object") {
     // 서명 계산에 쓰이는 정준 직렬화: 기본 .sort()와 바이트 동일한 UTF-16 code-unit
     // 비교자를 명시한다. localeCompare는 정렬 순서가 달라 이미 서명된 매니페스트의
     // 검증을 깨뜨리므로 사용 금지.
-    return Object.fromEntries(
-      Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((key) => [key, canonicalValue(value[key])]),
-    );
+    const keys = Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    out.push("{");
+    keys.forEach((key, index) => {
+      if (index > 0) out.push(",");
+      out.push(JSON.stringify(key), ":");
+      writeCanonical(value[key], out);
+    });
+    out.push("}");
+    return;
   }
   throw new Error("manifest canonical value is unsupported");
+}
+
+function canonicalNumber(value) {
+  if (!Number.isFinite(value)) {
+    // JSON.stringify는 Infinity·NaN을 조용히 null로 바꾼다. 서명 경계에서는
+    // 그 대체가 곧 규칙 분열이므로 거부한다.
+    throw new Error("manifest canonical number must be finite");
+  }
+  if (value > MAX_SAFE_CANONICAL_NUMBER_MAGNITUDE || value < -MAX_SAFE_CANONICAL_NUMBER_MAGNITUDE) {
+    throw new Error("manifest canonical number must be within the safe integer range");
+  }
+  // 정밀도 축은 파서가 이미 닫는다. JSON.parse가 리터럴을 배정도로 접었으므로 여기
+  // 도달한 값의 표기는 언제나 그 배정도의 최단 왕복 표기다(Java는 리터럴을 그대로
+  // 들고 있어 별도 검사가 필요하다).
+  return ecmascriptNumber(value);
 }
 
 export function isAbsoluteHttpsWithHost(value) {
