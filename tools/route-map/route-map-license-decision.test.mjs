@@ -212,12 +212,12 @@ test("route map license decision pins 대안 A(self-drawn) 전환과 근거", ()
   assert.ok(decision.references.length >= 3);
 });
 
-// #2068 리뷰 M1(2026-07-26) — 배포 basemap 콘텐츠 정책을 **실제 컴파일 산출과
-// 대조해** 고정한다. 종전에는 이 블록을 검사하는 계약 테스트가 없어, 배포물이
-// 바뀌었는데도 결정문의 excluded 목록이 낡은 채 남는 드리프트가 조용히 발생했다.
-// 라이선스 판단(오너 자작·attribution 불요)은 이 테스트의 대상이 아니다 —
-// "무엇이 배포되는가"가 문서와 일치하는지만 기계적으로 확인한다.
-test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다(#2068 M1 드리프트 방지)", async () => {
+// #2068 전량 반입 계약(2026-07-26 오너 최종 지시) — 배포 basemap 콘텐츠 정책을
+// **실제 컴파일 입력·배포 바이트와 대조해** 고정한다. 정책이 "오너 SVG 렌더 대상
+// 전량"으로 바뀌었으므로, 종전처럼 장식 id 부재를 확인하는 대신 **선별 없음**을
+// 확인한다: 오너 SVG의 렌더 대상 요소가 컴파일 입력에 하나도 빠지지 않는지.
+// 라이선스 판단(오너 자작·attribution 불요)은 이 테스트의 대상이 아니다.
+test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다(전량 반입 계약)", async () => {
   const decision = readJson("tools/route-map/route-map-license-decision.json");
   const policy = decision.distributedBasemapContentPolicy;
 
@@ -226,28 +226,12 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
     policy.contractTest,
     "tools/route-map/route-map-license-decision.test.mjs",
   );
-  assert.deepEqual(policy.included, [
-    "현재 운행 노선 형상(route-lines·terminal-route-extensions)",
-    "역·환승·종점 심벌(station-symbols·transfer-station-symbols·terminal-station-symbols)",
-    "노선 배지(terminal-route-badges·line-terminal-badges·route-midline-markers·route-number-badges)",
-    "SVG station-name label text",
-    "KTX/SRT service marks drawn by the owner in the map body",
-  ]);
-  assert.deepEqual(policy.excluded, [
-    "map title, header bar and status chips",
-    "legend and top route-line explanation box",
-    "card background, border and page background",
-    "component spec library samples (display:none)",
-    "header legend samples of KTX/SRT logos",
-    "planned or construction routes absent from structured catalog",
-  ]);
+  assert.equal(policy.included.length, 1);
+  assert.match(policy.included[0], /전량/);
+  assert.equal(policy.excluded.length, 1);
+  assert.match(policy.excluded[0], /렌더되지 않는/);
 
-  const {
-    collectServiceMarks,
-    normalizeSvgForCompile,
-    resolveStationNameLabelLayerId,
-    DECOR_SERVICE_MARK_SAMPLE_IDS,
-  } = await import("./compile-basemap-vec.mjs");
+  const { normalizeSvgForCompile } = await import("./compile-basemap-vec.mjs");
 
   const sources = path.join(root, "tools/route-map/route-map-defs/svg-sources");
   const regionSvgs = [
@@ -258,75 +242,78 @@ test("배포 basemap 콘텐츠 정책이 실제 컴파일 입력과 일치한다
     "easy-subway-gwangju-v3.svg",
   ];
 
-  for (const file of regionSvgs) {
-    const svgText = readFileSync(path.join(sources, file), "utf8");
-    const normalized = normalizeSvgForCompile(svgText);
+  // 렌더 대상 요소의 id 전수를 오너 SVG에서 뽑아 컴파일 입력에 그대로 있는지 본다.
+  // display:none 서브트리(비렌더)는 SVG 사양대로 제외 대상이라 기대에서 뺀다.
+  const HIDDEN_SUBTREE = /<([A-Za-z][\w:.-]*)\b(?=[^>]*(?:\sdisplay="none"|style="[^"]*display\s*:\s*none))[^>]*>/;
 
-    // included: 역명 라벨 레이어와 오너 표장이 실제로 배포물에 있다.
-    const labelLayerId = resolveStationNameLabelLayerId(svgText);
-    assert.match(
-      normalized,
-      new RegExp(`id="${labelLayerId}"`),
-      `${file}: 정책이 included로 선언한 역명 라벨이 컴파일 입력에 없습니다.`,
-    );
-    const marks = collectServiceMarks(svgText);
-    assert.ok(
-      marks.length > 0,
-      `${file}: 정책이 included로 선언한 KTX·SRT 표장이 0건입니다.`,
-    );
-
-    // excluded: 장식 요소가 실제로 배포물에 없다.
-    const rendered = normalized.includes("</defs>")
-      ? normalized.slice(normalized.lastIndexOf("</defs>") + 7)
-      : normalized;
-    for (const marker of [
-      /id="header-title-legend-and-status-layer"/,
-      /id="header-complete-route-badges-layer"/,
-      /id="top-route-line-explanation-layer"/,
-      /id="legend-layer"/,
-      /id="header-line-chip"/,
-      /id="header-status-chip"/,
-      /id="page-background"/,
-      /id="main-map-card-background"/,
-      /spec-library/,
-    ]) {
-      assert.doesNotMatch(
-        rendered,
-        marker,
-        `${file}: 정책이 excluded로 선언한 장식이 컴파일 입력에 있습니다 — ${marker}`,
-      );
-    }
-    // 헤더 범례 KTX/SRT 견본은 명시 목록으로 제외된다.
-    for (const sample of DECOR_SERVICE_MARK_SAMPLE_IDS) {
-      assert.ok(
-        !marks.some((mark) => mark.id === sample.id),
-        `${file}: 헤더 범례 견본 ${sample.id}가 배포 표장 목록에 있습니다.`,
-      );
+  function stripHiddenSubtrees(markup) {
+    let result = markup;
+    for (;;) {
+      const match = result.match(HIDDEN_SUBTREE);
+      if (!match) return result;
+      const tagName = match[1];
+      const openTag = result.slice(match.index).match(/^<[A-Za-z][\w:.-]*\b[^>]*>/)[0];
+      if (openTag.endsWith("/>")) {
+        result = result.slice(0, match.index) + result.slice(match.index + openTag.length);
+        continue;
+      }
+      const tagRe = new RegExp(`<${tagName}\\b[^>]*>|</${tagName}>`, "g");
+      tagRe.lastIndex = match.index;
+      let depth = 0;
+      let end = -1;
+      for (let m = tagRe.exec(result); m; m = tagRe.exec(result)) {
+        if (m[0].startsWith("</")) {
+          depth -= 1;
+          if (depth === 0) {
+            end = tagRe.lastIndex;
+            break;
+          }
+        } else if (!m[0].endsWith("/>")) {
+          depth += 1;
+        }
+      }
+      if (end < 0) throw new Error(`${tagName} 닫는 태그를 찾지 못했습니다.`);
+      result = result.slice(0, match.index) + result.slice(end);
     }
   }
 
+  const RENDERABLE = /<(path|circle|rect|line|polyline|polygon|text|image|use|ellipse)\b[^>]*\bid="([^"]+)"/g;
+
+  for (const file of regionSvgs) {
+    const svgText = readFileSync(path.join(sources, file), "utf8");
+    const normalized = normalizeSvgForCompile(svgText);
+    const visibleSource = stripHiddenSubtrees(svgText);
+
+    const missing = [];
+    for (const match of visibleSource.matchAll(RENDERABLE)) {
+      const id = match[2];
+      if (!normalized.includes(`id="${id}"`)) missing.push(id);
+    }
+    assert.deepEqual(
+      missing,
+      [],
+      `${file}: 오너 SVG의 렌더 대상 요소가 컴파일 입력에서 빠졌습니다 — 전량 반입 계약 위반:\n` +
+        missing.slice(0, 10).join("\n"),
+    );
+  }
+
   // 컴파일 입력뿐 아니라 **실제 배포 바이트(.vec)** 로도 확인한다 — 정책이
-  // 기술하는 대상은 배포물이다.
+  // 기술하는 대상은 배포물이다. 전량 반입이므로 종전 "장식 텍스트 부재" 대신
+  // 오너 도식의 대표 텍스트가 실제로 담겼는지만 본다.
   const basemapDir = path.join(
     root,
     "apps/mobile/assets/datapacks/metro_map_pack/basemap",
   );
   const distributed = {
-    "seoul.vec": { present: ["전곡", "뚝섬"], absent: ["통합 노선도", "간선 색상별"] },
-    "busan.vec": { present: ["벡스코", "서면"], absent: ["통합 노선도"] },
+    "seoul.vec": ["전곡", "뚝섬"],
+    "busan.vec": ["벡스코", "서면"],
   };
-  for (const [vecName, expectation] of Object.entries(distributed)) {
+  for (const [vecName, present] of Object.entries(distributed)) {
     const bytes = readFileSync(path.join(basemapDir, vecName), "latin1");
-    for (const text of expectation.present) {
+    for (const text of present) {
       assert.ok(
         bytes.includes(Buffer.from(text, "utf8").toString("latin1")),
-        `${vecName}: 정책이 included로 선언한 역명 "${text}"가 배포 .vec에 없습니다.`,
-      );
-    }
-    for (const text of expectation.absent) {
-      assert.ok(
-        !bytes.includes(Buffer.from(text, "utf8").toString("latin1")),
-        `${vecName}: 정책이 excluded로 선언한 장식 텍스트 "${text}"가 배포 .vec에 있습니다.`,
+        `${vecName}: 오너 도식의 역명 "${text}"가 배포 .vec에 없습니다.`,
       );
     }
   }

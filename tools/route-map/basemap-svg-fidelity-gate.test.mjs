@@ -14,8 +14,8 @@
 // 캔버스 장식(반입 금지): 카드 배경·테두리, 제목/상태 헤더 바, 범례, 상단 노선
 //   설명 박스, 규격 견본 라이브러리, display:none으로 폐기된 레이어.
 //   → 앱이 자체 UI로 그리므로 바탕층에 있으면 지도 위 유령 그래픽이 된다.
-// 분류의 단일 원본은 compile-basemap-vec.mjs의 MAP_BODY_LAYER_IDS /
-// EXCLUDED_DECOR_LAYERS / STRUCTURAL_WRAPPER_LAYER_IDS 세 목록이고, 아래
+// #2593: 전량 반입 계약으로 레이어 분류 완전성 게이트는 삭제했다 — 오너가 SVG에
+// 레이어를 추가하는 것은 계약상 no-op인데 그 게이트가 CI를 세웠기 때문이다. 아래
 // "레이어 분류 완전성" 테스트가 세 목록의 합집합이 실제 SVG를 덮는지 확인한다.
 //
 // ── 독립성 ────────────────────────────────────────────────────────────────
@@ -29,13 +29,9 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  classifyLayerId,
   collectServiceMarks,
-  decorLayerBoundsOf,
   normalizeSvgForCompile,
   resolveStationNameLabelLayerId,
-  svgLayerCandidateIds,
-  DECOR_SERVICE_MARK_SAMPLE_IDS,
   PAINT_ORDER_STROKE_COPY_ATTR,
 } from "./compile-basemap-vec.mjs";
 
@@ -259,55 +255,6 @@ function findElementEnd(text, startIndex, tagName) {
 
 // ── 게이트 ────────────────────────────────────────────────────────────────
 
-test("레이어 분류 완전성: 5권역 SVG의 모든 레이어가 본문/장식/구조 중 하나로 분류된다", () => {
-  for (const region of REGIONS) {
-    const text = svgTextOf(region);
-    const labelLayerId = resolveStationNameLabelLayerId(text);
-    const unclassified = svgLayerCandidateIds(text).filter(
-      (id) => classifyLayerId(id, labelLayerId) === "unclassified",
-    );
-    assert.deepEqual(
-      unclassified,
-      [],
-      `${region.id}: 분류되지 않은 레이어 — MAP_BODY_LAYER_IDS / EXCLUDED_DECOR_LAYERS / ` +
-        `STRUCTURAL_WRAPPER_LAYER_IDS 중 하나에 사유와 함께 등재해야 한다: ${unclassified.join(", ")}`,
-    );
-    assert.ok(labelLayerId, `${region.id}: 역명 라벨 레이어를 찾지 못했습니다.`);
-  }
-});
-
-test("장식 미반입: 컴파일 입력에 헤더·범례·설명·견본 장식이 하나도 없다", () => {
-  // 장식 레이어 id + 그 안에서만 나오는 대표 텍스트를 함께 본다(id만 보면
-  // 레이어를 풀어헤친 채 내용만 딸려 오는 경우를 놓친다).
-  const decorMarkers = [
-    /id="header-title-legend-and-status-layer"/,
-    /id="header-complete-route-badges-layer"/,
-    /id="top-route-line-explanation-layer"/,
-    /id="legend-layer"/,
-    /id="route-label-badges-layer"/,
-    /spec-library/,
-    /id="header-background-pill"/,
-    /id="page-background"/,
-    /id="main-map-card-background"/,
-    /id="background-grid-overlay"/,
-    /통합 노선도/,
-    /간선 색상별/,
-  ];
-  for (const region of REGIONS) {
-    const normalized = normalizeSvgForCompile(svgTextOf(region));
-    const rendered = normalized.includes("</defs>")
-      ? normalized.slice(normalized.lastIndexOf("</defs>") + 7)
-      : normalized;
-    for (const marker of decorMarkers) {
-      assert.doesNotMatch(
-        rendered,
-        marker,
-        `${region.id}: 장식 요소가 바탕층에 반입됐습니다 — ${marker}`,
-      );
-    }
-  }
-});
-
 test("역명 라벨 전수 ↔ labels.json 1:1 (개수·좌표 Δ<ε·anchor)", () => {
   const sidecar = JSON.parse(readFileSync(labelsSidecarPath, "utf8"));
   const EPSILON = 0.01;
@@ -465,61 +412,3 @@ test("표장은 오너 원본 좌표를 그대로 유지한다(bbox 재계산 �
 //
 // 그래서 판정을 (1) 명시 견본 id 목록 (2) 그 밖이 장식 영역에 들어오면 fail-closed
 // 두 단계로 나눴다. 아래 세 테스트가 그 계약과 실측 여유를 함께 고정한다.
-test("장식 견본은 명시 id 목록으로 제외된다(기하 규칙 단독 의존 금지)", () => {
-  assert.deepEqual(
-    DECOR_SERVICE_MARK_SAMPLE_IDS.map((sample) => sample.id).sort(),
-    ["logo-ktx-inline-vector-footer-0", "logo-srt-inline-vector-footer-2"],
-  );
-  for (const sample of DECOR_SERVICE_MARK_SAMPLE_IDS) {
-    assert.ok(
-      typeof sample.reason === "string" && sample.reason.length > 10,
-      `${sample.id}: 제외 사유가 비었습니다 — 명시 계약은 사유를 요구합니다.`,
-    );
-  }
-  // 견본이 실제로 수집 결과에서 빠진다.
-  const seoul = svgTextOf(REGIONS[0]);
-  const ids = new Set(collectServiceMarks(seoul).map((mark) => mark.id));
-  for (const sample of DECOR_SERVICE_MARK_SAMPLE_IDS) {
-    assert.ok(!ids.has(sample.id), `${sample.id}가 배포 표장에 남아 있습니다.`);
-  }
-});
-
-test("본문 표장과 장식 영역의 기하 여유를 실측으로 고정한다", () => {
-  // 여유가 줄어드는 변화(오너가 상단 박스를 키우는 등)가 오면 red가 되어
-  // 사람이 명시 목록/계약을 다시 보게 한다. green이어도 기하 규칙 단독으로는
-  // 안전하지 않다는 것이 위 fail-closed 계약의 존재 이유다.
-  const seoulText = svgTextOf(REGIONS[0]);
-  const decor = decorLayerBoundsOf(seoulText);
-  assert.ok(decor.length > 0, "seoul 장식 bbox가 0건입니다.");
-  const decorBottom = Math.max(...decor.map((box) => box.maxY));
-  const marks = collectServiceMarks(seoulText);
-  const topMarkMinY = Math.min(...marks.map((mark) => mark.bounds.minY));
-  const margin = topMarkMinY - decorBottom;
-  assert.ok(
-    Math.abs(decorBottom - 240) < 1,
-    `seoul 장식 밴드 하단 실측 ${decorBottom.toFixed(2)} (기준 240)`,
-  );
-  assert.ok(
-    Math.abs(topMarkMinY - 388.2343) < 0.01,
-    `seoul 최상단 본문 표장 minY 실측 ${topMarkMinY.toFixed(4)} (기준 388.2343)`,
-  );
-  assert.ok(
-    margin > 100 && margin < 200,
-    `장식↔본문 표장 여유 ${margin.toFixed(1)}단위 — 실측 기준선(약 148, viewBox 높이의 4.9%)에서 벗어났습니다.`,
-  );
-});
-
-test("명시 목록에 없는 표장이 장식 영역에 들어오면 조용히 빠지지 않고 실패한다", () => {
-  // 지도 본문 표장 하나를 장식 밴드(y 136~240) 안으로 옮긴 합성 입력.
-  // 종전 구현은 이때 그 마크를 조용히 제외했다(바탕층에서 표장 소실).
-  const moved = svgTextOf(REGIONS[0]).replace(
-    /(<g\s+id="logo-ktx-inline-vector-footer-0-6-9-4"\s+transform="matrix\()[^)]*(\))/,
-    "$10.02638383,0,0,0.02297538,1000,180$2",
-  );
-  assert.notEqual(moved, svgTextOf(REGIONS[0]), "합성 입력이 적용되지 않았습니다.");
-  assert.throws(
-    () => collectServiceMarks(moved),
-    /장식 레이어 영역 안에 있습니다/,
-    "장식 영역에 들어온 미등재 표장은 fail-closed여야 합니다.",
-  );
-});

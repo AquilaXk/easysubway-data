@@ -5,7 +5,15 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  applyStylesheet,
+  baselineShiftRatio,
+  expandDominantBaseline,
   extractOwnerLabels,
+  flattenTextScale,
+  matchFontWeight,
+  resolveFontWeightValue,
+  resolveGlyphCoordinateLists,
+  TEXT_FONT_METRICS,
   extractRailTransferChipObstacles,
   extractServiceTagObstacles,
   markLineTerminalBadgeEntries,
@@ -14,266 +22,9 @@ import {
   parseSvgNumbers,
 } from "./compile-basemap-vec.mjs";
 
-test("컴파일 전에 단순 class 스타일을 SVG 속성으로 인라인한다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <style>
-        .route-line { fill:none; stroke-width:8px; }
-        .station-name { fill:#14293D; font-size:12.5px; font-weight:700; }
-        .station-name.is-long { font-size:11.6px; }
-      </style>
-      <g id="header-title"><text>통합 노선도</text></g>
-      <g id="map-card-clipped-content-layer">
-        <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
-        <g id="route-lines-layer">
-          <polyline class="route-line" points="0,0 10,10" />
-          <g data-state="construction">
-            <path class="route-line" d="M 0 0 L 20 20" />
-          </g>
-          <polyline class="route-line" data-line="line2-phase1" points="0,0 30,30" />
-        </g>
-        <text class="station-name is-long">테스트역</text>
-        </g>
-      </g>
-    </svg>
-  `);
-
-  assert.doesNotMatch(normalized, /통합 노선도/);
-  assert.match(normalized, /route-lines-layer/);
-  assert.match(normalized, /transform="translate\(70 138\) scale\(0\.455\)"/);
-  assert.doesNotMatch(normalized, /construction|line2-phase1|20 20|30,30/);
-  assert.match(normalized, /<polyline[^>]*fill="none"[^>]*stroke-width="8px"/);
-  assert.match(
-    normalized,
-    /<polyline[^>]*stroke-linecap="round"[^>]*stroke-linejoin="round"/,
-  );
-  assert.doesNotMatch(normalized, /테스트역|<text\b/);
-  assert.doesNotMatch(normalized, /\/\s+[\w-]+="/);
-});
-
 // #2068 오너 v3 반입 회귀: 빈 레이어를 자기폐쇄 태그로 마감한 SVG(busan v3의
 // service-tags-layer)에서 extractGroup의 depth 카운터가 다음 형제 레이어를 삼켜
 // allow-list 밖 레이어(역명 라벨)가 바탕층에 딸려 들어갔다.
-test("자기폐쇄 태그로 마감된 빈 레이어가 뒤따르는 형제 레이어를 삼키지 않는다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="route-lines-layer">
-        <polyline class="route-line" points="0,0 10,10" />
-      </g>
-      <g id="service-tags-layer" class="render-layer service-tag-layer" />
-      <g id="station-name-labels-layer">
-        <text id="station-label-test">테스트역</text>
-      </g>
-      <g id="legend-layer"><text id="legend-caption">범례캡션</text></g>
-    </svg>
-  `);
-
-  assert.match(normalized, /id="route-lines-layer"/);
-  assert.match(normalized, /id="service-tags-layer"/);
-  // #2068 SVG 충실도(2026-07-26 오너 결정): 역명 라벨은 이제 바탕층에 굽는다.
-  // 자기폐쇄 빈 레이어가 뒤 형제를 삼키지 않는지는 "라벨 레이어가 정확히 한 번만
-  // 들어오는지"로 확인한다 — 삼키면 service-tags-layer 슬라이스에도 딸려 들어와
-  // 두 번 나온다.
-  assert.equal(
-    (normalized.match(/id="station-name-labels-layer"/g) ?? []).length,
-    1,
-  );
-  assert.match(normalized, /테스트역/);
-  // 장식(범례)은 계약대로 반입되지 않는다.
-  assert.doesNotMatch(normalized, /legend-layer|범례캡션/);
-});
-
-test("5권역 basemap에는 노선·기존 역 심벌만 남기고 미개통 노선을 제외한다", () => {
-  const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
-  const files = [
-    "easy-subway-sma-v4.svg",
-    "easy-subway-busan-v3.svg",
-    "easy-subway-daegu-v3.svg",
-    "easy-subway-daejeon-v3.svg",
-    "easy-subway-gwangju-v3.svg",
-  ];
-
-  for (const file of files) {
-    const normalized = normalizeSvgForCompile(
-      readFileSync(path.join(sources, file), "utf8"),
-    );
-    const rendered = normalized.includes("</defs>")
-      ? normalized.slice(normalized.lastIndexOf("</defs>") + 7)
-      : normalized;
-    assert.match(normalized, /id="route-lines-layer"/);
-    assert.match(normalized, /id="station-symbols-layer"/);
-    if (!/gwangju|daejeon/.test(file)) {
-      assert.match(normalized, /id="transfer-station-symbols-layer"/);
-    }
-    // #2408: 오너 종점 칩(terminal-route-badges-layer)은 id에 "header-route-badge"
-    // 를 포함(오너가 header 배지 템플릿에서 파생). 이는 정상 렌더 대상이므로
-    // header 접두 substring이 아니라 header/legend "레이어" id 유입만 배제한다.
-    // #2068(2026-07-26): 역명 라벨 레이어는 이제 **본문**이라 반드시 있어야 하고,
-    // 캔버스 장식(헤더 바·범례·상단 설명 박스·규격 견본)은 여전히 없어야 한다.
-    assert.match(rendered, /id="(?:station-name-labels-layer|station-label-group-)/);
-    assert.doesNotMatch(
-      rendered,
-      /id="header-(?:title|line-chip|status-chip|complete-route-badges|background-pill)|id="legend-layer"|id="top-route-line-explanation-layer"|spec-library|id="route-label-badges-layer"/,
-    );
-    assert.doesNotMatch(rendered, /<title\b/);
-  }
-
-  // #2068 v3: 오너가 두 도식에서 미개통 노선(대전 2호선 트램·충청권 광역철도,
-  // 광주 2호선)을 통째로 걷어냈다 — 미개통 마크업 자체가 0건이고, 그래서
-  // "미개통 환승 노드에서 뽑아 오던 현재 노선 역 심벌"(v1 대전 5·광주 2)도 0건이
-  // 된다(환승 캡슐 없이 실역 circle만 남는 구조).
-  const daejeon = normalizeSvgForCompile(
-    readFileSync(path.join(sources, "easy-subway-daejeon-v3.svg"), "utf8"),
-  );
-  assert.doesNotMatch(daejeon, /data-state="construction"/);
-  assert.equal(
-    (daejeon.match(/data-role="current-line-station"/g) ?? []).length,
-    0,
-  );
-  // 대전 v3는 지도 본문을 map-content-positioned-layer(translate(0 88))로 감쌌다 —
-  // 흡수하지 않으면 .vec가 팩 좌표보다 88px 위에 그려진다(#2068 실측).
-  assert.match(
-    daejeon,
-    /<g id="compiled-map-coordinate-layer" transform="translate\(0 88\)"/,
-  );
-  // 오너가 대전역에 배치한 KTX·SRT 마크는 바탕층에 반입된다(레이어 이동 대응).
-  assert.match(daejeon, /id="rail-service-marks-line1-104"/);
-
-  const gwangju = normalizeSvgForCompile(
-    readFileSync(path.join(sources, "easy-subway-gwangju-v3.svg"), "utf8"),
-  );
-  assert.doesNotMatch(gwangju, /data-line="line2-phase/);
-  assert.equal(
-    (gwangju.match(/data-role="current-line-station"/g) ?? []).length,
-    0,
-  );
-  assert.match(gwangju, /id="rail-service-marks-line1-117"/);
-  const gwangjuStations = gwangju.match(
-    /id="station-symbols-layer"[\s\S]*?<\/g>/,
-  )?.[0];
-  assert.ok(gwangjuStations);
-  for (const circle of gwangjuStations.match(/<circle\b[^>]*\/>/g) ?? []) {
-    assert.match(circle, /stroke="#009088"/);
-  }
-});
-
-test("scale 레이어 안 텍스트는 font-size를 k배하고 baseline central은 y를 보정한다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
-        <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-        <g id="transfer-station-symbols-layer">
-          <text x="100" y="200" font-size="10.3"
-                dominant-baseline="central" alignment-baseline="middle">1</text>
-        </g>
-      </g>
-    </svg>
-  `);
-  const text = normalized.match(/<text\b[^>]*>/)[0];
-  // 10.3 × 0.455 = 4.6865
-  assert.match(text, /font-size="4\.6865"/);
-  // 200 + 0.35 × 10.3 = 203.605 (로컬 단위)
-  assert.match(text, /\sy="203\.605"/);
-  assert.doesNotMatch(text, /dominant-baseline|alignment-baseline/);
-});
-
-test("scale 없는 권역은 font-size를 유지하고 baseline y만 보정한다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-      <g id="transfer-station-symbols-layer">
-        <text x="100" y="200" font-size="10.3" dominant-baseline="central">1</text>
-      </g>
-    </svg>
-  `);
-  const text = normalized.match(/<text\b[^>]*>/)[0];
-  assert.match(text, /font-size="10\.3"/); // k=1 → 불변
-  assert.match(text, /\sy="203\.605"/);
-  assert.doesNotMatch(text, /dominant-baseline/);
-});
-
-test("font-size의 px 접미사를 제거하고 k배 순수 숫자로 직렬화한다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="main-map-scaled-layer" transform="translate(0 0) scale(0.5)">
-        <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-        <g id="transfer-station-symbols-layer">
-          <text x="100" y="200" font-size="10.3px" dominant-baseline="central">1</text>
-        </g>
-      </g>
-    </svg>
-  `);
-  const text = normalized.match(/<text\b[^>]*>/)[0];
-  // 10.3 × 0.5 = 5.15, px 접미사 제거
-  assert.match(text, /font-size="5\.15"/);
-  assert.doesNotMatch(text, /font-size="[^"]*px"/);
-});
-
-test("class에서 인라인된 baseline 속성도 제거한다(인라인 이후 적용)", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <style>
-        .badge-label { dominant-baseline: central; alignment-baseline: middle; }
-      </style>
-      <g id="main-map-scaled-layer" transform="translate(0 0) scale(0.5)">
-        <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-        <g id="transfer-station-symbols-layer">
-          <text class="badge-label" x="100" y="200" font-size="10">1</text>
-        </g>
-      </g>
-    </svg>
-  `);
-  const text = normalized.match(/<text\b[^>]*>/)[0];
-  assert.doesNotMatch(text, /dominant-baseline|alignment-baseline/);
-  assert.match(text, /font-size="5"/); // 10 × 0.5
-  assert.match(text, /\sy="203\.5"/); // 200 + 0.35 × 10
-});
-
-test("style형 font-size(px 있음)는 text·tspan 모두 ×k 되고 baseline 보정은 없다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="main-map-scaled-layer" transform="translate(0 0) scale(0.5)">
-        <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-        <g id="transfer-station-symbols-layer">
-          <text xml:space="preserve" style="font-weight:bold;font-size:9.37729px;line-height:0.9" x="100" y="200" id="text1"><tspan
-            style="font-size:8.79121px;stroke-width:2.1978" x="100" y="200">GTX</tspan><tspan
-            style="font-size:8.79121px;stroke-width:2.1978" x="100" y="208" id="tspan2">A</tspan></text>
-        </g>
-      </g>
-    </svg>
-  `);
-  const outerText = normalized.match(/<text\b[^>]*id="text1"[^>]*>/)[0];
-  const tspans = [...normalized.matchAll(/<tspan\b[^>]*>/g)].map((m) => m[0]);
-  // 9.37729 × 0.5 = 4.688645 → roundCoord(4자리) = 4.6886
-  assert.match(outerText, /font-size:4\.6886px/);
-  assert.doesNotMatch(outerText, /dominant-baseline|alignment-baseline/);
-  // y는 baseline 보정 대상이 아니라 불변.
-  assert.match(outerText, /\sy="200"/);
-  // 8.79121 × 0.5 = 4.395605 → roundCoord(4자리) = 4.3956
-  assert.equal(tspans.length, 2);
-  for (const tspan of tspans) {
-    assert.match(tspan, /font-size:4\.3956px/);
-  }
-  assert.match(normalized, />GTX</);
-  assert.match(normalized, />A</);
-});
-
-test("style형 font-size(px 없음)도 동일하게 ×k 스케일한다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="main-map-scaled-layer" transform="translate(0 0) scale(0.5)">
-        <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-        <g id="transfer-station-symbols-layer">
-          <text style="font-size:10" x="100" y="200">A</text>
-        </g>
-      </g>
-    </svg>
-  `);
-  const text = normalized.match(/<text\b[^>]*>/)[0];
-  assert.match(text, /font-size:5(?!\d)/); // 10 × 0.5, px 접미사 없음 유지
-  assert.doesNotMatch(text, /font-size:5px/);
-});
-
 test("extractOwnerLabels: x/y 속성형 위치를 main-map-scaled-layer 변환(×scale+translate)해 뽑는다", () => {
   const entries = extractOwnerLabels(`
     <svg>
@@ -627,32 +378,6 @@ test("extractOwnerLabels: gwangju data-full-official-name 라벨 키는 GWANGJU.
 // seoul의 main-map-scaled-layer와 같은 "지도 본문 래퍼"인데 id가 달라 흡수되지
 // 않으면 ① .vec가 88px 위에 그려지고 ② 오너 라벨 sidecar 좌표도 88px 어긋나
 // 바탕↔인터랙션 정합(<5px 하드 게이트)이 통째로 깨진다.
-test("map-content-positioned-layer 래퍼 transform을 흡수한다(#2068 대전 v3 — .vec·라벨 sidecar 동시)", () => {
-  const svgText = `
-    <svg>
-      <g id="map-card-clipped-content-layer">
-        <g id="map-content-positioned-layer" transform="translate(0 88)">
-          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-          <g id="station-symbols-layer">
-            <circle cx="540" cy="360" r="9" />
-          </g>
-          <g id="station-name-labels-layer">
-            <text data-label-role="ordinary" font-size="34" x="100" y="200"
-                  data-full-official-name="판암">판암</text>
-          </g>
-        </g>
-      </g>
-    </svg>
-  `;
-  assert.match(
-    normalizeSvgForCompile(svgText),
-    /<g id="compiled-map-coordinate-layer" transform="translate\(0 88\)"/,
-  );
-  const [entry] = extractOwnerLabels(svgText, "daejeon");
-  assert.equal(entry.x, 100);
-  assert.equal(entry.y, 288); // 200 + 88 — 노드(360+88=448)와 같은 좌표계.
-});
-
 // ── 텍스트 위치 선언 완결화(#2068 대전 라벨 이중 이동, 2026-07-26) ───────────
 // vector_graphics_compiler 1.2.6은 x·y(또는 dx·dy)가 **둘 다** 선언된 텍스트 위치
 // 노드에서만 조상 transform을 좌표로 흡수한다. 오너 라벨의
@@ -766,23 +491,6 @@ test("조상 transform이 항등이면 tspan 선언을 건드리지 않는다(�
   assert.doesNotMatch(tspan, /\sy="/);
 });
 
-test("이미 x·y를 둘 다 선언한 tspan은 그대로 둔다(수도권 산출 바이트 보존)", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg>
-      <g id="map-card-clipped-content-layer">
-        <g id="main-map-scaled-layer" transform="translate(70 138) scale(0.455)">
-          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-          <g id="station-name-labels-layer">
-            <text data-label-role="ordinary" font-size="34" x="100" y="200"
-                  data-full-official-name="완전"><tspan x="120" y="220">완전</tspan></text>
-          </g>
-        </g>
-      </g>
-    </svg>
-  `);
-  assert.match(normalized.match(/<tspan\b[^>]*>/)[0], /<tspan x="120" y="220">/);
-});
-
 test("transform이 걸린 <text> 안에서 x를 선언하지 않은 tspan은 조용히 넘기지 않고 실패한다", () => {
   assert.throws(
     () =>
@@ -807,50 +515,6 @@ test("transform이 걸린 <text> 안에서 x를 선언하지 않은 tspan은 조
 // station-name-labels-layer 안 역 앵커 그룹(class="rail-service-marks")으로
 // 옮겨졌다. 그 레이어는 바탕층 allow-list 밖이라 손대지 않으면 ① 마크가 .vec에서
 // 통째로 사라지고 ② 라벨 회피 obstacle도 0건이 된다.
-test("rail-service-marks(대전·광주 v3 KTX·SRT)는 바탕층에 반입되고 라벨 회피 obstacle이 된다", () => {
-  const svgText = `
-    <svg>
-      <g id="map-card-clipped-content-layer">
-        <g id="map-content-positioned-layer" transform="translate(0 88)">
-          <g id="route-lines-layer"><polyline points="0,0 10,10" /></g>
-          <g id="station-name-labels-layer">
-            <text data-label-role="ordinary" font-size="34" x="100" y="200"
-                  data-full-official-name="대전역">대전역</text>
-            <g id="rail-service-marks-line1-104" class="rail-service-marks"
-               data-station-name="대전역" data-services="KTX,SRT">
-              <title>대전역 KTX·SRT 고속철도 환승</title>
-              <g id="rail-service-ktx-line1-104" data-logo="KTX"
-                 transform="matrix(0.05,0,0,0.05,660,880)">
-                <path d="M 0 0 L 200 0 L 200 100 L 0 100 Z" />
-              </g>
-            </g>
-          </g>
-        </g>
-      </g>
-    </svg>
-  `;
-  const normalized = normalizeSvgForCompile(svgText);
-  assert.match(normalized, /id="rail-service-marks-line1-104"/);
-  assert.match(normalized, /id="rail-service-ktx-line1-104"/);
-  // #2068(2026-07-26): 역명 라벨 레이어 자체가 본문이 됐다 — 표장은 그 레이어의
-  // 일부로 정확히 한 번만 반입되고(중복 반입 금지), 역명 텍스트도 함께 온다.
-  assert.equal(
-    (normalized.match(/id="rail-service-marks-line1-104"/g) ?? []).length,
-    1,
-  );
-  assert.match(normalized, /대전역</);
-  assert.doesNotMatch(normalized, /<title\b/);
-
-  const [obstacle] = extractRailTransferChipObstacles(svgText);
-  assert.equal(obstacle.station, "대전역");
-  // 로컬 path [0,200]×[0,100] → matrix(0.05,…,660,880) → [660,670]×[880,885],
-  // 그 위에 지도 본문 래퍼 translate(0 88).
-  assert.equal(obstacle.x, 665);
-  assert.equal(obstacle.y, 882.5 + 88);
-  assert.equal(obstacle.halfWidth, 5);
-  assert.equal(obstacle.halfHeight, 2.5);
-});
-
 test("extractOwnerLabels: 5권역 실 SVG에서 ordinary/transfer/terminal 개수가 실측과 일치한다", () => {
   const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
   const expected = {
@@ -1587,89 +1251,245 @@ test("extractServiceTagObstacles·extractRailTransferChipObstacles: 비수도권
 // 의도값 L×s×k가 된다. v2는 s×k≈1(2.198×0.455)이라 어떤 계수를 써도 티가 안
 // 났지만, v4(matrix 2.7475, s×k=1.25)에서 `×s` 계수가 칩 숫자를 1.25배 키우고
 // 캡슐 중심 위로 띄웠다(badge center 게이트 실측 ratio -0.19).
-test("foldTerminalChipScale: 칩 텍스트 font-size는 그룹 스케일과 무관하게 로컬 원값이다", () => {
-  const chipSvg = (chipTransform) => `
-    <svg id="seoul-metro-map" viewBox="0 0 100 100">
-      <g id="main-map-scaled-layer" transform="translate(10 20) scale(0.455)">
-        <g id="route-lines-layer"></g>
-        <g id="terminal-route-badges-layer">
-          <g class="ui-chip terminal-route-badge" transform="${chipTransform}">
-            <rect x="0" y="0" width="30" height="23" rx="11.5" fill="#004a85" />
-            <text x="15" y="11.5" font-size="10.5" text-anchor="middle"
-                  dominant-baseline="central">1</text>
-          </g>
-        </g>
-      </g>
-    </svg>
-  `;
-  const fontSizeOf = (svg) =>
-    Number(
-      /<text\b[^>]*\bfont-size="([\d.]+)"/.exec(normalizeSvgForCompile(svg))[1],
-    );
-  const yOf = (svg) =>
-    Number(/<text\b[^>]*\sy="([\d.]+)"/.exec(normalizeSvgForCompile(svg))[1]);
-
-  // v4형(matrix)·v2형(translate scale translate) 모두 로컬 원값 10.5로 남는다.
-  assert.equal(fontSizeOf(chipSvg("matrix(2.7475,0,0,2.7475,5,7)")), 10.5);
-  assert.equal(
-    fontSizeOf(chipSvg("translate(5 7) scale(2.198) translate(-15 -11.5)")),
-    10.5,
-  );
-  // central baseline 보정은 로컬 프레임 기준 0.35×L만큼 y를 내린다(그룹 스케일 무관).
-  assert.equal(yOf(chipSvg("matrix(2.7475,0,0,2.7475,5,7)")), 11.5 + 0.35 * 10.5);
-});
-
-test("easy-subway-sma-v4: 종점 칩 라벨은 오너 로컬 font-size를 그대로 컴파일한다", () => {
-  const sources = path.join(import.meta.dirname, "route-map-defs/svg-sources");
-  const normalized = normalizeSvgForCompile(
-    readFileSync(path.join(sources, "easy-subway-sma-v4.svg"), "utf8"),
-  );
-  const label = /<text\b[^>]*\bid="terminal-1-56-header-route-badge-1-label"[^>]*>/.exec(
-    normalized,
-  );
-  assert.ok(label, "신창(1호선) 종점 칩 라벨을 찾지 못했습니다.");
-  assert.equal(Number(/\bfont-size="([\d.]+)"/.exec(label[0])[1]), 10.5);
-  assert.equal(
-    Number(/\sy="([\d.]+)"/.exec(label[0])[1]),
-    Number((88.134506 + 0.35 * 10.5).toFixed(4)),
-  );
-});
-
 // #2068 리뷰 A6: 칩 폰트 면제 표식이 <text>에만 붙으면, 소비 측
 // scaleStyleFontSize가 <text|tspan> 양쪽을 대상으로 잡으므로 칩 내부 tspan의
 // style font-size만 ×k돼 한 칩 안에 두 배율이 섞인다(v4 실측 해당 tspan 0건 —
 // 잠복 결함). 표식이 tspan에도 붙어 로컬 원값이 유지되는지 고정한다.
-test("foldTerminalChipScale: 칩 내부 tspan의 style font-size도 맵 스케일 ×k에서 면제된다", () => {
-  const normalized = normalizeSvgForCompile(`
-    <svg id="seoul-metro-map" viewBox="0 0 100 100">
-      <g id="main-map-scaled-layer" transform="translate(10 20) scale(0.455)">
-        <g id="route-lines-layer"></g>
-        <g id="terminal-route-badges-layer">
-          <g class="ui-chip terminal-route-badge" transform="matrix(2.7475,0,0,2.7475,5,7)">
-            <rect x="0" y="0" width="30" height="23" rx="11.5" fill="#004a85" />
-            <text x="15" y="11.5" font-size="10.5" text-anchor="middle"
-                  dominant-baseline="central"><tspan x="15" y="11.5"
-                  style="font-size:10.5px">1</tspan></text>
-          </g>
-        </g>
-      </g>
-    </svg>
-  `);
-  const tspan = /<tspan\b[^>]*>/.exec(normalized)[0];
-  // 로컬 원값 10.5 그대로여야 한다(×k = 4.7775가 되면 안 된다).
-  assert.match(tspan, /font-size:10\.5px/);
-  // 면제 표식은 컴파일 입력에 남지 않는다.
-  assert.doesNotMatch(normalized, /data-basemap-chip-font-exempt/);
-  // 칩 밖 텍스트는 기존대로 ×k 된다(면제가 전역으로 새지 않는지 대조).
-  const outside = normalizeSvgForCompile(`
-    <svg id="seoul-metro-map" viewBox="0 0 100 100">
-      <g id="main-map-scaled-layer" transform="translate(10 20) scale(0.455)">
-        <g id="route-lines-layer"></g>
-        <g id="station-symbols-layer">
-          <text x="5" y="5" font-size="10"><tspan x="5" y="5" style="font-size:10px">A</tspan></text>
-        </g>
-      </g>
-    </svg>
-  `);
-  assert.match(outside, /font-size:4\.55px/);
+
+// ── 동치 변환 계약(#2068 오너 최종 지시 "100% 동일하게", 2026-07-26) ───────────
+//
+// 전량 반입 계약에서 파이프라인에 남는 단계는 **컴파일러가 직접 해석하지 못하는
+// SVG 의미를 마크업에 펼치는 동치 변환**뿐이다. 아래 테스트는 각 단계가 실제로
+// 의미를 보존하는지(그리고 보존할 수 없으면 조용히 넘기지 않고 던지는지) 고정한다.
+
+const cssSvg = (body, style) =>
+  `<svg id="root" viewBox="0 0 100 100"><style type="text/css">${style}</style>${body}</svg>`;
+
+test("CSS 캐스케이드: 자손 결합자·id·속성 선택자 규칙이 요소에 전개된다", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<g id="labels"><text x="1" y="2" data-role="a">가</text></g>',
+      "#labels text { fill:#111111; } text[data-role=&quot;a&quot;] { font-weight:700; }",
+    ),
+  );
+  assert.match(out, /<text[^>]*fill="#111111"/);
+  assert.match(out, /<text[^>]*font-weight="700"/);
+});
+
+test("CSS 캐스케이드: 특이도가 높은 규칙이 이긴다(소스 순서보다 우선)", () => {
+  const out = applyStylesheet(
+    cssSvg('<text class="c" id="t" x="0" y="0">가</text>', "#t { fill:#AAAAAA; } .c { fill:#BBBBBB; }"),
+  );
+  assert.match(out, /<text[^>]*fill="#AAAAAA"/);
+});
+
+test("CSS 캐스케이드: 같은 특이도면 뒤에 선언된 규칙이 이긴다", () => {
+  const out = applyStylesheet(
+    cssSvg('<text class="c" x="0" y="0">가</text>', ".c { fill:#AAAAAA; } .c { fill:#BBBBBB; }"),
+  );
+  assert.match(out, /<text[^>]*fill="#BBBBBB"/);
+});
+
+test("CSS 캐스케이드: CSS는 presentation attribute를 이기고, 인라인 style은 CSS를 이긴다", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<text class="c" fill="#111111" x="0" y="0">가</text>' +
+        '<text class="c" style="fill:#222222" x="0" y="0">나</text>',
+      ".c { fill:#999999; }",
+    ),
+  );
+  // presentation attribute는 CSS에 진다.
+  assert.match(out, /<text class="c" fill="#999999"/);
+  // 인라인 style은 일반 CSS를 이긴다 → 속성이 붙지 않는다.
+  assert.doesNotMatch(out, /<text class="c" style="fill:#222222"[^>]*fill="#999999"/);
+});
+
+test("CSS 캐스케이드: !important는 인라인 style도 이긴다", () => {
+  const out = applyStylesheet(
+    cssSvg('<text class="c" style="fill:#222222" x="0" y="0">가</text>', ".c { fill:#999999 !important; }"),
+  );
+  assert.match(out, /style="fill:#999999"/);
+});
+
+test("CSS 캐스케이드: :not()과 자식 결합자를 사양대로 해석한다", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<g id="w"><circle class="keep" r="1" /><circle class="skip" r="1" /></g>',
+      "#w > circle:not(.skip) { fill:#123456; }",
+    ),
+  );
+  assert.match(out, /<circle class="keep"[^>]*fill="#123456"/);
+  assert.doesNotMatch(out, /<circle class="skip"[^>]*fill="#123456"/);
+});
+
+test("CSS 캐스케이드: 지원하지 않는 선택자는 조용히 버리지 않고 던진다", () => {
+  assert.throws(
+    () => applyStylesheet(cssSvg('<text x="0" y="0">가</text>', "text + tspan { fill:#000000; }")),
+    /형제 결합자/,
+  );
+});
+
+test("CSS 캐스케이드: @media는 대상 매체(screen)로 평가한다(print 블록은 적용 안 됨)", () => {
+  const out = applyStylesheet(
+    cssSvg(
+      '<rect id="bg" width="1" height="1" />',
+      "@media print { #bg { fill:#000000; } } @media screen { #bg { fill:#FFFFFF; } }",
+    ),
+  );
+  assert.match(out, /<rect id="bg"[^>]*fill="#FFFFFF"/);
+  assert.doesNotMatch(out, /fill="#000000"/);
+});
+
+test("CSS 캐스케이드: var()는 정의 값으로 치환하고, 정의가 없으면 던진다", () => {
+  const out = applyStylesheet(
+    cssSvg('<rect id="bg" width="1" height="1" />', ":root { --c: #ABCDEF; } #bg { fill: var(--c); }"),
+  );
+  assert.match(out, /<rect id="bg"[^>]*fill="#ABCDEF"/);
+  assert.throws(
+    () => applyStylesheet(cssSvg('<rect id="bg" width="1" height="1" />', "#bg { fill: var(--missing); }")),
+    /정의되지 않은 CSS 사용자 정의 속성/,
+  );
+});
+
+test("font-weight: CSS Fonts 4 매칭으로 번들 페이스를 고른다(반올림 아님)", () => {
+  // 720은 "가장 가까운 100배수"면 700이지만, 사양은 목표 이상을 오름차순 우선한다.
+  assert.equal(matchFontWeight(720), 800);
+  assert.equal(matchFontWeight(650), 700);
+  assert.equal(matchFontWeight(850), 900);
+  assert.equal(matchFontWeight(760), 800);
+  assert.equal(matchFontWeight(300), 400);
+  assert.equal(resolveFontWeightValue("bold"), "700");
+  assert.throws(() => resolveFontWeightValue("bolder"), /지원하지 않는 font-weight/);
+});
+
+test("per-glyph 좌표 리스트: 적용 범위 안 값이 전부 0이면 단일 값으로 접는다", () => {
+  const out = resolveGlyphCoordinateLists('<svg><text x="1" y="2" dy="0 0 0 9">가나</text></svg>');
+  assert.match(out, /dy="0"/);
+});
+
+test("per-glyph 좌표 리스트: 접을 수 없으면 조용히 자르지 않고 던진다", () => {
+  assert.throws(
+    () => resolveGlyphCoordinateLists('<svg><text x="1" y="2" dy="0 5">가나</text></svg>'),
+    /단일 값으로 접을 수 없습니다/,
+  );
+  assert.throws(
+    () => resolveGlyphCoordinateLists('<svg><text x="1 20" y="2">가나</text></svg>'),
+    /단일 값으로 접을 수 없습니다/,
+  );
+});
+
+test("dominant-baseline: 번들 폰트 메트릭에서 유도한 비율로 y를 전개한다", () => {
+  const metrics = TEXT_FONT_METRICS;
+  const central = (metrics.ascender + metrics.descender) / 2 / metrics.unitsPerEm;
+  assert.ok(Math.abs(baselineShiftRatio("central") - central) < 1e-12);
+  assert.equal(baselineShiftRatio("alphabetic"), 0);
+  assert.throws(() => baselineShiftRatio("hanging"), /지원하지 않는 dominant-baseline/);
+
+  const out = expandDominantBaseline(
+    '<svg><text x="10" y="100" font-size="20" dominant-baseline="central">1</text></svg>',
+  );
+  assert.match(out, new RegExp(`y="${(100 + central * 20).toFixed(4).replace(/0+$/, "").replace(/\\.$/, "")}"`));
+  assert.doesNotMatch(out, /dominant-baseline/);
+});
+
+test("텍스트 스케일 평탄화: 좌표·font-size·stroke-width를 s배하고 잔여 transform에는 스케일이 없다", () => {
+  const out = flattenTextScale(
+    '<svg><g transform="scale(0.5)"><text x="10" y="20" font-size="12" stroke-width="2">가</text></g></svg>',
+  );
+  assert.match(out, /x="5"/);
+  assert.match(out, /y="10"/);
+  assert.match(out, /font-size="6"/);
+  assert.match(out, /stroke-width="1"/);
+  // 잔여 transform은 조상 스케일을 상쇄한다(유효 행렬 = 평행이동·회전만).
+  const transform = out.match(/<text[^>]*transform="([^"]*)"/)[1];
+  assert.match(transform, /scale\(2\)/);
+});
+
+test("텍스트 스케일 평탄화: 스케일이 1이면 마크업을 건드리지 않는다(산출 불변)", () => {
+  const input = '<svg><g transform="translate(3 4)"><text x="10" y="20" font-size="12">가</text></g></svg>';
+  assert.equal(flattenTextScale(input), input);
+});
+
+test("텍스트 스케일 평탄화: 비균일·기울임 transform은 조용히 넘기지 않고 던진다", () => {
+  assert.throws(
+    () =>
+      flattenTextScale(
+        '<svg><g transform="matrix(2,0,0,3,0,0)"><text x="1" y="1" font-size="10">가</text></g></svg>',
+      ),
+    /균일 스케일이 아닌 transform/,
+  );
+});
+
+test("좌표 리스트: 자식 tspan 안의 글자까지 세어 조용한 절단을 막는다(#2593 리뷰)", () => {
+  // 종전에는 직접 문자 데이터만 세어 글리프 수가 0이 되고 무조건 접혔다.
+  assert.throws(
+    () =>
+      resolveGlyphCoordinateLists(
+        '<svg><text x="1 20 30" y="2"><tspan>가나다</tspan></text></svg>',
+      ),
+    /단일 값으로 접을 수 없습니다/,
+  );
+  assert.throws(
+    () =>
+      resolveGlyphCoordinateLists('<svg><text x="1 20"><tspan>가</tspan>나</text></svg>'),
+    /단일 값으로 접을 수 없습니다/,
+  );
+});
+
+test("텍스트 스케일 평탄화: 상속 font-size·stroke-width도 s배해 요소에 명시한다(#2593 리뷰)", () => {
+  const out = flattenTextScale(
+    '<svg><g transform="scale(0.5)" font-size="12" stroke="#FFFFFF" stroke-width="4">' +
+      '<text x="10" y="20">가</text></g></svg>',
+  );
+  // 원본 렌더 크기 12 × 0.5 = 6. 상속을 놓치면 12로 그려진다(2배).
+  assert.match(out, /<text[^>]*font-size="6"/);
+  assert.match(out, /<text[^>]*stroke-width="2"/);
+});
+
+test("텍스트 스케일 평탄화: 상속 font-size조차 없으면 조용히 넘기지 않고 던진다", () => {
+  assert.throws(
+    () => flattenTextScale('<svg><g transform="scale(0.5)"><text x="1" y="1">가</text></g></svg>'),
+    /font-size 선언을 요소에서도 조상에서도 찾지 못해/,
+  );
+});
+
+test("dominant-baseline: y 미선언 <text>에도 명시적 y를 붙인다(#2593 리뷰)", () => {
+  const ratio = baselineShiftRatio("central");
+  const out = expandDominantBaseline(
+    '<svg><text x="5" font-size="20" dominant-baseline="central">1</text></svg>',
+  );
+  // 종전에는 속성만 지워져 0.355469×20 = 7.11px 이동이 통째로 사라졌다.
+  assert.match(out, new RegExp(`y="${(ratio * 20).toFixed(4).replace(/0+$/, "")}"`));
+});
+
+test("dominant-baseline: <tspan>이 baseline을 선언하면 조용히 무시하지 않고 던진다", () => {
+  assert.throws(
+    () =>
+      expandDominantBaseline(
+        '<svg><text x="5" y="10" font-size="20">' +
+          '<tspan y="10" dominant-baseline="central">1</tspan></text></svg>',
+      ),
+    /이 전개는 부모 <text> 선언만 해석하므로/,
+  );
+});
+
+test("non-scaling-stroke: 상속 stroke-width를 해석하고 컨테이너 선언은 no-op이다(#2593 리뷰)", () => {
+  const inherited = normalizeSvgForCompile(
+    '<svg viewBox="0 0 10 10"><g transform="scale(0.5)" stroke-width="2">' +
+      '<path vector-effect="non-scaling-stroke" stroke="#000000" d="M0 0 L1 1" /></g></svg>',
+  );
+  // 상속값 2를 스케일 0.5의 역수로 나눠 4로 명시한다(컴파일러가 다시 0.5를 곱한다).
+  assert.match(inherited, /<path[^>]*stroke-width="4"/);
+  // `<g>`의 vector-effect는 SVG 2에서 상속되지 않아 렌더 no-op — 던지지 않는다.
+  const container = normalizeSvgForCompile(
+    '<svg viewBox="0 0 10 10"><g vector-effect="non-scaling-stroke">' +
+      '<path stroke="#000000" stroke-width="2" d="M0 0 L1 1" /></g></svg>',
+  );
+  assert.match(container, /<path[^>]*stroke-width="2"/);
+});
+
+test("matchFontWeight: 400~500 구간은 사양대로 500 이하를 먼저 본다(450 경계 없음)", () => {
+  assert.equal(matchFontWeight(430, [300, 500, 600]), 500);
+  assert.equal(matchFontWeight(460, [300, 500, 600]), 500);
+  assert.equal(matchFontWeight(430, [300, 600]), 300);
 });

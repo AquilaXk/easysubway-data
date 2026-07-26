@@ -329,16 +329,17 @@ test("분해 쌍은 stroke 사본이 먼저이고 paint 외 모든 속성이 동
 // 이 계약을 다시 보게 한다.
 test("권역별 paint-order 분해 대상 구성 기준선", () => {
   const expected = {
-    // 수도권: 역명 라벨 halo는 `#…-layer text` **id 선택자** CSS라 인라인 대상이
-    // 아니고 컴파일러도 <style>을 읽지 않아 애초에 stroke가 없다 — 라벨은
-    // 분해 대상이 0건이고, 공항 아이콘 path 6건만 분해된다. 즉 **라벨 산출물은
-    // 불변이지만 seoul.vec 자체는 아이콘 분해로 바뀐다**(불변 주장 범위 주의).
+    // 수도권 역명 라벨은 CSS가 stroke를 주지 않아 분해 대상이 아니고, 공항 아이콘
+    // path 6건만 분해된다.
     seoul: { path: 6 },
     busan: { text: 147, path: 2 },
     daegu: { text: 97 },
-    // 대전·광주도 같은 id 선택자 CSS라 컴파일 입력에 stroke 텍스트가 없다.
-    daejeon: {},
-    gwangju: {},
+    // 대전·광주: `#station-name-labels-layer text { paint-order:stroke; stroke:#FFFFFF; … }`
+    // 규칙이 **자손 결합자**라 종전 단순 class 인라이너가 통째로 버렸다 — 그래서
+    // 라벨 halo가 조용히 빠져 있었다. 캐스케이드 전개가 사양대로 적용되면서
+    // 라벨 전량이 halo/글자 두 사본으로 분해된다(대전 22 · 광주 20).
+    daejeon: { text: 22 },
+    gwangju: { text: 20 },
   };
   for (const region of REGIONS) {
     const normalized = normalizedByRegion.get(region.id);
@@ -350,8 +351,8 @@ test("권역별 paint-order 분해 대상 구성 기준선", () => {
   }
 });
 
-test("halo 없는 3권역은 텍스트 분해가 no-op이다(라벨 산출물 불변)", () => {
-  for (const regionId of ["seoul", "daejeon", "gwangju"]) {
+test("halo 없는 권역은 텍스트 분해가 no-op이다(라벨 산출물 불변)", () => {
+  for (const regionId of ["seoul"]) {
     const normalized = normalizedByRegion.get(regionId);
     const textCopies = strokeCopyOpenTags(normalized).filter(
       ([, tagName]) => tagName === "text",

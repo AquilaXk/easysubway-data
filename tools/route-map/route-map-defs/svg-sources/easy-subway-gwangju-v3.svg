@@ -24,7 +24,7 @@
    data-active-transfer-count="0"
    data-rail-service-markers="광주송정역:KTX,SRT"
    data-global-scale="none"
-   sodipodi:docname="easy-subway-gwangju-sma-v4-fresh.svg"
+   sodipodi:docname="easy_subway_gwangju_v3.svg"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -39,15 +39,15 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="1.2931043"
-     inkscape:cx="708.75952"
-     inkscape:cy="897.45272"
-     inkscape:window-width="1920"
+     inkscape:zoom="0.3173339"
+     inkscape:cx="1492.1192"
+     inkscape:cy="597.1628"
+     inkscape:window-width="1024"
      inkscape:window-height="1022"
      inkscape:window-x="0"
      inkscape:window-y="30"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="station-name-labels-layer" />
+     inkscape:window-maximized="0"
+     inkscape:current-layer="gwangju-metro-line1-sma-v4-fresh" />
   <title
      id="map-title">광주 도시철도 1호선 노선도</title>
   <desc
@@ -105,156 +105,9 @@
      height="1800"
      fill="url(#subtle-background-grid-pattern)"
      opacity="0.52" />
-  <rect
-     id="header-background-pill"
-     x="40"
-     y="30"
-     width="2320"
-     height="82"
-     rx="30"
-     ry="30"
-     fill="#102133" />
-  <text
-     id="header-title-text"
-     x="84"
-     y="79.267"
-     class="ui-title">광주 도시철도 1호선 노선도</text>
-  <g
-     class="ui-chip"
-     id="header-line-chip">
-    <rect
-       x="2186"
-       y="56.5"
-       width="54"
-       height="23"
-       rx="11.5"
-       fill="#009088"
-       id="rect2" />
-    <text
-       x="2213"
-       y="68.3"
-       fill="#FFFFFF"
-       font-size="10.5"
-       font-weight="850"
-       text-anchor="middle"
-       dominant-baseline="central"
-       id="text2">1호선</text>
-  </g>
-  <g
-     class="ui-chip"
-     id="header-status-chip">
-    <rect
-       x="2248"
-       y="56.5"
-       width="46"
-       height="23"
-       rx="11.5"
-       fill="#009088"
-       id="rect3" />
-    <text
-       x="2271"
-       y="68.3"
-       fill="#FFFFFF"
-       font-size="10.5"
-       font-weight="850"
-       text-anchor="middle"
-       dominant-baseline="central"
-       id="text3">운영</text>
-  </g>
-  <rect
-     id="main-map-card-background"
-     x="40"
-     y="126"
-     width="2320"
-     height="1630"
-     rx="34"
-     ry="34"
-     fill="#FFFFFF"
-     stroke="#D7E5EE"
-     stroke-width="1.4" />
   <g
      id="map-card-clipped-content-layer"
      clip-path="url(#rounded-map-card-clip-area)">
-    <g
-       id="legend-layer">
-      <rect
-         x="70"
-         y="138"
-         width="2260"
-         height="92"
-         rx="18"
-         ry="18"
-         fill="#FFFFFF"
-         stroke="#D7E5EE"
-         stroke-width="1.2"
-         id="rect4" />
-      <text
-         x="94"
-         y="168"
-         fill="#42505D"
-         font-size="12.5"
-         font-weight="800"
-         id="text4">1호선 표기 안내</text>
-      <path
-         d="M 258 165 L 316 165"
-         fill="none"
-         stroke="#009088"
-         stroke-width="7.2"
-         stroke-linecap="round"
-         id="path4" />
-      <circle
-         cx="320"
-         cy="165"
-         r="10"
-         fill="#009088"
-         id="circle4" />
-      <text
-         x="320"
-         y="165"
-         fill="#FFFFFF"
-         font-size="11"
-         font-weight="900"
-         text-anchor="middle"
-         dominant-baseline="central"
-         id="text5">1</text>
-      <text
-         x="346"
-         y="169"
-         fill="#42505D"
-         font-size="12.5"
-         font-weight="700"
-         id="text6">1호선 · 운영</text>
-      <circle
-         cx="555"
-         cy="165"
-         r="5"
-         fill="#FFFFFF"
-         stroke="#009088"
-         stroke-width="1.5"
-         id="circle6" />
-      <text
-         x="578"
-         y="169"
-         fill="#42505D"
-         font-size="12.5"
-         font-weight="700"
-         id="text7">일반역</text>
-      <circle
-         cx="720"
-         cy="165"
-         r="6.4"
-         fill="#FFFFFF"
-         stroke="#009088"
-         stroke-width="2"
-         id="circle7" />
-      <text
-         x="744"
-         y="169"
-         fill="#42505D"
-         font-size="12.5"
-         font-weight="700"
-         id="text8">기·종점</text>
-    </g>
     <g
        id="route-lines-layer">
       <path

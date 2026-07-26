@@ -17,7 +17,7 @@
    data-octolinear-angles="0,45,90,135,180,225,270,315"
    data-font-policy="Pretendard-only"
    version="1.1"
-   sodipodi:docname="easy-subway-daejeon-line1-sma-v4-lowered-ktx-srt.svg"
+   sodipodi:docname="easy_subway_daejeon_v3.svg"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
    data-normalized-reference="easy_subway_sma_v4"
    data-legacy-map-cleanup="complete"
@@ -52,14 +52,14 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="0.40853555"
-     inkscape:cx="987.67413"
-     inkscape:cy="965.64423"
+     inkscape:cx="987.67414"
+     inkscape:cy="965.64424"
      inkscape:window-width="1920"
      inkscape:window-height="1022"
      inkscape:window-x="0"
      inkscape:window-y="30"
      inkscape:window-maximized="0"
-     inkscape:current-layer="station-name-labels-layer" />
+     inkscape:current-layer="daejeon-metro-line1-sma-v4-lowered-ktx-srt" />
   <title
      id="map-title">대전 도시철도 1호선 노선도 — SMA v4 상단 여백 보정본</title>
   <desc
@@ -120,77 +120,6 @@
      height="1800"
      fill="url(#subtle-background-grid-pattern)"
      opacity="0.52" />
-  <rect
-     id="header-background-pill"
-     x="40"
-     y="30"
-     width="2320"
-     height="82"
-     rx="30"
-     ry="30"
-     fill="#102133" />
-  <text
-     id="header-title-text"
-     x="84"
-     y="79.267"
-     class="ui-title"
-     fill="#FFFFFF"
-     font-size="32"
-     font-weight="900"
-     letter-spacing="-1">대전 도시철도 1호선 노선도</text>
-  <g
-     class="ui-chip"
-     id="g2">
-    <rect
-       x="1988"
-       y="56.5"
-       width="54"
-       height="23"
-       rx="11.5"
-       fill="#00975A"
-       id="rect2" />
-    <text
-       x="2015"
-       y="68.3"
-       fill="#FFFFFF"
-       font-size="10.5"
-       font-weight="850"
-       text-anchor="middle"
-       dominant-baseline="central"
-       id="text2">1호선</text>
-  </g>
-  <g
-     class="ui-chip"
-     id="g5">
-    <rect
-       x="2050"
-       y="56.5"
-       width="46"
-       height="23"
-       rx="11.5"
-       fill="#00975A"
-       id="rect5" />
-    <text
-       x="2073"
-       y="68.3"
-       fill="#FFFFFF"
-       font-size="10.5"
-       font-weight="850"
-       text-anchor="middle"
-       dominant-baseline="central"
-       id="text5">운영</text>
-  </g>
-  <rect
-     id="main-map-card-background"
-     x="39.621593"
-     y="125.6216"
-     width="2320"
-     height="1630"
-     rx="34"
-     ry="34"
-     fill="#ffffff"
-     stroke="#d7e5ee"
-     stroke-width="1.4" />
   <g
      id="map-card-clipped-content-layer"
      clip-path="url(#rounded-map-card-clip-area)">
@@ -1359,94 +1288,5 @@
         </g>
       </g>
     </g>
-  </g>
-  <g
-     id="top-route-line-explanation-layer">
-    <rect
-       x="70"
-       y="136"
-       width="2260"
-       height="82"
-       rx="18"
-       ry="18"
-       fill="#FFFFFF"
-       stroke="#D7E5EE"
-       stroke-width="1.1"
-       id="rect209" />
-    <text
-       x="94"
-       y="162"
-       fill="#344258"
-       font-size="13"
-       font-weight="850"
-       id="text209">1호선 표기 안내</text>
-    <g
-       class="route-line-explanation-item"
-       id="g211">
-      <path
-         d="M 260 158 L 302 158"
-         fill="none"
-         stroke="#00975A"
-         stroke-width="8"
-         stroke-linecap="round"
-         id="path209" />
-      <rect
-         x="307"
-         y="149"
-         width="20"
-         height="18"
-         rx="9"
-         fill="#00975A"
-         id="rect210" />
-      <text
-         x="317.0"
-         y="158.5"
-         fill="#FFFFFF"
-         font-size="10.5"
-         font-weight="900"
-         text-anchor="middle"
-         dominant-baseline="central"
-         id="text210">1</text>
-      <text
-         x="337"
-         y="158.5"
-         fill="#344258"
-         font-size="12.2"
-         font-weight="700"
-         dominant-baseline="central"
-         id="text211">1호선 · 운영</text>
-    </g>
-    <circle
-       cx="560"
-       cy="188"
-       r="4.8"
-       fill="#FFFFFF"
-       stroke="#00975A"
-       stroke-width="1.8"
-       id="circle217" />
-    <text
-       x="584"
-       y="188.5"
-       fill="#344258"
-       font-size="12.2"
-       font-weight="700"
-       dominant-baseline="central"
-       id="text218">일반역</text>
-    <circle
-       cx="760"
-       cy="188"
-       r="6.2"
-       fill="#FFFFFF"
-       stroke="#00975A"
-       stroke-width="2.4"
-       id="circle220" />
-    <text
-       x="784"
-       y="188.5"
-       fill="#344258"
-       font-size="12.2"
-       font-weight="700"
-       dominant-baseline="central"
-       id="text220">기·종점</text>
   </g>
 </svg>

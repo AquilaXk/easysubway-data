@@ -22,6 +22,7 @@ import test from "node:test";
 import {
   normalizeSvgForCompile,
   PAINT_ORDER_STROKE_COPY_ATTR,
+  unrepresentableTextDeclarations,
 } from "./compile-basemap-vec.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -129,12 +130,14 @@ test("번들 굵기 자산이 실제로 존재하고 pubspec 선언과 1:1이다
   }
 });
 
-// 실측 기준선(2026-07-26) — 오너 SVG의 굵기 구성이 바뀌면 red가 되어 위 계약을
-// 다시 보게 한다. 800은 이번 라벨 반입으로 새로 들어온 굵기이고, 900은 그 이전부터
-// 쓰이던(그러나 700으로 대체 렌더되던) 굵기다.
+// 실측 기준선(2026-07-26 갱신) — 오너 SVG의 굵기 구성이 바뀌면 red가 되어 위 계약을
+// 다시 보게 한다. 이번 라운드 변화 두 가지:
+//   - 굵기 확정 규칙이 "가장 가까운 100배수 반올림"에서 **CSS Fonts 4 폰트 매칭**
+//     으로 바뀌었다(720→800 등, 준수 렌더러와 같은 페이스 선택).
+//   - 전량 반입 계약으로 오너 SVG 전체가 대상이 됐다.
 test("권역별 font-weight 구성 기준선", () => {
   const expected = {
-    seoul: { 600: 124, 700: 531, 900: 312 },
+    seoul: { 600: 124, 700: 539, 900: 312 },
     busan: { 700: 135, 800: 12, 900: 32 },
     daegu: { 700: 92, 800: 5, 900: 18 },
     daejeon: { 700: 22, 900: 3 },
@@ -148,5 +151,37 @@ test("권역별 font-weight 구성 기준선", () => {
       [...appliedFontWeights(normalized)].sort((a, b) => a[0] - b[0]),
     );
     assert.deepEqual(counts, expected[region.id], `${region.id} 굵기 구성`);
+  }
+});
+
+// ── 표현 불가 텍스트 선언 계측(#2593 리뷰 Major) ─────────────────────────────
+//
+// `.vec`의 TextConfig에는 letter-spacing·word-spacing·font-style 필드가 없어
+// 이 선언들은 인코딩에서 사라진다 — 즉 오너 SVG와 **글자 간격이 다르게 렌더된다**.
+// 재현하려면 글자별 x로 펼쳐야 하는데 폰트 advance·커닝 해석이 필요해 #2571로
+// 미뤘다. 그동안 이 계측을 기준선으로 고정해 **조용히 늘어나는 것**을 막는다.
+// (오너가 letter-spacing을 더 쓰거나 새 권역이 들어오면 red가 되어 재판단하게 된다.)
+test("표현 불가 텍스트 선언(letter-spacing 등) 기준선", () => {
+  const expected = {
+    seoul: { "letter-spacing:0.32967px": 9, "letter-spacing:0.15px": 1 },
+    busan: { "letter-spacing:-1.26px": 270, "letter-spacing:-1.4px": 24 },
+    daegu: { "letter-spacing:-0.7px": 184, "letter-spacing:-0.8px": 10 },
+    daejeon: { "letter-spacing:-.22px": 44 },
+    gwangju: { "letter-spacing:-.22px": 40 },
+  };
+  for (const region of REGIONS) {
+    const normalized = normalizeSvgForCompile(
+      readFileSync(path.join(sourcesDir, region.svg), "utf8"),
+    );
+    const counts = Object.fromEntries(
+      [...unrepresentableTextDeclarations(normalized)].sort((a, b) => b[1] - a[1]),
+    );
+    assert.deepEqual(
+      counts,
+      expected[region.id],
+      `${region.id}: .vec가 담지 못하는 텍스트 선언 구성이 바뀌었습니다 — ` +
+        "글자 간격이 오너 SVG와 달라지는 범위가 변했다는 뜻입니다. " +
+        "#2571의 글자별 x 전개를 앞당길지 먼저 판단하세요.",
+    );
   }
 });
