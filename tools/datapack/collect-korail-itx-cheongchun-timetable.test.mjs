@@ -433,7 +433,12 @@ function shippedPackTopologyEvidence(overrides = {}) {
 
 // UNCHANGED_AUTO 승격 흐름을 구성하고 promote한 뒤, 결과 contract를 반환한다.
 // topologyEvidence === null이면 topology evidence 파일을 생성하지 않는다.
-async function promoteUnchangedWithPin({ pin, topologyEvidence }) {
+async function promoteUnchangedWithPin({
+  pin,
+  topologyEvidence,
+  freshness = { nextReviewAt: "2026-07-13T00:00:00+09:00" },
+  includeFreshness = true,
+}) {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-pin-correction-"));
   try {
     const sourceDir = path.join(dir, "tools/datapack/sources");
@@ -445,10 +450,15 @@ async function promoteUnchangedWithPin({ pin, topologyEvidence }) {
     const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
     const previousSha = previousReference.sha256;
     const contractExtras = { sourceTimetableArtifact: previousReference };
+    if (includeFreshness) contractExtras.freshness = freshness;
     if (pin !== undefined) {
       contractExtras.officialEvidence = { korailCompletenessAdmission: { canonicalPackIdentity: pin } };
     }
-    const contractPath = await writeCoverageContract(dir, JSON.stringify(contractExtras));
+    const contractPath = await writeCoverageContract(
+      dir,
+      JSON.stringify(contractExtras),
+      { includeFreshness },
+    );
     if (topologyEvidence !== null) {
       await writeFile(
         path.join(dir, "tools/datapack/itx-cheongchun-topology-evidence.json"),
@@ -479,7 +489,7 @@ async function promoteUnchangedWithPin({ pin, topologyEvidence }) {
   }
 }
 
-async function writeCoverageContract(repositoryRoot, contents) {
+async function writeCoverageContract(repositoryRoot, contents, { includeFreshness = true } = {}) {
   const packPath = path.join(repositoryRoot, PACK_PATH);
   await mkdir(path.dirname(packPath), { recursive: true });
   await writeFile(packPath, PACK_BYTES);
@@ -496,6 +506,7 @@ async function writeCoverageContract(repositoryRoot, contents) {
     completenessAdmission: {
       snapshotAnomalyPolicy: { policyId: "itx-snapshot-anomaly-v1" },
     },
+    ...(includeFreshness ? { freshness: { nextReviewAt: "2026-07-20T00:00:00+09:00" } } : {}),
     ...JSON.parse(contents),
   };
   await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
@@ -1390,6 +1401,34 @@ test("UNCHANGED_AUTO 승격은 조건이 모두 충족되면 admission pin을 �
   // 출하 pack 실측 identity와 정확히 일치한다.
   assert.equal(pin.sha256, createHash("sha256").update(PACK_BYTES).digest("hex"));
   assert.equal(pin.sqliteSha256, createHash("sha256").update(gunzipSync(PACK_BYTES)).digest("hex"));
+});
+
+test("UNCHANGED_AUTO 승격은 contract freshness를 candidate와 동기화한다", async () => {
+  const { promoted, contract } = await promoteUnchangedWithPin({
+    pin: stalePin(),
+    topologyEvidence: shippedPackTopologyEvidence(),
+  });
+
+  assert.equal(contract.freshness.nextReviewAt, promoted.sourceTimetableArtifact.freshUntil);
+});
+
+test("UNCHANGED_AUTO 승격은 malformed contract freshness를 fail closed한다", async () => {
+  for (const options of [
+    { includeFreshness: false },
+    { freshness: null },
+    { freshness: [] },
+    { freshness: {} },
+    { freshness: { nextReviewAt: "2026-07-13T00:00:00" } },
+  ]) {
+    await assert.rejects(
+      promoteUnchangedWithPin({
+        pin: stalePin(),
+        topologyEvidence: shippedPackTopologyEvidence(),
+        ...options,
+      }),
+      /ITX_COVERAGE_CONTRACT_INVALID/,
+    );
+  }
 });
 
 test("UNCHANGED_AUTO 승격은 조건 미충족 시 admission pin을 불변 유지한다", async (context) => {

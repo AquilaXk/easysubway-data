@@ -8,6 +8,10 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
+import {
+  admittedTopologySource,
+  isUnchangedRefresh,
+} from "./apply-itx-topology-to-bundled-pack.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -257,6 +261,33 @@ test("tracked production ITX topology evidence와 bundled pack은 --check를 통
   ], { cwd: root, env: freshBuildEnv });
 });
 
+test("UNCHANGED_AUTO historical fallback은 immediate previous source 변경을 거부한다", async () => {
+  const contract = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+  const source = JSON.parse(await readFile(
+    path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
+  const previous = JSON.parse(await readFile(
+    path.join(root, contract.sourceTimetableArtifact.promotion.previousArtifactPath), "utf8"));
+  previous.normalizedSnapshotSets[0].sets.stationSet.push("station-diverged-from-current");
+
+  assert.equal(isUnchangedRefresh(contract.sourceTimetableArtifact, source, previous), false);
+});
+
+test("historical fallback은 admitted SQLite identity 변조를 거부한다", async () => {
+  const contractPath = path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json");
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  const source = JSON.parse(await readFile(
+    path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
+  const evidence = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
+  evidence.pack.inputSqliteSha256 = "0".repeat(64);
+
+  await assert.rejects(
+    admittedTopologySource(contract.sourceTimetableArtifact, source, evidence, contractPath),
+    /admitted canonical input identity mismatch/,
+  );
+});
+
 test("--check는 hash가 갱신된 bundled pack의 foreign key 손상도 거부한다", async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-corrupt-pack-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
@@ -264,6 +295,7 @@ test("--check는 hash가 갱신된 bundled pack의 foreign key 손상도 거부�
   const sqlitePath = path.join(directory, "capital.sqlite");
   const indexPath = path.join(directory, "index.json");
   const evidencePath = path.join(directory, "evidence.json");
+  const contractPath = path.join(directory, "contract.json");
   const packBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
   await writeFile(sqlitePath, gunzipSync(packBytes));
   const database = new DatabaseSync(sqlitePath);
@@ -288,18 +320,37 @@ test("--check는 hash가 갱신된 bundled pack의 foreign key 손상도 거부�
   await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
   const evidence = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
+  const historicalSourcePath = `tools/datapack/sources/${evidence.sourceArtifact.id}.json`;
+  const historicalSource = JSON.parse(await readFile(path.join(root, historicalSourcePath), "utf8"));
+  const contract = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+  Object.assign(contract.sourceTimetableArtifact, {
+    artifactId: evidence.sourceArtifact.id,
+    artifactPath: historicalSourcePath,
+    sha256: evidence.sourceArtifact.sha256,
+    completenessEvidencePath: historicalSourcePath.replace(/\.json$/, "-completeness-evidence.json"),
+    completenessEvidenceSha256: evidence.sourceArtifact.completenessEvidenceSha256,
+    freshUntil: evidence.sourceArtifact.freshUntil,
+  });
+  Object.assign(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
+    id: evidence.pack.id,
+    sha256: historicalSource.canonicalPackIdentity.sha256,
+    sqliteSha256: evidence.pack.inputSqliteSha256,
+  });
   Object.assign(evidence.pack, {
     outputSha256: sha256(corruptedPackBytes),
     outputSqliteSha256: sha256(sqliteBytes),
     byteSize: corruptedPackBytes.length,
     byteSizeDelta: corruptedPackBytes.length - evidence.pack.inputByteSize,
   });
+  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
   await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
 
   await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
     "--pack", packPath,
     "--index", indexPath,
+    "--contract", contractPath,
     "--evidence", evidencePath,
     "--check",
   ], { cwd: root, env: freshBuildEnv }), /foreign_key_check failed/);
@@ -317,18 +368,21 @@ test("ITX topology는 freshUntil 경계부터 ADMITTED source를 거부한다", 
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
     "--check",
   ];
+  const contract = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
+  const boundary = Date.parse(contract.sourceTimetableArtifact.freshUntil);
   await execFileAsync(process.execPath, command, {
     cwd: root,
     env: {
       ...process.env,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-26T14:59:59.999Z",
+      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(boundary - 1).toISOString(),
     },
   });
   await assert.rejects(execFileAsync(process.execPath, command, {
     cwd: root,
     env: {
       ...process.env,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-26T15:00:00.000Z",
+      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(boundary).toISOString(),
     },
   }), /ITX topology source artifact is expired/);
 });

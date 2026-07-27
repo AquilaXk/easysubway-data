@@ -28,7 +28,7 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function inputs() {
+async function inputs({ withTopologyEvidence = false } = {}) {
   const baselineGzipBytes = await readFile(baselinePath);
   const contractBytes = await readFile(contractPath);
   const contract = JSON.parse(contractBytes);
@@ -38,7 +38,7 @@ async function inputs() {
     contract.sourceTimetableArtifact.completenessEvidencePath,
   ));
   const canonicalPackGzipBytes = await readFile(canonicalPackPath);
-  const topologyEvidenceBytes = await readFile(topologyEvidencePath);
+  const topologyEvidenceBytes = withTopologyEvidence ? await readFile(topologyEvidencePath) : null;
   const subwayRosterBytes = await readFile(subwayRosterPath);
   const reviewedPackBytes = await readFile(reviewedPackPath);
   const sourceSnapshotsBytes = await readFile(sourceSnapshotsPath);
@@ -83,10 +83,12 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
     sha256: sha256(value.canonicalPackGzipBytes),
     sqliteSha256: sha256(gunzipSync(value.canonicalPackGzipBytes)),
   });
-  assert.equal(
-    first.evidence.canonicalPackLineage.topologyEvidenceSha256,
-    sha256(value.topologyEvidenceBytes),
-  );
+  assert.deepEqual(first.evidence.canonicalPackLineage, {
+    provenance: "coverage-contract-admission",
+    admittedInputSha256: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256,
+    admittedInputSqliteSha256:
+      contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
+  });
   assert.deepEqual(first.evidence.serviceIdentity, {
     serviceId: "ITX_CHEONGCHUN",
     canonicalLineId: contract.canonicalLineId,
@@ -131,9 +133,9 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   assert.equal((first.sql.match(/INSERT INTO transit_feed_info/g) ?? []).length, 1);
   assert.equal((first.sql.match(/VALUES \('weekday-kric'/g) ?? []).length, 1);
   assert.equal((first.sql.match(/VALUES \('holiday-kric'/g) ?? []).length, 1);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-weekday-kric', '20260724', '20260726', 'Asia\/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE\)/);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-saturday-kric', '20260724', '20260726', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE\)/);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-holiday-kric', '20260724', '20260726', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE\)/);
+  assert.match(first.sql, /VALUES \('itx-cheongchun-weekday-kric', '20260727', '20260802', 'Asia\/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE\)/);
+  assert.match(first.sql, /VALUES \('itx-cheongchun-saturday-kric', '20260727', '20260802', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE\)/);
+  assert.match(first.sql, /VALUES \('itx-cheongchun-holiday-kric', '20260727', '20260802', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE\)/);
   for (const [sourceServiceId, namespacedServiceId] of [
     ["weekday-kric", "itx-cheongchun-weekday-kric"],
     ["saturday-kric", "itx-cheongchun-saturday-kric"],
@@ -332,7 +334,7 @@ test("complete snapshot은 source·completeness identity와 freshness를 fail cl
   assert.throws(
     () => buildServerTimetableSnapshot({
       ...value,
-      buildNow: new Date("2026-07-26T15:00:00.000Z"),
+      buildNow: new Date("2026-08-02T15:00:00.000Z"),
     }),
     /source artifact is stale/,
   );
@@ -344,11 +346,15 @@ test("complete snapshot은 source·completeness identity와 freshness를 fail cl
     }),
     /canonical topology pack identity mismatch/,
   );
-  const topologyEvidence = JSON.parse(value.topologyEvidenceBytes);
+  const topologyValue = await inputs({ withTopologyEvidence: true });
+  const consistentTopology = consistentFreshnessInputs(topologyValue);
+  const topologyEvidence = JSON.parse(consistentTopology.topologyEvidenceBytes);
   topologyEvidence.pack.outputSha256 = "0".repeat(64);
   assert.throws(
     () => buildServerTimetableSnapshot({
-      ...value,
+      ...topologyValue,
+      contractBytes: consistentTopology.contractBytes,
+      sourceBytes: consistentTopology.sourceBytes,
       topologyEvidenceBytes: Buffer.from(`${JSON.stringify(topologyEvidence, null, 2)}\n`),
       buildNow,
     }),
@@ -404,6 +410,7 @@ test("CLI는 tracked snapshot/evidence를 생성하고 --check에서 byte identi
   const runtimeEvidencePath = path.join(directory, "runtime-evidence.json");
   const args = [
     "tools/datapack/build-server-timetable-snapshot.mjs",
+    "--without-topology-evidence",
     "--baseline", baselinePath,
     "--contract", contractPath,
     "--output", outputPath,
@@ -450,6 +457,7 @@ test("CLI는 tracked snapshot/evidence를 생성하고 --check에서 byte identi
 test("CLI --check는 admitted input과 tracked snapshot/evidence의 최신성을 검증한다", async () => {
   await execFileAsync(process.execPath, [
     "tools/datapack/build-server-timetable-snapshot.mjs",
+    "--without-topology-evidence",
     "--check",
   ], {
     cwd: root,
@@ -474,7 +482,12 @@ function consistentFreshnessInputs(value) {
   contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
   const contractBytes = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`);
   const topology = JSON.parse(value.topologyEvidenceBytes);
-  topology.sourceArtifact.sha256 = sha256(sourceBytes);
+  topology.sourceArtifact = {
+    id: source.artifactId,
+    sha256: sha256(sourceBytes),
+    completenessEvidenceSha256: source.completenessEvidenceSha256,
+    freshUntil: source.freshUntil,
+  };
   topology.pack.inputSha256 = measuredGzipSha;
   topology.pack.inputSqliteSha256 = measuredSqliteSha;
   const topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topology, null, 2)}\n`);
@@ -483,8 +496,21 @@ function consistentFreshnessInputs(value) {
   };
 }
 
+function staleCanonicalInputs(value) {
+  const source = JSON.parse(value.sourceBytes);
+  source.canonicalPackIdentity.sha256 = "0".repeat(64);
+  const { evidenceHash: _drop, ...sourceWithoutHash } = source;
+  source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutHash)));
+  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
+  const contract = JSON.parse(value.contractBytes);
+  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = "0".repeat(64);
+  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "1".repeat(64);
+  contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
+  return { contract, sourceBytes };
+}
+
 test("pack 미입력 순수 freshness 경로는 admit된 pack identity를 evidence에 기록한다", async () => {
-  const value = await inputs();
+  const value = await inputs({ withTopologyEvidence: true });
   const { contractBytes, sourceBytes, measuredGzipSha, measuredSqliteSha } = consistentFreshnessInputs(value);
 
   const result = buildServerTimetableSnapshot({
@@ -507,16 +533,22 @@ test("pack 미입력 순수 freshness 경로는 admit된 pack identity를 eviden
 
 test("pack 미입력 경로는 admit된 identity와 번들 pack이 불일치하면 fail closed 한다", async () => {
   const value = await inputs();
+  const { contract, sourceBytes } = staleCanonicalInputs(value);
 
-  // 현행 tracked 상태: admit된 input(#2097 pre-topology pack)과 출하 pack(post-topology)이 다르다.
   assert.throws(
-    () => buildServerTimetableSnapshot({ ...value, topologyEvidenceBytes: null, buildNow }),
+    () => buildServerTimetableSnapshot({
+      ...value,
+      contractBytes: Buffer.from(`${JSON.stringify(contract, null, 2)}\n`),
+      sourceBytes,
+      topologyEvidenceBytes: null,
+      buildNow,
+    }),
     /canonical topology pack identity mismatch/,
   );
 });
 
 test("pack 미입력 경로는 sqliteSha256만 어긋나도 fail closed 한다", async () => {
-  const value = await inputs();
+  const value = await inputs({ withTopologyEvidence: true });
   const { contractBytes, sourceBytes } = consistentFreshnessInputs(value);
   // gzip sha256은 실측 pack과 일치시키되 sqliteSha256만 다른 값으로 어긋나게 한다.
   const contract = JSON.parse(contractBytes);
@@ -532,7 +564,7 @@ test("pack 미입력 경로는 sqliteSha256만 어긋나도 fail closed 한다",
 });
 
 test("pack 미입력 경로는 gzip이 파손되면 fail closed 한다", async () => {
-  const value = await inputs();
+  const value = await inputs({ withTopologyEvidence: true });
   const { contractBytes, sourceBytes } = consistentFreshnessInputs(value);
 
   assert.throws(
@@ -549,7 +581,7 @@ test("pack 미입력 경로는 gzip이 파손되면 fail closed 한다", async (
 });
 
 test("pack 미입력 경로와 topology evidence 경로는 동일 입력에서 byte-identical snapshot을 낸다", async () => {
-  const value = await inputs();
+  const value = await inputs({ withTopologyEvidence: true });
   const { contractBytes, sourceBytes, topologyEvidenceBytes } = consistentFreshnessInputs(value);
 
   const packMissing = buildServerTimetableSnapshot({
@@ -570,11 +602,21 @@ test("pack 미입력 경로와 topology evidence 경로는 동일 입력에서 b
 test("CLI --without-topology-evidence는 admit된 pack identity와 번들 pack 불일치를 fail closed 한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "server-timetable-snapshot-freshness-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
+  const value = await inputs();
+  const { contract, sourceBytes } = staleCanonicalInputs(value);
+  const staleContractPath = path.join(directory, "contract.json");
+  const staleSourcePath = path.join(directory, "source.json");
+  contract.sourceTimetableArtifact.artifactPath = staleSourcePath;
+  await Promise.all([
+    writeFile(staleContractPath, `${JSON.stringify(contract, null, 2)}\n`),
+    writeFile(staleSourcePath, sourceBytes),
+  ]);
 
   await assert.rejects(
     execFileAsync(process.execPath, [
       "tools/datapack/build-server-timetable-snapshot.mjs",
       "--without-topology-evidence",
+      "--contract", staleContractPath,
       "--output", path.join(directory, "snapshot.sql.gz"),
       "--evidence", path.join(directory, "evidence.json"),
       "--runtime-evidence", path.join(directory, "runtime-evidence.json"),

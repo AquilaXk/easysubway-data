@@ -189,8 +189,8 @@ test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
     mode: "UNCHANGED_AUTO",
-    previousArtifactSha256: "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json",
+    previousArtifactSha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260719230524758.json",
     approvalUrl: null,
     approvedArtifactSha256: null,
   });
@@ -239,7 +239,7 @@ test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260724", "7": "20260725", "9": "20260726" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260727", "7": "20260801", "9": "20260802" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
@@ -267,8 +267,8 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
     canonicalPackIdentity: {
       id: "capital",
       sourceIssue: 2097,
-      sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
-      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+      sha256: "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
+      sqliteSha256: "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
     },
     selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
     admissionStatus: "MISSING",
@@ -324,7 +324,7 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
   });
 });
 
-test("ITX-청춘 admission input identity는 #1400 topology output까지 연속 lineage를 이룬다", async () => {
+test("ITX-청춘 admission pin은 현행 pack과 일치하고 historical topology output lineage를 보존한다", async () => {
   const canonicalPackBytes = await readFile(new URL(
     "../../apps/mobile/assets/datapacks/capital.sqlite.gz",
     import.meta.url,
@@ -340,8 +340,8 @@ test("ITX-청춘 admission input identity는 #1400 topology output까지 연속 
   assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
     id: "capital",
     sourceIssue: 2097,
-    sha256: topologyEvidence.pack.inputSha256,
-    sqliteSha256: topologyEvidence.pack.inputSqliteSha256,
+    sha256: canonicalPackSha256,
+    sqliteSha256: canonicalPackSqliteSha256,
   });
   assert.equal(topologyEvidence.sourceIssue, 2135);
   assert.equal(topologyEvidence.pack.outputSha256, canonicalPackSha256);

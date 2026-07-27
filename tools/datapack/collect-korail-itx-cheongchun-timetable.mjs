@@ -461,6 +461,7 @@ async function promoteItxSourceCandidateLocked({
       approvedArtifactSha256: approvalRequired ? candidateSha256 : null,
     },
   };
+  contract.freshness.nextReviewAt = candidate.freshUntil;
   await maybeCorrectAdmissionPin({
     contract,
     candidate,
@@ -1002,7 +1003,9 @@ function validateCoverageContractAuthority(contract) {
     || contract.artifactKind !== "itx-cheongchun-coverage-contract"
     || contract.serviceId !== "ITX_CHEONGCHUN"
     || contract.canonicalLineId !== LINE_ID
-    || contract.completenessAdmission?.snapshotAnomalyPolicy?.policyId !== "itx-snapshot-anomaly-v1") {
+    || contract.completenessAdmission?.snapshotAnomalyPolicy?.policyId !== "itx-snapshot-anomaly-v1"
+    || !isPlainObject(contract.freshness)
+    || offsetIsoEpoch(contract.freshness.nextReviewAt) === null) {
     throw new Error("ITX_COVERAGE_CONTRACT_INVALID");
   }
   return contract;
