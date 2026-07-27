@@ -229,6 +229,7 @@
               "snapshotPath",
               "snapshotSha256",
               "capturedAt",
+              "freshUntil",
               "stationCount",
               "rawSha256",
               "positionsSha256"
@@ -246,6 +247,7 @@
               "snapshotPath": { "type": "string", "minLength": 1 },
               "snapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "capturedAt": { "type": "string", "format": "date-time" },
+              "freshUntil": { "type": "string", "format": "date-time" },
               "stationCount": { "type": "integer", "minimum": 1 },
               "rawStationCount": { "type": "integer", "minimum": 0 },
               "quarantinedCount": { "type": "integer", "minimum": 0 },

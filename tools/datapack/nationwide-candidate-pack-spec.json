@@ -138,7 +138,7 @@
         "sourceInventory": 1
       },
       "reasonKo": "#2580 B2-a. 대구 3노선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 pack.sourceInventory에 대구 시각표 소스가 이미 있을 것을 선행 조건으로 검사하므로 시각표 편입 뒤에 체인한다. 신규 admission·재수집은 없고 이미 admission이 끝난 snapshot(#2473)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 capturedAt은 2026-07-24T03:00:00Z이고 materializer는 기준 시각이 capturedAt 이전이면 fail closed 한다. 소스마다 포착 시각대가 다르므로 pin도 편입마다 따로 둔다."
+      "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-24T03:00:00Z, 2027-07-24T03:00:00Z)이고 materializer가 양끝 밖의 기준 시각을 fail closed 한다. 소스마다 포착·상한 시각이 다르므로 pin은 이 창의 하한에 편입별로 둔다."
     },
     {
       "regionId": "daegu",
@@ -189,7 +189,7 @@
         "sourceInventory": 1
       },
       "reasonKo": "#2580 B2-a. 대구 3노선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 대구 시각표 소스를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T01:00:00Z ~ freshUntil 2026-07-25T01:00:00Z이며 materializer가 그 밖의 기준 시각을 fail closed 한다. 창은 소스마다 다르고 상한 유무도 갈린다 — 시각표는 [capturedAt, freshUntil) 양끝을 검사하지만 노선도 materializer는 하한(capturedAt 이후)만 검사해 상한이 없다. 시각표 창은 이 창과 서로소이고 노선도 창은 이 창과 겹치므로, 편입 하나의 창만 보고 pin을 묶으면 그 소스의 snapshot이 갱신될 때 다른 편입의 기준 시각까지 함께 흔들린다. pin을 편입마다 따로 두면 각 pin이 자기 소스의 창에만 묶인다."
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 [2026-07-24T01:00:00Z, 2026-07-25T01:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. 시각표 창은 이 창과 서로소이며, 노선도 P1Y 창 [2026-07-24T03:00:00Z, 2027-07-24T03:00:00Z)은 이 창과 [2026-07-24T03:00:00Z, 2026-07-25T01:00:00Z)를 공유한다. 창이 겹쳐도 한 소스의 snapshot 갱신이 다른 편입의 기준 시각을 흔들지 않도록 pin은 편입마다 따로 둔다."
     },
     {
       "regionId": "busan",
@@ -315,7 +315,7 @@
       },
       "addedRowsKo": "이 편입은 승계 원본에 없던 표(routeMapLineTracks)를 새로 만든다. 집계 목록을 pack 자신에서 끌어오므로 새 표도 자동으로 대조 축에 들어오며, 선언하지 않으면 조립이 fail closed 된다. 이후 편입은 그 표를 0으로 선언해야 한다.",
       "reasonKo": "#2587 B2-b. 부산 4노선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 부산 topology 소스 등재와 station_lines·network_edges 계보를 선행 조건으로 검사하므로 topology 편입 뒤에 체인한다. 이미 admission이 끝난 snapshot(#2379)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 admission 정본에는 freshUntil이 없고 materializer도 하한(capturedAt 2026-07-20T11:13:18Z 이후)만 검사해 상한이 없다 — 대구 노선도 편입과 같은 비대칭이며 상한 도입은 materializer 쪽 판단이라 이 spec의 축이 아니다. pin은 그 하한에 맞춘다."
+      "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-20T11:13:18Z, 2027-07-20T11:13:18Z)이고 materializer가 양끝 밖의 기준 시각을 fail closed 한다. pin은 이 창의 하한에 맞춘다."
     },
     {
       "regionId": "busan",
@@ -357,7 +357,7 @@
         "sourceInventory": 1
       },
       "reasonKo": "#2587 B2-b. 부산 4노선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 114 역·노선 쌍 × 3종(엘리베이터·에스컬레이터·휠체어리프트) = 342행이며 미설치도 NOT_EXISTS 근거로 함께 싣는다 — 정본 station id 기준 고유 역은 108이라 두 노선에 걸친 환승역 6곳은 6행씩 낸다. 이 materializer도 부산 topology 계보를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 이미 admission이 끝난 snapshot(#2374)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T00:19:05.836Z ~ freshUntil 2026-07-25T00:19:05.836Z이며 materializer가 [capturedAt, freshUntil) 양끝을 검사한다. 창은 소스마다 다르고 상한 유무도 갈린다 — topology·시각표는 [capturedAt, freshUntil) 양끝을 검사하지만 노선도 materializer는 하한(capturedAt 이후)만 검사해 상한이 없다. topology·시각표 창은 이 창과 서로소이고 노선도 창은 상한이 없어 이 창을 통째로 품으므로, 편입 하나의 창만 보고 pin을 묶으면 그 소스의 snapshot이 갱신될 때 다른 편입의 기준 시각까지 함께 흔들린다. pin을 편입마다 따로 두면 각 pin이 자기 소스의 창에만 묶인다."
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 [2026-07-24T00:19:05.836Z, 2026-07-25T00:19:05.836Z)이고 materializer가 양끝 밖을 fail closed 한다. topology·시각표 창은 이 창과 서로소이며, 노선도 P1Y 창 [2026-07-20T11:13:18Z, 2027-07-20T11:13:18Z)은 이 창을 포함한다. 창의 관계가 달라도 한 소스의 snapshot 갱신이 다른 편입의 기준 시각을 흔들지 않도록 pin은 편입마다 따로 둔다."
     },
     {
       "regionId": "daejeon",
@@ -437,7 +437,7 @@
         "sourceInventory": 1
       },
       "reasonKo": "#2595 B3. 대전 1호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 pack에 대전 운영기관이 있을 것·시각표 소스가 등재돼 있을 것·역노선 station_code 계보가 topology 소스에서 온 것을 선행 조건으로 검사하므로 시각표 편입 뒤에 체인한다(시각표보다 앞서면 운영기관 조건에서 먼저 걸린다). 이미 admission이 끝난 snapshot(#2496)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 admission 정본에는 freshUntil이 없고 materializer도 하한(capturedAt 2026-07-25T03:00:00Z 이후)만 검사해 상한이 없다 — 대구·부산 노선도 편입과 같은 비대칭이며 상한 도입은 materializer 쪽 판단이라 이 spec의 축이 아니다. pin은 그 하한에 맞춘다."
+      "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-25T03:00:00Z, 2027-07-25T03:00:00Z)이고 materializer가 양끝 밖의 기준 시각을 fail closed 한다. pin은 이 창의 하한에 맞춘다."
     },
     {
       "regionId": "daejeon",
@@ -477,7 +477,7 @@
       },
       "addedRowsKo": "22 역·노선 쌍 × 3종(엘리베이터·에스컬레이터·휠체어리프트) = 66행이며 미설치도 NOT_EXISTS 근거로 함께 싣는다. 대전 1호선은 단일 노선이라 역 수 22와 역·노선 쌍 수 22가 같다.",
       "reasonKo": "#2595 B3. 대전 1호선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 대전 운영기관·시각표 소스 등재와 topology 계보를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 노선도 편입과는 서로 선행 조건이 없어 둘의 순서를 바꿔도 조립은 통과한다(실측) — 기록된 순서를 고정하는 것은 evidence 순서 대조다. 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T02:00:00Z ~ freshUntil 2026-07-25T02:00:00Z이며 materializer가 [capturedAt, freshUntil) 양끝을 검사한다. 대전 세 편입의 창은 서로소다(실측) — 시각표 편입 창은 [2026-07-20T03:30:00Z, 2026-07-20T22:12:49.895Z), 이 창은 [2026-07-24T02:00:00Z, 2026-07-25T02:00:00Z), 노선도 창은 상한이 없어 [2026-07-25T03:00:00Z, ∞)인데 노선도 하한이 이 창의 상한보다 한 시간 늦어 겹치지 않는다. 상한 없는 창이 늘 다른 창을 품는 것은 아니라는 뜻이며(광주는 같은 자리에서 겹친다) 그래서 pin은 편입마다 따로 둔다."
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 [2026-07-24T02:00:00Z, 2026-07-25T02:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. 시각표 편입 창 [2026-07-20T03:30:00Z, 2026-07-20T22:12:49.895Z), 이 창, 노선도 P1Y 창 [2026-07-25T03:00:00Z, 2027-07-25T03:00:00Z)은 서로소다. 노선도 하한이 이 창의 상한보다 한 시간 늦으므로 겹치지 않으며, pin은 각 소스의 창에 편입별로 둔다."
     },
     {
       "regionId": "gwangju",
@@ -557,7 +557,7 @@
         "sourceInventory": 1
       },
       "reasonKo": "#2595 B3. 광주 1호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 pack에 광주 운영기관이 있을 것·시각표 소스가 등재돼 있을 것·역노선 station_code 계보가 topology 소스에서 온 것을 선행 조건으로 검사하므로 시각표 편입 뒤에 체인한다(시각표보다 앞서면 운영기관 조건에서 먼저 걸린다). 이미 admission이 끝난 snapshot(#2496)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 admission 정본에는 freshUntil이 없고 materializer도 하한(capturedAt 2026-07-25T02:00:00Z 이후)만 검사해 상한이 없다. pin은 그 하한에 맞춘다."
+      "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-25T02:00:00Z, 2027-07-25T02:00:00Z)이고 materializer가 양끝 밖의 기준 시각을 fail closed 한다. pin은 이 창의 하한에 맞춘다."
     },
     {
       "regionId": "gwangju",
@@ -597,7 +597,7 @@
       },
       "addedRowsKo": "20 역·노선 쌍 × 3종(엘리베이터·에스컬레이터·휠체어리프트) = 60행이며 미설치도 NOT_EXISTS 근거로 함께 싣는다. 광주 1호선은 단일 노선이라 역 수 20과 역·노선 쌍 수 20이 같다.",
       "reasonKo": "#2595 B3. 광주 1호선 accessibility_facilities requirement를 판정에 올리려면 candidate root pack이 공식 편의시설 행을 담아야 한다. 이 materializer도 광주 운영기관·시각표 소스 등재와 topology 계보를 선행 조건으로 검사하므로 같은 체인 뒤에 붙인다. 노선도 편입과는 서로 선행 조건이 없어 둘의 순서를 바꿔도 조립은 통과한다(실측). 이미 admission이 끝난 snapshot(#2467)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 신선도 창은 capturedAt 2026-07-24T03:00:00Z ~ freshUntil 2026-07-25T03:00:00Z이며 materializer가 [capturedAt, freshUntil) 양끝을 검사한다. 광주 세 창의 관계는 대전과 다르다(실측). 시각표 편입 창 [2026-07-20T13:08:47.161Z, 2026-07-21T12:55:50.079Z)은 이 창과 서로소이지만, 노선도 창은 상한이 없어 [2026-07-25T02:00:00Z, ∞)이고 그 하한이 이 창의 상한(2026-07-25T03:00:00Z)보다 한 시간 이르러 두 창이 [2026-07-25T02:00:00Z, 2026-07-25T03:00:00Z)를 공유한다 — 대전은 같은 자리에서 서로소다. 겹치는 창끼리라도 pin을 묶으면 한 소스의 snapshot 갱신이 다른 편입의 기준 시각까지 흔들므로 편입마다 따로 둔다."
+      "materializedAtReasonKo": "이 snapshot의 신선도 창은 [2026-07-24T03:00:00Z, 2026-07-25T03:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. 시각표 편입 창 [2026-07-20T13:08:47.161Z, 2026-07-21T12:55:50.079Z)은 이 창과 서로소이지만, 노선도 P1Y 창 [2026-07-25T02:00:00Z, 2027-07-25T02:00:00Z)은 이 창과 [2026-07-25T02:00:00Z, 2026-07-25T03:00:00Z)를 공유한다. 겹치는 창끼리도 한 소스의 snapshot 갱신이 다른 편입의 기준 시각을 흔들지 않도록 pin은 편입마다 따로 둔다."
     },
     {
       "regionId": "capital",
@@ -646,7 +646,7 @@
       "reorderedTables": ["lines", "operators"],
       "reorderedTablesKo": "이 materializer는 append 뒤 pack.operators와 pack.lines를 id 오름차순으로 다시 정렬한다(실측). 승계 행 자체는 바이트 동일하게 남지만 위치가 바뀌므로 접두사 대조가 걸린다 — 재정렬을 표 단위로 명시 선언한 편입에서만 그 표를 다중집합 대조로 본다. coverageLineOperatorScopes는 이 편입이 처음 만드는 표라 승계 행이 없어 선언 대상이 아니다.",
       "reasonKo": "#2595 B3. 수도권 광역철도 8노선(경의중앙·경춘·수인분당·경강·공항철도·의정부경전철·서해선·GTX-A) route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. materializer가 노선 하나만 처리하므로 편입 하나가 노선별 snapshot을 카탈로그 순서대로 체인한다. 이 편입은 승계 pack에 의존하지 않는다 — 경로 그래프 계보를 inventory 소스가 아니라 tracked snapshot 파일(capital-route-topology-20260724.json)로 대조하고 역·역노선을 스스로 만든다. 서해선·GTX-A는 이 배치의 첫 묶음에서 빠져 있었다: 두 소스의 admission coverageScope.operatorIds가 2개인데 materializer의 정본 대조가 단일 운영기관만 허용했기 때문이다. 카탈로그가 그 두 번째 운영기관을 additionalCoverageOperators로 등재하고 materializer가 [노선 운영기관, ...등재분]을 정본과 전량 대조하도록 바꾸면서 두 노선이 열렸다. 이미 admission이 끝난 snapshot(#2503)을 재생한다.",
-      "materializedAtReasonKo": "이 편입이 싣는 8개 소스의 admission 정본에는 모두 freshUntil이 없고 materializer도 하한(capturedAt 이후)만 검사한다. 8개 소스의 capturedAt이 2026-07-25T06:00:00Z로 모두 같아(실측) 편입 하나의 pin이 여덟 하한을 동시에 만족한다 — pin은 그 공통 하한 정각이다."
+      "materializedAtReasonKo": "이 편입이 싣는 8개 소스는 모두 P1Y 신선도 창 [2026-07-25T06:00:00Z, 2027-07-25T06:00:00Z)을 공유하고 materializer가 양끝 밖을 fail closed 한다. 편입 하나의 pin은 여덟 창의 공통 하한 정각에 둔다."
     },
     {
       "regionId": "capital",
@@ -692,7 +692,7 @@
       "reorderedTables": ["coverageLineOperatorScopes", "lines", "operators"],
       "reorderedTablesKo": "이 materializer도 append 뒤 pack.operators·pack.lines를 id 오름차순으로 다시 정렬하며, 광역철도 편입이 이미 만들어 둔 coverageLineOperatorScopes까지 같은 축으로 다시 정렬한다(실측). 그래서 선언 표가 광역철도 편입보다 하나 많다 — 그 표가 이 편입에는 승계 행이 있는 표이기 때문이다.",
       "reasonKo": "#2595 B3. 수도권 경전철 5노선(신분당·에버라인·우이신설·신림·김포골드라인) route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 노선도 좌표 행을 담아야 한다. 광역철도 편입과 형상이 같고(노선별 snapshot 체인) 서로 선행 조건이 없다. 신분당선은 이 배치의 첫 묶음에서 빠져 있었다: admission coverageScope.operatorIds가 2개라 서해선·GTX-A와 같은 이유로 거부됐고, 같은 카탈로그 등재 축으로 열렸다. 신분당선 정본은 두 운영기관을 등재하지만 pack scope와 requirement는 하나씩이다 — 정본의 서울교통공사 표기는 FILE admission 계보 항목이라 #2138 activeLineScopes에 대응 scope가 없고, 카탈로그가 그 표기를 lineageOnlyOperatorIds로 갈라 정본 대조·운영기관 등재에만 쓰고 scope 행으로는 내지 않는다. 이미 admission이 끝난 snapshot(#2505)을 재생한다.",
-      "materializedAtReasonKo": "이 편입이 싣는 5개 소스도 admission 정본에 freshUntil이 없고 materializer가 하한만 검사하며, 다섯 소스의 capturedAt이 2026-07-25T06:00:00Z로 모두 같다(실측). 광역철도 편입과 pin 값이 같지만 묶지 않는다 — 값이 같은 것은 두 카탈로그의 snapshot을 같은 날 뜬 결과일 뿐이고, 한쪽 snapshot이 갱신되면 다른 편입의 기준 시각까지 함께 흔들려서는 안 된다."
+      "materializedAtReasonKo": "이 편입이 싣는 5개 소스는 모두 P1Y 신선도 창 [2026-07-25T06:00:00Z, 2027-07-25T06:00:00Z)을 공유하고 materializer가 양끝 밖을 fail closed 한다. 광역철도 편입과 현재 pin 값이 같아도 한쪽 snapshot 갱신이 다른 편입의 기준 시각을 흔들지 않도록 pin은 따로 둔다."
     },
     {
       "regionId": "capital",
@@ -741,7 +741,7 @@
       "reorderedTables": ["lines"],
       "reorderedTablesKo": "이 materializer는 노선 append 뒤 pack.lines를 id 오름차순으로 다시 정렬한다(실측). 운영기관은 이미 있어 건드리지 않고 coverageLineOperatorScopes에도 손대지 않으므로 선언 표는 lines 하나뿐이다.",
       "reasonKo": "#2595 B3. 수도권 1~8호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 좌표 행을 담아야 한다. materializer는 승계 원본의 서울교통공사 운영기관과 capital pilot cyberstation 소스가 pack에 남아 있을 것을 선행 조건으로 검사하지만, 그 둘은 승계 원본이 이미 갖고 있어 다른 편입에 대한 순서 의존은 없다. 4호선은 B0 파일럿에서 cyberstation 소스로 이미 SUPPORTED이므로 이 편입이 여는 것은 나머지 7 requirement이고, 4호선 requirement는 이후 두 소스가 함께 뒷받침한다. 이미 admission이 끝난 snapshot(#2470)을 재생한다.",
-      "materializedAtReasonKo": "이 snapshot의 admission 정본에도 freshUntil이 없고 materializer는 하한(capturedAt 2026-07-24T02:00:00Z 이후)만 검사한다. 같은 수도권 편입이지만 KRIC 두 편입의 창과 하한이 다르다 — 셋 다 상한이 없어 이 창 [2026-07-24T02:00:00Z, ∞)이 KRIC 창 [2026-07-25T06:00:00Z, ∞)을 통째로 품는다(포함 관계이지 서로소가 아니다). 포함 관계여도 pin은 묶지 않는다."
+      "materializedAtReasonKo": "이 snapshot의 P1Y 신선도 창은 [2026-07-24T02:00:00Z, 2027-07-24T02:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. KRIC 두 편입의 창 [2026-07-25T06:00:00Z, 2027-07-25T06:00:00Z)과는 겹치지만 시작·종료 시각이 모두 달라 어느 한쪽도 다른 창을 포함하지 않는다. pin은 각 편입의 창 하한에 따로 둔다."
     },
     {
       "regionId": "capital",
@@ -784,7 +784,7 @@
       "reorderedTables": ["coverageLineOperatorScopes", "lines", "operators"],
       "reorderedTablesKo": "이 materializer도 append 뒤 pack.operators·pack.lines를 id 오름차순으로, coverageLineOperatorScopes를 (권역:운영기관:노선) 오름차순으로 다시 정렬한다(실측). 세 표 모두 이 시점에는 승계 행이 있어 선언 대상이다.",
       "reasonKo": "#2595 B3. 수도권 9호선 route_map_positions requirement를 판정에 올리려면 candidate root pack이 공식 좌표 행을 담아야 한다. 9호선은 한 노선을 두 소스가 나눠 덮어(1단계 25역 / 2·3단계 13역) 편입도 소스마다 하나씩이고, 이 편입이 그중 1단계다. 승계 pack 의존이 없다 — 경로 그래프 계보를 tracked snapshot 파일로 대조하고 운영기관·노선·역·역노선을 스스로 만든다. 이미 admission이 끝난 snapshot(#2500)을 재생한다.",
-      "materializedAtReasonKo": "이 소스의 admission 정본에도 freshUntil이 없고 materializer는 하한(capturedAt 2026-07-25T05:00:00Z 이후)만 검사한다 — pin은 그 하한 정각이다. 2·3단계 소스의 하한(2026-07-25T04:00:00Z)과 값이 달라 두 편입의 pin을 묶을 수 없다."
+      "materializedAtReasonKo": "이 소스의 P1Y 신선도 창은 [2026-07-25T05:00:00Z, 2027-07-25T05:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. 2·3단계 소스의 창 [2026-07-25T04:00:00Z, 2027-07-25T04:00:00Z)과 겹치지만 양끝이 한 시간씩 달라 어느 한쪽도 다른 창을 포함하지 않으므로 pin은 각 창의 하한에 따로 둔다."
     },
     {
       "regionId": "capital",
@@ -825,7 +825,7 @@
       },
       "addedRowsKo": "2·3단계 좌표 13행 중 앞선 편입이 이미 실은 역 3곳(선정릉·종합운동장·석촌)이 있어 역은 10행만 늘고 소속은 13행 전부 는다. 1단계 소스와 겹치는 역은 없다(두 소스가 9호선을 구간으로 나눠 덮는다). 운영기관·노선은 0행 — 1단계 편입이 이미 만들었다. coverageLineOperatorScopes도 0행이다: 이 소스는 dual coverage(FILE 계보 표기 서울교통공사 + 노선 운영기관 서울시메트로9호선)로 등재돼 있지만 계보 표기에는 #2138 activeLineScopes에 대응 scope가 없어 scope 행으로 내지 않고, 노선 운영기관 scope는 1단계 편입이 이미 실었다. 그래서 이 편입은 어느 표에도 재정렬을 일으키지 않는다(reorderedTables 선언 없음).",
       "reasonKo": "#2595 B3. 9호선 2·3단계 소스를 같은 노선 위에 이어 싣는다. 1단계 편입과 서로 선행 조건은 없지만 두 편입이 같은 노선의 역을 나눠 실어 중복 제거 결과가 순서에 따라 갈리므로 선언 행수 대조가 순서를 고정한다. 이미 admission이 끝난 snapshot(#2498)을 재생한다.",
-      "materializedAtReasonKo": "이 소스의 admission 정본에도 freshUntil이 없고 materializer는 하한(capturedAt 2026-07-25T04:00:00Z 이후)만 검사한다 — pin은 그 하한 정각이다."
+      "materializedAtReasonKo": "이 소스의 P1Y 신선도 창은 [2026-07-25T04:00:00Z, 2027-07-25T04:00:00Z)이고 materializer가 양끝 밖을 fail closed 한다. pin은 이 창의 하한 정각에 둔다."
     },
     {
       "regionId": "incheon",

@@ -63,7 +63,7 @@ export function decideScheduledRun({
   return decision("NO_CHANGE_VALID", false);
 }
 
-function addCadence(basisMillis, cadence) {
+export function addCadence(basisMillis, cadence) {
   if (typeof cadence !== "string") {
     throw new Error("SOURCE_FRESHNESS_POLICY_MISSING: cadence");
   }

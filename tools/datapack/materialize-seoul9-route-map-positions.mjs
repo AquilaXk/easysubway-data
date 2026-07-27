@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateSeoul9RouteMapPositionsSnapshot } from "./collect-seoul9-route-map-positions.mjs";
+import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const SOURCE_ID = "seoul-metro-line9-23-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "capital-route-topology";
@@ -160,7 +161,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
   if (!/^[a-f0-9]{64}$/.test(snapshotSha256 ?? "") || evidence?.snapshotSha256 !== snapshotSha256) {
     throw new Error("Seoul9 route map snapshot byte identity mismatch");
   }
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
+  const observedNow = assertRouteMapAdmissionFreshness(evidence, now, SOURCE_ID);
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.license.commercialUseAllowed !== true || source.license.derivativeWorkAllowed !== true

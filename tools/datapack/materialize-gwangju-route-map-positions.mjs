@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateGwangjuRouteMapPositionsSnapshot } from "./collect-gwangju-route-map-positions.mjs";
+import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const SOURCE_ID = "gwangju-transportation-route-map-positions";
 const TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
@@ -128,7 +129,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, n
   if (!/^[a-f0-9]{64}$/.test(snapshotSha256 ?? "") || evidence?.snapshotSha256 !== snapshotSha256) {
     throw new Error("Gwangju route map snapshot byte identity mismatch");
   }
-  const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
+  const observedNow = assertRouteMapAdmissionFreshness(evidence, now, SOURCE_ID);
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.license.commercialUseAllowed !== true || source.license.derivativeWorkAllowed !== true

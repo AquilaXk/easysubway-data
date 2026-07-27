@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import {
   validateIncheonStationInfoSnapshot,
 } from "./collect-incheon-station-info.mjs";
+import { assertRouteMapAdmissionFreshness } from "./lib/route-map-admission-freshness.mjs";
 
 const SOURCE_ID = "incheon-transit-station-info";
 const OPERATOR_ID = "incheon-transit";
@@ -394,6 +395,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
     || Date.parse(snapshot.freshUntil) !== Date.parse(snapshot.capturedAt) + FRESHNESS_MILLIS) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
+  assertRouteMapAdmissionFreshness(routeMap, now, SOURCE_ID);
   return source;
 }
 

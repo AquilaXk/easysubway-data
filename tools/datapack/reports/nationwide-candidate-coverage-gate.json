@@ -67,7 +67,7 @@
     },
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "8856a81a49f8f3814c9abd1a54fca7451dbcd1b5a3c2613e6427c3f1a3f49ff8"
+      "sha256": "d6425d21333dcbb08341a40bc57571e31a0ea7cfc087732c5596af351dd3b1b7"
     },
     "resolutionPlan": {
       "path": "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
@@ -79,7 +79,7 @@
     },
     "spec": {
       "path": "tools/datapack/nationwide-candidate-pack-spec.json",
-      "sha256": "29658061a7723e547231b7620c4d86f2a6afd99375e213815f4e7efc6c6f6ef4"
+      "sha256": "57512260f212b10090b1d162453af509ae88753d20eb5a5ac8b1a931fc75f309"
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",

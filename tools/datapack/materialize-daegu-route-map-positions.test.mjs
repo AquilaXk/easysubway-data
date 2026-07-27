@@ -139,6 +139,16 @@ test("공식 대구 출구 위경도 snapshot을 누적 production candidate pac
   assert.equal(pack.version, "20260724");
   assert.deepEqual(fixture.manifest.activePack, { id: pack.id, version: "20260724" });
 
+  const routeMapFreshUntil = inventory.sources.find(({ id }) => id === SOURCE_ID)
+    .routeMapAdmissionEvidence.freshUntil;
+  assert.throws(
+    () => materializeDaeguRouteMapPositions({
+      baseFixture, snapshot: daeguSnapshot, snapshotSha256: daeguSnapshotSha256,
+      topologySnapshots, inventory, now: new Date(routeMapFreshUntil),
+    }),
+    /route-map admission snapshot is stale or future-dated/,
+  );
+
   const mismatchedInventory = structuredClone(inventory);
   mismatchedInventory.sources.find(({ id }) => id === SOURCE_ID)
     .routeMapAdmissionEvidence.positionsSha256 = "0".repeat(64);

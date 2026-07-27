@@ -214,6 +214,17 @@ test("인천 station-info materialize는 freshness·hash·중복을 fail closed�
     now: new Date("2026-07-25T06:00:00.000Z"),
   }), /inventory evidence|fresh/);
 
+  const mismatchedRouteMapFreshness = structuredClone(inventory);
+  mismatchedRouteMapFreshness.sources.find(({ id }) => id === SOURCE_ID)
+    .routeMapAdmissionEvidence.freshUntil = "2026-07-25T06:00:00.000Z";
+  assert.throws(() => materializeIncheonStationInfo({
+    baseFixture: accessibilityFixture,
+    snapshot: incheonSnapshot,
+    snapshotSha256,
+    inventory: mismatchedRouteMapFreshness,
+    now: incheonNow,
+  }), /route-map freshness contract is invalid/);
+
   const badHash = structuredClone(incheonSnapshot);
   badHash.contentSha256 = "0".repeat(64);
   assert.throws(() => materializeIncheonStationInfo({

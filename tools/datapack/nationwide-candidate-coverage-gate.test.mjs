@@ -219,11 +219,7 @@ const BUSAN_INCLUSION_BINDINGS = [
     offset: 2,
     sourceId: "busan-transportation-route-map-positions",
     evidenceKey: "routeMapAdmissionEvidence",
-    // 이 문구만 신선도 전용이 아니다 — 노선도 정본에는 freshUntil이 없어 materializer에 신선도 블록이
-    // 따로 없고, 하한(capturedAt 이후) 검사가 admission 정본 대조(positionsSha256·topologyContentSha256
-    // 등)와 한 조건에 묶여 같은 문구를 낸다. 문구를 가르는 것은 materializer 쪽 판단이라 이 하네스가
-    // 동작으로 바꾸지 않고, 대신 아래 대조 회귀가 그 문구의 원인을 하한 교차로 좁힌다.
-    stalePinPattern: /busan-transportation-route-map-positions inventory evidence does not match snapshot/,
+    stalePinPattern: /busan-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
   {
     labelKo: "편의시설",
@@ -243,7 +239,7 @@ const [
 // 대전·광주·수도권 편입의 결속 지점·신선도 창 축(#2595). 부산 표와 같은 목적이지만 창 서술이 한 단계
 // 넓다: 이 배치의 시각표 편입은 소스 하나가 아니라 두셋의 시각 판정을 동시에 받으므로 pin 창의 하한·상한이
 // 서로 다른 정본에서 온다. 그래서 snapshot 결속(경로)과 창 경계(어느 정본의 어느 필드)를 따로 기술하고,
-// 값은 전부 admission 정본에서 끌어온다. upperBound가 없으면 그 편입의 창에는 상한이 없다는 뜻이다.
+// 값은 전부 admission 정본에서 끌어온다.
 const DAEJEON_TOPOLOGY_SOURCE_ID = "daejeon-station-distance-fare";
 const GWANGJU_TOPOLOGY_SOURCE_ID = "gwangju-transportation-route-topology";
 const DAEJEON_INCLUSION_BINDINGS = [
@@ -280,10 +276,9 @@ const DAEJEON_INCLUSION_BINDINGS = [
       evidenceKey: "routeMapAdmissionEvidence",
       field: "capturedAt",
     },
-    // 부산 노선도와 같은 비대칭이다 — 정본에 freshUntil이 없고 materializer도 하한만 검사하며, 그 하한
-    // 검사가 정본 대조와 한 조건에 묶여 있어 문구가 신선도 전용이 아니다.
-    belowLowerBoundPattern:
-      /daejeon-transportation-route-map-positions inventory evidence does not match snapshot/,
+    upperBound: { sourceId: "daejeon-transportation-route-map-positions", evidenceKey: "routeMapAdmissionEvidence", field: "freshUntil" },
+    belowLowerBoundPattern: /daejeon-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
+    atUpperBoundPattern: /daejeon-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
     topologyBinding: { sourceId: DAEJEON_TOPOLOGY_SOURCE_ID, evidenceKey: "topologyAdmissionEvidence" },
   },
   {
@@ -341,8 +336,9 @@ const GWANGJU_INCLUSION_BINDINGS = [
       evidenceKey: "routeMapAdmissionEvidence",
       field: "capturedAt",
     },
-    belowLowerBoundPattern:
-      /gwangju-transportation-route-map-positions inventory evidence does not match snapshot/,
+    upperBound: { sourceId: "gwangju-transportation-route-map-positions", evidenceKey: "routeMapAdmissionEvidence", field: "freshUntil" },
+    belowLowerBoundPattern: /gwangju-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
+    atUpperBoundPattern: /gwangju-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
     topologyBinding: { sourceId: GWANGJU_TOPOLOGY_SOURCE_ID, evidenceKey: "topologyAdmissionEvidence" },
   },
   {
@@ -367,8 +363,7 @@ const GWANGJU_INCLUSION_BINDINGS = [
   },
 ];
 // 수도권 노선도 편입은 결속 단위가 편입이 아니라 노선(=소스)이다. 광역·경전철 편입은 노선별 snapshotPath를
-// 각 노선 소스의 정본 경로에 결속하고, 서울 편입만 편입 층 snapshotPath 하나를 쓴다. 세 편입 모두 창에
-// 상한이 없다(정본에 freshUntil이 없고 materializer도 하한만 검사한다).
+// 각 노선 소스의 정본 경로에 결속하고, 서울 편입만 편입 층 snapshotPath 하나를 쓴다.
 const CAPITAL_WIDE_RAIL_LINE_SOURCE_IDS = [
   "kric-gyeongui-jungang-route-map-positions",
   "kric-gyeongchun-route-map-positions",
@@ -395,7 +390,7 @@ const CAPITAL_INCLUSION_BINDINGS = [
     lineSourceIds: CAPITAL_WIDE_RAIL_LINE_SOURCE_IDS,
     reorderedTables: ["lines", "operators"],
     belowLowerBoundPattern:
-      /kric-gyeongui-jungang-route-map-positions inventory evidence does not match snapshot/,
+      /kric-gyeongui-jungang-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
   {
     labelKo: "경전철",
@@ -404,7 +399,7 @@ const CAPITAL_INCLUSION_BINDINGS = [
     lineSourceIds: CAPITAL_LIGHT_RAIL_LINE_SOURCE_IDS,
     reorderedTables: ["coverageLineOperatorScopes", "lines", "operators"],
     // 하한 위반은 편입이 체인하는 첫 노선 소스에서 걸린다 — 카탈로그 순서상 신분당선이 첫 노선이다.
-    belowLowerBoundPattern: /kric-shinbundang-route-map-positions inventory evidence does not match snapshot/,
+    belowLowerBoundPattern: /kric-shinbundang-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
   {
     labelKo: "서울 1~8호선",
@@ -413,7 +408,7 @@ const CAPITAL_INCLUSION_BINDINGS = [
     sourceId: CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID,
     evidenceKey: "routeMapAdmissionEvidence",
     reorderedTables: ["lines"],
-    belowLowerBoundPattern: /seoul-metro-route-map-positions inventory evidence does not match snapshot/,
+    belowLowerBoundPattern: /seoul-metro-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
   // 9호선 두 소스는 노선 층 경로 키를 쓰지 않는다 — 한 편입이 소스 하나만 싣기 때문이다. 대신 편입 층에
   // snapshotPath와 topologySnapshotPath를 함께 두고 둘 다 그 소스의 정본에 결속한다.
@@ -425,7 +420,7 @@ const CAPITAL_INCLUSION_BINDINGS = [
     evidenceKey: "routeMapAdmissionEvidence",
     reorderedTables: ["coverageLineOperatorScopes", "lines", "operators"],
     belowLowerBoundPattern:
-      /kric-seoul-metro-line9-1-route-map-positions inventory evidence does not match snapshot/,
+      /kric-seoul-metro-line9-1-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
   {
     labelKo: "9호선 2·3단계",
@@ -437,7 +432,7 @@ const CAPITAL_INCLUSION_BINDINGS = [
     // scope로 내지 않는다) 어느 표도 재정렬하지 않는다 — 선언 키 자체가 없어야 한다.
     reorderedTables: undefined,
     belowLowerBoundPattern:
-      /seoul-metro-line9-23-route-map-positions inventory evidence does not match snapshot/,
+      /seoul-metro-line9-23-route-map-positions route-map admission snapshot is stale or future-dated/,
   },
 ];
 // 인천 편입 3종의 결속 지점·신선도 창 축. 세 편입 모두 [capturedAt, freshUntil) 양끝을 검사하는 창을
@@ -767,15 +762,13 @@ test("대구 route_map/accessibility 6 requirement는 체인 편입으로 MISSIN
       assert.ok(pin >= Date.parse(capturedAt) && pin < Date.parse(freshUntil), `${sourceId} 창`);
     }
   }
-  // 노선도 편입: 신선도 보장이 다른 두 편입과 비대칭이다 — admission 정본에 freshUntil이 없고
-  // materializer도 하한(capturedAt 이후)만 검사해 상한이 없다(먼 미래 pin도 통과함이 실측된다).
-  // 상한 도입 여부는 materializer 쪽 판단이라 이 하네스의 축이 아니며, 여기서는 그 비대칭을 기록한다.
+  // 노선도 편입도 SLA P1Y 반개구간 안의 pin만 허용한다.
   const routeMapEvidence = admissionEvidence(
     "daegu-transportation-route-map-positions",
     "routeMapAdmissionEvidence",
   );
-  assert.equal(routeMapEvidence.freshUntil, undefined, "노선도 admission 정본에는 상한이 없다");
-  assert.ok(pins.get(DAEGU_MATERIALIZERS[1]) >= Date.parse(routeMapEvidence.capturedAt), "노선도 창 하한");
+  const routeMapPin = pins.get(DAEGU_MATERIALIZERS[1]);
+  assert.ok(routeMapPin >= Date.parse(routeMapEvidence.capturedAt) && routeMapPin < Date.parse(routeMapEvidence.freshUntil), "노선도 창");
   // 편의시설 편입: [capturedAt, freshUntil) 양끝을 검사한다.
   const accessibilityEvidence = admissionEvidence(
     "daegu-transportation-accessibility",
@@ -871,8 +864,7 @@ test("부산 20 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 �
   assert.equal(accessibility.addedRows.stationFacilityEvidence, 342);
   assert.equal(accessibility.addedRows.routeMapPositions, 0);
 
-  // pin은 편입마다 따로 두고 각각 그 소스의 admission 창 안이어야 한다. 부산 4소스의 창은 모양이 갈린다 —
-  // topology·시각표·편의시설은 [capturedAt, freshUntil) 양끝을 검사하고 노선도는 상한이 없다.
+  // pin은 편입마다 따로 두고 각각 그 소스의 admission 창 안이어야 한다.
   // 소스 id·evidence 키는 BUSAN_INCLUSION_BINDINGS가 정본이다 — 여기서 다시 인라인으로 쓰면 정본이
   // 갱신돼도 이 블록만 낡은 짝을 보게 된다.
   const inventory = await readJson(INVENTORY_PATH);
@@ -888,12 +880,10 @@ test("부산 20 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 �
     assert.ok(pin >= Date.parse(capturedAt) && pin < Date.parse(freshUntil), `${binding.sourceId} 창`);
   }
   const routeMapEvidence = bindingEvidence(BUSAN_ROUTE_MAP_BINDING);
-  assert.equal(routeMapEvidence.freshUntil, undefined, "부산 노선도 admission 정본에도 상한이 없다");
-  assert.ok(Date.parse(routeMap.materializedAt) >= Date.parse(routeMapEvidence.capturedAt), "노선도 창 하한");
+  assert.ok(Date.parse(routeMap.materializedAt) >= Date.parse(routeMapEvidence.capturedAt)
+    && Date.parse(routeMap.materializedAt) < Date.parse(routeMapEvidence.freshUntil), "노선도 창");
   // 편의시설 창은 상한이 있는 두 창(topology·시각표)과 서로소다 — 그 셋은 pin 하나로 묶는 것이 애초에
-  // 불가능하다. 다만 "부산 네 창이 전부 서로소"는 아니다: 노선도 창은 상한이 없어 [capturedAt, ∞)이고
-  // 편의시설 창을 통째로 품는다(실측: 노선도 pin을 편의시설 capturedAt으로 옮기면 조립이 통과하고
-  // 시각표 capturedAt으로 옮기면 거부된다). 그 포함 관계까지 함께 고정한다.
+  // 불가능하다. 다만 "부산 네 창이 전부 서로소"는 아니다: P1Y 노선도 창이 편의시설 창을 통째로 품는다.
   const accessibilityWindow = bindingEvidence(BUSAN_ACCESSIBILITY_BINDING);
   for (const binding of [BUSAN_TOPOLOGY_BINDING, BUSAN_TIMETABLE_BINDING]) {
     assert.ok(
@@ -903,7 +893,11 @@ test("부산 20 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 �
   }
   assert.ok(
     Date.parse(routeMapEvidence.capturedAt) <= Date.parse(accessibilityWindow.capturedAt),
-    "상한 없는 노선도 창은 편의시설 창을 통째로 품는다",
+    "노선도 창은 편의시설 창보다 먼저 시작한다",
+  );
+  assert.ok(
+    Date.parse(accessibilityWindow.freshUntil) <= Date.parse(routeMapEvidence.freshUntil),
+    "P1Y 노선도 창은 편의시설 창보다 나중에 닫힌다",
   );
 });
 
@@ -987,7 +981,7 @@ test("대전 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
   assert.equal(accessibility.addedRows.routeMapPositions, 0);
 
   // pin은 편입마다 따로 두고 각각 그 소스의 창 안이어야 한다. 대전 세 창은 서로소인데, 그 서로소가
-  // 성립하는 이유가 광주와 다르므로(상한 없는 노선도 창의 하한이 편의시설 창 상한보다 늦다) 그 부등식을
+  // 성립하는 이유가 광주와 다르므로(P1Y 노선도 창의 하한이 편의시설 창 상한보다 늦다) 그 부등식을
   // 직접 고정한다 — spec 서술이 실측과 갈리면 여기서 깨진다.
   const inventory = await readJson(INVENTORY_PATH);
   assertPinsInsideWindows(inventory, evidence, DAEJEON_INDEX, DAEJEON_INCLUSION_BINDINGS);
@@ -1001,15 +995,15 @@ test("대전 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
     "daejeon-transportation-accessibility",
     "accessibilityAdmissionEvidence",
   );
-  assert.equal(daejeonRouteMap.freshUntil, undefined, "대전 노선도 정본에는 상한이 없다");
+  assert.ok(Date.parse(daejeonRouteMap.freshUntil) > Date.parse(daejeonRouteMap.capturedAt));
   assert.ok(
     Date.parse(daejeonRouteMap.capturedAt) >= Date.parse(daejeonAccessibility.freshUntil),
-    "대전은 상한 없는 노선도 창이 편의시설 창보다 뒤에서 시작해 두 창이 서로소다",
+    "대전은 P1Y 노선도 창이 편의시설 창보다 뒤에서 시작해 두 창이 서로소다",
   );
 });
 
 // pin이 그 편입의 창 [하한, 상한) 안인지 본다. 이 배치의 시각표 편입은 창 경계가 서로 다른 정본에서
-// 오므로 경계 값을 binding 기술대로 끌어온다. 상한이 없는 편입은 하한만 본다.
+// 오므로 경계 값을 binding 기술대로 끌어온다.
 function assertPinsInsideWindows(inventory, evidence, regionIndex, bindings) {
   for (const binding of bindings) {
     const pin = Date.parse(evidence.packDataInclusions.entries[regionIndex + binding.offset].materializedAt);
@@ -1019,14 +1013,6 @@ function assertPinsInsideWindows(inventory, evidence, regionIndex, bindings) {
       binding.lowerBound.evidenceKey,
     )[binding.lowerBound.field];
     assert.ok(pin >= Date.parse(lower), `${binding.sourceId} 창 하한`);
-    if (binding.upperBound === undefined) {
-      assert.equal(
-        admissionEvidenceOf(inventory, binding.sourceId, binding.evidenceKey).freshUntil,
-        undefined,
-        `${binding.sourceId} 정본에는 상한이 없다`,
-      );
-      continue;
-    }
     const upper = admissionEvidenceOf(
       inventory,
       binding.upperBound.sourceId,
@@ -1075,8 +1061,8 @@ test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
   assert.equal(schedule.supportingRecordCountByField.stop_time, 13_360);
   assert.equal(timetable.addedRows.transitStopTimes - schedule.supportingRecordCountByField.stop_time, 811);
 
-  // 광주 세 창의 관계는 대전과 다르다 — 상한 없는 노선도 창의 하한이 편의시설 창 상한보다 이르러 두 창이
-  // 한 시간을 공유한다. "상한이 없으면 늘 다른 창을 품는다"도 "지역 안 창은 늘 서로소다"도 아니라는 뜻이라
+  // 광주 세 창의 관계는 대전과 다르다 — P1Y 노선도 창의 하한이 편의시설 창 상한보다 이르러 두 창이
+  // 한 시간을 공유한다. "노선도 창은 늘 다른 창을 품는다"도 "지역 안 창은 늘 서로소다"도 아니라는 뜻이라
   // 실측 부등식을 그대로 고정한다.
   const inventory = await readJson(INVENTORY_PATH);
   assertPinsInsideWindows(inventory, evidence, GWANGJU_INDEX, GWANGJU_INCLUSION_BINDINGS);
@@ -1090,11 +1076,11 @@ test("광주 5 requirement는 체인 편입으로 MISSING에서 SUPPORTED로 전
     "gwangju-transportation-accessibility",
     "accessibilityAdmissionEvidence",
   );
-  assert.equal(gwangjuRouteMap.freshUntil, undefined, "광주 노선도 정본에도 상한이 없다");
+  assert.ok(Date.parse(gwangjuRouteMap.freshUntil) > Date.parse(gwangjuRouteMap.capturedAt));
   assert.ok(
     Date.parse(gwangjuRouteMap.capturedAt) < Date.parse(gwangjuAccessibility.freshUntil)
       && Date.parse(gwangjuRouteMap.capturedAt) >= Date.parse(gwangjuAccessibility.capturedAt),
-    "광주는 상한 없는 노선도 창이 편의시설 창 안에서 시작해 두 창이 겹친다",
+    "광주는 P1Y 노선도 창이 편의시설 창 안에서 시작해 두 창이 겹친다",
   );
   // 시각표 편입 창은 두 창 모두와 서로소다(상한이 편의시설 창 하한보다 앞에서 닫힌다).
   const gwangjuScheduleUpper = admissionEvidenceOf(
@@ -1798,14 +1784,25 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     );
   });
 
-  // 편입마다 신선도 창이 다르므로 기준 시각 pin도 편입 단위다. 다만 노선도 편입의 창은 하한뿐이라
-  // 다른 두 편입(시각표·편의시설의 [capturedAt, freshUntil))과 신선도 보장이 비대칭이다 — 포착 이전
-  // pin만 fail closed 되고 먼 미래 pin은 통과한다. 상한 도입은 materializer 쪽 판단이라 여기서
-  // 동작으로 고정하지 않고 비대칭을 기록만 한다.
-  await context.test("노선도 편입 기준 시각을 snapshot 포착 이전으로 옮기면 거부된다(하한만 검사·상한 없음)", async () => {
+  // 노선도 편입도 P1Y 반개구간의 양끝을 fail closed 한다.
+  await context.test("노선도 편입 기준 시각을 snapshot 포착 이전으로 옮기면 거부된다", async () => {
     await rejectsWith(
       (value) => { value.packDataInclusions[1].materializedAt = "2026-07-20T16:00:00.000Z"; },
-      /daegu-transportation-route-map-positions inventory evidence does not match snapshot/,
+      /daegu-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
+    );
+  });
+
+  await context.test("노선도 편입 기준 시각을 P1Y 상한으로 옮기면 거부된다", async () => {
+    const inventory = await readJson(INVENTORY_PATH);
+    const freshUntil = admissionEvidenceOf(
+      inventory,
+      "daegu-transportation-route-map-positions",
+      "routeMapAdmissionEvidence",
+    ).freshUntil;
+    await rejectsWith(
+      (value) => { value.packDataInclusions[0].materializedAt = freshUntil; },
+      /daegu-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
+      { solo: 1 },
     );
   });
 
@@ -1915,7 +1912,7 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   });
 
   // pin 창 회귀도 편입 단위다. 편입 하나의 창만 덮으면 나머지 세 창이 풀려도 침묵하는데, 창 모양이
-  // 편입마다 갈리므로(양끝 검사 3편입 / 하한만 1편입) 한 편입의 통과가 다른 편입의 근거가 되지도
+  // 편입마다 갈리므로 한 편입의 통과가 다른 편입의 근거가 되지도
   // 않는다. 창 값은 admission 정본에서 끌어와 하한 직전(capturedAt - 1ms)과 상한 정각(freshUntil,
   // 반개구간이라 이미 창 밖)을 각각 때린다.
   for (const { labelKo, offset, sourceId, evidenceKey, stalePinPattern } of BUSAN_INCLUSION_BINDINGS) {
@@ -1929,8 +1926,6 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
         { solo: BUSAN_TOPOLOGY_INDEX + offset },
       );
     });
-    // 노선도 편입의 창에는 상한이 없다 — 그 비대칭은 아래 별도 축이 "먼 미래 pin도 통과한다"로 고정한다.
-    if (freshUntil === undefined) continue;
     await context.test(`부산 ${labelKo} 편입 기준 시각을 창 상한 이상으로 옮기면 거부된다`, async () => {
       await rejectsWith(
         (value) => { value.packDataInclusions[0].materializedAt = freshUntil; },
@@ -2070,16 +2065,16 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
     });
   }
 
-  // 수도권 다섯 편입의 창에는 상한이 없다(정본에 freshUntil이 없고 materializer도 하한만 검사한다).
+  // 수도권 노선도 편입도 P1Y 반개구간을 공유한다.
   // 하한은 광역·경전철에서 노선마다 따로 있지만 값이 모두 같아 편입 하나의 pin이 여덟/다섯 하한을 함께
   // 만족한다 — 그 "값이 같다"는 사실부터 정본에서 확인하고, 하한 위반은 첫 노선 소스에서 걸린다.
   for (const { labelKo, offset, lineSourceIds, sourceId, belowLowerBoundPattern } of CAPITAL_INCLUSION_BINDINGS) {
     const sourceIds = lineSourceIds ?? [sourceId];
     const windows = sourceIds.map((id) => admissionEvidenceOf(inventory, id, "routeMapAdmissionEvidence"));
-    await context.test(`수도권 ${labelKo} 편입 소스의 창은 상한이 없고 하한이 하나로 모인다`, () => {
+    await context.test(`수도권 ${labelKo} 편입 소스의 P1Y 창이 하나로 모인다`, () => {
       for (const window of windows) {
-        assert.equal(window.freshUntil, undefined, "수도권 노선도 정본에는 상한이 없다");
         assert.equal(window.capturedAt, windows[0].capturedAt, "한 편입이 싣는 소스의 하한은 모두 같다");
+        assert.equal(window.freshUntil, windows[0].freshUntil, "한 편입이 싣는 소스의 상한은 모두 같다");
       }
     });
     await context.test(`수도권 ${labelKo} 편입 기준 시각을 창 하한 미만으로 옮기면 거부된다`, async () => {
@@ -2089,6 +2084,13 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
             new Date(Date.parse(windows[0].capturedAt) - 1).toISOString();
         },
         belowLowerBoundPattern,
+        { solo: CAPITAL_INDEX + offset },
+      );
+    });
+    await context.test(`수도권 ${labelKo} 편입 기준 시각을 창 상한 이상으로 옮기면 거부된다`, async () => {
+      await rejectsWith(
+        (value) => { value.packDataInclusions[0].materializedAt = windows[0].freshUntil; },
+        /route-map admission snapshot is stale or future-dated/,
         { solo: CAPITAL_INDEX + offset },
       );
     });
@@ -2510,15 +2512,10 @@ test("candidate 안전 경계는 spec 편집만으로 넓힐 수 없다", async 
   });
 });
 
-// 부산 편입 넷 중 노선도만 신선도 창에 상한이 없다 — admission 정본에 freshUntil이 없고 materializer도
-// 하한(capturedAt 이후)만 검사한다. 하한 미만은 위 회귀가 fail closed로 고정하지만 상한 쪽에는 가드가
-// 아예 없어 100년 뒤 pin도 조립을 완주하고 판정까지 그대로 낸다. 상한 도입은 materializer 쪽 판단이라
-// 이 하네스가 동작으로 바꾸지 않고, 그 비대칭이 의도된 기록이라는 것을 성질 자체로 고정한다 — 나중에
-// 상한이 생기면 이 단언이 깨져 spec·evidence 서술까지 함께 고치도록 강제한다.
-test("부산 노선도 편입은 상한이 없어 먼 미래 기준 시각도 조립을 통과한다", async () => {
-  const fullSpec = await readJson(SPEC_PATH);
-  const trackedSpec = structuredClone(fullSpec);
-  const spec = structuredClone(fullSpec);
+// 부산 노선도 P1Y 반개구간의 상한은 downstream builder 전에 fail closed 한다. #2641의 경량
+// inclusion seam을 사용해 이 단언 하나 때문에 full candidate gate를 반복하지 않는다.
+test("부산 노선도 편입은 P1Y 상한에서 거부된다", async () => {
+  const spec = await readJson(SPEC_PATH);
   const inventory = await readJson(INVENTORY_PATH);
   const inherited = await readJson(REVIEWED_PACK_PATH);
   const { capturedAt, freshUntil } = admissionEvidenceOf(
@@ -2526,26 +2523,18 @@ test("부산 노선도 편입은 상한이 없어 먼 미래 기준 시각도 �
     BUSAN_ROUTE_MAP_BINDING.sourceId,
     BUSAN_ROUTE_MAP_BINDING.evidenceKey,
   );
-  assert.equal(freshUntil, undefined, "이 축은 노선도 정본에 상한이 없다는 전제 위에 있다");
-  const farFuture = capturedAt.replace(/^\d{4}/, (year) => String(Number(year) + 100));
+  assert.ok(Date.parse(freshUntil) > Date.parse(capturedAt));
   const index = BUSAN_TOPOLOGY_INDEX + BUSAN_ROUTE_MAP_BINDING.offset;
-  spec.packDataInclusions[index].materializedAt = farFuture;
+  const routeMapInclusion = structuredClone(spec.packDataInclusions[index]);
+  routeMapInclusion.materializedAt = freshUntil;
   spec.packDataInclusions = [
     spec.packDataInclusions[BUSAN_TOPOLOGY_INDEX],
-    spec.packDataInclusions[index],
+    routeMapInclusion,
   ];
-  trackedSpec.packDataInclusions = [
-    trackedSpec.packDataInclusions[BUSAN_TOPOLOGY_INDEX],
-    trackedSpec.packDataInclusions[index],
-  ];
-
-  const tracked = await applyPackDataInclusions(trackedSpec, inherited, inventory);
-  const inclusions = await applyPackDataInclusions(spec, inherited, inventory);
-  assert.equal(inclusions.records[1].materializedAt, farFuture);
-  assert.deepEqual(inclusions.pack, tracked.pack, "미래 pin은 downstream builder 입력을 바꾸지 않아야 한다");
-
-  const evidence = await readJson(EVIDENCE_PATH);
-  assertDeclaredTransitionsMatchVariants(fullSpec, evidence.variants);
+  await assert.rejects(
+    () => applyPackDataInclusions(spec, inherited, inventory),
+    /busan-transportation-route-map-positions route-map admission snapshot is stale or future-dated/,
+  );
 });
 
 // 노선도 편입의 하한 회귀는 나머지 셋과 진단 특정성이 비대칭이다: 시각표·편의시설은 신선도 전용 문구
