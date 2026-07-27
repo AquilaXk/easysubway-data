@@ -316,6 +316,8 @@ export async function runNationwideCandidateCoverageGate({
   // 지역 데이터 편입은 두 variant가 공유한다. line-scope 재기술은 소스 기술만 바꾸므로 편입 결과가
   // variant마다 달라질 수 없고, 한 번만 조립해 두 실행이 같은 행 바이트를 쓰는 것을 구조로 보장한다.
   const inclusions = await applyPackDataInclusions(spec, inherited, inventory, materializers);
+  const targets = (await readJsonInput(targetsInput.path)).document;
+  assertLineScopeRedescriptionsMatchActualRequiredSet(spec, inclusions.pack, inventory, targets);
 
   const signing = ephemeralSigningKeys();
   const variants = {};
@@ -1368,6 +1370,113 @@ function assertInventoryLineScopeSync(spec, inventory) {
       }
     }
   }
+}
+
+// candidate pack에 실제로 실린 line-scope 소스가 LAUNCH_REQUIRED scope를 뒷받침하면, 그 근거는
+// lineScopeRedescriptions에 source/domain 단위로 빠짐없이 재기술돼야 한다. 선언 목록을 기준으로
+// fixture·baseline을 조립하면 선언을 지운 실제 소스가 두 variant에 함께 남아 fail open하므로, pack ×
+// tracked inventory × coverage targets에서 actual required set을 역으로 유도해 양방향 exact-match 한다.
+export function assertLineScopeRedescriptionsMatchActualRequiredSet(spec, pack, inventory, targets) {
+  const launchRequiredDomains = new Set(
+    (targets.requiredSourceDomains ?? [])
+      .filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED")
+      .map(({ id }) => requiredString(id, "coverage target requiredSourceDomains[].id")),
+  );
+  const activeLineScopes = targets.activeLineScopes ?? [];
+  const inventoryById = new Map((inventory.sources ?? []).map((source) => [source.id, source]));
+  const actual = new Map();
+  const sourcesById = new Map();
+
+  for (const packSource of pack.sourceInventory ?? []) {
+    const sourceId = requiredString(packSource?.id, "candidate pack sourceInventory[].id");
+    const inventorySource = inventoryById.get(sourceId);
+    const packScope = packSource.coverageScope;
+    if (!inventorySource) {
+      if (packScope?.lineIds?.length) {
+        throw new Error(`line-scoped candidate pack source is missing from source inventory: ${sourceId}`);
+      }
+      continue;
+    }
+    const inventoryScope = inventorySource.coverageScope;
+    if (!inventoryScope?.lineIds?.length) {
+      if (packScope?.lineIds?.length) {
+        throw new Error(`candidate pack coverageScope.lineIds must match source inventory: ${sourceId}`);
+      }
+      continue;
+    }
+    // inclusions.pack은 재기술을 덮기 전 원형이다. 기존 source는 여기서 lineIds가 없고,
+    // lineScoped fixture에서만 spec 값이 주입된다. tracked inventory가 그 후보 line scope의 정본이며,
+    // 원형에 이미 lineIds가 있는 신규 source라면 둘의 집합이 같아야 한다.
+    if (packScope?.lineIds && !sameStringSet(packScope.lineIds, inventoryScope.lineIds)) {
+      throw new Error(`candidate pack coverageScope.lineIds must match source inventory: ${sourceId}`);
+    }
+    sourcesById.set(sourceId, { packScope, inventoryScope });
+  }
+
+  const addActualRequirement = (sourceId, requirementKey) => {
+    const { regionId, operatorId, lineId, sourceDomain } = parseRequirementKey(
+      requirementKey,
+      "line-scoped coverage requirement",
+    );
+    if (!launchRequiredDomains.has(sourceDomain)) return;
+    const source = sourcesById.get(sourceId);
+    if (!source) return;
+    const { packScope, inventoryScope } = source;
+    if (!inventoryScope.lineIds.includes(lineId)
+      || !packScope?.sourceDomains?.includes(sourceDomain)
+      || !packScope.regionIds?.includes(regionId)
+      || !packScope.operatorIds?.includes(operatorId)
+      || !inventoryScope.sourceDomains?.includes(sourceDomain)
+      || !inventoryScope.regionIds?.includes(regionId)
+      || !inventoryScope.operatorIds?.includes(operatorId)
+      || !activeLineScopes.some((scope) =>
+        scope.regionId === regionId && scope.operatorId === operatorId && scope.lineId === lineId,
+      )) {
+      return;
+    }
+    const key = `${sourceId}:${sourceDomain}`;
+    const entry = actual.get(key) ?? { sourceId, sourceDomain, lineIds: inventoryScope.lineIds, requirementKeys: [] };
+    if (!entry.requirementKeys.includes(requirementKey)) entry.requirementKeys.push(requirementKey);
+    actual.set(key, entry);
+  };
+
+  // report/provenance는 materializer 편입 순서에 따라 supporting-source 표현이 달라질 수 있다. actual
+  // required set은 오직 candidate pack에 존재하는 source와 tracked inventory, coverage target의 active
+  // scope 교집합에서 유도한다. 따라서 순서 허용 조립은 이 선언 대조에 영향을 줄 수 없다.
+  for (const { regionId, operatorId, lineId } of activeLineScopes) {
+    for (const sourceDomain of launchRequiredDomains) {
+      const key = `${regionId}:${operatorId}:${lineId}:${sourceDomain}`;
+      for (const sourceId of sourcesById.keys()) addActualRequirement(sourceId, key);
+    }
+  }
+
+  const declared = new Map();
+  for (const redescription of spec.lineScopeRedescriptions) {
+    const key = `${redescription.sourceId}:${redescription.sourceDomain}`;
+    if (declared.has(key)) throw new Error(`duplicate declared line-scope source/domain: ${key}`);
+    declared.set(key, redescription);
+  }
+
+  if (actual.size !== declared.size) {
+    throw new Error(
+      "line-scope redescriptions must exactly match the actual required set: "
+        + `actual=${[...actual.keys()].sort(codepointCompare).join(",")}, `
+        + `declared=${[...declared.keys()].sort(codepointCompare).join(",")}`,
+    );
+  }
+  for (const [key, required] of actual) {
+    const redescription = declared.get(key);
+    if (!redescription
+      || !sameStringSet(redescription.lineIds, required.lineIds)
+      || !sameStringSet(redescription.requirementKeys, required.requirementKeys)) {
+      throw new Error(`line-scope redescriptions must exactly match the actual required set: ${key}`);
+    }
+  }
+}
+
+function sameStringSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  return JSON.stringify([...left].sort(codepointCompare)) === JSON.stringify([...right].sort(codepointCompare));
 }
 
 function summarizeVariant(spec, report, provenance) {
