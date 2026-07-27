@@ -49,6 +49,13 @@ const CAPITAL_GEO = Object.freeze({
 const LAT_LON_SWAP_LON_AS_LAT = Object.freeze({ min: 33, max: 43 });
 const LAT_LON_SWAP_LAT_AS_LON = Object.freeze({ min: 124, max: 132 });
 
+// 광역철도 카탈로그와 같은 축이다. additionalCoverageOperators는 admission 정본이 dual coverage로 등재한
+// 두 번째 운영기관을 저장소 정본으로 적는 자리이며, materializer가 [operatorId, ...additional]을 정본과
+// 전량 대조한다 — 카탈로그·정본 어느 한쪽 편집만으로는 운영기관 범위를 넓힐 수 없다.
+//
+// lineageOnlyOperatorIds는 그 등재 집합 안에서 "정본 대조에는 쓰되 pack coverage scope로는 내지 않는"
+// 항목을 가른다. FILE admission 당시 표기가 노선 운영기관과 다른 노선에서 두 표기를 그대로 scope 행으로
+// 내면 #2138 activeLineScopes에 대응이 없는 (운영기관, 노선) 결속이 datapack 조립까지 흘러간다.
 const LINE_DEFINITIONS = Object.freeze([
   {
     key: "shinbundang",
@@ -57,6 +64,13 @@ const LINE_DEFINITIONS = Object.freeze([
     slug: "shinbundang",
     operatorId: "seoul-metro",
     operatorNameKo: "서울교통공사",
+    // operatorId(서울교통공사)는 FILE admission 당시 표기를 유지하는 계보 항목이라 #2138 activeLineScopes에
+    // 대응 scope가 없다. requirement에 매칭되는 것은 노선 운영기관인 네오트랜스다(admission 정본 서술) —
+    // 그래서 정본 대조에는 두 표기를 함께 쓰고 pack scope로는 네오트랜스만 낸다.
+    additionalCoverageOperators: Object.freeze([
+      Object.freeze({ operatorId: "operator-28e01fb8509d", nameKo: "네오트랜스" }),
+    ]),
+    lineageOnlyOperatorIds: Object.freeze(["seoul-metro"]),
     lineNameKo: "수도권 신분당",
     lineNameEn: "Shinbundang Line",
     lineColor: "#d4003b",

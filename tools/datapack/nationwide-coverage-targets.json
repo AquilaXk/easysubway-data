@@ -150,7 +150,9 @@
       ],
       "blockingThreshold": {
         "minimumOfficialFieldCoverageRatio": 1
-      }
+      },
+      "evidenceModel": "owner-authored-canonical",
+      "evidenceModelReasonKo": "이 도메인의 정본 좌표 소스는 오너 자작 도식이다. 도식 위 좌표를 공표하는 공식 기관이 존재하지 않으므로 이 도메인에 official position evidence를 요구하지 않는다. 이 도메인에서 공식 데이터의 역할은 역 신원 식별과 provenance이며(stationCode/역명 join, 위경도는 provenance 보존), 좌표 자체의 정본은 오너 제작물이다. 이 선언은 판정을 느슨하게 하는 스위치가 아니라 근거의 성격을 적는 축이다 — requiredFields 충족 요건과 blockingThreshold는 그대로이며, 공식 데이터가 신원·provenance를 대는 축은 약화되지 않는다."
     },
     {
       "id": "demand_reference",

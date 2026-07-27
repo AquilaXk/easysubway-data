@@ -9142,6 +9142,179 @@ test("전국 coverage v2는 LAUNCH_REQUIRED domain이 없는 target을 거부한
   );
 });
 
+// #2138 증거 모델 축. route_map_positions는 도식 위 좌표를 공표하는 공식 기관이 없어 정본이 오너
+// 자작 도식이고 공식 데이터는 역 신원 식별·provenance를 댄다. 그 성격을 판정 경로가 읽는 필드로 적되,
+// 판정 자체는 한 톨도 느슨해지지 않는다는 것이 이 축의 계약이다.
+test("전국 coverage v2는 domain 증거 모델 선언을 판정 레코드에 싣고 판정은 그대로 둔다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-evidence-model-"));
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+
+  await execFileAsync(process.execPath, [
+    "tools/datapack/report-coverage-gaps.mjs",
+    "--targets", "tools/datapack/nationwide-coverage-targets.json",
+    "--inventory", "tools/datapack/source-inventory.json",
+    "--output", reportPath,
+    "--allow-gaps",
+  ], { cwd: root });
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+
+  const routeMapDomain = targets.requiredSourceDomains.find(({ id }) => id === "route_map_positions");
+  assert.equal(routeMapDomain.evidenceModel, "owner-authored-canonical");
+  assert.match(routeMapDomain.evidenceModelReasonKo, /좌표를 공표하는 공식 기관이 존재하지 않으므로/);
+  // 선언하지 않은 도메인은 기본값으로 기록된다 — 기존 계약이 그대로 유지된다는 하위 호환 축이다.
+  for (const domain of targets.requiredSourceDomains) {
+    const rows = report.requirements.filter((entry) => entry.sourceDomain === domain.id);
+    assert.ok(rows.length > 0, domain.id);
+    for (const row of rows) {
+      assert.equal(row.evidenceModel, domain.evidenceModel ?? "official-source", domain.id);
+    }
+  }
+  // 선언이 판정을 열어 주지 않는다: 근거 provenance 없이 돌린 이 실행에서 route_map_positions는 다른
+  // 도메인과 똑같이 MISSING이고 분모·차단 임계도 선언 전과 같다.
+  for (const row of report.requirements.filter((entry) => entry.sourceDomain === "route_map_positions")) {
+    assert.equal(row.status, "MISSING");
+    assert.equal(row.denominator, routeMapDomain.requiredFields.length);
+    assert.equal(row.blockingThreshold, routeMapDomain.blockingThreshold.minimumOfficialFieldCoverageRatio);
+    assert.deepEqual(row.missingFields, routeMapDomain.requiredFields);
+  }
+});
+
+test("전국 coverage v2는 등재되지 않은 domain 증거 모델과 사유 없는 선언을 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-evidence-model-guard-"));
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+
+  const runWith = async (mutate, expected) => {
+    const mutated = structuredClone(targets);
+    mutate(mutated.requiredSourceDomains.find(({ id }) => id === "route_map_positions"));
+    const targetsPath = path.join(outputDir, `targets-${Date.now()}-${Math.random()}.json`);
+    await writeFile(targetsPath, `${JSON.stringify(mutated, null, 2)}\n`);
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", targetsPath,
+      "--inventory", "tools/datapack/source-inventory.json",
+      "--output", path.join(outputDir, "report.json"),
+      "--allow-gaps",
+    ], { cwd: root }), expected);
+  };
+
+  await runWith(
+    (domain) => { domain.evidenceModel = "owner-declared"; },
+    /route_map_positions\.evidenceModel must be one of official-source,owner-authored-canonical/,
+  );
+  await runWith(
+    (domain) => { delete domain.evidenceModelReasonKo; },
+    /route_map_positions\.evidenceModelReasonKo is required/,
+  );
+  // 사유만 남기고 모델 선언을 지우면 아무것도 하지 않는 죽은 서술이 된다 — 그것도 거부한다.
+  await runWith(
+    (domain) => { delete domain.evidenceModel; },
+    /route_map_positions\.evidenceModelReasonKo requires evidenceModel/,
+  );
+});
+
+// #2138이 production 유입을 거부하는 범주. 선언한 소스가 requirement를 하나라도 뒷받침하면 판정을 내지
+// 않는다. 현재 선언한 소스는 0건이라 판정은 그대로이고, 이 축은 그 경계를 기계로 옮긴 것이다.
+// 전국 targets(schemaVersion 2)는 provenance 없이는 어떤 소스도 뒷받침 소스로 세지 않으므로, 소스가 실제로
+// requirement를 뒷받침하는 pilot 계약(schemaVersion 1)으로 이 축을 때린다.
+test("coverage 게이트는 placeholder-fixture 소스가 requirement를 지원하면 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-placeholder-"));
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const targetsPath = "tools/datapack/capital-pilot-coverage-targets.json";
+  const targets = JSON.parse(await readFile(path.join(root, targetsPath), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const runWith = async (sources, name) => {
+    const inventoryPath = path.join(outputDir, name);
+    await writeFile(inventoryPath, `${JSON.stringify({ ...inventory, sources }, null, 2)}\n`);
+    return execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", targetsPath,
+      "--inventory", inventoryPath,
+      "--output", reportPath,
+      "--allow-gaps",
+    ], { cwd: root });
+  };
+  const withFirst = (extra) => inventory.sources.map((source, index) => (
+    index === 0 ? { ...source, ...extra } : source
+  ));
+
+  // 선언 없는 inventory는 그대로 통과하고 그 소스가 실제로 requirement를 뒷받침한다(하위 호환 + 전제 확인).
+  await runWith(inventory.sources, "baseline-inventory.json");
+  const baseline = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.ok(baseline.requirements.some((entry) => entry.sourceIds.includes(inventory.sources[0].id)));
+
+  await assert.rejects(
+    runWith(
+      withFirst({ evidenceCategory: "placeholder-fixture", evidenceCategoryReasonKo: "진짜 데이터 도착 전 임시값" }),
+      "placeholder-inventory.json",
+    ),
+    new RegExp(`is supported by placeholder-fixture sources: ${inventory.sources[0].id}`),
+  );
+
+  // 범주 값은 열거형이고 사유를 함께 요구한다 — 자유 문자열 선언으로 이 축을 비껴갈 수 없다.
+  await assert.rejects(
+    runWith(
+      withFirst({ evidenceCategory: "draft", evidenceCategoryReasonKo: "임시" }),
+      "bad-category-inventory.json",
+    ),
+    /evidenceCategory must be one of placeholder-fixture/,
+  );
+  await assert.rejects(
+    runWith(withFirst({ evidenceCategory: "placeholder-fixture" }), "no-reason-inventory.json"),
+    /evidenceCategoryReasonKo is required/,
+  );
+  await assert.rejects(
+    runWith(withFirst({ evidenceCategoryReasonKo: "모델 없는 죽은 서술" }), "no-category-inventory.json"),
+    /evidenceCategoryReasonKo requires evidenceCategory/,
+  );
+});
+
+// 같은 축의 두 번째 경로. 전국 라벨 경로에만 회귀가 있으면 게시 차단 판정이 실제로 도는 release-scope
+// 평가에서 같은 유입이 열려도 회귀가 침묵한다 — 그 경로를 따로 때린다.
+// 축 분리 방법: 전국 계약(schemaVersion 2)은 provenance 없이는 어떤 소스도 뒷받침 소스로 세지 않으므로
+// provenance 없이 돌리면 전국 경로는 조용하고, pilot 계약(schemaVersion 1)으로 도는 release-scope
+// 경로에서만 소스가 requirement를 뒷받침한다.
+test("coverage 게이트는 release scope 평가에서도 placeholder-fixture 소스 지원을 거부한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-coverage-placeholder-scope-"));
+  const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
+  const inventory = completeCoverageInventory(targets);
+  const runWith = async (sources, name) => {
+    const inventoryPath = path.join(outputDir, name);
+    await writeFile(inventoryPath, `${JSON.stringify({ ...inventory, sources }, null, 2)}\n`);
+    return execFileAsync(process.execPath, [
+      "tools/datapack/report-coverage-gaps.mjs",
+      "--targets", "tools/datapack/nationwide-coverage-targets.json",
+      "--inventory", inventoryPath,
+      "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+      "--output", reportPath,
+      "--allow-gaps",
+    ], { cwd: root });
+  };
+
+  await runWith(inventory.sources, "scope-baseline-inventory.json");
+  const baseline = JSON.parse(await readFile(reportPath, "utf8"));
+  // 전제 확인: 전국 경로에는 뒷받침 소스가 하나도 없고 release-scope 경로에는 있다 — 이 회귀가 겨냥한
+  // 분기에 실제로 닿는다는 뜻이다(전국 경로가 먼저 걸리면 축이 갈린다).
+  assert.ok(baseline.requirements.every(({ sourceIds }) => sourceIds.length === 0));
+  const scopeSourceIds = [...new Set(baseline.releaseScopeRequirements.flatMap(({ sourceIds }) => sourceIds))];
+  assert.ok(scopeSourceIds.length > 0);
+
+  await assert.rejects(
+    runWith(
+      inventory.sources.map((source) => (scopeSourceIds.includes(source.id)
+        ? {
+          ...source,
+          evidenceCategory: "placeholder-fixture",
+          evidenceCategoryReasonKo: "진짜 데이터 도착 전 임시값",
+        }
+        : source)),
+      "scope-placeholder-inventory.json",
+    ),
+    /release scope requirement .+ is supported by placeholder-fixture sources: /,
+  );
+});
+
 test("전국 coverage v2는 line-scoped inventory만으로 지원 완료를 선언하지 않는다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-provenance-required-${Date.now()}`);
   const inventoryPath = path.join(outputDir, "source-inventory.json");

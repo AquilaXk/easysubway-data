@@ -38,7 +38,9 @@ export function materializeCapitalLightRailRouteMapPositions({
   }
 
   validateTopologyLineage(source.routeMapAdmissionEvidence, topologySnapshot, line);
-  ensureOperator(pack, line.operatorId, line.operatorNameKo);
+  for (const { operatorId, nameKo } of coverageOperators(line)) {
+    ensureOperator(pack, operatorId, nameKo);
+  }
   ensureLine(pack, line);
   ensureCoverageLineOperatorScopes(fixture, pack, line);
   const stations = ensureStationsAndMembership(pack, snapshot, line);
@@ -111,6 +113,41 @@ export function materializedCapitalLightRailRouteMapPackContentHash(pack, versio
   return sha256(JSON.stringify({ version, content }));
 }
 
+// 이 노선을 덮는 운영기관 집합(저장소 정본). 노선 자체의 운영기관이 항상 첫 항목이며, 노선을 나눠
+// 운영하는(또는 FILE 계보 표기와 노선 운영기관이 갈리는) 두 번째 사업자가 있으면 카탈로그가
+// additionalCoverageOperators로 등재한다. 이 집합은 admission 정본(coverageScope.operatorIds)과 순서까지
+// 전량 대조되고 운영기관 등재에도 같이 쓰이므로, 카탈로그가 임의 운영기관을 주장하면 정본 대조에서
+// 그대로 거부된다.
+function coverageOperators(line) {
+  const additional = line.additionalCoverageOperators ?? [];
+  const operators = [{ operatorId: line.operatorId, nameKo: line.operatorNameKo }, ...additional];
+  const operatorIds = operators.map(({ operatorId }) => operatorId);
+  if (new Set(operatorIds).size !== operatorIds.length
+    || operators.some(({ operatorId, nameKo }) => typeof operatorId !== "string" || operatorId.trim() === ""
+      || typeof nameKo !== "string" || nameKo.trim() === "")) {
+    throw new Error(`${line.sourceId} coverage operators are invalid`);
+  }
+  return operators;
+}
+
+// pack coverage scope 행으로 낼 운영기관. 계보 항목(lineageOnlyOperatorIds)은 admission 정본 대조와
+// 운영기관 등재에는 그대로 쓰되 scope 행으로는 내지 않는다 — 그 표기는 #2138 activeLineScopes에 대응이
+// 없어, 행으로 내면 근거 없는 (운영기관, 노선) 결속이 pack에 남는다. 카탈로그가 등재 집합 밖 id를
+// 계보로 적거나 모든 운영기관을 계보로 적으면(그 노선의 scope가 사라진다) 그 자리에서 거부한다.
+function scopeOperators(line) {
+  const operators = coverageOperators(line);
+  const lineageOnly = line.lineageOnlyOperatorIds ?? [];
+  const operatorIds = new Set(operators.map(({ operatorId }) => operatorId));
+  if (lineageOnly.some((operatorId) => !operatorIds.has(operatorId))) {
+    throw new Error(`${line.sourceId} lineage-only operators are not coverage operators`);
+  }
+  const scoped = operators.filter(({ operatorId }) => !lineageOnly.includes(operatorId));
+  if (scoped.length === 0) {
+    throw new Error(`${line.sourceId} coverage scope operators are empty`);
+  }
+  return scoped;
+}
+
 function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, line, now) {
   const source = inventory?.sources?.find(({ id }) => id === line.sourceId);
   const evidence = source?.routeMapAdmissionEvidence;
@@ -146,7 +183,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, l
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
-      operatorIds: [line.operatorId],
+      operatorIds: coverageOperators(line).map(({ operatorId }) => operatorId),
       lineIds: [line.lineId],
       sourceDomains: ["route_map_positions"],
     })
@@ -212,11 +249,11 @@ function ensureLine(pack, line) {
 }
 
 function ensureCoverageLineOperatorScopes(fixture, pack, line) {
-  const scopes = [{
+  const scopes = scopeOperators(line).map(({ operatorId }) => ({
     regionId: "capital",
-    operatorId: line.operatorId,
+    operatorId,
     lineId: line.lineId,
-  }];
+  }));
   const packScopes = [...(pack.coverageLineOperatorScopes ?? [])];
   for (const scope of scopes) {
     if (!packScopes.some((entry) => (

@@ -12,6 +12,9 @@ const MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-gwangju-membership";
 const MEMBERSHIP_RAW_SOURCE_ID = "molit-urban-rail-full-route";
 const OPERATOR_ID = "gwangju-metropolitan-rapid-transit";
 const LINE_ID = "line-e57a361e8892";
+export const GWANGJU_LINES = Object.freeze([
+  Object.freeze({ lineNumber: 1, lineId: LINE_ID }),
+]);
 const PACK_ID = "nationwide-gwangju-schedule";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const STATION_CODES = Object.freeze(Array.from({ length: 20 }, (_, index) => String(100 + index)));

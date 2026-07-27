@@ -210,6 +210,62 @@ test("공식 김포골드라인 역사좌표 snapshot을 누적 production candi
   );
 });
 
+// 광역철도와 같은 축이다. 신분당선 정본은 FILE admission 당시 표기(서울교통공사)와 노선 운영기관
+// (네오트랜스)을 dual coverage로 등재해 단일 운영기관 대조로는 조립이 거부됐다 — 카탈로그 등재 집합과
+// 정본이 정확히 같을 때만 통과하고, 그 밖의 주장은 그대로 거부된다.
+test("dual-operator 노선은 카탈로그 등재 집합과 정본이 같을 때만 materialize된다", async () => {
+  const { baseFixture, topologySnapshot, inventory } = await inputs();
+  const line = listCapitalLightRailRouteMapPositionLines().find(({ key }) => key === "shinbundang");
+  const snapshotBytes = await readFile(
+    path.join(root, "tools/datapack/sources", `${line.sourceId}-20260725.json`),
+  );
+  const snapshot = JSON.parse(snapshotBytes);
+  const snapshotSha256 = createHash("sha256").update(snapshotBytes).digest("hex");
+  const declaredOperatorIds = [
+    line.operatorId,
+    ...line.additionalCoverageOperators.map(({ operatorId }) => operatorId),
+  ];
+
+  const fixture = materializeCapitalLightRailRouteMapPositions({
+    baseFixture, snapshot, snapshotSha256, topologySnapshot, inventory, now: routeMapNow,
+  });
+  const pack = fixture.packs[0];
+  assert.equal(declaredOperatorIds[0], line.operatorId);
+  assert.deepEqual(
+    pack.sourceInventory.find(({ id }) => id === line.sourceId).coverageScope.operatorIds,
+    declaredOperatorIds,
+  );
+  // 등재 집합은 정본 대조와 운영기관 등재에 그대로 쓰이지만 pack scope 행은 계보 표기를 뺀 나머지다 —
+  // 서울교통공사 표기에는 #2138 activeLineScopes에 대응 scope가 없어 행으로 내지 않는다.
+  assert.deepEqual(line.lineageOnlyOperatorIds, ["seoul-metro"]);
+  assert.deepEqual(
+    pack.coverageLineOperatorScopes
+      .filter(({ lineId }) => lineId === line.lineId)
+      .map(({ operatorId }) => operatorId),
+    declaredOperatorIds.filter((operatorId) => !line.lineageOnlyOperatorIds.includes(operatorId)),
+  );
+  for (const operatorId of declaredOperatorIds) {
+    assert.ok(pack.operators.some(({ id }) => id === operatorId), operatorId);
+  }
+
+  for (const operatorIds of [
+    [line.operatorId, "operator-000000000000"],
+    [line.operatorId],
+    [...declaredOperatorIds].reverse(),
+    [...declaredOperatorIds, "operator-000000000000"],
+  ]) {
+    const mismatched = structuredClone(inventory);
+    mismatched.sources.find(({ id }) => id === line.sourceId).coverageScope.operatorIds = operatorIds;
+    assert.throws(
+      () => materializeCapitalLightRailRouteMapPositions({
+        baseFixture, snapshot, snapshotSha256, topologySnapshot, inventory: mismatched, now: routeMapNow,
+      }),
+      new RegExp(`${line.sourceId} inventory evidence does not match snapshot`),
+      `operatorIds=${operatorIds.join(",")}`,
+    );
+  }
+});
+
 test("5노선 inventory evidence·snapshot byte identity가 모두 맞물린다", async () => {
   const inventory = await readJson("tools/datapack/source-inventory.json");
   for (const line of listCapitalLightRailRouteMapPositionLines()) {

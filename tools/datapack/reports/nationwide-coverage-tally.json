@@ -1085,7 +1085,7 @@
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "2715e0bb28a25b2103add14747e74742fcb88f61e4cf357ed68453f20cf6cfc5",
+      "sha256": "9a1249470a4ecd02d4781cd47a11615ff2a9353e45e37fcb710368069bd4abb1",
       "targetVersion": "2026-07-13"
     }
   },

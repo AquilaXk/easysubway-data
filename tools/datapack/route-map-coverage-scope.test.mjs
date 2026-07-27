@@ -780,16 +780,32 @@ test("MOLIT roster가 없는 scope는 감사에서 제외되고 위반으로 남
   );
 });
 
+// 이 축을 때리려면 대상 소스에 admitted snapshot 경로도, candidate 재기술 근거도 없어야 한다. 재기술이
+// 남아 있는 소스에서 경로만 지우면 판정이 재기술 근거 쪽 축(SOURCE_CANDIDATE_SCOPE_UNAUDITED)으로 넘어가
+// 이 분기를 덮지 못한다(#2595에서 대전 소스가 재기술 대상이 되면서 실제로 그렇게 갈렸다). #2595 B3에서
+// lineIds를 claim한 route_map_positions 소스가 전부 재기술 대상이 됐으므로 이제는 inventory와 spec 두
+// 정본에서 함께 지운다 — 어느 한쪽만 지우면 다른 축으로 갈린다는 사실 자체가 이 회귀의 전제다.
 test("lineIds를 claim한 route_map_positions 소스는 admitted snapshot 경로가 있어야 한다 (#2516)", async () => {
   const inputs = await loadAuditInputs();
+  const sourceId = "kric-seohae-route-map-positions";
   const inventory = structuredClone(inputs.inventory);
-  const source = inventory.sources.find(({ id }) => id === "daejeon-transportation-route-map-positions");
-  delete source.routeMapAdmissionEvidence.snapshotPath;
+  delete inventory.sources.find(({ id }) => id === sourceId).routeMapAdmissionEvidence.snapshotPath;
+  const spec = JSON.parse(inputs.candidateLineScopeAdmission.specBytes.toString("utf8"));
+  spec.lineScopeRedescriptions = spec.lineScopeRedescriptions.filter((entry) => entry.sourceId !== sourceId);
+  // spec 바이트를 바꾸면 evidence 결속 해시도 함께 옮겨야 한다. 그러지 않으면 이 소스가 아니라 다른
+  // 재기술 소스가 결속 축(SOURCE_CANDIDATE_EVIDENCE_SPEC_UNBOUND)에서 먼저 걸려 축이 갈린다.
+  const specBytes = Buffer.from(JSON.stringify(spec));
+  const evidence = structuredClone(inputs.candidateLineScopeAdmission.evidence);
+  evidence.inputs.spec.sha256 = createHash("sha256").update(specBytes).digest("hex");
 
-  const result = auditRouteMapCoverageScopes({ ...inputs, inventory });
+  const result = auditRouteMapCoverageScopes({
+    ...inputs,
+    inventory,
+    candidateLineScopeAdmission: { ...inputs.candidateLineScopeAdmission, specBytes, evidence },
+  });
 
   assert.deepEqual(violationKinds(result), ["SOURCE_SNAPSHOT_PATH_MISSING"]);
-  assert.equal(result.auditedScopeKeys.includes("daejeon:daejeon-transportation:line-7051a9c2525c"), false);
+  assert.equal(result.auditedScopeKeys.includes("capital:korail:line-051552e50435"), false);
 });
 
 // #2514(#2510 B0)의 candidate 게이트 line-scope 재기술은 admitted snapshot 파일 없이 lineIds를 claim한다.

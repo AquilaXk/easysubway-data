@@ -38,7 +38,9 @@ export function materializeCapitalWideRailRouteMapPositions({
   }
 
   validateTopologyLineage(source.routeMapAdmissionEvidence, topologySnapshot, line);
-  ensureOperator(pack, line.operatorId, line.operatorNameKo);
+  for (const { operatorId, nameKo } of coverageOperators(line)) {
+    ensureOperator(pack, operatorId, nameKo);
+  }
   ensureLine(pack, line);
   ensureCoverageLineOperatorScopes(fixture, pack, line);
   const stations = ensureStationsAndMembership(pack, snapshot, line);
@@ -111,6 +113,22 @@ export function materializedCapitalWideRailRouteMapPackContentHash(pack, version
   return sha256(JSON.stringify({ version, content }));
 }
 
+// 이 노선을 덮는 운영기관 집합(저장소 정본). 노선 자체의 운영기관이 항상 첫 항목이며, 노선을 나눠
+// 운영하는 두 번째 사업자가 있으면 카탈로그가 additionalCoverageOperators로 등재한다. 이 집합은
+// admission 정본(coverageScope.operatorIds)과 순서까지 전량 대조되고 pack coverage scope 선언에도 같이
+// 쓰이므로, 카탈로그가 임의 운영기관을 주장하면 정본 대조에서 그대로 거부된다.
+function coverageOperators(line) {
+  const additional = line.additionalCoverageOperators ?? [];
+  const operators = [{ operatorId: line.operatorId, nameKo: line.operatorNameKo }, ...additional];
+  const operatorIds = operators.map(({ operatorId }) => operatorId);
+  if (new Set(operatorIds).size !== operatorIds.length
+    || operators.some(({ operatorId, nameKo }) => typeof operatorId !== "string" || operatorId.trim() === ""
+      || typeof nameKo !== "string" || nameKo.trim() === "")) {
+    throw new Error(`${line.sourceId} coverage operators are invalid`);
+  }
+  return operators;
+}
+
 function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, line, now) {
   const source = inventory?.sources?.find(({ id }) => id === line.sourceId);
   const evidence = source?.routeMapAdmissionEvidence;
@@ -146,7 +164,7 @@ function requiredSource(inventory, snapshot, snapshotSha256, topologySnapshot, l
     || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
-      operatorIds: [line.operatorId],
+      operatorIds: coverageOperators(line).map(({ operatorId }) => operatorId),
       lineIds: [line.lineId],
       sourceDomains: ["route_map_positions"],
     })
@@ -212,11 +230,11 @@ function ensureLine(pack, line) {
 }
 
 function ensureCoverageLineOperatorScopes(fixture, pack, line) {
-  const scopes = [{
+  const scopes = coverageOperators(line).map(({ operatorId }) => ({
     regionId: "capital",
-    operatorId: line.operatorId,
+    operatorId,
     lineId: line.lineId,
-  }];
+  }));
   const packScopes = [...(pack.coverageLineOperatorScopes ?? [])];
   for (const scope of scopes) {
     if (!packScopes.some((entry) => (

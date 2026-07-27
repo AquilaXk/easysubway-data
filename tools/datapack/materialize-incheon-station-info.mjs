@@ -25,6 +25,13 @@ const LINE_METADATA = Object.freeze({
   [LINE2]: { nameKo: "인천 2호선", color: "#ed8b00" },
   [LINE7]: { nameKo: "수도권 7호선", color: "#657931" },
 });
+// 인천 역사정보·편의시설 편입이 선언하는 노선 정체성 정본(LINE_IDS와 같은 순서). admission 정본
+// (coverageScope.lineIds)에는 번호 축이 없어 편입 선언의 lineNumber를 대조할 상대가 이 표다.
+export const INCHEON_STATION_LINES = Object.freeze([
+  Object.freeze({ lineNumber: 2, lineId: LINE2 }),
+  Object.freeze({ lineNumber: 1, lineId: LINE1 }),
+  Object.freeze({ lineNumber: 7, lineId: LINE7 }),
+]);
 const EXPECTED_STATION_COUNT = 71;
 const EXPECTED_UNIQUE_STATION_COUNT = 69;
 const EXPECTED_TOPOLOGY_STATION_COUNT = 60;
@@ -190,7 +197,27 @@ export function materializeIncheonStationInfo({
     throw new Error("Incheon materialized route map position count is invalid");
   }
 
-  pack.stations.push(...stationsById.values());
+  // 정본 station id는 저장소 전역에서 같은 역을 가리키므로 앞선 편입이 이미 실은 역은 다시 싣지 않고
+  // 소속(station_lines)만 더한다(원인재·계양·검암·부천종합운동장이 실제로 그렇게 겹친다). 같은 id인데
+  // 역명이 다르면 정체성이 갈린 것이므로 중복 제거가 그 충돌을 덮지 않도록 그 자리에서 fail closed 한다.
+  //
+  // 대조 축은 역명(NFKC) 하나다. 좌표·영문명은 대조하지 않고 앞선 편입이 실은 값이 남는다 — 실측상 그
+  // 네 역은 두 공식 FILE의 좌표가 소수 넷째 자리에서 갈리고(예: 검암 37.568611/126.671221 vs 공항철도
+  // 정본 37.5692068/126.6731455) 영문명도 갈린다(앞선 편입은 빈 문자열). 좌표까지 대조 축으로 넓히면 그
+  // 차이가 그대로 fail closed가 되므로, 이 편입은 정본 station id를 정체성 축으로 삼고 좌표는 소스별
+  // provenance로만 본다. 수도권 KRIC materializer들의 규약과는 다르다 — 그쪽은 이름을 대조하지 않고
+  // 기존 행의 좌표가 null일 때만 backfill 한다.
+  const packStationsById = new Map(pack.stations.map((station) => [station.id, station]));
+  for (const station of stationsById.values()) {
+    const existing = packStationsById.get(station.id);
+    if (!existing) {
+      pack.stations.push(station);
+      continue;
+    }
+    if (existing.nameKo.normalize("NFKC") !== station.nameKo.normalize("NFKC")) {
+      throw new Error(`Incheon station identity conflict: ${station.id}`);
+    }
+  }
   pack.stationLines.push(...stationLines);
   pack.networkEdges.push(...networkEdges);
   pack.routeMapPositions = [...(pack.routeMapPositions ?? []), ...routeMapPositions];
@@ -226,7 +253,8 @@ export function materializedIncheonPackContentHash(pack, version) {
 }
 
 function ensureSharedLine7(pack, fixture) {
-  if (!pack.lines.some(({ id }) => id === LINE7)) {
+  const existingLine7 = pack.lines.find(({ id }) => id === LINE7);
+  if (!existingLine7) {
     pack.lines.push({
       id: LINE7,
       operatorId: OPERATOR_ID,
@@ -235,18 +263,31 @@ function ensureSharedLine7(pack, fixture) {
       color: LINE_METADATA[LINE7].color,
     });
   }
-  const scope = {
-    regionId: REGION_ID,
-    operatorId: OPERATOR_ID,
-    lineId: LINE7,
-  };
+  // 7호선은 두 운영기관이 나눠 운영한다. 승계 pack이 이미 7호선을 싣고 있으면 그 노선 자체의 운영기관
+  // scope도 함께 명시한다 — build-datapack은 한 노선에 명시 scope가 하나라도 있으면 그 노선의 운영기관을
+  // 더 이상 암묵 scope로 넣지 않으므로(coverageOperatorIdsForLines, 실측), 인천 scope만 더하면 승계
+  // 운영기관을 근거로 삼던 provenance가 통째로 사라지고 그 소스의 조립이 fail closed 된다. 여기서 더하는
+  // 값은 지어낸 것이 아니라 pack이 이미 싣고 있는 노선 레코드의 운영기관 그대로다.
+  const scopes = [
+    ...(existingLine7 && existingLine7.operatorId !== OPERATOR_ID
+      ? [{ regionId: REGION_ID, operatorId: existingLine7.operatorId, lineId: LINE7 }]
+      : []),
+    { regionId: REGION_ID, operatorId: OPERATOR_ID, lineId: LINE7 },
+  ];
   const packScopes = [...(pack.coverageLineOperatorScopes ?? [])];
-  if (!packScopes.some((entry) => (
-    entry.regionId === scope.regionId
-      && entry.operatorId === scope.operatorId
-      && entry.lineId === scope.lineId
-  ))) {
+  let added = false;
+  for (const scope of scopes) {
+    if (packScopes.some((entry) => (
+      entry.regionId === scope.regionId
+        && entry.operatorId === scope.operatorId
+        && entry.lineId === scope.lineId
+    ))) {
+      continue;
+    }
     packScopes.push(scope);
+    added = true;
+  }
+  if (added) {
     packScopes.sort((left, right) => (
       `${left.regionId}:${left.operatorId}:${left.lineId}`
         .localeCompare(`${right.regionId}:${right.operatorId}:${right.lineId}`, "en")

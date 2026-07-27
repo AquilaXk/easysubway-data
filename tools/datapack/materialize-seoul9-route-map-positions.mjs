@@ -15,9 +15,18 @@ const FILE_OPERATOR_NAME_KO = "서울교통공사";
 const LINE_OPERATOR_ID = "operator-936e454d0bfb";
 const LINE_OPERATOR_NAME_KO = "서울시메트로9호선";
 const COVERAGE_OPERATOR_IDS = Object.freeze([FILE_OPERATOR_ID, LINE_OPERATOR_ID]);
+// pack coverage scope로 낼 운영기관. FILE_OPERATOR_ID(서울교통공사)는 이 소스의 FILE admission 당시
+// 표기를 유지하는 계보 항목이라 admission 정본(coverageScope.operatorIds) 대조와 운영기관 등재에는 쓰되
+// scope 행으로는 내지 않는다 — 9호선의 #2138 activeLineScopes는 노선 운영기관 하나뿐이라, 계보 표기를
+// 그대로 행으로 내면 근거 없는 (운영기관, 노선) 결속이 pack에 남는다(경전철 신분당선과 같은 축).
+const SCOPE_OPERATOR_IDS = Object.freeze([LINE_OPERATOR_ID]);
 const REGION = "수도권";
 const LINE_ID = "line-f0e747248a31";
-const LINE_NUMBER = "9";
+const LINE_NUMBER = 9;
+// 9호선 편입(1단계·2·3단계)이 선언하는 노선 정체성 정본. admission 정본(coverageScope.lineIds)에는 번호
+// 축이 없어 편입 선언의 lineNumber를 대조할 상대가 이 표다 — 두 편입이 같은 노선을 나눠 덮으므로 1단계
+// 어댑터도 이 표를 쓴다.
+export const SEOUL9_LINES = Object.freeze([Object.freeze({ lineNumber: LINE_NUMBER, lineId: LINE_ID })]);
 const LINE_COLOR = "#B7A156";
 const LINE_NAME_KO = "수도권 9호선";
 const LINE_NAME_EN = "Seoul Subway Line 9";
@@ -243,7 +252,7 @@ function ensureLine(pack) {
 }
 
 function ensureCoverageLineOperatorScopes(fixture, pack) {
-  const scopes = COVERAGE_OPERATOR_IDS.map((operatorId) => ({
+  const scopes = SCOPE_OPERATOR_IDS.map((operatorId) => ({
     regionId: "capital",
     operatorId,
     lineId: LINE_ID,

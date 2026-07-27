@@ -47,6 +47,11 @@ const CAPITAL_GEO = Object.freeze({
 const LAT_LON_SWAP_LON_AS_LAT = Object.freeze({ min: 33, max: 43 });
 const LAT_LON_SWAP_LAT_AS_LON = Object.freeze({ min: 124, max: 132 });
 
+// 노선 하나를 두 운영기관이 나눠 운영하면 admission 정본이 그 노선 소스를 dual coverage로 등재한다
+// (source-inventory coverageScope.operatorIds 2개). additionalCoverageOperators는 그 두 번째 운영기관을
+// 저장소 정본으로 등재하는 자리이며, materializer가 [operatorId, ...additionalCoverageOperators]를
+// admission 정본과 전량 대조한다 — 카탈로그와 정본이 함께 같은 집합을 선언해야만 통과하므로 어느 한쪽
+// 편집만으로는 운영기관 범위를 넓힐 수 없다. 키가 없으면 단일 운영기관 노선이다.
 const LINE_DEFINITIONS = Object.freeze([
   {
     key: "gyeongui-jungang",
@@ -223,6 +228,10 @@ const LINE_DEFINITIONS = Object.freeze([
     slug: "seohae",
     operatorId: "korail",
     operatorNameKo: "코레일",
+    // 일산~부천종합운동장 구간은 코레일, 소사~원시 구간 12역은 서해철도가 운영한다(admission 정본 서술).
+    additionalCoverageOperators: Object.freeze([
+      Object.freeze({ operatorId: "operator-38450e138464", nameKo: "서해철도" }),
+    ]),
     lineNameKo: "수도권 서해선",
     lineNameEn: "Seohae Line",
     lineColor: "#81a914",
@@ -252,6 +261,10 @@ const LINE_DEFINITIONS = Object.freeze([
     slug: "gtxa",
     operatorId: "operator-5ca780d7dee1",
     operatorNameKo: "지티엑스에이운영",
+    // 동탄을 제외한 8역은 지티엑스에이운영, 동탄 1역은 주식회사 SR이 운영한다(admission 정본 서술).
+    additionalCoverageOperators: Object.freeze([
+      Object.freeze({ operatorId: "operator-9e999d4aa596", nameKo: "주식회사 SR" }),
+    ]),
     lineNameKo: "수도권 GTX-A",
     lineNameEn: "GTX-A",
     lineColor: "#9f6181",

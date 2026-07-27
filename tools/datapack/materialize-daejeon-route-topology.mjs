@@ -12,6 +12,9 @@ const MEMBERSHIP_SOURCE_ID = "molit-urban-rail-full-route-daejeon-membership";
 const MEMBERSHIP_RAW_SOURCE_ID = "molit-urban-rail-full-route";
 const OPERATOR_ID = "daejeon-transportation";
 const LINE_ID = "line-7051a9c2525c";
+export const DAEJEON_LINES = Object.freeze([
+  Object.freeze({ lineNumber: 1, lineId: LINE_ID }),
+]);
 const PACK_ID = "nationwide-daejeon-topology";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
 const STATION_NUMBERS = Object.freeze(Array.from({ length: 22 }, (_, index) => String(101 + index)));

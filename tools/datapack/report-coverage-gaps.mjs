@@ -14,6 +14,19 @@ const PUBLIC_API_ORIGINS = new Set([
   "https://openapi.seoul.go.kr",
 ]);
 const COVERAGE_FALLBACKS = new Set(["PLANNED", "STATIC_LOCAL", "UNSUPPORTED_REGION"]);
+// #2138 증거 모델 축. domain이 "그 도메인의 정본 근거가 어떤 성격인가"를 machine-checkable하게 선언한다.
+// official-source: 공식 기관이 그 값 자체를 공표한다(기본값 — 선언하지 않은 도메인은 이 성격이다).
+// owner-authored-canonical: 정본이 오너 제작물이고 공식 데이터는 신원 식별·provenance를 댄다.
+//   route_map_positions가 그렇다 — 도식 위 좌표를 공표하는 공식 기관이 존재하지 않는다.
+// 이 선언은 판정을 느슨하게 하지 않는다: requiredFields·blockingThreshold 충족 요건은 그대로이고,
+// 이 값은 requirement 레코드에 실려 "어느 건이 어느 근거 성격으로 섰는가"를 집계 가능하게 만들 뿐이다.
+const DEFAULT_DOMAIN_EVIDENCE_MODEL = "official-source";
+const DOMAIN_EVIDENCE_MODELS = new Set([DEFAULT_DOMAIN_EVIDENCE_MODEL, "owner-authored-canonical"]);
+// #2138이 production 유입을 거부하는 범주. 소스가 스스로 선언하며, 선언한 소스가 requirement를 하나라도
+// 뒷받침하면 판정을 내지 않고 그 자리에서 멈춘다(임시값이 완료로 집계되는 경로를 없앤다).
+// 선언하지 않은 소스는 기존 판정을 그대로 유지한다(하위 호환).
+const PLACEHOLDER_EVIDENCE_CATEGORY = "placeholder-fixture";
+const SOURCE_EVIDENCE_CATEGORIES = new Set([PLACEHOLDER_EVIDENCE_CATEGORY]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -102,8 +115,15 @@ function buildCoverageGapReport(
   const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
   const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest) : null;
 
+  // 임시값(placeholder-fixture)으로 선언된 소스는 어떤 requirement도 뒷받침할 수 없다(#2138).
+  const placeholderSourceIds = new Set(
+    sources.filter(({ evidenceCategory }) => evidenceCategory === PLACEHOLDER_EVIDENCE_CATEGORY)
+      .map(({ id }) => id),
+  );
+
   // 전국 requirement는 nationwide targets 전량으로 산출한다(은폐 금지 — 전국 gap은 그대로 기록).
   const requirements = evaluateRequirements(targets, sources, provenanceIndex);
+  assertNoPlaceholderSupport(requirements, placeholderSourceIds, "nationwide");
   const transitions = applyCoverageResolutions(
     targets,
     requirements,
@@ -144,6 +164,7 @@ function buildCoverageGapReport(
       includeLineId: true,
       strictLineScope: pilotTargets.schemaVersion === 2,
     });
+    assertNoPlaceholderSupport(scopeRequirements, placeholderSourceIds, "release scope");
     for (const entry of scopeRequirements) {
       entry.inReleaseScope = true;
     }
@@ -508,6 +529,9 @@ function evaluateRequirements(targets, sources, provenanceIndex, options = {}) {
               }
             : {}),
           sourceDomain: domain.id,
+          // 근거 성격 선언(#2138). 판정에는 관여하지 않고 requirement마다 실려 범주별 집계의 축이 된다 —
+          // 선언하지 않은 도메인은 official-source로 기록돼 기존 판정·기록이 그대로 유지된다.
+          evidenceModel: domainEvidenceModel(domain),
           status: targets.schemaVersion === 2
             ? (coverageRatio >= threshold ? "SUPPORTED" : "MISSING")
             : (coverageRatio >= threshold ? "covered" : "missing"),
@@ -602,6 +626,46 @@ function resolveReleaseScope(releaseScope) {
     operatorIds: new Set(operatorIds),
     lineIds: new Set(lineIds),
   };
+}
+
+// domain 증거 모델 선언 검사. 값은 열거형 allowlist로 고정하고 한국어 사유를 함께 요구한다 —
+// 사유가 없으면 "왜 이 도메인의 정본이 오너 제작물인가"가 계약에서 사라지고 선언만 남는다.
+// 반대로 사유만 있고 모델 선언이 없으면 아무것도 하지 않는 죽은 서술이므로 그것도 거부한다.
+function validateDomainEvidenceModel(domain, id) {
+  if (domain.evidenceModel === undefined) {
+    if (domain.evidenceModelReasonKo !== undefined) {
+      throw new Error(`${id}.evidenceModelReasonKo requires evidenceModel`);
+    }
+    return DEFAULT_DOMAIN_EVIDENCE_MODEL;
+  }
+  const evidenceModel = requiredString(domain.evidenceModel, `${id}.evidenceModel`);
+  if (!DOMAIN_EVIDENCE_MODELS.has(evidenceModel)) {
+    throw new Error(
+      `${id}.evidenceModel must be one of ${[...DOMAIN_EVIDENCE_MODELS].join(",")}: ${evidenceModel}`,
+    );
+  }
+  requiredString(domain.evidenceModelReasonKo, `${id}.evidenceModelReasonKo`);
+  return evidenceModel;
+}
+
+function domainEvidenceModel(domain) {
+  return domain.evidenceModel ?? DEFAULT_DOMAIN_EVIDENCE_MODEL;
+}
+
+// placeholder-fixture로 선언된 소스가 requirement를 하나라도 뒷받침하면 판정을 내지 않는다.
+// #2138은 임시값이 완료로 집계되는 것을 막는데, 그 경계를 서술이 아니라 판정 경로에서 강제한다.
+function assertNoPlaceholderSupport(requirements, placeholderSourceIds, label) {
+  if (placeholderSourceIds.size === 0) return;
+  for (const requirement of requirements) {
+    const offending = (requirement.sourceIds ?? []).filter((id) => placeholderSourceIds.has(id));
+    if (offending.length > 0) {
+      throw new Error(
+        `${label} requirement ${requirement.regionId}:${requirement.operatorId}:`
+          + `${requirement.lineId ?? ""}:${requirement.sourceDomain} is supported by `
+          + `${PLACEHOLDER_EVIDENCE_CATEGORY} sources: ${offending.join(",")}`,
+      );
+    }
+  }
 }
 
 function coverageTargetIndex(targets) {
@@ -713,6 +777,7 @@ function validateTargets(targets) {
     if (typeof threshold !== "number" || threshold <= 0 || threshold > 1) {
       throw new Error(`${id}.blockingThreshold.minimumOfficialFieldCoverageRatio must be between 0 and 1`);
     }
+    validateDomainEvidenceModel(domain, id);
   }
   if (
     targets.schemaVersion === 2 &&
@@ -898,6 +963,18 @@ function normalizeSource(source, targetIndex) {
   const sourceDomains = requiredStringArray(coverage.sourceDomains, `${id}.coverageScope.sourceDomains`);
   const lineIds = optionalStringArray(coverage.lineIds, `${id}.coverageScope.lineIds`);
   const fields = requiredStringArray(source.fieldsProvided ?? source.fields, `${id}.fieldsProvided`);
+  // 소스 증거 범주 선언(#2138). 선언하지 않으면 undefined로 남아 기존 판정이 그대로 유지된다.
+  if (source.evidenceCategory !== undefined) {
+    const evidenceCategory = requiredString(source.evidenceCategory, `${id}.evidenceCategory`);
+    if (!SOURCE_EVIDENCE_CATEGORIES.has(evidenceCategory)) {
+      throw new Error(
+        `${id}.evidenceCategory must be one of ${[...SOURCE_EVIDENCE_CATEGORIES].join(",")}: ${evidenceCategory}`,
+      );
+    }
+    requiredString(source.evidenceCategoryReasonKo, `${id}.evidenceCategoryReasonKo`);
+  } else if (source.evidenceCategoryReasonKo !== undefined) {
+    throw new Error(`${id}.evidenceCategoryReasonKo requires evidenceCategory`);
+  }
   validateKnownValues(regionIds, targetIndex.regionIds, `${id}.coverageScope.regionIds`, "region");
   validateKnownValues(operatorIds, targetIndex.operatorIds, `${id}.coverageScope.operatorIds`, "operator");
   validateKnownValues(sourceDomains, targetIndex.sourceDomains, `${id}.coverageScope.sourceDomains`, "source domain");
@@ -911,6 +988,7 @@ function normalizeSource(source, targetIndex) {
     sourceDomains,
     lineIds,
     fields,
+    evidenceCategory: source.evidenceCategory,
   };
 }
 
