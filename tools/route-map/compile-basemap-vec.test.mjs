@@ -21,6 +21,7 @@ import {
   normalizeSvgForCompile,
   parseSvgNumbers,
 } from "./compile-basemap-vec.mjs";
+import { viewBoxOf } from "./svg-ink-bbox.mjs";
 
 // #2068 오너 v3 반입 회귀: 빈 레이어를 자기폐쇄 태그로 마감한 SVG(busan v3의
 // service-tags-layer)에서 extractGroup의 depth 카운터가 다음 형제 레이어를 삼켜
@@ -680,7 +681,20 @@ test("build manifest가 source·normalized·vec hash와 viewBox를 결합한다"
     assert.equal(map.sourceSvgSha256, hash(source));
     assert.equal(map.normalizedSvgSha256, hash(normalized));
     assert.equal(map.compiledVectorSha256, hash(vec));
-    assert.equal(map.viewBox.length, 4);
+    // manifest viewBox는 원본 SVG의 viewBox와 **값까지** 같아야 한다. 길이(4)만
+    // 보면 크롭·캔버스 변경 뒤 값이 낡아도 그대로 통과한다(#2603).
+    assert.deepEqual(
+      map.viewBox,
+      viewBoxOf(source.toString("utf8")),
+      `${map.id}: manifest viewBox가 원본 SVG viewBox와 다릅니다.`,
+    );
+    // 원점이 0이 아니면 컴파일러가 그 값을 지오메트리에 굽고 .vec 앵커가
+    // 소스 좌표에서 이탈한다(#2603) — 원점 고정을 계약으로 박는다.
+    assert.deepEqual(
+      map.viewBox.slice(0, 2),
+      [0, 0],
+      `${map.id}: viewBox 원점은 0 0이어야 합니다.`,
+    );
     // #2068: 프로덕션 경로(main())가 extractOwnerLabels(sourceText, region.id)로
     // 권역 규칙을 태우므로 계약 테스트도 같은 인자를 넘겨야 한다. regionId를
     // 빼면 daejeon·gwangju는 data-full-official-name 원문이 키가 돼(대전역·

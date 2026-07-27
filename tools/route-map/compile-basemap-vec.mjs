@@ -374,7 +374,7 @@ const EXCLUDED_DECOR_LAYERS = [
   { id: "header-status-chip", reason: "광주 헤더 상태 칩" },
 ];
 
-const EXCLUDED_DECOR_LAYER_ID_SET = new Set(
+export const EXCLUDED_DECOR_LAYER_ID_SET = new Set(
   EXCLUDED_DECOR_LAYERS.map((layer) => layer.id),
 );
 
@@ -1360,7 +1360,7 @@ function parseTranslate(transformValue) {
   return { dx, dy };
 }
 
-function firstAttr(tag, name) {
+export function firstAttr(tag, name) {
   const match = tag.match(new RegExp(`\\s${name}="([^"]*)"`));
   return match ? match[1] : null;
 }
@@ -1476,7 +1476,7 @@ function visitPathCoordinates(d, visit) {
 // 2D 아핀 [a,b,c,d,e,f]: x'=a*x+c*y+e, y'=b*x+d*y+f. SVG transform 속성 합성 관례.
 const IDENTITY_MATRIX = [1, 0, 0, 1, 0, 0];
 
-function composeMatrix(A, B) {
+export function composeMatrix(A, B) {
   const [a1, b1, c1, d1, e1, f1] = A;
   const [a2, b2, c2, d2, e2, f2] = B;
   return [
@@ -1489,7 +1489,7 @@ function composeMatrix(A, B) {
   ];
 }
 
-function applyMatrix([a, b, c, d, e, f], x, y) {
+export function applyMatrix([a, b, c, d, e, f], x, y) {
   return [a * x + c * y + e, b * x + d * y + f];
 }
 
@@ -1518,7 +1518,7 @@ const SUPPORTED_TRANSFORM_FUNCTIONS = new Set([
   "rotate",
 ]);
 
-function parseTransformChain(transformValue) {
+export function parseTransformChain(transformValue) {
   let M = IDENTITY_MATRIX;
   if (!transformValue) return M;
   for (const m of transformValue.matchAll(/([A-Za-z]+)\s*\(([^)]*)\)/g)) {
@@ -2376,7 +2376,7 @@ export function markLineTerminalBadgeEntries(ownerLabels, sourceText) {
 // `<text>`에는 적용되지 않는다 — 실측상 5권역 tspan에는 baseline 속성이 0건이라
 // `<text>`의 dominant-baseline만 유효하다. 모르는 값은 던진다.
 
-const TEXT_FONT_FILE = path.join(mobileDir, "fonts/Pretendard-Regular.otf");
+export const TEXT_FONT_FILE = path.join(mobileDir, "fonts/Pretendard-Regular.otf");
 
 /** OpenType(head·hhea·OS/2) 메트릭을 읽는다. sfnt 테이블 디렉터리만 파싱한다. */
 export function readOpenTypeMetrics(fontPath) {

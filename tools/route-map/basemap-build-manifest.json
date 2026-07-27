@@ -22,14 +22,14 @@
       "id": "seoul",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/seoul.vec",
-      "sourceSvgSha256": "398b83ad040d9037877e69d7c7baf37cbc7c026a2321b4ba765d4a3329365e5f",
-      "normalizedSvgSha256": "669443cd05285022b88363d132c9794dc22360f6de5c61a5c18a1d2c391fd87f",
-      "compiledVectorSha256": "7cd5ebf5ae6a54fd53d6efe314b046de34826285c60c15d05b71127d8a2696ef",
+      "sourceSvgSha256": "821b636eac0f3b04c5baa995d39ae938d7648d04f7c32802fbef22e60537bf08",
+      "normalizedSvgSha256": "ec72dbfbb4f07d73dc78b945d7240a67aafe056e9d05d4aa6ba69337bd19d45b",
+      "compiledVectorSha256": "c1f6ab35c4080558343d4d9242703e6fca037b132459630a4952c48eb99dc4e4",
       "viewBox": [
         0,
         0,
-        3800,
-        3020
+        3688,
+        2972
       ],
       "ownerLabelCount": 655
     },
@@ -37,14 +37,14 @@
       "id": "busan",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.vec",
-      "sourceSvgSha256": "3c6c9e997e46e5ad4cbfba8aa883a623358ef10b643da87ece67b9fb63bdf5f8",
-      "normalizedSvgSha256": "7450306a2eebb2399456092e1dad0634b74a9cf764ef3014582b3ea2e84eec61",
-      "compiledVectorSha256": "492b8a52f36db04fee553cfb34850457872a133e4e8e8e9e0d46d2c079ba375f",
+      "sourceSvgSha256": "02497284c89a1813f92edeac5050be370535fc2768cc22701c9a39d9da7991d3",
+      "normalizedSvgSha256": "c9b271cfb7502ba0bce2ab2ceceea9c534fa7e186a0b0f1688dd38712eacc4ac",
+      "compiledVectorSha256": "f2364a77836de9e9b139d4a546315e47daa0d3eab3e945d5ef69f9da9e3a6976",
       "viewBox": [
         0,
         0,
-        12000,
-        7040
+        11156,
+        5980
       ],
       "ownerLabelCount": 147
     },
@@ -52,14 +52,14 @@
       "id": "daegu",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daegu-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daegu.vec",
-      "sourceSvgSha256": "561d8a27c4e12472f7f36aa45257e41e3dc8be141c8654078e777af00fcb4826",
-      "normalizedSvgSha256": "a1510a46a33171effb9a945e456c0836360a25e7531bfde4dcedc04ea0a43c6f",
-      "compiledVectorSha256": "5cca899281196606625a25a9bb8debe9aca6d435b9d04db83fbf788152e98685",
+      "sourceSvgSha256": "145804d2c9d1de679d7d63937c942b714af02a6ed58562969b5ace5a0f077874",
+      "normalizedSvgSha256": "553a906daa48b8b80e0f4bb3f17f1c2d8c026416fe7e101978b1ef68f6090efe",
+      "compiledVectorSha256": "aa703de118b77e16f05f4d774738a457eb6ec81b2fbd9ca53f70a9ddd941a0af",
       "viewBox": [
         0,
         0,
         4560,
-        2340
+        2268
       ],
       "ownerLabelCount": 97
     },
@@ -67,14 +67,14 @@
       "id": "daejeon",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-daejeon-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/daejeon.vec",
-      "sourceSvgSha256": "0bae08f76b5756049212e837cf9fca8b92139df98168391665435793951de4c8",
-      "normalizedSvgSha256": "232ba4416995065f6421870028bcf5918f3d8550fb556a71fbf2ac9437512e20",
-      "compiledVectorSha256": "1cee8b3d022817db16d3fd885e2ac450435e146be384076c78ba480d1fca4238",
+      "sourceSvgSha256": "f0b1c04e6f5ee390738414702e9a4b60fd6e77ddcc775eb08b66e740af5839b8",
+      "normalizedSvgSha256": "53c4162bf721bacafe0f528e800a842de1a0415b53f1ca7b7552205e624d8edd",
+      "compiledVectorSha256": "a36295fac53e7a07803d0027a969bd525ff6e837ddeb95e528fb90f76aa36eb0",
       "viewBox": [
         0,
         0,
-        2400,
-        1800
+        1828,
+        1748
       ],
       "ownerLabelCount": 22
     },
@@ -82,14 +82,14 @@
       "id": "gwangju",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-gwangju-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/gwangju.vec",
-      "sourceSvgSha256": "d38595cc45a1d7e9f1522e83b490564485feff4e14e4aa38df7018f7f9cd5b96",
-      "normalizedSvgSha256": "f3349f73bb5ac4fa6136e3467c33e2e59c76f24e219d993db58095d33d93981e",
-      "compiledVectorSha256": "09d656952213aa2221666e38695c7f7cb68cfc18d0b95b58374b8f8fc2105557",
+      "sourceSvgSha256": "ea28449f9cd4c7c96aeba413f7977932c78f9c56c0e2e17f173df046ef7695d9",
+      "normalizedSvgSha256": "24518dd687b9e8c9fca58c31d885ad61569b77bb613d5c6dc1f00e991d11f9a0",
+      "compiledVectorSha256": "1b2d8b6b37a240202c414499e96e482da31dc4f3561d1cb8f911361f5d980bcb",
       "viewBox": [
         0,
         0,
-        2400,
-        1800
+        2016,
+        1628
       ],
       "ownerLabelCount": 20
     }

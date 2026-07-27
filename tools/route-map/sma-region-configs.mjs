@@ -127,11 +127,13 @@ const SEOUL = {
   // 대부분(역 y 실측 범위 334~2852)을 "범례 밖"으로 오판해 5개 노선의 stroke를
   // 통째로 누락시켰다(build-sma-tracks.mjs 실측 — "SVG stroke 없음" 경고).
   // 새 캔버스의 실제 역 y 범위(334~2852)에 여유를 두고 재설정한다.
+  // (#2603 여백 크롭 후 현재 viewBox는 3688×2972 — 역 y 범위는 그대로다.)
   contentBand: { minY: 300, maxY: 2900 },
 };
 
 // ── 부산(busan): #2011 2단계. 오너 자작 easy-subway-busan-v3(#2068 재제작본). ──
-// 문법 차이(수도권 대비): viewBox 12000×7040, route-line은 노선당 단일 <polyline>
+// 문법 차이(수도권 대비): viewBox 11156×5980(#2603 여백 크롭 전 12000×7040),
+// route-line은 노선당 단일 <polyline>
 // (수도권은 파편 stroke 다수), data-line 슬러그가 line1..line4/donghae/bgl,
 // lines.name_ko 접두가 "부산"이나 route_map_positions.region은 "부산권"(불일치),
 // 환승 노드는 data-line 빈값(멤버십으로 broadcast), 범례 노드 1개 존재.
@@ -221,13 +223,15 @@ const BUSAN = {
     return { name };
   },
   // 범례 노선 swatch(medY≈216, len ~107px)는 콘텐츠 밴드 밖으로 배제한다. 전면
-  // 재설계(viewBox 12000×7040) 실 노선 polyline의 medY는 2116~4780이므로 minY 300
+  // 재설계(당시 viewBox 12000×7040, #2603 크롭 후 11156×5980) 실 노선
+  // polyline의 medY는 2116~4780이므로 minY 300
   // (범례 216 초과)·maxY 6000이면 범례만 걸러지고 6개 노선 stroke가 전부 포함된다.
   contentBand: { minY: 300, maxY: 6000 },
 };
 
 // ── 대구(daegu): #2011 3단계. 오너 자작 easy-subway-daegu-v3(#2068 재제작본). ──
-// 문법 차이(수도권 대비): viewBox 4560.00×2340.00, route-line은 노선당 단일 <path>
+// 문법 차이(수도권 대비): viewBox 4560×2268(#2603 여백 크롭 전 4560.00×2340.00),
+// route-line은 노선당 단일 <path>
 // (route-line-1/2/3/daegyeong 그룹), data-line 슬러그가 line1..line3/daegyeong,
 // lines.name_ko 접두가 "대구"이나 route_map_positions.region은 "대구권"(불일치),
 // 역 노드는 부산과 동일하게 [data-node-role][data-station] g(circle/g)로 마킹되고
