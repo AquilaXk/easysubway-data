@@ -3034,6 +3034,7 @@ function lineScopeExactMatchFixture(sourceId, sourceDomain, releaseTier = "LAUNC
     pack: {
       sourceInventory: [{ id: sourceId, coverageScope: { ...coverageScope, lineIds: undefined } }],
     },
+    inheritedPack: { sourceInventory: [] },
     inventory: { sources: [{ id: sourceId, coverageScope }] },
     targets: {
       requiredSourceDomains: [{ id: sourceDomain, releaseTier }],
@@ -3123,10 +3124,30 @@ test("inactive scope와 LAUNCH_REQUIRED가 아닌 domain은 actual line-scope se
   ));
 
   const enhancement = lineScopeExactMatchFixture("enhancement", "schedule_timetable", "ENHANCEMENT");
-  enhancement.spec.lineScopeRedescriptions = [];
   assert.doesNotThrow(() => assertLineScopeRedescriptionsMatchActualRequiredSet(
     enhancement.spec, enhancement.pack, enhancement.inventory, enhancement.targets,
   ));
+});
+
+test("승계 pack에 이미 있던 line scope는 신규 재기술 대상으로 세지 않는다", () => {
+  const fixture = lineScopeExactMatchFixture("inherited", "schedule_timetable");
+  fixture.spec.lineScopeRedescriptions = [];
+  fixture.pack.sourceInventory[0].coverageScope = structuredClone(
+    fixture.inventory.sources[0].coverageScope,
+  );
+  fixture.inheritedPack.sourceInventory = structuredClone(fixture.pack.sourceInventory);
+
+  assert.doesNotThrow(() => assertLineScopeRedescriptionsMatchActualRequiredSet(
+    fixture.spec, fixture.pack, fixture.inventory, fixture.targets, fixture.inheritedPack,
+  ));
+
+  fixture.inheritedPack.sourceInventory[0].coverageScope.lineIds = ["other-line"];
+  assert.throws(
+    () => assertLineScopeRedescriptionsMatchActualRequiredSet(
+      fixture.spec, fixture.pack, fixture.inventory, fixture.targets, fixture.inheritedPack,
+    ),
+    /inherited candidate pack coverageScope\.lineIds must match candidate pack and source inventory/,
+  );
 });
 
 test("pack-only lineIds와 inventory 누락 lineIds는 fail closed다", () => {

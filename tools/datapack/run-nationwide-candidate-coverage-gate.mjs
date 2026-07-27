@@ -317,7 +317,13 @@ export async function runNationwideCandidateCoverageGate({
   // variant마다 달라질 수 없고, 한 번만 조립해 두 실행이 같은 행 바이트를 쓰는 것을 구조로 보장한다.
   const inclusions = await applyPackDataInclusions(spec, inherited, inventory, materializers);
   const targets = (await readJsonInput(targetsInput.path)).document;
-  assertLineScopeRedescriptionsMatchActualRequiredSet(spec, inclusions.pack, inventory, targets);
+  assertLineScopeRedescriptionsMatchActualRequiredSet(
+    spec,
+    inclusions.pack,
+    inventory,
+    targets,
+    inclusions.inheritedPack,
+  );
 
   const signing = ephemeralSigningKeys();
   const variants = {};
@@ -430,7 +436,7 @@ async function applyPackDataInclusions(spec, inherited, inventory, materializers
       inputs: [...inputs.values()].sort((left, right) => codepointCompare(left.path, right.path)),
     });
   }
-  return { pack: fixture.packs[0], records };
+  return { pack: fixture.packs[0], inheritedPack, records };
 }
 
 // 대구 1·2·3호선 노선 선언 대조와 topology snapshot 로딩. 세 대구 어댑터가 공유한다.
@@ -1376,7 +1382,13 @@ function assertInventoryLineScopeSync(spec, inventory) {
 // lineScopeRedescriptions에 source/domain 단위로 빠짐없이 재기술돼야 한다. 선언 목록을 기준으로
 // fixture·baseline을 조립하면 선언을 지운 실제 소스가 두 variant에 함께 남아 fail open하므로, pack ×
 // tracked inventory × coverage targets에서 actual required set을 역으로 유도해 양방향 exact-match 한다.
-export function assertLineScopeRedescriptionsMatchActualRequiredSet(spec, pack, inventory, targets) {
+export function assertLineScopeRedescriptionsMatchActualRequiredSet(
+  spec,
+  pack,
+  inventory,
+  targets,
+  inheritedPack = { sourceInventory: [] },
+) {
   const launchRequiredDomains = new Set(
     (targets.requiredSourceDomains ?? [])
       .filter(({ releaseTier }) => releaseTier === "LAUNCH_REQUIRED")
@@ -1384,6 +1396,9 @@ export function assertLineScopeRedescriptionsMatchActualRequiredSet(spec, pack, 
   );
   const activeLineScopes = targets.activeLineScopes ?? [];
   const inventoryById = new Map((inventory.sources ?? []).map((source) => [source.id, source]));
+  const inheritedById = new Map(
+    (inheritedPack.sourceInventory ?? []).map((source) => [source.id, source]),
+  );
   const actual = new Map();
   const sourcesById = new Map();
 
@@ -1409,6 +1424,16 @@ export function assertLineScopeRedescriptionsMatchActualRequiredSet(spec, pack, 
     // 원형에 이미 lineIds가 있는 신규 source라면 둘의 집합이 같아야 한다.
     if (packScope?.lineIds && !sameStringSet(packScope.lineIds, inventoryScope.lineIds)) {
       throw new Error(`candidate pack coverageScope.lineIds must match source inventory: ${sourceId}`);
+    }
+    const inheritedLineIds = inheritedById.get(sourceId)?.coverageScope?.lineIds;
+    if (inheritedLineIds?.length) {
+      if (!sameStringSet(inheritedLineIds, inventoryScope.lineIds)
+        || !sameStringSet(inheritedLineIds, packScope?.lineIds)) {
+        throw new Error(
+          `inherited candidate pack coverageScope.lineIds must match candidate pack and source inventory: ${sourceId}`,
+        );
+      }
+      continue;
     }
     sourcesById.set(sourceId, { packScope, inventoryScope });
   }
@@ -1451,9 +1476,12 @@ export function assertLineScopeRedescriptionsMatchActualRequiredSet(spec, pack, 
   }
 
   const declared = new Map();
+  const declaredKeys = new Set();
   for (const redescription of spec.lineScopeRedescriptions) {
     const key = `${redescription.sourceId}:${redescription.sourceDomain}`;
-    if (declared.has(key)) throw new Error(`duplicate declared line-scope source/domain: ${key}`);
+    if (declaredKeys.has(key)) throw new Error(`duplicate declared line-scope source/domain: ${key}`);
+    declaredKeys.add(key);
+    if (!launchRequiredDomains.has(redescription.sourceDomain)) continue;
     declared.set(key, redescription);
   }
 
