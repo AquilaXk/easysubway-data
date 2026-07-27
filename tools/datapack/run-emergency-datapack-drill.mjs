@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const REQUIRED_PATCH_TABLES = ["facilities", "network_edges", "transit_stop_times"];
@@ -71,9 +72,7 @@ function correctedTables(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("emergencyPatch.rows is required");
   }
-  const tables = [...new Set(rows.map((row, index) => requireString(row?.table, `emergencyPatch.rows[${index}].table`)))].sort((left, right) =>
-    left.localeCompare(right),
-  );
+  const tables = [...new Set(rows.map((row, index) => requireString(row?.table, `emergencyPatch.rows[${index}].table`)))].sort(codepointCompare);
   for (const table of REQUIRED_PATCH_TABLES) {
     if (!tables.includes(table)) {
       throw new Error(`emergencyPatch.rows must include ${table}`);
