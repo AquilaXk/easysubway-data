@@ -12,6 +12,34 @@ const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 18;
 const EXPECTED_EDGE_COUNT = 48;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
+
+function hasApprovedSerializationOnlyReadmission(evidence, inputSha256) {
+  const readmissions = evidence?.readmissions ?? [];
+  const start = readmissions.findIndex(({ previousPack }) => previousPack?.sha256 === inputSha256);
+  return start >= 0
+    && readmissions.slice(start).some((readmission) =>
+      readmission?.serializationOnly?.approvedByIssue === 2648
+      && readmission.serializationOnly.logicalRowsUnchanged === true
+      && Array.isArray(readmission.rowDiff)
+      && readmission.rowDiff.length === 0)
+    && hasTrackedReadmissionToOutput(evidence, inputSha256);
+}
+
+function hasTrackedReadmissionToOutput(evidence, inputSha256) {
+  const readmissions = evidence?.readmissions;
+  const start = readmissions?.findIndex(({ previousPack }) => previousPack?.sha256 === inputSha256) ?? -1;
+  if (start < 0) return false;
+  let previous = readmissions[start].previousPack;
+  for (const entry of readmissions.slice(start)) {
+    if (entry.previousPack?.sha256 !== previous.sha256
+      || entry.previousPack?.sqliteSha256 !== previous.sqliteSha256
+      || entry.previousPack?.byteSize !== previous.byteSize) return false;
+    previous = entry.newPack ?? {};
+  }
+  return previous.sha256 === evidence?.pack?.outputSha256
+    && previous.sqliteSha256 === evidence?.pack?.outputSqliteSha256
+    && previous.byteSize === evidence?.pack?.byteSize;
+}
 const PRODUCTION_CONTRACT_PATH = repositoryPath(
   "tools/datapack/itx-cheongchun-coverage-contract.json",
 );
@@ -207,7 +235,7 @@ export async function admittedTopologySource(reference, source, evidence, contra
     || historical?.freshUntil !== evidence.sourceArtifact.freshUntil
     || historical?.canonicalPackIdentity?.sha256 !== historicalAdmission.gzipSha256
     || evidence?.pack?.inputSqliteSha256 !== historicalAdmission.sqliteSha256
-    || source?.canonicalPackIdentity?.sha256 !== evidence?.pack?.outputSha256
+    || !hasTrackedReadmissionToOutput(evidence, source?.canonicalPackIdentity?.sha256)
     || JSON.stringify(source.normalizedSnapshotSets)
       !== JSON.stringify(historical.normalizedSnapshotSets)
     || deriveTopology(source).sha256 !== deriveTopology(historical).sha256) {
@@ -553,11 +581,12 @@ async function main() {
       freshUntil: evidence.sourceArtifact.freshUntil,
       sourceIssue: 2135,
     } : admissionEvidence;
+    const currentCanonical = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
     assertCanonicalInputIdentity(
       contract,
       source,
-      topologySource.historical ? sha256(inputGzipBytes) : evidence?.pack?.inputSha256,
-      topologySource.historical ? sha256(inputSqliteBytes) : evidence?.pack?.inputSqliteSha256,
+      topologySource.historical ? currentCanonical?.sha256 : evidence?.pack?.inputSha256,
+      topologySource.historical ? currentCanonical?.sqliteSha256 : evidence?.pack?.inputSqliteSha256,
     );
     if (evidence?.schemaVersion !== 1
       || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
@@ -586,7 +615,11 @@ async function main() {
       || (topologySource.inputByteSize !== null
         && evidence.pack.inputByteSize !== topologySource.inputByteSize)
       || evidence?.pack?.byteSizeDelta !== inputGzipBytes.length - evidence.pack.inputByteSize
-      || evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
+      || (evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
+        && !hasApprovedSerializationOnlyReadmission(
+          evidence,
+          source?.canonicalPackIdentity?.sha256,
+        ))
       || pack?.sha256 !== sha256(inputGzipBytes)
       || pack?.sqliteSha256 !== evidence?.pack?.outputSqliteSha256
       || pack?.byteSize !== inputGzipBytes.length) {

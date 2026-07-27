@@ -169,6 +169,7 @@ function primaryKeyColumns(database, table) {
 }
 
 function tableRows(database, table) {
+  if (!listTables(database).includes(table)) return [];
   return database.prepare(`SELECT * FROM "${table}"`).all();
 }
 
@@ -176,10 +177,13 @@ function tableRows(database, table) {
 // removed/added/changed(같은 키, 다른 값)를 센다. 변경 행 수가 임계 이하면
 // 감사 가능하도록 키·before/after 값을 evidence에 함께 싣는다.
 function diffTable(previousDb, newDb, table) {
-  const pk = primaryKeyColumns(newDb, table);
+  const pk = primaryKeyColumns(listTables(newDb).includes(table) ? newDb : previousDb, table);
   const keyOf = (row) => pk.map((column) => JSON.stringify(row[column])).join("|");
   const previousRows = tableRows(previousDb, table);
   const newRows = tableRows(newDb, table);
+  const canonicalRow = (row) => JSON.stringify(Object.fromEntries(
+    Object.entries(row).sort(([left], [right]) => codepointCompare(left, right)),
+  ));
   const previousByKey = new Map(previousRows.map((row) => [keyOf(row), row]));
   const newByKey = new Map(newRows.map((row) => [keyOf(row), row]));
   const removedKeys = [];
@@ -188,7 +192,7 @@ function diffTable(previousDb, newDb, table) {
   for (const [key, previousRow] of previousByKey) {
     if (!newByKey.has(key)) {
       removedKeys.push(key);
-    } else if (JSON.stringify(newByKey.get(key)) !== JSON.stringify(previousRow)) {
+    } else if (canonicalRow(newByKey.get(key)) !== canonicalRow(previousRow)) {
       changedKeys.push(key);
     }
   }

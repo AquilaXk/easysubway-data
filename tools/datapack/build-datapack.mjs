@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { constants as zlibConstants, gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -23,7 +23,19 @@ import {
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const canonicalSqliteHeaderVersion = 3_053_000;
 const validatedItxAdmissionPacks = new WeakSet();
+const validatedItxAdmissionOutputs = new WeakMap();
+const originalItxAdmissionOutput = Object.freeze({
+  sha256: "dfe8420b2f26d2ca2948575098e0a6a5e278c3b203f7cd9c1f1b588a07e74b02",
+  sqliteSha256: "c39f23cd6b8b20f88672d0456b72a4efbd3697b81035cfb49ded289e50f3a4aa",
+  byteSize: 359388,
+});
+const originalItxAdmissionProjection = Object.freeze({
+  edgeCount: 48,
+  edgesSha256: "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+  evidenceSha256: "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996",
+});
 const productionMinimumTableRowNames = [
   "stations",
   "station_lines",
@@ -80,11 +92,27 @@ async function main() {
     buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions);
 
     const sqliteBytes = await readFile(sqlitePath);
-    const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+    // ponytail: offset 96 is informational and otherwise records the platform SQLite patch version.
+    sqliteBytes.writeUInt32BE(canonicalSqliteHeaderVersion, 96);
+    await writeFile(sqlitePath, sqliteBytes);
+    // ponytail: Z_RLE is stable across supported zlib versions; byte 9 removes the platform OS marker.
+    const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0, strategy: zlibConstants.Z_RLE });
+    compressedBytes[9] = 255;
     await writeFile(compressedPath, compressedBytes);
     const compressedSha256 = sha256(compressedBytes);
     const sqliteSha256 = sha256(sqliteBytes);
     const sizeBytes = compressedBytes.length;
+    const admittedOutput = validatedItxAdmissionOutputs.get(pack);
+    if (admittedOutput && !samePackIdentity(admittedOutput, {
+      sha256: compressedSha256,
+      sqliteSha256,
+      byteSize: sizeBytes,
+    })) {
+      throw new Error(`built ITX pack identity does not match tracked readmission output: ${JSON.stringify({
+        expected: admittedOutput,
+        actual: { sha256: compressedSha256, sqliteSha256, byteSize: sizeBytes },
+      })}`);
+    }
     const representativeRouteRegressions = canonicalRepresentativeRouteRegressions(
       pack.representativeRouteRegressions,
     );
@@ -396,6 +424,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     throw new Error("buildSpec.builderGitSha must be a git sha");
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
+  await validateTrackedItxTopologyEvidence(buildSpec, fixture);
   return validateOfficialOdFareEvidence(buildSpec.officialOdFareEvidence, fixture, admissions, admissionBytes);
 }
 
@@ -420,8 +449,135 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
     sourceInventorySha256: normalizedHashes.sourceInventorySha256,
     builderGitSha: requiredString(buildSpec.builderGitSha, "buildSpec.builderGitSha"),
     builderVersion: requiredString(buildSpec.builderVersion, "buildSpec.builderVersion"),
+    ...(buildSpec.itxTopologyEvidenceSha256
+      ? { itxTopologyEvidenceSha256: sha256HexString(
+          buildSpec.itxTopologyEvidenceSha256,
+          "buildSpec.itxTopologyEvidenceSha256",
+        ) }
+      : {}),
     ...(officialOdFareEvidence ? { officialOdFareEvidence } : {}),
   };
+}
+
+async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
+  if (fixture.packs?.some((pack) => (pack.transitTrips ?? [])
+    .some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN"))) {
+    throw new Error("production ITX timetable rows require explicit admission");
+  }
+  const packs = fixture.packs?.filter((pack) => [
+    ...(pack.transitTrips ?? []),
+    ...(pack.networkEdges ?? []),
+  ].some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")) ?? [];
+  if (packs.length === 0) return;
+  const evidencePath = await resolveBuildInputPath(
+    buildSpec.itxTopologyEvidencePath,
+    "buildSpec.itxTopologyEvidencePath",
+  );
+  const evidenceBytes = await readFile(evidencePath);
+  if (sha256HexString(buildSpec.itxTopologyEvidenceSha256, "buildSpec.itxTopologyEvidenceSha256")
+    !== sha256(evidenceBytes)) {
+    throw new Error("buildSpec.itxTopologyEvidenceSha256 must match tracked evidence bytes");
+  }
+  const evidence = JSON.parse(evidenceBytes);
+  if (evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence.serviceId !== "ITX_CHEONGCHUN"
+    || evidence.sourceIssue !== 2135) {
+    throw new Error("buildSpec ITX topology evidence must be the #2135 admission artifact");
+  }
+  const { output, projection: admission } = validateTrackedItxReadmissionChain(evidence);
+  for (const pack of packs) {
+    const edges = (pack.networkEdges ?? [])
+      .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+      .map((row) => ({
+        id: row.id,
+        from_node_id: row.fromNodeId,
+        to_node_id: row.toNodeId,
+        duration_seconds: row.durationSeconds,
+        distance_meters: row.distanceMeters,
+        edge_type: row.edgeType,
+        service_pattern: row.servicePattern,
+        service_class: row.serviceClass,
+      }))
+      .sort((left, right) => codepointCompare(left.id, right.id));
+    const routeEvidence = (pack.routeServiceArtifactEvidence ?? [])
+      .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+      .map((row) => ({
+        service_class: row.serviceClass,
+        timetable_artifact_id: row.timetableArtifactId,
+        timetable_artifact_sha256: row.timetableArtifactSha256,
+        canonical_pack_id: row.canonicalPackId,
+        canonical_pack_sha256: row.canonicalPackSha256,
+        canonical_pack_sqlite_sha256: row.canonicalPackSqliteSha256,
+        admission_status: row.admissionStatus,
+        admission_eligible: row.admissionEligible ? 1 : 0,
+        fresh_until: row.freshUntil,
+        source_issue: row.sourceIssue,
+      }));
+    if (edges.length !== admission.edgeCount
+      || sha256(Buffer.from(JSON.stringify(edges))) !== admission.edgesSha256) {
+      throw new Error("ITX_CHEONGCHUN edge projection does not match tracked topology evidence");
+    }
+    if (sha256(Buffer.from(JSON.stringify(routeEvidence))) !== admission.evidenceSha256) {
+      throw new Error("ITX_CHEONGCHUN route evidence projection does not match tracked topology evidence");
+    }
+    validatedItxAdmissionPacks.add(pack);
+    validatedItxAdmissionOutputs.set(pack, output);
+  }
+}
+
+function validateTrackedItxReadmissionChain(evidence) {
+  if (!Array.isArray(evidence.readmissions) || evidence.readmissions.length === 0) {
+    throw new Error("tracked ITX readmission chain is invalid");
+  }
+  let previous = originalItxAdmissionOutput;
+  let projection;
+  for (const entry of evidence.readmissions) {
+    const candidateProjection = entry.itxSubgraph;
+    if (!samePackIdentity(entry.previousPack, previous)
+      || candidateProjection?.unchanged !== true
+      || !Number.isSafeInteger(candidateProjection.edgeCount)
+      || candidateProjection.edgeCount <= 0
+      || !/^[a-f0-9]{64}$/.test(candidateProjection.edgesSha256 ?? "")
+      || !/^[a-f0-9]{64}$/.test(candidateProjection.evidenceSha256 ?? "")
+      || (projection && (candidateProjection.edgeCount !== projection.edgeCount
+        || candidateProjection.edgesSha256 !== projection.edgesSha256
+        || candidateProjection.evidenceSha256 !== projection.evidenceSha256))) {
+      throw new Error("tracked ITX readmission chain is invalid");
+    }
+    if (projection == null
+      && (candidateProjection.edgeCount !== originalItxAdmissionProjection.edgeCount
+        || candidateProjection.edgesSha256 !== originalItxAdmissionProjection.edgesSha256
+        || candidateProjection.evidenceSha256 !== originalItxAdmissionProjection.evidenceSha256)) {
+      throw new Error("tracked ITX readmission projection does not match original admission");
+    }
+    projection ??= candidateProjection;
+    previous = requiredPackIdentity(entry.newPack);
+  }
+  const output = requiredPackIdentity({
+    sha256: evidence.pack?.outputSha256,
+    sqliteSha256: evidence.pack?.outputSqliteSha256,
+    byteSize: evidence.pack?.byteSize,
+  });
+  if (evidence.pack?.id !== "capital" || !samePackIdentity(previous, output)) {
+    throw new Error("tracked ITX readmission chain is invalid");
+  }
+  return { output, projection };
+}
+
+function requiredPackIdentity(identity) {
+  if (!/^[a-f0-9]{64}$/.test(identity?.sha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(identity?.sqliteSha256 ?? "")
+    || !Number.isSafeInteger(identity?.byteSize)
+    || identity.byteSize <= 0) {
+    throw new Error("tracked ITX readmission chain is invalid");
+  }
+  return identity;
+}
+
+function samePackIdentity(left, right) {
+  return left?.sha256 === right.sha256
+    && left?.sqliteSha256 === right.sqliteSha256
+    && left?.byteSize === right.byteSize;
 }
 
 function validateOfficialOdFareEvidence(evidence, fixture, admissions, admissionBytes) {
@@ -457,8 +613,8 @@ function validateOfficialOdFareEvidence(evidence, fixture, admissions, admission
   if (officialOdFareQuoteSetHash(evidence.quotes) !== admission.quoteSetHash) {
     throw new Error(`${label}.quotes must match admission quote set`);
   }
-  if (JSON.stringify(candidateQuotes) !== JSON.stringify(evidence.quotes)) {
-    throw new Error(`${label}.quotes must exactly match candidate fixture quotes`);
+  if (officialOdFareQuoteSetHash(candidateQuotes) !== officialOdFareQuoteSetHash(evidence.quotes)) {
+    throw new Error(`${label}.quotes must match candidate fixture quote set`);
   }
   return evidence;
 }
@@ -1259,10 +1415,13 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           requiredString(row.zoneId, "stationFareZones.zoneId"),
         ],
       );
-      const officialOdFareQuotes = (pack.officialOdFareQuotes ?? []).map((row) => {
-        const admission = officialOdFareAdmissions.get(row.sourceId);
-        return { admission, row, values: officialOdFareQuoteValues(row, admission) };
-      });
+      const officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
+        .map((row) => {
+          const admission = officialOdFareAdmissions.get(row.sourceId);
+          return { admission, row, values: officialOdFareQuoteValues(row, admission) };
+        })
+        .sort((left, right) => codepointCompare(left.values[0], right.values[0])
+          || codepointCompare(left.values[1], right.values[1]));
       for (const admission of new Set(officialOdFareQuotes.map(({ admission }) => admission))) {
         const sourceQuotes = officialOdFareQuotes.filter(({ admission: rowAdmission }) => rowAdmission === admission);
         if (sourceQuotes.length !== admission.quoteCount) {
@@ -1651,8 +1810,8 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
           requiredString(row.stationId, "routeMapPositions.stationId"),
           requiredString(row.lineId, "routeMapPositions.lineId"),
           requiredString(row.region, "routeMapPositions.region"),
-          requiredNonNegativeInteger(row.x, "routeMapPositions.x"),
-          requiredNonNegativeInteger(row.y, "routeMapPositions.y"),
+          requiredNonNegativeFiniteNumber(row.x, "routeMapPositions.x"),
+          requiredNonNegativeFiniteNumber(row.y, "routeMapPositions.y"),
           row.labelDx ?? 0,
           row.labelDy ?? 0,
           canonicalLabelPolygon(row.labelPolygon, "routeMapPositions.labelPolygon"),
@@ -2073,7 +2232,8 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
         ],
       );
       database.exec("COMMIT");
-      vacuum(database);
+      // ponytail: ANALYZE/optimize statistics differ across SQLite builds; the release artifact must not embed them.
+      database.exec("VACUUM");
     } catch (error) {
       database.exec("ROLLBACK");
       throw error;
@@ -2140,11 +2300,6 @@ function insertRows(database, table, columns, rows, mapRow) {
   for (const row of rows ?? []) {
     statement.run(...mapRow(row));
   }
-}
-
-function vacuum(database) {
-  database.exec("PRAGMA optimize");
-  database.exec("VACUUM");
 }
 
 function validateFixture(fixture) {

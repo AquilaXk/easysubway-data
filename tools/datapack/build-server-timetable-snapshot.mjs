@@ -16,6 +16,12 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
 const SCHEMA_IDENTITY = "backend-timetable-snapshot-v1";
+// ponytail: keep this immutable trust anchor local so the runtime builder never imports the mutating CLI.
+const ORIGINAL_ITX_ADMISSION_OUTPUT = {
+  sha256: "dfe8420b2f26d2ca2948575098e0a6a5e278c3b203f7cd9c1f1b588a07e74b02",
+  sqliteSha256: "c39f23cd6b8b20f88672d0456b72a4efbd3697b81035cfb49ded289e50f3a4aa",
+  byteSize: 359388,
+};
 const ITX_SERVICE_ID_BY_SOURCE = {
   "weekday-kric": "itx-cheongchun-weekday-kric",
   "saturday-kric": "itx-cheongchun-saturday-kric",
@@ -40,6 +46,7 @@ export function buildServerTimetableSnapshot({
   completenessBytes,
   canonicalPackGzipBytes,
   topologyEvidenceBytes,
+  readmissionEvidenceBytes,
   subwayRosterBytes,
   reviewedPackBytes,
   sourceSnapshotsBytes,
@@ -53,6 +60,9 @@ export function buildServerTimetableSnapshot({
   const topologyEvidence = topologyEvidenceBytes == null
     ? null
     : parseJson(topologyEvidenceBytes, "topology evidence");
+  const readmissionEvidence = readmissionEvidenceBytes == null
+    ? null
+    : parseJson(readmissionEvidenceBytes, "readmission evidence");
   const subwayRoster = parseJson(subwayRosterBytes, "subway roster");
   const admittedCanonicalPackIdentity = validateAdmission({
     contract,
@@ -65,7 +75,7 @@ export function buildServerTimetableSnapshot({
   // 순수 freshness 리프레시(topology 불변)는 apply-itx가 산출하는 topology evidence 없이
   // 이미 admit된 pack identity를 재사용한다. topology가 실제로 바뀌는 리프레시는 기존 경로.
   const { canonicalPackIdentity, canonicalPackLineage } = topologyEvidenceBytes == null
-    ? admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity })
+    ? admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity, readmissionEvidence })
     : validateCanonicalTopologyPack({
       contract,
       source,
@@ -530,7 +540,7 @@ function namespacedItxServiceId(sourceServiceId) {
   return serviceId;
 }
 
-function admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity }) {
+function admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity, readmissionEvidence }) {
   let canonicalPackSqliteBytes;
   try {
     canonicalPackSqliteBytes = gunzipSync(canonicalPackGzipBytes);
@@ -541,10 +551,16 @@ function admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackId
   const outputSqliteSha256 = sha256(canonicalPackSqliteBytes);
   // coverage contract가 이미 admit한 identity를 evidence에 그대로 기록하되, 실제 번들 pack
   // 파일의 실측 해시와 어긋나면 스테일 pin 위에 조용히 쌓지 않도록 fail closed 한다.
-  if (admittedCanonicalPackIdentity.sha256 !== outputSha256
-    || admittedCanonicalPackIdentity.sqliteSha256 !== outputSqliteSha256) {
-    throw new Error("canonical topology pack identity mismatch");
-  }
+  const directlyAdmitted = admittedCanonicalPackIdentity.sha256 === outputSha256
+    && admittedCanonicalPackIdentity.sqliteSha256 === outputSqliteSha256;
+  if (!directlyAdmitted) validateReadmissionEvidence({
+    evidence: readmissionEvidence,
+    admittedCanonicalPackIdentity,
+    itxProjection: canonicalItxProjection(canonicalPackSqliteBytes),
+    outputSha256,
+    outputSqliteSha256,
+    byteSize: canonicalPackGzipBytes.length,
+  });
   return {
     canonicalPackIdentity: {
       id: admittedCanonicalPackIdentity.id,
@@ -552,11 +568,90 @@ function admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackId
       sqliteSha256: outputSqliteSha256,
     },
     canonicalPackLineage: {
-      provenance: "coverage-contract-admission",
+      provenance: directlyAdmitted ? "coverage-contract-admission" : "tracked-readmission-chain",
       admittedInputSha256: admittedCanonicalPackIdentity.sha256,
       admittedInputSqliteSha256: admittedCanonicalPackIdentity.sqliteSha256,
+      ...(directlyAdmitted ? {} : { readmissionCount: readmissionEvidence.readmissions.length }),
     },
   };
+}
+
+function validateReadmissionEvidence({
+  evidence,
+  admittedCanonicalPackIdentity,
+  itxProjection,
+  outputSha256,
+  outputSqliteSha256,
+  byteSize,
+}) {
+  const readmissions = evidence?.readmissions;
+  let previous = ORIGINAL_ITX_ADMISSION_OUTPUT;
+  let includesAdmission = false;
+  if (evidence?.schemaVersion !== 1
+    || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence.serviceId !== "ITX_CHEONGCHUN"
+    || evidence.pack?.id !== "capital"
+    || evidence.pack.outputSha256 !== outputSha256
+    || evidence.pack.outputSqliteSha256 !== outputSqliteSha256
+    || evidence.pack.byteSize !== byteSize
+    || !Array.isArray(readmissions)
+    || readmissions.length === 0) {
+    throw new Error("canonical topology pack identity mismatch");
+  }
+  for (const entry of readmissions) {
+    includesAdmission ||= previous.sha256 === admittedCanonicalPackIdentity.sha256
+      && previous.sqliteSha256 === admittedCanonicalPackIdentity.sqliteSha256;
+    if (entry.previousPack?.sha256 !== previous.sha256
+      || entry.previousPack?.sqliteSha256 !== previous.sqliteSha256
+      || entry.previousPack?.byteSize !== previous.byteSize
+      || entry.itxSubgraph?.unchanged !== true
+      || entry.itxSubgraph?.edgeCount !== itxProjection.edgeCount
+      || entry.itxSubgraph?.edgesSha256 !== itxProjection.edgesSha256
+      || entry.itxSubgraph?.evidenceSha256 !== itxProjection.evidenceSha256) {
+      throw new Error("canonical topology pack identity mismatch");
+    }
+    previous = entry.newPack ?? {};
+  }
+  if (!includesAdmission
+    || previous.sha256 !== outputSha256
+    || previous.sqliteSha256 !== outputSqliteSha256
+    || previous.byteSize !== byteSize) {
+    throw new Error("canonical topology pack identity mismatch");
+  }
+}
+
+function canonicalItxProjection(sqliteBytes) {
+  const directory = mkdtempSync(path.join(tmpdir(), "server-snapshot-itx-"));
+  const sqlitePath = path.join(directory, "capital.sqlite");
+  let database;
+  try {
+    writeFileSync(sqlitePath, sqliteBytes);
+    database = new DatabaseSync(sqlitePath, { readOnly: true });
+    const edges = database.prepare(`
+      SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters,
+             edge_type, service_pattern, service_class
+      FROM network_edges
+      WHERE service_class = 'ITX_CHEONGCHUN'
+      ORDER BY id
+    `).all();
+    const evidence = database.prepare(`
+      SELECT service_class, timetable_artifact_id, timetable_artifact_sha256,
+             canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+             admission_status, admission_eligible, fresh_until, source_issue
+      FROM route_service_artifact_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'
+    `).all();
+    return {
+      edgeCount: edges.length,
+      edgesSha256: sha256(Buffer.from(JSON.stringify(edges))),
+      evidenceSha256: sha256(Buffer.from(JSON.stringify(evidence))),
+    };
+  } catch (error) {
+    throw new Error("canonical topology pack identity mismatch", { cause: error });
+  } finally {
+    database?.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function validateCanonicalTopologyPack({
@@ -1002,6 +1097,7 @@ async function main() {
   const canonicalGzipBytes = args.check ? await readFile(outputPath) : undefined;
   const contractBytes = await readFile(contractPath);
   const contract = parseJson(contractBytes, "coverage contract");
+  const trackedTopologyEvidenceBytes = await readFile(topologyEvidencePath);
   const result = buildServerTimetableSnapshot({
     baselineGzipBytes: await readFile(baselinePath),
     contractBytes,
@@ -1011,7 +1107,8 @@ async function main() {
       contract.sourceTimetableArtifact.completenessEvidencePath,
     )),
     canonicalPackGzipBytes: await readFile(canonicalPackPath),
-    topologyEvidenceBytes: withoutTopologyEvidence ? null : await readFile(topologyEvidencePath),
+    topologyEvidenceBytes: withoutTopologyEvidence ? null : trackedTopologyEvidenceBytes,
+    readmissionEvidenceBytes: trackedTopologyEvidenceBytes,
     subwayRosterBytes: await readFile(subwayRosterPath),
     reviewedPackBytes: await readFile(reviewedPackPath),
     sourceSnapshotsBytes: await readFile(sourceSnapshotsPath),

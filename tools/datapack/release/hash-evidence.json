@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
+  "builderGitSha": "7e60ed6268517db734e745bae4f028dfbbc9d6a3",
+  "builderVersion": "build-datapack.mjs@4",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 (a) 커밋 데이터에서 결정적 재산출, 또는 (b) #1415·#1992·#1996 admission 실행 산출물의 재생성·검증본에서만 채웠다. 임의 합성값 없음. 사당·상록수 4호선 접근성 상태는 실측 그대로(UNDER_MAINTENANCE/NO_OFFICIAL_FEED) 기록 — 거짓 AVAILABLE 위장 없음.",
   "ledgerHashes": {
@@ -53,8 +54,10 @@
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
-    "value": "tools/datapack/release/capital-production-reviewed-pack.json",
-    "contract": "워크플로 production 게이트 체인(330~337행)을 현행 브랜치에서 그대로 실행한 산출물을 커밋. pack.artifactKind=production, 소비 소스 10종(9종+seoul-metro-accessibility). 사당 UNDER_MAINTENANCE·상록수 NO_OFFICIAL_FEED edge 포함."
+    "value": "tools/datapack/release/capital-production-canonical-pack.json",
+    "sha256": "be9898a8410db60e1e5a21a3c758b6acd9288e6968bdae0cfb474fd9e81c633c",
+    "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, f46fb5be builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
+    "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
   "identifiers": {
     "candidateId": {

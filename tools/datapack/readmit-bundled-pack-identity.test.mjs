@@ -34,7 +34,9 @@ function itxEdgeRow(index) {
 
 // 최소 스키마(도구가 실제로 건드리는 테이블만)로 gzip sqlite pack을 만든다.
 // unrelatedValue로 "ITX와 무관한" 변경을 주입해 재승인 대상 diff를 만든다.
-function buildFixturePack({ unrelatedValue = "v1", edgeOverride = null } = {}) {
+function buildFixturePack({
+  unrelatedValue = "v1", edgeOverride = null, addedTable = false, reversedUnrelatedColumns = false,
+} = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), "readmit-fixture-"));
   const sqlitePath = path.join(directory, "capital.sqlite");
   const database = new DatabaseSync(sqlitePath);
@@ -51,7 +53,9 @@ function buildFixturePack({ unrelatedValue = "v1", edgeOverride = null } = {}) {
     );
     CREATE TABLE station_lines (station_id TEXT, line_id TEXT, PRIMARY KEY(station_id, line_id));
     CREATE TABLE route_map_positions (station_id TEXT, line_id TEXT, x REAL, y REAL, PRIMARY KEY(station_id, line_id));
-    CREATE TABLE unrelated_table (id TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE unrelated_table (${reversedUnrelatedColumns
+      ? "value TEXT, id TEXT PRIMARY KEY"
+      : "id TEXT PRIMARY KEY, value TEXT"});
   `);
   const insertEdge = database.prepare(`
     INSERT INTO network_edges (id, from_node_id, to_node_id, duration_seconds, distance_meters, edge_type, service_pattern, service_class)
@@ -79,6 +83,9 @@ function buildFixturePack({ unrelatedValue = "v1", edgeOverride = null } = {}) {
     "ADMITTED", 1, "2999-01-01T00:00:00.000Z", 2135,
   );
   database.prepare("INSERT INTO unrelated_table (id, value) VALUES ('row-1', ?)").run(unrelatedValue);
+  if (addedTable) {
+    database.exec("CREATE TABLE added_table (id TEXT PRIMARY KEY); INSERT INTO added_table VALUES ('new-row');");
+  }
   database.close();
   return { directory, sqlitePath };
 }
@@ -158,6 +165,49 @@ test("생성 모드: ITX와 무관한 테이블만 바뀐 재승인은 evidence�
   await execFileAsync(process.execPath, [
     TOOL, "--check", "--pack", newPackPath, "--evidence", evidencePath, "--genesis-pack", previousPackPath,
   ], { cwd: root });
+});
+
+test("생성 모드: 새 schema table 추가를 row diff로 기록한다", async (context) => {
+  const { directory, previousPackPath, evidencePath } = await setupChainStart(context);
+  const next = buildFixturePack({ unrelatedValue: "after", addedTable: true });
+  context.after(() => rm(next.directory, { recursive: true, force: true }));
+  const newPackPath = path.join(directory, "new.sqlite.gz");
+  await packToGzipFile(next.sqlitePath, newPackPath);
+
+  await execFileAsync(process.execPath, [
+    TOOL,
+    "--pack", newPackPath,
+    "--previous-pack", previousPackPath,
+    "--evidence", evidencePath,
+    "--provenance", "schema test 재승인",
+  ], { cwd: root });
+
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  const added = evidence.readmissions[0].rowDiff.find(({ table }) => table === "added_table");
+  assert.deepEqual({
+    previousRowCount: added.previousRowCount,
+    newRowCount: added.newRowCount,
+    rowsAdded: added.rowsAdded,
+  }, { previousRowCount: 0, newRowCount: 1, rowsAdded: 1 });
+});
+
+test("생성 모드: column 순서만 다른 동일 행은 변경으로 기록하지 않는다", async (context) => {
+  const { directory, previousPackPath, evidencePath } = await setupChainStart(context);
+  const next = buildFixturePack({ unrelatedValue: "before", reversedUnrelatedColumns: true });
+  context.after(() => rm(next.directory, { recursive: true, force: true }));
+  const newPackPath = path.join(directory, "new.sqlite.gz");
+  await packToGzipFile(next.sqlitePath, newPackPath);
+
+  await execFileAsync(process.execPath, [
+    TOOL,
+    "--pack", newPackPath,
+    "--previous-pack", previousPackPath,
+    "--evidence", evidencePath,
+    "--provenance", "column order test 재승인",
+  ], { cwd: root });
+
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  assert.equal(evidence.readmissions[0].rowDiff.some(({ table }) => table === "unrelated_table"), false);
 });
 
 test("생성 모드: --previous-pack이 tracked evidence의 output과 다르면 거부한다", async (context) => {

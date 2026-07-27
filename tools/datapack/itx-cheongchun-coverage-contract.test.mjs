@@ -324,7 +324,7 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
   });
 });
 
-test("ITX-청춘 admission pin은 현행 pack과 일치하고 historical topology output lineage를 보존한다", async () => {
+test("ITX-청춘 admission pin은 historical source를 보존하고 readmission chain은 현행 pack과 일치한다", async () => {
   const canonicalPackBytes = await readFile(new URL(
     "../../apps/mobile/assets/datapacks/capital.sqlite.gz",
     import.meta.url,
@@ -340,8 +340,8 @@ test("ITX-청춘 admission pin은 현행 pack과 일치하고 historical topolog
   assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
     id: "capital",
     sourceIssue: 2097,
-    sha256: canonicalPackSha256,
-    sqliteSha256: canonicalPackSqliteSha256,
+    sha256: "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
+    sqliteSha256: "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
   });
   assert.equal(topologyEvidence.sourceIssue, 2135);
   assert.equal(topologyEvidence.pack.outputSha256, canonicalPackSha256);

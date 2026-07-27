@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "artifactKind": "server-timetable-snapshot-evidence",
   "schemaIdentity": "backend-timetable-snapshot-v1",
-  "snapshotId": "server-timetable-snapshot-cf2f25d26584bbcc",
-  "snapshotSha256": "cf2f25d26584bbcced1f33e999ddd89b9885a9de3be7c4ff4fabceab323aef30",
+  "snapshotId": "server-timetable-snapshot-a0eb22245b5d1e57",
+  "snapshotSha256": "a0eb22245b5d1e573b33a27ee703d9cfa54c24274965bc78c27028e1d4127849",
   "snapshotSqlByteSize": 9714509,
-  "snapshotGzipSha256": "575ba396e052171a94cbb0fded0ad708a37b10b9490aecc63746c2cdd7c9a1d2",
-  "snapshotGzipByteSize": 348025,
+  "snapshotGzipSha256": "b28e79a51d03dc4a4aef144fb11a5ff2c9ceebd673fb43ffbfe5a1e785fe313f",
+  "snapshotGzipByteSize": 348019,
   "freshUntil": "2026-08-03T00:00:00+09:00",
   "serviceIdentity": {
     "serviceId": "ITX_CHEONGCHUN",
@@ -21,13 +21,14 @@
   },
   "canonicalPackIdentity": {
     "id": "capital",
-    "sha256": "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
-    "sqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7"
+    "sha256": "6e4d7aafb533d57a405ee403c349d7608cbea9a5eda4f8dbcacb753da5d8e93e",
+    "sqliteSha256": "93aeff44980305e419bad1e618f0143854a2f625b331ba200dde6b779e616706"
   },
   "canonicalPackLineage": {
-    "provenance": "coverage-contract-admission",
+    "provenance": "tracked-readmission-chain",
     "admittedInputSha256": "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
-    "admittedInputSqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7"
+    "admittedInputSqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
+    "readmissionCount": 9
   },
   "accessibilitySource": {
     "materializedSqlSha256": "3f0b8240eacf190cd3206e9803ea9cb9dfa6d0dbaf299e683cbd28ad5e430d2e"
@@ -122,5 +123,5 @@
     "transferRules": 0,
     "routeEdgeEvidence": 4
   },
-  "evidenceHash": "e440bb3ebd1628e1fda442a23e60d9c933ee066fc06f7bcc588b83a54ea52064"
+  "evidenceHash": "51e006604e3ba279fdc59c7ebdf7b5293e5e10b5b1080afda51ef30d0a0dfa20"
 }

@@ -514,6 +514,20 @@ test("RC producer는 현재 remote production manifest를 다시 검증한다", 
   assert.match(releaseWorkflow, /--expected-manifest release-artifacts\/downloaded\/datapack-selected\/current\.json/);
 });
 
+test("Android production RC는 build와 upload 전에 bundled artifact identity를 검증한다", () => {
+  const releaseWorkflow = readFileSync(path.join(root, ".github/workflows/release-artifacts.yml"), "utf8");
+  const job = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  android-production-rc-release:"),
+    releaseWorkflow.indexOf("  play-internal-upload:"),
+  );
+  const audit = job.indexOf("Android Production RC Artifact / Audit bundled datapacks");
+  const build = job.indexOf("Android Production RC Artifact / Build production signed app bundle");
+  const upload = job.indexOf("Android Production RC Artifact / Upload app bundle");
+
+  assert.match(job, /node tools\/datapack\/verify-production-pack-artifact-identity\.mjs/);
+  assert.ok(audit < build && build < upload);
+});
+
 test("expiry alert는 publish 없이 같은 decision engine을 소비한다", () => {
   const expiryWorkflow = readFileSync(path.join(root, ".github/workflows/datapack-expiry-alert.yml"), "utf8");
   assert.match(expiryWorkflow, /decide-datapack-release\.mjs/);

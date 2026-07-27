@@ -38,7 +38,8 @@ async function inputs({ withTopologyEvidence = false } = {}) {
     contract.sourceTimetableArtifact.completenessEvidencePath,
   ));
   const canonicalPackGzipBytes = await readFile(canonicalPackPath);
-  const topologyEvidenceBytes = withTopologyEvidence ? await readFile(topologyEvidencePath) : null;
+  const readmissionEvidenceBytes = await readFile(topologyEvidencePath);
+  const topologyEvidenceBytes = withTopologyEvidence ? readmissionEvidenceBytes : null;
   const subwayRosterBytes = await readFile(subwayRosterPath);
   const reviewedPackBytes = await readFile(reviewedPackPath);
   const sourceSnapshotsBytes = await readFile(sourceSnapshotsPath);
@@ -49,6 +50,7 @@ async function inputs({ withTopologyEvidence = false } = {}) {
     completenessBytes,
     canonicalPackGzipBytes,
     topologyEvidenceBytes,
+    readmissionEvidenceBytes,
     subwayRosterBytes,
     reviewedPackBytes,
     sourceSnapshotsBytes,
@@ -84,10 +86,11 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
     sqliteSha256: sha256(gunzipSync(value.canonicalPackGzipBytes)),
   });
   assert.deepEqual(first.evidence.canonicalPackLineage, {
-    provenance: "coverage-contract-admission",
+    provenance: "tracked-readmission-chain",
     admittedInputSha256: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256,
     admittedInputSqliteSha256:
       contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
+    readmissionCount: 9,
   });
   assert.deepEqual(first.evidence.serviceIdentity, {
     serviceId: "ITX_CHEONGCHUN",
@@ -346,6 +349,26 @@ test("complete snapshot은 source·completeness identity와 freshness를 fail cl
     }),
     /canonical topology pack identity mismatch/,
   );
+  const brokenReadmission = JSON.parse(value.readmissionEvidenceBytes);
+  brokenReadmission.readmissions[0].previousPack.sha256 = "0".repeat(64);
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      readmissionEvidenceBytes: Buffer.from(JSON.stringify(brokenReadmission)),
+      buildNow,
+    }),
+    /canonical topology pack identity mismatch/,
+  );
+  const missingNewPack = JSON.parse(value.readmissionEvidenceBytes);
+  delete missingNewPack.readmissions[0].newPack;
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      readmissionEvidenceBytes: Buffer.from(JSON.stringify(missingNewPack)),
+      buildNow,
+    }),
+    /canonical topology pack identity mismatch/,
+  );
   const topologyValue = await inputs({ withTopologyEvidence: true });
   const consistentTopology = consistentFreshnessInputs(topologyValue);
   const topologyEvidence = JSON.parse(consistentTopology.topologyEvidenceBytes);
@@ -558,6 +581,21 @@ test("pack 미입력 경로는 sqliteSha256만 어긋나도 fail closed 한다",
   assert.throws(
     () => buildServerTimetableSnapshot({
       ...value, contractBytes: tamperedContractBytes, sourceBytes, topologyEvidenceBytes: null, buildNow,
+    }),
+    /canonical topology pack identity mismatch/,
+  );
+});
+
+test("pack 미입력 경로는 손상된 ITX projection hash를 거부한다", async () => {
+  const value = await inputs();
+  const evidence = JSON.parse(value.readmissionEvidenceBytes);
+  evidence.readmissions.at(-1).itxSubgraph.edgesSha256 = "0".repeat(64);
+
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      readmissionEvidenceBytes: Buffer.from(`${JSON.stringify(evidence)}\n`),
+      buildNow,
     }),
     /canonical topology pack identity mismatch/,
   );

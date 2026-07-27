@@ -3,7 +3,9 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260712",
   "productionScopeId": "capital_pilot_android_v1",
-  "fixturePath": "tools/datapack/release/capital-production-reviewed-pack.json",
+  "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
+  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence.json",
+  "itxTopologyEvidenceSha256": "4289fbef83e95c318d43b44829ae33db26e9d9a04623dc911fde9218899d25d3",
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
     "molit-urban-rail-full-route-capital-admission-20260712",
@@ -195,8 +197,8 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "3f47b5b54e44500f589ae037bed24477eb461a00041623250bd7cc45fca3874c",
-  "builderGitSha": "4fc68131b397c0468d68728683bb6c79b7a42a39",
-  "builderVersion": "build-datapack.mjs@1",
+  "builderGitSha": "7e60ed6268517db734e745bae4f028dfbbc9d6a3",
+  "builderVersion": "build-datapack.mjs@4",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
     "snapshotId": "seoul-metro-official-od-fares-20260712",
