@@ -514,10 +514,76 @@ function forbiddenKeyPaths(node, nodePath = "$") {
   }
   if (!node || typeof node !== "object") return [];
   return Object.entries(node).flatMap(([key, value]) => [
-    ...(FORBIDDEN_EVIDENCE_KEYS.includes(key) ? [`${nodePath}.${key}`] : []),
+    ...(FORBIDDEN_EVIDENCE_KEYS.includes(key) && `${nodePath}.${key}` !== "$.deployedArtifact.sqliteSha256"
+      ? [`${nodePath}.${key}`]
+      : []),
     ...forbiddenKeyPaths(value, `${nodePath}.${key}`),
   ]);
 }
+
+test("candidate evidence는 배포 artifact row count와 transition을 함께 기록한다", async () => {
+  const evidence = await readJson(EVIDENCE_PATH);
+
+  assert.deepEqual(evidence.deployedArtifact, {
+    verifierPath: "tools/datapack/verify-production-pack-artifact-identity.mjs",
+    packId: "capital",
+    gzipSha256: "dddfba965fb735efccc01d5f4501a0c4a4e9cf7d2a6bd2324bbeaef47c03141e",
+    sqliteSha256: "afefead8a5cb8c3c1121e825e37d22a340d277cb98279ba5c218ff5c2adcd18b",
+    byteSize: 1463806,
+    rowCounts: {
+      catalog_metadata: 2,
+      data_quality_records: 5,
+      facilities: 7,
+      facility_status_snapshots: 0,
+      fare_discounts: 0,
+      fare_rules: 0,
+      fare_zones: 0,
+      internal_route_edges: 1,
+      internal_route_nodes: 2,
+      lines: 37,
+      network_edges: 2178,
+      official_od_fare_quotes: 6,
+      operators: 22,
+      out_of_station_transfer_links: 0,
+      realtime_provider_line_mappings: 0,
+      realtime_provider_station_mappings: 0,
+      route_map_line_tracks: 48,
+      route_map_positions: 1102,
+      route_service_artifact_evidence: 1,
+      service_calendar_dates: 28,
+      service_calendars: 2,
+      station_accessibility_summaries: 0,
+      station_aliases: 18,
+      station_car_door_hints: 35,
+      station_exits: 1,
+      station_facility_evidence: 8,
+      station_fare_zones: 0,
+      station_lines: 1108,
+      station_pathway_edges: 0,
+      station_pathway_nodes: 0,
+      stations: 946,
+      transfer_rules: 0,
+      transit_feed_info: 1,
+      transit_frequencies: 0,
+      transit_routes: 2,
+      transit_stop_times: 932,
+      transit_trips: 466,
+    },
+    networkEdgeCounts: {
+      total: 2178,
+      provenanceComplete: 652,
+      strictEligible: 652,
+    },
+  });
+  assert.deepEqual(evidence.transitions.find((entry) => entry.requirementKey === PILOT_REQUIREMENT_KEY), {
+    requirementKey: PILOT_REQUIREMENT_KEY,
+    before: "MISSING",
+    after: "SUPPORTED",
+    sourceIds: [CAPITAL_SEOUL_ROUTE_MAP_SOURCE_ID, PILOT_SOURCE_ID],
+    coveredFields: 2,
+    denominator: 2,
+  });
+});
 
 test("커밋된 candidate 게이트 evidence는 현행 입력에서 바이트 단위로 재생성된다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "nationwide-candidate-gate-"));
@@ -1396,6 +1462,34 @@ test("candidate spec validation seam은 production 채널을 거부한다", asyn
   assert.throws(
     () => validateNationwideCandidateCoverageSpec(spec, inventory),
     /manifest\.channel must be candidate/,
+  );
+});
+
+test("배포 artifact identity는 SUPPORTED 판정 전에 검증한다", async () => {
+  const spec = await readJson(SPEC_PATH);
+  const inventory = await readJson(INVENTORY_PATH);
+  spec.packDataInclusions = [{
+    ...spec.packDataInclusions[0],
+    materializer: "test://supported-judgment",
+  }];
+
+  await assert.rejects(
+    runNationwideCandidateCoverageGate({
+      spec,
+      specInput: { path: SPEC_PATH, sha256: "a".repeat(64) },
+      targetsInput: { path: TARGETS_PATH, sha256: "b".repeat(64) },
+      inventory,
+      inventoryInput: { path: INVENTORY_PATH, sha256: "c".repeat(64) },
+      resolutionPlanInput: { path: RESOLUTION_PLAN_PATH, sha256: "d".repeat(64) },
+      resolutionsInput: { path: RESOLUTIONS_PATH, sha256: "e".repeat(64) },
+      workDir: path.join(tmpdir(), "nationwide-candidate-gate-artifact-ordering"),
+      verifyDeployedArtifact: async () => { throw new Error("deployed artifact identity mismatch"); },
+      materializers: new Map([["test://supported-judgment", {
+        inputs: { paths: ["stationMapPath"], linePaths: ["topologySnapshotPath", "timetableSnapshotPath"] },
+        materialize: () => { throw new Error("SUPPORTED judgment reached"); },
+      }]]),
+    }),
+    /deployed artifact identity mismatch/,
   );
 });
 
@@ -2934,6 +3028,7 @@ test("누락된 재기술은 emit fixture를 남기지 않고 거부된다", asy
         resolutionsInput: { path: RESOLUTIONS_PATH, sha256: "e".repeat(64) },
         workDir: workspace,
         emitFixturePath,
+        verifyDeployedArtifact: async () => ({}),
       }),
       /line-scope redescriptions must exactly match the actual required set/,
     );

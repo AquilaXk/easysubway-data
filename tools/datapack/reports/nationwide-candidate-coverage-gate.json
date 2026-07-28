@@ -35,6 +35,57 @@
     "reasonCodesKo": "NO_SUPPORTING_ROWS_FOR_LINE — 그 scope를 뒷받침하는 official/field-verified provenance 행이 조립 결과에 필드마다 0건임을 하네스가 확인한다(아래 supportingRecordCountByField). 사유가 자유 서술로만 남지 않도록 코드마다 실측 술어를 하나씩 둔다. 새 사유 코드는 그 코드가 요구하는 실측 술어를 함께 넣어야만 allowlist에 오른다.",
     "scopeKo": "선언 단위는 (sourceId, sourceDomain, lineId)다. 선언은 그 재기술이 declare한 requirement 키 안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없고, 한 재기술의 노선을 전부 선언하면 그 재기술이 아무것도 열지 않게 되므로 거부된다."
   },
+  "deployedArtifact": {
+    "byteSize": 1463806,
+    "gzipSha256": "dddfba965fb735efccc01d5f4501a0c4a4e9cf7d2a6bd2324bbeaef47c03141e",
+    "networkEdgeCounts": {
+      "provenanceComplete": 652,
+      "strictEligible": 652,
+      "total": 2178
+    },
+    "packId": "capital",
+    "rowCounts": {
+      "catalog_metadata": 2,
+      "data_quality_records": 5,
+      "facilities": 7,
+      "facility_status_snapshots": 0,
+      "fare_discounts": 0,
+      "fare_rules": 0,
+      "fare_zones": 0,
+      "internal_route_edges": 1,
+      "internal_route_nodes": 2,
+      "lines": 37,
+      "network_edges": 2178,
+      "official_od_fare_quotes": 6,
+      "operators": 22,
+      "out_of_station_transfer_links": 0,
+      "realtime_provider_line_mappings": 0,
+      "realtime_provider_station_mappings": 0,
+      "route_map_line_tracks": 48,
+      "route_map_positions": 1102,
+      "route_service_artifact_evidence": 1,
+      "service_calendar_dates": 28,
+      "service_calendars": 2,
+      "station_accessibility_summaries": 0,
+      "station_aliases": 18,
+      "station_car_door_hints": 35,
+      "station_exits": 1,
+      "station_facility_evidence": 8,
+      "station_fare_zones": 0,
+      "station_lines": 1108,
+      "station_pathway_edges": 0,
+      "station_pathway_nodes": 0,
+      "stations": 946,
+      "transfer_rules": 0,
+      "transit_feed_info": 1,
+      "transit_frequencies": 0,
+      "transit_routes": 2,
+      "transit_stop_times": 932,
+      "transit_trips": 466
+    },
+    "sqliteSha256": "afefead8a5cb8c3c1121e825e37d22a340d277cb98279ba5c218ff5c2adcd18b",
+    "verifierPath": "tools/datapack/verify-production-pack-artifact-identity.mjs"
+  },
   "determinism": {
     "excludedAxes": [
       "candidate.manifestSha256",
@@ -1710,6 +1761,7 @@
   "readingGuide": {
     "baselineSemanticsKo": "baseline은 저장소의 특정 과거 커밋 상태가 아니라 '등재된 재기술을 걷어낸' counterfactual이다. 아래 lineScopeRedescriptions에 등재된 소스의 coverageScope.lineIds만 fixture와 inventory 사본에서 지운 실행이며, 편입 행은 두 variant에 동일하게 들어간다. 따라서 이 evidence의 전이는 '어떤 소스의 line-scope 기술이 그 requirement를 여는가'를 뜻하고, 그 소스의 line-scope가 admission 정본에 언제 들어왔는지(대구 소스는 #2549 이전부터 line-scope였다)와는 다른 축이다. 전이를 뒷받침한 소스가 등재 목록과 정확히 같은지는 하네스가 fail closed로 확인한다.",
     "denominatorSemanticsKo": "pilotRequirements의 denominator·coveredFields는 domain requiredFields 개수이지 데이터 행 수가 아니다. route_map_positions의 denominator 2는 필수 필드 2개(route_map_position·route_map_label_polygon)를 뜻하며 역 2개나 행 2개를 뜻하지 않는다. 실제로 그 판정을 뒷받침한 provenance 행 수는 필드별 supportingRecordCountByField에 따로 기록한다.",
+    "deployedArtifactSemanticsKo": "reviewed-seed counterfactual 전이는 line-scope 재기술의 판정 축이고, shipped artifact row counts는 실제 배포 팩의 별도 축이다.",
     "supportedScopeKo": "이 evidence는 SUPPORTED 축만 기록하므로 전국 gap 총량 판독에 쓰면 안 된다. 전국 진행 집계는 tools/datapack/reports/nationwide-coverage-tally.json이 정본이다.",
     "variantComparisonKo": "전이 판정은 두 variant의 상대 비교다. baseline SUPPORTED 총량은 승계 팩의 다른 소스가 line-scope를 갖게 되면 함께 늘어날 수 있고, 하네스는 파일럿 키가 baseline에 없고 lineScoped가 baseline ∪ 파일럿 키와 정확히 같은지만 fail closed로 본다."
   },

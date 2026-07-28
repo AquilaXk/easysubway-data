@@ -35,7 +35,8 @@
 //
 // 결정성:
 //   임시 키로 만든 manifest·pack 서명과 그 서명이 들어간 manifest sha256, 그리고 런타임 SQLite 구현에
-//   좌우되는 sqliteSha256은 evidence에 기록하지 않는다. resolutions 만료(nextReviewAt)는 게이트가
+//   좌우되는 candidate sqliteSha256은 evidence에 기록하지 않는다. 배포 artifact verifier가 확인한
+//   SQLite identity는 후보 산출물과 별도 축으로 기록한다. resolutions 만료(nextReviewAt)는 게이트가
 //   wall-clock으로 판정하므로 그 영향을 받는 EXPLICITLY_UNSUPPORTED·MISSING 집계도 기록하지 않는다.
 //   기록 축은 SUPPORTED 판정과 분모뿐이며 이 축은 오프라인·키 없이 바이트 단위로 재현된다.
 //
@@ -61,6 +62,7 @@ import { promisify } from "node:util";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { verifyProductionPackArtifactIdentity } from "./verify-production-pack-artifact-identity.mjs";
 import {
   parseMolitDaeguStationMappings,
   parseMolitDaejeonStationMappings,
@@ -130,6 +132,10 @@ const ALLOWED_FLAGS = new Set([
 const SPEC_ARTIFACT_KIND = "nationwide-candidate-pack-spec";
 const CANDIDATE_ARTIFACT_KIND = "production";
 const CANDIDATE_MANIFEST_CHANNEL = "candidate";
+const DEPLOYED_ARTIFACT_BUILD_SPEC_PATH = "tools/datapack/release/candidate-build-spec.json";
+const DEPLOYED_ARTIFACT_ASSET_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
+const DEPLOYED_ARTIFACT_INDEX_PATH = "apps/mobile/assets/datapacks/index.json";
+const DEPLOYED_ARTIFACT_PACK_ID = "capital";
 // 예약 TLD(.invalid, RFC 2606)라 어떤 게시 경로에서도 해석되지 않는다.
 const NON_PUBLISHABLE_HOST = "easysubway-datapack-candidate.invalid";
 const SIGNING_MODE = "EPHEMERAL_RSA_2048";
@@ -315,7 +321,14 @@ export async function runNationwideCandidateCoverageGate({
   // 않으므로 기본 allowlist가 그대로 적용되고, spec은 이 맵에 항목을 추가할 수 없다 — "spec 편집만으로
   // 임의 모듈을 실행시킬 수 없다"는 성질은 그대로다.
   materializers = PACK_DATA_MATERIALIZERS,
+  verifyDeployedArtifact = () => verifyProductionPackArtifactIdentity({
+    buildSpecPath: path.join(root, DEPLOYED_ARTIFACT_BUILD_SPEC_PATH),
+    assetPath: path.join(root, DEPLOYED_ARTIFACT_ASSET_PATH),
+    indexPath: path.join(root, DEPLOYED_ARTIFACT_INDEX_PATH),
+    packId: DEPLOYED_ARTIFACT_PACK_ID,
+  }),
 }) {
+  const deployedArtifact = await verifyDeployedArtifact();
   validateNationwideCandidateCoverageSpec(spec, inventory, materializers);
   // 승계 원본도 입력 해시 축에 넣는다. 경로·pack 정체성만 기록하면 원본 좌표 같은 값 drift가
   // evidence를 바이트 동일하게 통과시킨다(구조 drift만 잡히는 상태) — 파일 바이트로 결속한다.
@@ -404,6 +417,7 @@ export async function runNationwideCandidateCoverageGate({
     reports,
     variants,
     signing,
+    deployedArtifact,
   });
 }
 
@@ -1690,7 +1704,7 @@ export function assertDeclaredTransitionsMatchVariants(spec, variants) {
   return nonTransitions;
 }
 
-function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, signing }) {
+function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, signing, deployedArtifact }) {
   const nonTransitions = assertDeclaredNonTransitionsMatchVariants(spec, variants);
   assertEvidenceModelTotals(variants);
   assertCandidateRootPack(spec, reports);
@@ -1728,6 +1742,10 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
     issue: spec.issue,
     parentIssues: [...spec.parentIssues],
     targetVersion: reports.lineScoped.targetVersion,
+    deployedArtifact: {
+      verifierPath: "tools/datapack/verify-production-pack-artifact-identity.mjs",
+      ...deployedArtifact,
+    },
     regeneration: {
       command: regenerationCommand(inputs),
       evidencePath: EVIDENCE_PATH,
@@ -1788,6 +1806,8 @@ function buildEvidence({ spec, inputs, packDataInclusions, reports, variants, si
         + "line-scope 기술이 그 requirement를 여는가'를 뜻하고, 그 소스의 line-scope가 admission 정본에 언제 "
         + "들어왔는지(대구 소스는 #2549 이전부터 line-scope였다)와는 다른 축이다. 전이를 뒷받침한 소스가 등재 "
         + "목록과 정확히 같은지는 하네스가 fail closed로 확인한다.",
+      deployedArtifactSemanticsKo:
+        "reviewed-seed counterfactual 전이는 line-scope 재기술의 판정 축이고, shipped artifact row counts는 실제 배포 팩의 별도 축이다.",
     },
     inputs: Object.fromEntries(
       Object.entries(inputs).map(([name, input]) => [name, { path: input.path, sha256: input.sha256 }]),

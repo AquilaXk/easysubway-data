@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
+import { verifyProductionPackArtifactIdentity } from "./verify-production-pack-artifact-identity.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -45,7 +46,7 @@ test("production producer는 미승격 network edge와 역외 환승 link 상태
 test("production build와 bundled asset/index의 artifact identity를 exact-match한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-production-pack-identity-"));
   const baselineDir = path.join(workspace, "baseline");
-  const assetPath = path.join(workspace, "capital.sqlite.gz");
+  const assetPath = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
   const indexPath = path.join(workspace, "index.json");
   try {
     await execFileAsync(process.execPath, [
@@ -93,7 +94,7 @@ test("production build와 bundled asset/index의 artifact identity를 exact-matc
         && ["duration_seconds", "distance_meters"].includes(field));
     assert.equal(new Set(itxPlaceholderRecords.map(({ entityId, field }) => `${entityId}\0${field}`)).size, 96);
     assert.ok(itxPlaceholderRecords.every(({ derivationKind }) => derivationKind === "GENERATED"));
-    await copyFile(path.join(baselineDir, "catalog/capital-v1.sqlite.gz"), assetPath);
+    await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
     const gzipBytes = await readFile(assetPath);
     assert.equal(gzipBytes[9], 255);
     const sqliteBytes = gunzipSync(gzipBytes);
@@ -145,13 +146,6 @@ test("production build와 bundled asset/index의 artifact identity를 exact-matc
     } finally {
       database.close();
     }
-    await writeFile(indexPath, `${JSON.stringify({ packs: [{
-      id: "capital",
-      sha256: pack.sha256,
-      sqliteSha256: pack.sqliteSha256,
-      byteSize: pack.sizeBytes,
-    }] })}\n`);
-
     const { stdout } = await execFileAsync(process.execPath, [
       "tools/datapack/verify-production-pack-artifact-identity.mjs",
       "--build-spec", "tools/datapack/release/candidate-build-spec.json",
@@ -164,9 +158,34 @@ test("production build와 bundled asset/index의 artifact identity를 exact-matc
     assert.equal(report.sqliteSha256, pack.sqliteSha256);
     assert.equal(report.byteSize, pack.sizeBytes);
     assert.ok(report.rowCounts.stations > 0);
+    assert.deepEqual(report.networkEdgeCounts, {
+      total: 2178,
+      provenanceComplete: 652,
+      strictEligible: 652,
+    });
+    assert.deepEqual(await verifyProductionPackArtifactIdentity({
+      buildSpecPath: "tools/datapack/release/candidate-build-spec.json",
+      assetPath,
+      indexPath,
+      packId: "capital",
+    }), report);
 
     const index = JSON.parse(await readFile(indexPath, "utf8"));
-    index.packs[0].sha256 = "f".repeat(64);
+    const capitalIndex = index.packs.find(({ id }) => id === "capital");
+    capitalIndex.asset = "assets/datapacks/core.sqlite.gz";
+    await writeFile(indexPath, `${JSON.stringify(index)}\n`);
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/verify-production-pack-artifact-identity.mjs",
+        "--build-spec", "tools/datapack/release/candidate-build-spec.json",
+        "--asset", assetPath,
+        "--index", indexPath,
+        "--pack-id", "capital",
+      ], { cwd: root, env: verifierEnv }),
+      /index asset mismatch/,
+    );
+    capitalIndex.asset = "assets/datapacks/capital.sqlite.gz";
+    capitalIndex.sha256 = "f".repeat(64);
     await writeFile(indexPath, `${JSON.stringify(index)}\n`);
     await assert.rejects(
       execFileAsync(process.execPath, [

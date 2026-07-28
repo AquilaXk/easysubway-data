@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
 import { stagedPackPath } from "./lib/manifest-validation.mjs";
@@ -52,12 +53,39 @@ function tableRowCounts(sqlitePath) {
   }
 }
 
-async function main(argv) {
-  const args = parseArgs(argv);
-  const buildSpecPath = path.resolve(requiredArg(args, "build-spec"));
-  const assetPath = path.resolve(requiredArg(args, "asset"));
-  const indexPath = path.resolve(requiredArg(args, "index"));
-  const packId = requiredArg(args, "pack-id");
+function networkEdgeCounts(sqlitePath) {
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const rows = database.prepare(`
+      SELECT source_id, source_snapshot_id, provider_record_hash, provenance_kind,
+             verification_status, last_verified_at, evidence_hash
+      FROM network_edges
+    `).all();
+    const hasValidHash = (value) => /^[0-9a-f]{64}$/.test(value);
+    const hasCompleteProvenance = (row) => row.source_id !== ""
+      && row.source_snapshot_id !== ""
+      && hasValidHash(row.provider_record_hash)
+      && hasValidHash(row.evidence_hash)
+      && row.provenance_kind !== "UNKNOWN"
+      && row.verification_status !== "UNKNOWN"
+      && row.last_verified_at != null;
+    const provenanceComplete = rows.filter(hasCompleteProvenance);
+    return {
+      total: rows.length,
+      provenanceComplete: provenanceComplete.length,
+      strictEligible: provenanceComplete.filter((row) => row.verification_status === "VERIFIED"
+        && ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_SURVEY"].includes(row.provenance_kind)
+        && !/^([0-9a-f])\1{63}$/.test(row.evidence_hash)).length,
+    };
+  } finally {
+    database.close();
+  }
+}
+
+export async function verifyProductionPackArtifactIdentity({ buildSpecPath, assetPath, indexPath, packId }) {
+  buildSpecPath = path.resolve(buildSpecPath);
+  assetPath = path.resolve(assetPath);
+  indexPath = path.resolve(indexPath);
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-production-pack-identity-"));
   try {
     // ponytail: manifest signatures are outside this SQLite identity gate, so CI needs no publish private key.
@@ -96,23 +124,38 @@ async function main(argv) {
     const index = JSON.parse(await readFile(indexPath, "utf8"));
     const indexPacks = index.packs?.filter(({ id }) => id === packId) ?? [];
     if (indexPacks.length !== 1) throw new Error(`index must contain exactly one pack: ${packId}`);
+    assertEqual(indexPacks[0].asset, path.relative(path.join(root, "apps/mobile"), assetPath).split(path.sep).join("/"), "index asset");
     assertEqual(indexPacks[0].sha256, gzipSha256, "index sha256");
     assertEqual(indexPacks[0].sqliteSha256, sqliteSha256, "index SQLite sha256");
     assertEqual(indexPacks[0].byteSize, byteSize, "index byteSize");
 
-    process.stdout.write(`${JSON.stringify({
+    return {
       packId,
       gzipSha256,
       sqliteSha256,
       byteSize,
       rowCounts: tableRowCounts(builtPath.replace(/\.gz$/, "")),
-    }, null, 2)}\n`);
+      networkEdgeCounts: networkEdgeCounts(builtPath.replace(/\.gz$/, "")),
+    };
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
 }
 
-main(process.argv.slice(2)).catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+async function main(argv) {
+  const args = parseArgs(argv);
+  const report = await verifyProductionPackArtifactIdentity({
+    buildSpecPath: requiredArg(args, "build-spec"),
+    assetPath: requiredArg(args, "asset"),
+    indexPath: requiredArg(args, "index"),
+    packId: requiredArg(args, "pack-id"),
+  });
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
