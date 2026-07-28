@@ -558,7 +558,7 @@ async function writeImmutableArtifact(artifactPath, bytes, errorPrefix) {
   }
 }
 
-function validateSourceFreshness(source, selectedServiceDates, now = null) {
+export function validateSourceFreshness(source, selectedServiceDates, now = null) {
   const value = source?.freshUntil;
   if (typeof value !== "string"
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
@@ -569,7 +569,7 @@ function validateSourceFreshness(source, selectedServiceDates, now = null) {
   if (now && now.getTime() >= Date.parse(value)) throw new Error("SOURCE_SNAPSHOT_EXPIRED");
 }
 
-function validateSourceCandidateSchema(candidate) {
+export function validateSourceCandidateSchema(candidate) {
   const dayCodes = ["8", "7", "9"];
   const selectedDayCodes = Object.keys(candidate?.selectedServiceDates ?? {}).sort(naturalCompare);
   const lineage = candidate?.sourceLineage;

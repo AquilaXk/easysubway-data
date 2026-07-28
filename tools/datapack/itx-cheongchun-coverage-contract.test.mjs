@@ -82,7 +82,7 @@ test("ITX-청춘 coverage contract는 sequence 성공을 timetable 시각 지원
   });
   assert.deepEqual(contract.coverageStates, {
     station_line_membership: "SUPPORTED",
-    route_graph_topology: "MISSING",
+    route_graph_topology: "SUPPORTED",
     schedule_timetable: "MISSING",
   });
   assert.equal(contract.officialEvidence.tagoTrainOd.providerResultCode, "00");
@@ -122,7 +122,8 @@ test("ITX-청춘 source artifact는 승인된 후속 이슈만 소비할 수 있
     contract.searchScopePolicy.metropolitanRouteSearch.SUBWAY_AND_TRAIN,
   );
   assert.equal(targets.railProductScope.trainSearchOnly.services.includes("ITX_CHEONGCHUN"), false);
-  assert.deepEqual(contract.allowedConsumerIssues, ["#2145", "#1400", "#2098", "#2099", "#2058", "#2137"]);
+  assert.deepEqual(contract.allowedConsumerIssues, ["#2145", "#1400", "#2098", "#2099", "#2058", "#2137", "#2649"]);
+  assert.deepEqual(itxTarget.coverageStates, contract.coverageStates);
   assert.equal(contract.legacyDaejeonRowCount, 0);
   assert.equal(contract.legacyYongsanDaejeonTripCount, 0);
 });

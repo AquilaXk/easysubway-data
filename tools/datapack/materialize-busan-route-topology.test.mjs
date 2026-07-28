@@ -16,6 +16,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const evidenceNow = new Date("2026-07-19T18:14:03.004Z");
 
 async function inputs() {

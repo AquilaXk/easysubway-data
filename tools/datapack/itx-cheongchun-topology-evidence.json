@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "6e4d7aafb533d57a405ee403c349d7608cbea9a5eda4f8dbcacb753da5d8e93e",
-    "outputSqliteSha256": "93aeff44980305e419bad1e618f0143854a2f625b331ba200dde6b779e616706",
-    "byteSize": 1373391,
-    "byteSizeDelta": 1014072
+    "outputSha256": "dddfba965fb735efccc01d5f4501a0c4a4e9cf7d2a6bd2324bbeaef47c03141e",
+    "outputSqliteSha256": "afefead8a5cb8c3c1121e825e37d22a340d277cb98279ba5c218ff5c2adcd18b",
+    "byteSize": 1463806,
+    "byteSizeDelta": 1104487
   },
   "readmissions": [
     {
@@ -1918,6 +1918,228 @@
               }
             ],
             "changed": []
+          }
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-27T20:19:01.716Z",
+      "provenance": "#2649 owner-approved network_edges provenance wiring",
+      "previousPack": {
+        "sha256": "6e4d7aafb533d57a405ee403c349d7608cbea9a5eda4f8dbcacb753da5d8e93e",
+        "sqliteSha256": "93aeff44980305e419bad1e618f0143854a2f625b331ba200dde6b779e616706",
+        "byteSize": 1373391
+      },
+      "newPack": {
+        "sha256": "213c824f2801860b58aabe57a3c401ce52e508a0a0a06501127be61c4523f829",
+        "sqliteSha256": "bcc7dbedfa7a275956e9f565f296992d2907b89afe110d9216edb59b0b8765db",
+        "byteSize": 1466134
+      },
+      "byteSizeDelta": 92743,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "network_edges",
+          "previousRowCount": 2178,
+          "newRowCount": 2178,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 652
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-27T21:44:09.199Z",
+      "provenance": "#2649 exact topology edge admission freshness and provenance review",
+      "previousPack": {
+        "sha256": "213c824f2801860b58aabe57a3c401ce52e508a0a0a06501127be61c4523f829",
+        "sqliteSha256": "bcc7dbedfa7a275956e9f565f296992d2907b89afe110d9216edb59b0b8765db",
+        "byteSize": 1466134
+      },
+      "newPack": {
+        "sha256": "a5e7d41a16eba4ccc8ff37fdd57a2b3cc6db49bb816cfa05dfbdda1634f4ea9b",
+        "sqliteSha256": "526a1edddaf160b5e3eab51f060c5145a1a704f5b6a3726498a6d964e020c378",
+        "byteSize": 1466420
+      },
+      "byteSizeDelta": 286,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "network_edges",
+          "previousRowCount": 2178,
+          "newRowCount": 2178,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 604
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-27T22:31:26.000Z",
+      "provenance": "#2649 reviewer correction: fixture-owned provenance rejected; non-admitted edges remain UNKNOWN",
+      "previousPack": {
+        "sha256": "a5e7d41a16eba4ccc8ff37fdd57a2b3cc6db49bb816cfa05dfbdda1634f4ea9b",
+        "sqliteSha256": "526a1edddaf160b5e3eab51f060c5145a1a704f5b6a3726498a6d964e020c378",
+        "byteSize": 1466420
+      },
+      "newPack": {
+        "sha256": "a8342b86e1710b3b722f0385d62f87fb8bd7f616a644c59c25fc18dd48f842fa",
+        "sqliteSha256": "09eeef080cdcc61563d0eb8c5c1e22af644b51109e8e60520f85fac9eb896fde",
+        "byteSize": 1463824
+      },
+      "byteSizeDelta": -2596,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "network_edges",
+          "previousRowCount": 2178,
+          "newRowCount": 2178,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 60
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-28T02:12:57.563Z",
+      "provenance": "#2649 current-head review: 미승격 network edge의 accessibility/stair 상태를 UNKNOWN으로 fail-closed 정규화",
+      "previousPack": {
+        "sha256": "a8342b86e1710b3b722f0385d62f87fb8bd7f616a644c59c25fc18dd48f842fa",
+        "sqliteSha256": "09eeef080cdcc61563d0eb8c5c1e22af644b51109e8e60520f85fac9eb896fde",
+        "byteSize": 1463824
+      },
+      "newPack": {
+        "sha256": "dddfba965fb735efccc01d5f4501a0c4a4e9cf7d2a6bd2324bbeaef47c03141e",
+        "sqliteSha256": "afefead8a5cb8c3c1121e825e37d22a340d277cb98279ba5c218ff5c2adcd18b",
+        "byteSize": 1463806
+      },
+      "byteSizeDelta": -18,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "network_edges",
+          "previousRowCount": 2178,
+          "newRowCount": 2178,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 2,
+          "detail": {
+            "removed": [],
+            "added": [],
+            "changed": [
+              {
+                "previous": {
+                  "id": "edge-sadang-sangnoksu-seoul-4",
+                  "from_node_id": "station-sadang:seoul-4",
+                  "to_node_id": "station-sangnoksu:seoul-4",
+                  "duration_seconds": 2430,
+                  "distance_meters": 18600,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "STEP_FREE",
+                  "accessibility_status": "AVAILABLE",
+                  "reliability_score": 90,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                },
+                "new": {
+                  "id": "edge-sadang-sangnoksu-seoul-4",
+                  "from_node_id": "station-sadang:seoul-4",
+                  "to_node_id": "station-sangnoksu:seoul-4",
+                  "duration_seconds": 2430,
+                  "distance_meters": 18600,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 90,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                }
+              },
+              {
+                "previous": {
+                  "id": "edge-sangnoksu-sadang-seoul-4",
+                  "from_node_id": "station-sangnoksu:seoul-4",
+                  "to_node_id": "station-sadang:seoul-4",
+                  "duration_seconds": 2430,
+                  "distance_meters": 18600,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "STEP_FREE",
+                  "accessibility_status": "AVAILABLE",
+                  "reliability_score": 90,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                },
+                "new": {
+                  "id": "edge-sangnoksu-sadang-seoul-4",
+                  "from_node_id": "station-sangnoksu:seoul-4",
+                  "to_node_id": "station-sadang:seoul-4",
+                  "duration_seconds": 2430,
+                  "distance_meters": 18600,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 90,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                }
+              }
+            ]
           }
         }
       ]

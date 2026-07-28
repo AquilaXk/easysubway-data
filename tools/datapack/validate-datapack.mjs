@@ -1480,7 +1480,9 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     .map((edge) => edge.id);
 
   for (const edge of edgeRows) {
-    validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
+    if (!isExactUnknownNetworkEdgeProvenance(edge)) {
+      validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack);
+    }
     if (isAccessibilityProvenanceCandidate(edge)) {
       validateAccessibilityCoverageEdgeProvenance(edge, sourceUpdatedAtById, pack, accessibilityEvidence);
     }
@@ -1511,6 +1513,18 @@ function validateProductionNetworkEdgeProvenance(database, pack) {
     }
   }
   return null;
+}
+
+function isExactUnknownNetworkEdgeProvenance(edge) {
+  return edge.source_id === ""
+    && edge.source_snapshot_id === ""
+    && edge.provider_record_hash === ""
+    && edge.evidence_hash === ""
+    && edge.provenance_kind === "UNKNOWN"
+    && edge.verification_status === "UNKNOWN"
+    && edge.last_verified_at == null
+    && edge.accessibility_status === "UNKNOWN"
+    && edge.stair_access_state === "UNKNOWN";
 }
 
 function validateNetworkEdgeBaseProvenance(edge, sourceUpdatedAtById, pack) {

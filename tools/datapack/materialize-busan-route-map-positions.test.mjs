@@ -20,6 +20,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const routeMapNow = new Date("2026-07-20T11:13:18.000Z");
 

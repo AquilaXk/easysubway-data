@@ -22,6 +22,7 @@ import { materializeGwangjuTimetable } from "./materialize-gwangju-timetable.mjs
 import { materializeDaeguTimetable, runDaeguTimetableMaterializer } from "./materialize-daegu-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const now = new Date("2026-07-20T16:00:00.000Z");
 const execFileAsync = promisify(execFile);
 const LINE_IDS = { 1: "line-5b8d9b05e7e6", 2: "line-e2938a4cc492", 3: "line-0ffaa95b1b5d" };

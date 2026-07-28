@@ -362,7 +362,14 @@ export async function runNationwideCandidateCoverageGate({
       path.join(root, BUILDER_PATH),
       "--fixture", fixturePath,
       "--output", buildDir,
-    ], { cwd: root, env: { ...process.env, ...signing.env } });
+    ], {
+      cwd: root,
+      env: {
+        ...process.env,
+        ...signing.env,
+        EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+      },
+    });
 
     const reportPath = path.join(variantDir, "coverage-gap-report.json");
     await execFileAsync(process.execPath, [

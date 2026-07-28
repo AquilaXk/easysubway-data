@@ -12,7 +12,8 @@
     "#2098",
     "#2099",
     "#2058",
-    "#2137"
+    "#2137",
+    "#2649"
   ],
   "legacyDaejeonRowCount": 0,
   "legacyYongsanDaejeonTripCount": 0,
@@ -103,7 +104,7 @@
   },
   "coverageStates": {
     "station_line_membership": "SUPPORTED",
-    "route_graph_topology": "MISSING",
+    "route_graph_topology": "SUPPORTED",
     "schedule_timetable": "MISSING"
   },
   "officialEvidence": {

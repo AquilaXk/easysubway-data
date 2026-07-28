@@ -29,6 +29,7 @@ import {
 } from "./materialize-seoul9-phase1-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const accessibilityNow = new Date("2026-07-24T03:00:00.000Z");

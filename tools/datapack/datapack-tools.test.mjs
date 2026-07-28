@@ -58,6 +58,7 @@ const productionEnv = {
   ...process.env,
   EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: testPrivateKeyPem,
   EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM: testPublicKeyPem,
+  EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
 };
 
 test("데이터팩 생성기는 TEST_ONLY admission fixture를 build input으로 거부한다", async (context) => {
@@ -1950,6 +1951,94 @@ test("데이터팩 생성기는 buildSpec과 fixture 동시 입력을 거부한�
     ),
     /exactly one of --fixture or --build-spec is required/,
   );
+});
+
+test("데이터팩 생성기는 일반 fixture 입력으로 production channel을 만들지 않는다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-production-fixture-bypass-"));
+  const fixture = JSON.parse(await readFile(
+    "tools/datapack/release/capital-production-reviewed-pack.json",
+    "utf8",
+  ));
+  const fixturePath = path.join(workspace, "fixture.json");
+  await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
+
+  try {
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture", fixturePath,
+        "--output", path.join(workspace, "output"),
+      ], {
+        cwd: root,
+        env: {
+          ...productionEnv,
+          EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "false",
+        },
+      }),
+      /production fixture builds are validation-only/,
+    );
+    await execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture", fixturePath,
+      "--output", path.join(workspace, "validation-output"),
+    ], {
+      cwd: root,
+      env: {
+        ...productionEnv,
+        EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "true",
+      },
+    });
+    const manifest = JSON.parse(await readFile(
+      path.join(workspace, "validation-output/current.json"),
+      "utf8",
+    ));
+    assert.equal(manifest.channel, "dev");
+    await execFileAsync(process.execPath, [
+      "tools/datapack/validate-datapack.mjs",
+      "--manifest", path.join(workspace, "validation-output/current.json"),
+      "--root", path.join(workspace, "validation-output"),
+      "--require-production",
+    ], { cwd: root, env: productionEnv });
+    const fixturePack = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+    fixturePack.manifest = {
+      ...fixturePack.manifest,
+      manifestVersion: 2,
+      channel: " production ",
+      keyId: "production-v1",
+    };
+    const fixturePackPath = path.join(workspace, "fixture-pack.json");
+    await writeFile(fixturePackPath, `${JSON.stringify(fixturePack)}\n`);
+    await execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture", fixturePackPath,
+      "--output", path.join(workspace, "fixture-pack-output"),
+    ], {
+      cwd: root,
+      env: {
+        ...productionEnv,
+        EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY: "false",
+      },
+    });
+    const fixturePackManifest = JSON.parse(await readFile(
+      path.join(workspace, "fixture-pack-output/current.json"),
+      "utf8",
+    ));
+    assert.equal(fixturePackManifest.channel, "dev");
+    fixture.manifest.channel = "candidate";
+    await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
+    await execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture", fixturePath,
+      "--output", path.join(workspace, "candidate-output"),
+    ], { cwd: root, env: productionEnv });
+    const candidateManifest = JSON.parse(await readFile(
+      path.join(workspace, "candidate-output/current.json"),
+      "utf8",
+    ));
+    assert.equal(candidateManifest.channel, "candidate");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("데이터팩 생성기는 invalid buildSpec hash를 거부한다", async () => {
@@ -4220,6 +4309,55 @@ test("데이터팩 검증기는 출처 없는 production positive edge를 거부
     ),
     /network_edges\.edge-sangnoksu-sadang-seoul-4\.source_id must be a non-empty string/,
   );
+});
+
+test("데이터팩 검증기는 exact UNKNOWN edge만 provenance 예외로 허용한다", async () => {
+  const outputDir = path.join(tmpdir(), `easysubway-datapack-production-edge-exact-unknown-${Date.now()}`);
+  const partialOutputDir = `${outputDir}-partial`;
+  const fixturePath = path.join(outputDir, "fixture.json");
+  await rm(outputDir, { recursive: true, force: true });
+  await rm(partialOutputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  const fixture = JSON.parse(await readFile("tools/datapack/fixtures/catalog-fixture.json", "utf8"));
+  markFixturePackProduction(fixture);
+  const edge = fixture.packs[0].networkEdges.find(({ id }) => id === "edge-sangnoksu-sadang-seoul-4");
+  Object.assign(edge, {
+    accessibilityStatus: "UNKNOWN",
+    stairAccessState: "UNKNOWN",
+    sourceId: "",
+    sourceSnapshotId: "",
+    providerRecordHash: "",
+    provenanceKind: "UNKNOWN",
+    verificationStatus: "UNKNOWN",
+    lastVerifiedAt: null,
+    evidenceHash: "",
+  });
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs",
+    "--fixture", fixturePath,
+    "--output", outputDir,
+  ], { cwd: root, env: productionEnv });
+  await execFileAsync(process.execPath, [
+    "tools/datapack/validate-datapack.mjs",
+    "--manifest", path.join(outputDir, "current.json"),
+    "--root", outputDir,
+  ], { cwd: root, env: productionEnv });
+
+  edge.sourceId = "capital-official-stations";
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
+  await execFileAsync(process.execPath, [
+    "tools/datapack/build-datapack.mjs",
+    "--fixture", fixturePath,
+    "--output", partialOutputDir,
+  ], { cwd: root, env: productionEnv });
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/validate-datapack.mjs",
+    "--manifest", path.join(partialOutputDir, "current.json"),
+    "--root", partialOutputDir,
+  ], { cwd: root, env: productionEnv }), /source_snapshot_id must be a non-empty string/);
 });
 
 test("데이터팩 생성기는 production pack의 최소 row 기준 누락을 거부한다", async () => {
@@ -8802,7 +8940,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
         coverageContract: "tools/datapack/itx-cheongchun-coverage-contract.json",
         coverageStates: {
           station_line_membership: "SUPPORTED",
-          route_graph_topology: "MISSING",
+          route_graph_topology: "SUPPORTED",
           schedule_timetable: "MISSING",
         },
         supportClaimAllowed: false,
@@ -13150,7 +13288,7 @@ test("수도권 pilot production source input은 검증된 접근성 상태로 �
 
   const manifest = JSON.parse(await readFile(path.join(packOutputDir, "current.json"), "utf8"));
   assert.equal(manifest.manifestVersion, 2);
-  assert.equal(manifest.channel, "production");
+  assert.equal(manifest.channel, "dev");
   assert.equal(manifest.keyId, "production-v1");
   assert.deepEqual(manifest.activePack, { id: "capital", version: "1" });
   assert.equal(Number.isInteger(manifest.releaseSequence), true);
@@ -15588,6 +15726,7 @@ async function writeCoverageCandidate(outputDir, provenance) {
 }
 
 function markFixturePackProduction(fixture) {
+  process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
   const pack = fixture.packs[0];
   const officialOdFareSource = pack.sourceInventory.find(
     (source) => source.id === "seoul-metro-official-od-fares",

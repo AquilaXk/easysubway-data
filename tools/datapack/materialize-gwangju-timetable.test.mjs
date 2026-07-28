@@ -22,6 +22,7 @@ import {
 } from "./materialize-gwangju-timetable.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const now = new Date("2026-07-20T13:09:00.000Z");
 const execFileAsync = promisify(execFile);
 

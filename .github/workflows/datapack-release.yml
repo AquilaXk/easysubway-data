@@ -492,7 +492,7 @@ jobs:
               --overrides tools/datapack/fixtures/admin-review-overrides.json \
               --output "${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}"
             rm -rf "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}"
-            node tools/datapack/build-datapack.mjs \
+            EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY=true node tools/datapack/build-datapack.mjs \
               --fixture "${EASYSUBWAY_DATAPACK_PRODUCTION_REVIEWED_FIXTURE}" \
               --output "${EASYSUBWAY_DATAPACK_PRODUCTION_GATE_OUTPUT}"
             if node tools/datapack/validate-datapack.mjs \

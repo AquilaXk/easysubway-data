@@ -28,6 +28,7 @@ import {
 } from "./materialize-seoul-route-map-positions.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const timetableNow = new Date("2026-07-20T16:00:00.000Z");
 const accessibilityNow = new Date("2026-07-24T01:00:00.000Z");
 const daeguRouteMapNow = new Date("2026-07-24T03:00:00.000Z");

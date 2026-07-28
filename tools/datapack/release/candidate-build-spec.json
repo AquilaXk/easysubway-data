@@ -5,7 +5,32 @@
   "productionScopeId": "capital_pilot_android_v1",
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence.json",
-  "itxTopologyEvidenceSha256": "4289fbef83e95c318d43b44829ae33db26e9d9a04623dc911fde9218899d25d3",
+  "itxTopologyEvidenceSha256": "db3f7c6f3a515f734bdd3a210ede8a7b945490d7bcef36340d94ef2fcbe2d9f2",
+  "networkEdgeEvidence": {
+    "sourceInventory": {
+      "path": "tools/datapack/source-inventory.json",
+      "sha256": "d6425d21333dcbb08341a40bc57571e31a0ea7cfc087732c5596af351dd3b1b7"
+    },
+    "capitalTopology": {
+      "path": "tools/datapack/sources/capital-route-topology-20260724.json",
+      "sha256": "1026e93ae3c6fd81bf9a6ac92b810439fc7e7e9fdd0a7c8167840cb5876d84a4",
+      "snapshotId": "capital-route-topology-20260724"
+    },
+    "capitalTopologyAdmission": {
+      "schemaVersion": 1,
+      "artifactKind": "capital-network-edge-admission",
+      "issue": 2649,
+      "status": "ADMITTED",
+      "snapshotId": "capital-route-topology-20260724",
+      "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+      "reviewedAt": "2026-07-27T21:38:29.000Z",
+      "freshUntil": "2026-08-03T21:38:29.000Z"
+    },
+    "itxCoverageContract": {
+      "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
+      "sha256": "8e45ce12b513c5e16109141314d8c5c0390f6621875b18ddd440cc26e8f3a1d5"
+    }
+  },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
     "molit-urban-rail-full-route-capital-admission-20260712",
@@ -197,8 +222,8 @@
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
   "sourceInventorySha256": "3f47b5b54e44500f589ae037bed24477eb461a00041623250bd7cc45fca3874c",
-  "builderGitSha": "7e60ed6268517db734e745bae4f028dfbbc9d6a3",
-  "builderVersion": "build-datapack.mjs@4",
+  "builderGitSha": "6492e35ba435925a219b0de232f977395344afe6",
+  "builderVersion": "build-datapack.mjs@23",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
     "snapshotId": "seoul-metro-official-od-fares-20260712",
