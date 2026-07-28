@@ -3,94 +3,15 @@
   "region": "광주권",
   "generatedFrom": {
     "geometry": "tools/route-map/route-map-defs/easy-subway-gwangju-v3-geometry.json",
-    "geometrySha256": "68de7b12cca2d97f864d09a5c562b11a1a1f02c0978dd2feb85adef020992d9c",
+    "geometrySha256": "2831a30185d100c6a7d309b9441244316f9b88e32a2c116d77341f23d7a63b5f",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "packSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b"
+    "packSha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c"
   },
   "stationCount": 20,
   "unmatchedCount": 0,
+  "unmatched": [],
   "maxDeltaPx": 0,
   "entries": [
-    {
-      "stationId": "station-73a324a117ea",
-      "lineId": "line-e57a361e8892",
-      "name": "녹동",
-      "svgX": 1720,
-      "svgY": 1300,
-      "packX": 1720,
-      "packY": 1300,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-52a494cc7ca2",
-      "lineId": "line-e57a361e8892",
-      "name": "소태",
-      "svgX": 1720,
-      "svgY": 1080,
-      "packX": 1720,
-      "packY": 1080,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-b32a58ea5aa3",
-      "lineId": "line-e57a361e8892",
-      "name": "학동증심사입구",
-      "svgX": 1720,
-      "svgY": 860,
-      "packX": 1720,
-      "packY": 860,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-6416b91f94b1",
-      "lineId": "line-e57a361e8892",
-      "name": "남광주",
-      "svgX": 1720,
-      "svgY": 680,
-      "packX": 1720,
-      "packY": 680,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-ac7ae9113d05",
-      "lineId": "line-e57a361e8892",
-      "name": "문화전당",
-      "svgX": 1720,
-      "svgY": 500,
-      "packX": 1720,
-      "packY": 500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-956d3c1b71cf",
-      "lineId": "line-e57a361e8892",
-      "name": "금남로4가",
-      "svgX": 1415,
-      "svgY": 310,
-      "packX": 1415,
-      "packY": 310,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-f95b9a228e56",
-      "lineId": "line-e57a361e8892",
-      "name": "금남로5가",
-      "svgX": 1110,
-      "svgY": 580,
-      "packX": 1110,
-      "packY": 580,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-e5787c873af4",
-      "lineId": "line-e57a361e8892",
-      "name": "양동시장",
-      "svgX": 1110,
-      "svgY": 740,
-      "packX": 1110,
-      "packY": 740,
-      "deltaPx": 0
-    },
     {
       "stationId": "station-0ffe7433dae9",
       "lineId": "line-e57a361e8892",
@@ -99,36 +20,6 @@
       "svgY": 900,
       "packX": 1110,
       "packY": 900,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-cd16eea9577e",
-      "lineId": "line-e57a361e8892",
-      "name": "농성",
-      "svgX": 1110,
-      "svgY": 1060,
-      "packX": 1110,
-      "packY": 1060,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-eaf1b3343165",
-      "lineId": "line-e57a361e8892",
-      "name": "화정",
-      "svgX": 1110,
-      "svgY": 1220,
-      "packX": 1110,
-      "packY": 1220,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-d56474cd3eff",
-      "lineId": "line-e57a361e8892",
-      "name": "쌍촌",
-      "svgX": 1110,
-      "svgY": 1380,
-      "packX": 1110,
-      "packY": 1380,
       "deltaPx": 0
     },
     {
@@ -142,23 +33,13 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-d0ad7b1b53ca",
+      "stationId": "station-25f856602c61",
       "lineId": "line-e57a361e8892",
-      "name": "상무",
+      "name": "도산",
       "svgX": 470,
-      "svgY": 1380,
+      "svgY": 580,
       "packX": 470,
-      "packY": 1380,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-4388c8c84f48",
-      "lineId": "line-e57a361e8892",
-      "name": "김대중컨벤션센터",
-      "svgX": 470,
-      "svgY": 1220,
-      "packX": 470,
-      "packY": 1220,
+      "packY": 580,
       "deltaPx": 0
     },
     {
@@ -172,13 +53,13 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-a6d7ab6cd1b4",
+      "stationId": "station-4388c8c84f48",
       "lineId": "line-e57a361e8892",
-      "name": "송정공원",
+      "name": "김대중컨벤션센터",
       "svgX": 470,
-      "svgY": 900,
+      "svgY": 1220,
       "packX": 470,
-      "packY": 900,
+      "packY": 1220,
       "deltaPx": 0
     },
     {
@@ -192,13 +73,43 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-25f856602c61",
+      "stationId": "station-52a494cc7ca2",
       "lineId": "line-e57a361e8892",
-      "name": "도산",
-      "svgX": 470,
-      "svgY": 580,
-      "packX": 470,
-      "packY": 580,
+      "name": "소태",
+      "svgX": 1720,
+      "svgY": 1080,
+      "packX": 1720,
+      "packY": 1080,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-6416b91f94b1",
+      "lineId": "line-e57a361e8892",
+      "name": "남광주",
+      "svgX": 1720,
+      "svgY": 680,
+      "packX": 1720,
+      "packY": 680,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-73a324a117ea",
+      "lineId": "line-e57a361e8892",
+      "name": "녹동",
+      "svgX": 1720,
+      "svgY": 1300,
+      "packX": 1720,
+      "packY": 1300,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-956d3c1b71cf",
+      "lineId": "line-e57a361e8892",
+      "name": "금남로4가",
+      "svgX": 1415,
+      "svgY": 310,
+      "packX": 1415,
+      "packY": 310,
       "deltaPx": 0
     },
     {
@@ -209,6 +120,96 @@
       "svgY": 420,
       "packX": 470,
       "packY": 420,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a6d7ab6cd1b4",
+      "lineId": "line-e57a361e8892",
+      "name": "송정공원",
+      "svgX": 470,
+      "svgY": 900,
+      "packX": 470,
+      "packY": 900,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-ac7ae9113d05",
+      "lineId": "line-e57a361e8892",
+      "name": "문화전당",
+      "svgX": 1720,
+      "svgY": 500,
+      "packX": 1720,
+      "packY": 500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-b32a58ea5aa3",
+      "lineId": "line-e57a361e8892",
+      "name": "학동증심사입구",
+      "svgX": 1720,
+      "svgY": 860,
+      "packX": 1720,
+      "packY": 860,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-cd16eea9577e",
+      "lineId": "line-e57a361e8892",
+      "name": "농성",
+      "svgX": 1110,
+      "svgY": 1060,
+      "packX": 1110,
+      "packY": 1060,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-d0ad7b1b53ca",
+      "lineId": "line-e57a361e8892",
+      "name": "상무",
+      "svgX": 470,
+      "svgY": 1380,
+      "packX": 470,
+      "packY": 1380,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-d56474cd3eff",
+      "lineId": "line-e57a361e8892",
+      "name": "쌍촌",
+      "svgX": 1110,
+      "svgY": 1380,
+      "packX": 1110,
+      "packY": 1380,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-e5787c873af4",
+      "lineId": "line-e57a361e8892",
+      "name": "양동시장",
+      "svgX": 1110,
+      "svgY": 740,
+      "packX": 1110,
+      "packY": 740,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-eaf1b3343165",
+      "lineId": "line-e57a361e8892",
+      "name": "화정",
+      "svgX": 1110,
+      "svgY": 1220,
+      "packX": 1110,
+      "packY": 1220,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-f95b9a228e56",
+      "lineId": "line-e57a361e8892",
+      "name": "금남로5가",
+      "svgX": 1110,
+      "svgY": 580,
+      "packX": 1110,
+      "packY": 580,
       "deltaPx": 0
     }
   ]

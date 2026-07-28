@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b",
-    "outputSqliteSha256": "95b0c33e287857809ecedbc7136d6f79d976e9a8147d2fb6d15b8a093a525408",
-    "byteSize": 1463946,
-    "byteSizeDelta": 1104627
+    "outputSha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c",
+    "outputSqliteSha256": "91fd8a98895fd55f1305c1cfe6b554fd4bb71d07bdb1c3a284a93f8ad31651cd",
+    "byteSize": 1463673,
+    "byteSizeDelta": 1104354
   },
   "readmissions": [
     {
@@ -2695,6 +2695,266 @@
               }
             ],
             "changed": []
+          }
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-28T09:20:55.352Z",
+      "provenance": "#2606 owner-approved 5-region geometry/route_map_positions rejoin",
+      "previousPack": {
+        "sha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b",
+        "sqliteSha256": "95b0c33e287857809ecedbc7136d6f79d976e9a8147d2fb6d15b8a093a525408",
+        "byteSize": 1463946
+      },
+      "newPack": {
+        "sha256": "b5df7e9dc9326f302f196e00ec52d0772bccf65d3415f229a6594e7c1de4eb5c",
+        "sqliteSha256": "83e4fe62cb650c4c8eafc58b1a827accb884b19f885a3cfee3f762fa0f3ac0a3",
+        "byteSize": 1463773
+      },
+      "byteSizeDelta": -173,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "route_map_positions",
+          "previousRowCount": 1102,
+          "newRowCount": 1102,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 58
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-28T10:14:09.263Z",
+      "provenance": "#2606 owner-approved 5-region geometry/route_map_positions and branch tracks rejoin",
+      "previousPack": {
+        "sha256": "b5df7e9dc9326f302f196e00ec52d0772bccf65d3415f229a6594e7c1de4eb5c",
+        "sqliteSha256": "83e4fe62cb650c4c8eafc58b1a827accb884b19f885a3cfee3f762fa0f3ac0a3",
+        "byteSize": 1463773
+      },
+      "newPack": {
+        "sha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c",
+        "sqliteSha256": "91fd8a98895fd55f1305c1cfe6b554fd4bb71d07bdb1c3a284a93f8ad31651cd",
+        "byteSize": 1463673
+      },
+      "byteSizeDelta": -100,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "route_map_line_tracks",
+          "previousRowCount": 48,
+          "newRowCount": 48,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 6,
+          "detail": {
+            "removed": [],
+            "added": [],
+            "changed": [
+              {
+                "previous": {
+                  "region": "수도권",
+                  "line_id": "line-472a81add377",
+                  "track_index": 0,
+                  "path": "M 1451 540 L 1538 540 L 1622 540 L 1708 540 L 1789 540 L 1854 540 L 1920 540 L 1986 540 L 2051 540 L 2117 540 L 2182 540 L 2248 540 L 2314 540 L 2379 540 L 2387 548 L 2434 548 L 2442 540 L 2511 540 L 2519 548 L 2591 548 L 2599 540 L 2688 540 L 2707 559 L 2740 559 L 2741 560 L 2741 624 L 2741 687 L 2741 752 L 2748 759 L 2748 817 L 2733 832 L 2733 940 L 2740 947 L 2740 1007 L 2698 1049 L 2698 1070 L 2682 1054 L 2627 1054 L 2619 1062 L 2554 1062 L 2546 1070 L 2417 1070 L 2282 1070 L 2274 1078 L 2151 1078 L 2003 1078 L 1996 1071 L 1947 1071 L 1929 1053 L 1803 1053 L 1731 1125 L 1674 1125 L 1673 1126 L 1673 1214 L 1657 1230 L 1657 1336 L 1675 1354 L 1675 1521 L 1675 1607 L 1675 1726 L 1644 1757 L 1518 1757 L 1511 1750 L 1421 1750 L 1413 1758 L 1367 1758 L 1360 1765 L 1293 1765 L 1282 1754 L 1210 1754 L 1142 1822 L 1142 1869 L 1151 1878 L 1151 1921 L 1151.116 1921.116 L 1151.116 1977.687 L 1195 2021.571 L 1195 2026 L 1240 2071 L 1240 2075 L 1282 2117 L 1282 2122 L 1328 2168 L 1328 2173 L 1375 2220 L 1375 2225 L 1422 2272 L 1423 2272 L 1499 2348 L 1499 2349 L 1576 2426 L 1652 2502 L 1652 2503 L 1729 2580 L 1729 2581 L 1782 2634 L 1782 2645 L 1811 2674 L 1911 2674 L 1911.9360000000001 2673.064 L 1996.315 2673.064 L 1997.2510000000002 2674 L 2078 2674 L 2158 2674 L 2237 2674 L 2316 2674 L 2394 2674 L 2462 2674 L 2551 2674 L 2629 2674 L 2707 2674 L 2785 2674 L 2864 2674 L 2941 2674 L 3020 2674 L 3097 2674 L 3175 2674 L 3257 2674 L 3339 2674 L 3421 2674 L 3503 2674",
+                  "svg_color": "#004a85",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                },
+                "new": {
+                  "region": "수도권",
+                  "line_id": "line-472a81add377",
+                  "track_index": 0,
+                  "path": "M 1451 540 L 1538 540 L 1622 540 L 1708 540 L 1789 540 L 1854 540 L 1920 540 L 1986 540 L 2051 540 L 2117 540 L 2182 540 L 2248 540 L 2314 540 L 2379 540 L 2387 548 L 2434 548 L 2442 540 L 2511 540 L 2519 548 L 2591 548 L 2599 540 L 2688 540 L 2707 559 L 2740 559 L 2741 560 L 2741 624 L 2741 687 L 2741 752 L 2748 759 L 2748 817 L 2733 832 L 2733 940 L 2740 947 L 2740 1007 L 2698 1049 L 2698 1070 L 2682 1054 L 2627 1054 L 2619 1062 L 2554 1062 L 2546 1070 L 2417 1070 L 2282 1070 L 2274 1078 L 2151 1078 L 2003 1078 L 1996 1071 L 1947 1071 L 1929 1053 L 1803 1053 L 1731 1125 L 1674 1125 L 1673 1126 L 1673 1214 L 1657 1230 L 1657 1336 L 1675 1354 L 1675 1521 L 1675 1607 L 1675 1726 L 1644 1757 L 1518 1757 L 1511 1750 L 1421 1750 L 1413 1758 L 1367 1758 L 1360 1765 L 1293 1765 L 1282 1754 L 1210 1754 L 1142 1822 L 1142 1869 L 1151 1878 L 1151 1921 L 1151 1978 L 1195 2022 L 1195 2026 L 1240 2071 L 1240 2075 L 1282 2117 L 1282 2122 L 1328 2168 L 1328 2173 L 1375 2220 L 1375 2225 L 1422 2272 L 1423 2272 L 1499 2348 L 1499 2349 L 1576 2426 L 1652 2502 L 1652 2503 L 1729 2580 L 1729 2581 L 1782 2634 L 1782 2645 L 1811 2674 L 1911 2674 L 1912 2673 L 1996 2673 L 1997 2674 L 2078 2674 L 2158 2674 L 2237 2674 L 2316 2674 L 2394 2674 L 2462 2674 L 2551 2674 L 2629 2674 L 2707 2674 L 2785 2674 L 2864 2674 L 2941 2674 L 3020 2674 L 3097 2674 L 3175 2674 L 3257 2674 L 3339 2674 L 3421 2674 L 3503 2674",
+                  "svg_color": "#004a85",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                }
+              },
+              {
+                "previous": {
+                  "region": "수도권",
+                  "line_id": "line-472a81add377",
+                  "track_index": 2,
+                  "path": "M 1151.116 1977.687 L 1138 1990.8029999999999 L 1138 2068",
+                  "svg_color": "#004a85",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                },
+                "new": {
+                  "region": "수도권",
+                  "line_id": "line-472a81add377",
+                  "track_index": 2,
+                  "path": "M 1151 1978 L 1138 1991 L 1138 2068",
+                  "svg_color": "#004a85",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                }
+              },
+              {
+                "previous": {
+                  "region": "수도권",
+                  "line_id": "line-472a81add377",
+                  "track_index": 3,
+                  "path": "M 1996.315 2673.064 L 2004 2665.379 L 2004 2582",
+                  "svg_color": "#004a85",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                },
+                "new": {
+                  "region": "수도권",
+                  "line_id": "line-472a81add377",
+                  "track_index": 3,
+                  "path": "M 1996 2673 L 2004 2665 L 2004 2582",
+                  "svg_color": "#004a85",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                }
+              },
+              {
+                "previous": {
+                  "region": "수도권",
+                  "line_id": "line-80fc4d5350d4",
+                  "track_index": 0,
+                  "path": "M 747 923 L 747 991 L 763 1007 L 763 1055 L 777 1069 L 777 1129 L 829 1181 L 833 1181 L 881 1229 L 884 1229 L 932 1277 L 936 1277 L 983 1324 L 986 1324 L 1031 1369 L 1031 1373 L 1082 1424 L 1090 1424 L 1138 1472 L 1185 1519 L 1234 1568 L 1293 1627 L 1293 1636 L 1343 1686 L 1352 1686 L 1416 1750 L 1421 1750 L 1479 1692 L 1479 1688 L 1533 1634 L 1540 1634 L 1541 1633 L 1541 1569 L 1540 1568 L 1540 1480 L 1541 1479 L 1541 1315 L 1541 1214 L 1613 1142 L 1613 1054 L 1723 1054 L 1724 1053 L 1803 1053 L 1895 1145 L 1895 1213 L 1903 1205 L 2004 1205 L 2094 1295 L 2145 1295 L 2214 1364 L 2231 1364 L 2297 1298 L 2317 1298 L 2340 1275 L 2340 1205 L 2351 1194 L 2435 1194 L 2567 1194 L 2643 1194 L 2678 1229 L 2678 1299 L 2678 1369 L 2678 1442 L 2679 1443 L 2679 1556 L 2834 1711 L 2889 1711 L 2950 1650 L 2950 1649 L 2999 1600 L 3048 1551 L 3097 1502 L 3146.132 1452.868 L 3146.132 1452.48 L 3195 1403.612 L 3195 1403 L 3244 1354 L 3293 1305 L 3294 1305 L 3343 1256 L 3393 1206 L 3393 1205",
+                  "svg_color": "#794698",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                },
+                "new": {
+                  "region": "수도권",
+                  "line_id": "line-80fc4d5350d4",
+                  "track_index": 0,
+                  "path": "M 747 923 L 747 991 L 763 1007 L 763 1055 L 777 1069 L 777 1129 L 829 1181 L 833 1181 L 881 1229 L 884 1229 L 932 1277 L 936 1277 L 983 1324 L 986 1324 L 1031 1369 L 1031 1373 L 1082 1424 L 1090 1424 L 1138 1472 L 1185 1519 L 1234 1568 L 1293 1627 L 1293 1636 L 1343 1686 L 1352 1686 L 1416 1750 L 1421 1750 L 1479 1692 L 1479 1688 L 1533 1634 L 1540 1634 L 1541 1633 L 1541 1569 L 1540 1568 L 1540 1480 L 1541 1479 L 1541 1315 L 1541 1214 L 1613 1142 L 1613 1054 L 1723 1054 L 1724 1053 L 1803 1053 L 1895 1145 L 1895 1213 L 1903 1205 L 2004 1205 L 2094 1295 L 2145 1295 L 2214 1364 L 2231 1364 L 2297 1298 L 2317 1298 L 2340 1275 L 2340 1205 L 2351 1194 L 2435 1194 L 2567 1194 L 2643 1194 L 2678 1229 L 2678 1299 L 2678 1369 L 2678 1442 L 2679 1443 L 2679 1556 L 2834 1711 L 2889 1711 L 2950 1650 L 2950 1649 L 2999 1600 L 3048 1551 L 3097 1502 L 3146 1453 L 3146 1452 L 3195 1403 L 3244 1354 L 3293 1305 L 3294 1305 L 3343 1256 L 3393 1206 L 3393 1205",
+                  "svg_color": "#794698",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                }
+              },
+              {
+                "previous": {
+                  "region": "수도권",
+                  "line_id": "seoul-2",
+                  "track_index": 0,
+                  "path": "M 1673 1214 L 1541 1214 L 1532 1205 L 1497 1205 L 1429 1205 L 1407 1227 L 1369 1227 L 1322 1274 L 1294 1302 L 1294 1389 L 1293 1390 L 1293 1511 L 1293 1636 L 1293 1688 L 1293 1765 L 1294 1766 L 1294 1877 L 1359 1942 L 1359 1948 L 1420 2009 L 1503 2009 L 1591 2009 L 1675 2009 L 1750 2009 L 1835 2009 L 1843 2017 L 1896 2017 L 1904 2009 L 1969 2009 L 2036 2009 L 2044 2017 L 2112 2017 L 2220 2017 L 2228 2009 L 2291 2009 L 2298 2016 L 2348 2016 L 2433 1931 L 2462 1931 L 2516 1877 L 2516 1868 L 2516 1783 L 2522 1777 L 2522 1717 L 2516 1711 L 2516 1651 L 2516 1586 L 2516 1520 L 2515 1519 L 2515 1469 L 2514.894 1468.8939999999998 L 2514.894 1332.41 L 2467.4839999999995 1285 L 2467 1285 L 2421 1239 L 2387 1205 L 2340 1205 L 2339 1206 L 2232 1206 L 2224 1214 L 2152 1214 L 2143 1205 L 2004 1205 L 1996 1213 L 1895 1213 L 1804 1213 L 1796 1205 L 1740 1205",
+                  "svg_color": "#00a23f",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                },
+                "new": {
+                  "region": "수도권",
+                  "line_id": "seoul-2",
+                  "track_index": 0,
+                  "path": "M 1673 1214 L 1541 1214 L 1532 1205 L 1497 1205 L 1429 1205 L 1407 1227 L 1369 1227 L 1322 1274 L 1294 1302 L 1294 1389 L 1293 1390 L 1293 1511 L 1293 1636 L 1293 1688 L 1293 1765 L 1294 1766 L 1294 1877 L 1359 1942 L 1359 1948 L 1420 2009 L 1503 2009 L 1591 2009 L 1675 2009 L 1750 2009 L 1835 2009 L 1843 2017 L 1896 2017 L 1904 2009 L 1969 2009 L 2036 2009 L 2044 2017 L 2112 2017 L 2220 2017 L 2228 2009 L 2291 2009 L 2298 2016 L 2348 2016 L 2433 1931 L 2462 1931 L 2516 1877 L 2516 1868 L 2516 1783 L 2522 1777 L 2522 1717 L 2516 1711 L 2516 1651 L 2516 1586 L 2516 1520 L 2515 1519 L 2515 1469 L 2515 1332 L 2468 1285 L 2467 1285 L 2421 1239 L 2387 1205 L 2340 1205 L 2339 1206 L 2232 1206 L 2224 1214 L 2152 1214 L 2143 1205 L 2004 1205 L 1996 1213 L 1895 1213 L 1804 1213 L 1796 1205 L 1740 1205",
+                  "svg_color": "#00a23f",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                }
+              },
+              {
+                "previous": {
+                  "region": "수도권",
+                  "line_id": "seoul-2",
+                  "track_index": 2,
+                  "path": "M 2514.894 1332.41 L 2515 1332.3039999999999 L 2515 1258 L 2515 1137 L 2465 1087 L 2369 1087 L 2352 1070 L 2282 1070",
+                  "svg_color": "#00a23f",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                },
+                "new": {
+                  "region": "수도권",
+                  "line_id": "seoul-2",
+                  "track_index": 2,
+                  "path": "M 2515 1332 L 2515 1258 L 2515 1137 L 2465 1087 L 2369 1087 L 2352 1070 L 2282 1070",
+                  "svg_color": "#00a23f",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 수도권 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "updated_at": 1785000755
+                }
+              }
+            ]
           }
         }
       ]

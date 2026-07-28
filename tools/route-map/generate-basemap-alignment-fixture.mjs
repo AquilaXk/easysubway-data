@@ -27,6 +27,10 @@ import { buildAssignments } from "./apply-sma-svg-positions.mjs";
 import { cleanupPackDir, openPack, repoRoot } from "./pack-io.mjs";
 import { getRegionConfig } from "./sma-region-configs.mjs";
 
+function codeUnitCompare(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function parseArgs(argv) {
   const o = {
     pack: "apps/mobile/assets/datapacks/capital.sqlite.gz",
@@ -79,11 +83,25 @@ function main() {
       .all(config.regionKey);
 
     const entries = [];
-    let unmatched = 0;
+    const unmatched = [];
     for (const row of packRows) {
       const svg = svgByStation.get(row.station_id);
       if (!svg) {
-        unmatched += 1;
+        const name = names.get(row.station_id) ?? row.station_id;
+        const exception = config.topologyExceptions.find(
+          (candidate) => candidate.name === name,
+        );
+        if (!exception) {
+          throw new Error(
+            `Undeclared unmatched route_map_positions row: ${row.station_id}/${row.line_id} (${name}).`,
+          );
+        }
+        unmatched.push({
+          stationId: row.station_id,
+          lineId: row.line_id,
+          name,
+          reason: exception.reason,
+        });
         continue;
       }
       const dx = svg.x - row.x;
@@ -100,6 +118,13 @@ function main() {
       });
     }
     entries.sort((a, b) => b.deltaPx - a.deltaPx);
+    unmatched.sort(
+      (a, b) =>
+        codeUnitCompare(a.stationId, b.stationId) ||
+        codeUnitCompare(a.lineId, b.lineId) ||
+        codeUnitCompare(a.name, b.name) ||
+        codeUnitCompare(a.reason, b.reason),
+    );
 
     const fixture = {
       artifactKind: "basemap-alignment-fixture",
@@ -111,7 +136,8 @@ function main() {
         packSha256: sha256(packBytes),
       },
       stationCount: entries.length,
-      unmatchedCount: unmatched,
+      unmatchedCount: unmatched.length,
+      unmatched,
       maxDeltaPx: entries.length ? entries[0].deltaPx : 0,
       entries,
     };
@@ -120,7 +146,7 @@ function main() {
       JSON.stringify(fixture, null, 2) + "\n",
     );
     console.log(
-      `[${o.region}] alignment fixture: ${entries.length}역 · 미매칭 ${unmatched} · ` +
+      `[${o.region}] alignment fixture: ${entries.length}역 · 미매칭 ${unmatched.length} · ` +
         `max delta ${fixture.maxDeltaPx}px → ${o.out}`,
     );
   } finally {

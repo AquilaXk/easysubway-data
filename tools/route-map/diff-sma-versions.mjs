@@ -80,12 +80,59 @@ export function diffExtractions(oldGeom, newGeom, { moveThreshold = 4 } = {}) {
   };
 }
 
+function withoutSourceElementKeys(value) {
+  if (Array.isArray(value)) return value.map(withoutSourceElementKeys);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== "sourceElementKey")
+        .map(([key, item]) => [key, withoutSourceElementKeys(item)]),
+    );
+  }
+  return value;
+}
+
+export function assertGeometryContentEqual(oldGeom, newGeom) {
+  const contentOf = (geometry) => withoutSourceElementKeys({
+    labels: geometry.labels ?? [],
+    strokes: geometry.strokes ?? [],
+    stationNodes: geometry.stationNodes ?? [],
+  });
+  if (!contentEqual(contentOf(oldGeom), contentOf(newGeom))) {
+    throw new Error("geometry content differs");
+  }
+}
+
+const CONTENT_NUMERIC_TOLERANCE = 0.0011;
+
+function contentEqual(a, b) {
+  if (typeof a === "number" && typeof b === "number") {
+    return Math.abs(a - b) <= CONTENT_NUMERIC_TOLERANCE;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
+      a.every((value, index) => contentEqual(value, b[index]));
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && contentEqual(a[key], b[key]));
+  }
+  return Object.is(a, b);
+}
+
 function round(n) {
   return Math.round(n * 1000) / 1000;
 }
 
 function parseArgs(argv) {
-  const o = { old: null, new: null, moveThreshold: 4, out: null };
+  const o = {
+    old: null,
+    new: null,
+    moveThreshold: 4,
+    out: null,
+    requireContentEqual: false,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     switch (argv[i]) {
       case "--old": o.old = argv[++i]; break;
@@ -100,6 +147,8 @@ function parseArgs(argv) {
         break;
       }
       case "--out": o.out = argv[++i]; break;
+      case "--require-content-equal": o.requireContentEqual = true; break;
+      default: throw new Error(`Unknown option: ${argv[i]}`);
     }
   }
   if (!o.old || !o.new) throw new Error("--old and --new geometry JSON required");
@@ -110,6 +159,7 @@ async function main() {
   const o = parseArgs(process.argv.slice(2));
   const oldGeom = JSON.parse(await readFile(path.resolve(o.old), "utf8"));
   const newGeom = JSON.parse(await readFile(path.resolve(o.new), "utf8"));
+  if (o.requireContentEqual) assertGeometryContentEqual(oldGeom, newGeom);
   const report = diffExtractions(oldGeom, newGeom, { moveThreshold: o.moveThreshold });
   const json = JSON.stringify(report, null, 2);
   if (o.out) await writeFile(path.resolve(o.out), `${json}\n`);

@@ -55,15 +55,15 @@
      inkscape:pageopacity="0.0"
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="0.15257468"
-     inkscape:cx="1042.1126"
-     inkscape:cy="3660.5024"
-     inkscape:window-width="1459"
+     inkscape:zoom="0.12517457"
+     inkscape:cx="4062.3267"
+     inkscape:cy="3383.275"
+     inkscape:window-width="1920"
      inkscape:window-height="1022"
-     inkscape:window-x="372"
+     inkscape:window-x="0"
      inkscape:window-y="30"
-     inkscape:window-maximized="0"
-     inkscape:current-layer="g33" />
+     inkscape:window-maximized="1"
+     inkscape:current-layer="station-name-labels-layer" />
   <defs
      id="sma-v1-family-definitions">
     <clipPath
@@ -147,7 +147,7 @@
     <path
        id="route-line-line3"
        class="route-line"
-       d="m 1570.8032,2702.9515 1427.7543,3.5304 2405.7576,-1.2222 c 116.6667,-0.059 113.3432,-9.6171 112.5762,84.8368 -0.5666,69.776 -0.4272,378.4553 1.5104,516.4519 1.0883,77.5079 8.3584,116.0317 84.6731,116.2316 31.7364,-0.067 234.2065,-3.0222 286.2665,-2.78 48.5611,0.2259 2765.2089,-7.0846 2797.6284,-7.4758 39.9997,-0.4827 45.2964,22.2397 45.7237,55.2067 0.2866,22.1055 -0.1789,189.7947 0.1113,218.3675 0.2377,23.4076 19.7482,44.2121 55.1553,43.558 43.7541,-0.8082 232.8864,-0.3722 286.6579,-0.3338"
+       d="m 1570.8032,2702.9515 1427.7543,3.5304 2444.018,-1.2222 c 75.9654,-0.038 74.2687,-4.7328 74.3158,32.7376 0.088,69.7782 -0.4272,430.5545 1.5104,568.5511 1.0883,77.5079 8.3584,116.0317 84.6731,116.2316 31.7364,-0.067 234.2065,-3.0222 286.2665,-2.78 48.5611,0.2259 2765.2089,-7.0846 2797.6284,-7.4758 39.9997,-0.4827 45.2964,22.2397 45.7237,55.2067 0.2866,22.1055 -0.1789,189.7947 0.1113,218.3675 0.2377,23.4076 19.7482,44.2121 55.1553,43.558 43.7541,-0.8082 232.8864,-0.3722 286.6579,-0.3338"
        stroke="#d49329"
        data-line="line3"
        data-line-name="3호선"
@@ -158,14 +158,14 @@
     <path
        id="route-line-line2"
        class="route-line"
-       d="m 3490.0998,1103.4969 c 0.1253,114.5315 -2.0995,1527.6973 -1.6895,1604.1774 l 8.8132,1643.861 c 0.17,31.7218 0.5371,49.6398 7.2093,60.3863 4.4338,7.1413 50.5219,9.6263 108.6144,9.654 l 2626.3038,1.2526 2737.4367,7.6392 c 110.616,3.5641 99.9971,-63.7702 99.166,-186.532 -0.4121,-60.8727 -7.9087,-1016.1515 -5.771,-1066.3243 2.0235,-47.4935 58.3603,-49.847 88.625,-49.336 77.9736,1.3165 79.8443,-0.2149 138.1963,0.6218 63.0616,0.9042 1196.818,0.3378 1270.462,0.2361"
+       d="m 3490.0998,1103.4969 c 0.1253,114.5315 -2.0741,1527.6972 -1.6895,1604.1774 l 8.4411,1678.4631 c 0.1755,34.8816 1.2568,35.7953 46.9915,35.8103 l 2695.5081,0.8805 2737.4367,7.6392 c 110.616,3.5641 99.9971,-63.7702 99.166,-186.532 -0.4121,-60.8727 -7.9087,-1016.1515 -5.771,-1066.3243 2.0235,-47.4935 58.3603,-49.847 88.625,-49.336 77.9736,1.3165 79.8443,-0.2149 138.1963,0.6218 63.0616,0.9042 1196.818,0.3378 1270.462,0.2361"
        stroke="#a6da53"
        data-line="line2"
        data-line-name="2호선"
        data-line-color="#A6DA53"
        data-direction-system="octolinear"
        data-curve-smoothing="quadratic-rounded"
-       sodipodi:nodetypes="cssssccssssc" />
+       sodipodi:nodetypes="csssccssssc" />
     <path
        id="route-line-line1"
        class="route-line"
@@ -3394,7 +3394,7 @@
        data-capsule-axis-deg="45"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(463.1027,-237.23647)">
+       transform="rotate(90,6148.5863,4744.962)">
       <title
          id="title176">서면 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
@@ -3427,7 +3427,8 @@
            data-line="line1"
            data-line-color="#F68712"
            data-slot-index="1"
-           id="g3">
+           id="g3"
+           transform="rotate(-90,5774.4551,4660)">
           <circle
              cx="5774.4551"
              cy="4660"
@@ -3453,7 +3454,8 @@
            data-line="line2"
            data-line-color="#A6DA53"
            data-slot-index="2"
-           id="g4">
+           id="g4"
+           transform="rotate(-90,5825.5449,4660)">
           <circle
              cx="5825.5449"
              cy="4660"
@@ -3488,7 +3490,7 @@
        data-capsule-axis-deg="45"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(460.66833,-0.27704702)">
+       transform="rotate(-90,6029.0776,3214.123)">
       <title
          id="title184">연산 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
@@ -3521,7 +3523,8 @@
            data-line="line1"
            data-line-color="#F68712"
            data-slot-index="1"
-           id="g11">
+           id="g11"
+           transform="rotate(90,5774.4551,3420)">
           <circle
              cx="5774.4551"
              cy="3420"
@@ -3547,7 +3550,8 @@
            data-line="line3"
            data-line-color="#D49329"
            data-slot-index="2"
-           id="g12">
+           id="g12"
+           transform="rotate(90,5825.5449,3420)">
           <circle
              cx="5825.5449"
              cy="3420"
@@ -3582,29 +3586,29 @@
        data-capsule-axis-deg="45"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(434.49097)">
+       transform="rotate(90,6004.3886,3290.1024)">
       <title
          id="title188">교대 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g14">
         <line
-           x1="5774.455163"
+           x1="5774.4551"
            y1="3060"
-           x2="5825.544837"
+           x2="5825.5449"
            y2="3060"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line13" />
         <line
-           x1="5774.455163"
+           x1="5774.4551"
            y1="3060"
-           x2="5825.544837"
+           x2="5825.5449"
            y2="3060"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line14" />
       </g>
       <g
@@ -3615,16 +3619,17 @@
            data-line="line1"
            data-line-color="#F68712"
            data-slot-index="1"
-           id="g15">
+           id="g15"
+           transform="rotate(-90,5825.5449,3060)">
           <circle
-             cx="5825.544837"
+             cx="5825.5449"
              cy="3060"
              r="23.970798"
              fill="#f68712"
              class="ourclass-transfer-badge-circle"
              id="circle14" />
           <text
-             x="5825.544837"
+             x="5825.5449"
              y="3060"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -3634,23 +3639,24 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text14"
-             style="font-size:31.859244px">1</text>
+             style="font-size:31.8592px">1</text>
         </g>
         <g
            class="ourclass-transfer-badge"
            data-line="donghae"
            data-line-color="#1C63B7"
            data-slot-index="2"
-           id="g16">
+           id="g16"
+           transform="rotate(-90,5774.4551,3060)">
           <circle
-             cx="5774.455163"
+             cx="5774.4551"
              cy="3060"
              r="23.970798"
              fill="#1c63b7"
              class="ourclass-transfer-badge-circle"
              id="circle15" />
           <text
-             x="5774.455163"
+             x="5774.4551"
              y="3060"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -3660,7 +3666,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text15"
-             style="font-size:21.052632px">동해</text>
+             style="font-size:21.0526px">동해</text>
         </g>
       </g>
     </g>
@@ -3676,29 +3682,29 @@
        data-capsule-axis-deg="0"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(430.14393)">
+       transform="rotate(-90,6031.121,2497.5983)">
       <title
          id="title192">동래 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g18">
         <line
-           x1="5774.455163"
+           x1="5774.4551"
            y1="2700"
-           x2="5825.544837"
+           x2="5825.5449"
            y2="2700"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line17" />
         <line
-           x1="5774.455163"
+           x1="5774.4551"
            y1="2700"
-           x2="5825.544837"
+           x2="5825.5449"
            y2="2700"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line18" />
       </g>
       <g
@@ -3709,16 +3715,17 @@
            data-line="line1"
            data-line-color="#F68712"
            data-slot-index="1"
-           id="g19">
+           id="g19"
+           transform="rotate(90,5774.4551,2700)">
           <circle
-             cx="5774.455163"
+             cx="5774.4551"
              cy="2700"
              r="23.970798"
              fill="#f68712"
              class="ourclass-transfer-badge-circle"
              id="circle18" />
           <text
-             x="5774.455163"
+             x="5774.4551"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -3728,23 +3735,24 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text18"
-             style="font-size:31.859244px">1</text>
+             style="font-size:31.8592px">1</text>
         </g>
         <g
            class="ourclass-transfer-badge"
            data-line="line4"
            data-line-color="#7189C5"
            data-slot-index="2"
-           id="g20">
+           id="g20"
+           transform="rotate(90,5825.5449,2700)">
           <circle
-             cx="5825.544837"
+             cx="5825.5449"
              cy="2700"
              r="23.970798"
              fill="#7189c5"
              class="ourclass-transfer-badge-circle"
              id="circle19" />
           <text
-             x="5825.544837"
+             x="5825.5449"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -3754,7 +3762,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text19"
-             style="font-size:31.859244px">4</text>
+             style="font-size:31.8592px">4</text>
         </g>
       </g>
     </g>
@@ -3770,29 +3778,29 @@
        data-capsule-axis-deg="0"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(481.67038,5.2930811)">
+       transform="rotate(-90,3261.3107,2471.6173)">
       <title
          id="title196">덕천 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g22">
         <line
-           x1="2974.455163"
+           x1="2974.4551"
            y1="2700"
-           x2="3025.544837"
+           x2="3025.5449"
            y2="2700"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line21" />
         <line
-           x1="2974.455163"
+           x1="2974.4551"
            y1="2700"
-           x2="3025.544837"
+           x2="3025.5449"
            y2="2700"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line22" />
       </g>
       <g
@@ -3803,16 +3811,17 @@
            data-line="line2"
            data-line-color="#A6DA53"
            data-slot-index="1"
-           id="g23">
+           id="g23"
+           transform="rotate(90,2974.4551,2700)">
           <circle
-             cx="2974.455163"
+             cx="2974.4551"
              cy="2700"
              r="23.970798"
              fill="#a6da53"
              class="ourclass-transfer-badge-circle"
              id="circle22" />
           <text
-             x="2974.455163"
+             x="2974.4551"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#344258"
@@ -3822,23 +3831,24 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text22"
-             style="font-size:31.859244px">2</text>
+             style="font-size:31.8592px">2</text>
         </g>
         <g
            class="ourclass-transfer-badge"
            data-line="line3"
            data-line-color="#D49329"
            data-slot-index="2"
-           id="g24">
+           id="g24"
+           transform="rotate(90,3025.5449,2700)">
           <circle
-             cx="3025.544837"
+             cx="3025.5449"
              cy="2700"
              r="23.970798"
              fill="#d49329"
              class="ourclass-transfer-badge-circle"
              id="circle23" />
           <text
-             x="3025.544837"
+             x="3025.5449"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -3848,7 +3858,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text23"
-             style="font-size:31.859244px">3</text>
+             style="font-size:31.8592px">3</text>
         </g>
       </g>
     </g>
@@ -3864,29 +3874,29 @@
        data-capsule-axis-deg="135"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(12.785861,155.56131)">
+       transform="translate(-11.917643,155.56131)">
       <title
          id="title200">사상 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g26">
         <line
-           x1="3457.618675"
-           y1="4261.683649"
-           x2="3508.708349"
-           y2="4261.683649"
+           x1="3457.6187"
+           y1="4261.6836"
+           x2="3508.7083"
+           y2="4261.6836"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line25" />
         <line
-           x1="3457.618675"
-           y1="4261.683649"
-           x2="3508.708349"
-           y2="4261.683649"
+           x1="3457.6187"
+           y1="4261.6836"
+           x2="3508.7083"
+           y2="4261.6836"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line26" />
       </g>
       <g
@@ -3899,15 +3909,15 @@
            data-slot-index="1"
            id="g27">
           <circle
-             cx="3508.708349"
-             cy="4261.683649"
+             cx="3508.7083"
+             cy="4261.6836"
              r="23.970798"
              fill="#a6da53"
              class="ourclass-transfer-badge-circle"
              id="circle26" />
           <text
-             x="3508.708349"
-             y="4261.683649"
+             x="3508.7083"
+             y="4261.6836"
              class="ourclass-transfer-badge-label"
              fill="#344258"
              font-size="31.859244px"
@@ -3916,7 +3926,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text26"
-             style="font-size:31.859244px">2</text>
+             style="font-size:31.8592px">2</text>
         </g>
         <g
            class="ourclass-transfer-badge"
@@ -3925,15 +3935,15 @@
            data-slot-index="2"
            id="g28">
           <circle
-             cx="3457.618675"
-             cy="4261.683649"
+             cx="3457.6187"
+             cy="4261.6836"
              r="23.970798"
              fill="#854eac"
              class="ourclass-transfer-badge-circle"
              id="circle27" />
           <text
-             x="3457.618675"
-             y="4261.683649"
+             x="3457.6187"
+             y="4261.6836"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
              font-size="21.052632px"
@@ -3942,7 +3952,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text27"
-             style="font-size:21.052632px">부김</text>
+             style="font-size:21.0526px">부김</text>
         </g>
       </g>
     </g>
@@ -3958,29 +3968,29 @@
        data-capsule-axis-deg="0"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="rotate(90,9002.3617,4729.661)">
+       transform="rotate(180,8523.6282,4193.2226)">
       <title
          id="title204">수영 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g30">
         <line
-           x1="7974.455163"
+           x1="7974.4551"
            y1="4660"
-           x2="8025.544837"
+           x2="8025.5449"
            y2="4660"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line29" />
         <line
-           x1="7974.455163"
+           x1="7974.4551"
            y1="4660"
-           x2="8025.544837"
+           x2="8025.5449"
            y2="4660"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line30" />
       </g>
       <g
@@ -3992,7 +4002,7 @@
            data-line-color="#A6DA53"
            data-slot-index="1"
            id="g31"
-           transform="rotate(-90,7974.4551,4660)">
+           transform="rotate(-180,7974.4551,4660)">
           <circle
              cx="7974.4551"
              cy="4660"
@@ -4019,7 +4029,7 @@
            data-line-color="#D49329"
            data-slot-index="2"
            id="g32"
-           transform="rotate(-90,8025.5449,4660)">
+           transform="rotate(-180,8025.5449,4660)">
           <circle
              cx="8025.5449"
              cy="4660"
@@ -4150,29 +4160,29 @@
        data-capsule-axis-deg="45"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(169.73318)">
+       transform="translate(198.4459,1.148509)">
       <title
          id="title212">대저 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g38">
         <line
-           x1="1374.455163"
+           x1="1374.4552"
            y1="2700"
-           x2="1425.544837"
+           x2="1425.5448"
            y2="2700"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line37" />
         <line
-           x1="1374.455163"
+           x1="1374.4552"
            y1="2700"
-           x2="1425.544837"
+           x2="1425.5448"
            y2="2700"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line38" />
       </g>
       <g
@@ -4185,14 +4195,14 @@
            data-slot-index="1"
            id="g39">
           <circle
-             cx="1374.455163"
+             cx="1374.4552"
              cy="2700"
              r="23.970798"
              fill="#854eac"
              class="ourclass-transfer-badge-circle"
              id="circle38" />
           <text
-             x="1374.455163"
+             x="1374.4552"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -4202,7 +4212,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text38"
-             style="font-size:21.052632px">부김</text>
+             style="font-size:21.0526px">부김</text>
         </g>
         <g
            class="ourclass-transfer-badge"
@@ -4211,14 +4221,14 @@
            data-slot-index="2"
            id="g40">
           <circle
-             cx="1425.544837"
+             cx="1425.5448"
              cy="2700"
              r="23.970798"
              fill="#d49329"
              class="ourclass-transfer-badge-circle"
              id="circle39" />
           <text
-             x="1425.544837"
+             x="1425.5448"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -4228,7 +4238,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text39"
-             style="font-size:31.859244px">3</text>
+             style="font-size:31.8592px">3</text>
         </g>
       </g>
     </g>
@@ -4244,29 +4254,29 @@
        data-capsule-axis-deg="135"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(113.78155,4.0833565)">
+       transform="translate(139.01712,5.7114577)">
       <title
          id="title216">미남 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g42">
         <line
-           x1="5374.455163"
+           x1="5374.4551"
            y1="2700"
-           x2="5425.544837"
+           x2="5425.5449"
            y2="2700"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line41" />
         <line
-           x1="5374.455163"
+           x1="5374.4551"
            y1="2700"
-           x2="5425.544837"
+           x2="5425.5449"
            y2="2700"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line42" />
       </g>
       <g
@@ -4279,14 +4289,14 @@
            data-slot-index="1"
            id="g43">
           <circle
-             cx="5374.455163"
+             cx="5374.4551"
              cy="2700"
              r="23.970798"
              fill="#d49329"
              class="ourclass-transfer-badge-circle"
              id="circle42" />
           <text
-             x="5374.455163"
+             x="5374.4551"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -4296,7 +4306,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text42"
-             style="font-size:31.859244px">3</text>
+             style="font-size:31.8592px">3</text>
         </g>
         <g
            class="ourclass-transfer-badge"
@@ -4305,14 +4315,14 @@
            data-slot-index="2"
            id="g44">
           <circle
-             cx="5425.544837"
+             cx="5425.5449"
              cy="2700"
              r="23.970798"
              fill="#7189c5"
              class="ourclass-transfer-badge-circle"
              id="circle43" />
           <text
-             x="5425.544837"
+             x="5425.5449"
              y="2700"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
@@ -4322,7 +4332,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text43"
-             style="font-size:31.859244px">4</text>
+             style="font-size:31.8592px">4</text>
         </g>
       </g>
     </g>
@@ -4338,29 +4348,29 @@
        data-capsule-axis-deg="45"
        data-slot-size="3u"
        data-base-unit-u="8px"
-       transform="translate(2.1129512,2.1129542)">
+       transform="rotate(-90,5827.901,3426.9117)">
       <title
          id="title220">거제 환승 노드 — sma-v1 직선형 8방향 캡슐</title>
       <g
          class="ourclass-transfer-shell-network ourclass-transfer-shell-capsule"
          id="g46">
         <line
-           x1="5785.150363"
-           y1="3416.29074"
-           x2="5836.240037"
-           y2="3416.29074"
+           x1="5785.1504"
+           y1="3416.2908"
+           x2="5836.2402"
+           y2="3416.2908"
            class="ourclass-transfer-shell-outline"
            stroke="#3f4a5c"
-           stroke-width="74.337613"
+           stroke-width="74.3376"
            id="line45" />
         <line
-           x1="5785.150363"
-           y1="3416.29074"
-           x2="5836.240037"
-           y2="3416.29074"
+           x1="5785.1504"
+           y1="3416.2908"
+           x2="5836.2402"
+           y2="3416.2908"
            class="ourclass-transfer-shell-fill"
            stroke="#ffffff"
-           stroke-width="56.611866"
+           stroke-width="56.6119"
            id="line46" />
       </g>
       <g
@@ -4371,17 +4381,18 @@
            data-line="donghae"
            data-line-color="#1C63B7"
            data-slot-index="1"
-           id="g47">
+           id="g47"
+           transform="rotate(90,5785.1504,3416.2908)">
           <circle
-             cx="5785.150363"
-             cy="3416.29074"
+             cx="5785.1504"
+             cy="3416.2908"
              r="23.970798"
              fill="#1c63b7"
              class="ourclass-transfer-badge-circle"
              id="circle46" />
           <text
-             x="5785.150363"
-             y="3416.29074"
+             x="5785.1504"
+             y="3416.2908"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
              font-size="21.052632px"
@@ -4390,24 +4401,25 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text46"
-             style="font-size:21.052632px">동해</text>
+             style="font-size:21.0526px">동해</text>
         </g>
         <g
            class="ourclass-transfer-badge"
            data-line="line3"
            data-line-color="#D49329"
            data-slot-index="2"
-           id="g48">
+           id="g48"
+           transform="rotate(90,5836.2402,3416.2908)">
           <circle
-             cx="5836.240037"
-             cy="3416.29074"
+             cx="5836.2402"
+             cy="3416.2908"
              r="23.970798"
              fill="#d49329"
              class="ourclass-transfer-badge-circle"
              id="circle47" />
           <text
-             x="5836.240037"
-             y="3416.29074"
+             x="5836.2402"
+             y="3416.2908"
              class="ourclass-transfer-badge-label"
              fill="#ffffff"
              font-size="31.859244px"
@@ -4416,7 +4428,7 @@
              dominant-baseline="central"
              alignment-baseline="middle"
              id="text47"
-             style="font-size:31.859244px">3</text>
+             style="font-size:31.8592px">3</text>
         </g>
       </g>
     </g>
@@ -4500,8 +4512,8 @@
          id="tspan336">안평</tspan></text>
     <text
        id="station-label-ub300-uc800"
-       x="1616.9707"
-       y="2641.5122"
+       x="1641.8585"
+       y="2649.2156"
        text-anchor="end"
        class="transfer-name"
        font-size="54.6"
@@ -4509,13 +4521,13 @@
        data-station-key="대저"
        data-station="대저"
        data-label-mode="left"><tspan
-         x="1616.9707"
+         x="1641.8585"
          dy="0"
          id="tspan309">대저</tspan></text>
     <text
        id="station-label-ub355-ucc9c"
-       x="3615.3167"
-       y="2644.5078"
+       x="3597.4878"
+       y="2662.3367"
        text-anchor="end"
        class="transfer-name"
        font-size="54.6"
@@ -4523,7 +4535,7 @@
        data-station-key="덕천"
        data-station="덕천"
        data-label-mode="upper-left"><tspan
-         x="3615.3167"
+         x="3597.4878"
          dy="0"
          id="tspan275">덕천</tspan></text>
     <text
@@ -4542,8 +4554,8 @@
          id="tspan316">미남</tspan></text>
     <text
        id="station-label-ub3d9-ub798_M"
-       x="6354.7534"
-       y="2635.5723"
+       x="6344.6914"
+       y="2659.05"
        text-anchor="end"
        class="transfer-name"
        font-size="54.6"
@@ -4551,7 +4563,7 @@
        data-station-key="동래_M"
        data-station="동래"
        data-label-mode="upper-left"><tspan
-         x="6354.7534"
+         x="6344.6914"
          dy="0"
          id="tspan254">동래</tspan></text>
     <text
@@ -4570,8 +4582,8 @@
          id="tspan308">장산</tspan></text>
     <text
        id="station-label-uad50-ub300"
-       x="6356.3135"
-       y="3003.011"
+       x="6344.0156"
+       y="3013.0728"
        text-anchor="end"
        class="transfer-name"
        font-size="54.6"
@@ -4579,13 +4591,13 @@
        data-station-key="교대"
        data-station="교대"
        data-label-mode="left"><tspan
-         x="6356.3135"
+         x="6344.0156"
          dy="0"
          id="tspan253">교대</tspan></text>
     <text
        id="station-label-uc5f0-uc0b0"
-       x="6248.4565"
-       y="3373.583"
+       x="6250.6924"
+       y="3374.7009"
        text-anchor="start"
        class="transfer-name"
        font-size="54.6"
@@ -4593,13 +4605,13 @@
        data-station-key="연산"
        data-station="연산"
        data-label-mode="upper-right"><tspan
-         x="6248.4565"
+         x="6250.6924"
          dy="0"
          id="tspan252">연산</tspan></text>
     <text
        id="station-label-uac70-uc81c"
-       x="5945.5801"
-       y="3356.9746"
+       x="5928.8101"
+       y="3374.8623"
        text-anchor="end"
        class="transfer-name"
        font-size="54.6"
@@ -4607,7 +4619,7 @@
        data-station-key="거제"
        data-station="거제"
        data-label-mode="left"><tspan
-         x="5945.5801"
+         x="5928.8101"
          dy="0"
          id="tspan320">거제</tspan></text>
     <text
@@ -4664,7 +4676,7 @@
     <text
        id="station-label-uc11c-uba74"
        x="6298.7227"
-       y="4373.5942"
+       y="4325.041"
        text-anchor="middle"
        class="transfer-name"
        font-size="54.6"
@@ -4677,8 +4689,8 @@
          id="tspan248">서면</tspan></text>
     <text
        id="station-label-uc218-uc601"
-       x="9140.0479"
-       y="3748.0854"
+       x="9117.8438"
+       y="3744.6694"
        text-anchor="start"
        class="transfer-name"
        font-size="54.6"
@@ -4686,7 +4698,7 @@
        data-station-key="수영"
        data-station="수영"
        data-label-mode="right"><tspan
-         x="9140.0479"
+         x="9117.8438"
          dy="0"
          id="tspan300">수영</tspan></text>
     <text

@@ -3,192 +3,23 @@
   "region": "대구권",
   "generatedFrom": {
     "geometry": "tools/route-map/route-map-defs/easy-subway-daegu-v3-geometry.json",
-    "geometrySha256": "b4e8a5a7ddc60d4781ee4c0db36cd32677bfa493634933812334f758204337ec",
+    "geometrySha256": "1704eb883b4e3f723572f5a6c8158db9a5bb1b2b80ad9bf0aa8e1656e104d607",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "packSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b"
+    "packSha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c"
   },
   "stationCount": 102,
   "unmatchedCount": 0,
+  "unmatched": [],
   "maxDeltaPx": 0,
   "entries": [
     {
-      "stationId": "station-35a106653881",
+      "stationId": "station-01b6cffd80c9",
       "lineId": "line-0ffaa95b1b5d",
-      "name": "칠곡경대병원",
-      "svgX": 1051,
-      "svgY": 137,
-      "packX": 1051,
-      "packY": 137,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-f52606e872bf",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "학정",
-      "svgX": 1051,
-      "svgY": 224,
-      "packX": 1051,
-      "packY": 224,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-51a2f915959b",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "팔거",
-      "svgX": 1051,
-      "svgY": 303,
-      "packX": 1051,
-      "packY": 303,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-641cb3dc9dc2",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "동천",
-      "svgX": 1052,
-      "svgY": 379,
-      "packX": 1052,
-      "packY": 379,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-47bd8a10858a",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "칠곡운암",
-      "svgX": 1051,
-      "svgY": 457,
-      "packX": 1051,
-      "packY": 457,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-fd616b921935",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "구암",
-      "svgX": 1051,
-      "svgY": 537,
-      "packX": 1051,
-      "packY": 537,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-f10dbe8e725c",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "태전",
-      "svgX": 1051,
-      "svgY": 621,
-      "packX": 1051,
-      "packY": 621,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-2062cce838f9",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "매천",
-      "svgX": 1051,
-      "svgY": 711,
-      "packX": 1051,
-      "packY": 711,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-94208b16fdb2",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "매천시장",
-      "svgX": 1188,
-      "svgY": 800,
-      "packX": 1188,
-      "packY": 800,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-75376ad42c0a",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "팔달",
-      "svgX": 1353,
-      "svgY": 801,
-      "packX": 1353,
-      "packY": 801,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-9140315d3652",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "공단",
-      "svgX": 1523,
-      "svgY": 801,
-      "packX": 1523,
-      "packY": 801,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-3e4f2fe97142",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "만평",
-      "svgX": 1688,
-      "svgY": 801,
-      "packX": 1688,
-      "packY": 801,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-f81ee711511a",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "팔달시장",
-      "svgX": 1798,
-      "svgY": 901,
-      "packX": 1798,
-      "packY": 901,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-ffa8f6b738f9",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "원대",
-      "svgX": 1799,
-      "svgY": 1042,
-      "packX": 1799,
-      "packY": 1042,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-85f4f28bb9d5",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "북구청",
-      "svgX": 1800,
-      "svgY": 1172,
-      "packX": 1800,
-      "packY": 1172,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-a0b65b9d084d",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "달성공원",
-      "svgX": 1799,
-      "svgY": 1311,
-      "packX": 1799,
-      "packY": 1311,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-670546e5653e",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "서문시장",
-      "svgX": 1800,
-      "svgY": 1412,
-      "packX": 1800,
-      "packY": 1412,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-3de9d5097085",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "청라언덕",
-      "svgX": 1822,
-      "svgY": 1500,
-      "packX": 1822,
-      "packY": 1500,
+      "name": "황금",
+      "svgX": 3000,
+      "svgY": 1890,
+      "packX": 3000,
+      "packY": 1890,
       "deltaPx": 0
     },
     {
@@ -202,33 +33,23 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-a94cb65fc5ee",
+      "stationId": "station-2062cce838f9",
       "lineId": "line-0ffaa95b1b5d",
-      "name": "명덕",
-      "svgX": 2122,
-      "svgY": 1620,
-      "packX": 2122,
-      "packY": 1620,
+      "name": "매천",
+      "svgX": 1051,
+      "svgY": 711,
+      "packX": 1051,
+      "packY": 711,
       "deltaPx": 0
     },
     {
-      "stationId": "station-eff8188e3ddf",
+      "stationId": "station-25cb467579a9",
       "lineId": "line-0ffaa95b1b5d",
-      "name": "건들바위",
-      "svgX": 2360,
-      "svgY": 1620,
-      "packX": 2360,
-      "packY": 1620,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-ea7c56bfe707",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "대봉교",
-      "svgX": 2580,
-      "svgY": 1620,
-      "packX": 2580,
-      "packY": 1620,
+      "name": "어린이세상",
+      "svgX": 3000,
+      "svgY": 1800,
+      "packX": 3000,
+      "packY": 1800,
       "deltaPx": 0
     },
     {
@@ -238,6 +59,166 @@
       "svgX": 2800,
       "svgY": 1620,
       "packX": 2800,
+      "packY": 1620,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-35a106653881",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "칠곡경대병원",
+      "svgX": 1051,
+      "svgY": 137,
+      "packX": 1051,
+      "packY": 137,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-3de9d5097085",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "청라언덕",
+      "svgX": 1822,
+      "svgY": 1500,
+      "packX": 1822,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-3e4f2fe97142",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "만평",
+      "svgX": 1688,
+      "svgY": 801,
+      "packX": 1688,
+      "packY": 801,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-45af370ffd17",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "수성못",
+      "svgX": 3066,
+      "svgY": 1980,
+      "packX": 3066,
+      "packY": 1980,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-47bd8a10858a",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "칠곡운암",
+      "svgX": 1051,
+      "svgY": 457,
+      "packX": 1051,
+      "packY": 457,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-51a2f915959b",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "팔거",
+      "svgX": 1051,
+      "svgY": 303,
+      "packX": 1051,
+      "packY": 303,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-542e73dc8112",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "지산",
+      "svgX": 3177,
+      "svgY": 1980,
+      "packX": 3177,
+      "packY": 1980,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-641cb3dc9dc2",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "동천",
+      "svgX": 1052,
+      "svgY": 379,
+      "packX": 1052,
+      "packY": 379,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-670546e5653e",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "서문시장",
+      "svgX": 1800,
+      "svgY": 1412,
+      "packX": 1800,
+      "packY": 1412,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-75376ad42c0a",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "팔달",
+      "svgX": 1353,
+      "svgY": 801,
+      "packX": 1353,
+      "packY": 801,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-85f4f28bb9d5",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "북구청",
+      "svgX": 1800,
+      "svgY": 1172,
+      "packX": 1800,
+      "packY": 1172,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-9140315d3652",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "공단",
+      "svgX": 1523,
+      "svgY": 801,
+      "packX": 1523,
+      "packY": 801,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-94208b16fdb2",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "매천시장",
+      "svgX": 1188,
+      "svgY": 800,
+      "packX": 1188,
+      "packY": 800,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-947b936ddc6d",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "범물",
+      "svgX": 3294,
+      "svgY": 1981,
+      "packX": 3294,
+      "packY": 1981,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a0b65b9d084d",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "달성공원",
+      "svgX": 1799,
+      "svgY": 1311,
+      "packX": 1799,
+      "packY": 1311,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a94cb65fc5ee",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "명덕",
+      "svgX": 2122,
+      "svgY": 1620,
+      "packX": 2122,
       "packY": 1620,
       "deltaPx": 0
     },
@@ -252,56 +233,6 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-25cb467579a9",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "어린이세상",
-      "svgX": 3000,
-      "svgY": 1800,
-      "packX": 3000,
-      "packY": 1800,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-01b6cffd80c9",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "황금",
-      "svgX": 3000,
-      "svgY": 1890,
-      "packX": 3000,
-      "packY": 1890,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-45af370ffd17",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "수성못",
-      "svgX": 3066,
-      "svgY": 1980,
-      "packX": 3066,
-      "packY": 1980,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-542e73dc8112",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "지산",
-      "svgX": 3177,
-      "svgY": 1980,
-      "packX": 3177,
-      "packY": 1980,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-947b936ddc6d",
-      "lineId": "line-0ffaa95b1b5d",
-      "name": "범물",
-      "svgX": 3294,
-      "svgY": 1981,
-      "packX": 3294,
-      "packY": 1981,
-      "deltaPx": 0
-    },
-    {
       "stationId": "station-dea6c25efcfe",
       "lineId": "line-0ffaa95b1b5d",
       "name": "용지",
@@ -312,73 +243,73 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-223244bf7907",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "설화명곡",
-      "svgX": 168,
-      "svgY": 2102,
-      "packX": 168,
-      "packY": 2102,
+      "stationId": "station-ea7c56bfe707",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "대봉교",
+      "svgX": 2580,
+      "svgY": 1620,
+      "packX": 2580,
+      "packY": 1620,
       "deltaPx": 0
     },
     {
-      "stationId": "station-98ec969f74ff",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "화원",
-      "svgX": 307,
-      "svgY": 2101,
-      "packX": 307,
-      "packY": 2101,
+      "stationId": "station-eff8188e3ddf",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "건들바위",
+      "svgX": 2360,
+      "svgY": 1620,
+      "packX": 2360,
+      "packY": 1620,
       "deltaPx": 0
     },
     {
-      "stationId": "station-d1a94e2e44d9",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "대곡",
-      "svgX": 460,
-      "svgY": 2100,
-      "packX": 460,
-      "packY": 2100,
+      "stationId": "station-f10dbe8e725c",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "태전",
+      "svgX": 1051,
+      "svgY": 621,
+      "packX": 1051,
+      "packY": 621,
       "deltaPx": 0
     },
     {
-      "stationId": "station-5ac3c738cd5a",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "진천",
-      "svgX": 635,
-      "svgY": 2100,
-      "packX": 635,
-      "packY": 2100,
+      "stationId": "station-f52606e872bf",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "학정",
+      "svgX": 1051,
+      "svgY": 224,
+      "packX": 1051,
+      "packY": 224,
       "deltaPx": 0
     },
     {
-      "stationId": "station-b5dfb2aa9e40",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "월배",
-      "svgX": 810,
-      "svgY": 2100,
-      "packX": 810,
-      "packY": 2100,
+      "stationId": "station-f81ee711511a",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "팔달시장",
+      "svgX": 1798,
+      "svgY": 901,
+      "packX": 1798,
+      "packY": 901,
       "deltaPx": 0
     },
     {
-      "stationId": "station-9af4cd5ccffa",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "상인",
-      "svgX": 985,
-      "svgY": 2100,
-      "packX": 985,
-      "packY": 2100,
+      "stationId": "station-fd616b921935",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "구암",
+      "svgX": 1051,
+      "svgY": 537,
+      "packX": 1051,
+      "packY": 537,
       "deltaPx": 0
     },
     {
-      "stationId": "station-10d8a9b4a5e6",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "월촌",
-      "svgX": 1160,
-      "svgY": 2100,
-      "packX": 1160,
-      "packY": 2100,
+      "stationId": "station-ffa8f6b738f9",
+      "lineId": "line-0ffaa95b1b5d",
+      "name": "원대",
+      "svgX": 1799,
+      "svgY": 1042,
+      "packX": 1799,
+      "packY": 1042,
       "deltaPx": 0
     },
     {
@@ -392,13 +323,53 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-c90f326f201f",
+      "stationId": "station-0c3918ad57fe",
       "lineId": "line-5b8d9b05e7e6",
-      "name": "서부정류장",
-      "svgX": 1510,
+      "name": "교대",
+      "svgX": 2100,
+      "svgY": 1740,
+      "packX": 2100,
+      "packY": 1740,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-10d8a9b4a5e6",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "월촌",
+      "svgX": 1160,
       "svgY": 2100,
-      "packX": 1510,
+      "packX": 1160,
       "packY": 2100,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-223244bf7907",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "설화명곡",
+      "svgX": 168,
+      "svgY": 2102,
+      "packX": 168,
+      "packY": 2102,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-282c6d61cdf3",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "부호",
+      "svgX": 3911,
+      "svgY": 467,
+      "packX": 3911,
+      "packY": 467,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-2b9a16377de4",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "아양교",
+      "svgX": 2720,
+      "svgY": 780,
+      "packX": 2720,
+      "packY": 780,
       "deltaPx": 0
     },
     {
@@ -408,16 +379,6 @@
       "svgX": 1685,
       "svgY": 2100,
       "packX": 1685,
-      "packY": 2100,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-6a6c88ce8896",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "안지랑",
-      "svgX": 1860,
-      "svgY": 2100,
-      "packX": 1860,
       "packY": 2100,
       "deltaPx": 0
     },
@@ -432,36 +393,6 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-779e18fa58a2",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "영대병원",
-      "svgX": 2100,
-      "svgY": 1860,
-      "packX": 2100,
-      "packY": 1860,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-0c3918ad57fe",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "교대",
-      "svgX": 2100,
-      "svgY": 1740,
-      "packX": 2100,
-      "packY": 1740,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-a94cb65fc5ee",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "명덕",
-      "svgX": 2122,
-      "svgY": 1620,
-      "packX": 2122,
-      "packY": 1620,
-      "deltaPx": 0
-    },
-    {
       "stationId": "station-44dc03b65cae",
       "lineId": "line-5b8d9b05e7e6",
       "name": "반월당",
@@ -472,43 +403,13 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-fef7ebca3c7e",
+      "stationId": "station-5ac3c738cd5a",
       "lineId": "line-5b8d9b05e7e6",
-      "name": "중앙로",
-      "svgX": 2100,
-      "svgY": 1380,
-      "packX": 2100,
-      "packY": 1380,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-d5764b48d283",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "대구역",
-      "svgX": 2121,
-      "svgY": 1260,
-      "packX": 2121,
-      "packY": 1260,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-7f05ab5676f1",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "칠성시장",
-      "svgX": 2220,
-      "svgY": 1140,
-      "packX": 2220,
-      "packY": 1140,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-9f9a40c1ed7b",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "신천",
-      "svgX": 2340,
-      "svgY": 1020,
-      "packX": 2340,
-      "packY": 1020,
+      "name": "진천",
+      "svgX": 635,
+      "svgY": 2100,
+      "packX": 635,
+      "packY": 2100,
       "deltaPx": 0
     },
     {
@@ -522,63 +423,23 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-dc146f1e6d4c",
+      "stationId": "station-6a6c88ce8896",
       "lineId": "line-5b8d9b05e7e6",
-      "name": "동구청",
-      "svgX": 2580,
-      "svgY": 780,
-      "packX": 2580,
-      "packY": 780,
+      "name": "안지랑",
+      "svgX": 1860,
+      "svgY": 2100,
+      "packX": 1860,
+      "packY": 2100,
       "deltaPx": 0
     },
     {
-      "stationId": "station-2b9a16377de4",
+      "stationId": "station-779e18fa58a2",
       "lineId": "line-5b8d9b05e7e6",
-      "name": "아양교",
-      "svgX": 2720,
-      "svgY": 780,
-      "packX": 2720,
-      "packY": 780,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-c5e3e27e0898",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "동촌",
-      "svgX": 2860,
-      "svgY": 780,
-      "packX": 2860,
-      "packY": 780,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-e7b987a3540d",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "해안",
-      "svgX": 3000,
-      "svgY": 780,
-      "packX": 3000,
-      "packY": 780,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-e5f998c61a2f",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "방촌",
-      "svgX": 3140,
-      "svgY": 780,
-      "packX": 3140,
-      "packY": 780,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-da4ddf528baa",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "용계",
-      "svgX": 3280,
-      "svgY": 780,
-      "packX": 3280,
-      "packY": 780,
+      "name": "영대병원",
+      "svgX": 2100,
+      "svgY": 1860,
+      "packX": 2100,
+      "packY": 1860,
       "deltaPx": 0
     },
     {
@@ -592,33 +453,13 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-c52013c9209f",
+      "stationId": "station-7f05ab5676f1",
       "lineId": "line-5b8d9b05e7e6",
-      "name": "신기",
-      "svgX": 3560,
-      "svgY": 780,
-      "packX": 3560,
-      "packY": 780,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-ff5ac25872c2",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "반야월",
-      "svgX": 3700,
-      "svgY": 780,
-      "packX": 3700,
-      "packY": 780,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-fb4f89ba7c49",
-      "lineId": "line-5b8d9b05e7e6",
-      "name": "각산",
-      "svgX": 3840,
-      "svgY": 780,
-      "packX": 3840,
-      "packY": 780,
+      "name": "칠성시장",
+      "svgX": 2220,
+      "svgY": 1140,
+      "packX": 2220,
+      "packY": 1140,
       "deltaPx": 0
     },
     {
@@ -642,13 +483,43 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-282c6d61cdf3",
+      "stationId": "station-98ec969f74ff",
       "lineId": "line-5b8d9b05e7e6",
-      "name": "부호",
-      "svgX": 3911,
-      "svgY": 467,
-      "packX": 3911,
-      "packY": 467,
+      "name": "화원",
+      "svgX": 307,
+      "svgY": 2101,
+      "packX": 307,
+      "packY": 2101,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-9af4cd5ccffa",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "상인",
+      "svgX": 985,
+      "svgY": 2100,
+      "packX": 985,
+      "packY": 2100,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-9f9a40c1ed7b",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "신천",
+      "svgX": 2340,
+      "svgY": 1020,
+      "packX": 2340,
+      "packY": 1020,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a94cb65fc5ee",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "명덕",
+      "svgX": 2122,
+      "svgY": 1620,
+      "packX": 2122,
+      "packY": 1620,
       "deltaPx": 0
     },
     {
@@ -662,18 +533,58 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-5b51eac5a29c",
-      "lineId": "line-8f7ed01f290a",
-      "name": "동대구역",
-      "svgX": 2481,
-      "svgY": 900,
-      "packX": 2481,
-      "packY": 900,
+      "stationId": "station-b5dfb2aa9e40",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "월배",
+      "svgX": 810,
+      "svgY": 2100,
+      "packX": 810,
+      "packY": 2100,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-c52013c9209f",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "신기",
+      "svgX": 3560,
+      "svgY": 780,
+      "packX": 3560,
+      "packY": 780,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-c5e3e27e0898",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "동촌",
+      "svgX": 2860,
+      "svgY": 780,
+      "packX": 2860,
+      "packY": 780,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-c90f326f201f",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "서부정류장",
+      "svgX": 1510,
+      "svgY": 2100,
+      "packX": 1510,
+      "packY": 2100,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-d1a94e2e44d9",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "대곡",
+      "svgX": 460,
+      "svgY": 2100,
+      "packX": 460,
+      "packY": 2100,
       "deltaPx": 0
     },
     {
       "stationId": "station-d5764b48d283",
-      "lineId": "line-8f7ed01f290a",
+      "lineId": "line-5b8d9b05e7e6",
       "name": "대구역",
       "svgX": 2121,
       "svgY": 1260,
@@ -682,33 +593,73 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-cedc1a6c1c6a",
-      "lineId": "line-8f7ed01f290a",
-      "name": "경산",
-      "svgX": 3935,
-      "svgY": 1200,
-      "packX": 3935,
-      "packY": 1200,
+      "stationId": "station-da4ddf528baa",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "용계",
+      "svgX": 3280,
+      "svgY": 780,
+      "packX": 3280,
+      "packY": 780,
       "deltaPx": 0
     },
     {
-      "stationId": "station-dbe2b8021ff7",
-      "lineId": "line-8f7ed01f290a",
-      "name": "서대구역",
-      "svgX": 938,
-      "svgY": 1089,
-      "packX": 938,
-      "packY": 1089,
+      "stationId": "station-dc146f1e6d4c",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "동구청",
+      "svgX": 2580,
+      "svgY": 780,
+      "packX": 2580,
+      "packY": 780,
       "deltaPx": 0
     },
     {
-      "stationId": "station-6502c3637045",
-      "lineId": "line-8f7ed01f290a",
-      "name": "왜관",
-      "svgX": 796,
-      "svgY": 946,
-      "packX": 796,
-      "packY": 946,
+      "stationId": "station-e5f998c61a2f",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "방촌",
+      "svgX": 3140,
+      "svgY": 780,
+      "packX": 3140,
+      "packY": 780,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-e7b987a3540d",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "해안",
+      "svgX": 3000,
+      "svgY": 780,
+      "packX": 3000,
+      "packY": 780,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-fb4f89ba7c49",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "각산",
+      "svgX": 3840,
+      "svgY": 780,
+      "packX": 3840,
+      "packY": 780,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-fef7ebca3c7e",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "중앙로",
+      "svgX": 2100,
+      "svgY": 1380,
+      "packX": 2100,
+      "packY": 1380,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-ff5ac25872c2",
+      "lineId": "line-5b8d9b05e7e6",
+      "name": "반야월",
+      "svgX": 3700,
+      "svgY": 780,
+      "packX": 3700,
+      "packY": 780,
       "deltaPx": 0
     },
     {
@@ -722,13 +673,33 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-efc0fed91bd1",
+      "stationId": "station-5b51eac5a29c",
       "lineId": "line-8f7ed01f290a",
-      "name": "구미",
-      "svgX": 418,
-      "svgY": 560,
-      "packX": 418,
-      "packY": 560,
+      "name": "동대구역",
+      "svgX": 2481,
+      "svgY": 900,
+      "packX": 2481,
+      "packY": 900,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-6502c3637045",
+      "lineId": "line-8f7ed01f290a",
+      "name": "왜관",
+      "svgX": 796,
+      "svgY": 946,
+      "packX": 796,
+      "packY": 946,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-cedc1a6c1c6a",
+      "lineId": "line-8f7ed01f290a",
+      "name": "경산",
+      "svgX": 3935,
+      "svgY": 1200,
+      "packX": 3935,
+      "packY": 1200,
       "deltaPx": 0
     },
     {
@@ -742,83 +713,33 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-f9dd22bf2e51",
-      "lineId": "line-e2938a4cc492",
-      "name": "문양",
-      "svgX": 180,
-      "svgY": 1500,
-      "packX": 180,
-      "packY": 1500,
+      "stationId": "station-d5764b48d283",
+      "lineId": "line-8f7ed01f290a",
+      "name": "대구역",
+      "svgX": 2121,
+      "svgY": 1260,
+      "packX": 2121,
+      "packY": 1260,
       "deltaPx": 0
     },
     {
-      "stationId": "station-74e47bb91218",
-      "lineId": "line-e2938a4cc492",
-      "name": "다사",
-      "svgX": 300,
-      "svgY": 1500,
-      "packX": 300,
-      "packY": 1500,
+      "stationId": "station-dbe2b8021ff7",
+      "lineId": "line-8f7ed01f290a",
+      "name": "서대구역",
+      "svgX": 938,
+      "svgY": 1089,
+      "packX": 938,
+      "packY": 1089,
       "deltaPx": 0
     },
     {
-      "stationId": "station-5499991f111a",
-      "lineId": "line-e2938a4cc492",
-      "name": "대실",
-      "svgX": 420,
-      "svgY": 1500,
-      "packX": 420,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-a3cecfd3924b",
-      "lineId": "line-e2938a4cc492",
-      "name": "강창",
-      "svgX": 540,
-      "svgY": 1500,
-      "packX": 540,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-cb82b040e485",
-      "lineId": "line-e2938a4cc492",
-      "name": "계명대",
-      "svgX": 660,
-      "svgY": 1500,
-      "packX": 660,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-6e1af0ea8662",
-      "lineId": "line-e2938a4cc492",
-      "name": "성서산업단지",
-      "svgX": 780,
-      "svgY": 1500,
-      "packX": 780,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-42730cf4522b",
-      "lineId": "line-e2938a4cc492",
-      "name": "이곡",
-      "svgX": 900,
-      "svgY": 1500,
-      "packX": 900,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-e812e38b8614",
-      "lineId": "line-e2938a4cc492",
-      "name": "용산",
-      "svgX": 1020,
-      "svgY": 1500,
-      "packX": 1020,
-      "packY": 1500,
+      "stationId": "station-efc0fed91bd1",
+      "lineId": "line-8f7ed01f290a",
+      "name": "구미",
+      "svgX": 418,
+      "svgY": 560,
+      "packX": 418,
+      "packY": 560,
       "deltaPx": 0
     },
     {
@@ -828,116 +749,6 @@
       "svgX": 1140,
       "svgY": 1500,
       "packX": 1140,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-d8a2db461ffa",
-      "lineId": "line-e2938a4cc492",
-      "name": "감삼",
-      "svgX": 1260,
-      "svgY": 1500,
-      "packX": 1260,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-590ea3d4ad45",
-      "lineId": "line-e2938a4cc492",
-      "name": "두류",
-      "svgX": 1380,
-      "svgY": 1500,
-      "packX": 1380,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-992e683020e5",
-      "lineId": "line-e2938a4cc492",
-      "name": "내당",
-      "svgX": 1500,
-      "svgY": 1500,
-      "packX": 1500,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-73a1e4d00322",
-      "lineId": "line-e2938a4cc492",
-      "name": "반고개",
-      "svgX": 1620,
-      "svgY": 1500,
-      "packX": 1620,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-3de9d5097085",
-      "lineId": "line-e2938a4cc492",
-      "name": "청라언덕",
-      "svgX": 1822,
-      "svgY": 1500,
-      "packX": 1822,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-44dc03b65cae",
-      "lineId": "line-e2938a4cc492",
-      "name": "반월당",
-      "svgX": 2123,
-      "svgY": 1501,
-      "packX": 2123,
-      "packY": 1501,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-be7ab8df3e5a",
-      "lineId": "line-e2938a4cc492",
-      "name": "경대병원",
-      "svgX": 2320,
-      "svgY": 1500,
-      "packX": 2320,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-6c3b04e49a1c",
-      "lineId": "line-e2938a4cc492",
-      "name": "대구은행",
-      "svgX": 2470,
-      "svgY": 1500,
-      "packX": 2470,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-d566c2aa1967",
-      "lineId": "line-e2938a4cc492",
-      "name": "범어",
-      "svgX": 2620,
-      "svgY": 1500,
-      "packX": 2620,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-e0128ea54ab7",
-      "lineId": "line-e2938a4cc492",
-      "name": "수성구청",
-      "svgX": 2770,
-      "svgY": 1500,
-      "packX": 2770,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-49bae1276fab",
-      "lineId": "line-e2938a4cc492",
-      "name": "만촌",
-      "svgX": 2920,
-      "svgY": 1500,
-      "packX": 2920,
       "packY": 1500,
       "deltaPx": 0
     },
@@ -952,32 +763,22 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-a004973f3b97",
-      "lineId": "line-e2938a4cc492",
-      "name": "연호",
-      "svgX": 3220,
-      "svgY": 1500,
-      "packX": 3220,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
-      "stationId": "station-ad41e2bbbe5e",
-      "lineId": "line-e2938a4cc492",
-      "name": "수성알파시티",
-      "svgX": 3370,
-      "svgY": 1500,
-      "packX": 3370,
-      "packY": 1500,
-      "deltaPx": 0
-    },
-    {
       "stationId": "station-3a32b10ba12e",
       "lineId": "line-e2938a4cc492",
       "name": "고산",
       "svgX": 3520,
       "svgY": 1500,
       "packX": 3520,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-3de9d5097085",
+      "lineId": "line-e2938a4cc492",
+      "name": "청라언덕",
+      "svgX": 1822,
+      "svgY": 1500,
+      "packX": 1822,
       "packY": 1500,
       "deltaPx": 0
     },
@@ -992,6 +793,46 @@
       "deltaPx": 0
     },
     {
+      "stationId": "station-42730cf4522b",
+      "lineId": "line-e2938a4cc492",
+      "name": "이곡",
+      "svgX": 900,
+      "svgY": 1500,
+      "packX": 900,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-44dc03b65cae",
+      "lineId": "line-e2938a4cc492",
+      "name": "반월당",
+      "svgX": 2123,
+      "svgY": 1501,
+      "packX": 2123,
+      "packY": 1501,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-49bae1276fab",
+      "lineId": "line-e2938a4cc492",
+      "name": "만촌",
+      "svgX": 2920,
+      "svgY": 1500,
+      "packX": 2920,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-5499991f111a",
+      "lineId": "line-e2938a4cc492",
+      "name": "대실",
+      "svgX": 420,
+      "svgY": 1500,
+      "packX": 420,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
       "stationId": "station-54a584ac4858",
       "lineId": "line-e2938a4cc492",
       "name": "사월",
@@ -1002,12 +843,62 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-dea5359dd3e5",
+      "stationId": "station-590ea3d4ad45",
       "lineId": "line-e2938a4cc492",
-      "name": "정평",
-      "svgX": 3970,
+      "name": "두류",
+      "svgX": 1380,
       "svgY": 1500,
-      "packX": 3970,
+      "packX": 1380,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-5bce7e78ddc8",
+      "lineId": "line-e2938a4cc492",
+      "name": "영남대",
+      "svgX": 4270,
+      "svgY": 1500,
+      "packX": 4270,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-6c3b04e49a1c",
+      "lineId": "line-e2938a4cc492",
+      "name": "대구은행",
+      "svgX": 2470,
+      "svgY": 1500,
+      "packX": 2470,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-6e1af0ea8662",
+      "lineId": "line-e2938a4cc492",
+      "name": "성서산업단지",
+      "svgX": 780,
+      "svgY": 1500,
+      "packX": 780,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-73a1e4d00322",
+      "lineId": "line-e2938a4cc492",
+      "name": "반고개",
+      "svgX": 1620,
+      "svgY": 1500,
+      "packX": 1620,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-74e47bb91218",
+      "lineId": "line-e2938a4cc492",
+      "name": "다사",
+      "svgX": 300,
+      "svgY": 1500,
+      "packX": 300,
       "packY": 1500,
       "deltaPx": 0
     },
@@ -1022,12 +913,122 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-5bce7e78ddc8",
+      "stationId": "station-992e683020e5",
       "lineId": "line-e2938a4cc492",
-      "name": "영남대",
-      "svgX": 4270,
+      "name": "내당",
+      "svgX": 1500,
       "svgY": 1500,
-      "packX": 4270,
+      "packX": 1500,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a004973f3b97",
+      "lineId": "line-e2938a4cc492",
+      "name": "연호",
+      "svgX": 3220,
+      "svgY": 1500,
+      "packX": 3220,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-a3cecfd3924b",
+      "lineId": "line-e2938a4cc492",
+      "name": "강창",
+      "svgX": 540,
+      "svgY": 1500,
+      "packX": 540,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-ad41e2bbbe5e",
+      "lineId": "line-e2938a4cc492",
+      "name": "수성알파시티",
+      "svgX": 3370,
+      "svgY": 1500,
+      "packX": 3370,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-be7ab8df3e5a",
+      "lineId": "line-e2938a4cc492",
+      "name": "경대병원",
+      "svgX": 2320,
+      "svgY": 1500,
+      "packX": 2320,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-cb82b040e485",
+      "lineId": "line-e2938a4cc492",
+      "name": "계명대",
+      "svgX": 660,
+      "svgY": 1500,
+      "packX": 660,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-d566c2aa1967",
+      "lineId": "line-e2938a4cc492",
+      "name": "범어",
+      "svgX": 2620,
+      "svgY": 1500,
+      "packX": 2620,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-d8a2db461ffa",
+      "lineId": "line-e2938a4cc492",
+      "name": "감삼",
+      "svgX": 1260,
+      "svgY": 1500,
+      "packX": 1260,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-dea5359dd3e5",
+      "lineId": "line-e2938a4cc492",
+      "name": "정평",
+      "svgX": 3970,
+      "svgY": 1500,
+      "packX": 3970,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-e0128ea54ab7",
+      "lineId": "line-e2938a4cc492",
+      "name": "수성구청",
+      "svgX": 2770,
+      "svgY": 1500,
+      "packX": 2770,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-e812e38b8614",
+      "lineId": "line-e2938a4cc492",
+      "name": "용산",
+      "svgX": 1020,
+      "svgY": 1500,
+      "packX": 1020,
+      "packY": 1500,
+      "deltaPx": 0
+    },
+    {
+      "stationId": "station-f9dd22bf2e51",
+      "lineId": "line-e2938a4cc492",
+      "name": "문양",
+      "svgX": 180,
+      "svgY": 1500,
+      "packX": 180,
       "packY": 1500,
       "deltaPx": 0
     }

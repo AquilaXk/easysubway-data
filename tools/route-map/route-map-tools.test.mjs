@@ -370,6 +370,26 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
   );
   const output = JSON.parse(stdout);
   const source = await readFile(path.join(root, fixture), "utf8");
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-extractor-output-"));
+  try {
+    const outputPath = path.join(outputDir, "geometry.json");
+    const fileRun = await execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/extract-svg-geometry.mjs",
+        fixture,
+        "--region",
+        "fixture",
+        "--output",
+        outputPath,
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    );
+    assert.equal(fileRun.stdout, "");
+    assert.deepEqual(JSON.parse(await readFile(outputPath, "utf8")), output);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 
   assert.equal(output.schemaVersion, 1);
   assert.equal(output.region, "fixture");
@@ -446,6 +466,48 @@ test("SVG geometry extractor returns transformed visible text polygons", async (
   assert.deepEqual(
     output.stationNodes.map((node) => node.dataLine),
     ["1", "2", "3", "4", "5"],
+  );
+});
+
+test("SVG geometry extractor rejects an invalid --output path before browser launch", async () => {
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/extract-svg-geometry.mjs",
+        "tools/route-map/fixtures/geometry-fixture.svg",
+        "--region",
+        "fixture",
+        "--output",
+        "--pretty",
+        "--browser",
+        "/definitely/missing",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    ),
+    (error) => /--output requires a non-empty path/.test(error.stderr),
+  );
+});
+
+test("SMA geometry diff rejects unknown options", async () => {
+  const geometry = path.join(
+    root,
+    "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
+  );
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/route-map/diff-sma-versions.mjs",
+        "--old",
+        geometry,
+        "--new",
+        geometry,
+        "--require-content-equl",
+      ],
+      { cwd: root, maxBuffer: 1024 * 1024 },
+    ),
+    (error) => /Unknown option: --require-content-equl/.test(error.stderr),
   );
 });
 

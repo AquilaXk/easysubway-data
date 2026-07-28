@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -25,7 +25,7 @@ const MIN_STROKE_LENGTH = 24;
 const PATH_SAMPLE_SPACING = 8;
 
 function usage() {
-  return `Usage: node tools/route-map/extract-svg-geometry.mjs <svg-file> --region <name> [--browser <path>] [--pretty]
+  return `Usage: node tools/route-map/extract-svg-geometry.mjs <svg-file> --region <name> [--browser <path>] [--pretty] [--output <path>]
 
 Extract visible SVG <text> bounding polygons and line/polyline/polygon/path
 stroke geometry (with computed stroke color) in root SVG coordinates.
@@ -33,7 +33,7 @@ stroke geometry (with computed stroke color) in root SVG coordinates.
 }
 
 function parseArgs(argv) {
-  const options = { pretty: false, browser: "", region: "" };
+  const options = { pretty: false, browser: "", region: "", output: null };
   const positionals = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -44,6 +44,12 @@ function parseArgs(argv) {
       options.browser = argv[++index] ?? "";
     } else if (arg === "--region") {
       options.region = argv[++index] ?? "";
+    } else if (arg === "--output") {
+      const output = argv[++index] ?? "";
+      if (!output.trim() || output.startsWith("--")) {
+        throw new Error("--output requires a non-empty path.");
+      }
+      options.output = output;
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`);
     } else {
@@ -863,7 +869,9 @@ async function main() {
     region: options.region.trim(),
     browser,
   });
-  process.stdout.write(`${JSON.stringify(result, null, options.pretty ? 2 : 0)}\n`);
+  const json = `${JSON.stringify(result, null, options.pretty ? 2 : 0)}\n`;
+  if (options.output) await writeFile(path.resolve(options.output), json);
+  else process.stdout.write(json);
 }
 
 main().catch((error) => {

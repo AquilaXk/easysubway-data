@@ -15,7 +15,7 @@
   },
   "ownerLabelsSidecar": {
     "path": "apps/mobile/assets/datapacks/metro_map_pack/basemap/labels.json",
-    "sha256": "8a158fe6d7e51712884cdc02d2c1bd290d5657ac0aa3e060f22c780262e7bb2d"
+    "sha256": "d9744505b0c954aa6a611bf7dac1a6f96ef3f5b13e4c665eeece7c44e6835833"
   },
   "maps": [
     {
@@ -37,9 +37,9 @@
       "id": "busan",
       "source": "tools/route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
       "compiledVector": "apps/mobile/assets/datapacks/metro_map_pack/basemap/busan.vec",
-      "sourceSvgSha256": "02497284c89a1813f92edeac5050be370535fc2768cc22701c9a39d9da7991d3",
-      "normalizedSvgSha256": "c9b271cfb7502ba0bce2ab2ceceea9c534fa7e186a0b0f1688dd38712eacc4ac",
-      "compiledVectorSha256": "f2364a77836de9e9b139d4a546315e47daa0d3eab3e945d5ef69f9da9e3a6976",
+      "sourceSvgSha256": "8bd04aa7e94c8e6cd5c1a2dd83fda605e7d892bc66078db57ba8291cee80cdb0",
+      "normalizedSvgSha256": "9dadd2baf3408952e17117aed448364bdac00b2fb4370c2ae8d5e3c84e77e827",
+      "compiledVectorSha256": "37767acef358fb2b538265b5660816cce3e2d775428dd48468f52cb4086592e7",
       "viewBox": [
         0,
         0,

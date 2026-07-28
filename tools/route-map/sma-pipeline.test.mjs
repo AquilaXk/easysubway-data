@@ -13,7 +13,10 @@ import {
 } from "./apply-sma-svg-positions.mjs";
 import { getRegionConfig } from "./sma-region-configs.mjs";
 import { octolinearizeChain, stitchToPaths, SVG_COLOR_TO_SLUG } from "./build-sma-tracks.mjs";
-import { diffExtractions } from "./diff-sma-versions.mjs";
+import {
+  assertGeometryContentEqual,
+  diffExtractions,
+} from "./diff-sma-versions.mjs";
 
 test("canonicalStationName: 콜론 동명이역·역 접미·이수 별칭 규칙", () => {
   // 콜론 동명이역은 이름만 취하고 노선 disambiguate 플래그를 세운다.
@@ -277,6 +280,61 @@ test("diffExtractions: moveThreshold 초과 이동을 moved로 감지", () => {
   assert.deepEqual(report.moved[0].to, { x: 20, y: 0 });
   // 임계 이하 이동(가: dist 0)은 moved에 포함되지 않는다.
   assert.ok(!report.moved.some((m) => m.station === "가"));
+});
+
+test("geometry content equivalence는 provenance-only drift만 무시한다", () => {
+  const before = {
+    schemaVersion: 1,
+    region: "fixture",
+    sourceSvgSha256: "a".repeat(64),
+    sourceViewBox: [0, 0, 10, 10],
+    extractorVersion: "fixture-v1",
+    browser: { name: "Chrome", version: "Chrome 1" },
+    labels: [{
+      sourceText: "역",
+      classification: "STATION_LABEL",
+      polygon: [{ x: 1, y: 2 }],
+      sourceElementKey: "b".repeat(64),
+    }],
+    strokes: [{
+      stroke: "#000000",
+      points: [{ x: 0, y: 0 }, { x: 2, y: 2 }],
+      sourceElementKey: "c".repeat(64),
+    }],
+    stationNodes: [{
+      dataStation: "역",
+      x: 1,
+      y: 2,
+      sourceElementKey: "d".repeat(64),
+    }],
+  };
+  const provenanceOnly = structuredClone(before);
+  provenanceOnly.sourceSvgSha256 = "e".repeat(64);
+  provenanceOnly.sourceViewBox = [0, 0, 9, 9];
+  provenanceOnly.browser.version = "Chrome 2";
+  provenanceOnly.labels[0].sourceElementKey = "f".repeat(64);
+  provenanceOnly.strokes[0].sourceElementKey = "0".repeat(64);
+  provenanceOnly.stationNodes[0].sourceElementKey = "1".repeat(64);
+  assert.doesNotThrow(() => assertGeometryContentEqual(before, provenanceOnly));
+
+  const roundingJitter = structuredClone(provenanceOnly);
+  roundingJitter.stationNodes[0].x += 0.001;
+  assert.doesNotThrow(() => assertGeometryContentEqual(before, roundingJitter));
+
+  for (const mutate of [
+    (value) => { value.labels[0].polygon[0].x += 1; },
+    (value) => { value.strokes[0].points[1].y += 1; },
+    (value) => { value.stationNodes[0].x += 1; },
+    (value) => { value.labels[0].classification = "NOTICE"; },
+    (value) => { value.stationNodes.pop(); },
+  ]) {
+    const changed = structuredClone(provenanceOnly);
+    mutate(changed);
+    assert.throws(
+      () => assertGeometryContentEqual(before, changed),
+      /geometry content differs/,
+    );
+  }
 });
 
 // #2068 신원 사고 구조적 방어(C2). 한 station_id에 서로 멀리 떨어진 노드가 여러 개
