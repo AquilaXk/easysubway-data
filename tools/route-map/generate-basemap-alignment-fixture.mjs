@@ -20,6 +20,7 @@
 // 포함시키므로 QA 전용 fixture가 실제 배포 앱에 딸려 들어간다.
 
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { buildAssignments } from "./apply-sma-svg-positions.mjs";
@@ -54,9 +55,10 @@ function parseArgs(argv) {
 
 function main() {
   const o = parseArgs(process.argv.slice(2));
-  const extraction = JSON.parse(
-    readFileSync(path.join(repoRoot, o.geometry), "utf8"),
-  );
+  const geometryBytes = readFileSync(path.join(repoRoot, o.geometry));
+  const packBytes = readFileSync(path.join(repoRoot, o.pack));
+  const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const extraction = JSON.parse(geometryBytes.toString("utf8"));
   const config = getRegionConfig(o.region);
   const { db, dir } = openPack(o.pack, "align-fixture-");
   try {
@@ -104,7 +106,9 @@ function main() {
       region: o.region,
       generatedFrom: {
         geometry: o.geometry,
+        geometrySha256: sha256(geometryBytes),
         pack: o.pack,
+        packSha256: sha256(packBytes),
       },
       stationCount: entries.length,
       unmatchedCount: unmatched,

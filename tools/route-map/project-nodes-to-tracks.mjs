@@ -17,6 +17,45 @@ import path from "node:path";
 import { parsePathVertices } from "./audit-octolinearity.mjs";
 import { cleanupPackDir, openPack, repoRoot, writePack } from "./pack-io.mjs";
 
+export const CHECK_BASELINES = [{
+  region: "수도권",
+  stationId: "station-4c48e8115728",
+  lineId: "line-6e39be0cb6e2",
+  maxDistancePx: 406,
+  reason: "도라산은 오너 SMA SVG 미수록 topology exception; #2571에서 기존 실측만 동결",
+}];
+
+export function checkProjectionReport(report) {
+  const baselines = CHECK_BASELINES.filter((item) => item.region === report.region);
+  const byKey = new Map(
+    baselines.map((item) => [`${item.stationId}:${item.lineId}`, item]),
+  );
+  const seen = new Set();
+  const unexpected = [];
+  const exceededBaseline = [];
+  for (const row of report.overThreshold) {
+    const key = `${row.station_id}:${row.line_id}`;
+    const baseline = byKey.get(key);
+    if (!baseline) {
+      unexpected.push(row);
+      continue;
+    }
+    seen.add(key);
+    if (!Number.isFinite(row.dist) || row.dist > baseline.maxDistancePx) {
+      exceededBaseline.push({ ...row, maxDistancePx: baseline.maxDistancePx });
+    }
+  }
+  return {
+    unexpected,
+    exceededBaseline,
+    staleBaseline: baselines.filter(
+      (item) => !seen.has(`${item.stationId}:${item.lineId}`),
+    ),
+    missingTracks: report.withoutTrack,
+    emptyRegion: report.nodes === 0 ? [report.region] : [],
+  };
+}
+
 /** 점 p를 선분 (a,b)에 투영한 점과 거리. */
 export function projectPointToSegment(p, a, b) {
   const dx = b.x - a.x;
@@ -94,12 +133,12 @@ function main() {
 
     const updates = [];
     const overThreshold = [];
-    let noTrack = 0;
+    const withoutTrack = [];
     let movedTotal = 0;
     for (const row of nodeRows) {
       const polylines = polylinesByLine.get(row.line_id);
       if (!polylines) {
-        noTrack += 1;
+        withoutTrack.push({ station_id: row.station_id, line_id: row.line_id });
         continue;
       }
       const proj = projectPointToPolylines({ x: row.x, y: row.y }, polylines);
@@ -124,7 +163,8 @@ function main() {
       region: options.region,
       threshold: options.threshold,
       nodes: nodeRows.length,
-      nodesWithoutTrack: noTrack,
+      nodesWithoutTrack: withoutTrack.length,
+      withoutTrack,
       moved: movedTotal,
       overThreshold,
     };
@@ -133,7 +173,7 @@ function main() {
     }
     console.log(
       `[${options.region}] 노드 ${report.nodes} · 투영 이동 ${report.moved} · 임계(${options.threshold}) 초과 ${overThreshold.length}` +
-        (noTrack ? ` · track없는노드 ${noTrack}` : ""),
+        (withoutTrack.length ? ` · track없는노드 ${withoutTrack.length}` : ""),
     );
     if (overThreshold.length) {
       console.log("  임계 초과(수동 검수):");
@@ -143,6 +183,12 @@ function main() {
     }
 
     if (options.check) {
+      const findings = checkProjectionReport(report);
+      if (Object.values(findings).some((rows) => rows.length > 0)) {
+        console.error(JSON.stringify(findings, null, 2));
+        process.exitCode = 1;
+      }
+      database.close();
       console.log("(--check: 팩 미기록)");
       return;
     }

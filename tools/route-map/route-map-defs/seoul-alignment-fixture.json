@@ -3,7 +3,9 @@
   "region": "수도권",
   "generatedFrom": {
     "geometry": "tools/route-map/route-map-defs/easy-subway-sma-v4-geometry.json",
-    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz"
+    "geometrySha256": "f3ca27c797889b248d0e05e4197a5f38acbd46b23c29cab2dcc4de2eadcf6782",
+    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    "packSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b"
   },
   "stationCount": 799,
   "unmatchedCount": 1,

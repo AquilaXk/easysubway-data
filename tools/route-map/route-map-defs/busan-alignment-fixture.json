@@ -3,7 +3,9 @@
   "region": "부산권",
   "generatedFrom": {
     "geometry": "tools/route-map/route-map-defs/easy-subway-busan-v3-geometry.json",
-    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz"
+    "geometrySha256": "a88ed84fcd18df2e493de28d116f5ac7af38a5ff7a19c905cb7cee7dafe6085f",
+    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    "packSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b"
   },
   "stationCount": 158,
   "unmatchedCount": 0,
@@ -273,10 +275,10 @@
       "stationId": "station-9acc028dded4",
       "lineId": "line-ab1a041f6266",
       "name": "부전",
-      "svgX": 5817,
-      "svgY": 3938,
-      "packX": 5817,
-      "packY": 3938,
+      "svgX": 6233,
+      "svgY": 4157,
+      "packX": 6233,
+      "packY": 4157,
       "deltaPx": 0
     },
     {
@@ -1400,13 +1402,13 @@
       "deltaPx": 0
     },
     {
-      "stationId": "station-dbfe9e072d98",
+      "stationId": "station-b65d6408d975",
       "lineId": "line-f52eb59d8497",
       "name": "동래",
-      "svgX": 6230,
-      "svgY": 2700,
-      "packX": 6230,
-      "packY": 2700,
+      "svgX": 6783,
+      "svgY": 3062,
+      "packX": 6783,
+      "packY": 3062,
       "deltaPx": 0
     },
     {

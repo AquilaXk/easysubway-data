@@ -136,7 +136,7 @@ const SEOUL = {
 // route-line은 노선당 단일 <polyline>
 // (수도권은 파편 stroke 다수), data-line 슬러그가 line1..line4/donghae/bgl,
 // lines.name_ko 접두가 "부산"이나 route_map_positions.region은 "부산권"(불일치),
-// 환승 노드는 data-line 빈값(멤버십으로 broadcast), 범례 노드 1개 존재.
+// 환승 노드는 data-line 빈값과 data-transfer-lines 노선 목록을 가지며, 범례 노드 1개 존재.
 const BUSAN = {
   id: "busan",
   regionKey: "부산권",
@@ -159,52 +159,14 @@ const BUSAN = {
     "#f68712": "line1", "#a6da53": "line2", "#d49329": "line3",
     "#7189c5": "line4", "#1c63b7": "donghae", "#854eac": "bgl",
   },
-  // 부산 도식은 data-line 없는 환승역을 멤버십으로 해소하므로 힌트 불필요.
+  // data-line 없는 환승역은 SVG data-transfer-lines의 첫 노선을 사용한다.
   missingLineHint: {},
   markerlessFallback: [],
   // 부산 카탈로그는 도식과 위상 일치(누락 없음). 예외 없음.
   topologyExceptions: [],
   // 범례 노드(data-station="범례")는 카탈로그 역이 아니므로 정합 대상에서 제외.
   excludedStations: ["범례"],
-  // #2068 산발 후보 게이트 명시 예외(선재 결함 2건 — **원인이 서로 다르다**).
-  // 둘 다 origin/main에도 있던 선재 상태이고, 근본 해소는 #2068 범위 밖이라
-  // 여기서는 명시 면제만 한다(팩 실측 근거는 각 reason 참조).
-  //
-  //  · 동래 — 진짜 카탈로그 오병합. `station-dbfe9e072d98` **하나**가 1호선·
-  //    4호선·동해 3노선을 다 물고 있는데, 도식은 1·4호선 동래와 동해선 동래를
-  //    660.9px 떨어진 별개 노드로 그린다. 해소하려면 카탈로그를 두 역으로
-  //    분리해야 한다.
-  //  · 부전 — 오병합이 **아니다**. 카탈로그는 이미 1호선 `station-9acc028dded4`와
-  //    동해 `station-ee8407a487c2`로 분리돼 있다. 문제는 BUSAN에 노선 1:1 해소
-  //    (disambiguateByLine)가 없어 resolveStationIds가 이름만으로 두 id를 모두
-  //    반환하고, 도식의 두 노드가 서로의 id까지 broadcast한다는 것이다 — 문서
-  //    순서상 동해선 노드가 먼저 배정돼 1호선 부전까지 (5817,3938)로 끌려간다
-  //    (1호선 실제 노드는 (6233,4157) — 470.1px 어긋남). seoul의
-  //    distinctSameNameStations/disambiguateByLine 기법을 부산에도 적용하면
-  //    해소되지만, 부산 팩 좌표가 바뀌므로 별도 이슈로 뺀다.
-  //
-  // maxSpreadPx는 "알려진 결함이 만드는 spread"의 실측값에 소폭 여유를 둔 상한이다.
-  // 면제를 무제한으로 두면 그 역에서 김포공항형 새 오배정이 생겨도 게이트가 침묵한다.
-  // 실측(2026-07-26, busan v3 geometry): 동래 660.9px · 부전 470.1px(2 id 동일).
-  // 그 밖의 부산 복수 후보는 공항 2.2px 1건으로 기본 상한 안이라 예외가 필요 없다.
-  scatteredCandidateExceptions: [
-    {
-      name: "동래",
-      maxSpreadPx: 700,
-      reason:
-        "카탈로그 오병합: 단일 station_id(station-dbfe9e072d98)가 1·4호선·동해를 " +
-        "모두 물고 있고 도식은 660.9px 떨어진 별개 노드 2개로 그린다. 카탈로그 분리 필요(후속).",
-    },
-    {
-      name: "부전",
-      maxSpreadPx: 500,
-      reason:
-        "노선 1:1 해소 부재로 인한 broadcast: 카탈로그는 1호선(station-9acc028dded4)/" +
-        "동해(station-ee8407a487c2)로 이미 분리돼 있으나, BUSAN에 disambiguateByLine이 " +
-        "없어 두 노드가 두 id에 모두 broadcast돼 1호선 부전이 동해선 좌표로 470.1px " +
-        "끌려간다(선재). seoul식 동명 별개역 해소 적용이 정답 — 부산 팩 좌표가 바뀌므로 후속.",
-    },
-  ],
+  scatteredCandidateExceptions: [],
   // canonical 정합 규칙(부산 카탈로그 실측 6건):
   //   벡스코 (시립미술관)→벡스코, 괘법 르네시떼→괘법르네시떼,
   //   서부산 유통지구→서부산유통지구, 부산역→부산, 가운뎃점(·)→마침표(.).
@@ -217,9 +179,10 @@ const BUSAN = {
     name = name.replace(/\s+/g, "");
     // 역 접미 제거(부산역→부산). 카탈로그는 접미 없는 표기.
     if (name.length > 1 && name.endsWith("역")) name = name.slice(0, -1);
-    // #2068 좌천: 1호선·동해선 좌천은 별개 물리역(오병합 분리 대상). 도식이 두
-    // 노드를 각자 그리므로 노선 힌트로 각 station_id에 1:1 정합한다(broadcast 금지).
-    if (name === "좌천") return { name, disambiguateByLine: true };
+    // 좌천·부전·동래는 동명 별개역이므로 노선으로 1:1 정합한다(broadcast 금지).
+    if (["좌천", "부전", "동래"].includes(name)) {
+      return { name, disambiguateByLine: true };
+    }
     return { name };
   },
   // 범례 노선 swatch(medY≈216, len ~107px)는 콘텐츠 밴드 밖으로 배제한다. 전면

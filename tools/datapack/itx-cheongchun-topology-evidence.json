@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "dddfba965fb735efccc01d5f4501a0c4a4e9cf7d2a6bd2324bbeaef47c03141e",
-    "outputSqliteSha256": "afefead8a5cb8c3c1121e825e37d22a340d277cb98279ba5c218ff5c2adcd18b",
-    "byteSize": 1463806,
-    "byteSizeDelta": 1104487
+    "outputSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b",
+    "outputSqliteSha256": "95b0c33e287857809ecedbc7136d6f79d976e9a8147d2fb6d15b8a093a525408",
+    "byteSize": 1463946,
+    "byteSizeDelta": 1104627
   },
   "readmissions": [
     {
@@ -2140,6 +2140,561 @@
                 }
               }
             ]
+          }
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-07-28T06:05:19.844Z",
+      "provenance": "#2571 오너 승인 — 부산 부전·동래 역 신원 분리 및 route_map_positions 재조인",
+      "previousPack": {
+        "sha256": "dddfba965fb735efccc01d5f4501a0c4a4e9cf7d2a6bd2324bbeaef47c03141e",
+        "sqliteSha256": "afefead8a5cb8c3c1121e825e37d22a340d277cb98279ba5c218ff5c2adcd18b",
+        "byteSize": 1463806
+      },
+      "newPack": {
+        "sha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b",
+        "sqliteSha256": "95b0c33e287857809ecedbc7136d6f79d976e9a8147d2fb6d15b8a093a525408",
+        "byteSize": 1463946
+      },
+      "byteSizeDelta": 140,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "network_edges",
+          "previousRowCount": 2178,
+          "newRowCount": 2178,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 4,
+          "detail": {
+            "removed": [],
+            "added": [],
+            "changed": [
+              {
+                "previous": {
+                  "id": "edge-line-f52eb59d8497-station-05895a68d975-station-dbfe9e072d98",
+                  "from_node_id": "station-05895a68d975:line-f52eb59d8497",
+                  "to_node_id": "station-dbfe9e072d98:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                },
+                "new": {
+                  "id": "edge-line-f52eb59d8497-station-05895a68d975-station-dbfe9e072d98",
+                  "from_node_id": "station-05895a68d975:line-f52eb59d8497",
+                  "to_node_id": "station-b65d6408d975:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                }
+              },
+              {
+                "previous": {
+                  "id": "edge-line-f52eb59d8497-station-0fb11e932dda-station-dbfe9e072d98",
+                  "from_node_id": "station-0fb11e932dda:line-f52eb59d8497",
+                  "to_node_id": "station-dbfe9e072d98:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                },
+                "new": {
+                  "id": "edge-line-f52eb59d8497-station-0fb11e932dda-station-dbfe9e072d98",
+                  "from_node_id": "station-0fb11e932dda:line-f52eb59d8497",
+                  "to_node_id": "station-b65d6408d975:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                }
+              },
+              {
+                "previous": {
+                  "id": "edge-line-f52eb59d8497-station-dbfe9e072d98-station-05895a68d975",
+                  "from_node_id": "station-dbfe9e072d98:line-f52eb59d8497",
+                  "to_node_id": "station-05895a68d975:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                },
+                "new": {
+                  "id": "edge-line-f52eb59d8497-station-dbfe9e072d98-station-05895a68d975",
+                  "from_node_id": "station-b65d6408d975:line-f52eb59d8497",
+                  "to_node_id": "station-05895a68d975:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                }
+              },
+              {
+                "previous": {
+                  "id": "edge-line-f52eb59d8497-station-dbfe9e072d98-station-0fb11e932dda",
+                  "from_node_id": "station-dbfe9e072d98:line-f52eb59d8497",
+                  "to_node_id": "station-0fb11e932dda:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                },
+                "new": {
+                  "id": "edge-line-f52eb59d8497-station-dbfe9e072d98-station-0fb11e932dda",
+                  "from_node_id": "station-b65d6408d975:line-f52eb59d8497",
+                  "to_node_id": "station-0fb11e932dda:line-f52eb59d8497",
+                  "duration_seconds": 120,
+                  "distance_meters": 0,
+                  "edge_type": "RIDE",
+                  "service_pattern": "LOCAL",
+                  "service_class": "SUBWAY",
+                  "includes_stairs": 0,
+                  "stair_access_state": "UNKNOWN",
+                  "accessibility_status": "UNKNOWN",
+                  "reliability_score": 80,
+                  "source_id": "",
+                  "source_snapshot_id": "",
+                  "provider_record_hash": "",
+                  "provenance_kind": "UNKNOWN",
+                  "verification_status": "UNKNOWN",
+                  "facility_id": null,
+                  "last_verified_at": null,
+                  "evidence_hash": ""
+                }
+              }
+            ]
+          }
+        },
+        {
+          "table": "route_map_positions",
+          "previousRowCount": 1102,
+          "newRowCount": 1102,
+          "rowsRemoved": 1,
+          "rowsAdded": 1,
+          "rowsChanged": 5,
+          "detail": {
+            "removed": [
+              {
+                "station_id": "station-dbfe9e072d98",
+                "line_id": "line-f52eb59d8497",
+                "region": "부산권",
+                "x": 6230,
+                "y": 2700,
+                "label_dx": 0,
+                "label_dy": 16,
+                "label_polygon": "[{\"x\":6211,\"y\":2705},{\"x\":6249,\"y\":2705},{\"x\":6249,\"y\":2727},{\"x\":6211,\"y\":2727}]",
+                "up_path": "M 7258 3063 L 6230 2700",
+                "down_path": "M 6234 3060 L 6230 2700",
+                "source_id": "owner-self-drawn-sma-schematic",
+                "source_name": "오너 자작 부산 8선형 정본 도식",
+                "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                "license": "self-drawn",
+                "license_status": "confirmed",
+                "commercial_use_allowed": 1,
+                "attribution_required": 0,
+                "reviewed_at": 1782259200,
+                "updated_at": 1783728000
+              }
+            ],
+            "added": [
+              {
+                "station_id": "station-b65d6408d975",
+                "line_id": "line-f52eb59d8497",
+                "region": "부산권",
+                "x": 6783,
+                "y": 3062,
+                "label_dx": 0,
+                "label_dy": 16,
+                "label_polygon": "[{\"x\":6764,\"y\":3067},{\"x\":6802,\"y\":3067},{\"x\":6802,\"y\":3089},{\"x\":6764,\"y\":3089}]",
+                "up_path": "M 7258 3063 L 6783 3062",
+                "down_path": "M 6234 3060 L 6783 3062",
+                "source_id": "owner-self-drawn-sma-schematic",
+                "source_name": "오너 자작 부산 8선형 정본 도식",
+                "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                "license": "self-drawn",
+                "license_status": "confirmed",
+                "commercial_use_allowed": 1,
+                "attribution_required": 0,
+                "reviewed_at": 1782259200,
+                "updated_at": 1783728000
+              }
+            ],
+            "changed": [
+              {
+                "previous": {
+                  "station_id": "station-05895a68d975",
+                  "line_id": "line-f52eb59d8497",
+                  "region": "부산권",
+                  "x": 7258,
+                  "y": 3063,
+                  "label_dx": 0,
+                  "label_dy": 16,
+                  "label_polygon": "[{\"x\":7239,\"y\":3068},{\"x\":7277,\"y\":3068},{\"x\":7277,\"y\":3090},{\"x\":7239,\"y\":3090}]",
+                  "up_path": "M 7762 3066 L 7258 3063",
+                  "down_path": "M 6230 2700 L 7258 3063",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                },
+                "new": {
+                  "station_id": "station-05895a68d975",
+                  "line_id": "line-f52eb59d8497",
+                  "region": "부산권",
+                  "x": 7258,
+                  "y": 3063,
+                  "label_dx": 0,
+                  "label_dy": 16,
+                  "label_polygon": "[{\"x\":7239,\"y\":3068},{\"x\":7277,\"y\":3068},{\"x\":7277,\"y\":3090},{\"x\":7239,\"y\":3090}]",
+                  "up_path": "M 7762 3066 L 7258 3063",
+                  "down_path": "M 6783 3062 L 7258 3063",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                }
+              },
+              {
+                "previous": {
+                  "station_id": "station-0fb11e932dda",
+                  "line_id": "line-f52eb59d8497",
+                  "region": "부산권",
+                  "x": 6234,
+                  "y": 3060,
+                  "label_dx": 16,
+                  "label_dy": 0,
+                  "label_polygon": "[{\"x\":6231,\"y\":3049},{\"x\":6269,\"y\":3049},{\"x\":6269,\"y\":3071},{\"x\":6231,\"y\":3071}]",
+                  "up_path": "M 6230 2700 L 6234 3060",
+                  "down_path": "M 5813 3418 L 6234 3060",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                },
+                "new": {
+                  "station_id": "station-0fb11e932dda",
+                  "line_id": "line-f52eb59d8497",
+                  "region": "부산권",
+                  "x": 6234,
+                  "y": 3060,
+                  "label_dx": 0,
+                  "label_dy": 16,
+                  "label_polygon": "[{\"x\":6215,\"y\":3065},{\"x\":6253,\"y\":3065},{\"x\":6253,\"y\":3087},{\"x\":6215,\"y\":3087}]",
+                  "up_path": "M 6783 3062 L 6234 3060",
+                  "down_path": "M 5813 3418 L 6234 3060",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                }
+              },
+              {
+                "previous": {
+                  "station_id": "station-1fc7a7c971c8",
+                  "line_id": "line-ab1a041f6266",
+                  "region": "부산권",
+                  "x": 6263,
+                  "y": 4423,
+                  "label_dx": 16,
+                  "label_dy": 0,
+                  "label_polygon": "[{\"x\":6260,\"y\":4412},{\"x\":6298,\"y\":4412},{\"x\":6298,\"y\":4434},{\"x\":6260,\"y\":4434}]",
+                  "up_path": "M 5817 3938 L 6263 4423",
+                  "down_path": "M 6234 4562 L 6263 4423",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                },
+                "new": {
+                  "station_id": "station-1fc7a7c971c8",
+                  "line_id": "line-ab1a041f6266",
+                  "region": "부산권",
+                  "x": 6263,
+                  "y": 4423,
+                  "label_dx": 16,
+                  "label_dy": 0,
+                  "label_polygon": "[{\"x\":6260,\"y\":4412},{\"x\":6298,\"y\":4412},{\"x\":6298,\"y\":4434},{\"x\":6260,\"y\":4434}]",
+                  "up_path": "M 6233 4157 L 6263 4423",
+                  "down_path": "M 6234 4562 L 6263 4423",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                }
+              },
+              {
+                "previous": {
+                  "station_id": "station-9acc028dded4",
+                  "line_id": "line-ab1a041f6266",
+                  "region": "부산권",
+                  "x": 5817,
+                  "y": 3938,
+                  "label_dx": 0,
+                  "label_dy": 16,
+                  "label_polygon": "[{\"x\":5798,\"y\":3943},{\"x\":5836,\"y\":3943},{\"x\":5836,\"y\":3965},{\"x\":5798,\"y\":3965}]",
+                  "up_path": "M 6233 3906 L 5817 3938",
+                  "down_path": "M 6263 4423 L 5817 3938",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                },
+                "new": {
+                  "station_id": "station-9acc028dded4",
+                  "line_id": "line-ab1a041f6266",
+                  "region": "부산권",
+                  "x": 6233,
+                  "y": 4157,
+                  "label_dx": 16,
+                  "label_dy": 0,
+                  "label_polygon": "[{\"x\":6230,\"y\":4146},{\"x\":6268,\"y\":4146},{\"x\":6268,\"y\":4168},{\"x\":6230,\"y\":4168}]",
+                  "up_path": "M 6233 3906 L 6233 4157",
+                  "down_path": "M 6263 4423 L 6233 4157",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                }
+              },
+              {
+                "previous": {
+                  "station_id": "station-bd95d5bb95dc",
+                  "line_id": "line-ab1a041f6266",
+                  "region": "부산권",
+                  "x": 6233,
+                  "y": 3906,
+                  "label_dx": 16,
+                  "label_dy": 0,
+                  "label_polygon": "[{\"x\":6230,\"y\":3895},{\"x\":6268,\"y\":3895},{\"x\":6268,\"y\":3917},{\"x\":6230,\"y\":3917}]",
+                  "up_path": "M 6233 3654 L 6233 3906",
+                  "down_path": "M 5817 3938 L 6233 3906",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                },
+                "new": {
+                  "station_id": "station-bd95d5bb95dc",
+                  "line_id": "line-ab1a041f6266",
+                  "region": "부산권",
+                  "x": 6233,
+                  "y": 3906,
+                  "label_dx": 16,
+                  "label_dy": 0,
+                  "label_polygon": "[{\"x\":6230,\"y\":3895},{\"x\":6268,\"y\":3895},{\"x\":6268,\"y\":3917},{\"x\":6230,\"y\":3917}]",
+                  "up_path": "M 6233 3654 L 6233 3906",
+                  "down_path": "M 6233 4157 L 6233 3906",
+                  "source_id": "owner-self-drawn-sma-schematic",
+                  "source_name": "오너 자작 부산 8선형 정본 도식",
+                  "source_url": "internal:route-map/route-map-defs/svg-sources/easy-subway-busan-v3.svg",
+                  "license": "self-drawn",
+                  "license_status": "confirmed",
+                  "commercial_use_allowed": 1,
+                  "attribution_required": 0,
+                  "reviewed_at": 1782259200,
+                  "updated_at": 1783728000
+                }
+              }
+            ]
+          }
+        },
+        {
+          "table": "station_lines",
+          "previousRowCount": 1108,
+          "newRowCount": 1108,
+          "rowsRemoved": 1,
+          "rowsAdded": 1,
+          "rowsChanged": 0,
+          "detail": {
+            "removed": [
+              {
+                "station_id": "station-dbfe9e072d98",
+                "line_id": "line-f52eb59d8497",
+                "station_code": "5",
+                "line_sequence": 5,
+                "platform_info": ""
+              }
+            ],
+            "added": [
+              {
+                "station_id": "station-b65d6408d975",
+                "line_id": "line-f52eb59d8497",
+                "station_code": "5",
+                "line_sequence": 5,
+                "platform_info": ""
+              }
+            ],
+            "changed": []
+          }
+        },
+        {
+          "table": "stations",
+          "previousRowCount": 946,
+          "newRowCount": 947,
+          "rowsRemoved": 0,
+          "rowsAdded": 1,
+          "rowsChanged": 0,
+          "detail": {
+            "removed": [],
+            "added": [
+              {
+                "id": "station-b65d6408d975",
+                "name_ko": "동래",
+                "name_en": "",
+                "name_sub": "",
+                "normalized_name": "동래",
+                "region": "부산권",
+                "latitude": null,
+                "longitude": null,
+                "data_quality_level": "LEVEL_2",
+                "data_source_type": "OFFICIAL_FILE",
+                "last_verified_at": 1775088000
+              }
+            ],
+            "changed": []
           }
         }
       ]

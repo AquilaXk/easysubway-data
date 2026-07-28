@@ -104,6 +104,19 @@ const JSON_COLUMNS = new Set([
   "route_map_positions.label_polygon",
 ]);
 
+const DERIVED_EDGE_PROVENANCE_KEYS = Object.freeze([
+  "sourceId",
+  "sourceSnapshotId",
+  "providerRecordHash",
+  "evidenceHash",
+  "lastFieldVerifiedAt",
+  "lastVerifiedAt",
+  "verifiedAt",
+  "fieldProvenance",
+  "provenanceKind",
+  "verificationStatus",
+]);
+
 const PASSTHROUGH_ARRAYS = new Set([
   "sourceInventory",
   "requiredTables",
@@ -234,7 +247,13 @@ function readRows(database, expectedDatabase, table) {
     `SELECT * FROM ${quoteIdentifier(table)} ORDER BY ${orderColumns.map(quoteIdentifier).join(", ")}`,
   ).all();
   assertUniqueRows(table, rows, primaryKeyColumns);
-  return rows.map((row) => normalizeRow(table, row, available));
+  return rows.map((row) => {
+    const normalized = normalizeRow(table, row, available);
+    if (table === "network_edges" || table === "out_of_station_transfer_links") {
+      for (const key of DERIVED_EDGE_PROVENANCE_KEYS) delete normalized[key];
+    }
+    return normalized;
+  });
 }
 
 function normalizeRow(table, row, available) {

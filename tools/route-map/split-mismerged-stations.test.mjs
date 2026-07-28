@@ -39,9 +39,21 @@ test("planSplit는 이동 노선을 신규 id로 떼고 원 역 메타를 보존
   });
 });
 
-test("SPLITS는 공식 근거를 붙인 신촌·양평·좌천 오병합 대상을 담는다", () => {
+test("SPLITS는 공식 근거를 붙인 신촌·양평·좌천·동래 오병합 대상을 담는다", () => {
   const names = SPLITS.map((s) => s.name).sort();
-  assert.deepEqual(names, ["신촌", "양평", "좌천"]);
+  assert.deepEqual(names, ["동래", "신촌", "양평", "좌천"]);
+  const dongnae = SPLITS.find((spec) => spec.name === "동래");
+  assert.deepEqual(dongnae, {
+    name: "동래",
+    stationId: "station-dbfe9e072d98",
+    moveLineId: "line-f52eb59d8497",
+    keepEvidence: "부산 1호선 125·4호선 402 환승역 동래",
+    moveEvidence: "동해선 동래 K115",
+  });
+  assert.equal(
+    newStationId(dongnae.stationId, dongnae.moveLineId),
+    "station-b65d6408d975",
+  );
   for (const s of SPLITS) {
     assert.match(s.stationId, /^station-[0-9a-f]{12}$/);
     assert.ok(s.moveLineId, "떼어낼 노선 지정");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { gunzipSync } from "node:zlib";
@@ -76,6 +77,90 @@ test("resolveStationIds: 동명 별개역(신촌·양평)은 노선으로 1:1 �
   assert.deepEqual(resolveStationIds(db, canon.name, "l-gj", opts), ["s-yp-gj"]);
   // 규칙이 풀리면(플래그 없음) 두 id에 같은 좌표가 broadcast된다 — 회귀 감지용 대조.
   assert.deepEqual(resolveStationIds(db, "양평", "l-5", {}), ["s-yp-5", "s-yp-gj"]);
+  db.close();
+});
+
+test("부산 부전·동래는 노선 힌트로 별개 역에 1:1 배정한다", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE stations (id TEXT PRIMARY KEY, name_ko TEXT);
+    CREATE TABLE lines (id TEXT PRIMARY KEY, name_ko TEXT);
+    CREATE TABLE station_lines (station_id TEXT, line_id TEXT);
+    INSERT INTO stations VALUES
+      ('station-dbfe9e072d98','동래'),
+      ('station-b65d6408d975','동래'),
+      ('station-9acc028dded4','부전'),
+      ('station-ee8407a487c2','부전');
+    INSERT INTO lines VALUES
+      ('busan-line1','부산 1호선'),
+      ('busan-line2','부산 2호선'),
+      ('busan-line3','부산 3호선'),
+      ('busan-line4','부산 4호선'),
+      ('busan-donghae','부산 동해'),
+      ('busan-bgl','부산 부산김해경전철');
+    INSERT INTO station_lines VALUES
+      ('station-dbfe9e072d98','busan-line1'),
+      ('station-dbfe9e072d98','busan-line4'),
+      ('station-b65d6408d975','busan-donghae'),
+      ('station-9acc028dded4','busan-line1'),
+      ('station-ee8407a487c2','busan-donghae');
+  `);
+  const config = getRegionConfig("busan");
+  assert.deepEqual(config.scatteredCandidateExceptions, []);
+  assert.deepEqual(config.canonicalRules("부전"), {
+    name: "부전",
+    disambiguateByLine: true,
+  });
+  assert.deepEqual(config.canonicalRules("동래"), {
+    name: "동래",
+    disambiguateByLine: true,
+  });
+
+  const extraction = {
+    labels: [],
+    stationNodes: [
+      { dataStation: "부전", dataLine: "line1", x: 10, y: 10 },
+      { dataStation: "부전", dataLine: "donghae", x: 20, y: 20 },
+      {
+        dataStation: "동래",
+        dataLine: "",
+        transferLines: "line1 line4",
+        x: 30,
+        y: 30,
+      },
+      { dataStation: "동래", dataLine: "donghae", x: 40, y: 40 },
+    ],
+  };
+  const result = buildAssignments(db, extraction, config);
+  assert.deepEqual(result.unresolvedNodes, []);
+  assert.deepEqual(
+    result.assignments.map(({ stationId, x, y }) => ({ stationId, x, y })),
+    [
+      { stationId: "station-9acc028dded4", x: 10, y: 10 },
+      { stationId: "station-ee8407a487c2", x: 20, y: 20 },
+      { stationId: "station-dbfe9e072d98", x: 30, y: 30 },
+      { stationId: "station-b65d6408d975", x: 40, y: 40 },
+    ],
+  );
+  for (const node of [
+    { dataStation: "부전", dataLine: "unknown", x: 50, y: 50 },
+    {
+      dataStation: "동래",
+      dataLine: "",
+      transferLines: "unknown line4",
+      x: 60,
+      y: 60,
+    },
+  ]) {
+    const unknown = buildAssignments(
+      db,
+      { labels: [], stationNodes: [node] },
+      config,
+    );
+    assert.deepEqual(unknown.assignments, []);
+    assert.equal(unknown.unresolvedNodes.length, 1);
+    assert.match(unknown.unresolvedNodes[0].reason, /노선 unknown/);
+  }
   db.close();
 });
 
@@ -437,16 +522,12 @@ test("scatteredCandidateExceptions는 5권역 전부에 명시 선언되고 예�
       assert.ok(exception.reason, `${region}/${exception.name}: reason이 필요하다`);
     }
   }
-  // 실측(2026-07-26): 산발 예외가 필요한 권역은 부산뿐(동래·부전 선재 결함).
+  // 부산 동래·부전 신원 결함 해소 후 5권역 모두 산발 예외가 없어야 한다.
   assert.deepEqual(
-    ["seoul", "daegu", "daejeon", "gwangju"].map(
+    ["seoul", "busan", "daegu", "daejeon", "gwangju"].map(
       (r) => getRegionConfig(r).scatteredCandidateExceptions.length,
     ),
-    [0, 0, 0, 0],
-  );
-  assert.deepEqual(
-    getRegionConfig("busan").scatteredCandidateExceptions.map((e) => e.name),
-    ["동래", "부전"],
+    [0, 0, 0, 0, 0],
   );
 });
 
@@ -478,6 +559,47 @@ test("수도권 유지보수 도구의 기본 --svg/--geometry가 컴파일 정�
       stale,
       [],
       `${tool}: 기본 경로가 정본(${version})이 아닌 도식을 가리킨다 — 인자 없이 실행하면 구 도식을 감사한다`,
+    );
+  }
+});
+
+test("5권역 alignment fixture는 raw geometry·pack SHA-256과 결속된다", () => {
+  const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const defs = path.join(import.meta.dirname, "route-map-defs");
+  const canonicalGeometry = {
+    seoul: "easy-subway-sma-v4",
+    busan: "easy-subway-busan-v3",
+    daegu: "easy-subway-daegu-v3",
+    daejeon: "easy-subway-daejeon-v3",
+    gwangju: "easy-subway-gwangju-v3",
+  };
+  for (const [fixtureName, geometryName] of Object.entries(canonicalGeometry)) {
+    const fixture = JSON.parse(
+      readFileSync(path.join(defs, `${fixtureName}-alignment-fixture.json`)),
+    );
+    assert.equal(
+      fixture.generatedFrom.geometry,
+      `tools/route-map/route-map-defs/${geometryName}-geometry.json`,
+      `${fixtureName}: canonical geometry path drift`,
+    );
+    assert.equal(
+      fixture.generatedFrom.pack,
+      "apps/mobile/assets/datapacks/capital.sqlite.gz",
+      `${fixtureName}: production pack path drift`,
+    );
+    const geometryPath = path.resolve(import.meta.dirname, "../..", fixture.generatedFrom.geometry);
+    const packPath = path.resolve(import.meta.dirname, "../..", fixture.generatedFrom.pack);
+    assert.match(fixture.generatedFrom.geometrySha256, /^[a-f0-9]{64}$/);
+    assert.match(fixture.generatedFrom.packSha256, /^[a-f0-9]{64}$/);
+    assert.equal(
+      fixture.generatedFrom.geometrySha256,
+      sha256(readFileSync(geometryPath)),
+      `${fixtureName}: geometry drift`,
+    );
+    assert.equal(
+      fixture.generatedFrom.packSha256,
+      sha256(readFileSync(packPath)),
+      `${fixtureName}: pack drift`,
     );
   }
 });

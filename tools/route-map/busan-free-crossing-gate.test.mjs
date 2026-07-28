@@ -40,8 +40,8 @@ const BUSAN_FREE_CROSSING_ALLOWLIST = [
     toleranceRadius: 80,
     note:
       "오너 확정 2026-07-20 — 부전 1호선·동해선 별개 역, 무환승 교차(병합 금지). " +
-      "부전 좌표(1호선 station-9acc028dded4, 동해선 station-ee8407a487c2 모두 " +
-      "(5817,3938) 인근)에서 두 노선이 실제로 교차만 하고 환승은 없다.",
+      "각 station_id는 노선별 마커 좌표를 유지하며, allowlist 중심 인근에서는 " +
+      "두 노선이 실제로 교차만 하고 환승은 없다.",
   },
 ];
 

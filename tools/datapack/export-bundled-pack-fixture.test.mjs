@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { extractBundledPackFixture } from "./export-bundled-pack-fixture.mjs";
 
-test("legacy bundled pack을 provenance 추론 없이 builder fixture로 옮긴다", (context) => {
+test("bundled pack edge의 검증 후 provenance를 builder fixture로 역수출하지 않는다", (context) => {
   const database = new DatabaseSync(":memory:");
   const expectedDatabase = new DatabaseSync(":memory:");
   context.after(() => {
@@ -156,14 +156,7 @@ test("legacy bundled pack을 provenance 추론 없이 builder fixture로 옮긴�
     stairAccessState: "UNKNOWN",
     accessibilityStatus: "UNKNOWN",
     reliabilityScore: 100,
-    sourceId: "",
-    sourceSnapshotId: "",
-    providerRecordHash: "",
-    provenanceKind: "UNKNOWN",
-    verificationStatus: "UNKNOWN",
     facilityId: null,
-    lastVerifiedAt: "2026-07-28T00:00:00.000Z",
-    evidenceHash: "",
   }]);
   assert.deepEqual(fixture.packs[0].facilities, [{
     id: "legacy-facility",

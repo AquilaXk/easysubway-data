@@ -90,7 +90,7 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
     admittedInputSha256: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256,
     admittedInputSqliteSha256:
       contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
-    readmissionCount: 13,
+    readmissionCount: 14,
   });
   assert.deepEqual(first.evidence.serviceIdentity, {
     serviceId: "ITX_CHEONGCHUN",

@@ -3,7 +3,9 @@
   "region": "대전권",
   "generatedFrom": {
     "geometry": "tools/route-map/route-map-defs/easy-subway-daejeon-v3-geometry.json",
-    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz"
+    "geometrySha256": "e37a9760f070f0332bd166051402e9aa124977c74c85a4b8591018d4c7aa6547",
+    "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    "packSha256": "7d96e2c408069d2940f1f8bfd114e57ddaf9855d667aaa7420f2619ef1b7320b"
   },
   "stationCount": 22,
   "unmatchedCount": 0,
