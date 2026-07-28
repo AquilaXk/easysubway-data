@@ -27,7 +27,7 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -3382,6 +3382,7 @@ function main() {
     for (const region of regions) {
       const inputSvg = path.join(svgSourceDir, region.svg);
       const outputVec = path.join(outDir, `${region.id}.vec`);
+      const outputDisplaySvg = path.join(outDir, `${region.id}.svg`);
       const sourceSvg = readFileSync(inputSvg);
       const sourceText = sourceSvg.toString("utf8");
       const normalizedSvg = normalizeSvgForCompile(sourceText);
@@ -3394,6 +3395,7 @@ function main() {
         throw new Error(`${region.svg}: 유효한 viewBox를 찾지 못했습니다.`);
       }
       compile(inputSvg, outputVec, normalizedSvgDir);
+      copyFileSync(inputSvg, outputDisplaySvg);
       const digest = sha256(outputVec);
       const ownerLabels = markLineTerminalBadgeEntries(
         extractOwnerLabels(sourceText, region.id),
@@ -3410,7 +3412,9 @@ function main() {
         id: region.id,
         source: path.relative(root, inputSvg).replaceAll(path.sep, "/"),
         compiledVector: path.relative(root, outputVec).replaceAll(path.sep, "/"),
+        displaySvg: path.relative(root, outputDisplaySvg).replaceAll(path.sep, "/"),
         sourceSvgSha256: sha256Value(sourceSvg),
+        displaySvgSha256: sha256(outputDisplaySvg),
         normalizedSvgSha256: sha256Value(normalizedSvg),
         compiledVectorSha256: digest,
         viewBox,

@@ -3,7 +3,7 @@
   "region": "광주권",
   "generatedFrom": {
     "geometry": "tools/route-map/route-map-defs/easy-subway-gwangju-v3-geometry.json",
-    "geometrySha256": "2831a30185d100c6a7d309b9441244316f9b88e32a2c116d77341f23d7a63b5f",
+    "geometrySha256": "2f1ee5841983b87a712d3f911159c5134d1249243acfa350b04b282c762c904a",
     "pack": "apps/mobile/assets/datapacks/capital.sqlite.gz",
     "packSha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c"
   },

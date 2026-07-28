@@ -216,7 +216,7 @@
          data-node-role="ordinary"
          data-node-x="470"
          data-node-y="740"
-         aria-label="광주송정역역, KTX·SRT 고속철도 연계"
+         aria-label="광주송정역, KTX·SRT 고속철도 연계"
          data-rail-services="KTX,SRT">
         <circle
            id="station-node-line1-117"
@@ -667,7 +667,7 @@
          data-node-x="470"
          data-node-y="740"
          data-station-order="3"
-         aria-label="광주송정역역, KTX·SRT 고속철도 연계"
+         aria-label="광주송정역, KTX·SRT 고속철도 연계"
          data-rail-services="KTX,SRT"><tspan
            sodipodi:role="line"
            id="tspan14"
