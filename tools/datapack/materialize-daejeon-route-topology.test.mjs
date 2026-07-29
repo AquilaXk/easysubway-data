@@ -29,7 +29,27 @@ async function inputs() {
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv")),
   ]);
+  makeInheritedAccessibilityCoverageExplicitlyUnavailable(baseFixture);
   return [baseFixture, snapshot, inventory, parseMolitDaejeonStationMappings(stationMapCsv)];
+}
+
+function makeInheritedAccessibilityCoverageExplicitlyUnavailable(fixture) {
+  const pack = fixture.packs[0];
+  for (const edge of pack.networkEdges.filter(({ edgeType }) => ["ENTRY", "EXIT"].includes(edgeType))) {
+    edge.stairAccessState = "STEP_FREE";
+    edge.accessibilityStatus = "NO_OFFICIAL_FEED";
+    edge.verificationStatus = "VERIFIED";
+  }
+  for (const evidence of pack.stationFacilityEvidence.filter(
+    ({ facilityType }) => facilityType === "ACCESSIBILITY_STATUS_PROBE",
+  )) {
+    evidence.evidenceKind = "NOT_EXISTS";
+    evidence.installationStatus = "NOT_COVERED";
+    evidence.operationalStatus = "NOT_COVERED";
+    evidence.statusMeaning = "FEED_ABSENCE_RECORD";
+    evidence.strictRouteEligible = false;
+    evidence.strictRouteEligibleReason = "NO_OFFICIAL_STATUS_FEED";
+  }
 }
 
 test("대전 topology snapshot을 실제 production pack 입력으로 materialize한다", async () => {

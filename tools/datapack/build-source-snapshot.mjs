@@ -7,6 +7,7 @@ import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import {
   buildSnapshotDiff,
   requiredCredentialFreeObjectUri,
+  validateLineage,
 } from "./source-snapshot-policy.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -15,6 +16,9 @@ const DEFAULT_FRESHNESS_POLICY = "apps/mobile/release/datapack-freshness-sla.jso
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args["remove-source-ids"] != null && args["snapshot-set"] == null) {
+    throw new Error("--remove-source-ids requires --snapshot-set");
+  }
   const raw = await readRaw(args);
   assertNoCredential(raw);
   const canonicalRaw = canonicalizeRaw(raw);
@@ -66,10 +70,38 @@ async function main() {
   await validateRetentionPolicy(snapshot, args);
   validateSnapshot(snapshot);
 
+  let snapshotSetUpdate;
+  if (args["snapshot-set"]) {
+    const snapshotSetPath = path.resolve(args["snapshot-set"]);
+    const snapshots = JSON.parse(await readFile(snapshotSetPath, "utf8"));
+    if (snapshots.some(({ snapshotId }) => snapshotId === snapshot.snapshotId)) {
+      throw new Error(`snapshot ID already exists: ${snapshot.snapshotId}`);
+    }
+    const requestedRemovals = args["remove-source-ids"] == null
+      ? []
+      : args["remove-source-ids"].split(",").map((sourceId) => sourceId.trim());
+    if (requestedRemovals.some((sourceId) => sourceId === "")) {
+      throw new Error("snapshot removal source must not be empty");
+    }
+    const availableSourceIds = new Set(snapshots.map(({ sourceId }) => sourceId));
+    for (const sourceId of requestedRemovals) {
+      if (!availableSourceIds.has(sourceId)) throw new Error(`snapshot removal source not found: ${sourceId}`);
+    }
+    const removedSourceIds = new Set(requestedRemovals);
+    if (removedSourceIds.has(snapshot.sourceId)) {
+      throw new Error(`snapshot removal source must differ from refreshed source: ${snapshot.sourceId}`);
+    }
+    const next = snapshots
+      .filter(({ sourceId }) => !removedSourceIds.has(sourceId))
+      .concat(snapshot);
+    validateLineage(next);
+    snapshotSetUpdate = [snapshotSetPath, `${JSON.stringify(next, null, 2)}\n`];
+  }
   if (args["raw-output"]) {
     await writeFileWithParents(args["raw-output"], canonicalRaw);
   }
   await writeFileWithParents(requireArg(args, "output"), `${JSON.stringify(snapshot, null, 2)}\n`);
+  if (snapshotSetUpdate) await writeFileWithParents(...snapshotSetUpdate);
 }
 
 async function validateRetentionPolicy(snapshot, args) {

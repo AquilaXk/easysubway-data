@@ -41,6 +41,9 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
   const scopeArgs = ["--scope", "apps/mobile/release/production-datapack-scope.json"];
   const launchReportPath = path.join(outputDir, "launch-denominator-go.json");
+  const accessibilityReportPath = path.join(outputDir, "accessibility-source-coverage.json");
+  const accessibilityReportRaw = `${JSON.stringify({ decision: "GO" }, null, 2)}\n`;
+  await writeFile(accessibilityReportPath, accessibilityReportRaw);
   const currentLaunchReportPath = "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
   const identity = {
     canonicalStationVersion: "station-catalog-v18",
@@ -188,6 +191,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   const goReportRaw = `${JSON.stringify(goReport, null, 2)}\n`;
   await writeFile(launchReportPath, goReportRaw);
   const reportArgs = ["--launch-report", launchReportPath];
+  const accessibilityReportArgs = ["--accessibility-source-coverage", accessibilityReportPath];
   const candidateArgs = [
     "--build-spec", artifactPaths.buildSpec,
     "--manifest", artifactPaths.manifest,
@@ -200,6 +204,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     "--bundle",
     bundlePath,
     ...reportArgs,
+    ...accessibilityReportArgs,
     ...candidateArgs,
   ];
   const bindLaunchReport = (target, report, raw) => Object.assign(target, {
@@ -235,6 +240,8 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
     gzipSha256: hash,
     manifestSha256: candidateBinding.manifestSha256,
     coverageSummarySha256: hash,
+    accessibilitySourceCoverageSha256: sha256(accessibilityReportRaw),
+    accessibilitySourceCoverageDecision: "GO",
     itxCheongchunCoverageSha256: hash,
     routeMapPositionCoverageSha256: hash,
     routeGraphTopologySha256: hash,
@@ -264,11 +271,46 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
       bundlePath,
       ...scopeArgs,
       ...reportArgs,
+      ...accessibilityReportArgs,
       ...candidateArgs,
       "--require-pass",
     ],
     { cwd: root },
   );
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/validate-release-evidence-bundle.mjs",
+      "--bundle", bundlePath,
+      ...scopeArgs,
+      ...reportArgs,
+      ...candidateArgs,
+      "--require-pass",
+    ], { cwd: root }),
+    /publish validation requires accessibility source coverage evidence/,
+  );
+
+  bundle.accessibilitySourceCoverageSha256 = hash;
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, ...scopeArgs, "--require-pass"], { cwd: root }),
+    /accessibility source coverage sha256 mismatch/,
+  );
+  bundle.accessibilitySourceCoverageSha256 = sha256(accessibilityReportRaw);
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+
+  const noGoAccessibilityReportRaw = `${JSON.stringify({ decision: "NO_GO" }, null, 2)}\n`;
+  await writeFile(accessibilityReportPath, noGoAccessibilityReportRaw);
+  bundle.accessibilitySourceCoverageSha256 = sha256(noGoAccessibilityReportRaw);
+  bundle.accessibilitySourceCoverageDecision = "NO_GO";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(process.execPath, [...validatorCommand, ...scopeArgs, "--require-pass"], { cwd: root }),
+    /accessibility source coverage decision must be GO for publish/,
+  );
+  await writeFile(accessibilityReportPath, accessibilityReportRaw);
+  bundle.accessibilitySourceCoverageSha256 = sha256(accessibilityReportRaw);
+  bundle.accessibilitySourceCoverageDecision = "GO";
+  await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`);
 
   bundle.rollbackRescue = {
     evidenceSha256: hash,
@@ -518,6 +560,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
       "--bundle", bundlePath,
       ...scopeArgs,
       ...reportArgs,
+      ...accessibilityReportArgs,
       "--build-spec", replayedBuildSpecPath,
       "--manifest", artifactPaths.manifest,
       "--source-evidence", artifactPaths.source,
@@ -585,6 +628,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
       "--bundle", bundlePath,
       ...scopeArgs,
       "--launch-report", forgedTemplatePath,
+      ...accessibilityReportArgs,
       "--build-spec", artifactPaths.buildSpec,
       "--manifest", artifactPaths.manifest,
       "--source-evidence", artifactPaths.source,
@@ -667,6 +711,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
       ...scopeArgs,
       "--launch-report",
       forgedGoReportPath,
+      ...accessibilityReportArgs,
       ...candidateArgs,
       "--require-pass",
     ], { cwd: root }),
@@ -695,6 +740,7 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
       ...scopeArgs,
       "--launch-report",
       forgedEmptyIdentityPath,
+      ...accessibilityReportArgs,
       ...candidateArgs,
       "--require-pass",
     ], { cwd: root }),

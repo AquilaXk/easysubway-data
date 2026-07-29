@@ -22,10 +22,96 @@ const verifierEnv = { ...process.env };
 delete verifierEnv.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
+test("reviewed accessibility edge identity is bound to its status probe", () => {
+  const providerRecordHash = "a".repeat(64);
+  const edge = {
+    id: "edge-entry-sadang-seoul-4",
+    fromNodeId: "station-sadang",
+    toNodeId: "station-sadang:seoul-4",
+    edgeType: "ENTRY",
+    sourceId: "seoul-metro-accessibility",
+    sourceSnapshotId: "seoul-metro-accessibility-20260728",
+    providerRecordHash,
+    evidenceHash: sha256(JSON.stringify({
+      edgeId: "edge-entry-sadang-seoul-4",
+      sourceSnapshotId: "seoul-metro-accessibility-20260728",
+      providerRecordHash,
+    })),
+    provenanceKind: "OFFICIAL_SOURCE",
+    verificationStatus: "NOT_VERIFIED",
+    accessibilityStatus: "NO_OFFICIAL_FEED",
+    stairAccessState: "UNKNOWN",
+    lastVerifiedAt: "2026-07-28T15:35:25.704Z",
+  };
+  const pack = { stationFacilityEvidence: [{
+    stationId: "station-sadang",
+    lineId: "seoul-4",
+    facilityType: "ACCESSIBILITY_STATUS_PROBE",
+    evidenceKind: "NOT_EXISTS",
+    sourceId: edge.sourceId,
+    sourceSnapshotId: edge.sourceSnapshotId,
+    providerRecordHash,
+    evidenceHash: sha256(JSON.stringify({
+      snapshotId: edge.sourceSnapshotId,
+      stationId: "station-sadang",
+      lineId: "seoul-4",
+      providerRecordHash,
+    })),
+  }] };
+
+  const valid = { ...structuredClone(pack), networkEdges: [structuredClone(edge)] };
+  normalizeUnverifiedNetworkEdgeStates(valid);
+  assert.equal(valid.networkEdges[0].accessibilityStatus, "NO_OFFICIAL_FEED");
+  for (const field of ["providerRecordHash", "evidenceHash"]) {
+    const tampered = { ...structuredClone(pack), networkEdges: [{ ...edge, [field]: "b".repeat(64) }] };
+    normalizeUnverifiedNetworkEdgeStates(tampered);
+    assert.equal(tampered.networkEdges[0].accessibilityStatus, "UNKNOWN");
+  }
+});
+
 test("production producer는 미승격 network edge와 역외 환승 link 상태를 UNKNOWN으로 내린다", () => {
   const verified = { verificationStatus: "VERIFIED", accessibilityStatus: "AVAILABLE", stairAccessState: "STEP_FREE" };
+  const officialFeedAbsence = {
+    id: "edge-entry-sadang-seoul-4",
+    fromNodeId: "station-sadang",
+    toNodeId: "station-sadang:seoul-4",
+    edgeType: "ENTRY",
+    sourceId: "seoul-metro-accessibility",
+    sourceSnapshotId: "seoul-metro-accessibility-20260728",
+    providerRecordHash: "a".repeat(64),
+    evidenceHash: sha256(JSON.stringify({
+      edgeId: "edge-entry-sadang-seoul-4",
+      sourceSnapshotId: "seoul-metro-accessibility-20260728",
+      providerRecordHash: "a".repeat(64),
+    })),
+    provenanceKind: "OFFICIAL_SOURCE",
+    verificationStatus: "NOT_VERIFIED",
+    accessibilityStatus: "NO_OFFICIAL_FEED",
+    stairAccessState: "UNKNOWN",
+    lastVerifiedAt: "2026-07-28T15:35:25.704Z",
+  };
+  const expectedOfficialFeedAbsence = structuredClone(officialFeedAbsence);
   const pack = {
-    networkEdges: [{ verificationStatus: "UNKNOWN", accessibilityStatus: "AVAILABLE", stairAccessState: "STEP_FREE" }, verified],
+    networkEdges: [
+      { verificationStatus: "UNKNOWN", accessibilityStatus: "AVAILABLE", stairAccessState: "STEP_FREE" },
+      verified,
+      officialFeedAbsence,
+    ],
+    stationFacilityEvidence: [{
+      stationId: "station-sadang",
+      lineId: "seoul-4",
+      facilityType: "ACCESSIBILITY_STATUS_PROBE",
+      evidenceKind: "NOT_EXISTS",
+      sourceId: officialFeedAbsence.sourceId,
+      sourceSnapshotId: officialFeedAbsence.sourceSnapshotId,
+      providerRecordHash: officialFeedAbsence.providerRecordHash,
+      evidenceHash: sha256(JSON.stringify({
+        snapshotId: officialFeedAbsence.sourceSnapshotId,
+        stationId: "station-sadang",
+        lineId: "seoul-4",
+        providerRecordHash: officialFeedAbsence.providerRecordHash,
+      })),
+    }],
     outOfStationTransferLinks: [{ accessibilityStatus: "AVAILABLE", stairAccessState: "STEP_FREE" }],
   };
 
@@ -37,6 +123,7 @@ test("production producer는 미승격 network edge와 역외 환승 link 상태
     stairAccessState: "UNKNOWN",
   });
   assert.equal(pack.networkEdges[1], verified);
+  assert.deepEqual(pack.networkEdges[2], expectedOfficialFeedAbsence);
   assert.deepEqual(pack.outOfStationTransferLinks[0], {
     accessibilityStatus: "UNKNOWN",
     stairAccessState: "UNKNOWN",
@@ -159,8 +246,8 @@ test("production build와 bundled asset/index의 artifact identity를 exact-matc
     assert.equal(report.byteSize, pack.sizeBytes);
     assert.ok(report.rowCounts.stations > 0);
     assert.deepEqual(report.networkEdgeCounts, {
-      total: 2178,
-      provenanceComplete: 652,
+      total: 2182,
+      provenanceComplete: 656,
       strictEligible: 652,
     });
     assert.deepEqual(await verifyProductionPackArtifactIdentity({

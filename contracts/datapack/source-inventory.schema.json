@@ -379,33 +379,61 @@
             "additionalProperties": false,
             "required": [
               "issue",
-              "materializer",
-              "verificationTest",
               "snapshotId",
               "snapshotPath",
               "capturedAt",
               "freshUntil",
-              "stationCount",
-              "rowCount",
-              "facilityCount",
-              "rawSha256",
-              "rowsSha256",
-              "topologySourceId",
-              "topologySnapshotId",
-              "topologyContentSha256"
+              "rawSha256"
+            ],
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "materializer",
+                  "verificationTest",
+                  "stationCount",
+                  "rowCount",
+                  "facilityCount",
+                  "rowsSha256",
+                  "topologySourceId",
+                  "topologySnapshotId",
+                  "topologyContentSha256"
+                ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "decision",
+                  "productionUseAllowed",
+                  "licenseEvidenceHash",
+                  "observedAt",
+                  "contentSha256",
+                  "schemaFingerprint",
+                  "snapshotFileSha256",
+                  "absenceEvidenceMode"
+                ]
+              }
             ],
             "properties": {
               "issue": { "type": "integer", "minimum": 1 },
+              "decision": { "const": "APPROVED" },
+              "productionUseAllowed": { "const": true },
+              "licenseEvidenceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "materializer": { "type": "string", "minLength": 1 },
               "verificationTest": { "type": "string", "minLength": 1 },
               "snapshotId": { "type": "string", "minLength": 1 },
               "snapshotPath": { "type": "string", "minLength": 1 },
               "capturedAt": { "type": "string", "format": "date-time" },
+              "observedAt": { "type": "string", "format": "date-time" },
               "freshUntil": { "type": "string", "format": "date-time" },
               "stationCount": { "type": "integer", "minimum": 1 },
               "rowCount": { "type": "integer", "minimum": 1 },
               "facilityCount": { "type": "integer", "minimum": 1 },
               "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "schemaFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "snapshotFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "absenceEvidenceMode": { "enum": ["EXHAUSTIVE_LIST", "EXPLICIT_ZERO"] },
               "rowsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
               "datasetIds": {
                 "type": "array",

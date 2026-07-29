@@ -4197,17 +4197,18 @@
           "capital"
         ],
         "operatorIds": [
-          "seoul-metro"
+          "seoul-metro",
+          "korail"
         ],
         "sourceDomains": [
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": false,
-      "productionUseAllowed": false,
-      "updateFrequency": "provider documented; production cadence not admitted",
-      "observedDataUpdatedAt": "2026-07-12",
-      "retrievedAt": "2026-07-12",
+      "requiredForProductionPack": true,
+      "productionUseAllowed": true,
+      "updateFrequency": "daily",
+      "observedDataUpdatedAt": "2026-07-28",
+      "retrievedAt": "2026-07-28",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -4244,11 +4245,11 @@
           "unsupportedNotes": "source is not admitted as production realtime arrival data"
         },
         "facility": {
-          "status": "CANDIDATE",
-          "productionUseAllowed": false,
-          "coverageStatus": "CONSUMER_EVIDENCE_REQUIRED",
-          "updateFrequency": "provider documented; production cadence not admitted",
-          "unsupportedNotes": "inventory provenance admission only; consumer-specific coverage and quality evidence is still required before production use"
+          "status": "SUPPORTED",
+          "productionUseAllowed": true,
+          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "updateFrequency": "daily",
+          "unsupportedNotes": "production use is limited to official EV/ES/WCLF facility codes in the fresh exhaustive query snapshot"
         }
       },
       "admissionEvidence": {
@@ -4275,11 +4276,27 @@
         "quotaEvidence": {
           "defaultDailyLimit": "unlimited",
           "portal": "KRIC 레일포털",
-          "productionUseAllowed": false,
+          "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "오너 admin review(2026-07-13)로 inventory provenance에만 승격했다. consumer별 coverage·약관·품질 evidence가 확인되기 전에는 production pack과 runtime 호출에 사용하지 않는다.",
+        "productionUseNoteKo": "2026-07-13 review는 inventory provenance만 승인했다. #2609 accessibilityReview가 fresh snapshot·license·quality 근거를 별도로 승인했으며 static derived facility에만 production use를 허용한다.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
+      },
+      "accessibilityAdmissionEvidence": {
+        "issue": 2609,
+        "decision": "APPROVED",
+        "productionUseAllowed": true,
+        "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
+        "snapshotId": "kric-station-convenience-standard-20260728T184503338Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260728T184503338Z.json",
+        "capturedAt": "2026-07-28T18:45:03.338Z",
+        "observedAt": "2026-07-28T18:45:03.338Z",
+        "freshUntil": "2026-07-29T18:45:03.338Z",
+        "rawSha256": "aef4063a61ab3172361d8a44eceff6b1c709261ec4c5f139f27f0a1db9a3afe5",
+        "contentSha256": "063975fd27b899204e7d4240cb4c56c9f010ce79ed3aa65c3e544374c47914ba",
+        "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+        "snapshotFileSha256": "cf03e3ed45813f66210c2be445e4f496469d81a59464e9a7fb51f08daffcf1a9",
+        "absenceEvidenceMode": "EXHAUSTIVE_LIST"
       }
     },
     {
@@ -4313,7 +4330,8 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -4353,11 +4371,11 @@
           "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "PROVIDER_RESULT_30_20260728",
           "updateFrequency": "realtime",
-          "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
+          "unsupportedNotes": "detailed endpoint returned provider resultCode 30 on 2026-07-28; standard stationCnvFacl is the production source"
         }
       },
       "admissionEvidence": {
@@ -4386,9 +4404,9 @@
           "portal": "공공데이터포털",
           "defaultDailyLimit": "unlimited",
           "unlockStatus": "approved",
-          "productionUseAllowed": true
+          "productionUseAllowed": false
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+        "productionUseNoteKo": "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다."
       }
     },
     {
@@ -4532,7 +4550,8 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -4571,11 +4590,11 @@
           "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "PROVIDER_RESULT_30_20260728",
           "updateFrequency": "realtime",
-          "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
+          "unsupportedNotes": "detailed endpoint returned provider resultCode 30 on 2026-07-28; standard stationCnvFacl is the production source"
         }
       },
       "admissionEvidence": {
@@ -4604,9 +4623,9 @@
           "portal": "공공데이터포털",
           "defaultDailyLimit": "unlimited",
           "unlockStatus": "approved",
-          "productionUseAllowed": true
+          "productionUseAllowed": false
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+        "productionUseNoteKo": "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다."
       }
     },
     {
@@ -5874,7 +5893,8 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -5912,11 +5932,11 @@
           "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "PROVIDER_RESULT_30_20260728",
           "updateFrequency": "realtime",
-          "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
+          "unsupportedNotes": "detailed endpoint returned provider resultCode 30 on 2026-07-28; standard stationCnvFacl is the production source"
         }
       },
       "admissionEvidence": {
@@ -5945,9 +5965,9 @@
           "portal": "공공데이터포털",
           "defaultDailyLimit": "unlimited",
           "unlockStatus": "approved",
-          "productionUseAllowed": true
+          "productionUseAllowed": false
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+        "productionUseNoteKo": "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다."
       }
     },
     {
@@ -6732,9 +6752,10 @@
         ]
       },
       "requiredForProductionPack": true,
+      "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-07-12",
-      "retrievedAt": "2026-07-12",
+      "observedDataUpdatedAt": "2026-07-28",
+      "retrievedAt": "2026-07-28",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -6818,6 +6839,22 @@
           "productionUseAllowed": true
         },
         "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격(교통약자 승강기 실시간 운행상황). strict route 보장은 별도 계약으로 유지."
+      },
+      "accessibilityAdmissionEvidence": {
+        "issue": 2609,
+        "decision": "APPROVED",
+        "productionUseAllowed": true,
+        "licenseEvidenceHash": "cd1063d4aa4b6290b1f4edabb9a74e62d70f8da5044aa4608b7f1e45e10c5963",
+        "snapshotId": "seoul-metro-accessibility-20260728",
+        "snapshotPath": "tools/datapack/sources/seoul-metro-accessibility-20260728.json",
+        "capturedAt": "2026-07-28T15:35:25.704Z",
+        "observedAt": "2026-07-28T15:35:25.704Z",
+        "freshUntil": "2026-07-29T15:35:25.704Z",
+        "rawSha256": "07e91cc7d035dd60e753c25b1a4dd4a306b757f3a74f7364eb38f9c3ef43c1ba",
+        "contentSha256": "bedfd9067948539b6285dba3ad24cd1ae0dac0166095466fb7f4b2df4e31b8aa",
+        "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
+        "snapshotFileSha256": "9b55ab8e99a1ad2a11274f684b445dc1eb7f47f82abaca8f567985351324dd11",
+        "absenceEvidenceMode": "EXHAUSTIVE_LIST"
       }
     },
     {

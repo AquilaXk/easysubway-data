@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "artifactKind": "server-timetable-snapshot-evidence",
   "schemaIdentity": "backend-timetable-snapshot-v1",
-  "snapshotId": "server-timetable-snapshot-a6f783c31973ca04",
-  "snapshotSha256": "a6f783c31973ca04ee01fbc26ad46a7585ef83c7140f26fc35dbdcc0461ebe6f",
-  "snapshotSqlByteSize": 9714509,
-  "snapshotGzipSha256": "0477165fb9e7226d32098d310ab2ed2bf2402a333bffc885d87fe1fde4d64ec7",
-  "snapshotGzipByteSize": 348014,
+  "snapshotId": "server-timetable-snapshot-3e94b82f0330cc10",
+  "snapshotSha256": "3e94b82f0330cc106fba0fbd646b0660b785817229dcb234ef636e6c97b14730",
+  "snapshotSqlByteSize": 9717674,
+  "snapshotGzipSha256": "5352d237a954fd28c0a41f4e3149474ac3b33e93dba0bdf0a46fe70221356111",
+  "snapshotGzipByteSize": 348263,
   "freshUntil": "2026-08-03T00:00:00+09:00",
   "serviceIdentity": {
     "serviceId": "ITX_CHEONGCHUN",
@@ -21,17 +21,17 @@
   },
   "canonicalPackIdentity": {
     "id": "capital",
-    "sha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c",
-    "sqliteSha256": "91fd8a98895fd55f1305c1cfe6b554fd4bb71d07bdb1c3a284a93f8ad31651cd"
+    "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+    "sqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5"
   },
   "canonicalPackLineage": {
     "provenance": "tracked-readmission-chain",
     "admittedInputSha256": "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
     "admittedInputSqliteSha256": "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
-    "readmissionCount": 16
+    "readmissionCount": 27
   },
   "accessibilitySource": {
-    "materializedSqlSha256": "3f0b8240eacf190cd3206e9803ea9cb9dfa6d0dbaf299e683cbd28ad5e430d2e"
+    "materializedSqlSha256": "3d877a17f547ede83a879f4079951daf64dbbd31e94ec4a1bfa2187f5f276a31"
   },
   "canonicalStationSet": {
     "version": "sha256:1d44e5838691cb5103a864713f50d1d867d1337477544347b31e0f3ee94dd273",
@@ -123,5 +123,5 @@
     "transferRules": 0,
     "routeEdgeEvidence": 4
   },
-  "evidenceHash": "358c993624834c688018309284281a45be54c0513083f46524267e6630974570"
+  "evidenceHash": "97abcb43de569aa2075eda4bb19af070dd227db208867a92978a1e7bc1acf904"
 }

@@ -90,7 +90,7 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
     admittedInputSha256: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256,
     admittedInputSqliteSha256:
       contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
-    readmissionCount: 16,
+    readmissionCount: 27,
   });
   assert.deepEqual(first.evidence.serviceIdentity, {
     serviceId: "ITX_CHEONGCHUN",
@@ -131,6 +131,8 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   assert.equal((first.sql.match(/INSERT INTO station_pathway_edges/g) ?? []).length, 4);
   assert.equal((first.sql.match(/INSERT INTO transfer_rules/g) ?? []).length, 0);
   assert.equal((first.sql.match(/INSERT INTO route_edge_evidence/g) ?? []).length, 4);
+  assert.match(first.sql, /'edge-entry-sadang-seoul-4', 'ENTRY', 'seoul-metro-accessibility', 'seoul-metro-accessibility-20260728', 'OFFICIAL_SOURCE', 'UNKNOWN'/);
+  assert.doesNotMatch(first.sql, /route_edge_evidence[^;]+'NOT_VERIFIED'/);
   assert.match(first.sql, /'ITX_CHEONGCHUN'/);
   assert.match(first.sql, /, 2135\);/);
   assert.equal((first.sql.match(/INSERT INTO transit_feed_info/g) ?? []).length, 1);
@@ -171,12 +173,12 @@ test("접근성 source snapshot의 lineage와 governance 값을 그대로 materi
   const reviewedPack = JSON.parse(value.reviewedPackBytes);
   const snapshots = JSON.parse(value.sourceSnapshotsBytes);
   const parent = snapshots.find(
-    ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-capital-admission-20260712",
+    ({ snapshotId }) => snapshotId === "seoul-metro-accessibility-20260728",
   );
   const child = {
     ...parent,
-    snapshotId: "seoul-metro-accessibility-capital-admission-20260713",
-    retrievedAt: "2026-07-13T00:00:00Z",
+    snapshotId: "seoul-metro-accessibility-20260729",
+    retrievedAt: "2026-07-29T00:00:00Z",
     sourceUpdatedAt: null,
     rowCount: 9,
     coverageCount: 2,

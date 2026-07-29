@@ -63,6 +63,27 @@
       }
     },
     {
+      "sourceId": "kric-station-convenience-standard",
+      "sourceClassId": "static_accessibility_facility",
+      "retentionClassId": "standard-90d",
+      "ownerRole": "datapack-source-owner",
+      "stewardRole": "datapack-data-steward",
+      "approvalRole": "datapack-release-approver",
+      "escalationHours": 4,
+      "alertRoute": "github:area-datapack",
+      "licenseReview": {
+        "status": "APPROVED",
+        "termsHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
+        "reviewedAt": "2026-07-28T12:42:27Z",
+        "nextReviewAt": "2027-07-28T12:42:27Z",
+        "termsUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+        "reviewedProvider": "국가철도공단",
+        "reviewedDatasetUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=430&service=handicapped&operation=stationCnvFacl&page=1",
+        "redistributionScopes": ["DERIVED_DATAPACK"],
+        "approvedByRole": "datapack-release-approver"
+      }
+    },
+    {
       "sourceId": "kric-station-elevator",
       "sourceClassId": "static_accessibility_facility",
       "retentionClassId": "standard-90d",

@@ -381,12 +381,13 @@ function routeEdgeEvidenceInsert(edge, endpoint) {
     && edge.verificationStatus === "VERIFIED"
     && ["OFFICIAL_SOURCE", "OPERATOR_CONFIRMED", "FIELD_VERIFIED"].includes(edge.provenanceKind)
     && edge.includesStairs === false;
+  const verificationStatus = edge.verificationStatus === "NOT_VERIFIED" ? "UNKNOWN" : edge.verificationStatus;
   return "INSERT INTO route_edge_evidence (id, station_id, line_id, edge_id, edge_type, source_id, source_snapshot_id, provenance_kind, verification_status, last_verified_at, evidence_hash, strict_route_eligible, blocker_reason, created_at) VALUES ("
     + `${sqlText(`route-evidence-${edge.id}`, "route evidence id")}, ${sqlText(endpoint.stationId, "route evidence station")}, `
     + `${sqlText(endpoint.lineId, "route evidence line")}, ${sqlText(edge.id, "route evidence edge")}, `
     + `${sqlText(edge.edgeType, "route evidence type")}, ${sqlText(edge.sourceId, "route evidence source")}, `
     + `${sqlText(edge.sourceSnapshotId, "route evidence snapshot")}, ${sqlText(edge.provenanceKind, "route evidence provenance")}, `
-    + `${sqlText(edge.verificationStatus, "route evidence verification")}, ${sqlTimestamp(edge.lastVerifiedAt, "route evidence verifiedAt")}, `
+    + `${sqlText(verificationStatus, "route evidence verification")}, ${sqlTimestamp(edge.lastVerifiedAt, "route evidence verifiedAt")}, `
     + `${sqlText(edge.evidenceHash, "route evidence hash")}, ${strictEligible ? "TRUE" : "FALSE"}, `
     + `${strictEligible ? "NULL" : sqlText(edge.accessibilityStatus, "route evidence blocker")}, `
     + `${sqlTimestamp(edge.lastVerifiedAt, "route evidence createdAt")});`;

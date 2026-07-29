@@ -36,18 +36,18 @@
     "scopeKo": "선언 단위는 (sourceId, sourceDomain, lineId)다. 선언은 그 재기술이 declare한 requirement 키 안에서만 고를 수 있어 도메인 전체·소스 전체·와일드카드 선언이 들어올 통로가 없고, 한 재기술의 노선을 전부 선언하면 그 재기술이 아무것도 열지 않게 되므로 거부된다."
   },
   "deployedArtifact": {
-    "byteSize": 1463673,
-    "gzipSha256": "0fc9103e3b27e867d90513d1c8ffb6e01ac9b8026e4a6311fda9ee6f18c4779c",
+    "byteSize": 1463745,
+    "gzipSha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
     "networkEdgeCounts": {
-      "provenanceComplete": 652,
+      "provenanceComplete": 656,
       "strictEligible": 652,
-      "total": 2178
+      "total": 2182
     },
     "packId": "capital",
     "rowCounts": {
-      "catalog_metadata": 2,
-      "data_quality_records": 5,
-      "facilities": 7,
+      "catalog_metadata": 3,
+      "data_quality_records": 2,
+      "facilities": 4,
       "facility_status_snapshots": 0,
       "fare_discounts": 0,
       "fare_rules": 0,
@@ -55,7 +55,7 @@
       "internal_route_edges": 1,
       "internal_route_nodes": 2,
       "lines": 37,
-      "network_edges": 2178,
+      "network_edges": 2182,
       "official_od_fare_quotes": 6,
       "operators": 22,
       "out_of_station_transfer_links": 0,
@@ -83,7 +83,7 @@
       "transit_stop_times": 932,
       "transit_trips": 466
     },
-    "sqliteSha256": "91fd8a98895fd55f1305c1cfe6b554fd4bb71d07bdb1c3a284a93f8ad31651cd",
+    "sqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
     "verifierPath": "tools/datapack/verify-production-pack-artifact-identity.mjs"
   },
   "determinism": {
@@ -114,11 +114,11 @@
   "inputs": {
     "inheritedPack": {
       "path": "tools/datapack/release/capital-production-reviewed-pack.json",
-      "sha256": "6b64e5e9f16306e7602a52fd47247c770b2b192c058f1f07a718aaf2dab2ff4a"
+      "sha256": "3107c942c53ad5ccff7981a7bb8fb831a048e4e94176a0123bed0482cfd6f7b4"
     },
     "inventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "d6425d21333dcbb08341a40bc57571e31a0ea7cfc087732c5596af351dd3b1b7"
+      "sha256": "d1f088dc748ad01a2b8b6745cc6f3ad2df40e100ffe68ac17146ef80cb0966fa"
     },
     "resolutionPlan": {
       "path": "tools/datapack/release/nationwide-public-api-coverage-search-plan-20260725.json",
@@ -134,7 +134,7 @@
     },
     "targets": {
       "path": "tools/datapack/nationwide-coverage-targets.json",
-      "sha256": "d998a663c8828b2011862c193ec2e93b266be3f3a9e4277b7f32eb67a4c5faaf"
+      "sha256": "045c209621d929060bf0399af6d2ba2cdc5e55cc95d83850c86a3cc1c89965af"
     }
   },
   "issue": 2595,
@@ -5670,10 +5670,10 @@
           "status": "SUPPORTED",
           "supportingRecordCountByField": {
             "elevator": 40,
-            "escalator": 40,
+            "escalator": 59,
             "status": 120,
-            "verified_at": 120,
-            "wheelchair_lift": 40
+            "verified_at": 179,
+            "wheelchair_lift": 80
           }
         },
         {
@@ -5882,11 +5882,11 @@
           ],
           "status": "SUPPORTED",
           "supportingRecordCountByField": {
-            "elevator": 17,
+            "elevator": 18,
             "escalator": 17,
             "status": 51,
-            "verified_at": 51,
-            "wheelchair_lift": 17
+            "verified_at": 69,
+            "wheelchair_lift": 34
           }
         },
         {
@@ -6098,8 +6098,8 @@
             "elevator": 14,
             "escalator": 14,
             "status": 42,
-            "verified_at": 42,
-            "wheelchair_lift": 14
+            "verified_at": 56,
+            "wheelchair_lift": 28
           }
         },
         {
@@ -6309,10 +6309,10 @@
           "status": "SUPPORTED",
           "supportingRecordCountByField": {
             "elevator": 43,
-            "escalator": 43,
+            "escalator": 57,
             "status": 129,
-            "verified_at": 129,
-            "wheelchair_lift": 43
+            "verified_at": 183,
+            "wheelchair_lift": 83
           }
         },
         {
@@ -6524,8 +6524,8 @@
             "elevator": 11,
             "escalator": 11,
             "status": 33,
-            "verified_at": 33,
-            "wheelchair_lift": 11
+            "verified_at": 44,
+            "wheelchair_lift": 22
           }
         },
         {
@@ -6692,8 +6692,8 @@
             "elevator": 27,
             "escalator": 27,
             "status": 81,
-            "verified_at": 81,
-            "wheelchair_lift": 27
+            "verified_at": 108,
+            "wheelchair_lift": 54
           }
         },
         {
@@ -6903,10 +6903,10 @@
           "status": "SUPPORTED",
           "supportingRecordCountByField": {
             "elevator": 33,
-            "escalator": 33,
+            "escalator": 35,
             "status": 99,
-            "verified_at": 99,
-            "wheelchair_lift": 33
+            "verified_at": 132,
+            "wheelchair_lift": 64
           }
         },
         {
@@ -7916,8 +7916,8 @@
             "elevator": 30,
             "escalator": 30,
             "status": 90,
-            "verified_at": 90,
-            "wheelchair_lift": 30
+            "verified_at": 120,
+            "wheelchair_lift": 60
           }
         },
         {
@@ -8128,10 +8128,10 @@
           "status": "SUPPORTED",
           "supportingRecordCountByField": {
             "elevator": 35,
-            "escalator": 35,
+            "escalator": 39,
             "status": 105,
-            "verified_at": 105,
-            "wheelchair_lift": 35
+            "verified_at": 143,
+            "wheelchair_lift": 69
           }
         },
         {
@@ -8344,8 +8344,8 @@
             "elevator": 29,
             "escalator": 29,
             "status": 87,
-            "verified_at": 87,
-            "wheelchair_lift": 29
+            "verified_at": 116,
+            "wheelchair_lift": 58
           }
         },
         {
@@ -8558,8 +8558,8 @@
             "elevator": 22,
             "escalator": 22,
             "status": 66,
-            "verified_at": 66,
-            "wheelchair_lift": 22
+            "verified_at": 88,
+            "wheelchair_lift": 44
           }
         },
         {
@@ -8769,11 +8769,11 @@
           ],
           "status": "SUPPORTED",
           "supportingRecordCountByField": {
-            "elevator": 20,
-            "escalator": 20,
+            "elevator": 21,
+            "escalator": 23,
             "status": 60,
-            "verified_at": 60,
-            "wheelchair_lift": 20
+            "verified_at": 84,
+            "wheelchair_lift": 40
           }
         },
         {

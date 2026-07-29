@@ -15,6 +15,15 @@ const maintenanceOperationalStatuses = [
   "INSPECTION",
   "UNDER_CONSTRUCTION",
 ];
+const strictRouteEligibilityReasons = new Set([
+  "FACILITY_NOT_INSTALLED",
+  "FACILITY_OPERATION_VERIFIED",
+  "NO_OFFICIAL_STATUS_FEED",
+  "OPERATION_EVIDENCE_MISSING",
+  "OPERATION_STATUS_NOT_AVAILABLE",
+  "OPERATION_STATUS_UNKNOWN",
+  "STATUS_PROBE_NOT_ROUTE_EVIDENCE",
+]);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -964,6 +973,11 @@ function accessibilityStatusEvidenceRows(input, stationLineKeys, isProductionPac
     if (!["EXISTS", "NOT_EXISTS"].includes(evidenceKind)) {
       throw new Error(`accessibilityStatusEvidence.evidenceKind is not allowed: ${stationId}:${lineId}:${evidenceKind}`);
     }
+    const strictRouteEligibleReason = row.strictRouteEligibleReason
+      ?? (evidenceKind === "NOT_EXISTS" ? "NO_OFFICIAL_STATUS_FEED" : "OPERATION_STATUS_NOT_AVAILABLE");
+    if (!strictRouteEligibilityReasons.has(strictRouteEligibleReason)) {
+      throw new Error(`accessibilityStatusEvidence.strictRouteEligibleReason is not allowed: ${strictRouteEligibleReason}`);
+    }
     return {
       stationId,
       lineId,
@@ -992,7 +1006,7 @@ function accessibilityStatusEvidenceRows(input, stationLineKeys, isProductionPac
       retrievedAt: productionString(row.retrievedAt, isProductionPack, "accessibilityStatusEvidence.retrievedAt"),
       // 검증된 비가용/부재 상태는 strict route(보장) 대상이 아니다 — 항상 ineligible.
       strictRouteEligible: false,
-      strictRouteEligibleReason: evidenceKind === "NOT_EXISTS" ? "NO_OFFICIAL_STATUS_FEED" : "OPERATION_STATUS_NOT_AVAILABLE",
+      strictRouteEligibleReason,
     };
   });
 }

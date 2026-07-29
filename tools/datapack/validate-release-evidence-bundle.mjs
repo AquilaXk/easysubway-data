@@ -341,6 +341,7 @@ async function main() {
   const scopePath = argValue(args, "--scope") ?? "apps/mobile/release/production-datapack-scope.json";
   const launchReportPath = argValue(args, "--launch-report")
     ?? "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
+  const accessibilitySourceCoveragePath = argValue(args, "--accessibility-source-coverage");
   const candidatePaths = {
     buildSpec: argValue(args, "--build-spec"),
     manifest: argValue(args, "--manifest"),
@@ -367,9 +368,15 @@ async function main() {
   const scope = JSON.parse(scopeRaw);
   const launchReportRaw = await readFile(launchReportPath, "utf8");
   const launchReport = JSON.parse(launchReportRaw);
+  const accessibilitySourceCoverageRaw = accessibilitySourceCoveragePath
+    ? await readFile(accessibilitySourceCoveragePath, "utf8")
+    : null;
   const requiredCandidatePaths = ["buildSpec", "manifest", "source"];
   if (requirePass && requiredCandidatePaths.some((key) => !candidatePaths[key])) {
     throw new Error("publish validation requires current build spec, manifest, and source evidence");
+  }
+  if (requirePass && !accessibilitySourceCoveragePath) {
+    throw new Error("publish validation requires accessibility source coverage evidence");
   }
   const hasCandidatePaths = Object.values(candidatePaths).some(Boolean);
   if (hasCandidatePaths && requiredCandidatePaths.some((key) => !candidatePaths[key])) {
@@ -442,6 +449,7 @@ async function main() {
     "gzipSha256",
     "manifestSha256",
     "coverageSummarySha256",
+    "accessibilitySourceCoverageSha256",
     "itxCheongchunCoverageSha256",
     "routeMapPositionCoverageSha256",
     "routeGraphTopologySha256",
@@ -450,6 +458,22 @@ async function main() {
     "androidEvidenceSha256",
   ]) {
     validateSha(bundle, field);
+  }
+  if (!["GO", "NO_GO", "NOT_EVALUATED"].includes(bundle.accessibilitySourceCoverageDecision)) {
+    throw new Error("accessibilitySourceCoverageDecision must be GO, NO_GO, or NOT_EVALUATED");
+  }
+  if (accessibilitySourceCoverageRaw != null) {
+    const report = JSON.parse(accessibilitySourceCoverageRaw);
+    if (bundle.accessibilitySourceCoverageSha256
+      !== createHash("sha256").update(accessibilitySourceCoverageRaw).digest("hex")) {
+      throw new Error("accessibility source coverage sha256 mismatch");
+    }
+    if (bundle.accessibilitySourceCoverageDecision !== report.decision) {
+      throw new Error("accessibility source coverage decision must match bundle");
+    }
+  }
+  if (requirePass && bundle.accessibilitySourceCoverageDecision !== "GO") {
+    throw new Error("accessibility source coverage decision must be GO for publish");
   }
   for (const field of [
     "validatorStatus",

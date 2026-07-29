@@ -75,6 +75,7 @@ jobs:
             echo "EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-map-audit.json"
             echo "EASYSUBWAY_COVERAGE_GAP_REPORT=${{ runner.temp }}/easysubway-datapack-stage/coverage-gap-report.json"
             echo "EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/route-graph-topology-report.json"
+            echo "EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT=${{ runner.temp }}/easysubway-datapack-stage/accessibility-source-coverage.json"
             echo "EASYSUBWAY_HEADWAY_REPORT=${{ runner.temp }}/easysubway-datapack-stage/datapack-headways.json"
             echo "EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE=${{ runner.temp }}/easysubway-datapack-stage/release-evidence-bundle.json"
             echo "EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT=${{ runner.temp }}/easysubway-datapack-stage/launch-denominator-report.json"
@@ -574,6 +575,20 @@ jobs:
           fi
           node -e "const manifest=require(process.env.EASYSUBWAY_DATAPACK_OUTPUT + '/current.json'); if (!manifest.packs.every((pack) => Array.isArray(pack.sourceInventory) && pack.sourceInventory.length > 0)) throw new Error('sourceInventory missing');"
 
+      - name: Data Pack Release / Validate accessibility source coverage
+        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' || steps.release-mode.outputs.mode == 'production-publish' }}
+        run: |
+          set -euo pipefail
+          evaluation_at="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+          node tools/datapack/build-accessibility-source-coverage-report.mjs \
+            --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json" \
+            --manifest-root "${EASYSUBWAY_DATAPACK_OUTPUT}" \
+            --bundled-index apps/mobile/assets/datapacks/index.json \
+            --inventory tools/datapack/source-inventory.json \
+            --source-snapshots tools/datapack/release/source-snapshots.json \
+            --evaluation-at "${evaluation_at}" \
+            --output "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}"
+
       - name: Data Pack Release / Write coverage gap evidence
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
         run: |
@@ -696,6 +711,10 @@ jobs:
           const androidEvidence = process.env.EASYSUBWAY_ANDROID_EVIDENCE_PATH || "";
           const sourceEvidencePath = `${process.env.EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json`;
           const optionalRaw = (file) => file && fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+          const accessibilitySourceCoverageRaw = optionalRaw(process.env.EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT);
+          const accessibilitySourceCoverage = accessibilitySourceCoverageRaw
+            ? JSON.parse(accessibilitySourceCoverageRaw)
+            : null;
           const launchEvidenceRaw = {
             buildSpecRaw,
             manifestRaw,
@@ -791,6 +810,10 @@ jobs:
             gzipSha256: gzipFile ? hashFile(path.join(catalogDir, gzipFile)) : zeroHash,
             manifestSha256: candidateBinding.manifestSha256,
             coverageSummarySha256: hashFile(process.env.EASYSUBWAY_COVERAGE_GAP_REPORT),
+            accessibilitySourceCoverageSha256: accessibilitySourceCoverageRaw
+              ? hashBytes(accessibilitySourceCoverageRaw)
+              : zeroHash,
+            accessibilitySourceCoverageDecision: accessibilitySourceCoverage?.decision ?? "NOT_EVALUATED",
             itxCheongchunCoverageSha256: hashFile("tools/datapack/itx-cheongchun-coverage-contract.json"),
             routeMapPositionCoverageSha256: hashFile(process.env.EASYSUBWAY_ROUTE_MAP_AUDIT_REPORT),
             routeGraphTopologySha256: hashFile(process.env.EASYSUBWAY_ROUTE_GRAPH_TOPOLOGY_REPORT),
@@ -824,6 +847,9 @@ jobs:
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
             --source-evidence "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json"
           )
+          if [[ -f "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}" ]]; then
+            bundle_args+=(--accessibility-source-coverage "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}")
+          fi
           if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then
             bundle_args+=(--server-evidence "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}")
           fi
@@ -920,6 +946,7 @@ jobs:
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
             --source-evidence "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json" \
+            --accessibility-source-coverage "${EASYSUBWAY_ACCESSIBILITY_SOURCE_COVERAGE_REPORT}" \
             --require-pass
           )
           if [[ -n "${EASYSUBWAY_STRICT_ROUTE_REGRESSION_PATH}" ]]; then

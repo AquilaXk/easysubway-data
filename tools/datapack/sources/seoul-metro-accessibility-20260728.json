@@ -1,0 +1,6841 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "seoul-accessibility-snapshot",
+  "sourceId": "seoul-metro-accessibility",
+  "snapshotId": "seoul-metro-accessibility-20260728",
+  "retrievedAt": "2026-07-28T15:35:25.704Z",
+  "capturedAt": "2026-07-28T15:35:25.704Z",
+  "observedAt": "2026-07-28T15:35:25.704Z",
+  "freshUntil": "2026-07-29T15:35:25.704Z",
+  "credentialRedacted": true,
+  "absenceEvidenceMode": "EXHAUSTIVE_LIST",
+  "rowCount": 865,
+  "normalizedRowCount": 865,
+  "rawSha256": "07e91cc7d035dd60e753c25b1a4dd4a306b757f3a74f7364eb38f9c3ef43c1ba",
+  "contentSha256": "bedfd9067948539b6285dba3ad24cd1ae0dac0166095466fb7f4b2df4e31b8aa",
+  "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
+  "stations": [
+    {
+      "stationName": "동대문",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동묘앞 방면10-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종로5가 방면2-1"
+        }
+      ]
+    },
+    {
+      "stationName": "동묘앞",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신설동 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신설동 방면10-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신설동 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문(1) 방면7-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문(1) 방면1-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,10번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "서울역",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "시청 방면5-1,남영 방면6-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "시청",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종각 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서울역 방면8-3"
+        }
+      ]
+    },
+    {
+      "stationName": "신설동",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "제기동 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동묘앞 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4,5번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2,3번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "12번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "제기동",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청량리 방면9-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신설동 방면2-1"
+        }
+      ]
+    },
+    {
+      "stationName": "종각",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종로3가 방면6-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "시청 방면4-4"
+        }
+      ]
+    },
+    {
+      "stationName": "종로3가",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종로5가 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종각 방면6-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "12,13번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "종로5가",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8,9번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문(1) 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종로3가 방면3-2"
+        }
+      ]
+    },
+    {
+      "stationName": "청량리",
+      "lineName": "1호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "강남",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "역삼 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "교대 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "강변",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "구의 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실나루 방면7-3"
+        }
+      ]
+    },
+    {
+      "stationName": "건대입구",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "성수 방면5-4"
+        }
+      ]
+    },
+    {
+      "stationName": "교대",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강남 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서초 방면3-1"
+        }
+      ]
+    },
+    {
+      "stationName": "구로디지털단지",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2,3번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신대방 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대림 방면7-4"
+        }
+      ]
+    },
+    {
+      "stationName": "구의",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강변 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "낙성대",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서울대입구 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "사당 방면8-2"
+        }
+      ]
+    },
+    {
+      "stationName": "당산",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포구청 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "합정 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "대림",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "구로디지털단지역 방면 3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신도림 방면 8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "도림천",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신도림 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "양천구청 방면2-4"
+        }
+      ]
+    },
+    {
+      "stationName": "동대문역사문화공원",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "을지로4가 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신당 방면3-2"
+        }
+      ]
+    },
+    {
+      "stationName": "뚝섬",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "한양대 방면7-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "성수 방면7-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "문래",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신도림 방면7-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포구청 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "방배",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서초 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "사당 방면3-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "봉천",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서울대입구 방면6-3, 신림 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "사당",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "방배 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "14번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "삼성",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종합운동장 방면3-1, 선릉 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "상왕십리",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1-1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신당 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "왕십리 방면3-4"
+        }
+      ]
+    },
+    {
+      "stationName": "서울대입구",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "봉천 방면5-2, 낙성대 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "서초",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "교대 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "방배 방면9-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "선릉",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "성수",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "뚝섬 방면7-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "건대입구 방면4-4"
+        }
+      ]
+    },
+    {
+      "stationName": "시청",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "충정로 방면6-2, 을지로입구 방면5-3"
+        }
+      ]
+    },
+    {
+      "stationName": "신답",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "용두 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "용답 방면3-2"
+        }
+      ]
+    },
+    {
+      "stationName": "신당",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문역사문화공원 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상왕십리 방면7-4"
+        }
+      ]
+    },
+    {
+      "stationName": "신대방",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신림방면 3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "구로디지털단지 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신도림",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대림 방면4-4, 문래 방면7-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대림 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신림",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신대방 방면7-1, 봉천 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신설동",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신설동 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신정네거리",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "까치산 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "양천구청 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신촌",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "홍대입구 방면6-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이대 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "아현",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이대 방면7-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "충정로 방면4-3"
+        }
+      ]
+    },
+    {
+      "stationName": "양천구청",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신정네거리 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "도림천 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "역삼",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "선릉 방면7-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강남 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "영등포구청",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "문래 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "당산 방면3-1"
+        }
+      ]
+    },
+    {
+      "stationName": "왕십리",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상왕십리 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "한양대 방면3-4"
+        }
+      ]
+    },
+    {
+      "stationName": "용답",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신답방면2-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "성수방면3-3"
+        }
+      ]
+    },
+    {
+      "stationName": "용두",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "신설동 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신답 방면1-1"
+        }
+      ]
+    },
+    {
+      "stationName": "을지로3가",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "을지로입구 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "을지로4가 방면3-2"
+        }
+      ]
+    },
+    {
+      "stationName": "을지로4가",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "을지로3가 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문역사문화공원 방면8-3"
+        }
+      ]
+    },
+    {
+      "stationName": "을지로입구",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "을지로3가 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "시청 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5,6번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "이대",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신촌 방면2-2, 아현 방면9-3"
+        }
+      ]
+    },
+    {
+      "stationName": "잠실",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실나루 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실새내 방면6-3"
+        }
+      ]
+    },
+    {
+      "stationName": "잠실나루",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강변 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실 방면8-1"
+        }
+      ]
+    },
+    {
+      "stationName": "잠실새내",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실방면7-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종합운동장 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "종합운동장",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실새내 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "삼성 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "충정로",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "아현 방면2-1, 시청 방면9-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "한양대",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구(육교) 측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "왕십리 방면3-3"
+        }
+      ]
+    },
+    {
+      "stationName": "합정",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "홍대입구 방면7-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "당산 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "홍대입구",
+      "lineName": "2호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "합정 방면7-2, 신촌 방면4-3"
+        }
+      ]
+    },
+    {
+      "stationName": "가락시장",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수서 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "경찰병원 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "경복궁",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "독립문 방면6-2, 안국 방면5-3"
+        }
+      ]
+    },
+    {
+      "stationName": "경찰병원",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "가락시장 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "오금 방면 7-3"
+        }
+      ]
+    },
+    {
+      "stationName": "고속터미널",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠원 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "교대 방면3-3"
+        }
+      ]
+    },
+    {
+      "stationName": "교대",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "13번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고속터미널 방면4-2, 남부터미널 방면7-3"
+        }
+      ]
+    },
+    {
+      "stationName": "구파발",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "지축 방면5-3, 연신내 방면6-2"
+        }
+      ]
+    },
+    {
+      "stationName": "금호",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구 측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "약수 방면3-2, 옥수 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "남부터미널",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "교대 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "양재 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "녹번",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "불광 방면3-1, 홍제 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "대청",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "학여울 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "일원 방면7-1"
+        }
+      ]
+    },
+    {
+      "stationName": "대치",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "도곡 방면1-1, 학여울 방면10-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "독립문",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "무악재 방면9-1, 경복궁 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "동대입구",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(F계단 측, 3~5번 출입구 방향)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "충무로 방면3-1, 약수 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "매봉",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "양재 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "도곡 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "무악재",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "홍제 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "독립문 방면8-2"
+        }
+      ]
+    },
+    {
+      "stationName": "불광",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "연신내 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "녹번 방면8-2"
+        }
+      ]
+    },
+    {
+      "stationName": "수서",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "가락시장 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "일원 방면8-3"
+        }
+      ]
+    },
+    {
+      "stationName": "신사",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "압구정 방면3-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠원 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "안국",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "경복궁 방면3-2, 종로3가 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "압구정",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "옥수 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신사 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "약수",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대입구 방면8-4, 금호 방면3-1"
+        }
+      ]
+    },
+    {
+      "stationName": "양재",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "11번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남부터미널 방면3-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "매봉 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "연신내",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "구파발 방면6-1, 불광 방면5-4"
+        }
+      ]
+    },
+    {
+      "stationName": "오금",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "경찰병원 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "오금 방면6-4"
+        }
+      ]
+    },
+    {
+      "stationName": "옥수",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5,6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "금호 방면10-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "압구정 방면1-2"
+        }
+      ]
+    },
+    {
+      "stationName": "을지로3가",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "종로3가 방면6-3, 충무로 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "일원",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대청 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수서 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "잠원",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신사 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고속터미널 방면8-2"
+        }
+      ]
+    },
+    {
+      "stationName": "종로3가",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "안국 방면4-3, 을지로3가 방면7-1"
+        }
+      ]
+    },
+    {
+      "stationName": "지축",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "삼송 방면9-3, 구파발 방면2-2"
+        }
+      ]
+    },
+    {
+      "stationName": "학여울",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대치 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대청 방면6-1"
+        }
+      ]
+    },
+    {
+      "stationName": "홍제",
+      "lineName": "3호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "녹번 방면3-4, 무악재 방면8-1"
+        }
+      ]
+    },
+    {
+      "stationName": "길음",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미아사거리 방면6-1,성신여대입구 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "남태령",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "사당 방면3-3,선바위 방면8-2"
+        }
+      ]
+    },
+    {
+      "stationName": "노원",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상계 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "동대문",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "혜화 방면6-3,동대문역사문화공원 방면5-2"
+        }
+      ]
+    },
+    {
+      "stationName": "동대문역사문화공원",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문 방면4-4,혜화 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "동작",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "총신대입구 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이촌 방면7-4"
+        }
+      ]
+    },
+    {
+      "stationName": "명동",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "충무로 방면1-1,회현 방면10-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "미아",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수유 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미아사거리 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "미아사거리",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미아 방면3-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "길음 방면8-3"
+        }
+      ]
+    },
+    {
+      "stationName": "불암산",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상계 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "별내별가람 방면6-1"
+        }
+      ]
+    },
+    {
+      "stationName": "사당",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "총신대입구 방면9-2,남태령 방면2-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9,10번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "삼각지",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "숙대입구 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신용산 방면7-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5,6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "상계",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(1,2번 출입구 사이)"
+        }
+      ]
+    },
+    {
+      "stationName": "서울역",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "12번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "회현 방면9-1,숙대입구 방면2-4"
+        }
+      ]
+    },
+    {
+      "stationName": "성신여대입구",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "길음 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "한성대입구 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "수유",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "쌍문 방면7-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미아 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "숙대입구",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서울역(4) 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "삼각지 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신용산",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "삼각지 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이촌 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "쌍문",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "창동 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수유 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "이촌",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(서빙고 방면1-4)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신용산 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동작 방면3-3"
+        }
+      ]
+    },
+    {
+      "stationName": "창동",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "쌍문 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "쌍문 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "노원 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "노원 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "쌍문 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "쌍문 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "총신대입구",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "14번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동작 방면7-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "사당(4) 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "충무로",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "을지로3가 방면7-4,동대입구 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문역사문화공원 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "명동 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "한성대입구",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "성신여대입구 방면6-1,길음 방면5-4"
+        }
+      ]
+    },
+    {
+      "stationName": "혜화",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "한성대입구 방면7-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문(4) 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "회현",
+      "lineName": "4호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서울역 방면1-4,명동 방면10-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4,5번 출입구 중심"
+        }
+      ]
+    },
+    {
+      "stationName": "강동",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "둔촌동 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "천호 방면1-2"
+        }
+      ]
+    },
+    {
+      "stationName": "강일",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상일동 방면1-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미사 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상일동 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미사 방면1-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "개롱",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "오금 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "거여 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "개화산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구(대합실 내)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구(대합실 내)"
+        }
+      ]
+    },
+    {
+      "stationName": "거여",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "개롱 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마천 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "고덕",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "명일 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상일동 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구(역사 화장실 앞)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4,5번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "공덕",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(애오개 방면8-4 마포 방면1-1)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "광나루",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "아차산 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "천호 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "광화문",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서대문 방면1-1,종로3가 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "서대문 방면1-1, 종로3가 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "군자",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장한평 방면5-3, 아차산 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장한평 방면4-3, 아차산 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "굽은다리",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "길동 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "명일 방면3-2, 3-3 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "길동",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강동 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "굽은다리 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(1번 출입구 세븐일레븐 옆)"
+        }
+      ]
+    },
+    {
+      "stationName": "김포공항",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "개화산 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "송정 방면3-1"
+        }
+      ]
+    },
+    {
+      "stationName": "까치산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고색안전실 측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "내부 상선측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "내부 하선측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(1,2,3,4번 출입구 화장실 방향)"
+        }
+      ]
+    },
+    {
+      "stationName": "답십리",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마장 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장한평 방면5-1"
+        }
+      ]
+    },
+    {
+      "stationName": "동대문역사문화공원",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(6,7번 출입구 사이)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청구방면 1-1,을지로4가 방면10-4"
+        }
+      ]
+    },
+    {
+      "stationName": "둔촌동",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강동 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "올림픽공원 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        },
+        {
+          "operational": null,
+          "situationCode": null,
+          "situation": "PROVIDER_STATUS_MISSING",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "마곡",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4,5번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "송정 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "발산 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6,7번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "마장",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "왕십리 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "답십리 방면5-1"
+        }
+      ]
+    },
+    {
+      "stationName": "마천",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "거여 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마천 방면5-2"
+        }
+      ]
+    },
+    {
+      "stationName": "마포",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "여의나루 방면5-1, 공덕 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "명일",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "굽은다리 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고덕 방면4-3, 4-4 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "목동",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신정 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "오목교 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "미사",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강일 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하남풍산 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "발산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마곡방면 5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "우장산 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "방이",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "올림픽공원 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "오금 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "방화",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "방화 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "개화산 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "상일동",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5,6번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7,8번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고덕방면 6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강일 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "서대문",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "충정로 방면3-2, 광화문 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5,6번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "송정",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "김포공항 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마곡 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신금호",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청구 방면1-2, 행당 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청구 방면1-2, 행당 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고객안전실 측"
+        }
+      ]
+    },
+    {
+      "stationName": "신길",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "여의도 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "여의도 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포시장 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포시장 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(경사형)"
+        }
+      ]
+    },
+    {
+      "stationName": "신정",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "까치산 방면8-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "목동 방면1-4"
+        }
+      ]
+    },
+    {
+      "stationName": "아차산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "군자 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "광나루 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "애오개",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "공덕 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "충정로 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "양평",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "오목교 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포구청 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "여의나루",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "여의도 방면6-2, 마포 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(경사형)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "여의도",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신길 방면6-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "여의나루 방면6-4"
+        }
+      ]
+    },
+    {
+      "stationName": "영등포구청",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포시장 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6,7번 출입구 사이(공영주차장입구)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포시장 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "양평 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "영등포시장",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "영등포구청 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신길 방면5-2"
+        }
+      ]
+    },
+    {
+      "stationName": "오금",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "방이 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "개롱 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(방이 방면8-4)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(개롱 방면1-1)"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "오목교",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "목동 방면7-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "양평 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "올림픽공원",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "둔촌동 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "방이 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "왕십리",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "행당 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마장 방면6-2"
+        }
+      ]
+    },
+    {
+      "stationName": "우장산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "발산 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "화곡 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "을지로4가",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동대문역사문화공원방면 1-1,종로3가방면 10-4"
+        }
+      ]
+    },
+    {
+      "stationName": "장한평",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "답십리 방면4-2, 군자 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7,8번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "종로3가",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "광화문 방면8-4, 을지로4가 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(광화문 방면8-4 을지로4가 방면1-1)"
+        }
+      ]
+    },
+    {
+      "stationName": "천호",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6,7번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "광나루 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강동 방면4-1"
+        }
+      ]
+    },
+    {
+      "stationName": "충정로",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "애오개 방면3-3, 서대문 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "하남검단산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하남시청 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하남검단산 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "하남시청",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하남풍산 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하남검단산 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5,6번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "하남풍산",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "미사 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하남시청 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "행당",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신금호 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "왕십리 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "화곡",
+      "lineName": "5호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "까치산 방면4-3,우장산 방면7-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "고려대",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "안암 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "월곡 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "공덕",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대흥 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "효창공원 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대흥 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "효창공원앞 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "광흥창",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상수 방면1-2, 대흥 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "구산",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "응암 방면5-4"
+        }
+      ]
+    },
+    {
+      "stationName": "녹사평",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "삼각지 방면4-3, 이태원 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "대흥",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "광흥창 방면4-4, 공덕 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        }
+      ]
+    },
+    {
+      "stationName": "독바위",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "연신내 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "돌곶이",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상월곡 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "석계 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "동묘앞",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신당 방면3-3, 창신 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신당 방면8-4, 창신 방면1-1"
+        }
+      ]
+    },
+    {
+      "stationName": "디지털미디어시티",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "증산 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "월드컵경기장 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "마포구청",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "월드컵경기장 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "망원 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "망원",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마포구청 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "합정 방면5-2"
+        }
+      ]
+    },
+    {
+      "stationName": "버티고개",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(경사형)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "한강진 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "약수 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "보문",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "창신 방면4-4 , 안암 방면5-1"
+        }
+      ]
+    },
+    {
+      "stationName": "봉화산",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신내 방면8-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "화랑대 방면1-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "불광",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "독바위 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "독바위 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "삼각지",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "효창공원앞 방면1-1,녹사평 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "녹사평 방면1-1, 효창공원앞 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "12번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(효창공원앞 방면6-1,녹사평 방면4-4)"
+        }
+      ]
+    },
+    {
+      "stationName": "상수",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "합정 방면4-4, 광흥창 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "상월곡",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "돌곶이 방면8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "월곡 방면1-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "새절",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "응암 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "응암 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "석계",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "돌곶이 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "태릉입구 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신내",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신내, 봉화산 방면8-3"
+        }
+      ]
+    },
+    {
+      "stationName": "신당",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청구 방면5-3, 동묘앞 방면4-2"
+        }
+      ]
+    },
+    {
+      "stationName": "안암",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "보문 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고려대 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "약수",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "버티고개 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청구 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "버티고개 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로"
+        }
+      ]
+    },
+    {
+      "stationName": "역촌",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "불광 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "연신내",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "구산 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "월곡",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고려대 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상월곡 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,5번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "월드컵경기장",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "디지털미디어시티 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마포구청 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "응암",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "역촌 방면5-2, 새절 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "이태원",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "녹사평 방면3-1, 한강진 방면6-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "증산",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "새절 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "디지털미디어시티 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "창신",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "동묘앞 방면4-2, 보문 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "청구",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신금호 방면5-3, 동대문역사문화공원 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "약수 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신당 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "태릉입구",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "석계 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "화랑대 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "8번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "한강진",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이태원 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "버티고개 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "합정",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "망원 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상수 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "화랑대",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "태릉입구 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "봉화산 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "효창공원앞",
+      "lineName": "6호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "공덕 방면5-3, 삼각지 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        }
+      ]
+    },
+    {
+      "stationName": "가산디지털단지",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남구로 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "철산 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "강남구청",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청담 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "학동 방면8-4"
+        }
+      ]
+    },
+    {
+      "stationName": "건대입구",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "어린이대공원 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "자양방면 4-1"
+        }
+      ]
+    },
+    {
+      "stationName": "고속터미널",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "반포 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "내방 방면6-2"
+        }
+      ]
+    },
+    {
+      "stationName": "공릉",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "하계 방면 8-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "태릉입구 방면 1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "광명사거리",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "철산 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "천왕 방면2-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "군자",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "7번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "남구로",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "가산디지털단지방면 8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대림방면 1-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "남성",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이수(7) 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "숭실대입구 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "내방",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고속터미널(7) 방면 5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "이수(7) 방면 4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고객안전실 측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "노원",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "마들 방면4-4, 중계 방면4-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "논현",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "학동 방면7-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "반포 방면2-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "대림",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신풍 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남구로 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "도봉산",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1-1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장암 방면7-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수락산 방면1-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장암 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수락산 방면4-2"
+        }
+      ]
+    },
+    {
+      "stationName": "마들",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수락산 방면8-4, 노원 방면1-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "먹골",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "태릉입구 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "중화 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "면목",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상봉 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "사가정 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "반포",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "논현 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고속터미널(7) 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "보라매",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신풍 방면5-1, 신대방삼거리 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "사가정",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "면목 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "용마산 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "상도",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "숭실대입구 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장승배기 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "상봉",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "중화 방면3-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "면목 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "중화 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "면목 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "수락산",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "도봉산 방면1-1"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "마들 방면8-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "숭실대입구",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남성 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상도 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신대방삼거리",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장승배기 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "보라매 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "고객안전실 측"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신풍",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "보라매 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대림(7) 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "어린이대공원",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "군자 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "건대입구 방면6-2"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "온수",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "천왕 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "까치울 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "용마산",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "사가정 방면3-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "중곡 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "이수",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "내방 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남성 방면5-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "11번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "자양",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "건대입구 방면1-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "청담 방면7-4"
+        }
+      ]
+    },
+    {
+      "stationName": "장승배기",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상도 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신대방삼거리 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "중계",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "노원 방면5-1, 하계 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "중곡",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "용마산 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "군자 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "중화",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "먹골 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "상봉 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "천왕",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "광명사거리 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "온수 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "철산",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "가산디지털단지 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "광명사거리 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "청담",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장암 방면7-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "석남 방면2-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "10번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "태릉입구",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "공릉 방면6-4"
+        }
+      ]
+    },
+    {
+      "stationName": "하계",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "6번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "중계 방면4-4, 공릉 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "학동",
+      "lineName": "7호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강남구청 방면4-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "논현 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "가락시장",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "송파 방면5-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "문정 방면2-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "암사 방면6-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "환승통로(문정 방면1-1)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "강동구청",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "천호 방면4-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "몽촌토성 방면 3-2,3-3 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "남위례",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(1번 출입구)"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "5번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "산성 방면3-4"
+        }
+      ]
+    },
+    {
+      "stationName": "남한산성입구",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "산성 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "단대오거리 방면4-1"
+        }
+      ]
+    },
+    {
+      "stationName": "단대오거리",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남한산성입구 방면2-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신흥 방면5-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "모란",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수진 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "모란 방면2-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "11번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "몽촌토성",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강동구청 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "잠실 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "대합실(B1, 4번 출입구 화장실 앞)"
+        }
+      ]
+    },
+    {
+      "stationName": "문정",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "가락시장 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장지 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "2번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "복정",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장지 방면3-4, 남위례 방면3-4"
+        }
+      ]
+    },
+    {
+      "stationName": "산성",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "E/S 11호기 옆"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남위례 방면6-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "남한산성입구 방면1-3"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "석촌",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "암사 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "모란 방면 3-4"
+        }
+      ]
+    },
+    {
+      "stationName": "송파",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1,2번 출입구 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "가락시장 방면 3-4,4-1 사이"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "석촌 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "4번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "수진",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "신흥 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "모란 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "신흥",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "단대오거리 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "수진 방면3-4"
+        }
+      ]
+    },
+    {
+      "stationName": "암사",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "암사역사공원 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "천호 방면4-1"
+        },
+        {
+          "operational": false,
+          "situationCode": "S",
+          "situation": "보수중",
+          "pathDescription": "3,4번 출입구 사이"
+        }
+      ]
+    },
+    {
+      "stationName": "암사역사공원",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "암사 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "장자호수공원 방면6-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "잠실",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "몽촌토성 방면2-3"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "석촌 방면5-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "9번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "장지",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "문정 방면4-1"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "복정 방면3-4"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "1번 출입구"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "3번 출입구"
+        }
+      ]
+    },
+    {
+      "stationName": "천호",
+      "lineName": "8호선",
+      "facilities": [
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "암사 방면2-2"
+        },
+        {
+          "operational": true,
+          "situationCode": "M",
+          "situation": "사용가능",
+          "pathDescription": "강동구청 방면5-4"
+        }
+      ]
+    }
+  ]
+}
