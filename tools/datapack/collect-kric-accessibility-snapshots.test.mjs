@@ -302,6 +302,22 @@ test("provider result 실패와 schema drift는 retry하지 않는다", async ()
   }
 });
 
+test("provider result 실패는 exact tuple만 진단한다", async () => {
+  await assert.rejects(() => collectKricAccessibilitySnapshots({
+    roster: roster.slice(0, 1),
+    operations: [operation],
+    serviceKey: "key",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ header: { resultCode: "03" } }),
+    }),
+  }), {
+    name: "Error",
+    message: "KRIC accessibility provider result invalid: kric-station-elevator/S1/2/202/03; keys=header; bodyKeys=",
+  });
+});
+
 test("header 없는 provider resultCode 00도 absence evidence로 인정하지 않는다", async () => {
   await assert.rejects(() => collectKricAccessibilitySnapshots({
     roster: roster.slice(0, 1),

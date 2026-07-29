@@ -293,6 +293,7 @@ function validateOperation(operation) {
 }
 
 async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest }) {
+  const requestIdentity = `${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`;
   const url = new URL(operation.endpoint);
   url.searchParams.set("serviceKey", serviceKey);
   url.searchParams.set("format", "json");
@@ -304,18 +305,16 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
       response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
     } catch {
       if (attempt === 0) continue;
-      throw new Error(
-        `KRIC accessibility request failed: ${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`,
-      );
+      throw new Error(`KRIC accessibility request failed: ${requestIdentity}`);
     }
     if (response.ok || response.status < 500 || attempt === 1) break;
   }
-  if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${operation.sourceId}`);
+  if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
   let payload;
   try {
     payload = await response.json();
   } catch {
-    throw new Error(`KRIC accessibility schema invalid: ${operation.sourceId}`);
+    throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
   }
   const rawResponseSha256 = hash(payload);
   const resultCode = payload?.header?.resultCode;
@@ -327,13 +326,13 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
       .sort(codepointCompare).slice(0, 12);
     const safeBodyKeys = Object.keys(payload?.body ?? {}).filter((key) => /^[A-Za-z0-9._-]{1,32}$/.test(key))
       .sort(codepointCompare).slice(0, 12);
-    throw new Error(`KRIC accessibility provider result invalid: ${operation.sourceId}/${safeCode}; keys=${safeKeys.join(",")}; bodyKeys=${safeBodyKeys.join(",")}`);
+    throw new Error(`KRIC accessibility provider result invalid: ${requestIdentity}/${safeCode}; keys=${safeKeys.join(",")}; bodyKeys=${safeBodyKeys.join(",")}`);
   }
   const tupleIdentityFields = operation.tupleIdentityFields ?? ["railOprIsttCd", "lnCd", "stinCd"];
   for (const row of payload) {
     if (!row || typeof row !== "object" || operation.responseFields.some((field) => !(field in row))
       || tupleIdentityFields.some((field) => row[field] !== tuple[field])) {
-      throw new Error(`KRIC accessibility schema invalid: ${operation.sourceId}`);
+      throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
     }
   }
   return {
