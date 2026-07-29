@@ -17,11 +17,12 @@ export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([
   },
 ]);
 
-const CONSUMED_KRIC_FACILITY_SOURCE_IDS = Object.freeze([
-  "kric-station-convenience-standard",
-  "kric-station-elevator",
-  "kric-station-escalator",
-  "kric-wheelchair-lift-location",
+// Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
+export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
+  { stationId: "station-47b514f305d8", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "454" },
+  { stationId: "station-47b514f305d8", lineId: "line-558d0bd8312d", railOprIsttCd: "KR", lnCd: "K1", stinCd: "K256" },
+  { stationId: "station-9d261727e400", lineId: "line-828f04afc588", railOprIsttCd: "EV", lnCd: "E1", stinCd: "Y120" },
+  { stationId: "station-b1a5f63faf69", lineId: "line-42b5805f3b5a", railOprIsttCd: "IC", lnCd: "I2", stinCd: "210" },
 ]);
 
 export async function collectKricAccessibilitySnapshots({
@@ -40,10 +41,15 @@ export async function collectKricAccessibilitySnapshots({
   for (const operation of operations) {
     validateOperation(operation);
     const queries = [];
+    const responsesByProviderTuple = new Map();
     for (const tuple of tuples) {
-      const { rows, rawResponseSha256 } = await requestRows({
-        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs,
-      });
+      const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
+      if (!responsesByProviderTuple.has(providerKey)) {
+        responsesByProviderTuple.set(providerKey, await requestRows({
+          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs,
+        }));
+      }
+      const { rows, rawResponseSha256 } = responsesByProviderTuple.get(providerKey);
       const providerRecordHash = hash(rows);
       queries.push({
         ...tuple,
@@ -79,10 +85,10 @@ export async function collectKricAccessibilitySnapshots({
   return snapshots;
 }
 
-export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, routeRosters }) {
+export function buildKricAccessibilityRoster({ activeLineScopes, fixture, canonicalStationLines, routeRosters }) {
   if (!Array.isArray(fixture?.providerLineScopes) || !Array.isArray(canonicalStationLines)
-    || !Array.isArray(routeRosters?.rosters)) {
-    throw new Error("KRIC fixture, canonical station lines, and route rosters are required");
+    || !Array.isArray(routeRosters?.providerScopes) || !Array.isArray(routeRosters?.rosters)) {
+    throw new Error("KRIC fixture, canonical station lines, provider scopes, and route rosters are required");
   }
   const stationLines = new Map();
   for (const membership of canonicalStationLines) {
@@ -90,6 +96,7 @@ export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, r
   }
   const canonicalByLineAndName = new Map();
   const canonicalByLineAndCode = new Map();
+  const canonicalByProviderTuple = new Map();
   for (const membership of stationLines.values()) {
     if (!Array.isArray(membership.names) || membership.names.length === 0) {
       throw new Error(`canonical station names missing: ${membership.stationId}`);
@@ -109,6 +116,12 @@ export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, r
       canonicalByLineAndCode.set(key, matches);
     }
   }
+  for (const mapping of KRIC_STATION_TUPLE_MAPPINGS) {
+    const matches = [...stationLines.values()].filter(({ stationId, lineId }) => (
+      stationId === mapping.stationId && lineId === mapping.lineId
+    ));
+    if (matches.length > 0) canonicalByProviderTuple.set(providerTupleKey(mapping), matches);
+  }
   const rosterByRequest = new Map(routeRosters.rosters.map((roster) => [
     `${roster.mreaWideCd}\0${roster.lnCd}`,
     roster,
@@ -116,9 +129,13 @@ export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, r
   const tuples = [];
   const coveredMemberships = new Set();
   const scopedLineIds = new Set();
-  const activeScopes = Array.isArray(routeRosters.providerScopes)
-    ? routeRosters.providerScopes
-    : fixture.providerLineScopes;
+  const activeScopes = routeRosters.providerScopes;
+  const expectedScopeKeys = uniqueActiveScopeKeys(activeLineScopes);
+  const actualScopeKeys = uniqueActiveScopeKeys(activeScopes);
+  if (expectedScopeKeys.length !== actualScopeKeys.length
+    || expectedScopeKeys.some((key, index) => key !== actualScopeKeys[index])) {
+    throw new Error("KRIC active provider scope set mismatch");
+  }
   const fixtureScopeKeys = new Set(fixture.providerLineScopes.map((scope) => (
     `${scope.lineId}\0${scope.railOprIsttCd}\0${scope.lnCd}`
   )));
@@ -135,6 +152,7 @@ export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, r
       const matches = [...new Map([
         ...(canonicalByLineAndName.get(`${scope.lineId}\0${normalizeStationName(station.stinNm)}`) ?? []),
         ...(canonicalByLineAndCode.get(`${scope.lineId}\0${station.stinCd}`) ?? []),
+        ...(canonicalByProviderTuple.get(providerTupleKey({ ...station, lineId: scope.lineId })) ?? []),
       ].map((match) => [`${match.artifactId}\0${match.stationId}`, match])).values()];
       const matchesByArtifact = new Map();
       for (const match of matches) {
@@ -148,9 +166,6 @@ export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, r
         );
       }
       if (matches.length === 0) continue;
-      for (const membership of matches) {
-        coveredMemberships.add(`${membership.artifactId}\0${membership.stationId}\0${membership.lineId}`);
-      }
       const canonicalMappings = matches.map(({ artifactId, stationId, lineId }) => ({
         artifactId,
         stationId,
@@ -159,14 +174,26 @@ export function buildKricAccessibilityRoster({ fixture, canonicalStationLines, r
         `${left.artifactId}\0${left.stationId}\0${left.lineId}`,
         `${right.artifactId}\0${right.stationId}\0${right.lineId}`,
       ));
-      tuples.push({
-        stationId: canonicalMappings[0].stationId,
-        lineId: canonicalMappings[0].lineId,
-        railOprIsttCd: station.railOprIsttCd,
-        lnCd: station.lnCd,
-        stinCd: station.stinCd,
-        canonicalMappings,
-      });
+      for (const membership of matches) {
+        coveredMemberships.add(`${membership.artifactId}\0${membership.stationId}\0${membership.lineId}`);
+      }
+      const mappingsByIdentity = new Map();
+      for (const mapping of canonicalMappings) {
+        const identity = `${mapping.stationId}\0${mapping.lineId}`;
+        const identityMappings = mappingsByIdentity.get(identity) ?? [];
+        identityMappings.push(mapping);
+        mappingsByIdentity.set(identity, identityMappings);
+      }
+      for (const identityMappings of mappingsByIdentity.values()) {
+        tuples.push({
+          stationId: identityMappings[0].stationId,
+          lineId: identityMappings[0].lineId,
+          railOprIsttCd: station.railOprIsttCd,
+          lnCd: station.lnCd,
+          stinCd: station.stinCd,
+          canonicalMappings: identityMappings,
+        });
+      }
     }
   }
   const uncovered = [...stationLines.values()]
@@ -191,29 +218,12 @@ export async function loadCanonicalStationLinesFromBundledIndex({ bundledIndex, 
       await writeFile(sqlitePath, sqliteBytes);
       const database = new DatabaseSync(sqlitePath, { readOnly: true });
       try {
-        if (!tableExists(database, "station_facility_evidence")) continue;
-        const requiredMemberships = new Set(database.prepare(`
-          SELECT DISTINCT station_id, line_id
-          FROM station_facility_evidence
-          WHERE source_id IN (${CONSUMED_KRIC_FACILITY_SOURCE_IDS.map(() => "?").join(",")})
-        `).all(...CONSUMED_KRIC_FACILITY_SOURCE_IDS).map(({ station_id, line_id }) => (
-          `${station_id}\0${line_id}`
-        )));
-        const aliases = new Map();
-        if (tableExists(database, "station_aliases")) {
-          for (const { station_id: stationId, alias } of database.prepare("SELECT station_id, alias FROM station_aliases").all()) {
-            const values = aliases.get(stationId) ?? [];
-            values.push(alias);
-            aliases.set(stationId, values);
-          }
-        }
         for (const row of database.prepare(`
           SELECT stations.id AS station_id, stations.name_ko, station_lines.line_id,
                  station_lines.station_code
           FROM stations
           JOIN station_lines ON station_lines.station_id = stations.id
         `).all()) {
-          if (!requiredMemberships.has(`${row.station_id}\0${row.line_id}`)) continue;
           const key = `${pack.id}\0${row.station_id}\0${row.line_id}`;
           const membership = memberships.get(key) ?? {
             artifactId: `bundled-${pack.id}`,
@@ -223,7 +233,6 @@ export async function loadCanonicalStationLinesFromBundledIndex({ bundledIndex, 
             names: new Set(),
           };
           membership.names.add(row.name_ko);
-          for (const alias of aliases.get(row.station_id) ?? []) membership.names.add(alias);
           memberships.set(key, membership);
         }
       } finally {
@@ -252,7 +261,7 @@ function validateRoster(roster) {
     for (const field of ["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd"]) {
       if (typeof tuple?.[field] !== "string" || tuple[field] === "") throw new Error(`KRIC roster ${field} is required`);
     }
-    const key = `${tuple.railOprIsttCd}\0${tuple.lnCd}\0${tuple.stinCd}`;
+    const key = tupleKey(tuple);
     if (seen.has(key)) throw new Error(`duplicate KRIC station tuple: ${key}`);
     seen.add(key);
     return { ...tuple };
@@ -325,6 +334,10 @@ function tupleKey(tuple) {
   return `${tuple.railOprIsttCd}\0${tuple.lnCd}\0${tuple.stinCd}\0${tuple.stationId}\0${tuple.lineId}`;
 }
 
+function providerTupleKey(tuple) {
+  return `${tuple.lineId}\0${tuple.railOprIsttCd}\0${tuple.lnCd}\0${tuple.stinCd}`;
+}
+
 function hash(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -350,10 +363,23 @@ function normalizeStationName(value) {
     .toLocaleLowerCase("ko-KR");
 }
 
+function uniqueActiveScopeKeys(scopes) {
+  if (!Array.isArray(scopes) || scopes.length === 0) return [];
+  const keys = scopes.map((scope) => ["regionId", "operatorId", "lineId"].map((field) => {
+    if (typeof scope?.[field] !== "string" || scope[field] === "") {
+      throw new Error("KRIC active provider scope set mismatch");
+    }
+    return scope[field];
+  }).join("\0"));
+  if (new Set(keys).size !== keys.length) throw new Error("KRIC active provider scope set mismatch");
+  return keys.sort(compare);
+}
+
 async function main(argv) {
   const args = parseArgs(argv);
-  const [bundledIndex, fixture, routeRosters] = await Promise.all([
+  const [bundledIndex, targets, fixture, routeRosters] = await Promise.all([
     readJson(args["bundled-index"]),
+    readJson(args.targets),
     readJson(args.fixture),
     readJson(args["route-rosters"]),
   ]);
@@ -361,7 +387,12 @@ async function main(argv) {
     bundledIndex,
     bundledRoot: path.resolve(path.dirname(args["bundled-index"]), "../.."),
   });
-  const roster = buildKricAccessibilityRoster({ fixture, canonicalStationLines, routeRosters });
+  const roster = buildKricAccessibilityRoster({
+    activeLineScopes: targets.activeLineScopes,
+    fixture,
+    canonicalStationLines,
+    routeRosters,
+  });
   if (args["validate-roster-only"] === true) {
     process.stdout.write(`validated KRIC accessibility roster: tuples=${roster.length}\n`);
     return;
@@ -393,7 +424,7 @@ function parseArgs(argv) {
     args[argv[index].slice(2)] = argv[index + 1];
     index += 2;
   }
-  for (const name of ["bundled-index", "fixture", "route-rosters", "output-root"]) {
+  for (const name of ["bundled-index", "targets", "fixture", "route-rosters", "output-root"]) {
     if (!args[name]) throw new Error(`missing --${name}`);
   }
   if (!path.isAbsolute(args["output-root"])) throw new Error("--output-root must be absolute");

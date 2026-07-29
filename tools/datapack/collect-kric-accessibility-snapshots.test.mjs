@@ -24,6 +24,7 @@ const roster = [
 ];
 
 test("canonical fixture와 official route roster를 station-line tuple로 결속한다", () => {
+  const activeLineScopes = [{ lineId: "line-1", regionId: "capital", operatorId: "operator-1" }];
   const fixture = {
     providerLineScopes: [
       { lineId: "line-1", mreaWideCd: "01", lnCd: "1", railOprIsttCd: "S1" },
@@ -35,6 +36,7 @@ test("canonical fixture와 official route roster를 station-line tuple로 결속
     { artifactId: "bundled-core", stationId: "station-a", lineId: "line-1", stationCode: "101", names: ["구가나"] },
   ];
   const routeRosters = {
+    providerScopes: [{ ...activeLineScopes[0], mreaWideCd: "01", lnCd: "1", railOprIsttCd: "S1" }],
     rosters: [{
       mreaWideCd: "01",
       lnCd: "1",
@@ -46,7 +48,7 @@ test("canonical fixture와 official route roster를 station-line tuple로 결속
     }],
   };
 
-  assert.deepEqual(buildKricAccessibilityRoster({ fixture, canonicalStationLines, routeRosters }), [
+  assert.deepEqual(buildKricAccessibilityRoster({ activeLineScopes, fixture, canonicalStationLines, routeRosters }), [
     { stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "101", canonicalMappings: [
       { artifactId: "bundled-capital", stationId: "station-a", lineId: "line-1" },
       { artifactId: "bundled-core", stationId: "station-a", lineId: "line-1" },
@@ -55,12 +57,13 @@ test("canonical fixture와 official route roster를 station-line tuple로 결속
   ]);
   canonicalStationLines.push({ artifactId: "bundled-capital", stationId: "station-duplicate", lineId: "line-1", stationCode: "101", names: ["새가나"] });
   assert.throws(
-    () => buildKricAccessibilityRoster({ fixture, canonicalStationLines, routeRosters }),
+    () => buildKricAccessibilityRoster({ activeLineScopes, fixture, canonicalStationLines, routeRosters }),
     /ambiguous canonical KRIC station join/,
   );
   assert.throws(
     () => buildKricAccessibilityRoster({
       fixture,
+      activeLineScopes,
       canonicalStationLines: canonicalStationLines.filter(({ stationId }) => stationId !== "station-duplicate")
         .concat({ artifactId: "bundled-capital", stationId: "station-missing", lineId: "line-1", stationCode: "999", names: ["없는역"] }),
       routeRosters,
@@ -70,17 +73,91 @@ test("canonical fixture와 official route roster를 station-line tuple로 결속
   assert.throws(
     () => buildKricAccessibilityRoster({
       fixture,
+      activeLineScopes: [{ lineId: "line-x", regionId: "capital", operatorId: "operator-x" }],
       canonicalStationLines: [],
       routeRosters: {
         ...routeRosters,
-        providerScopes: [{ lineId: "line-x", mreaWideCd: "01", lnCd: "9", railOprIsttCd: "SX" }],
+        providerScopes: [{
+          lineId: "line-x",
+          regionId: "capital",
+          operatorId: "operator-x",
+          mreaWideCd: "01",
+          lnCd: "9",
+          railOprIsttCd: "SX",
+        }],
       },
     }),
     /KRIC active provider scope missing from fixture: line-x\/SX/,
   );
+  assert.throws(
+    () => buildKricAccessibilityRoster({
+      activeLineScopes: [],
+      fixture,
+      canonicalStationLines: canonicalStationLines.filter(({ stationId }) => stationId !== "station-duplicate"),
+      routeRosters,
+    }),
+    /KRIC active provider scope set mismatch/,
+  );
+  const divergentIdentities = buildKricAccessibilityRoster({
+    activeLineScopes,
+    fixture,
+    canonicalStationLines: canonicalStationLines.filter(({ stationId }) => stationId !== "station-duplicate").concat({
+      artifactId: "bundled-core",
+      stationId: "station-different",
+      lineId: "line-1",
+      stationCode: "102",
+      names: ["다라"],
+    }),
+    routeRosters,
+  }).filter(({ stinCd }) => stinCd === "102");
+  assert.deepEqual(divergentIdentities.map(({ stationId, canonicalMappings }) => ({
+    stationId,
+    artifactIds: canonicalMappings.map(({ artifactId }) => artifactId),
+  })), [
+    { stationId: "station-b", artifactIds: ["bundled-capital"] },
+    { stationId: "station-different", artifactIds: ["bundled-core"] },
+  ]);
 });
 
-test("현재 standard source claim도 다음 snapshot roster 입력으로 다시 읽는다", async (t) => {
+test("공식 KRIC 개명 tuple correction을 station id와 provider code로 결속한다", () => {
+  const lineId = "line-828f04afc588";
+  assert.deepEqual(buildKricAccessibilityRoster({
+    activeLineScopes: [{ lineId, regionId: "capital", operatorId: "operator-b2d80436b438" }],
+    fixture: { providerLineScopes: [{ lineId, mreaWideCd: "01", lnCd: "E1", railOprIsttCd: "EV" }] },
+    canonicalStationLines: [{
+      artifactId: "bundled-capital",
+      stationId: "station-9d261727e400",
+      lineId,
+      stationCode: "11",
+      names: ["운동장.송담대"],
+    }],
+    routeRosters: {
+      providerScopes: [{
+        lineId,
+        regionId: "capital",
+        operatorId: "operator-b2d80436b438",
+        mreaWideCd: "01",
+        lnCd: "E1",
+        railOprIsttCd: "EV",
+      }],
+      rosters: [{
+      mreaWideCd: "01",
+      lnCd: "E1",
+      resultCode: "00",
+      stations: [{ railOprIsttCd: "EV", lnCd: "E1", stinCd: "Y120", stinNm: "용인중앙시장(용인예술과학대)" }],
+      }],
+    },
+  }), [{
+    stationId: "station-9d261727e400",
+    lineId,
+    railOprIsttCd: "EV",
+    lnCd: "E1",
+    stinCd: "Y120",
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-9d261727e400", lineId }],
+  }]);
+});
+
+test("전체 station-line을 다음 snapshot roster 입력으로 읽는다", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-current-claim-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const sqlitePath = path.join(directory, "capital.sqlite");
@@ -93,7 +170,9 @@ test("현재 standard source claim도 다음 snapshot roster 입력으로 다시
     CREATE TABLE station_facility_evidence (station_id TEXT, line_id TEXT, source_id TEXT);
   `);
   database.prepare("INSERT INTO stations VALUES (?,?)").run("station-a", "현재역");
+  database.prepare("INSERT INTO stations VALUES (?,?)").run("station-b", "미평가역");
   database.prepare("INSERT INTO station_lines VALUES (?,?,?)").run("station-a", "line-a", "101");
+  database.prepare("INSERT INTO station_lines VALUES (?,?,?)").run("station-b", "line-a", "102");
   database.prepare("INSERT INTO station_aliases VALUES (?,?)").run("station-a", "옛이름역");
   database.prepare("INSERT INTO station_facility_evidence VALUES (?,?,?)").run("station-a", "line-a", "kric-station-convenience-standard");
   database.close();
@@ -106,14 +185,16 @@ test("현재 standard source claim도 다음 snapshot roster 입력으로 다시
   });
 
   assert.deepEqual(memberships, [{
-    artifactId: "bundled-capital", stationId: "station-a", lineId: "line-a", stationCode: "101", names: ["옛이름역", "현재역"],
+    artifactId: "bundled-capital", stationId: "station-a", lineId: "line-a", stationCode: "101", names: ["현재역"],
+  }, {
+    artifactId: "bundled-capital", stationId: "station-b", lineId: "line-a", stationCode: "102", names: ["미평가역"],
   }]);
 });
 
 test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero를 보존한다", async () => {
   const seen = [];
   const snapshots = await collectKricAccessibilitySnapshots({
-    roster,
+    roster: [...roster, { ...roster[0], stationId: "station-c" }],
     operations: [operation],
     serviceKey: "super-secret",
     now: new Date("2026-07-28T00:00:00.000Z"),
@@ -125,7 +206,9 @@ test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero
   });
 
   assert.deepEqual(seen, ["101", "202"]);
-  assert.deepEqual(snapshots[0].queries.map(({ status }) => status), ["PRESENT", "ABSENT_EXPLICIT_ZERO"]);
+  assert.deepEqual(snapshots[0].queries.map(({ status }) => status), [
+    "PRESENT", "ABSENT_EXPLICIT_ZERO", "ABSENT_EXPLICIT_ZERO",
+  ]);
   assert.equal(snapshots[0].capturedAt, "2026-07-28T00:00:00.000Z");
   assert.equal(snapshots[0].observedAt, "2026-07-28T00:00:00.000Z");
   assert.equal(snapshots[0].snapshotId, "kric-station-elevator-20260728T000000000Z");
@@ -191,7 +274,7 @@ test("소비하지 않는 provider 필드 drift는 raw hash만 바꾼다", async
 test("duplicate station tuple은 호출 전에 거부한다", async () => {
   let calls = 0;
   await assert.rejects(() => collectKricAccessibilitySnapshots({
-    roster: [roster[0], { ...roster[0], stationId: "duplicate" }],
+    roster: [roster[0], { ...roster[0] }],
     operations: [operation],
     serviceKey: "key",
     fetchImpl: async () => { calls += 1; },
