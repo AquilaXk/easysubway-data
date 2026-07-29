@@ -52,15 +52,24 @@ export async function collectKricAccessibilitySnapshots({
   for (const operation of operations) {
     validateOperation(operation);
     const queries = [];
+    const providerGaps = [];
     const responsesByProviderTuple = new Map();
     for (const tuple of tuples) {
       const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
       if (!responsesByProviderTuple.has(providerKey)) {
-        responsesByProviderTuple.set(providerKey, await requestRows({
-          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
-        }));
+        try {
+          responsesByProviderTuple.set(providerKey, await requestRows({
+            operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
+          }));
+        } catch (error) {
+          if (error?.kricResultCode !== "03") throw error;
+          providerGaps.push(`${error.kricRequestIdentity}/${error.kricResultCode}`);
+          responsesByProviderTuple.set(providerKey, null);
+        }
       }
-      const { rows, rawResponseSha256 } = responsesByProviderTuple.get(providerKey);
+      const response = responsesByProviderTuple.get(providerKey);
+      if (response === null) continue;
+      const { rows, rawResponseSha256 } = response;
       const providerRecordHash = hash(rows);
       queries.push({
         ...tuple,
@@ -69,6 +78,9 @@ export async function collectKricAccessibilitySnapshots({
         providerRecordHash,
         rows,
       });
+    }
+    if (providerGaps.length > 0) {
+      throw new Error(`KRIC accessibility provider gaps: count=${providerGaps.length}; tuples=${providerGaps.sort(compare).join(",")}`);
     }
     const contentSha256 = hash(queries.map(({ rawResponseSha256: _, ...query }) => query));
     const rawSha256 = hash(queries.map(({
@@ -326,7 +338,10 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
       .sort(codepointCompare).slice(0, 12);
     const safeBodyKeys = Object.keys(payload?.body ?? {}).filter((key) => /^[A-Za-z0-9._-]{1,32}$/.test(key))
       .sort(codepointCompare).slice(0, 12);
-    throw new Error(`KRIC accessibility provider result invalid: ${requestIdentity}/${safeCode}; keys=${safeKeys.join(",")}; bodyKeys=${safeBodyKeys.join(",")}`);
+    const error = new Error(`KRIC accessibility provider result invalid: ${requestIdentity}/${safeCode}; keys=${safeKeys.join(",")}; bodyKeys=${safeBodyKeys.join(",")}`);
+    error.kricRequestIdentity = requestIdentity;
+    error.kricResultCode = safeCode;
+    throw error;
   }
   const tupleIdentityFields = operation.tupleIdentityFields ?? ["railOprIsttCd", "lnCd", "stinCd"];
   for (const row of payload) {

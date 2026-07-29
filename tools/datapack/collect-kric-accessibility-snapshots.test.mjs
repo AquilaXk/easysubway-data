@@ -314,8 +314,29 @@ test("provider result 실패는 exact tuple만 진단한다", async () => {
     }),
   }), {
     name: "Error",
-    message: "KRIC accessibility provider result invalid: kric-station-elevator/S1/2/202/03; keys=header; bodyKeys=",
+    message: "KRIC accessibility provider gaps: count=1; tuples=kric-station-elevator/S1/2/202/03",
   });
+});
+
+test("provider 03은 전체 safe tuple을 모은 뒤 fail closed한다", async () => {
+  let calls = 0;
+  await assert.rejects(() => collectKricAccessibilitySnapshots({
+    roster,
+    operations: [operation],
+    serviceKey: "key",
+    fetchImpl: async () => {
+      calls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ header: { resultCode: "03" } }),
+      };
+    },
+  }), {
+    name: "Error",
+    message: "KRIC accessibility provider gaps: count=2; tuples=kric-station-elevator/S1/1/101/03,kric-station-elevator/S1/2/202/03",
+  });
+  assert.equal(calls, 2);
 });
 
 test("header 없는 provider resultCode 00도 absence evidence로 인정하지 않는다", async () => {
