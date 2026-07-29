@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -32,12 +33,22 @@ export async function collectKricAccessibilitySnapshots({
   fetchImpl = fetch,
   now = new Date(),
   requestTimeoutMs = 30_000,
+  requestIntervalMs = 0,
+  delayImpl = delay,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
+  if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
+    throw new Error("KRIC request interval is invalid");
+  }
   const tuples = validateRoster(roster);
   const capturedAt = now.toISOString();
   const freshUntil = new Date(now.getTime() + 86_400_000).toISOString();
   const snapshots = [];
+  let requestCount = 0;
+  const paceRequest = async () => {
+    if (requestCount > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
+    requestCount += 1;
+  };
   for (const operation of operations) {
     validateOperation(operation);
     const queries = [];
@@ -46,7 +57,7 @@ export async function collectKricAccessibilitySnapshots({
       const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
       if (!responsesByProviderTuple.has(providerKey)) {
         responsesByProviderTuple.set(providerKey, await requestRows({
-          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs,
+          operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
         }));
       }
       const { rows, rawResponseSha256 } = responsesByProviderTuple.get(providerKey);
@@ -281,18 +292,21 @@ function validateOperation(operation) {
   }
 }
 
-async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs }) {
+async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest }) {
   const url = new URL(operation.endpoint);
   url.searchParams.set("serviceKey", serviceKey);
   url.searchParams.set("format", "json");
   for (const field of ["railOprIsttCd", "lnCd", "stinCd"]) url.searchParams.set(field, tuple[field]);
   let response;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    await paceRequest();
     try {
       response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
     } catch {
       if (attempt === 0) continue;
-      throw new Error(`KRIC accessibility request failed: ${operation.sourceId}`);
+      throw new Error(
+        `KRIC accessibility request failed: ${operation.sourceId}/${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`,
+      );
     }
     if (response.ok || response.status < 500 || attempt === 1) break;
   }
@@ -400,6 +414,7 @@ async function main(argv) {
   const snapshots = await collectKricAccessibilitySnapshots({
     roster,
     serviceKey: process.env.KRIC_SERVICE_KEY,
+    requestIntervalMs: Number(args["request-interval-ms"] ?? 0),
   });
   await mkdir(args["output-root"], { recursive: true });
   for (const snapshot of snapshots) {
