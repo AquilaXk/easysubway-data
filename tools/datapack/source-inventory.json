@@ -7897,6 +7897,44 @@
         },
         "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
       }
+    },
+    {
+      "id": "molit-railway-transfer-movement",
+      "displayName": "국토교통부_철도역 환승 이동경로 정보",
+      "owner": "국토교통부",
+      "provider": "국토교통부",
+      "providerDepartment": "철도정책과",
+      "sourceSystem": "공공데이터포털",
+      "datasetUrl": "https://www.data.go.kr/data/15130556/fileData.do",
+      "datasetKind": "file-data",
+      "coverage": "전국 철도역 환승 이동경로의 provider verbatim 단계와 이동내용",
+      "coverageScope": {
+        "mappingStatus": "UNMAPPED_RAW_SNAPSHOT",
+        "regionIds": [],
+        "operatorIds": [],
+        "sourceDomains": ["indoor_movement_paths"]
+      },
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
+      "updateFrequency": "annual snapshot",
+      "observedDataUpdatedAt": "2025-08-11",
+      "retrievedAt": "2026-07-29",
+      "license": {
+        "type": "PUBLIC_DATA_FREE_USE",
+        "name": "이용허락범위 제한 없음",
+        "attribution": "공공데이터포털 이용허락범위 제한 없음: 국토교통부, 철도역 환승 이동경로 정보",
+        "commercialUseAllowed": true,
+        "derivativeWorkAllowed": true,
+        "redistributionAllowed": true,
+        "evidenceUrl": "https://www.data.go.kr/data/15130556/fileData.do"
+      },
+      "fieldsProvided": ["RAIL_OPR_ISTT_CD", "LN_NM", "STIN_NM", "CHTN_MV_TP_ORDR", "MV_CONT_DTL", "CHTN_MV_CONT"],
+      "capabilities": {
+        "schedule": { "status": "UNSUPPORTED", "productionUseAllowed": false, "coverageStatus": "NOT_PROVIDED_BY_SOURCE", "updateFrequency": "annual snapshot", "unsupportedNotes": "환승 이동경로 file은 시간표를 제공하지 않는다." },
+        "realtime": { "status": "UNSUPPORTED", "productionUseAllowed": false, "liveEtaEligible": false, "rateLimitStatus": "NOT_APPLICABLE", "coverageStatus": "NOT_PROVIDED_BY_SOURCE", "updateFrequency": "annual snapshot", "unsupportedNotes": "환승 이동경로 file은 realtime 정보를 제공하지 않는다." },
+        "facility": { "status": "CANDIDATE", "productionUseAllowed": false, "coverageStatus": "RAW_SNAPSHOT_ADMITTED", "updateFrequency": "annual snapshot", "unsupportedNotes": "raw official snapshot만 admission했으며 station-domain materialization은 #2610 범위다." }
+      },
+      "rawSnapshotAdmission": { "snapshotId": "molit-railway-transfer-movement-20250811", "metadataPath": "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json", "metadataFileSha256": "f75e3ec2a2270cdd8d3b2303f12db0167cf0b5f5525115f6c980680468faa284", "rawSha256": "3a45dc1d82f81666c48eeef81fdc35b0e4a0c59312e4b26907f644c45b518ce3", "gzipSha256": "94e712d32860a7a6e4b4c1f1d9651dc25823305f537e50370142009c1ca66d28", "rowCount": 8054, "status": "LOCKED" }
     }
   ]
 }

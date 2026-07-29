@@ -1,10 +1,18 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { gunzipSync } from "node:zlib";
 import { validateQuotaEvidence } from "./lib/quota-evidence.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { officialOdFareAdmissionsBySource } from "./lib/official-od-fare-evidence.mjs";
 import { validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import {
+  buildMolitRailwayTransferMovementSnapshot,
+  MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256,
+  MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
+} from "./collect-molit-railway-transfer-movement.mjs";
 
 const args = process.argv.slice(2);
 const inventoryPath = optionValue("--inventory") ?? "tools/datapack/source-inventory.json";
@@ -42,7 +50,7 @@ try {
   const officialOdFareAdmissionBytes = inventory.sources.some(
     (source) => source.officialOdFareAdmissionHash != null || source.fareStationLineMappingLedgerHash != null,
   ) ? await readFile(officialOdFareAdmissionPath) : null;
-  validateAdmittedCandidateEvidence(inventory, candidates, officialOdFareAdmissionBytes);
+  await validateAdmittedCandidateEvidence(inventory, candidates, officialOdFareAdmissionBytes);
   if (scope) {
     validateProductionScope(inventory, scope);
   }
@@ -119,7 +127,7 @@ function validateSource(source, label) {
   }
   assertDate(source.observedDataUpdatedAt, `${id}.observedDataUpdatedAt`);
   validateLicense(source.license, id);
-  validateCoverageScope(source.coverageScope, id);
+  validateCoverageScope(source.coverageScope, source, id);
   validateCapabilities(source.capabilities, source, id);
 
   if (!Array.isArray(source.fieldsProvided) || source.fieldsProvided.length === 0) {
@@ -263,7 +271,7 @@ function validateProductionScope(inventory, scope) {
   }
 }
 
-function validateAdmittedCandidateEvidence(inventory, candidates, officialOdFareAdmissionBytes) {
+async function validateAdmittedCandidateEvidence(inventory, candidates, officialOdFareAdmissionBytes) {
   if (!candidates || typeof candidates !== "object" || Array.isArray(candidates)) {
     throw new Error("source candidates must be an object");
   }
@@ -277,7 +285,70 @@ function validateAdmittedCandidateEvidence(inventory, candidates, officialOdFare
   const unmatchedFareSourceIds = new Set(inventory.sources
     .filter((source) => source.officialOdFareAdmissionHash != null || source.fareStationLineMappingLedgerHash != null)
     .map((source) => source.id));
+  const unmatchedSnapshotSourceIds = new Set(inventory.sources
+    .filter((source) => source.rawSnapshotAdmission != null)
+    .map((source) => source.id));
   for (const candidate of candidates.candidates) {
+    if (candidate?.rawSnapshotAdmission != null && candidate.admissionStatus !== "official_snapshot_admitted") {
+      throw new Error(`${candidate.id} official snapshot admissionStatus invalid`);
+    }
+    if (candidate?.admissionStatus === "official_snapshot_admitted") {
+      const source = sources.get(candidate.id);
+      if (!source) throw new Error(`${candidate.id} official snapshot missing inventory source`);
+      if (!unmatchedSnapshotSourceIds.delete(candidate.id)) {
+        throw new Error(`${candidate.id} official snapshot requires exactly one inventory binding`);
+      }
+      if (source.requiredForProductionPack || source.capabilities.facility.productionUseAllowed
+        || source.capabilities.schedule.productionUseAllowed || source.capabilities.realtime.productionUseAllowed) {
+        throw new Error(`${candidate.id} official snapshot must remain non-production`);
+      }
+      const candidateBinding = candidate.rawSnapshotAdmission;
+      const inventoryBinding = source.rawSnapshotAdmission;
+      if (!candidateBinding || !inventoryBinding || JSON.stringify(candidateBinding) !== JSON.stringify(inventoryBinding)) {
+        throw new Error(`${candidate.id} official snapshot binding mismatch`);
+      }
+      for (const field of ["snapshotId", "metadataPath", "metadataFileSha256", "rawSha256", "gzipSha256", "rowCount", "status"]) {
+        if (candidateBinding[field] == null) throw new Error(`${candidate.id} official snapshot ${field} missing`);
+      }
+      if (!/^[0-9a-f]{64}$/.test(candidateBinding.metadataFileSha256)
+        || !/^[0-9a-f]{64}$/.test(candidateBinding.rawSha256)
+        || !/^[0-9a-f]{64}$/.test(candidateBinding.gzipSha256)
+        || candidateBinding.rowCount !== 8054 || candidateBinding.status !== "LOCKED") {
+        throw new Error(`${candidate.id} official snapshot binding invalid`);
+      }
+      if (candidate.id !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID
+        || candidateBinding.rawSha256 !== MOLIT_RAILWAY_TRANSFER_MOVEMENT_RAW_SHA256) {
+        throw new Error(`${candidate.id} official snapshot raw hash is not the pinned provider artifact`);
+      }
+      const metadataBytes = await readFile(candidateBinding.metadataPath);
+      if (sha256(metadataBytes) !== candidateBinding.metadataFileSha256) {
+        throw new Error(`${candidate.id} official snapshot metadata hash mismatch`);
+      }
+      const metadata = JSON.parse(metadataBytes);
+      for (const field of ["snapshotId", "rawSha256", "gzipSha256", "rowCount"]) {
+        if (metadata[field] !== candidateBinding[field]) throw new Error(`${candidate.id} official snapshot metadata ${field} mismatch`);
+      }
+      if (metadata.sourceId !== candidate.id || metadata.artifactKind !== "molit-railway-transfer-movement-snapshot-metadata") {
+        throw new Error(`${candidate.id} official snapshot metadata identity mismatch`);
+      }
+      requiredUtcInstant(metadata.capturedAt, `${candidate.id} official snapshot capturedAt`);
+      if (metadata.gzipPath !== `${candidateBinding.snapshotId}.csv.gz`) {
+        throw new Error(`${candidate.id} official snapshot metadata mismatch`);
+      }
+      const gzipBytes = await readFile(path.resolve(path.dirname(candidateBinding.metadataPath), metadata.gzipPath));
+      if (sha256(gzipBytes) !== candidateBinding.gzipSha256) throw new Error(`${candidate.id} official snapshot gzip hash mismatch`);
+      const rawBytes = gunzipSync(gzipBytes);
+      if (sha256(rawBytes) !== candidateBinding.rawSha256) {
+        throw new Error(`${candidate.id} official snapshot raw hash mismatch`);
+      }
+      const rebuilt = buildMolitRailwayTransferMovementSnapshot({ bytes: rawBytes, capturedAt: metadata.capturedAt });
+      const { gzipBytes: ignoredGzipBytes, gzipSha256: ignoredRebuiltGzipSha256, rows: ignoredRows, ...rebuiltMetadata } = rebuilt;
+      const { gzipSha256: ignoredMetadataGzipSha256, ...logicalMetadata } = metadata;
+      if (JSON.stringify({ ...rebuiltMetadata, gzipPath: metadata.gzipPath }) !== JSON.stringify(logicalMetadata)) {
+        throw new Error(`${candidate.id} official snapshot metadata mismatch`);
+      }
+      continue;
+    }
     if (candidate?.admissionStatus === "official_od_fare_admitted_to_production_inventory") {
       validateOfficialOdFareCandidate(candidate, sources, officialOdFareAdmissionBytes);
       const sourceId = candidate.productionInventoryReferenceId ?? candidate.id;
@@ -301,6 +372,9 @@ function validateAdmittedCandidateEvidence(inventory, candidates, officialOdFare
   }
   if (unmatchedFareSourceIds.size !== 0) {
     throw new Error(`${[...unmatchedFareSourceIds][0]} official OD fare source requires an admitted candidate`);
+  }
+  if (unmatchedSnapshotSourceIds.size !== 0) {
+    throw new Error(`${[...unmatchedSnapshotSourceIds][0]} official snapshot requires an admitted candidate`);
   }
 }
 
@@ -434,12 +508,32 @@ function assertDisjoint(left, right, leftLabel, rightLabel) {
   }
 }
 
-function validateCoverageScope(coverageScope, sourceId) {
+function validateCoverageScope(coverageScope, source, sourceId) {
   if (!coverageScope || typeof coverageScope !== "object" || Array.isArray(coverageScope)) {
     throw new Error(`${sourceId}.coverageScope must be an object`);
   }
-  assertStringArray(coverageScope.regionIds, `${sourceId}.coverageScope.regionIds`);
-  assertStringArray(coverageScope.operatorIds, `${sourceId}.coverageScope.operatorIds`);
+  const unmappedRawSnapshot = coverageScope.mappingStatus === "UNMAPPED_RAW_SNAPSHOT"
+    && source.rawSnapshotAdmission != null
+    && source.requiredForProductionPack === false
+    && source.productionUseAllowed === false
+    && ["facility", "schedule", "realtime"].every(
+      (capability) => source.capabilities?.[capability]?.productionUseAllowed === false,
+    );
+  if (coverageScope.mappingStatus !== undefined && !unmappedRawSnapshot) {
+    throw new Error(`${sourceId}.coverageScope.mappingStatus requires a non-production raw snapshot`);
+  }
+  if (source.rawSnapshotAdmission != null && coverageScope.mappingStatus !== "UNMAPPED_RAW_SNAPSHOT") {
+    throw new Error(`${sourceId}.rawSnapshotAdmission requires UNMAPPED_RAW_SNAPSHOT coverage`);
+  }
+  const regionIds = assertStringArray(
+    coverageScope.regionIds, `${sourceId}.coverageScope.regionIds`, { allowEmpty: unmappedRawSnapshot },
+  );
+  const operatorIds = assertStringArray(
+    coverageScope.operatorIds, `${sourceId}.coverageScope.operatorIds`, { allowEmpty: unmappedRawSnapshot },
+  );
+  if (unmappedRawSnapshot && (regionIds.length !== 0 || operatorIds.length !== 0)) {
+    throw new Error(`${sourceId}.rawSnapshotAdmission requires an explicit mapping ledger before internal coverage scope`);
+  }
   assertStringArray(coverageScope.sourceDomains, `${sourceId}.coverageScope.sourceDomains`);
   if (coverageScope.lineIds !== undefined) {
     const lineIds = assertStringArray(coverageScope.lineIds, `${sourceId}.coverageScope.lineIds`);
@@ -481,8 +575,8 @@ function assertString(value, label) {
   return value;
 }
 
-function assertStringArray(value, label) {
-  if (!Array.isArray(value) || value.length === 0) {
+function assertStringArray(value, label, { allowEmpty = false } = {}) {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
     throw new Error(`${label} must be a non-empty array`);
   }
   for (const entry of value) {

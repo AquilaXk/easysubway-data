@@ -80,7 +80,9 @@ export function buildNationwideCoverageTally({
   validateTargets(targets);
   validateInventory(inventory);
   const targetIndex = coverageTargetIndex(targets);
-  const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
+  const sources = inventory.sources
+    .filter((source) => source.rawSnapshotAdmission == null)
+    .map((source) => normalizeSource(source, targetIndex));
   const scopes = [...targets.activeLineScopes]
     .map(({ regionId, operatorId, lineId }) => ({ regionId, operatorId, lineId }))
     .sort(compareScopes);

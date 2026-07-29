@@ -423,11 +423,11 @@
     },
     "sourceCandidateAdmission": {
       "sourceCandidatesPath": "tools/datapack/source-candidates.json",
-      "p0CandidateCount": 55,
+      "p0CandidateCount": 56,
       "requiredAdmissionStatusBeforeProductionClaim": "admitted_to_production_inventory",
       "admittedCandidateCount": 20,
       "currentOpenAdmissionStatus": "evidence_recorded_admin_review_required",
-      "productionClaimImpactKo": "admittedCandidateCount는 generic admission P0 후보 전용 카운트다. #2609에서 provider resultCode=30인 KRIC 상세 위치 operation 3종을 superseded_by_standard_operation으로 내려 P0 source candidate 55건 중 20건만 generic production inventory 승격 상태다. 접근성 static facility는 kric-station-convenience-standard snapshot만 소비하고 elevator/wheelchair movement source는 기존 용도로 유지한다. fresh 서울 status row는 station probe이며 ENTRY/EXIT route availability로 승격하지 않는다. kric-provider-code-catalog와 fare 전용 admission, admitted P1 seoulmetro-cyberstation-route-map 후보는 이 카운트에 포함하지 않는다. 잔여 candidate와 TOPIS realtime production use는 각 quota·terms·materialization 근거가 닫힐 때까지 NO-GO다."
+      "productionClaimImpactKo": "admittedCandidateCount는 generic admission P0 후보 전용 카운트다. #2609에서 provider resultCode=30인 KRIC 상세 위치 operation 3종을 superseded_by_standard_operation으로 내려 P0 source candidate 56건 중 20건만 generic production inventory 승격 상태다. 접근성 static facility는 kric-station-convenience-standard snapshot만 소비하고 elevator/wheelchair movement source는 기존 용도로 유지한다. fresh 서울 status row는 station probe이며 ENTRY/EXIT route availability로 승격하지 않는다. kric-provider-code-catalog와 fare 전용 admission, admitted P1 seoulmetro-cyberstation-route-map 후보는 이 카운트에 포함하지 않는다. 잔여 candidate와 TOPIS realtime production use는 각 quota·terms·materialization 근거가 닫힐 때까지 NO-GO다."
     },
     "gapEscalationRuleKo": "지원 claim을 깨는 P1/P2 gap은 P0 release blocker로 승격하고 release gate에서 실패시킨다."
   }

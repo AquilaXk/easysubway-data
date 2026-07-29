@@ -16,6 +16,44 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["coverageScope", "rawSnapshotAdmission", "requiredForProductionPack", "productionUseAllowed", "capabilities"],
+            "properties": {
+              "coverageScope": {
+                "type": "object",
+                "required": ["mappingStatus", "regionIds", "operatorIds"],
+                "properties": {
+                  "mappingStatus": { "const": "UNMAPPED_RAW_SNAPSHOT" },
+                  "regionIds": { "type": "array", "maxItems": 0 },
+                  "operatorIds": { "type": "array", "maxItems": 0 }
+                }
+              },
+              "requiredForProductionPack": { "const": false },
+              "productionUseAllowed": { "const": false },
+              "capabilities": {
+                "type": "object",
+                "required": ["schedule", "realtime", "facility"],
+                "properties": {
+                  "schedule": { "type": "object", "required": ["productionUseAllowed"], "properties": { "productionUseAllowed": { "const": false } } },
+                  "realtime": { "type": "object", "required": ["productionUseAllowed"], "properties": { "productionUseAllowed": { "const": false } } },
+                  "facility": { "type": "object", "required": ["productionUseAllowed"], "properties": { "productionUseAllowed": { "const": false } } }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "not": { "type": "object", "required": ["rawSnapshotAdmission"] },
+            "properties": {
+              "coverageScope": {
+                "type": "object",
+                "not": { "type": "object", "required": ["mappingStatus"] }
+              }
+            }
+          }
+        ],
         "required": [
           "id",
           "displayName",
@@ -46,15 +84,30 @@
           "datasetKind": { "type": "string" },
           "coverage": { "type": "string" },
           "coverageScope": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["regionIds", "operatorIds", "sourceDomains"],
-            "properties": {
-              "regionIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-              "operatorIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-              "lineIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-              "sourceDomains": { "type": "array", "minItems": 1, "items": { "type": "string" } }
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["regionIds", "operatorIds", "sourceDomains"],
+                "properties": {
+                  "regionIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+                  "operatorIds": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+                  "lineIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                  "sourceDomains": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mappingStatus", "regionIds", "operatorIds", "sourceDomains"],
+                "properties": {
+                  "mappingStatus": { "const": "UNMAPPED_RAW_SNAPSHOT" },
+                  "regionIds": { "type": "array", "items": { "type": "string" } },
+                  "operatorIds": { "type": "array", "items": { "type": "string" } },
+                  "sourceDomains": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+                }
+              }
+            ]
           },
           "requiredForProductionPack": { "type": "boolean" },
           "productionUseAllowed": { "type": "boolean" },
@@ -479,7 +532,21 @@
             }
           },
           "officialOdFareAdmissionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "fareStationLineMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          "fareStationLineMappingLedgerHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "rawSnapshotAdmission": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["snapshotId", "metadataPath", "metadataFileSha256", "rawSha256", "gzipSha256", "rowCount", "status"],
+            "properties": {
+              "snapshotId": { "type": "string", "minLength": 1 },
+              "metadataPath": { "type": "string", "minLength": 1 },
+              "metadataFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rawSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "gzipSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "rowCount": { "type": "integer", "minimum": 1 },
+              "status": { "type": "string", "enum": ["LOCKED"] }
+            }
+          }
         }
       }
     }

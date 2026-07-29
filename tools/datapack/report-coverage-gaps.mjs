@@ -112,7 +112,9 @@ function buildCoverageGapReport(
   validateTargets(targets);
   const targetIndex = coverageTargetIndex(targets);
   validateInventory(inventory);
-  const sources = inventory.sources.map((source) => normalizeSource(source, targetIndex));
+  const sources = inventory.sources
+    .filter((source) => source.rawSnapshotAdmission == null)
+    .map((source) => normalizeSource(source, targetIndex));
   const provenanceIndex = provenance ? provenanceFieldIndex(provenance, candidateManifest) : null;
 
   // 임시값(placeholder-fixture)으로 선언된 소스는 어떤 requirement도 뒷받침할 수 없다(#2138).

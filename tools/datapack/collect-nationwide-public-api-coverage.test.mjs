@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -126,6 +127,18 @@ const admissionFixture = {
     lines: [{ id: "busan-1", nameKo: "부산 1호선" }, { id: "busan-2", nameKo: "부산 2호선" }],
   }],
 };
+
+test("tracked raw snapshot 후보는 전국 검색계획 provider 색인에서 제외한다", async () => {
+  const sourceCandidates = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+  const plan = buildNationwidePublicApiSearchPlan({
+    targets: admissionTargets,
+    fixture: admissionFixture,
+    sourceCandidates,
+  });
+  assert.ok(plan.entries.every(({ knownProviderCandidateIds }) => (
+    !knownProviderCandidateIds.includes("molit-railway-transfer-movement")
+  )));
+});
 
 function admissionCoverageScope(overrides = {}) {
   return {

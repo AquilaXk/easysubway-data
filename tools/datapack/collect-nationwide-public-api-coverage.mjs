@@ -166,7 +166,7 @@ function admittedRequirementKeys(targets, launchDomains, inventory) {
     throw new Error("source inventory sources must be a non-empty array");
   }
   const targetIndex = coverageTargetIndex(targets);
-  const sources = inventory.sources.map((source, index) => {
+  const sources = inventory.sources.filter((source) => source.rawSnapshotAdmission == null).map((source, index) => {
     const label = `source inventory sources[${index}]`;
     const coverage = source?.coverageScope;
     if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) {
@@ -406,6 +406,7 @@ function indexKnownProviderCandidates(sourceCandidates) {
   const indexed = new Map();
   for (const [index, candidate] of (sourceCandidates?.candidates ?? []).entries()) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    if (candidate.rawSnapshotAdmission !== undefined) continue;
     const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
     const domain = typeof candidate.domain === "string" ? candidate.domain.trim() : "";
     const endpointValue = candidate.operation?.endpoint ?? candidate.requestUrl;
