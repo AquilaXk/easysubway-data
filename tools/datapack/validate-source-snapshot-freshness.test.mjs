@@ -608,7 +608,7 @@ test("실제 release build spec은 current source inventory에 결합되어 gove
   const { stdout } = await execFileAsync(process.execPath, [
     "tools/datapack/validate-source-snapshot-freshness.mjs",
     "--build-spec", "tools/datapack/release/candidate-build-spec.json",
-    "--policy", "apps/mobile/release/datapack-freshness-sla.json",
+    "--policy", "release/product-gates/datapack-freshness-sla.json",
     "--governance-policy", "tools/datapack/source-governance-policy.json",
     "--inventory", "tools/datapack/source-inventory.json",
     "--evaluation-at", "2026-07-28T19:00:00.000Z",

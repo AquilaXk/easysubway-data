@@ -180,7 +180,7 @@ test("schedule decision은 publish write를 승인 evidence와 strict pass 뒤�
 
 test("tracked freshness policy는 수동 decision 없이 파생 필드를 선언한다", async () => {
   const tracked = JSON.parse(await readFile(
-    "apps/mobile/release/datapack-freshness-sla.json",
+    "release/product-gates/datapack-freshness-sla.json",
     "utf8",
   ));
 

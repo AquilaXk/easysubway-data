@@ -7173,7 +7173,7 @@ test("source inventory 검증기는 v1 optional source가 production 필수로 �
         "--inventory",
         inventoryPath,
         "--scope",
-        "apps/mobile/release/production-datapack-scope.json",
+        "release/product-gates/production-datapack-scope.json",
       ],
       { cwd: root },
     ),
@@ -9077,7 +9077,7 @@ test("전국 coverage target은 공식 snapshot의 현재 catalog 노선과 정�
     trainSearchOnly: {
       trackingIssue: 2094,
       routeMapProvided: false,
-      exclusionContract: "apps/mobile/release/train-search-itx-exclusion-gate.json",
+      exclusionContract: "release/product-gates/train-search-itx-exclusion-gate.json",
       services: ["KTX", "KTX_SANCHEON", "SRT", "ITX_MAUM", "ITX_SAEMAEUL", "SAEMAEUL", "MUGUNGHWA", "NURIRO"],
     },
   });
@@ -9671,7 +9671,7 @@ test("coverage 게이트는 release scope 평가에서도 placeholder-fixture �
       "tools/datapack/report-coverage-gaps.mjs",
       "--targets", "tools/datapack/nationwide-coverage-targets.json",
       "--inventory", inventoryPath,
-      "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+      "--release-scope", "release/product-gates/production-datapack-scope.json",
       "--output", reportPath,
       "--allow-gaps",
     ], { cwd: root });
@@ -10454,7 +10454,7 @@ test("v1 pilot release gate는 line-scoped inventory와 provenance를 포함 노
       "--inventory", inventoryPath,
       "--manifest", path.join(outputDir, "current.json"),
       "--provenance", provenancePath,
-      "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+      "--release-scope", "release/product-gates/production-datapack-scope.json",
       "--output", reportPath,
     ],
     { cwd: root },
@@ -10499,7 +10499,7 @@ test("v1 pilot release gate는 다른 노선의 line-scoped provenance를 재사
         "--inventory", inventoryPath,
         "--manifest", path.join(outputDir, "current.json"),
         "--provenance", provenancePath,
-        "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+        "--release-scope", "release/product-gates/production-datapack-scope.json",
         "--output", reportPath,
       ],
       { cwd: root },
@@ -10547,7 +10547,7 @@ test("v1 pilot release gate는 line-scoped source의 노선 없는 provenance를
         "--inventory", inventoryPath,
         "--manifest", path.join(outputDir, "current.json"),
         "--provenance", provenancePath,
-        "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+        "--release-scope", "release/product-gates/production-datapack-scope.json",
         "--output", reportPath,
       ],
       { cwd: root },
@@ -10568,7 +10568,7 @@ test("v1 release gate는 active 노선-운영기관 pair만 평가한다", async
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
   const releaseScope = JSON.parse(
-    await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8"),
+    await readFile(path.join(root, "release/product-gates/production-datapack-scope.json"), "utf8"),
   );
   releaseScope.verifiedAccessibilityScope.includedOperatorIds = ["seoul-metro", "operator-28e01fb8509d"];
   releaseScope.verifiedAccessibilityScope.includedLineIds = ["seoul-4", "shinbundang"];
@@ -10611,7 +10611,7 @@ test("release gate는 일부만 active pair에 매칭되는 scope를 거부한�
   const targets = JSON.parse(await readFile(path.join(root, "tools/datapack/nationwide-coverage-targets.json"), "utf8"));
   const inventory = completeCoverageInventory(targets);
   const releaseScope = JSON.parse(
-    await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8"),
+    await readFile(path.join(root, "release/product-gates/production-datapack-scope.json"), "utf8"),
   );
   releaseScope.verifiedAccessibilityScope.includedLineIds.push("unknown-line");
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
@@ -10695,7 +10695,7 @@ test("release gate는 schema v2 release target의 SUPPORTED requirement를 집�
       "--inventory", inventoryPath,
       "--manifest", path.join(outputDir, "current.json"),
       "--provenance", provenancePath,
-      "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+      "--release-scope", "release/product-gates/production-datapack-scope.json",
       "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
       "--output", reportPath,
     ],
@@ -10743,7 +10743,7 @@ test("release gate는 schema v2 release target에서 operator-wide provenance로
         "--inventory", inventoryPath,
         "--manifest", path.join(outputDir, "current.json"),
         "--provenance", provenancePath,
-        "--release-scope", "apps/mobile/release/production-datapack-scope.json",
+        "--release-scope", "release/product-gates/production-datapack-scope.json",
         "--release-targets", "tools/datapack/nationwide-coverage-targets.json",
         "--output", reportPath,
       ],
@@ -13593,7 +13593,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       "--provenance",
       path.join(packOutputDir, "current.provenance.json"),
       "--release-scope",
-      "apps/mobile/release/production-datapack-scope.json",
+      "release/product-gates/production-datapack-scope.json",
       "--output",
       releaseScopeReportPath,
     ],
@@ -13650,7 +13650,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
         "--provenance",
         scopeGapProvenancePath,
         "--release-scope",
-        "apps/mobile/release/production-datapack-scope.json",
+        "release/product-gates/production-datapack-scope.json",
         "--output",
         scopeGapReportPath,
       ],
@@ -13673,7 +13673,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
 
   // #2000: scope의 region/operator id가 pilot targets와 하나도 매칭되지 않으면 in-scope requirement가 0개가 되어
   // missingRequirements === 0으로 공허 통과할 위험이 있다. fail closed — 존재하지 않는 regionId scope는 exit 1로 실패한다.
-  const emptyScope = JSON.parse(await readFile("apps/mobile/release/production-datapack-scope.json", "utf8"));
+  const emptyScope = JSON.parse(await readFile("release/product-gates/production-datapack-scope.json", "utf8"));
   emptyScope.verifiedAccessibilityScope.regionIds = ["nonexistent-region"];
   const emptyScopePath = path.join(outputDir, "empty-release-scope.json");
   await writeFile(emptyScopePath, `${JSON.stringify(emptyScope, null, 2)}\n`);

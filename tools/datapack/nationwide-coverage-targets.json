@@ -8,7 +8,7 @@
       "claimId": "android_v1_public_support_scope",
       "claimKo": "상록수·사당 검증 pilot",
       "status": "SCOPE_LOCKED_NO_GO_UNTIL_EVIDENCE_CLOSED",
-      "releaseScopeArtifact": "apps/mobile/release/production-datapack-scope.json",
+      "releaseScopeArtifact": "release/product-gates/production-datapack-scope.json",
       "unblockConditionKo": "#1392-#1398 Android v1 pilot evidence만 대상으로 한다."
     },
     {
@@ -22,14 +22,14 @@
       "claimId": "realtime_eta_accuracy",
       "claimKo": "실시간 ETA 정확 보장",
       "status": "NO_GO",
-      "releaseScopeArtifact": "apps/mobile/release/datapack-release-readiness-gate.json",
+      "releaseScopeArtifact": "release/product-gates/datapack-release-readiness-gate.json",
       "unblockConditionKo": "#1416 realtime overlay coverage와 #1417 ground truth P50/P90 report가 통과해야 한다."
     },
     {
       "claimId": "strict_accessible_route_guarantee",
       "claimKo": "교통약자 경로 보장",
       "status": "NO_GO",
-      "releaseScopeArtifact": "apps/mobile/release/datapack-release-readiness-gate.json",
+      "releaseScopeArtifact": "release/product-gates/datapack-release-readiness-gate.json",
       "unblockConditionKo": "#1394 pathway/facility evidence와 strict profile regression이 UNKNOWN/stale/generated false positive 0건을 증명해야 한다."
     }
   ],
@@ -61,7 +61,7 @@
     "trainSearchOnly": {
       "trackingIssue": 2094,
       "routeMapProvided": false,
-      "exclusionContract": "apps/mobile/release/train-search-itx-exclusion-gate.json",
+      "exclusionContract": "release/product-gates/train-search-itx-exclusion-gate.json",
       "services": [
         "KTX",
         "KTX_SANCHEON",
@@ -311,7 +311,7 @@
     },
     {
       "id": "source_inventory_validation",
-      "command": "node tools/datapack/validate-source-inventory.mjs --scope apps/mobile/release/production-datapack-scope.json tools/datapack/source-inventory.json"
+      "command": "node tools/datapack/validate-source-inventory.mjs --scope release/product-gates/production-datapack-scope.json tools/datapack/source-inventory.json"
     },
     {
       "id": "production_datapack_validation",
@@ -319,7 +319,7 @@
     },
     {
       "id": "route_commercialization_gate",
-      "command": "node tools/routes/check-route-commercialization-gate.mjs --gate apps/mobile/release/route-commercialization-gate.json --accuracy artifacts/route-accuracy-report.json --accessibility artifacts/route-accessibility-regression-report.json --coverage artifacts/realtime-provider-coverage-report.json --contract artifacts/route-v2-contract-report.json"
+      "command": "node tools/routes/check-route-commercialization-gate.mjs --gate release/product-gates/route-commercialization-gate.json --accuracy artifacts/route-accuracy-report.json --accessibility artifacts/route-accessibility-regression-report.json --coverage artifacts/realtime-provider-coverage-report.json --contract artifacts/route-v2-contract-report.json"
     }
   ],
   "expansionRoadmap": [

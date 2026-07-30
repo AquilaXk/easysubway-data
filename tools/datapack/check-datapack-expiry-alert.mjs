@@ -27,7 +27,7 @@ async function main() {
   const args = process.argv.slice(2);
   const manifestPath = argValue(args, "--manifest");
   const outputPath = argValue(args, "--output");
-  const policyPath = argValue(args, "--policy") ?? "apps/mobile/release/datapack-freshness-sla.json";
+  const policyPath = argValue(args, "--policy") ?? "release/product-gates/datapack-freshness-sla.json";
   const now = parseTime(argValue(args, "--now") ?? new Date().toISOString(), "now");
   if (!manifestPath || !outputPath) throw new Error("--manifest and --output are required");
 

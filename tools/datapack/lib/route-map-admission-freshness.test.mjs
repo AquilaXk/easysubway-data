@@ -17,7 +17,7 @@ const evidence = {
 
 test("route-map admission은 SLA의 P1Y UTC calendar-year 반개구간만 허용한다", async () => {
   const policy = JSON.parse(await readFile(
-    path.join(root, "apps/mobile/release/datapack-freshness-sla.json"),
+    path.join(root, "release/product-gates/datapack-freshness-sla.json"),
     "utf8",
   ));
   assert.equal(

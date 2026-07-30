@@ -195,7 +195,7 @@ test("accessibility coverage는 required ID와 unique covered ID의 교집합으
 
 test("production routing scope는 mutable #2135 roster 대신 안정적인 launch 요구조건만 고정한다", async () => {
   const productionScope = JSON.parse(await readFile(
-    path.join(import.meta.dirname, "../../apps/mobile/release/production-datapack-scope.json"),
+    path.join(import.meta.dirname, "../../release/product-gates/production-datapack-scope.json"),
     "utf8",
   ));
   assert.deepEqual(productionScope.routingLaunchScope.lineIds, [
@@ -223,7 +223,7 @@ test("production routing scope는 mutable #2135 roster 대신 안정적인 launc
 
 test("committed current report는 gap과 unavailable consumer를 숨기지 않고 NO_GO다", async () => {
   const productionScope = JSON.parse(await readFile(
-    path.join(import.meta.dirname, "../../apps/mobile/release/production-datapack-scope.json"),
+    path.join(import.meta.dirname, "../../release/product-gates/production-datapack-scope.json"),
     "utf8",
   ));
   const report = JSON.parse(await readFile(

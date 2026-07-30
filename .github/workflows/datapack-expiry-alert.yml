@@ -131,11 +131,11 @@ jobs:
           node tools/datapack/check-datapack-expiry-alert.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
             --output "${EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE}" \
-            --policy apps/mobile/release/datapack-freshness-sla.json
+            --policy release/product-gates/datapack-freshness-sla.json
           node tools/datapack/decide-datapack-release.mjs \
             --alert-only \
             --current-manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
-            --freshness-policy apps/mobile/release/datapack-freshness-sla.json \
+            --freshness-policy release/product-gates/datapack-freshness-sla.json \
             --output "${EASYSUBWAY_DATAPACK_EXPIRY_DECISION}"
           node -e '
             const fs = require("fs");

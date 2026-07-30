@@ -12,7 +12,7 @@ import {
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
-const DEFAULT_FRESHNESS_POLICY = "apps/mobile/release/datapack-freshness-sla.json";
+const DEFAULT_FRESHNESS_POLICY = "release/product-gates/datapack-freshness-sla.json";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));

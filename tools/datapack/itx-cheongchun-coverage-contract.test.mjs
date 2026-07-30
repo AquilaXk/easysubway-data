@@ -58,7 +58,7 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
     "./release/capital-production-reviewed-pack.json",
     "../../apps/mobile/assets/datapacks/source-inventory.json",
     "../../apps/mobile/assets/datapacks/index.json",
-    "../../apps/mobile/release/production-datapack-scope.json",
+    "../../release/product-gates/production-datapack-scope.json",
   ];
   for (const relativePath of forbiddenProductionSurfaces) {
     const productionText = await readFile(new URL(relativePath, import.meta.url), "utf8");

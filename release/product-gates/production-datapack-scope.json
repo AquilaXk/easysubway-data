@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 2,
+  "applicationId": "easysubway",
+  "androidApplicationId": "com.easysubway.app",
+  "releaseGate": "production-datapack-scope",
+  "issue": 547,
+  "status": "DENOMINATOR_LOCKED",
+  "statusDetail": "SUPPORTED_STATION_LINE_OPERATOR_DENOMINATOR_LOCKED",
+  "decision": {
+    "approvalState": "qa-approved",
+    "approvedAt": "2026-06-28",
+    "currentLaunchDecision": "NO_GO",
+    "blocker": "ITX_TIMETABLE_SOURCE_MISSING",
+    "supportScope": "capital_pilot_android_v1",
+    "reasonKo": "Android v1은 전국 source inventory를 유지하되 production 지원 claim은 P0 coverage gap 0과 strict route safety evidence가 닫힌 수도권 pilot 범위로 제한한다."
+  },
+  "verifiedAccessibilityScope": {
+    "id": "capital_pilot_android_v1",
+    "regionIds": ["capital"],
+    "includedOperatorIds": ["seoul-metro"],
+    "includedLineIds": ["seoul-4"],
+    "includedStationIds": ["station-sangnoksu", "station-sadang"],
+    "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
+    "facilityCoverageDenominator": {
+      "kind": "station_line_x_required_facility_type",
+      "expectedRows": 6
+    },
+    "supportedClaimKo": "상록수·사당 검증 pilot",
+    "supportedClaimPolicyKo": "앱 화면과 Play listing은 production coverage evidence가 통과한 상록수·사당 검증 범위만 지원 범위로 표현한다.",
+    "unsupportedRegionPolicy": {
+      "requiredAppStatus": ["UNSUPPORTED_REGION", "다시 확인"],
+      "policyKo": "coverageEvidence와 P0 gap 0을 만족하지 못한 지역, 운영기관, 노선은 지원 지역으로 표시하지 않는다."
+    },
+    "storeListingPolicyKo": "대한민국 도시철도 전체 또는 전국 완전 지원처럼 검증 범위를 넘는 문구를 사용하지 않는다."
+  },
+  "supportScope": {
+    "id": "capital_pilot_android_v1",
+    "regionIds": ["capital"],
+    "includedOperatorIds": ["seoul-metro"],
+    "includedLineIds": ["seoul-4"],
+    "includedStationIds": ["station-sangnoksu", "station-sadang"],
+    "requiredFacilityTypes": ["ELEVATOR", "ESCALATOR", "WHEELCHAIR_LIFT"],
+    "facilityCoverageDenominator": {
+      "kind": "station_line_x_required_facility_type",
+      "expectedRows": 6
+    },
+    "supportedClaimKo": "상록수·사당 검증 pilot",
+    "supportedClaimPolicyKo": "앱 화면과 Play listing은 production coverage evidence가 통과한 상록수·사당 검증 범위만 지원 범위로 표현한다.",
+    "unsupportedRegionPolicy": {
+      "requiredAppStatus": ["UNSUPPORTED_REGION", "다시 확인"],
+      "policyKo": "coverageEvidence와 P0 gap 0을 만족하지 못한 지역, 운영기관, 노선은 지원 지역으로 표시하지 않는다."
+    },
+    "storeListingPolicyKo": "대한민국 도시철도 전체 또는 전국 완전 지원처럼 검증 범위를 넘는 문구를 사용하지 않는다."
+  },
+  "routingLaunchScope": {
+    "id": "capital_routing_android_v1",
+    "regionIds": ["capital"],
+    "operatorIds": ["seoul-metro", "korail"],
+    "lineIds": ["seoul-4", "line-6e39be0cb6e2", "line-54a7b980b7c3"],
+    "serviceIds": ["SUBWAY", "ITX_CHEONGCHUN"],
+    "baseRoutingStationIds": ["station-sangnoksu", "station-sadang"],
+    "requiredTransferStationIds": [
+      "station-8aa315864466",
+      "station-c0679b9a6cf8",
+      "station-e5cf592cf355",
+      "station-b819702fa7d9",
+      "station-83bcb1eae340"
+    ],
+    "requiredBaseEdgeIds": [
+      "edge-entry-sangnoksu-seoul-4",
+      "edge-exit-sangnoksu-seoul-4",
+      "edge-entry-sadang-seoul-4",
+      "edge-exit-sadang-seoul-4"
+    ],
+    "requiredTransferEdgeIds": ["path-edge-sadang-4-to-2-fast"],
+    "admittedStationEvidenceRequired": true,
+    "sourceDerivedConnectionEdgeEvidenceRequired": true,
+    "fixtureOrLegacyEvidenceAllowed": false,
+    "outOfScopeServiceEvidenceAllowed": false
+  },
+  "nationwideRoadmapScope": {
+    "id": "nationwide_roadmap_v1",
+    "targets": "tools/datapack/nationwide-coverage-targets.json",
+    "launchRequiredCount": 270,
+    "blocksRoutingLaunch": false
+  },
+  "identityMatrix": {
+    "consumers": ["source", "server", "mobile"],
+    "requiredSharedFields": [
+      "canonicalStationVersion",
+      "corridorId",
+      "serviceId",
+      "lineageId",
+      "schemaVersion"
+    ],
+    "differentArtifactHashesAllowed": true
+  },
+  "nationwideCoverageContract": {
+    "targets": "tools/datapack/nationwide-coverage-targets.json",
+    "activeLaunchRequiredDomains": [
+      "station_line_membership",
+      "route_graph_topology",
+      "accessibility_facilities",
+      "realtime_arrivals",
+      "schedule_timetable",
+      "route_map_positions"
+    ],
+    "enhancementDomains": ["demand_reference"],
+    "completionRule": "ACTIVE_LAUNCH_REQUIRED_MISSING_ZERO"
+  },
+  "productionSourceSet": {
+    "sourceInventory": "tools/datapack/source-inventory.json",
+    "requiredSourceIds": [
+      "molit-urban-rail-full-route",
+      "seoulmetro-station-line-info",
+      "seoul-metro-accessibility",
+      "kric-station-convenience-standard",
+      "kric-station-elevator-movement",
+      "kric-subway-timetable",
+      "kric-wheelchair-lift-movement"
+    ],
+    "optionalAccessibilitySourceIds": [
+      "kric-disabled-toilet",
+      "kric-platform-train-distance",
+      "kric-safety-platform",
+      "kric-elevator-car-number",
+      "kric-metropolitan-rail-station-info"
+    ],
+    "excludedFromV1SupportClaims": [
+      "seoul-realtime-arrival-station-info",
+      "seoul-subway-hourly-boarding",
+      "molit-tago-subway-info",
+      "busan-transportation-urban-rail-station-info"
+    ],
+    "sourcePolicyKo": "필수 source는 production pack row provenance와 연결되어야 한다. 선택 source는 coverage evidence가 닫히기 전까지 v1 지원 claim을 넓히는 근거로 사용하지 않는다."
+  },
+  "productionPromotionCriteria": {
+    "artifactKind": "production",
+    "sourceInventoryRequired": true,
+    "redistributionAllowedRequired": true,
+    "coverageEvidenceRequired": true,
+    "minimumProductionCoverageValuesMustBePositive": true,
+    "releaseModeAllowGaps": false,
+    "p0CoverageGapPolicy": "fail-release",
+    "p0DefinitionKo": "지원한다고 표시한 역, 노선, 시설, ENTRY/EXIT/TRANSFER/route edge 누락 또는 앱/Play listing 지원 범위와 모순되는 P1/P2 gap",
+    "p1p2PolicyKo": "P1/P2 gap은 evidence와 support copy에 기록하되 지원 claim을 깨면 P0로 승격한다.",
+    "routeSafetyRequired": true,
+    "representativeRouteRegressionsRequired": false,
+    "strictMobilityProfile": {
+      "staleUnknownGeneratedConnectorCannotProduceFound": true,
+      "policyKo": "wheelchair/stroller strict profile에서 stale, unknown, generated connector edge는 FOUND 경로를 만들 수 없다."
+    },
+    "manifest": {
+      "manifestVersion": 2,
+      "channel": "production",
+      "releaseSequenceMustIncrease": true,
+      "publishedAtExpiresAtRequired": true,
+      "publicHttpsPackUrlRequired": true,
+      "localPlaceholderHostForbidden": true,
+      "rsaSignatureRequired": true,
+      "privateKeyForbiddenInRepoArtifacts": true
+    },
+    "sqliteChecksRequired": [
+      "pragma-quick-check",
+      "pragma-foreign-key-check",
+      "required-tables-present",
+      "minimum-table-rows"
+    ],
+    "androidEvidenceRequired": [
+      "published-manifest-install",
+      "rollback-manifest-recovery",
+      "corrupt-expired-channel-mismatch-unsigned-manifest-rejection",
+      "offline-existing-pack-retained"
+    ]
+  },
+  "productionPromotionForbiddenWhen": [
+    "fixture-only source remains in pack sourceInventory",
+    "source licenseStatus is not redistributable",
+    "source license.redistributionAllowed is not true",
+    "pack url is not absolute HTTPS",
+    "pack or source url uses localhost, .localhost, .local domains, or .local hosts",
+    "manifestVersion is not 2",
+    "RSA pack or manifest signature is missing",
+    "coverageEvidence is empty",
+    "minimumProductionCoverage is missing or has non-positive values",
+    "P0 coverage gap exists",
+    "strict mobility profile can return FOUND through stale, unknown, or generated connector edge",
+    "Android RC installer install and rollback evidence is missing",
+    "app or Play listing claims a wider support scope than approved"
+  ],
+  "linkedReleaseBlockers": [547, 571, 1016, 1020, 1021, 1022, 1414],
+  "evidencePolicy": {
+    "githubSummaryOnly": true,
+    "localOnlyEvidenceRoot": ".codex/evidence/datapack/production-scope/<rc-or-run>/",
+    "forbiddenInGithubSummary": [
+      "production signing private key",
+      "object storage credential",
+      "provider credential or quota token",
+      "Play Console account data"
+    ]
+  }
+}

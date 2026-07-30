@@ -104,7 +104,7 @@ function parseArgs(argv) {
     candidates: "tools/datapack/source-candidates.json",
     inventory: "tools/datapack/source-inventory.json",
     "governance-policy": "tools/datapack/source-governance-policy.json",
-    "freshness-policy": "apps/mobile/release/datapack-freshness-sla.json",
+    "freshness-policy": "release/product-gates/datapack-freshness-sla.json",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];

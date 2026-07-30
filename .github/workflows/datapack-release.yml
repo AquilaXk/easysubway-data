@@ -7,7 +7,8 @@ on:
     paths:
       - tools/datapack/**
       - tools/route-map/**
-      - apps/mobile/release/datapack-freshness-sla.json
+      - release/product-gates/datapack-freshness-sla.json
+      - release/product-gates/production-datapack-scope.json
       - apps/mobile/lib/core/datapack/**
       - apps/mobile/lib/core/database/catalog/**
       - .github/workflows/datapack-release.yml
@@ -337,7 +338,7 @@ jobs:
           set -euo pipefail
           freshness_args=( \
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
-            --policy apps/mobile/release/datapack-freshness-sla.json \
+            --policy release/product-gates/datapack-freshness-sla.json \
             --governance-policy tools/datapack/source-governance-policy.json \
             --inventory tools/datapack/source-inventory.json \
           )
@@ -546,9 +547,9 @@ jobs:
           set -euo pipefail
           node tools/datapack/validate-source-inventory.mjs \
             --inventory tools/datapack/source-inventory.json \
-            --scope apps/mobile/release/production-datapack-scope.json \
+            --scope release/product-gates/production-datapack-scope.json \
             --governance-policy tools/datapack/source-governance-policy.json \
-            --freshness-policy apps/mobile/release/datapack-freshness-sla.json
+            --freshness-policy release/product-gates/datapack-freshness-sla.json
 
       - name: Data Pack Release / Validate generated data packs
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
@@ -611,7 +612,7 @@ jobs:
             coverage_args+=(
               --manifest "${EASYSUBWAY_DATAPACK_OUTPUT}/current.json"
               --provenance "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json"
-              --release-scope apps/mobile/release/production-datapack-scope.json
+              --release-scope release/product-gates/production-datapack-scope.json
             )
           fi
           if [[ "${EASYSUBWAY_DATAPACK_ALLOW_GAPS}" == "true" ]]; then
@@ -701,7 +702,7 @@ jobs:
             "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
           const launchTemplate = JSON.parse(fs.readFileSync(launchDenominatorTemplatePath, "utf8"));
           const productionScope = JSON.parse(
-            fs.readFileSync("apps/mobile/release/production-datapack-scope.json", "utf8"),
+            fs.readFileSync("release/product-gates/production-datapack-scope.json", "utf8"),
           );
           const catalogDir = path.join(stage, "catalog");
           const gzipFile = fs.readdirSync(catalogDir).find((name) => name.endsWith(".sqlite.gz"));
@@ -799,7 +800,7 @@ jobs:
             releaseRequestId: process.env.EASYSUBWAY_DATAPACK_RELEASE_REQUEST_ID,
             builderGitSha: process.env.GITHUB_SHA,
             buildSpecSha256: candidateBinding.buildSpecSha256,
-            supportedDenominatorSha256: hashFile("apps/mobile/release/production-datapack-scope.json"),
+            supportedDenominatorSha256: hashFile("release/product-gates/production-datapack-scope.json"),
             sourceSnapshotSetHash: releaseHash("sourceSnapshotSetHash"),
             approvedAliasLedgerHash: releaseHash("approvedAliasLedgerHash"),
             facilityEvidenceLedgerHash: releaseHash("facilityEvidenceLedgerHash"),
@@ -841,7 +842,7 @@ jobs:
           set -euo pipefail
           bundle_args=(
             --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}"
-            --scope apps/mobile/release/production-datapack-scope.json
+            --scope release/product-gates/production-datapack-scope.json
             --launch-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}"
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
@@ -909,7 +910,7 @@ jobs:
           decision_args=(
             --candidate-manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json"
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
-            --freshness-policy apps/mobile/release/datapack-freshness-sla.json
+            --freshness-policy release/product-gates/datapack-freshness-sla.json
             --strict-validation-status PASS
             --output "${EASYSUBWAY_DATAPACK_RELEASE_DECISION}"
             --github-output "${GITHUB_OUTPUT}"
@@ -941,7 +942,7 @@ jobs:
           set -euo pipefail
           publish_validation_args=(
             --bundle "${EASYSUBWAY_RELEASE_EVIDENCE_BUNDLE}" \
-            --scope apps/mobile/release/production-datapack-scope.json \
+            --scope release/product-gates/production-datapack-scope.json \
             --launch-report "${EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT}" \
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}" \
             --manifest "${EASYSUBWAY_DATAPACK_STAGE}/catalog/current.json" \
@@ -1092,7 +1093,7 @@ jobs:
           final_decision_args=(
             --candidate-manifest "${candidate_manifest}"
             --build-spec "${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH}"
-            --freshness-policy apps/mobile/release/datapack-freshness-sla.json
+            --freshness-policy release/product-gates/datapack-freshness-sla.json
             --release-request "${release_request_path}"
             --strict-validation-status PASS
             --publish-attempted "${publish_attempted}"

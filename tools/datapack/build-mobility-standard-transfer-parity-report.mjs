@@ -8,7 +8,7 @@
 //   --baseline: tools/datapack/reports/baseline-ingestion-gate-report.json
 //     (gateInternalConsistency.directionPairReport의 forwardMinTransferSeconds가
 //      공식 환승 소요시간의 정본. 값은 여기서 읽으며 창작하지 않는다.)
-//   --policy:   apps/mobile/release/mobility-profile-policy.json
+//   --policy:   release/product-gates/mobility-profile-policy.json
 //     (presets.STANDARD.speedFactor를 여기서 읽는다.)
 //
 // STANDARD는 speedFactor 1.0이므로 baseline 초에 곱해도 그대로다. 리포트는
@@ -17,7 +17,7 @@
 //
 // 사용: node tools/datapack/build-mobility-standard-transfer-parity-report.mjs \
 //   --baseline tools/datapack/reports/baseline-ingestion-gate-report.json \
-//   --policy apps/mobile/release/mobility-profile-policy.json \
+//   --policy release/product-gates/mobility-profile-policy.json \
 //   --output tools/datapack/reports/mobility-standard-transfer-parity-report.json
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";

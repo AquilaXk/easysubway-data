@@ -35,11 +35,11 @@ test("release evidence bundle validator는 publish gate status와 deferred headw
   await mkdir(outputDir, { recursive: true });
   const bundlePath = path.join(outputDir, "release-evidence-bundle.json");
   const hash = "a".repeat(64);
-  const scopeRaw = await readFile(path.join(root, "apps/mobile/release/production-datapack-scope.json"), "utf8");
+  const scopeRaw = await readFile(path.join(root, "release/product-gates/production-datapack-scope.json"), "utf8");
   const scope = JSON.parse(scopeRaw);
   const sha256 = (raw) => createHash("sha256").update(raw).digest("hex");
   const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
-  const scopeArgs = ["--scope", "apps/mobile/release/production-datapack-scope.json"];
+  const scopeArgs = ["--scope", "release/product-gates/production-datapack-scope.json"];
   const launchReportPath = path.join(outputDir, "launch-denominator-go.json");
   const accessibilityReportPath = path.join(outputDir, "accessibility-source-coverage.json");
   const accessibilityReportRaw = `${JSON.stringify({ decision: "GO" }, null, 2)}\n`;

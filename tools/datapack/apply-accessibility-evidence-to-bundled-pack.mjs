@@ -498,7 +498,7 @@ async function syncReleaseEvidence({ check }) {
     hashes: path.join(root, "tools/datapack/release/hash-evidence.json"),
     canonical: path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"),
     governance: path.join(root, "tools/datapack/source-governance-policy.json"),
-    freshness: path.join(root, "apps/mobile/release/datapack-freshness-sla.json"),
+    freshness: path.join(root, "release/product-gates/datapack-freshness-sla.json"),
   };
   const [specBytes, snapshotBytes, inventoryBytes, requestBytes, hashBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all(
     Object.values(paths).map((file) => readFile(file)),

@@ -7,6 +7,11 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
 
+test("product datapack 정책 변경은 release workflow를 실행한다", () => {
+  assert.match(yml, /paths:[\s\S]*release\/product-gates\/datapack-freshness-sla\.json/);
+  assert.match(yml, /paths:[\s\S]*release\/product-gates\/production-datapack-scope\.json/);
+});
+
 // 외부 yaml 의존성 없이(리포는 node 내장 --test만 사용) workflow_dispatch 입력 이름을
 // 들여쓰기로 추출한다: "    inputs:" 다음, 4칸 이하 들여쓰기로 블록이 끝나기 전까지의 6칸 키.
 function workflowDispatchInputNames(source) {
@@ -289,7 +294,7 @@ test("NO_CHANGE_VALID 재실행은 current manifest binding과 callback을 복�
 
 test("coverage gap 스텝은 release 모드에서만 production provenance와 release-scope를 배선한다", () => {
   // release-scope 게이트는 게시 범위(pilot region/operator × capitalPilotTargets domains) 내 gap만 차단한다(#1999).
-  assert.match(yml, /--release-scope apps\/mobile\/release\/production-datapack-scope\.json/);
+  assert.match(yml, /--release-scope release\/product-gates\/production-datapack-scope\.json/);
   // release 모드에서만 production manifest/provenance와 --release-scope를 붙인다.
   // exploratory fixture는 inventory 기준으로 전량 MISSING을 기록하며 --allow-gaps로 통과해야 한다.
   assert.match(
@@ -323,7 +328,7 @@ test("release evidence는 canonical launch denominator report identity와 decisi
   assert.match(evidenceStep, /launchDenominatorDecision:\s*launchReport\.decision/);
   assert.match(evidenceStep, /launchDenominatorReportSha256:\s*hashBytes\(launchDenominatorReportRaw\)/);
   assert.doesNotMatch(evidenceStep, /scopeId:\s*"capital_pilot_android_v1"/);
-  assert.match(yml, /--scope apps\/mobile\/release\/production-datapack-scope\.json/);
+  assert.match(yml, /--scope release\/product-gates\/production-datapack-scope\.json/);
   const normalValidationStep = yml.match(
     /- name: Data Pack Release \/ Validate release evidence bundle[\s\S]*?\n\s+- name:/,
   )?.[0];
@@ -336,7 +341,7 @@ test("release evidence는 canonical launch denominator report identity와 decisi
     ["normal", normalValidationStep],
     ["publish", publishValidationStep],
   ]) {
-    assert.match(step, /--scope apps\/mobile\/release\/production-datapack-scope\.json/, `${label} scope binding`);
+    assert.match(step, /--scope release\/product-gates\/production-datapack-scope\.json/, `${label} scope binding`);
     assert.match(step, /--launch-report "?\$\{EASYSUBWAY_LAUNCH_DENOMINATOR_REPORT\}"?/, `${label} report binding`);
     assert.match(step, /--build-spec/, `${label} build spec binding`);
     assert.match(step, /--manifest/, `${label} manifest binding`);
@@ -441,7 +446,7 @@ test("release build는 source snapshot freshness를 build 전에 fail closed로 
   assert.match(freshnessStep, /validate-source-snapshot-freshness\.mjs/);
   assert.match(freshnessStep, /--build-spec/);
   assert.doesNotMatch(freshnessStep, /--snapshots/);
-  assert.match(freshnessStep, /--policy apps\/mobile\/release\/datapack-freshness-sla\.json/);
+  assert.match(freshnessStep, /--policy release\/product-gates\/datapack-freshness-sla\.json/);
   assert.match(freshnessStep, /--governance-policy tools\/datapack\/source-governance-policy\.json/);
   assert.match(freshnessStep, /--inventory tools\/datapack\/source-inventory\.json/);
   assert.match(
@@ -459,7 +464,7 @@ test("release build는 source snapshot freshness를 build 전에 fail closed로 
   )?.[0];
   assert.ok(inventoryStep, "source inventory 검증 스텝을 찾지 못함");
   assert.match(inventoryStep, /--governance-policy tools\/datapack\/source-governance-policy\.json/);
-  assert.match(inventoryStep, /--freshness-policy apps\/mobile\/release\/datapack-freshness-sla\.json/);
+  assert.match(inventoryStep, /--freshness-policy release\/product-gates\/datapack-freshness-sla\.json/);
   assert.ok(
     yml.indexOf("Validate source snapshot freshness") < yml.indexOf("Build data packs"),
     "source snapshot freshness는 build 전에 검증해야 함",

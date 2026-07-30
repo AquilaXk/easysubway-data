@@ -338,7 +338,7 @@ function validateLaunchDenominatorReport(
 async function main() {
   const args = process.argv.slice(2);
   const bundlePath = argValue(args, "--bundle");
-  const scopePath = argValue(args, "--scope") ?? "apps/mobile/release/production-datapack-scope.json";
+  const scopePath = argValue(args, "--scope") ?? "release/product-gates/production-datapack-scope.json";
   const launchReportPath = argValue(args, "--launch-report")
     ?? "tools/datapack/reports/android-v1-launch-denominator-20260715.json";
   const accessibilitySourceCoveragePath = argValue(args, "--accessibility-source-coverage");
