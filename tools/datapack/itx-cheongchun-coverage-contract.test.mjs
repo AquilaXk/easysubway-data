@@ -335,7 +335,11 @@ test("ITX-청춘 admission pin은 historical source를 보존하고 release cand
   const activePack = manifest.packs.find((pack) => pack.id === manifest.activePack.id
     && pack.version === manifest.activePack.version);
   assert.ok(activePack, "release candidate active pack을 찾지 못함");
-  const canonicalPackPath = path.resolve(output, activePack.url);
+  const canonicalPackPath = path.join(
+    output,
+    "catalog",
+    `${activePack.id}-v${activePack.version}.sqlite.gz`,
+  );
   const canonicalPackBytes = await readFile(canonicalPackPath);
   const canonicalPackSha256 = createHash("sha256").update(canonicalPackBytes).digest("hex");
   const canonicalPackSqliteSha256 = createHash("sha256")
