@@ -218,6 +218,10 @@ function parseCsv(text) {
     }
   }
   appendCsvRow(table, row, field);
+  return csvTableToRecords(table, quoted);
+}
+
+function csvTableToRecords(table, quoted) {
   if (quoted || table.length < 2) throw new Error("official source CSV is invalid");
   const [columns, ...data] = table;
   if (new Set(columns).size !== columns.length) throw new Error("official source CSV columns are duplicated");
