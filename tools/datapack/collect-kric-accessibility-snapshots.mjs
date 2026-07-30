@@ -26,6 +26,37 @@ export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
   { stationId: "station-b1a5f63faf69", lineId: "line-42b5805f3b5a", railOprIsttCd: "IC", lnCd: "I2", stinCd: "210" },
 ]);
 
+export function validateKricAccessibilityProviderGapEvidence(evidence) {
+  if (evidence?.schemaVersion !== 1
+    || evidence?.artifactKind !== "kric-accessibility-provider-gap-evidence"
+    || evidence?.sourceId !== "kric-station-convenience-standard"
+    || !Array.isArray(evidence?.gaps) || evidence.gaps.length === 0) {
+    throw new Error("KRIC accessibility provider gap evidence is invalid");
+  }
+  if (!Number.isFinite(Date.parse(evidence.observedAt))
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway\/actions\/runs\/\d+$/.test(evidence.workflowRunUrl)) {
+    throw new Error("KRIC accessibility provider gap provenance is invalid");
+  }
+  const seen = new Set();
+  const operatorCounts = {};
+  for (const gap of evidence.gaps) {
+    for (const field of ["railOprIsttCd", "lnCd", "stinCd"]) {
+      if (typeof gap?.[field] !== "string" || gap[field] === "") {
+        throw new Error(`KRIC accessibility provider gap ${field} is invalid`);
+      }
+    }
+    if (gap.resultCode !== "03") throw new Error("KRIC accessibility provider gap resultCode must be 03");
+    const key = [gap.railOprIsttCd, gap.lnCd, gap.stinCd].join("/");
+    if (seen.has(key)) throw new Error(`duplicate KRIC accessibility provider gap: ${key}`);
+    seen.add(key);
+    operatorCounts[gap.railOprIsttCd] = (operatorCounts[gap.railOprIsttCd] ?? 0) + 1;
+  }
+  return {
+    count: evidence.gaps.length,
+    operatorCounts: Object.fromEntries(Object.entries(operatorCounts).sort(([left], [right]) => compare(left, right))),
+  };
+}
+
 export async function collectKricAccessibilitySnapshots({
   roster,
   operations = KRIC_ACCESSIBILITY_OPERATIONS,
