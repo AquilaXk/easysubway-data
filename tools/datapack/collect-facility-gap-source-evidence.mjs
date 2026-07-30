@@ -145,66 +145,6 @@ export async function collectFacilityGapSourceEvidence({
   };
 }
 
-export function bindSeoulFacilityGapEvidence({ gapEvidence, routeRosters, sourceSnapshot } = {}) {
-  validateKricAccessibilityProviderGapEvidence(gapEvidence);
-  if (sourceSnapshot?.schemaVersion !== 1
-    || sourceSnapshot?.artifactKind !== "seoul-facility-location-snapshot"
-    || sourceSnapshot?.sourceId !== "seoul-metro-facility-location"
-    || sourceSnapshot?.credentialRedacted !== true
-    || sourceSnapshot?.absenceEvidenceMode !== "EXHAUSTIVE_LIST"
-    || !Array.isArray(sourceSnapshot?.stations)
-    || !Number.isSafeInteger(sourceSnapshot.rowCount) || sourceSnapshot.rowCount < 1
-    || !Number.isSafeInteger(sourceSnapshot.normalizedRowCount) || sourceSnapshot.normalizedRowCount < 1
-    || !/^[0-9a-f]{64}$/.test(sourceSnapshot.rawSha256 ?? "")
-    || sourceSnapshot.contentSha256 !== hash(sourceSnapshot.stations)
-    || !/^[0-9a-f]{64}$/.test(sourceSnapshot.schemaFingerprint ?? "")
-    || !Number.isFinite(Date.parse(sourceSnapshot.capturedAt))) {
-    throw new Error("Seoul facility-location source snapshot is invalid");
-  }
-  const gapStations = mapGapStations(gapEvidence.gaps, routeRosters, "S1");
-  const evaluatedGaps = gapStations.filter(({ lnCd }) => lnCd === "2");
-  const outOfScopeGaps = gapStations.filter(({ lnCd }) => lnCd !== "2");
-  const matchedGaps = [];
-  const unmatchedGaps = [];
-  for (const gap of evaluatedGaps) {
-    const matches = sourceSnapshot.stations.filter((station) => (
-      station.providerStationCode === gap.stinCd
-      && station.lineName === `${gap.lnCd}호선`
-      && normalizeStationName(station.stationName) === normalizeStationName(gap.stationName)
-    ));
-    if (matches.length > 1) throw new Error(`Seoul facility-location canonical station identity is ambiguous: ${providerTuple(gap)}`);
-    if (matches.length === 0) {
-      unmatchedGaps.push(gap);
-      continue;
-    }
-    const [providerRecord] = matches;
-    if (!Array.isArray(providerRecord.facilities) || providerRecord.facilities.length === 0) {
-      throw new Error(`Seoul facility-location facility rows are empty: ${providerTuple(gap)}`);
-    }
-    matchedGaps.push({ ...gap, rowCount: 1, providerRecordHash: hash(providerRecord), providerRecords: [providerRecord] });
-  }
-  return {
-    schemaVersion: 1,
-    artifactKind: "facility-gap-source-evidence",
-    sourceId: sourceSnapshot.sourceId,
-    sourceUrl: "https://apis.data.go.kr/B553766/facility/getFcElvtr",
-    sourceSnapshotId: sourceSnapshot.snapshotId,
-    capturedAt: sourceSnapshot.capturedAt,
-    official: true,
-    credentialRequired: true,
-    credentialRedacted: true,
-    absenceEvidenceMode: sourceSnapshot.absenceEvidenceMode,
-    rowCount: sourceSnapshot.rowCount,
-    normalizedRowCount: sourceSnapshot.normalizedRowCount,
-    rawSha256: sourceSnapshot.rawSha256,
-    contentSha256: sourceSnapshot.contentSha256,
-    schemaFingerprint: sourceSnapshot.schemaFingerprint,
-    matchedGaps,
-    unmatchedGaps,
-    outOfScopeGaps,
-  };
-}
-
 export function formatGapClassification(snapshot) {
   if (snapshot?.artifactKind !== "facility-gap-source-evidence"
     || !Array.isArray(snapshot?.matchedGaps) || !Array.isArray(snapshot?.unmatchedGaps)
@@ -340,10 +280,9 @@ function parseArgs(argv) {
   if (argv.length === 2 && argv[0] === "--report" && path.isAbsolute(argv[1])) {
     return { report: argv[1] };
   }
-  if (argv.length !== 8) throw new Error("usage: collect-facility-gap-source-evidence.mjs (--source <id>|--seoul-snapshot <json>) --gaps <json> --route-rosters <json> --output <absolute.json>");
+  if (argv.length !== 8) throw new Error("usage: collect-facility-gap-source-evidence.mjs --source <id> --gaps <json> --route-rosters <json> --output <absolute.json>");
   const args = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [argv[index * 2]?.replace(/^--/, ""), argv[index * 2 + 1]]));
-  if ((!args.source && !args["seoul-snapshot"]) || (args.source && args["seoul-snapshot"])
-    || !args.gaps || !args["route-rosters"] || !path.isAbsolute(args.output ?? "")) {
+  if (!args.source || !args.gaps || !args["route-rosters"] || !path.isAbsolute(args.output ?? "")) {
     throw new Error("facility gap source arguments are invalid");
   }
   return args;
@@ -355,16 +294,13 @@ async function main(argv) {
     process.stdout.write(`${formatGapClassification(JSON.parse(await readFile(args.report, "utf8")))}\n`);
     return;
   }
-  const [gapEvidenceJson, routeRostersJson, seoulSnapshotJson] = await Promise.all([
+  const [gapEvidenceJson, routeRostersJson] = await Promise.all([
     readFile(args.gaps, "utf8"),
     readFile(args["route-rosters"], "utf8"),
-    args["seoul-snapshot"] ? readFile(args["seoul-snapshot"], "utf8") : null,
   ]);
   const gapEvidence = JSON.parse(gapEvidenceJson);
   const routeRosters = JSON.parse(routeRostersJson);
-  const snapshot = seoulSnapshotJson
-    ? bindSeoulFacilityGapEvidence({ gapEvidence, routeRosters, sourceSnapshot: JSON.parse(seoulSnapshotJson) })
-    : await collectFacilityGapSourceEvidence({ sourceId: args.source, gapEvidence, routeRosters });
+  const snapshot = await collectFacilityGapSourceEvidence({ sourceId: args.source, gapEvidence, routeRosters });
   await writeFile(args.output, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o644 });
   process.stdout.write(`official facility gap source evidence ready: source=${snapshot.sourceId} rows=${snapshot.rowCount} matched=${snapshot.matchedGaps.length} unmatched=${snapshot.unmatchedGaps.length}\n`);
 }
