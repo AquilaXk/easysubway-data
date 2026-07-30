@@ -117,6 +117,7 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
   assert.equal(s1.canonicalStationId, "station-b35616704ce3");
   assert.deepEqual(s1.canonicalSourceObservation, {
     sourceId: "seoul-metro-route-map-positions",
+    sourceSnapshot: "seoul-metro-route-map-positions-20260724.json",
     capturedAt: "2026-07-24T02:00:00.000Z",
     rawSha256: "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
     scopeSha256: "9d119cf23421206116e3f4c491a4ef760a9bf694f2a43a63926b0e70f3fd25fd",
