@@ -88,4 +88,12 @@ test("URL·title·operator drift를 snapshot 전에 거부한다", async () => {
     routeRosters,
     fetchImpl: async () => assert.fail("unexpected request"),
   }), /official Guri gap set is invalid/);
+  await assert.rejects(() => collectGuriStationFacilityEvidence({
+    gapEvidence: {
+      ...gaps,
+      gaps: [...gaps.gaps, { railOprIsttCd: "GU", lnCd: "9", stinCd: "9001", resultCode: "03" }],
+    },
+    routeRosters,
+    fetchImpl: async () => assert.fail("unexpected request"),
+  }), /official Guri gap set is invalid/);
 });

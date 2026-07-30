@@ -28,7 +28,7 @@ export async function collectGuriStationFacilityEvidence({
 } = {}) {
   validateKricAccessibilityProviderGapEvidence(gapEvidence);
   const gaps = new Map(gapEvidence.gaps
-    .filter(({ railOprIsttCd, lnCd }) => railOprIsttCd === "GU" && lnCd === "8")
+    .filter(({ railOprIsttCd }) => railOprIsttCd === "GU")
     .map((gap) => [providerTuple(gap), gap]));
   if (gaps.size !== STATIONS.length) throw new Error("official Guri gap set is invalid");
   const rosterStations = (routeRosters?.rosters ?? []).flatMap(({ stations = [] }) => stations);
