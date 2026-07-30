@@ -106,4 +106,7 @@ test("미해결 provider evidence는 production admission을 fail closed한다",
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
   assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR", "S1"]);
+  assert.equal(evidence.blockedGroups.at(-1).state, "EXACT_CANONICAL_IDENTITY_UNPROVEN");
+  assert.equal(evidence.blockedGroups.at(-1).officialSourceObservation.rowCount, 865);
+  assert.equal(evidence.blockedGroups.at(-1).officialSourceObservation.missingContract, "VERIFIED_KRIC_TO_SEOUL_STATION_CODE_MAPPING");
 });
