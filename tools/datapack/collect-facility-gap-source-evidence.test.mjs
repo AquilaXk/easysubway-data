@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -101,12 +102,86 @@ test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
   assert.deepEqual(decodeCsv(Uint8Array.from([0xbf, 0xaa, 0xb8, 0xed])), { text: "역명", encoding: "euc-kr" });
 });
 
-test("미해결 provider evidence는 production admission을 fail closed한다", async () => {
+test("미해결 provider evidence는 production admission을 fail closed하고 S1은 canonical station으로 결속한다", async () => {
   const evidence = JSON.parse(await readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)));
+  const routeMap = JSON.parse(await readFile(new URL("./sources/seoul-metro-route-map-positions-20260724.json", import.meta.url)));
+  const kricSnapshot = JSON.parse(await readFile(new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url)));
+  const seoulSnapshot = JSON.parse(await readFile(new URL("./sources/seoul-metro-facility-location-20260730T214010816Z.json", import.meta.url)));
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
-  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR", "S1"]);
-  assert.equal(evidence.blockedGroups.at(-1).state, "EXACT_CANONICAL_IDENTITY_UNPROVEN");
-  assert.equal(evidence.blockedGroups.at(-1).officialSourceObservation.rowCount, 865);
-  assert.equal(evidence.blockedGroups.at(-1).officialSourceObservation.missingContract, "VERIFIED_KRIC_TO_SEOUL_STATION_CODE_MAPPING");
+  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR"]);
+
+  const s1 = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "S1");
+  assert.equal(s1.state, "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED");
+  assert.deepEqual(s1.providerTuples, ["S1/2/234-4"]);
+  assert.equal(s1.canonicalStationId, "station-b35616704ce3");
+  assert.deepEqual(s1.canonicalSourceObservation, {
+    sourceId: "seoul-metro-route-map-positions",
+    sourceSnapshot: "seoul-metro-route-map-positions-20260724.json",
+    capturedAt: "2026-07-24T02:00:00.000Z",
+    rawSha256: "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
+    scopeSha256: "9d119cf23421206116e3f4c491a4ef760a9bf694f2a43a63926b0e70f3fd25fd",
+    positionsSha256: "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
+  });
+  const kric = s1.kricRouteRosterObservation;
+  assert.equal(kricSnapshot.credentialRedacted, true);
+  assert.deepEqual(
+    [kricSnapshot.sourceId, kricSnapshot.capturedAt, kricSnapshot.providerScopeCount, kricSnapshot.requestCount],
+    [kric.sourceId, kric.capturedAt, kric.providerScopeCount, kric.requestCount],
+  );
+  assert.deepEqual(kricSnapshot.providerScopes.filter(({ lineId }) => lineId === "seoul-2"), [kric.providerScope]);
+  assert.deepEqual(
+    [kric.capturedAt, kric.requestRawSha256, kric.requestSchemaFingerprint, kric.providerRecordHash],
+    [
+      "2026-07-30T20:39:26.676Z",
+      "f0a15898cd3a148a48b1338347a3287cd3c2016119a4d3ac64c35dc4d7e38367",
+      "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
+      "3673252431c48350fc774795287c496f32f83aba1113df0bbe742ebc70096974",
+    ],
+  );
+  const roster = kricSnapshot.rosters.find(({ mreaWideCd, lnCd }) => mreaWideCd === "01" && lnCd === "2");
+  assert.deepEqual([roster.rawSha256, roster.schemaFingerprint], [kric.requestRawSha256, kric.requestSchemaFingerprint]);
+  const kricRecords = roster.stations.filter(({ railOprIsttCd, lnCd, stinCd }) =>
+    `${railOprIsttCd}/${lnCd}/${stinCd}` === s1.providerTuples[0]);
+  assert.equal(kricRecords.length, 1);
+  const [kricRecord] = kricRecords;
+  assert.equal(kric.providerScope.lineId, "seoul-2");
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(kricRecord)).digest("hex"),
+    kric.providerRecordHash,
+  );
+  assert.deepEqual(
+    routeMap.positions
+      .filter(({ lineId, stationName }) => lineId === kric.providerScope.lineId && stationName === kricRecord.stinNm)
+      .map(({ stationId }) => stationId),
+    [s1.canonicalStationId],
+  );
+  assert.deepEqual(
+    routeMap.positions
+      .filter(({ stationId }) => stationId === s1.canonicalStationId)
+      .map(({ lineId, stationCode, stationName }) => ({ lineId, stationCode, stationName })),
+    s1.canonicalMemberships,
+  );
+  const observation = s1.officialSourceObservation;
+  assert.equal(seoulSnapshot.credentialRedacted, true);
+  assert.deepEqual(
+    [seoulSnapshot.sourceId, seoulSnapshot.snapshotId, seoulSnapshot.capturedAt, seoulSnapshot.rowCount,
+      seoulSnapshot.rawSha256, seoulSnapshot.contentSha256, seoulSnapshot.schemaFingerprint],
+    [observation.sourceId, observation.sourceSnapshot.replace(".json", ""), observation.capturedAt, observation.rowCount,
+      observation.rawSha256, observation.contentSha256, observation.schemaFingerprint],
+  );
+  const seoulRecords = seoulSnapshot.stations.filter(({ stationName, lineName, providerStationCode }) =>
+    stationName === kricRecord.stinNm && lineName === "5호선" && providerStationCode === "2519");
+  assert.equal(seoulRecords.length, 1);
+  const [seoulRecord] = seoulRecords;
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(seoulRecord)).digest("hex"),
+    s1.officialSourceRecordHash,
+  );
+  assert.equal(s1.officialSourceRecordHash, "022b531ce285bbf03ba6699236753d1874fd2d453d6a988e4a66e54d9978a375");
+  assert.deepEqual(
+    { lineName: seoulRecord.lineName, providerStationCode: seoulRecord.providerStationCode },
+    { lineName: "5호선", providerStationCode: "2519" },
+  );
+  assert.equal(seoulRecord.facilities.length, 4);
 });
