@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "guri-station-facility-evidence",
+  "sourceId": "guri-city-official-station-pages",
+  "capturedAt": "2026-07-30T22:55:21.335Z",
+  "official": true,
+  "credentialRequired": false,
+  "credentialRedacted": true,
+  "absenceEvidenceMode": "EXACT_STATION_PAGE",
+  "rowCount": 3,
+  "contentSha256": "b50760a9be3c56433480febf898586fec1b55e5626bc384200106ed9d65d72c3",
+  "schemaFingerprint": "7013d4127dd94e712da0fb6cee046ec99462c427a4a0fcb7a42069d74d5aadcf",
+  "records": [
+    {
+      "providerTuple": "GU/8/2805",
+      "stationName": "구리",
+      "operatorName": "구리도시공사 교통사업부",
+      "elevatorCount": 6,
+      "escalatorCount": 11,
+      "officialUrl": "https://www.guri.go.kr/www/contents.do?key=7231",
+      "rawSha256": "dbc0448149e04b5cedd0895334103889afe79af307fdcc039127d20e680f29f3",
+      "providerRecordHash": "22310cfc0dbd855a2f970602927270985f331763c35ce8a49ace4d6248f74178"
+    },
+    {
+      "providerTuple": "GU/8/2807",
+      "stationName": "동구릉",
+      "operatorName": "구리도시공사 교통사업부",
+      "elevatorCount": 4,
+      "escalatorCount": 18,
+      "officialUrl": "https://www.guri.go.kr/www/contents.do?key=7232",
+      "rawSha256": "285929dc321a1ae3001fa61aa4a6c07f0b9af3f1976c7c922932931db440e255",
+      "providerRecordHash": "1aff7dd228f112f0db1a8f8bf680496bd464d820e5b6a039b1839a7521779db3"
+    },
+    {
+      "providerTuple": "GU/8/2808",
+      "stationName": "장자호수공원",
+      "operatorName": "구리도시공사 교통사업부",
+      "elevatorCount": 4,
+      "escalatorCount": 20,
+      "officialUrl": "https://www.guri.go.kr/www/contents.do?key=7196",
+      "rawSha256": "59797f1908b9537d4859caeb82fafa0a1c58a3fcdedd901435c6bcfaa658ecfc",
+      "providerRecordHash": "dc862b136ff0b4021a56fea7ffde66349f5a831e79d58691006d57bc303b2382"
+    }
+  ]
+}
