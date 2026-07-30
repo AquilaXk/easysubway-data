@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  bindSeoulFacilityGapEvidence,
   collectFacilityGapSourceEvidence,
   decodeCsv,
   formatGapClassification,
   resolveOfficialDownloadUrl,
 } from "./collect-facility-gap-source-evidence.mjs";
+
+const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 const gaps = {
   schemaVersion: 1,
@@ -101,9 +105,64 @@ test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
   assert.deepEqual(decodeCsv(Uint8Array.from([0xbf, 0xaa, 0xb8, 0xed])), { text: "역명", encoding: "euc-kr" });
 });
 
+test("Seoul snapshot은 exact S1 operator·line·station identity 하나만 결속한다", () => {
+  const stations = [{
+    stationName: "까치산",
+    lineName: "2호선",
+    providerStationCode: "234-4",
+    facilities: [{ operational: true, situationCode: "M", situation: "사용가능", pathDescription: "2번 출입구" }],
+  }];
+  const sourceSnapshot = {
+    schemaVersion: 1,
+    artifactKind: "seoul-facility-location-snapshot",
+    sourceId: "seoul-metro-facility-location",
+    snapshotId: "seoul-metro-facility-location-20260731T000000000Z",
+    capturedAt: "2026-07-28T15:35:25.704Z",
+    credentialRedacted: true,
+    absenceEvidenceMode: "EXHAUSTIVE_LIST",
+    rowCount: 1,
+    normalizedRowCount: 1,
+    rawSha256: "a".repeat(64),
+    contentSha256: hash(stations),
+    schemaFingerprint: "b".repeat(64),
+    stations,
+  };
+  const gapEvidence = {
+    ...gaps,
+    gaps: [{ railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4", resultCode: "03" }],
+  };
+  const s1RouteRosters = {
+    rosters: [{ stations: [{ railOprIsttCd: "S1", lnCd: "2", stinCd: "234-4", stinNm: "까치산" }] }],
+  };
+
+  const evidence = bindSeoulFacilityGapEvidence({ gapEvidence, routeRosters: s1RouteRosters, sourceSnapshot });
+  assert.equal(evidence.matchedGaps.length, 1);
+  assert.equal(evidence.rowCount, 1);
+  assert.equal(evidence.matchedGaps[0].providerRecordHash, hash(stations[0]));
+  assert.deepEqual(evidence.unmatchedGaps, []);
+  assert.deepEqual(evidence.outOfScopeGaps, []);
+  assert.throws(
+    () => bindSeoulFacilityGapEvidence({
+      gapEvidence,
+      routeRosters: s1RouteRosters,
+      sourceSnapshot: { ...sourceSnapshot, stations: [...stations, ...stations], contentSha256: hash([...stations, ...stations]) },
+    }),
+    /canonical station identity is ambiguous/,
+  );
+});
+
 test("미해결 provider evidence는 production admission을 fail closed한다", async () => {
-  const evidence = JSON.parse(await readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)));
+  const [evidence, s1Snapshot] = await Promise.all([
+    readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)).then(JSON.parse),
+    readFile(new URL("./sources/seoul-metro-facility-location-s1-gap-evidence-20260731.json", import.meta.url)).then(JSON.parse),
+  ]);
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
   assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR", "S1"]);
+  assert.equal(evidence.blockedGroups.at(-1).state, "OFFICIAL_SOURCE_EXACT_TUPLE_UNMATCHED");
+  assert.equal(s1Snapshot.rowCount, 865);
+  assert.deepEqual(s1Snapshot.matchedGaps, []);
+  assert.deepEqual(s1Snapshot.unmatchedGaps.map(({ railOprIsttCd, lnCd, stinCd, stationName }) => (
+    `${railOprIsttCd}/${lnCd}/${stinCd}/${stationName}`
+  )), ["S1/2/234-4/까치산"]);
 });

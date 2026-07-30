@@ -6,7 +6,8 @@
   "evaluatedSourceSnapshots": [
     "korail-station-facilities-gap-evidence-20260731.json",
     "kric-capital-line1-elevators-gap-evidence-20260731.json",
-    "kric-capital-line8-elevators-gap-evidence-20260731.json"
+    "kric-capital-line8-elevators-gap-evidence-20260731.json",
+    "seoul-metro-facility-location-s1-gap-evidence-20260731.json"
   ],
   "blockedGroups": [
     {
@@ -30,8 +31,8 @@
     },
     {
       "operatorCode": "S1",
-      "state": "EXACT_CANONICAL_IDENTITY_UNPROVEN",
-      "officialSourceSnapshot": "seoul-metro-accessibility-20260728.json",
+      "state": "OFFICIAL_SOURCE_EXACT_TUPLE_UNMATCHED",
+      "sourceSnapshots": ["seoul-metro-facility-location-s1-gap-evidence-20260731.json"],
       "providerTuples": ["S1/2/234-4"]
     }
   ],
