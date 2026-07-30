@@ -112,7 +112,24 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
   const s1 = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "S1");
   assert.equal(s1.state, "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED");
   assert.deepEqual(s1.providerTuples, ["S1/2/234-4"]);
+  assert.equal(s1.canonicalStationId, "station-b35616704ce3");
+  assert.deepEqual(s1.canonicalSourceObservation, {
+    sourceId: "seoul-metro-route-map-positions",
+    capturedAt: "2026-07-24T02:00:00.000Z",
+    rawSha256: "713d6a7353748f1f29b974cd70df9b7a24b3600b6aeb60a58ed7bfa6975e02ed",
+    scopeSha256: "9d119cf23421206116e3f4c491a4ef760a9bf694f2a43a63926b0e70f3fd25fd",
+    positionsSha256: "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
+  });
   const kric = s1.kricRouteRosterObservation;
+  assert.deepEqual(
+    [kric.capturedAt, kric.requestRawSha256, kric.requestSchemaFingerprint, kric.providerRecordHash],
+    [
+      "2026-07-30T20:39:26.676Z",
+      "f0a15898cd3a148a48b1338347a3287cd3c2016119a4d3ac64c35dc4d7e38367",
+      "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
+      "3673252431c48350fc774795287c496f32f83aba1113df0bbe742ebc70096974",
+    ],
+  );
   assert.equal(
     `${kric.providerRecord.railOprIsttCd}/${kric.providerRecord.lnCd}/${kric.providerRecord.stinCd}`,
     s1.providerTuples[0],
@@ -139,6 +156,7 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
     createHash("sha256").update(JSON.stringify(s1.officialSourceRecord)).digest("hex"),
     s1.officialSourceRecordHash,
   );
+  assert.equal(s1.officialSourceRecordHash, "022b531ce285bbf03ba6699236753d1874fd2d453d6a988e4a66e54d9978a375");
   assert.deepEqual(
     { lineName: s1.officialSourceRecord.lineName, providerStationCode: s1.officialSourceRecord.providerStationCode },
     { lineName: "5호선", providerStationCode: "2519" },
