@@ -341,10 +341,21 @@ function sourceSnapshotInsert(row) {
     "diff_summary", "diff_summary_json", "freshness_expires_at", "raw_retention_expires_at",
     "governance_policy_version", "governance_policy_sha256",
   ];
-  const exactIdentity = columns
-    .map((column, index) => `${column} IS NOT DISTINCT FROM ${values[index]}`)
+  // Global governance policy can be re-evaluated without changing locked source snapshot bytes.
+  const governanceColumns = ["governance_policy_version", "governance_policy_sha256"];
+  const columnValues = columns.map((column, index) => [column, values[index]]);
+  const exactIdentity = columnValues
+    .filter(([column]) => !governanceColumns.includes(column))
+    .map(([column, value]) => `${column} IS NOT DISTINCT FROM ${value}`)
     .join(" AND ");
-  return `INSERT INTO data_source_snapshots (${columns.join(", ")}) `
+  const governanceBinding = columnValues.filter(([column]) => governanceColumns.includes(column));
+  const governanceAssignments = governanceBinding
+    .map(([column, value]) => `${column} = ${value}`)
+    .join(", ");
+  const governanceUpdate = governanceBinding.every(([, value]) => value !== "NULL")
+    ? `UPDATE data_source_snapshots SET ${governanceAssignments} WHERE ${exactIdentity};\n`
+    : "";
+  return governanceUpdate + `INSERT INTO data_source_snapshots (${columns.join(", ")}) `
     + `SELECT ${values.join(", ")} WHERE NOT EXISTS (SELECT 1 FROM data_source_snapshots WHERE ${exactIdentity});`;
 }
 
