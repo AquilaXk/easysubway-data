@@ -11,6 +11,7 @@ import {
   buildKricAccessibilityRoster,
   collectKricAccessibilitySnapshots,
   loadCanonicalStationLinesFromBundledIndex,
+  validateKricAccessibilityProviderGapEvidence,
 } from "./collect-kric-accessibility-snapshots.mjs";
 
 const operation = {
@@ -337,6 +338,34 @@ test("provider 03은 전체 safe tuple을 모은 뒤 fail closed한다", async (
     message: "KRIC accessibility provider gaps: count=2; tuples=kric-station-elevator/S1/1/101/03,kric-station-elevator/S1/2/202/03",
   });
   assert.equal(calls, 2);
+});
+
+test("provider gap evidence는 exact 24 tuple과 operator 분포를 고정한다", async () => {
+  const evidence = JSON.parse(await readFile(new URL(
+    "./sources/kric-station-convenience-provider-gaps-20260729.json",
+    import.meta.url,
+  ), "utf8"));
+
+  assert.deepEqual(validateKricAccessibilityProviderGapEvidence(evidence), {
+    count: 24,
+    operatorCounts: { GU: 3, GX: 5, KR: 15, S1: 1 },
+  });
+  assert.throws(() => validateKricAccessibilityProviderGapEvidence({
+    ...evidence,
+    gaps: [...evidence.gaps, evidence.gaps[0]],
+  }), /duplicate KRIC accessibility provider gap/);
+  assert.throws(() => validateKricAccessibilityProviderGapEvidence({
+    ...evidence,
+    gaps: evidence.gaps.map((gap, index) => index === 0 ? { ...gap, resultCode: "00" } : gap),
+  }), /provider gap resultCode must be 03/);
+  assert.throws(() => validateKricAccessibilityProviderGapEvidence({
+    ...evidence,
+    resultCodeInterpretation: undefined,
+  }), /provider gap evidence is invalid/);
+  assert.throws(() => validateKricAccessibilityProviderGapEvidence({
+    ...evidence,
+    resultCodeInterpretation: "ABSENCE",
+  }), /provider gap evidence is invalid/);
 });
 
 test("header 없는 provider resultCode 00도 absence evidence로 인정하지 않는다", async () => {

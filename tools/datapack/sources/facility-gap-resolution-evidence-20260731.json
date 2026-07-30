@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "facility-gap-resolution-evidence",
+  "gapEvidence": "kric-station-convenience-provider-gaps-20260729.json",
+  "admissionState": "BLOCKED",
+  "evaluatedSourceSnapshots": [
+    "korail-station-facilities-gap-evidence-20260731.json",
+    "kric-capital-line1-elevators-gap-evidence-20260731.json",
+    "kric-capital-line8-elevators-gap-evidence-20260731.json"
+  ],
+  "blockedGroups": [
+    {
+      "operatorCode": "GU",
+      "state": "OFFICIAL_SOURCE_EXACT_TUPLE_UNMATCHED",
+      "sourceSnapshots": ["kric-capital-line8-elevators-gap-evidence-20260731.json"],
+      "providerTuples": ["GU/8/2805", "GU/8/2807", "GU/8/2808"]
+    },
+    {
+      "operatorCode": "GX",
+      "state": "OFFICIAL_SOURCE_WAF_BLOCKED",
+      "officialSourceUrl": "https://www.gtx-a.com/stationIF.do?lineCd=L09",
+      "observedAt": "2026-07-30T21:07:01Z",
+      "providerTuples": ["GX/A/X101", "GX/A/X102", "GX/A/X103", "GX/A/X105", "GX/A/X106"]
+    },
+    {
+      "operatorCode": "KR",
+      "state": "OFFICIAL_SOURCE_SCOPE_INSUFFICIENT",
+      "sourceSnapshots": ["korail-station-facilities-gap-evidence-20260731.json", "kric-capital-line1-elevators-gap-evidence-20260731.json"],
+      "providerTuples": ["KR/1/116", "KR/K1/K209", "KR/K1/K222", "KR/K2/119", "KR/K2/K117", "KR/K2/K118", "KR/K2/K119", "KR/K4/K118", "KR/K4/K338", "KR/WS/S07", "KR/WS/S08", "KR/WS/S09", "KR/WS/S10", "KR/WS/S11", "KR/WS/S12"]
+    },
+    {
+      "operatorCode": "S1",
+      "state": "EXACT_CANONICAL_IDENTITY_UNPROVEN",
+      "officialSourceSnapshot": "seoul-metro-accessibility-20260728.json",
+      "providerTuples": ["S1/2/234-4"]
+    }
+  ],
+  "resultCodeInterpretation": "UNDEFINED_NOT_ABSENCE",
+  "productionAdmissionAllowed": false
+}

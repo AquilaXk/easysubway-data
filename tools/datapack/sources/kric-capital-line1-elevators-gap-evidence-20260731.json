@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "facility-gap-source-evidence",
+  "sourceId": "kric-capital-line1-elevators",
+  "datasetId": "15041389",
+  "detailUrl": "https://www.data.go.kr/data/15041389/fileData.do",
+  "downloadUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003513540&fileDetailSn=1&insertDataPrcus=N",
+  "capturedAt": "2026-07-30T21:22:47.619Z",
+  "official": true,
+  "credentialRequired": false,
+  "credentialRedacted": true,
+  "absenceEvidenceMode": "EXHAUSTIVE_LIST",
+  "responseEncoding": "euc-kr",
+  "rawSha256": "63dfe2754e075e3e9b136a5aaf58f6ce2334d28b41967d65ecb09ee97b5884d4",
+  "contentSha256": "aca2844a3b35f5920303a35b5c278f77103d0ef24369d5469245f3bdccc3dd97",
+  "schemaFingerprint": "b5741cf38fd3710ac8c5363e1bbd380ae5db9f44e2348b96953e68b7b15c4fba",
+  "rowCount": 370,
+  "matchedGaps": [],
+  "unmatchedGaps": [
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "1",
+      "stinCd": "116",
+      "resultCode": "03",
+      "stationName": "창동"
+    }
+  ],
+  "outOfScopeGaps": [
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K1",
+      "stinCd": "K209",
+      "resultCode": "03",
+      "stationName": "청량리"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K1",
+      "stinCd": "K222",
+      "resultCode": "03",
+      "stationName": "복정(동서울대학)"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
+      "stinCd": "119",
+      "resultCode": "03",
+      "stationName": "광운대"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
+      "stinCd": "K117",
+      "resultCode": "03",
+      "stationName": "청량리"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
+      "stinCd": "K118",
+      "resultCode": "03",
+      "stationName": "회기"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
+      "stinCd": "K119",
+      "resultCode": "03",
+      "stationName": "중랑"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K4",
+      "stinCd": "K118",
+      "resultCode": "03",
+      "stationName": "회기"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K4",
+      "stinCd": "K338",
+      "resultCode": "03",
+      "stationName": "도라산"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "WS",
+      "stinCd": "S07",
+      "resultCode": "03",
+      "stationName": "일산"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "WS",
+      "stinCd": "S08",
+      "resultCode": "03",
+      "stationName": "풍산"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "WS",
+      "stinCd": "S09",
+      "resultCode": "03",
+      "stationName": "백마"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "WS",
+      "stinCd": "S10",
+      "resultCode": "03",
+      "stationName": "곡산"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "WS",
+      "stinCd": "S11",
+      "resultCode": "03",
+      "stationName": "대곡"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "WS",
+      "stinCd": "S12",
+      "resultCode": "03",
+      "stationName": "능곡"
+    }
+  ],
+  "license": {
+    "type": "PUBLIC_DATA_FREE_USE",
+    "redistributionAllowed": true,
+    "evidenceUrl": "https://www.data.go.kr/data/15041389/fileData.do"
+  }
+}
