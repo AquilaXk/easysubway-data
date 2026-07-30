@@ -5,7 +5,7 @@
   "datasetId": "15041396",
   "detailUrl": "https://www.data.go.kr/data/15041396/fileData.do",
   "downloadUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003513520&fileDetailSn=1&insertDataPrcus=N",
-  "capturedAt": "2026-07-30T21:10:39.524Z",
+  "capturedAt": "2026-07-30T21:22:59.556Z",
   "official": true,
   "credentialRequired": false,
   "credentialRedacted": true,
@@ -39,6 +39,7 @@
       "stationName": "장자호수공원"
     }
   ],
+  "outOfScopeGaps": [],
   "license": {
     "type": "PUBLIC_DATA_FREE_USE",
     "redistributionAllowed": true,

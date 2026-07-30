@@ -31,24 +31,24 @@ const routeRosters = {
 
 test("official source는 operator·line·station이 모두 같은 gap만 결속한다", async () => {
   const sources = {
-    "korail-station-facilities": { matchedCount: 0, csv: [
+    "korail-station-facilities": { matchedCount: 0, unmatchedCount: 0, outOfScopeCount: 1, csv: [
       "역명,엘리베이터,에스컬레이터,휠체어리프트,장애인경사로",
       "가나,2,3,0,Y",
     ].join("\n") },
-    "kric-capital-line8-elevators": { matchedCount: 1, csv: [
+    "kric-capital-line8-elevators": { matchedCount: 1, unmatchedCount: 0, outOfScopeCount: 0, csv: [
       "철도운영기관명,선명,역명,출입구번호,상세위치,정원_인원,정원_중량",
       "구리도시공사,8호선,다라,1,대합실,15,1000",
       "남양주도시공사,8호선,다라,2,환승통로,15,1000",
       "구리도시공사,8호선,다라(별칭)역,3,승강장,15,1000",
     ].join("\n") },
-    "kric-capital-line1-elevators": { matchedCount: 1, csv: [
+    "kric-capital-line1-elevators": { matchedCount: 1, unmatchedCount: 0, outOfScopeCount: 0, csv: [
       "철도운영기관명,선명,역명,출입구번호,상세위치,정원_인원,정원_중량",
       "코레일,1호선,가나,1,대합실,15,1000",
       "서울교통공사,1호선,가나,2,환승통로,15,1000",
       "코레일,1호선,가나(별칭)역,3,승강장,15,1000",
     ].join("\n") },
   };
-  for (const [sourceId, { matchedCount, csv }] of Object.entries(sources)) {
+  for (const [sourceId, { matchedCount, unmatchedCount, outOfScopeCount, csv }] of Object.entries(sources)) {
     const snapshot = await collectFacilityGapSourceEvidence({
       sourceId,
       gapEvidence: gaps,
@@ -63,7 +63,8 @@ test("official source는 operator·line·station이 모두 같은 gap만 결속�
     assert.equal(snapshot.capturedAt, "2026-07-31T00:00:00.000Z");
     assert.equal(snapshot.absenceEvidenceMode, "EXHAUSTIVE_LIST");
     assert.equal(snapshot.matchedGaps.length, matchedCount);
-    assert.equal(snapshot.unmatchedGaps.length, 1 - matchedCount);
+    assert.equal(snapshot.unmatchedGaps.length, unmatchedCount);
+    assert.equal(snapshot.outOfScopeGaps.length, outOfScopeCount);
     assert.match(snapshot.rawSha256, /^[0-9a-f]{64}$/);
     assert.match(snapshot.contentSha256, /^[0-9a-f]{64}$/);
     if (matchedCount === 1) {
@@ -100,9 +101,9 @@ test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
   assert.deepEqual(decodeCsv(Uint8Array.from([0xbf, 0xaa, 0xb8, 0xed])), { text: "역명", encoding: "euc-kr" });
 });
 
-test("미해결 GX·S1 evidence는 production admission을 fail closed한다", async () => {
+test("미해결 provider evidence는 production admission을 fail closed한다", async () => {
   const evidence = JSON.parse(await readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)));
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
-  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GX", "S1"]);
+  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR", "S1"]);
 });

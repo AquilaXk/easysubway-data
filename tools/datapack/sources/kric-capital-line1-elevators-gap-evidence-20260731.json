@@ -5,7 +5,7 @@
   "datasetId": "15041389",
   "detailUrl": "https://www.data.go.kr/data/15041389/fileData.do",
   "downloadUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003513540&fileDetailSn=1&insertDataPrcus=N",
-  "capturedAt": "2026-07-30T21:10:27.097Z",
+  "capturedAt": "2026-07-30T21:22:47.619Z",
   "official": true,
   "credentialRequired": false,
   "credentialRedacted": true,
@@ -23,7 +23,9 @@
       "stinCd": "116",
       "resultCode": "03",
       "stationName": "창동"
-    },
+    }
+  ],
+  "outOfScopeGaps": [
     {
       "railOprIsttCd": "KR",
       "lnCd": "K1",

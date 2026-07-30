@@ -5,7 +5,7 @@
   "datasetId": "15090379",
   "detailUrl": "https://www.data.go.kr/data/15090379/fileData.do",
   "downloadUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003247666&fileDetailSn=1&insertDataPrcus=N",
-  "capturedAt": "2026-07-30T21:07:18.408Z",
+  "capturedAt": "2026-07-30T21:22:36.473Z",
   "official": true,
   "credentialRequired": false,
   "credentialRedacted": true,
@@ -16,7 +16,8 @@
   "schemaFingerprint": "acedb9ec7fe5ea516b589f14fe246739578f118cf0edcc9594f431b041e78582",
   "rowCount": 288,
   "matchedGaps": [],
-  "unmatchedGaps": [
+  "unmatchedGaps": [],
+  "outOfScopeGaps": [
     {
       "railOprIsttCd": "KR",
       "lnCd": "1",

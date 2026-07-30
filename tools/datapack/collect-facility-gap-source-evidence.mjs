@@ -14,6 +14,7 @@ const SOURCES = Object.freeze({
     detailUrl: "https://www.data.go.kr/data/15090379/fileData.do",
     operatorCode: "KR",
     operatorNames: ["코레일", "한국철도공사"],
+    operatorIdentityMode: "SOURCE_LEVEL",
     lineNames: {},
     columns: ["역명", "엘리베이터", "에스컬레이터", "휠체어리프트", "장애인경사로"],
     normalize(row) {
@@ -78,6 +79,8 @@ export async function collectFacilityGapSourceEvidence({
   if (!source) throw new Error(`facility gap source is not allowed: ${sourceId}`);
   validateKricAccessibilityProviderGapEvidence(gapEvidence);
   const gapStations = mapGapStations(gapEvidence.gaps, routeRosters, source.operatorCode);
+  const evaluatedGaps = gapStations.filter((gap) => Object.hasOwn(source.lineNames, gap.lnCd));
+  const outOfScopeGaps = gapStations.filter((gap) => !Object.hasOwn(source.lineNames, gap.lnCd));
 
   const detailResponse = await fetchOfficial(new URL(source.detailUrl), fetchImpl, "detail page");
   const detailHtml = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(await detailResponse.arrayBuffer()));
@@ -100,7 +103,7 @@ export async function collectFacilityGapSourceEvidence({
 
   const matchedGaps = [];
   const unmatchedGaps = [];
-  for (const gap of gapStations) {
+  for (const gap of evaluatedGaps) {
     const matches = rows.filter((row) => matchesGap(source, gap, row));
     if (matches.length === 0) {
       unmatchedGaps.push(gap);
@@ -133,6 +136,7 @@ export async function collectFacilityGapSourceEvidence({
     rowCount: rows.length,
     matchedGaps,
     unmatchedGaps,
+    outOfScopeGaps,
     license: {
       type: "PUBLIC_DATA_FREE_USE",
       redistributionAllowed: true,
@@ -143,7 +147,8 @@ export async function collectFacilityGapSourceEvidence({
 
 export function formatGapClassification(snapshot) {
   if (snapshot?.artifactKind !== "facility-gap-source-evidence"
-    || !Array.isArray(snapshot?.matchedGaps) || !Array.isArray(snapshot?.unmatchedGaps)) {
+    || !Array.isArray(snapshot?.matchedGaps) || !Array.isArray(snapshot?.unmatchedGaps)
+    || !Array.isArray(snapshot?.outOfScopeGaps)) {
     throw new Error("facility gap source evidence report is invalid");
   }
   const format = (gap) => `${gap.railOprIsttCd}/${gap.lnCd}/${gap.stinCd}/${gap.stationName}`;
@@ -151,6 +156,7 @@ export function formatGapClassification(snapshot) {
     `source=${snapshot.sourceId}`,
     `matched=${snapshot.matchedGaps.map(format).join(",") || "none"}`,
     `unmatched=${snapshot.unmatchedGaps.map(format).join(",") || "none"}`,
+    `outOfScope=${snapshot.outOfScopeGaps.map(format).join(",") || "none"}`,
   ].join("\n");
 }
 
@@ -244,7 +250,9 @@ function normalizeStationName(value) {
 }
 
 function matchesGap(source, gap, row) {
-  return source.operatorNames.includes(row.operatorName)
+  const operatorMatches = source.operatorIdentityMode === "SOURCE_LEVEL"
+    || source.operatorNames.includes(row.operatorName);
+  return operatorMatches
     && source.lineNames[gap.lnCd] === row.lineName
     && normalizeStationName(gap.stationName) === normalizeStationName(row.stationName);
 }
