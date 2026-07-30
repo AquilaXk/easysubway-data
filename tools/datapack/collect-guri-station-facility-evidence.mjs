@@ -30,6 +30,7 @@ export async function collectGuriStationFacilityEvidence({
   const gaps = new Map(gapEvidence.gaps
     .filter(({ railOprIsttCd, lnCd }) => railOprIsttCd === "GU" && lnCd === "8")
     .map((gap) => [providerTuple(gap), gap]));
+  if (gaps.size !== STATIONS.length) throw new Error("official Guri gap set is invalid");
   const rosterStations = (routeRosters?.rosters ?? []).flatMap(({ stations = [] }) => stations);
   const capturedAt = now.toISOString();
   if (!Number.isFinite(Date.parse(capturedAt))) throw new Error("capture time is invalid");
