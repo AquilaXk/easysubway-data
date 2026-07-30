@@ -2,9 +2,11 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { validateKricAccessibilityProviderGapEvidence } from "./collect-kric-accessibility-snapshots.mjs";
+import { isMainModule } from "../lib/is-main-module.mjs";
+
+const KRIC_ELEVATOR_COLUMNS = ["철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원_인원", "정원_중량"];
 
 const SOURCES = Object.freeze({
   "korail-station-facilities": {
@@ -26,42 +28,22 @@ const SOURCES = Object.freeze({
     datasetId: "15041396",
     detailUrl: "https://www.data.go.kr/data/15041396/fileData.do",
     operatorCode: "GU",
-    columns: ["철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원_인원", "정원_중량"],
-    normalize(row) {
-      return {
-        operatorName: row["철도운영기관명"],
-        lineName: row["선명"],
-        stationName: required(row["역명"], "역명"),
-        exitNumber: row["출입구번호"],
-        detailLocation: required(row["상세위치"], "상세위치"),
-        capacityPeople: row["정원_인원"],
-        capacityWeight: row["정원_중량"],
-      };
-    },
+    columns: KRIC_ELEVATOR_COLUMNS,
+    normalize: normalizeKricElevatorRow,
   },
   "kric-capital-line1-elevators": {
     datasetId: "15041389",
     detailUrl: "https://www.data.go.kr/data/15041389/fileData.do",
     operatorCode: "KR",
-    columns: ["철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원_인원", "정원_중량"],
-    normalize(row) {
-      return {
-        operatorName: row["철도운영기관명"],
-        lineName: row["선명"],
-        stationName: required(row["역명"], "역명"),
-        exitNumber: row["출입구번호"],
-        detailLocation: required(row["상세위치"], "상세위치"),
-        capacityPeople: row["정원_인원"],
-        capacityWeight: row["정원_중량"],
-      };
-    },
+    columns: KRIC_ELEVATOR_COLUMNS,
+    normalize: normalizeKricElevatorRow,
   },
 });
 
 export function resolveOfficialDownloadUrl(html) {
   const match = /"contentUrl"\s*:\s*"([^"]+)"/.exec(html);
   if (!match) throw new Error("official data.go.kr contentUrl is missing");
-  const url = new URL(match[1].replaceAll("\\u0026", "&"));
+  const url = new URL(match[1].replaceAll(String.raw`\u0026`, "&"));
   if (url.origin !== "https://www.data.go.kr"
     || url.pathname !== "/cmm/cmm/fileDownload.do"
     || !/^FILE_[0-9A-Z]+$/.test(url.searchParams.get("atchFileId") ?? "")
@@ -106,7 +88,7 @@ export async function collectFacilityGapSourceEvidence({
   }
   const rows = records
     .filter((row) => source.include?.(row) ?? true)
-    .map(source.normalize)
+    .map((row) => source.normalize(row))
     .sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right)));
   if (rows.length === 0) throw new Error(`official source rows are empty: ${sourceId}`);
 
@@ -208,31 +190,33 @@ function parseCsv(text) {
   let quoted = false;
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
-    if (quoted) {
-      if (character === '"' && text[index + 1] === '"') {
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') {
         field += '"';
         index += 1;
-      } else if (character === '"') {
-        quoted = false;
+      } else if (quoted || field === "") {
+        quoted = !quoted;
       } else {
         field += character;
       }
-    } else if (character === '"' && field === "") {
-      quoted = true;
-    } else if (character === ",") {
+      continue;
+    }
+    if (quoted) {
+      field += character;
+      continue;
+    }
+    if (character === ",") {
       row.push(field.trim());
       field = "";
     } else if (character === "\n") {
-      row.push(field.trim());
-      if (row.some((value) => value !== "")) table.push(row);
+      appendCsvRow(table, row, field);
       row = [];
       field = "";
     } else if (character !== "\r") {
       field += character;
     }
   }
-  row.push(field.trim());
-  if (row.some((value) => value !== "")) table.push(row);
+  appendCsvRow(table, row, field);
   if (quoted || table.length < 2) throw new Error("official source CSV is invalid");
   const [columns, ...data] = table;
   if (new Set(columns).size !== columns.length) throw new Error("official source CSV columns are duplicated");
@@ -245,8 +229,28 @@ function parseCsv(text) {
   };
 }
 
+function appendCsvRow(table, row, field) {
+  row.push(field.trim());
+  if (row.some((value) => value !== "")) table.push(row);
+}
+
 function normalizeStationName(value) {
-  return String(value).normalize("NFKC").replace(/\([^)]*\)/g, "").replace(/역$/u, "").replace(/[^\p{L}\p{N}]+/gu, "").toLocaleLowerCase("ko-KR");
+  return removeParenthetical(String(value).normalize("NFKC"))
+    .replace(/역$/u, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .toLocaleLowerCase("ko-KR");
+}
+
+function removeParenthetical(value) {
+  let result = value;
+  let open = result.indexOf("(");
+  while (open >= 0) {
+    const close = result.indexOf(")", open + 1);
+    if (close < 0) break;
+    result = result.slice(0, open) + result.slice(close + 1);
+    open = result.indexOf("(");
+  }
+  return result;
 }
 
 function providerTuple(value) {
@@ -263,7 +267,9 @@ function hash(value) {
 }
 
 function compare(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function parseArgs(argv) {
@@ -284,18 +290,34 @@ async function main(argv) {
     process.stdout.write(`${formatGapClassification(JSON.parse(await readFile(args.report, "utf8")))}\n`);
     return;
   }
-  const [gapEvidence, routeRosters] = await Promise.all([
-    readFile(args.gaps, "utf8").then(JSON.parse),
-    readFile(args["route-rosters"], "utf8").then(JSON.parse),
+  const [gapEvidenceJson, routeRostersJson] = await Promise.all([
+    readFile(args.gaps, "utf8"),
+    readFile(args["route-rosters"], "utf8"),
   ]);
+  const gapEvidence = JSON.parse(gapEvidenceJson);
+  const routeRosters = JSON.parse(routeRostersJson);
   const snapshot = await collectFacilityGapSourceEvidence({ sourceId: args.source, gapEvidence, routeRosters });
   await writeFile(args.output, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o644 });
   process.stdout.write(`official facility gap source evidence ready: source=${snapshot.sourceId} rows=${snapshot.rowCount} matched=${snapshot.matchedGaps.length} unmatched=${snapshot.unmatchedGaps.length}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main(process.argv.slice(2)).catch((error) => {
+if (isMainModule(import.meta.url)) {
+  try {
+    await main(process.argv.slice(2));
+  } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : "facility gap source collection failed"}\n`);
     process.exitCode = 1;
-  });
+  }
+}
+
+function normalizeKricElevatorRow(row) {
+  return {
+    operatorName: row["철도운영기관명"],
+    lineName: row["선명"],
+    stationName: required(row["역명"], "역명"),
+    exitNumber: row["출입구번호"],
+    detailLocation: required(row["상세위치"], "상세위치"),
+    capacityPeople: row["정원_인원"],
+    capacityWeight: row["정원_중량"],
+  };
 }
