@@ -120,7 +120,7 @@ function requestValue(component, compatibilityBytes, approvalBytes) {
       approvalEvidenceSha256: sha256(approvalBytes),
     },
     contractVersion: "datapack-promotion-v1",
-    issueRef: "AquilaXk/easysubway#2699",
+    issueRef: "AquilaXk/easysubway#2705",
   };
 }
 
@@ -140,7 +140,7 @@ function componentValue(inventorySha256) {
   return {
     schemaVersion: 1,
     component: "data",
-    repository: "AquilaXk/easysubway",
+    repository: "AquilaXk/easysubway-data",
     gitSha: "a".repeat(40),
     workflowRunId: "123",
     dataVersion: "1",
@@ -149,7 +149,7 @@ function componentValue(inventorySha256) {
     provenance: { sourceSnapshotSetHash: "c".repeat(64) },
     artifactInventorySha256: inventorySha256,
     contractVersion: "datapack-contract-v3",
-    issueRef: "AquilaXk/easysubway#2699",
+    issueRef: "AquilaXk/easysubway#2705",
   };
 }
 

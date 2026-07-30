@@ -68,6 +68,7 @@ jobs:
     env:
       NODE_OPTIONS: --disable-warning=ExperimentalWarning
       SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
+      EASYSUBWAY_DATAPACK_FRESHNESS_POLICY: build/contracts/datapack/datapack-freshness-sla.json
     outputs:
       status: ${{ steps.check.outputs.status }}
       severity: ${{ steps.check.outputs.severity }}
@@ -81,6 +82,9 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: "24"
+
+      - name: Data Pack Expiry Alert / Stage product contracts
+        run: node tools/datapack/stage-contracts.mjs
 
       - name: Data Pack Expiry Alert / Configure temp paths
         run: |
@@ -131,11 +135,11 @@ jobs:
           node tools/datapack/check-datapack-expiry-alert.mjs \
             --manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
             --output "${EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE}" \
-            --policy release/product-gates/datapack-freshness-sla.json
+            --policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}"
           node tools/datapack/decide-datapack-release.mjs \
             --alert-only \
             --current-manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
-            --freshness-policy release/product-gates/datapack-freshness-sla.json \
+            --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}" \
             --output "${EASYSUBWAY_DATAPACK_EXPIRY_DECISION}"
           node -e '
             const fs = require("fs");

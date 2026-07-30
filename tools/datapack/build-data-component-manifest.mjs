@@ -19,11 +19,15 @@ export async function buildDataComponentManifest(input) {
   const output = containedFile(root, input.output, "--output");
   if (inventoryOutput === output) throw new Error("metadata outputs must be distinct");
 
-  const repository = exact(input.repository, "--repository", "AquilaXk/easysubway");
+  const repository = exact(input.repository, "--repository", "AquilaXk/easysubway-data");
   const gitSha = matched(input.gitSha, "--git-sha", /^[a-f0-9]{40}$/);
   const workflowRunId = matched(input.workflowRunId, "--workflow-run-id", /^[1-9][0-9]*$/);
   const contractVersion = exact(input.contractVersion, "--contract-version", "datapack-contract-v3");
-  const issueRef = exact(input.issueRef, "--issue-ref", "AquilaXk/easysubway#2699");
+  const issueRef = matched(
+    input.issueRef,
+    "--issue-ref",
+    /^AquilaXk\/(?:easysubway|easysubway-data)#[1-9][0-9]*$/,
+  );
   const manifestBytes = await regularFileBytes(manifestPath, "--manifest");
   const provenanceBytes = await regularFileBytes(provenancePath, "--provenance");
   const manifest = parseJson(manifestBytes, "--manifest");

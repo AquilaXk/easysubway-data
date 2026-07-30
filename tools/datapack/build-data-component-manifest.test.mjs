@@ -36,7 +36,7 @@ test("candidate stage의 불변 data component manifest와 정렬된 artifact in
     assert.deepEqual(manifest, {
       schemaVersion: 1,
       component: "data",
-      repository: "AquilaXk/easysubway",
+      repository: "AquilaXk/easysubway-data",
       gitSha,
       workflowRunId: "123456789",
       dataVersion: "20260730",
@@ -45,10 +45,10 @@ test("candidate stage의 불변 data component manifest와 정렬된 artifact in
       provenance: { sourceSnapshotSetHash },
       artifactInventorySha256: manifestHash(inventoryBytes),
       contractVersion: "datapack-contract-v3",
-      issueRef: "AquilaXk/easysubway#2699",
+      issueRef: "AquilaXk/easysubway#2705",
     });
     assert.equal(manifest.artifactInventorySha256, "f17cdab0fb8d18b329dc12e21b9c4d612ab278b3dde374f2a20627620e7e50c0");
-    assert.equal(manifestHash(manifestBytes), "92c42a0cafcf0c3972900085ef48f0d7e97fbbf1358bdf1f4acdc651f23fda9f");
+    assert.equal(manifestHash(manifestBytes), "eee29229926cf4a2235ff1ba2ea13113f6993f21bac0dd04014c722e4203c17f");
   } finally {
     fixture.cleanup();
   }
@@ -67,6 +67,25 @@ test("production manifest validation이 닫는 current manifest shape를 fail cl
       assert.notEqual(result.status, 0, name);
       assert.equal(exists(fixture.inventory), false, name);
       assert.equal(exists(fixture.output), false, name);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+});
+
+test("issueRef는 hub 또는 data repository의 qualified issue만 허용한다", () => {
+  for (const issueRef of ["AquilaXk/easysubway-data#1", "AquilaXk/easysubway#2705"]) {
+    const fixture = createFixture();
+    try {
+      assert.equal(run(fixture, { issueRef }).status, 0, issueRef);
+    } finally {
+      fixture.cleanup();
+    }
+  }
+  for (const issueRef of ["2705", "AquilaXk/other#2705"]) {
+    const fixture = createFixture();
+    try {
+      assert.notEqual(run(fixture, { issueRef }).status, 0, issueRef);
     } finally {
       fixture.cleanup();
     }
@@ -199,11 +218,11 @@ function commandArguments(fixture, overrides = {}) {
     "--root", fixture.root,
     "--manifest", fixture.manifest,
     "--provenance", fixture.provenance,
-    "--repository", "AquilaXk/easysubway",
+    "--repository", "AquilaXk/easysubway-data",
     "--git-sha", gitSha,
     "--workflow-run-id", "123456789",
     "--contract-version", "datapack-contract-v3",
-    "--issue-ref", "AquilaXk/easysubway#2699",
+    "--issue-ref", overrides.issueRef ?? "AquilaXk/easysubway#2705",
     "--inventory-output", overrides.inventory ?? fixture.inventory,
     "--output", overrides.output ?? fixture.output,
   ];
