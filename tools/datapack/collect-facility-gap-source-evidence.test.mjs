@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -101,12 +102,30 @@ test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
   assert.deepEqual(decodeCsv(Uint8Array.from([0xbf, 0xaa, 0xb8, 0xed])), { text: "역명", encoding: "euc-kr" });
 });
 
-test("미해결 provider evidence는 production admission을 fail closed한다", async () => {
+test("미해결 provider evidence는 production admission을 fail closed하고 S1은 canonical station으로 결속한다", async () => {
   const evidence = JSON.parse(await readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)));
+  const routeMap = JSON.parse(await readFile(new URL("./sources/seoul-metro-route-map-positions-20260724.json", import.meta.url)));
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
-  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR", "S1"]);
-  assert.equal(evidence.blockedGroups.at(-1).state, "EXACT_CANONICAL_IDENTITY_UNPROVEN");
-  assert.equal(evidence.blockedGroups.at(-1).officialSourceObservation.rowCount, 865);
-  assert.equal(evidence.blockedGroups.at(-1).officialSourceObservation.missingContract, "VERIFIED_KRIC_TO_SEOUL_STATION_CODE_MAPPING");
+  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR"]);
+
+  const s1 = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "S1");
+  assert.equal(s1.state, "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED");
+  assert.deepEqual(s1.providerTuples, ["S1/2/234-4"]);
+  assert.deepEqual(
+    routeMap.positions
+      .filter(({ stationId }) => stationId === s1.canonicalStationId)
+      .map(({ lineId, stationCode, stationName }) => ({ lineId, stationCode, stationName })),
+    s1.canonicalMemberships,
+  );
+  assert.equal(s1.officialSourceObservation.rowCount, 865);
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(s1.officialSourceRecord)).digest("hex"),
+    s1.officialSourceRecordHash,
+  );
+  assert.deepEqual(
+    { lineName: s1.officialSourceRecord.lineName, providerStationCode: s1.officialSourceRecord.providerStationCode },
+    { lineName: "5호선", providerStationCode: "2519" },
+  );
+  assert.equal(s1.officialSourceRecord.facilities.length, 4);
 });
