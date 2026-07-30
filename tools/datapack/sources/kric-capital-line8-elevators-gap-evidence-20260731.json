@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "facility-gap-source-evidence",
+  "sourceId": "kric-capital-line8-elevators",
+  "datasetId": "15041396",
+  "detailUrl": "https://www.data.go.kr/data/15041396/fileData.do",
+  "downloadUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003513520&fileDetailSn=1&insertDataPrcus=N",
+  "capturedAt": "2026-07-30T20:56:45.467Z",
+  "official": true,
+  "credentialRequired": false,
+  "credentialRedacted": true,
+  "absenceEvidenceMode": "EXHAUSTIVE_LIST",
+  "responseEncoding": "euc-kr",
+  "rawSha256": "686281fe7fbeb1d20e7187839156b4fbce707564c6e22af15a4e18be71723aea",
+  "contentSha256": "345277ed75b2993c01a711e541263d361fc27c37c96ecface8ebbaeffee0f32f",
+  "schemaFingerprint": "b5741cf38fd3710ac8c5363e1bbd380ae5db9f44e2348b96953e68b7b15c4fba",
+  "rowCount": 73,
+  "matchedGaps": [],
+  "unmatchedGaps": [
+    {
+      "railOprIsttCd": "GU",
+      "lnCd": "8",
+      "stinCd": "2805",
+      "resultCode": "03",
+      "stationName": "구리"
+    },
+    {
+      "railOprIsttCd": "GU",
+      "lnCd": "8",
+      "stinCd": "2807",
+      "resultCode": "03",
+      "stationName": "동구릉"
+    },
+    {
+      "railOprIsttCd": "GU",
+      "lnCd": "8",
+      "stinCd": "2808",
+      "resultCode": "03",
+      "stationName": "장자호수공원"
+    }
+  ],
+  "license": {
+    "type": "PUBLIC_DATA_FREE_USE",
+    "redistributionAllowed": true,
+    "evidenceUrl": "https://www.data.go.kr/data/15041396/fileData.do"
+  }
+}
