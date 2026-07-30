@@ -44,12 +44,12 @@ export function exactKeys(value, keys, label) {
 export function validateComponent(value) {
   exactKeys(value, componentKeys, "component");
   if (value.schemaVersion !== 1 || value.component !== "data"
-    || value.repository !== "AquilaXk/easysubway" || !sha40(value.gitSha)
+    || value.repository !== "AquilaXk/easysubway-data" || !sha40(value.gitSha)
     || !positiveDecimal(value.workflowRunId) || !text(value.dataVersion)
     || !Number.isInteger(value.releaseSequence) || value.releaseSequence < 1
     || !sha64(value.manifestSha256) || !sha64(value.artifactInventorySha256)
     || value.contractVersion !== "datapack-contract-v3"
-    || value.issueRef !== "AquilaXk/easysubway#2699") {
+    || !/^AquilaXk\/(?:easysubway|easysubway-data)#[1-9][0-9]*$/.test(value.issueRef)) {
     throw new Error("component is invalid");
   }
   exactKeys(value.provenance, ["sourceSnapshotSetHash"], "component.provenance");
@@ -127,7 +127,7 @@ export function validateRequest({
     || !isDeepStrictEqual(request.candidate, component)
     || request.compatibilityEvidenceSha256 !== hash(compatibilityBytes)
     || !text(request.requestedBy) || request.contractVersion !== "datapack-promotion-v1"
-    || request.issueRef !== "AquilaXk/easysubway#2699") {
+    || request.issueRef !== component.issueRef) {
     throw new Error("request is invalid");
   }
 
