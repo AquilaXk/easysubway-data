@@ -7,12 +7,18 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
 
-test("고정된 hub 계약 변경은 release workflow를 실행 전에 stage한다", () => {
+test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
   assert.match(yml, /paths:[\s\S]*contracts\.lock\.json/);
   assert.doesNotMatch(yml, /paths:[\s\S]*release\/product-gates/);
   const stage = yml.match(/- name: Data Pack Release \/ Stage product contracts[\s\S]*?\n\s+- name:/)?.[0];
   assert.ok(stage, "product contract stage 스텝을 찾지 못함");
+  assert.match(stage, /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' \}\}/);
   assert.match(stage, /node tools\/datapack\/stage-contracts\.mjs/);
+  assert.ok(
+    yml.indexOf("Data Pack Release / Stage product contracts")
+      > yml.indexOf("Data Pack Release / Validate release mode inputs"),
+    "contract stage는 pointer-only 여부가 확정된 뒤여야 한다",
+  );
 });
 
 // 외부 yaml 의존성 없이(리포는 node 내장 --test만 사용) workflow_dispatch 입력 이름을
@@ -553,7 +559,9 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.match(runs, /if:\s*\$\{\{ steps\.release-mode\.outputs\.mode == 'production-publish' \}\}/);
   assert.match(runs, /CANDIDATE_RUN_ID: \$\{\{ steps\.release-mode\.outputs\.candidate_run_id \}\}/);
   assert.match(runs, /PROMOTION_RUN_ID: \$\{\{ steps\.release-mode\.outputs\.promotion_run_id \}\}/);
-  assert.match(runs, /GH_TOKEN: \$\{\{ secrets\.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN \}\}/);
+  assert.match(runs, /EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN: \$\{\{ secrets\.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN \}\}/);
+  assert.doesNotMatch(runs, /GH_TOKEN: \$\{\{ secrets\.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN \}\}/);
+  assert.match(runs, /GH_TOKEN="\$\{EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN\}" gh api "repos\/\$\{EASYSUBWAY_HUB_REPOSITORY\}/);
   assert.match(runs, /\.github\/workflows\/datapack-release\.yml/);
   assert.match(runs, /\.github\/workflows\/datapack-promotion\.yml/);
   assert.match(runs, /promotion_ref\}" == "main"/);
@@ -576,8 +584,11 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   ]) assert.match(runs, predicate);
 
   const metadata = step("Data Pack Release / Validate production artifact metadata");
+  assert.match(metadata, /EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN: \$\{\{ secrets\.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN \}\}/);
+  assert.doesNotMatch(metadata, /GH_TOKEN: \$\{\{ secrets\.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN \}\}/);
   assert.match(metadata, /repos\/\$\{GITHUB_REPOSITORY\}\/actions\/runs/);
   assert.match(metadata, /repos\/\$\{EASYSUBWAY_HUB_REPOSITORY\}\/actions\/runs/);
+  assert.match(metadata, /GH_TOKEN="\$\{EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN\}" gh api "repos\/\$\{EASYSUBWAY_HUB_REPOSITORY\}/);
   assert.match(metadata, /easysubway-datapack-candidate-\$\{EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID\}/);
   assert.match(metadata, /easysubway-datapack-promotion-\$\{EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID\}/);
   assert.match(metadata, /require-workflow-artifact\.mjs/);

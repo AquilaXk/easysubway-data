@@ -67,9 +67,6 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Data Pack Release / Stage product contracts
-        run: node tools/datapack/stage-contracts.mjs
-
       - name: Data Pack Release / Configure temp directories
         run: |
           set -euo pipefail
@@ -358,6 +355,10 @@ jobs:
             fi
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Data Pack Release / Stage product contracts
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' }}
+        run: node tools/datapack/stage-contracts.mjs
+
       - name: Data Pack Release / Validate source snapshot freshness
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
         env:
@@ -519,7 +520,7 @@ jobs:
       - name: Data Pack Release / Validate production candidate and promotion runs
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
         env:
-          GH_TOKEN: ${{ secrets.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN }}
+          EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN: ${{ secrets.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN }}
           CANDIDATE_RUN_ID: ${{ steps.release-mode.outputs.candidate_run_id }}
           PROMOTION_RUN_ID: ${{ steps.release-mode.outputs.promotion_run_id }}
         run: |
@@ -531,7 +532,7 @@ jobs:
           IFS=$'\t' read -r candidate_id candidate_conclusion candidate_repository candidate_head_repository candidate_event candidate_head_sha candidate_path_raw <<< "${candidate_metadata}"
           candidate_path="${candidate_path_raw%@*}"
           [[ "${candidate_id}" == "${CANDIDATE_RUN_ID}" && "${candidate_conclusion}" == "success" && "${candidate_repository}" == "${GITHUB_REPOSITORY}" && "${candidate_head_repository}" == "${GITHUB_REPOSITORY}" && "${candidate_event}" == "workflow_dispatch" && "${candidate_head_sha}" =~ ^[a-f0-9]{40}$ && "${candidate_path}" == ".github/workflows/datapack-release.yml" ]]
-          promotion_metadata="$(gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${PROMOTION_RUN_ID}" --jq '[.id, .conclusion, .repository.full_name, .head_repository.full_name, .event, .head_branch, .head_sha, .path] | @tsv')"
+          promotion_metadata="$(GH_TOKEN="${EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN}" gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${PROMOTION_RUN_ID}" --jq '[.id, .conclusion, .repository.full_name, .head_repository.full_name, .event, .head_branch, .head_sha, .path] | @tsv')"
           IFS=$'\t' read -r promotion_id promotion_conclusion promotion_repository promotion_head_repository promotion_event promotion_ref promotion_head_sha promotion_path_raw <<< "${promotion_metadata}"
           promotion_path="${promotion_path_raw%@*}"
           [[ "${promotion_id}" == "${PROMOTION_RUN_ID}" && "${promotion_conclusion}" == "success" && "${promotion_repository}" == "${EASYSUBWAY_HUB_REPOSITORY}" && "${promotion_head_repository}" == "${EASYSUBWAY_HUB_REPOSITORY}" && "${promotion_event}" == "workflow_dispatch" && "${promotion_ref}" == "main" && "${promotion_head_sha}" =~ ^[a-f0-9]{40}$ && "${promotion_path}" == ".github/workflows/datapack-promotion.yml" ]]
@@ -541,14 +542,14 @@ jobs:
       - name: Data Pack Release / Validate production artifact metadata
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
         env:
-          GH_TOKEN: ${{ secrets.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN }}
+          EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN: ${{ secrets.EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN }}
         run: |
           set -euo pipefail
           candidate_name="easysubway-datapack-candidate-${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}/artifacts?name=${candidate_name}&per_page=100" > "${RUNNER_TEMP}/${candidate_name}.json"
           node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${candidate_name}.json" "${candidate_name}" "${EASYSUBWAY_DATAPACK_CANDIDATE_RUN_ID}" "${CANDIDATE_HEAD_SHA}"
           promotion_name="easysubway-datapack-promotion-${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}"
-          gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}/artifacts?name=${promotion_name}&per_page=100" > "${RUNNER_TEMP}/${promotion_name}.json"
+          GH_TOKEN="${EASYSUBWAY_HUB_ARTIFACT_READ_TOKEN}" gh api "repos/${EASYSUBWAY_HUB_REPOSITORY}/actions/runs/${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}/artifacts?name=${promotion_name}&per_page=100" > "${RUNNER_TEMP}/${promotion_name}.json"
           node tools/ci/require-workflow-artifact.mjs "${RUNNER_TEMP}/${promotion_name}.json" "${promotion_name}" "${EASYSUBWAY_DATAPACK_PROMOTION_RUN_ID}" "${PROMOTION_HEAD_SHA}"
 
       - name: Data Pack Release / Download exact production artifacts
