@@ -13,6 +13,8 @@ const SOURCES = Object.freeze({
     datasetId: "15090379",
     detailUrl: "https://www.data.go.kr/data/15090379/fileData.do",
     operatorCode: "KR",
+    operatorNames: ["코레일", "한국철도공사"],
+    lineNames: {},
     columns: ["역명", "엘리베이터", "에스컬레이터", "휠체어리프트", "장애인경사로"],
     normalize(row) {
       return {
@@ -28,6 +30,8 @@ const SOURCES = Object.freeze({
     datasetId: "15041396",
     detailUrl: "https://www.data.go.kr/data/15041396/fileData.do",
     operatorCode: "GU",
+    operatorNames: ["구리도시공사"],
+    lineNames: { "8": "8호선" },
     columns: KRIC_ELEVATOR_COLUMNS,
     normalize: normalizeKricElevatorRow,
   },
@@ -35,6 +39,8 @@ const SOURCES = Object.freeze({
     datasetId: "15041389",
     detailUrl: "https://www.data.go.kr/data/15041389/fileData.do",
     operatorCode: "KR",
+    operatorNames: ["코레일", "한국철도공사"],
+    lineNames: { "1": "1호선" },
     columns: KRIC_ELEVATOR_COLUMNS,
     normalize: normalizeKricElevatorRow,
   },
@@ -92,15 +98,10 @@ export async function collectFacilityGapSourceEvidence({
     .sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right)));
   if (rows.length === 0) throw new Error(`official source rows are empty: ${sourceId}`);
 
-  const rowsByStationName = new Map();
-  for (const row of rows) {
-    const key = normalizeStationName(row.stationName);
-    rowsByStationName.set(key, [...(rowsByStationName.get(key) ?? []), row]);
-  }
   const matchedGaps = [];
   const unmatchedGaps = [];
   for (const gap of gapStations) {
-    const matches = rowsByStationName.get(normalizeStationName(gap.stationName)) ?? [];
+    const matches = rows.filter((row) => matchesGap(source, gap, row));
     if (matches.length === 0) {
       unmatchedGaps.push(gap);
       continue;
@@ -235,22 +236,13 @@ function appendCsvRow(table, row, field) {
 }
 
 function normalizeStationName(value) {
-  return removeParenthetical(String(value).normalize("NFKC"))
-    .replace(/역$/u, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .toLocaleLowerCase("ko-KR");
+  return String(value).normalize("NFKC").trim().toLocaleLowerCase("ko-KR");
 }
 
-function removeParenthetical(value) {
-  let result = value;
-  let open = result.indexOf("(");
-  while (open >= 0) {
-    const close = result.indexOf(")", open + 1);
-    if (close < 0) break;
-    result = result.slice(0, open) + result.slice(close + 1);
-    open = result.indexOf("(");
-  }
-  return result;
+function matchesGap(source, gap, row) {
+  return source.operatorNames.includes(row.operatorName)
+    && source.lineNames[gap.lnCd] === row.lineName
+    && normalizeStationName(gap.stationName) === normalizeStationName(row.stationName);
 }
 
 function providerTuple(value) {

@@ -13,7 +13,7 @@
       "operatorCode": "GX",
       "state": "OFFICIAL_SOURCE_WAF_BLOCKED",
       "officialSourceUrl": "https://www.gtx-a.com/stationIF.do?lineCd=L09",
-      "observedAt": "2026-07-31",
+      "observedAt": "2026-07-30T21:07:01Z",
       "providerTuples": ["GX/A/X101", "GX/A/X102", "GX/A/X103", "GX/A/X105", "GX/A/X106"]
     },
     {

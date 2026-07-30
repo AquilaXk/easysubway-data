@@ -5,7 +5,7 @@
   "datasetId": "15041389",
   "detailUrl": "https://www.data.go.kr/data/15041389/fileData.do",
   "downloadUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003513540&fileDetailSn=1&insertDataPrcus=N",
-  "capturedAt": "2026-07-30T20:56:33.261Z",
+  "capturedAt": "2026-07-30T21:10:27.097Z",
   "official": true,
   "credentialRequired": false,
   "credentialRedacted": true,
@@ -15,180 +15,7 @@
   "contentSha256": "aca2844a3b35f5920303a35b5c278f77103d0ef24369d5469245f3bdccc3dd97",
   "schemaFingerprint": "b5741cf38fd3710ac8c5363e1bbd380ae5db9f44e2348b96953e68b7b15c4fba",
   "rowCount": 370,
-  "matchedGaps": [
-    {
-      "railOprIsttCd": "KR",
-      "lnCd": "K1",
-      "stinCd": "K209",
-      "resultCode": "03",
-      "stationName": "청량리",
-      "rowCount": 2,
-      "providerRecordHash": "7c3aad7dfdf6c041c88942d34ec4f97f93de881e6be3588ffb8247363a710b6c",
-      "providerRecords": [
-        {
-          "operatorName": "서울교통공사",
-          "lineName": "1호선",
-          "stationName": "청량리(서울시립대입구)",
-          "exitNumber": "2",
-          "detailLocation": "2번 출구 측",
-          "capacityPeople": "13",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "서울교통공사",
-          "lineName": "1호선",
-          "stationName": "청량리(서울시립대입구)",
-          "exitNumber": "6",
-          "detailLocation": "6번 출구 측",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        }
-      ]
-    },
-    {
-      "railOprIsttCd": "KR",
-      "lnCd": "K2",
-      "stinCd": "119",
-      "resultCode": "03",
-      "stationName": "광운대",
-      "rowCount": 1,
-      "providerRecordHash": "6cf33e358b2ed47d80ef92d609ed920b2c38241bb55b311edc58e51e538eba6f",
-      "providerRecords": [
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "광운대",
-          "exitNumber": "2",
-          "detailLocation": "소요산방면 4호차 옆",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        }
-      ]
-    },
-    {
-      "railOprIsttCd": "KR",
-      "lnCd": "K2",
-      "stinCd": "K117",
-      "resultCode": "03",
-      "stationName": "청량리",
-      "rowCount": 2,
-      "providerRecordHash": "7c3aad7dfdf6c041c88942d34ec4f97f93de881e6be3588ffb8247363a710b6c",
-      "providerRecords": [
-        {
-          "operatorName": "서울교통공사",
-          "lineName": "1호선",
-          "stationName": "청량리(서울시립대입구)",
-          "exitNumber": "2",
-          "detailLocation": "2번 출구 측",
-          "capacityPeople": "13",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "서울교통공사",
-          "lineName": "1호선",
-          "stationName": "청량리(서울시립대입구)",
-          "exitNumber": "6",
-          "detailLocation": "6번 출구 측",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        }
-      ]
-    },
-    {
-      "railOprIsttCd": "KR",
-      "lnCd": "K2",
-      "stinCd": "K118",
-      "resultCode": "03",
-      "stationName": "회기",
-      "rowCount": 4,
-      "providerRecordHash": "ae9a535c5ba86cfbfab6cf17931717a162efef6cd1b39106034be6fb5c05c7d7",
-      "providerRecords": [
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "1",
-          "detailLocation": "자유통로(2층) <-> 외부(경희대1번 출구)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "2",
-          "detailLocation": "자유통로(2층) <-> 외부(삼육대 2번출구)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "내부",
-          "detailLocation": "맞이방(2층) <-> 경원승강장(1층)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "내부",
-          "detailLocation": "맞이방(2층) <-> 중앙선승강장(1층)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        }
-      ]
-    },
-    {
-      "railOprIsttCd": "KR",
-      "lnCd": "K4",
-      "stinCd": "K118",
-      "resultCode": "03",
-      "stationName": "회기",
-      "rowCount": 4,
-      "providerRecordHash": "ae9a535c5ba86cfbfab6cf17931717a162efef6cd1b39106034be6fb5c05c7d7",
-      "providerRecords": [
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "1",
-          "detailLocation": "자유통로(2층) <-> 외부(경희대1번 출구)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "2",
-          "detailLocation": "자유통로(2층) <-> 외부(삼육대 2번출구)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "내부",
-          "detailLocation": "맞이방(2층) <-> 경원승강장(1층)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        },
-        {
-          "operatorName": "코레일",
-          "lineName": "1호선",
-          "stationName": "회기",
-          "exitNumber": "내부",
-          "detailLocation": "맞이방(2층) <-> 중앙선승강장(1층)",
-          "capacityPeople": "15",
-          "capacityWeight": "1000"
-        }
-      ]
-    }
-  ],
+  "matchedGaps": [],
   "unmatchedGaps": [
     {
       "railOprIsttCd": "KR",
@@ -200,6 +27,13 @@
     {
       "railOprIsttCd": "KR",
       "lnCd": "K1",
+      "stinCd": "K209",
+      "resultCode": "03",
+      "stationName": "청량리"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K1",
       "stinCd": "K222",
       "resultCode": "03",
       "stationName": "복정(동서울대학)"
@@ -207,9 +41,37 @@
     {
       "railOprIsttCd": "KR",
       "lnCd": "K2",
+      "stinCd": "119",
+      "resultCode": "03",
+      "stationName": "광운대"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
+      "stinCd": "K117",
+      "resultCode": "03",
+      "stationName": "청량리"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
+      "stinCd": "K118",
+      "resultCode": "03",
+      "stationName": "회기"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K2",
       "stinCd": "K119",
       "resultCode": "03",
       "stationName": "중랑"
+    },
+    {
+      "railOprIsttCd": "KR",
+      "lnCd": "K4",
+      "stinCd": "K118",
+      "resultCode": "03",
+      "stationName": "회기"
     },
     {
       "railOprIsttCd": "KR",

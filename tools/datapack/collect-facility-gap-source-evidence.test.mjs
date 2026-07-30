@@ -15,35 +15,40 @@ const gaps = {
   sourceId: "kric-station-convenience-standard",
   observedAt: "2026-07-29T20:16:45.595Z",
   workflowRunUrl: "https://github.com/AquilaXk/easysubway/actions/runs/30487251281",
+  resultCodeInterpretation: "UNDEFINED_NOT_ABSENCE",
   gaps: [
     { railOprIsttCd: "GU", lnCd: "8", stinCd: "2805", resultCode: "03" },
-    { railOprIsttCd: "KR", lnCd: "K1", stinCd: "K209", resultCode: "03" },
+    { railOprIsttCd: "KR", lnCd: "1", stinCd: "116", resultCode: "03" },
   ],
 };
 
 const routeRosters = {
   rosters: [{ stations: [
     { railOprIsttCd: "GU", lnCd: "8", stinCd: "2805", stinNm: "다라" },
-    { railOprIsttCd: "KR", lnCd: "K1", stinCd: "K209", stinNm: "가나" },
+    { railOprIsttCd: "KR", lnCd: "1", stinCd: "116", stinNm: "가나" },
   ] }],
 };
 
-test("official KR·GU source는 exact gap station을 immutable evidence로 결속한다", async () => {
+test("official source는 operator·line·station이 모두 같은 gap만 결속한다", async () => {
   const sources = {
-    "korail-station-facilities": [
+    "korail-station-facilities": { matchedCount: 0, csv: [
       "역명,엘리베이터,에스컬레이터,휠체어리프트,장애인경사로",
       "가나,2,3,0,Y",
-    ].join("\n"),
-    "kric-capital-line8-elevators": [
+    ].join("\n") },
+    "kric-capital-line8-elevators": { matchedCount: 1, csv: [
       "철도운영기관명,선명,역명,출입구번호,상세위치,정원_인원,정원_중량",
       "구리도시공사,8호선,다라,1,대합실,15,1000",
-    ].join("\n"),
-    "kric-capital-line1-elevators": [
+      "남양주도시공사,8호선,다라,2,환승통로,15,1000",
+      "구리도시공사,8호선,다라(별칭)역,3,승강장,15,1000",
+    ].join("\n") },
+    "kric-capital-line1-elevators": { matchedCount: 1, csv: [
       "철도운영기관명,선명,역명,출입구번호,상세위치,정원_인원,정원_중량",
-      "한국철도공사,1호선,가나,1,대합실,15,1000",
-    ].join("\n"),
+      "코레일,1호선,가나,1,대합실,15,1000",
+      "서울교통공사,1호선,가나,2,환승통로,15,1000",
+      "코레일,1호선,가나(별칭)역,3,승강장,15,1000",
+    ].join("\n") },
   };
-  for (const [sourceId, csv] of Object.entries(sources)) {
+  for (const [sourceId, { matchedCount, csv }] of Object.entries(sources)) {
     const snapshot = await collectFacilityGapSourceEvidence({
       sourceId,
       gapEvidence: gaps,
@@ -57,14 +62,15 @@ test("official KR·GU source는 exact gap station을 immutable evidence로 결�
     assert.equal(snapshot.sourceId, sourceId);
     assert.equal(snapshot.capturedAt, "2026-07-31T00:00:00.000Z");
     assert.equal(snapshot.absenceEvidenceMode, "EXHAUSTIVE_LIST");
-    assert.equal(snapshot.rowCount, 1);
-    assert.equal(snapshot.matchedGaps.length, 1);
-    assert.deepEqual(snapshot.unmatchedGaps, []);
-    assert.equal(snapshot.matchedGaps[0].providerRecords.length, 1);
+    assert.equal(snapshot.matchedGaps.length, matchedCount);
+    assert.equal(snapshot.unmatchedGaps.length, 1 - matchedCount);
     assert.match(snapshot.rawSha256, /^[0-9a-f]{64}$/);
     assert.match(snapshot.contentSha256, /^[0-9a-f]{64}$/);
-    assert.match(snapshot.matchedGaps[0].providerRecordHash, /^[0-9a-f]{64}$/);
-    assert.match(formatGapClassification(snapshot), new RegExp(`matched=.*${snapshot.matchedGaps[0].stationName}`));
+    if (matchedCount === 1) {
+      assert.equal(snapshot.matchedGaps[0].providerRecords.length, 1);
+      assert.match(snapshot.matchedGaps[0].providerRecordHash, /^[0-9a-f]{64}$/);
+      assert.match(formatGapClassification(snapshot), new RegExp(`matched=.*${snapshot.matchedGaps[0].stationName}`));
+    }
   }
 });
 

@@ -358,6 +358,14 @@ test("provider gap evidence는 exact 24 tuple과 operator 분포를 고정한다
     ...evidence,
     gaps: evidence.gaps.map((gap, index) => index === 0 ? { ...gap, resultCode: "00" } : gap),
   }), /provider gap resultCode must be 03/);
+  assert.throws(() => validateKricAccessibilityProviderGapEvidence({
+    ...evidence,
+    resultCodeInterpretation: undefined,
+  }), /provider gap evidence is invalid/);
+  assert.throws(() => validateKricAccessibilityProviderGapEvidence({
+    ...evidence,
+    resultCodeInterpretation: "ABSENCE",
+  }), /provider gap evidence is invalid/);
 });
 
 test("header 없는 provider resultCode 00도 absence evidence로 인정하지 않는다", async () => {

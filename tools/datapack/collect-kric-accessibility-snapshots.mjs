@@ -30,6 +30,7 @@ export function validateKricAccessibilityProviderGapEvidence(evidence) {
   if (evidence?.schemaVersion !== 1
     || evidence?.artifactKind !== "kric-accessibility-provider-gap-evidence"
     || evidence?.sourceId !== "kric-station-convenience-standard"
+    || evidence?.resultCodeInterpretation !== "UNDEFINED_NOT_ABSENCE"
     || !Array.isArray(evidence?.gaps) || evidence.gaps.length === 0) {
     throw new Error("KRIC accessibility provider gap evidence is invalid");
   }
