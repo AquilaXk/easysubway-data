@@ -112,6 +112,22 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
   const s1 = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "S1");
   assert.equal(s1.state, "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED");
   assert.deepEqual(s1.providerTuples, ["S1/2/234-4"]);
+  const kric = s1.kricRouteRosterObservation;
+  assert.equal(
+    `${kric.providerRecord.railOprIsttCd}/${kric.providerRecord.lnCd}/${kric.providerRecord.stinCd}`,
+    s1.providerTuples[0],
+  );
+  assert.equal(kric.providerScope.lineId, "seoul-2");
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(kric.providerRecord)).digest("hex"),
+    kric.providerRecordHash,
+  );
+  assert.deepEqual(
+    routeMap.positions
+      .filter(({ lineId, stationName }) => lineId === kric.providerScope.lineId && stationName === kric.providerRecord.stinNm)
+      .map(({ stationId }) => stationId),
+    [s1.canonicalStationId],
+  );
   assert.deepEqual(
     routeMap.positions
       .filter(({ stationId }) => stationId === s1.canonicalStationId)

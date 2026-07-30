@@ -34,6 +34,33 @@
       "operatorCode": "S1",
       "state": "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED",
       "providerTuples": ["S1/2/234-4"],
+      "kricRouteRosterObservation": {
+        "sourceId": "kric-subway-route-info",
+        "capturedAt": "2026-07-30T20:39:26.676Z",
+        "providerScopeCount": 45,
+        "requestCount": 36,
+        "providerScope": {
+          "lineId": "seoul-2",
+          "regionId": "capital",
+          "operatorId": "seoul-metro",
+          "mreaWideCd": "01",
+          "lnCd": "2",
+          "railOprIsttCd": "S1"
+        },
+        "requestRawSha256": "f0a15898cd3a148a48b1338347a3287cd3c2016119a4d3ac64c35dc4d7e38367",
+        "requestSchemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
+        "providerRecordHash": "3673252431c48350fc774795287c496f32f83aba1113df0bbe742ebc70096974",
+        "providerRecord": {
+          "lnCd": "2",
+          "mreaWideCd": "01",
+          "railOprIsttCd": "S1",
+          "routCd": "2",
+          "routNm": "2호선",
+          "stinCd": "234-4",
+          "stinConsOrdr": 15,
+          "stinNm": "까치산"
+        }
+      },
       "canonicalStationId": "station-b35616704ce3",
       "canonicalMemberships": [
         { "lineId": "seoul-2", "stationCode": "200", "stationName": "까치산" },
