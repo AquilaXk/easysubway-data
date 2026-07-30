@@ -89,8 +89,7 @@ export async function collectGuriStationFacilityEvidence({
 function parseStationPage(html, { key, stationName }) {
   const visibleHtml = html
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+    .replace(/<(script|style|template|textarea|noscript|iframe|object)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
   const escapedName = stationName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const sectionPattern = new RegExp(
     `<div class="cts${key}_wrap subway_table">\\s*<h3[^>]*>\\s*${escapedName}역\\s*</h3>`,
