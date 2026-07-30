@@ -16,6 +16,10 @@ const stationSequenceEvidence = JSON.parse(await readFile(
   new URL("./sources/korail-itx-cheongchun-station-sequence-20260713.json", import.meta.url),
   "utf8",
 ));
+const topologyEvidence = JSON.parse(await readFile(
+  new URL("./itx-cheongchun-topology-evidence.json", import.meta.url),
+  "utf8",
+));
 const admittedFixtureUrl = new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url);
 
 test("deterministic ADMITTED fixture는 test-only이며 production evidence에 연결되지 않는다", async () => {
@@ -37,35 +41,30 @@ test("deterministic ADMITTED fixture는 test-only이며 production evidence에 �
     id: "test-only-itx-cheongchun-admitted-v1",
     sha256Source: "FIXTURE_FILE_BYTES",
   });
-  // #2068 노선도 재설계로 번들 pack이 바뀌면 이 test-only fixture의 pack pin도
-  // 함께 갱신해야 한다(build-datapack의 --test-only-itx-admission 검증이
-  // 라이브 pack 바이트와 대조한다). production evidence가 아니라 fixture 격리
-  // 계약이므로, 값은 현재 번들 pack에서 직접 계산해 대조한다.
-  const canonicalPackGzip = await readFile(
-    new URL("../../apps/mobile/assets/datapacks/capital.sqlite.gz", import.meta.url),
-  );
   assert.deepEqual(fixture.canonicalPackIdentity, {
-    id: "capital",
-    sha256: createHash("sha256").update(canonicalPackGzip).digest("hex"),
-    sqliteSha256: createHash("sha256")
-      .update(gunzipSync(canonicalPackGzip))
-      .digest("hex"),
+    id: topologyEvidence.pack.id,
+    sha256: topologyEvidence.pack.outputSha256,
+    sqliteSha256: topologyEvidence.pack.outputSqliteSha256,
   });
 
   const forbiddenProductionSurfaces = [
-    "./source-inventory.json",
-    "./release/candidate-build-spec.json",
-    "./release/capital-production-reviewed-pack.json",
-    "../../apps/mobile/assets/datapacks/source-inventory.json",
-    "../../apps/mobile/assets/datapacks/index.json",
-    "../../release/product-gates/production-datapack-scope.json",
+    new URL("./source-inventory.json", import.meta.url),
+    new URL("./release/candidate-build-spec.json", import.meta.url),
+    new URL("./release/capital-production-reviewed-pack.json", import.meta.url),
   ];
-  for (const relativePath of forbiddenProductionSurfaces) {
-    const productionText = await readFile(new URL(relativePath, import.meta.url), "utf8");
+  if (process.env.EASYSUBWAY_DATAPACK_OUTPUT) {
+    forbiddenProductionSurfaces.push(path.join(process.env.EASYSUBWAY_DATAPACK_OUTPUT, "current.json"));
+  }
+  if (process.env.EASYSUBWAY_DATAPACK_SCOPE_POLICY) {
+    forbiddenProductionSurfaces.push(path.resolve(root, process.env.EASYSUBWAY_DATAPACK_SCOPE_POLICY));
+  }
+  for (const productionSurface of forbiddenProductionSurfaces) {
+    const productionText = await readFile(productionSurface, "utf8");
     assert.doesNotMatch(productionText, /test-only-itx-cheongchun-admitted\.json/);
     assert.equal(productionText.includes(fixture.timetableArtifactIdentity.id), false,
-      `${relativePath}에 test-only fixture artifact ID가 연결됐다`);
-    assert.equal(productionText.includes(fixtureSha256), false, `${relativePath}에 test-only fixture hash가 연결됐다`);
+      `${productionSurface}에 test-only fixture artifact ID가 연결됐다`);
+    assert.equal(productionText.includes(fixtureSha256), false,
+      `${productionSurface}에 test-only fixture hash가 연결됐다`);
   }
 });
 
@@ -325,19 +324,27 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
   });
 });
 
-test("ITX-청춘 admission pin은 historical source를 보존하고 readmission chain은 현행 pack과 일치한다", async () => {
-  const canonicalPackBytes = await readFile(new URL(
-    "../../apps/mobile/assets/datapacks/capital.sqlite.gz",
-    import.meta.url,
-  ));
+test("ITX-청춘 admission pin은 historical source를 보존하고 release candidate pack과 일치한다", {
+  skip: process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
+    ? false
+    : "release-candidate pack identity에서만 검증한다",
+}, async () => {
+  const output = process.env.EASYSUBWAY_DATAPACK_OUTPUT;
+  assert.ok(output, "release candidate datapack output이 필요하다");
+  const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
+  const activePack = manifest.packs.find((pack) => pack.id === manifest.activePack.id
+    && pack.version === manifest.activePack.version);
+  assert.ok(activePack, "release candidate active pack을 찾지 못함");
+  const canonicalPackPath = path.join(
+    output,
+    "catalog",
+    `${activePack.id}-v${activePack.version}.sqlite.gz`,
+  );
+  const canonicalPackBytes = await readFile(canonicalPackPath);
   const canonicalPackSha256 = createHash("sha256").update(canonicalPackBytes).digest("hex");
   const canonicalPackSqliteSha256 = createHash("sha256")
     .update(gunzipSync(canonicalPackBytes))
     .digest("hex");
-  const topologyEvidence = JSON.parse(await readFile(new URL(
-    "./itx-cheongchun-topology-evidence.json",
-    import.meta.url,
-  ), "utf8"));
   assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
     id: "capital",
     sourceIssue: 2097,
@@ -360,6 +367,7 @@ test("ITX-청춘 admission pin은 historical source를 보존하고 readmission 
   await execFileAsync(process.execPath, [
     "tools/datapack/readmit-bundled-pack-identity.mjs",
     "--check",
+    "--pack", canonicalPackPath,
   ], { cwd: root });
 });
 
