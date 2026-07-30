@@ -732,6 +732,10 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
 
   const provenance = step("Data Pack Release / Stage candidate provenance");
   assert.match(provenance, /current\.provenance\.json/);
+  assert.match(
+    provenance,
+    /if:\s*\$\{\{ steps\.release-mode\.outputs\.is-pointer-only != 'true' && steps\.release-mode\.outputs\.mode != 'production-publish' \}\}/,
+  );
   assert.match(step("Data Pack Release / Validate source snapshot freshness"), /mode == 'release-candidate'/);
   const accessibility = step("Data Pack Release / Validate accessibility source coverage");
   assert.match(accessibility, /mode == 'release-candidate'/);

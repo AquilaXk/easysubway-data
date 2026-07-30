@@ -691,7 +691,7 @@ jobs:
             --freshness-policy release/product-gates/datapack-freshness-sla.json
 
       - name: Data Pack Release / Stage candidate provenance
-        if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
+        if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
         run: |
           set -euo pipefail
           cp "${EASYSUBWAY_DATAPACK_OUTPUT}/current.provenance.json" "${EASYSUBWAY_DATAPACK_STAGE}/current.provenance.json"
