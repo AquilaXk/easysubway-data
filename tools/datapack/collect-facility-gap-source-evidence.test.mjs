@@ -105,6 +105,8 @@ test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
 test("미해결 provider evidence는 production admission을 fail closed하고 S1은 canonical station으로 결속한다", async () => {
   const evidence = JSON.parse(await readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)));
   const routeMap = JSON.parse(await readFile(new URL("./sources/seoul-metro-route-map-positions-20260724.json", import.meta.url)));
+  const kricSnapshot = JSON.parse(await readFile(new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url)));
+  const seoulSnapshot = JSON.parse(await readFile(new URL("./sources/seoul-metro-facility-location-20260730T214010816Z.json", import.meta.url)));
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
   assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR"]);
@@ -121,6 +123,12 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
     positionsSha256: "fb04a674e9e1ccf7491e1a20ac87cb79604edbbe31517d712fc290f919ee6398",
   });
   const kric = s1.kricRouteRosterObservation;
+  assert.equal(kricSnapshot.credentialRedacted, true);
+  assert.deepEqual(
+    [kricSnapshot.sourceId, kricSnapshot.capturedAt, kricSnapshot.providerScopeCount, kricSnapshot.requestCount],
+    [kric.sourceId, kric.capturedAt, kric.providerScopeCount, kric.requestCount],
+  );
+  assert.deepEqual(kricSnapshot.providerScopes.filter(({ lineId }) => lineId === "seoul-2"), [kric.providerScope]);
   assert.deepEqual(
     [kric.capturedAt, kric.requestRawSha256, kric.requestSchemaFingerprint, kric.providerRecordHash],
     [
@@ -130,18 +138,20 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
       "3673252431c48350fc774795287c496f32f83aba1113df0bbe742ebc70096974",
     ],
   );
-  assert.equal(
-    `${kric.providerRecord.railOprIsttCd}/${kric.providerRecord.lnCd}/${kric.providerRecord.stinCd}`,
-    s1.providerTuples[0],
-  );
+  const roster = kricSnapshot.rosters.find(({ mreaWideCd, lnCd }) => mreaWideCd === "01" && lnCd === "2");
+  assert.deepEqual([roster.rawSha256, roster.schemaFingerprint], [kric.requestRawSha256, kric.requestSchemaFingerprint]);
+  const kricRecords = roster.stations.filter(({ railOprIsttCd, lnCd, stinCd }) =>
+    `${railOprIsttCd}/${lnCd}/${stinCd}` === s1.providerTuples[0]);
+  assert.equal(kricRecords.length, 1);
+  const [kricRecord] = kricRecords;
   assert.equal(kric.providerScope.lineId, "seoul-2");
   assert.equal(
-    createHash("sha256").update(JSON.stringify(kric.providerRecord)).digest("hex"),
+    createHash("sha256").update(JSON.stringify(kricRecord)).digest("hex"),
     kric.providerRecordHash,
   );
   assert.deepEqual(
     routeMap.positions
-      .filter(({ lineId, stationName }) => lineId === kric.providerScope.lineId && stationName === kric.providerRecord.stinNm)
+      .filter(({ lineId, stationName }) => lineId === kric.providerScope.lineId && stationName === kricRecord.stinNm)
       .map(({ stationId }) => stationId),
     [s1.canonicalStationId],
   );
@@ -151,15 +161,26 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
       .map(({ lineId, stationCode, stationName }) => ({ lineId, stationCode, stationName })),
     s1.canonicalMemberships,
   );
-  assert.equal(s1.officialSourceObservation.rowCount, 865);
+  const observation = s1.officialSourceObservation;
+  assert.equal(seoulSnapshot.credentialRedacted, true);
+  assert.deepEqual(
+    [seoulSnapshot.sourceId, seoulSnapshot.snapshotId, seoulSnapshot.capturedAt, seoulSnapshot.rowCount,
+      seoulSnapshot.rawSha256, seoulSnapshot.contentSha256, seoulSnapshot.schemaFingerprint],
+    [observation.sourceId, observation.sourceSnapshot.replace(".json", ""), observation.capturedAt, observation.rowCount,
+      observation.rawSha256, observation.contentSha256, observation.schemaFingerprint],
+  );
+  const seoulRecords = seoulSnapshot.stations.filter(({ stationName, lineName, providerStationCode }) =>
+    stationName === kricRecord.stinNm && lineName === "5호선" && providerStationCode === "2519");
+  assert.equal(seoulRecords.length, 1);
+  const [seoulRecord] = seoulRecords;
   assert.equal(
-    createHash("sha256").update(JSON.stringify(s1.officialSourceRecord)).digest("hex"),
+    createHash("sha256").update(JSON.stringify(seoulRecord)).digest("hex"),
     s1.officialSourceRecordHash,
   );
   assert.equal(s1.officialSourceRecordHash, "022b531ce285bbf03ba6699236753d1874fd2d453d6a988e4a66e54d9978a375");
   assert.deepEqual(
-    { lineName: s1.officialSourceRecord.lineName, providerStationCode: s1.officialSourceRecord.providerStationCode },
+    { lineName: seoulRecord.lineName, providerStationCode: seoulRecord.providerStationCode },
     { lineName: "5호선", providerStationCode: "2519" },
   );
-  assert.equal(s1.officialSourceRecord.facilities.length, 4);
+  assert.equal(seoulRecord.facilities.length, 4);
 });

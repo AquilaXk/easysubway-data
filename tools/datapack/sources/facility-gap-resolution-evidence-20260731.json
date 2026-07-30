@@ -6,7 +6,9 @@
   "evaluatedSourceSnapshots": [
     "korail-station-facilities-gap-evidence-20260731.json",
     "kric-capital-line1-elevators-gap-evidence-20260731.json",
-    "kric-capital-line8-elevators-gap-evidence-20260731.json"
+    "kric-capital-line8-elevators-gap-evidence-20260731.json",
+    "kric-nationwide-route-rosters-20260730T203926676Z.json",
+    "seoul-metro-facility-location-20260730T214010816Z.json"
   ],
   "blockedGroups": [
     {
@@ -36,6 +38,7 @@
       "providerTuples": ["S1/2/234-4"],
       "kricRouteRosterObservation": {
         "sourceId": "kric-subway-route-info",
+        "sourceSnapshot": "kric-nationwide-route-rosters-20260730T203926676Z.json",
         "capturedAt": "2026-07-30T20:39:26.676Z",
         "providerScopeCount": 45,
         "requestCount": 36,
@@ -49,17 +52,7 @@
         },
         "requestRawSha256": "f0a15898cd3a148a48b1338347a3287cd3c2016119a4d3ac64c35dc4d7e38367",
         "requestSchemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764",
-        "providerRecordHash": "3673252431c48350fc774795287c496f32f83aba1113df0bbe742ebc70096974",
-        "providerRecord": {
-          "lnCd": "2",
-          "mreaWideCd": "01",
-          "railOprIsttCd": "S1",
-          "routCd": "2",
-          "routNm": "2호선",
-          "stinCd": "234-4",
-          "stinConsOrdr": 15,
-          "stinNm": "까치산"
-        }
+        "providerRecordHash": "3673252431c48350fc774795287c496f32f83aba1113df0bbe742ebc70096974"
       },
       "canonicalStationId": "station-b35616704ce3",
       "canonicalMemberships": [
@@ -75,6 +68,7 @@
       },
       "officialSourceObservation": {
         "sourceId": "seoul-metro-facility-location",
+        "sourceSnapshot": "seoul-metro-facility-location-20260730T214010816Z.json",
         "sourceUrl": "https://apis.data.go.kr/B553766/facility/getFcElvtr",
         "sourceSnapshotId": "seoul-metro-facility-location-20260730T214010816Z",
         "capturedAt": "2026-07-30T21:40:10.816Z",
@@ -83,18 +77,7 @@
         "contentSha256": "a68b3c35ac1b73c130f993120db2af1d817a23876c465d4376101cc10bab15db",
         "schemaFingerprint": "0a8ee6d5d7feb5c7374aa6d5384c6427d4a5d687a011b52bef10d19356f94dde"
       },
-      "officialSourceRecordHash": "022b531ce285bbf03ba6699236753d1874fd2d453d6a988e4a66e54d9978a375",
-      "officialSourceRecord": {
-        "stationName": "까치산",
-        "lineName": "5호선",
-        "providerStationCode": "2519",
-        "facilities": [
-          { "operational": true, "situationCode": "M", "situation": "사용가능", "pathDescription": "고색안전실 측" },
-          { "operational": true, "situationCode": "M", "situation": "사용가능", "pathDescription": "내부 상선측" },
-          { "operational": true, "situationCode": "M", "situation": "사용가능", "pathDescription": "내부 하선측" },
-          { "operational": true, "situationCode": "M", "situation": "사용가능", "pathDescription": "대합실(1,2,3,4번 출입구 화장실 방향)" }
-        ]
-      }
+      "officialSourceRecordHash": "022b531ce285bbf03ba6699236753d1874fd2d453d6a988e4a66e54d9978a375"
     }
   ],
   "resultCodeInterpretation": "UNDEFINED_NOT_ABSENCE",
