@@ -54,7 +54,7 @@ export async function collectGuriStationFacilityEvidence({
     if (!response?.ok) throw new Error(`official Guri station HTTP status is invalid: ${tuple}`);
     const rawBytes = new Uint8Array(await response.arrayBuffer());
     const html = new TextDecoder("utf-8", { fatal: true }).decode(rawBytes);
-    const { elevatorCount, escalatorCount } = parseStationPage(html, station.stationName);
+    const { elevatorCount, escalatorCount } = parseStationPage(html, station);
     records.push({
       providerTuple: tuple,
       stationName: station.stationName,
@@ -86,16 +86,24 @@ export async function collectGuriStationFacilityEvidence({
   };
 }
 
-function parseStationPage(html, stationName) {
+function parseStationPage(html, { key, stationName }) {
   const visibleHtml = html
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
   const escapedName = stationName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!new RegExp(`<h3[^>]*>\\s*${escapedName}역\\s*</h3>`).test(visibleHtml)) {
+  const sectionPattern = new RegExp(
+    `<div class="cts${key}_wrap subway_table">\\s*<h3[^>]*>\\s*${escapedName}역\\s*</h3>`,
+    "g",
+  );
+  const sections = [...visibleHtml.matchAll(sectionPattern)];
+  if (sections.length !== 1) {
     throw new Error(`official Guri station page is invalid: ${stationName}`);
   }
-  const text = visibleHtml
+  const remainder = visibleHtml.slice(sections[0].index + sections[0][0].length);
+  const nextSection = remainder.search(/<div class="cts\d+_wrap subway_table">/);
+  const table = /<table\b[^>]*>([\s\S]*?)<\/table>/i.exec(nextSection < 0 ? remainder : remainder.slice(0, nextSection));
+  const text = (table?.[1] ?? "")
     .replace(/<[^>]+>/g, " ")
     .replaceAll("&nbsp;", " ")
     .replace(/\s+/g, " ");

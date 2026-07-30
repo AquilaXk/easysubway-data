@@ -32,12 +32,13 @@ const routeRosters = {
   ] }],
 };
 
-const page = (stationName, elevatorCount, escalatorCount) => `
-  <html><body>
+const keys = new Map([["구리", "7231"], ["동구릉", "7232"], ["장자호수공원", "7196"]]);
+const page = (stationName, elevatorCount, escalatorCount, key = keys.get(stationName) ?? "9999") => `
+  <html><body><div class="cts${key}_wrap subway_table">
     <h3>${stationName}역</h3>
     <table><tr><th>승강기 안내</th><td>엘리베이터 ${elevatorCount}대, 에스컬레이터 ${escalatorCount}대</td></tr>
     <tr><th>운영기관</th><td>구리도시공사 교통사업부</td></tr></table>
-  </body></html>`;
+  </div></body></html>`;
 
 test("구리시청 세 station page를 exact GU tuple evidence로 고정한다", async () => {
   const pages = new Map([
@@ -89,6 +90,11 @@ test("URL·title·operator drift를 snapshot 전에 거부한다", async () => {
     gapEvidence: gaps,
     routeRosters,
     fetchImpl: async () => new Response(`<script>${page("구리", 6, 11)}</script>${page("다른역", 1, 1)}`),
+  }), /official Guri station page is invalid/);
+  await assert.rejects(() => collectGuriStationFacilityEvidence({
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async () => new Response(`${page("다른역", 1, 1)}${page("구리", 6, 11)}${page("구리", 7, 12)}`),
   }), /official Guri station page is invalid/);
   await assert.rejects(() => collectGuriStationFacilityEvidence({
     gapEvidence: {
