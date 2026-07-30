@@ -5,7 +5,20 @@ import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_ENDPOINT = "https://apis.data.go.kr/B553766/wksn/getWksnElvtr";
+const SOURCES = {
+  accessibility: {
+    endpoint: "https://apis.data.go.kr/B553766/wksn/getWksnElvtr",
+    sourceId: "seoul-metro-accessibility",
+    artifactKind: "seoul-accessibility-snapshot",
+    schemaFields: ["dtlPstn", "lineNm", "oprtngSitu", "stnNm"],
+  },
+  "facility-location": {
+    endpoint: "https://apis.data.go.kr/B553766/facility/getFcElvtr",
+    sourceId: "seoul-metro-facility-location",
+    artifactKind: "seoul-facility-location-snapshot",
+    schemaFields: ["dtlPstn", "lineNm", "oprtngSitu", "stnCd", "stnNm"],
+  },
+};
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const INVALID_RESPONSE = "Seoul accessibility API response invalid";
 const INVALID_OUTPUT_PATH = "output path must stay within allowed root";
@@ -23,7 +36,8 @@ const OPERATION_SITUATION_STATES = new Map([
 ]);
 const REMOVED_OPERATION_SITUATION = "D";
 
-export function normalizeAccessibilityRows(rows) {
+export function normalizeAccessibilityRows(rows, { source = "accessibility" } = {}) {
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
   if (!Array.isArray(rows)) {
     throw new Error(INVALID_RESPONSE);
   }
@@ -32,8 +46,11 @@ export function normalizeAccessibilityRows(rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       throw new Error(`${INVALID_RESPONSE}: row`);
     }
-    const { lineNm, stnNm, oprtngSitu, dtlPstn } = row;
-    for (const [field, value] of Object.entries({ lineNm, stnNm, dtlPstn })) {
+    const { lineNm, stnNm, stnCd, oprtngSitu, dtlPstn } = row;
+    const requiredFields = source === "facility-location"
+      ? { lineNm, stnNm, stnCd, dtlPstn }
+      : { lineNm, stnNm, dtlPstn };
+    for (const [field, value] of Object.entries(requiredFields)) {
       if (typeof value !== "string" || value.trim() === "") {
         throw new Error(`${INVALID_RESPONSE}: requiredField:${field}`);
       }
@@ -54,6 +71,7 @@ export function normalizeAccessibilityRows(rows) {
     normalized.push({
       stationName: stnNm.trim(),
       lineName: lineNm.trim(),
+      ...(source === "facility-location" ? { providerStationCode: stnCd.trim() } : {}),
       operational: state.operational,
       situationCode: state.situationCode,
       situation: state.situation,
@@ -63,7 +81,13 @@ export function normalizeAccessibilityRows(rows) {
   return normalized;
 }
 
-export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, rawSha256, previousSnapshot = null }) {
+export function buildAccessibilitySnapshot(
+  rows,
+  retrievedAt,
+  { source = "accessibility", rawRowCount, rawSha256, previousSnapshot = null },
+) {
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
+  const sourceConfig = SOURCES[source];
   if (
     !Array.isArray(rows) ||
     rows.some(
@@ -73,6 +97,8 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
         row.stationName.trim() === "" ||
         typeof row.lineName !== "string" ||
         row.lineName.trim() === "" ||
+        (source === "facility-location" &&
+          (typeof row.providerStationCode !== "string" || row.providerStationCode.trim() === "")) ||
         !(
           (typeof row.operational === "boolean" &&
             typeof row.situationCode === "string" &&
@@ -93,7 +119,7 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
     throw new Error(`${INVALID_RESPONSE}: rawIdentity`);
   }
   const retrievedMillis = Date.parse(retrievedAt);
-  const snapshotId = `seoul-metro-accessibility-${typeof retrievedAt === "string" ? retrievedAt.replaceAll(/[-:.]/g, "") : ""}`;
+  const snapshotId = `${sourceConfig.sourceId}-${typeof retrievedAt === "string" ? retrievedAt.replaceAll(/[-:.]/g, "") : ""}`;
   if (typeof retrievedAt !== "string"
     || !Number.isFinite(retrievedMillis)
     || new Date(retrievedMillis).toISOString() !== retrievedAt) {
@@ -102,13 +128,13 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
   let previousSnapshotId = null;
   if (previousSnapshot !== null) {
     const previousMillis = Date.parse(previousSnapshot?.retrievedAt);
-    const previousFullId = `seoul-metro-accessibility-${typeof previousSnapshot?.retrievedAt === "string"
+    const previousFullId = `${sourceConfig.sourceId}-${typeof previousSnapshot?.retrievedAt === "string"
       ? previousSnapshot.retrievedAt.replaceAll(/[-:.]/g, "") : ""}`;
-    const previousLegacyId = `seoul-metro-accessibility-${typeof previousSnapshot?.retrievedAt === "string"
+    const previousLegacyId = `${sourceConfig.sourceId}-${typeof previousSnapshot?.retrievedAt === "string"
       ? previousSnapshot.retrievedAt.slice(0, 10).replaceAll("-", "") : ""}`;
     if (previousSnapshot?.schemaVersion !== 1
-      || previousSnapshot?.artifactKind !== "seoul-accessibility-snapshot"
-      || previousSnapshot?.sourceId !== "seoul-metro-accessibility"
+      || previousSnapshot?.artifactKind !== sourceConfig.artifactKind
+      || previousSnapshot?.sourceId !== sourceConfig.sourceId
       || !Number.isFinite(previousMillis)
       || new Date(previousMillis).toISOString() !== previousSnapshot.retrievedAt
       || ![previousFullId, previousLegacyId].includes(previousSnapshot.snapshotId)
@@ -118,11 +144,15 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
     previousSnapshotId = previousSnapshot.snapshotId;
   }
   const stationsByIdentity = new Map();
+  const stationIdentity = (station) => `${station.lineName}\0${station.stationName}${
+    source === "facility-location" ? `\0${station.providerStationCode}` : ""
+  }`;
   for (const row of rows) {
-    const key = `${row.lineName}\0${row.stationName}`;
+    const key = stationIdentity(row);
     const station = stationsByIdentity.get(key) ?? {
       stationName: row.stationName,
       lineName: row.lineName,
+      ...(source === "facility-location" ? { providerStationCode: row.providerStationCode } : {}),
       facilities: [],
     };
     station.facilities.push({
@@ -134,7 +164,7 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
     stationsByIdentity.set(key, station);
   }
   const stations = [...stationsByIdentity.values()].sort((left, right) => (
-    compare(`${left.lineName}\0${left.stationName}`, `${right.lineName}\0${right.stationName}`)
+    compare(stationIdentity(left), stationIdentity(right))
   ));
   for (const station of stations) {
     station.facilities.sort((left, right) => compare(JSON.stringify(left), JSON.stringify(right)));
@@ -142,8 +172,8 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
   const contentSha256 = hash(stations);
   return {
     schemaVersion: 1,
-    artifactKind: "seoul-accessibility-snapshot",
-    sourceId: "seoul-metro-accessibility",
+    artifactKind: sourceConfig.artifactKind,
+    sourceId: sourceConfig.sourceId,
     snapshotId,
     previousSnapshotId,
     retrievedAt,
@@ -156,7 +186,7 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
     normalizedRowCount: rows.length,
     rawSha256,
     contentSha256,
-    schemaFingerprint: hash(["dtlPstn", "lineNm", "oprtngSitu", "stnNm"]),
+    schemaFingerprint: hash(sourceConfig.schemaFields),
     stations,
   };
 }
@@ -164,9 +194,15 @@ export function buildAccessibilitySnapshot(rows, retrievedAt, { rawRowCount, raw
 export async function collectSeoulAccessibility({
   endpoint,
   serviceKey,
+  source = "accessibility",
   fetchImpl = fetch,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 }) {
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
+  const sourceConfig = SOURCES[source];
+  if (source === "facility-location" && endpoint !== sourceConfig.endpoint) {
+    throw new Error(`${INVALID_RESPONSE}: endpoint`);
+  }
   const endpointUrl = new URL(endpoint);
   if (endpointUrl.protocol !== "https:") {
     throw new Error("HTTPS endpoint is required");
@@ -223,7 +259,7 @@ export async function collectSeoulAccessibility({
       rowIdentities.add(rowIdentity);
     }
     rawPages.push({ pageNo, totalCount: pageTotal, rawSha256: hashText(raw) });
-    const normalizedRows = normalizeAccessibilityRows(rows);
+    const normalizedRows = normalizeAccessibilityRows(rows, { source });
     collected.push(...normalizedRows);
     receivedCount += rows.length;
     if (receivedCount > totalCount || (receivedCount < totalCount && rows.length === 0)) {
@@ -240,6 +276,7 @@ export async function collectSeoulAccessibility({
 export async function writeSeoulAccessibilityEvidence({
   endpoint,
   serviceKey,
+  source = "accessibility",
   output,
   outputRoot = REPOSITORY_ROOT,
   fetchImpl = fetch,
@@ -247,8 +284,19 @@ export async function writeSeoulAccessibilityEvidence({
   previousSnapshot = null,
 }) {
   const { outputPath: requestedOutputPath } = await validatedOutputPath(output, outputRoot);
-  const collected = await collectSeoulAccessibility({ endpoint, serviceKey, fetchImpl });
-  const snapshot = buildAccessibilitySnapshot(collected.rows, retrievedAt, { ...collected, previousSnapshot });
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
+  const sourceConfig = SOURCES[source];
+  const collected = await collectSeoulAccessibility({
+    endpoint: endpoint ?? sourceConfig.endpoint,
+    serviceKey,
+    source,
+    fetchImpl,
+  });
+  const snapshot = buildAccessibilitySnapshot(collected.rows, retrievedAt, {
+    source,
+    ...collected,
+    previousSnapshot,
+  });
   const outputPath = extname(requestedOutputPath) === ".json"
     ? requestedOutputPath
     : join(requestedOutputPath, `${snapshot.snapshotId}.json`);
@@ -356,17 +404,20 @@ function compare(left, right) {
 }
 
 async function main() {
-  const previousSnapshotArgument = process.argv.length === 8
-    && process.argv[6] === "--previous-snapshot";
+  const sourceArgument = process.argv[6] === "--source";
+  const previousSnapshotIndex = sourceArgument ? 8 : 6;
+  const previousSnapshotArgument = process.argv[previousSnapshotIndex] === "--previous-snapshot";
   if (
-    (process.argv.length !== 6 && !previousSnapshotArgument) ||
+    ![6, sourceArgument ? 8 : -1, previousSnapshotArgument ? previousSnapshotIndex + 2 : -1].includes(process.argv.length) ||
     process.argv[2] !== "--output" ||
     process.argv[4] !== "--output-root"
   ) {
     throw new Error(
-      "usage: collect-seoul-accessibility-evidence.mjs --output <path-or-directory> --output-root <path> [--previous-snapshot <repository-relative-path>]",
+      "usage: collect-seoul-accessibility-evidence.mjs --output <path-or-directory> --output-root <path> [--source <accessibility|facility-location>] [--previous-snapshot <repository-relative-path>]",
     );
   }
+  const source = sourceArgument ? process.argv[7] : "accessibility";
+  if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
   const serviceKey = process.env.DATA_GO_KR_SERVICE_KEY;
   if (!serviceKey) {
     throw new Error("DATA_GO_KR_SERVICE_KEY env is required");
@@ -374,14 +425,14 @@ async function main() {
   let previousSnapshot = null;
   if (previousSnapshotArgument) {
     const canonicalSourceRoot = await realpath(SOURCE_SNAPSHOT_ROOT);
-    const canonicalPreviousPath = await realpath(resolve(REPOSITORY_ROOT, process.argv[7]));
+    const canonicalPreviousPath = await realpath(resolve(REPOSITORY_ROOT, process.argv[previousSnapshotIndex + 1]));
     if (!isPathWithin(canonicalSourceRoot, canonicalPreviousPath)) {
       throw new Error(`${INVALID_RESPONSE}: snapshotIdentity`);
     }
     previousSnapshot = JSON.parse(await readFile(canonicalPreviousPath, "utf8"));
   }
   await writeSeoulAccessibilityEvidence({
-    endpoint: DEFAULT_ENDPOINT,
+    source,
     serviceKey,
     output: process.argv[3],
     outputRoot: process.argv[5],

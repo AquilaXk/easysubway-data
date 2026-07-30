@@ -23,6 +23,24 @@ test("collector rejects non-HTTPS endpoints", async () => {
   );
 });
 
+test("collector rejects unknown sources before fetching", async () => {
+  let fetched = false;
+  for (const source of ["other", "toString", "constructor"]) {
+    await assert.rejects(
+      collectSeoulAccessibility({
+        endpoint: "https://apis.data.go.kr/example",
+        serviceKey: "secret",
+        source,
+        fetchImpl: async () => {
+          fetched = true;
+        },
+      }),
+      /Seoul accessibility API response invalid: source/,
+    );
+  }
+  assert.equal(fetched, false);
+});
+
 test("collector redacts request details from network failures", async () => {
   await assert.rejects(
     collectSeoulAccessibility({
@@ -385,6 +403,74 @@ test("snapshot contains sorted full-scope evidence and hashes", () => {
   assert.doesNotMatch(JSON.stringify(snapshot), /serviceKey|https?:\/\//);
 });
 
+test("facility-location snapshot preserves the provider station code under a distinct source identity", () => {
+  const rows = normalizeAccessibilityRows(
+    [{ lineNm: "2호선", stnNm: "신정네거리", stnCd: "0249", oprtngSitu: "M", dtlPstn: "대합실-승강장" }],
+    { source: "facility-location" },
+  );
+  const snapshot = buildAccessibilitySnapshot(
+    rows,
+    "2026-07-29T00:00:00.000Z",
+    { source: "facility-location", rawRowCount: 1, rawSha256: "a".repeat(64) },
+  );
+
+  assert.equal(snapshot.sourceId, "seoul-metro-facility-location");
+  assert.equal(snapshot.artifactKind, "seoul-facility-location-snapshot");
+  assert.equal(snapshot.snapshotId, "seoul-metro-facility-location-20260729T000000000Z");
+  assert.equal(snapshot.stations[0].providerStationCode, "0249");
+});
+
+test("facility-location snapshot identity is stable for duplicate station names with distinct codes", () => {
+  const rows = normalizeAccessibilityRows([
+    { lineNm: "2호선", stnNm: "환승역", stnCd: "0202", oprtngSitu: "M", dtlPstn: "2번" },
+    { lineNm: "2호선", stnNm: "환승역", stnCd: "0201", oprtngSitu: "M", dtlPstn: "1번" },
+  ], { source: "facility-location" });
+  const build = (input) => buildAccessibilitySnapshot(input, "2026-07-29T00:00:00.000Z", {
+    source: "facility-location",
+    rawRowCount: 2,
+    rawSha256: "a".repeat(64),
+  });
+
+  assert.deepEqual(build(rows).stations, build([...rows].reverse()).stations);
+  assert.equal(build(rows).contentSha256, build([...rows].reverse()).contentSha256);
+});
+
+test("facility-location collection rejects endpoint overrides before fetching", async () => {
+  const outputRoot = await mkdtemp(join(tmpdir(), "easysubway-facility-location-endpoint-"));
+  let fetched = false;
+  try {
+    await assert.rejects(
+      collectSeoulAccessibility({
+        endpoint: "https://apis.data.go.kr/example",
+        serviceKey: "secret",
+        source: "facility-location",
+        fetchImpl: async () => {
+          fetched = true;
+          throw new Error("must not fetch");
+        },
+      }),
+      /endpoint/,
+    );
+    await assert.rejects(
+      writeSeoulAccessibilityEvidence({
+        endpoint: "https://apis.data.go.kr/example",
+        serviceKey: "secret",
+        source: "facility-location",
+        output: "unused.json",
+        outputRoot,
+        fetchImpl: async () => {
+          fetched = true;
+          throw new Error("must not fetch");
+        },
+      }),
+      /endpoint/,
+    );
+    assert.equal(fetched, false);
+  } finally {
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("same-day captures keep distinct timestamped files and explicit lineage", async (t) => {
   const outputRoot = await mkdtemp(join(tmpdir(), "easysubway-seoul-snapshots-"));
   t.after(() => rm(outputRoot, { recursive: true, force: true }));
@@ -465,6 +551,16 @@ test("snapshot content identity is stable when provider facility order changes",
 
   assert.deepEqual(first.stations, reversed.stations);
   assert.equal(first.contentSha256, reversed.contentSha256);
+});
+
+test("accessibility snapshot ignores facility-only provider codes in station identity", () => {
+  const snapshot = buildAccessibilitySnapshot([
+    { stationName: "사당", lineName: "4호선", providerStationCode: "A", operational: true, situationCode: "M", situation: "사용가능", pathDescription: "1번" },
+    { stationName: "사당", lineName: "4호선", providerStationCode: "B", operational: true, situationCode: "M", situation: "사용가능", pathDescription: "2번" },
+  ], "2026-07-29T00:00:00.000Z", { rawRowCount: 2, rawSha256: "a".repeat(64) });
+
+  assert.equal(snapshot.stations.length, 1);
+  assert.equal(snapshot.stations[0].facilities.length, 2);
 });
 
 test("snapshot rejects facilities without a verified or provider-missing status tuple", () => {
@@ -642,6 +738,22 @@ test("CLI requires the service key before collection", async () => {
       { env: {} },
     ),
     /DATA_GO_KR_SERVICE_KEY env is required/,
+  );
+});
+
+test("CLI rejects unknown facility-location source modes before collection", async () => {
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        collectorPath,
+        "--output", "unused.json",
+        "--output-root", tmpdir(),
+        "--source", "other",
+      ],
+      { env: { DATA_GO_KR_SERVICE_KEY: "secret" } },
+    ),
+    /Seoul accessibility API response invalid: source/,
   );
 });
 
