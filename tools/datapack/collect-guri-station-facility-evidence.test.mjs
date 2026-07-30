@@ -86,6 +86,11 @@ test("URL·title·operator drift를 snapshot 전에 거부한다", async () => {
     fetchImpl: async () => new Response(`<!--${page("구리", 6, 11)}-->`),
   }), /official Guri station page is invalid/);
   await assert.rejects(() => collectGuriStationFacilityEvidence({
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async () => new Response(`<script>${page("구리", 6, 11)}</script>${page("다른역", 1, 1)}`),
+  }), /official Guri station page is invalid/);
+  await assert.rejects(() => collectGuriStationFacilityEvidence({
     gapEvidence: {
       ...gaps,
       gaps: [...gaps.gaps, { railOprIsttCd: "GU", lnCd: "8", stinCd: "2810", resultCode: "03" }],

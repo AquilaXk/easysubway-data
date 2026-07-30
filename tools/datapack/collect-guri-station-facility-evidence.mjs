@@ -87,14 +87,15 @@ export async function collectGuriStationFacilityEvidence({
 }
 
 function parseStationPage(html, stationName) {
-  const visibleHtml = html.replace(/<!--[\s\S]*?-->/g, " ");
+  const visibleHtml = html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
   const escapedName = stationName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (!new RegExp(`<h3[^>]*>\\s*${escapedName}역\\s*</h3>`).test(visibleHtml)) {
     throw new Error(`official Guri station page is invalid: ${stationName}`);
   }
   const text = visibleHtml
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replaceAll("&nbsp;", " ")
     .replace(/\s+/g, " ");
