@@ -97,6 +97,27 @@ test("official source URL·schema·exact join drift는 snapshot 전에 거부한
   }), /official source columns are invalid/);
 });
 
+test("official source transport failure는 allowlisted code만 노출한다", async () => {
+  const failure = Object.assign(new Error("never-print-provider-detail"), { code: "ENOTFOUND" });
+  await assert.rejects(collectFacilityGapSourceEvidence({
+    sourceId: "kric-capital-line1-elevators",
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async () => { throw failure; },
+  }), (error) => {
+    assert.match(error.message, /detail page request failed; code=ENOTFOUND/);
+    assert.doesNotMatch(error.message, /never-print-provider-detail/);
+    assert.equal(error.cause, failure);
+    return true;
+  });
+  await assert.rejects(collectFacilityGapSourceEvidence({
+    sourceId: "kric-capital-line1-elevators",
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async () => { throw Object.assign(new Error("hidden"), { code: "ESECRET_TOKEN" }); },
+  }), /detail page request failed; code=UNKNOWN/);
+});
+
 test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
   assert.deepEqual(decodeCsv(new TextEncoder().encode("station")), { text: "station", encoding: "utf-8" });
   assert.deepEqual(decodeCsv(Uint8Array.from([0xbf, 0xaa, 0xb8, 0xed])), { text: "역명", encoding: "euc-kr" });

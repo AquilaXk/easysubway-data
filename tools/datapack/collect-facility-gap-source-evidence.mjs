@@ -7,6 +7,10 @@ import { validateKricAccessibilityProviderGapEvidence } from "./collect-kric-acc
 import { isMainModule } from "../lib/is-main-module.mjs";
 
 const KRIC_ELEVATOR_COLUMNS = ["철도운영기관명", "선명", "역명", "출입구번호", "상세위치", "정원_인원", "정원_중량"];
+const TRANSPORT_CODES = new Set([
+  "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "EAI_AGAIN", "ECONNREFUSED", "ECONNRESET",
+  "EHOSTUNREACH", "ENETUNREACH", "ENOTFOUND", "ETIMEDOUT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
 
 const SOURCES = Object.freeze({
   "korail-station-facilities": {
@@ -164,11 +168,16 @@ async function fetchOfficial(url, fetchImpl, label) {
   let response;
   try {
     response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
-  } catch {
-    throw new Error(`official data.go.kr ${label} request failed`);
+  } catch (error) {
+    throw new Error(`official data.go.kr ${label} request failed; code=${transportCode(error)}`, { cause: error });
   }
   if (!response?.ok) throw new Error(`official data.go.kr ${label} HTTP status is invalid`);
   return response;
+}
+
+function transportCode(error) {
+  const code = error?.cause?.code ?? error?.code;
+  return TRANSPORT_CODES.has(code) ? code : "UNKNOWN";
 }
 
 function mapGapStations(gaps, routeRosters, operatorCode) {
