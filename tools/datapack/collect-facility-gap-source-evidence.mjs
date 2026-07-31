@@ -179,7 +179,7 @@ async function fetchOfficialBytes(url, fetchImpl, label) {
 }
 
 function transportCode(error) {
-  if (error?.name === "TimeoutError" || error?.cause?.name === "TimeoutError") return "ETIMEDOUT";
+  if (["AbortError", "TimeoutError"].includes(error?.name) || error?.cause?.name === "TimeoutError") return "ETIMEDOUT";
   const code = error?.cause?.code ?? error?.code;
   return TRANSPORT_CODES.has(code) ? code : "UNKNOWN";
 }

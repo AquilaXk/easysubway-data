@@ -134,6 +134,15 @@ test("official source transport failure는 allowlisted code만 노출한다", as
     routeRosters,
     fetchImpl: async () => { throw new DOMException("timed out", "TimeoutError"); },
   }), /detail page request failed; code=ETIMEDOUT/);
+  await assert.rejects(collectFacilityGapSourceEvidence({
+    sourceId: "kric-capital-line1-elevators",
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async () => ({
+      ok: true,
+      arrayBuffer: async () => { throw new DOMException("aborted", "AbortError"); },
+    }),
+  }), /detail page request failed; code=ETIMEDOUT/);
 });
 
 test("CSV decoder는 UTF-8과 EUC-KR을 구분한다", () => {
