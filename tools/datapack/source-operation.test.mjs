@@ -603,7 +603,7 @@ test("공식 OD fare source는 재현 가능한 operation과 조회 명령을 �
   });
   assert.equal(
     runbook.operationLookupCommand,
-    "node tools/ci/api-catalog.mjs show provider:<sourceId>",
+    "node tools/datapack/source-operation.mjs show <sourceId>",
   );
   assert.match(runbook.command, /--source-class-id <sourceClassId>/);
 });
