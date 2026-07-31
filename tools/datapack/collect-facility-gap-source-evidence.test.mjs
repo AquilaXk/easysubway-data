@@ -107,7 +107,7 @@ test("official source transport failure는 allowlisted code만 노출한다", as
   }), (error) => {
     assert.match(error.message, /detail page request failed; code=ENOTFOUND/);
     assert.doesNotMatch(error.message, /never-print-provider-detail/);
-    assert.equal(error.cause, failure);
+    assert.equal(error.cause, undefined);
     return true;
   });
   await assert.rejects(collectFacilityGapSourceEvidence({

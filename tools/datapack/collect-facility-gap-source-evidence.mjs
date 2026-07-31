@@ -169,7 +169,7 @@ async function fetchOfficial(url, fetchImpl, label) {
   try {
     response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
   } catch (error) {
-    throw new Error(`official data.go.kr ${label} request failed; code=${transportCode(error)}`, { cause: error });
+    throw new Error(`official data.go.kr ${label} request failed; code=${transportCode(error)}`);
   }
   if (!response?.ok) throw new Error(`official data.go.kr ${label} HTTP status is invalid`);
   return response;
