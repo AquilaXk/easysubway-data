@@ -8,8 +8,8 @@
   "credentialRedacted": true,
   "absenceEvidenceMode": "EXACT_STATION_PAGE",
   "rowCount": 3,
-  "contentSha256": "b50760a9be3c56433480febf898586fec1b55e5626bc384200106ed9d65d72c3",
-  "schemaFingerprint": "7013d4127dd94e712da0fb6cee046ec99462c427a4a0fcb7a42069d74d5aadcf",
+  "contentSha256": "88799bdd46e34d2e2db774373d0bda85e1d40f5317d9689156bb13ac5f927058",
+  "schemaFingerprint": "3b4dde5d410893a865020e01c31a132fe65d99ee1790a86e15229fb8f7507c9e",
   "records": [
     {
       "providerTuple": "GU/8/2805",
@@ -18,7 +18,8 @@
       "elevatorCount": 6,
       "escalatorCount": 11,
       "officialUrl": "https://www.guri.go.kr/www/contents.do?key=7231",
-      "rawSha256": "dbc0448149e04b5cedd0895334103889afe79af307fdcc039127d20e680f29f3",
+      "sourcePayload": "구리역 승강기 안내 엘리베이터 6대, 에스컬레이터 11대 운영기관 구리도시공사 교통사업부",
+      "sourcePayloadSha256": "106afbf03b527ec60cb341c13ec2ec95676f6dd00c5b80d064a0c56faabe1b76",
       "providerRecordHash": "22310cfc0dbd855a2f970602927270985f331763c35ce8a49ace4d6248f74178"
     },
     {
@@ -28,7 +29,8 @@
       "elevatorCount": 4,
       "escalatorCount": 18,
       "officialUrl": "https://www.guri.go.kr/www/contents.do?key=7232",
-      "rawSha256": "285929dc321a1ae3001fa61aa4a6c07f0b9af3f1976c7c922932931db440e255",
+      "sourcePayload": "동구릉역 승강기 안내 엘리베이터 4대, 에스컬레이터 18대 운영기관 구리도시공사 교통사업부",
+      "sourcePayloadSha256": "537aed73979c3e1677759b92d2b21fe0a236f86bf892c983c02f8b02e3278471",
       "providerRecordHash": "1aff7dd228f112f0db1a8f8bf680496bd464d820e5b6a039b1839a7521779db3"
     },
     {
@@ -38,7 +40,8 @@
       "elevatorCount": 4,
       "escalatorCount": 20,
       "officialUrl": "https://www.guri.go.kr/www/contents.do?key=7196",
-      "rawSha256": "59797f1908b9537d4859caeb82fafa0a1c58a3fcdedd901435c6bcfaa658ecfc",
+      "sourcePayload": "장자호수공원역 승강기 안내 엘리베이터 4대, 에스컬레이터 20대 운영기관 구리도시공사 교통사업부",
+      "sourcePayloadSha256": "efcc6403b58226e126271d6e95d3f8191c85a64aa7deba948ab6fed0b77fed43",
       "providerRecordHash": "dc862b136ff0b4021a56fea7ffde66349f5a831e79d58691006d57bc303b2382"
     }
   ]
