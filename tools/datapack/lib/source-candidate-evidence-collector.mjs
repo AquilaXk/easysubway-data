@@ -264,6 +264,13 @@ function parseJson(raw) {
   }
 }
 
+function appendJsonChildren(pending, value) {
+  for (const child of Object.values(value)) {
+    if (pending.length === 128) return;
+    if (child && typeof child === "object") pending.push(child);
+  }
+}
+
 function findJsonFailureEnvelope(payload) {
   const pending = [payload];
   for (let cursor = 0; cursor < pending.length && cursor < 128; cursor += 1) {
@@ -273,10 +280,7 @@ function findJsonFailureEnvelope(payload) {
       && !/^(?:0+|ok|success)$/i.test(String(value.resultCode))) {
       return value;
     }
-    for (const child of Object.values(value)) {
-      if (pending.length === 128) break;
-      if (child && typeof child === "object") pending.push(child);
-    }
+    appendJsonChildren(pending, value);
   }
   return null;
 }
