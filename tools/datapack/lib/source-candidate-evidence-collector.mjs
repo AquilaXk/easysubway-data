@@ -256,6 +256,44 @@ export function buildXmlDiagnostic({ response, requestedFormat, raw, label }) {
   ].join(" ");
 }
 
+export function buildJsonDiagnostic({ response, raw, label }) {
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const pending = [payload];
+  let envelope = null;
+  for (let inspected = 0; pending.length > 0 && inspected < 128; inspected += 1) {
+    const value = pending.shift();
+    if (!value || typeof value !== "object") continue;
+    if (!Array.isArray(value) && Object.hasOwn(value, "resultCode")
+      && !/^(?:0+|ok|success)$/i.test(String(value.resultCode))) {
+      envelope = value;
+      break;
+    }
+    pending.push(...Object.values(value).filter((child) => child && typeof child === "object"));
+  }
+  if (!envelope) return null;
+  const resultCode = typeof envelope.resultCode === "string" || typeof envelope.resultCode === "number"
+    ? String(envelope.resultCode)
+    : null;
+  const resultMessage = typeof envelope.resultMsg === "string" ? envelope.resultMsg : null;
+  const safeResultCode = resultCode == null
+    ? MISSING_PLACEHOLDER
+    : SAFE_RESULT_CODE.test(resultCode) ? resultCode : SAFE_PLACEHOLDER;
+  const httpStatus = Number.isInteger(response.status) && response.status >= 100 && response.status <= 599
+    ? response.status
+    : SAFE_PLACEHOLDER;
+  return [
+    label.replace("XML", "JSON"),
+    `httpStatus=${httpStatus}`,
+    `resultCode=${safeResultCode}`,
+    `classification=${classifyXmlFailure({ itemCount: 0, resultCode, resultMessage })}`,
+  ].join(" ");
+}
+
 export async function runEvidenceTool(scriptName, args) {
   return execFileAsync(process.execPath, [path.join(TOOL_DIRECTORY, scriptName), ...args], {
     cwd: REPOSITORY_ROOT,
@@ -329,6 +367,10 @@ export async function collectSourceCandidateEvidence({
     }
     const rawResponse = await response.text();
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
+    if (request.format === "json") {
+      const diagnostic = buildJsonDiagnostic({ response, raw: rawResponse, label: diagnosticLabel });
+      if (diagnostic) throw new Error(diagnostic);
+    }
 
     let sample;
     try {

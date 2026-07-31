@@ -27,6 +27,18 @@ test("KRIC route roster는 schema·순서·credential redaction을 검증한다"
 });
 
 test("KRIC route roster는 provider 실패·중복 순서·schema mismatch를 거부한다", async (context) => {
+  await context.test("sanitized transport failure", async () => {
+    await assert.rejects(collectKricRouteRoster({
+      mreaWideCd: "01", lnCd: "K2", serviceKey: "never-print-kric-key",
+      fetchImpl: async () => {
+        throw Object.assign(new Error("never-print-kric-key"), { code: "ENOTFOUND" });
+      },
+    }), (error) => {
+      assert.match(error.message, /transport failure; code=ENOTFOUND/);
+      assert.doesNotMatch(error.message, /never-print-kric-key/);
+      return true;
+    });
+  });
   await context.test("provider failure", async () => {
     await assert.rejects(collectKricRouteRoster({
       mreaWideCd: "01", lnCd: "K2", serviceKey: "key",

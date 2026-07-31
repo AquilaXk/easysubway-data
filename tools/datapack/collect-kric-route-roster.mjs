@@ -71,10 +71,15 @@ async function fetchWithRetry(url, fetchImpl) {
     try {
       return await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml,text/xml" } });
     } catch (error) {
-      if (attempt === 1) throw new Error("KRIC route roster transport failure", { cause: error });
+      if (attempt === 1) throw new Error(`KRIC route roster transport failure; code=${transportCode(error)}`, { cause: error });
     }
   }
   throw new Error("KRIC route roster transport failure");
+}
+
+function transportCode(error) {
+  const code = error?.cause?.code ?? error?.code;
+  return /^[A-Z0-9_]{1,32}$/.test(code ?? "") ? code : "UNKNOWN";
 }
 
 function scalar(raw, field) {
