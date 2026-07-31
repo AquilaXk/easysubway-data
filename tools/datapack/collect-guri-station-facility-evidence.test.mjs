@@ -114,6 +114,25 @@ test("URL·title·operator drift를 snapshot 전에 거부한다", async () => {
     fetchImpl: async () => new Response(`${page("다른역", 1, 1)}${page("구리", 6, 11)}${page("구리", 7, 12)}`),
   }), /official Guri station page is invalid/);
   await assert.rejects(() => collectGuriStationFacilityEvidence({
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async (url) => {
+      assert.equal(url.searchParams.get("key"), "7231");
+      return new Response(page("구리", 6, 11).replace("<table>", "</div><table>"));
+    },
+  }), /official Guri station page is invalid/);
+  await assert.rejects(() => collectGuriStationFacilityEvidence({
+    gapEvidence: gaps,
+    routeRosters,
+    fetchImpl: async (url) => {
+      assert.equal(url.searchParams.get("key"), "7231");
+      return new Response(page("구리", 6, 11).replace(
+        "</table>",
+        "<tr><th>승강기 안내</th><td>엘리베이터 7대, 에스컬레이터 12대</td></tr></table>",
+      ));
+    },
+  }), /official Guri station page is invalid/);
+  await assert.rejects(() => collectGuriStationFacilityEvidence({
     gapEvidence: {
       ...gaps,
       gaps: [...gaps.gaps, { railOprIsttCd: "GU", lnCd: "8", stinCd: "2810", resultCode: "03" }],

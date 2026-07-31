@@ -128,17 +128,27 @@ function parseStationPage(html, { key, stationName }) {
   if (sections.length !== 1) {
     throw new Error(`official Guri station page is invalid: ${stationName}`);
   }
-  const remainder = visibleHtml.slice(sections[0].index + sections[0][0].length);
-  const nextSection = remainder.search(/<div class="cts\d+_wrap subway_table">/);
-  const table = /<table\b[^>]*>([\s\S]*?)<\/table>/i.exec(nextSection < 0 ? remainder : remainder.slice(0, nextSection));
-  const text = (table?.[1] ?? "")
-    .replace(/<[^>]+>/g, " ")
-    .replaceAll("&nbsp;", " ")
-    .replace(/\s+/g, " ");
-  const facility = /승강기 안내\s*엘리베이터\s*(\d+)대,\s*에스컬레이터\s*(\d+)대/.exec(text);
-  if (!facility || !/운영기관\s*구리도시공사 교통사업부/.test(text)) {
+  const sectionStart = sections[0].index + sections[0][0].length;
+  const div = /<div\b[^>]*>|<\/div\s*>/gi;
+  div.lastIndex = sectionStart;
+  let depth = 1;
+  let sectionEnd = -1;
+  for (let tag = div.exec(visibleHtml); tag; tag = div.exec(visibleHtml)) {
+    depth += /^<div\b/i.test(tag[0]) ? 1 : -1;
+    if (depth === 0) {
+      sectionEnd = tag.index;
+      break;
+    }
+  }
+  const section = sectionEnd < 0 ? "" : visibleHtml.slice(sectionStart, sectionEnd);
+  const facilities = [...section.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)]
+    .map(([, table]) => table.replace(/<[^>]+>/g, " ").replaceAll("&nbsp;", " ").replace(/\s+/g, " "))
+    .filter((text) => /운영기관\s*구리도시공사 교통사업부/.test(text))
+    .flatMap((text) => [...text.matchAll(/승강기 안내\s*엘리베이터\s*(\d+)대,\s*에스컬레이터\s*(\d+)대/g)]);
+  if (facilities.length !== 1) {
     throw new Error(`official Guri station page is invalid: ${stationName}`);
   }
+  const [facility] = facilities;
   const elevatorCount = Number(facility[1]);
   const escalatorCount = Number(facility[2]);
   if (!Number.isSafeInteger(elevatorCount) || elevatorCount < 1
