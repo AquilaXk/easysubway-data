@@ -7,17 +7,12 @@
     "korail-station-facilities-gap-evidence-20260731.json",
     "kric-capital-line1-elevators-gap-evidence-20260731.json",
     "kric-capital-line8-elevators-gap-evidence-20260731.json",
+    "guri-city-station-facility-evidence-20260731.json",
     "kric-nationwide-route-rosters-20260730T203926676Z.json",
     "seoul-metro-route-map-positions-20260724.json",
     "seoul-metro-facility-location-20260730T214010816Z.json"
   ],
   "blockedGroups": [
-    {
-      "operatorCode": "GU",
-      "state": "OFFICIAL_SOURCE_EXACT_TUPLE_UNMATCHED",
-      "sourceSnapshots": ["kric-capital-line8-elevators-gap-evidence-20260731.json"],
-      "providerTuples": ["GU/8/2805", "GU/8/2807", "GU/8/2808"]
-    },
     {
       "operatorCode": "GX",
       "state": "OFFICIAL_SOURCE_WAF_BLOCKED",
@@ -33,6 +28,28 @@
     }
   ],
   "resolvedGroups": [
+    {
+      "operatorCode": "GU",
+      "state": "OFFICIAL_SOURCE_EXACT_TUPLE_MATCHED",
+      "providerTuples": ["GU/8/2805", "GU/8/2807", "GU/8/2808"],
+      "kricRouteRosterObservation": {
+        "sourceId": "kric-subway-route-info",
+        "sourceSnapshot": "kric-nationwide-route-rosters-20260730T203926676Z.json",
+        "capturedAt": "2026-07-30T20:39:26.676Z",
+        "mreaWideCd": "01",
+        "lnCd": "8",
+        "rawSha256": "f296d9eca7d7147a8c4158f33ac3c079b3f50ac6d67e0a3221e5420b5622c07e",
+        "schemaFingerprint": "d516b09e782a9afd73eb0f921b48abdf2bac3aa2247e1b0ad9f0a4a7c371f764"
+      },
+      "officialSourceObservation": {
+        "sourceId": "guri-city-official-station-pages",
+        "sourceSnapshot": "guri-city-station-facility-evidence-20260731.json",
+        "capturedAt": "2026-07-30T22:55:21.335Z",
+        "rowCount": 3,
+        "contentSha256": "b50760a9be3c56433480febf898586fec1b55e5626bc384200106ed9d65d72c3",
+        "schemaFingerprint": "7013d4127dd94e712da0fb6cee046ec99462c427a4a0fcb7a42069d74d5aadcf"
+      }
+    },
     {
       "operatorCode": "S1",
       "state": "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED",

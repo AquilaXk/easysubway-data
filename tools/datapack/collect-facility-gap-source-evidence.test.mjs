@@ -106,10 +106,64 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
   const evidence = JSON.parse(await readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url)));
   const routeMap = JSON.parse(await readFile(new URL("./sources/seoul-metro-route-map-positions-20260724.json", import.meta.url)));
   const kricSnapshot = JSON.parse(await readFile(new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url)));
+  const guriSnapshot = JSON.parse(await readFile(new URL("./sources/guri-city-station-facility-evidence-20260731.json", import.meta.url)));
   const seoulSnapshot = JSON.parse(await readFile(new URL("./sources/seoul-metro-facility-location-20260730T214010816Z.json", import.meta.url)));
   assert.equal(evidence.admissionState, "BLOCKED");
   assert.equal(evidence.productionAdmissionAllowed, false);
-  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GU", "GX", "KR"]);
+  assert.deepEqual(evidence.blockedGroups.map(({ operatorCode }) => operatorCode), ["GX", "KR"]);
+
+  const gu = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "GU");
+  assert.equal(gu.state, "OFFICIAL_SOURCE_EXACT_TUPLE_MATCHED");
+  assert.deepEqual(gu.providerTuples, ["GU/8/2805", "GU/8/2807", "GU/8/2808"]);
+  const guRosters = kricSnapshot.rosters.filter(({ mreaWideCd, lnCd }) => mreaWideCd === "01" && lnCd === "8");
+  assert.equal(guRosters.length, 1);
+  const [guRoster] = guRosters;
+  assert.equal(kricSnapshot.artifactKind, "kric-nationwide-route-rosters");
+  assert.equal(guRoster.resultCode, "00");
+  assert.equal(guRoster.stationCount, guRoster.stations.length);
+  assert.deepEqual(
+    [kricSnapshot.sourceId, kricSnapshot.capturedAt, guRoster.rawSha256, guRoster.schemaFingerprint],
+    [gu.kricRouteRosterObservation.sourceId, gu.kricRouteRosterObservation.capturedAt,
+      gu.kricRouteRosterObservation.rawSha256, gu.kricRouteRosterObservation.schemaFingerprint],
+  );
+  assert.deepEqual(
+    [guriSnapshot.sourceId, guriSnapshot.capturedAt, guriSnapshot.rowCount,
+      guriSnapshot.contentSha256, guriSnapshot.schemaFingerprint],
+    [gu.officialSourceObservation.sourceId, gu.officialSourceObservation.capturedAt,
+      gu.officialSourceObservation.rowCount, gu.officialSourceObservation.contentSha256,
+      gu.officialSourceObservation.schemaFingerprint],
+  );
+  assert.equal(guriSnapshot.rowCount, guriSnapshot.records.length);
+  assert.deepEqual(
+    guriSnapshot.records.map(({ providerTuple, stationName, elevatorCount }) => (
+      { providerTuple, stationName, elevatorCount }
+    )),
+    [
+      { providerTuple: "GU/8/2805", stationName: "구리", elevatorCount: 6 },
+      { providerTuple: "GU/8/2807", stationName: "동구릉", elevatorCount: 4 },
+      { providerTuple: "GU/8/2808", stationName: "장자호수공원", elevatorCount: 4 },
+    ],
+  );
+  assert.equal(
+    guriSnapshot.contentSha256,
+    createHash("sha256").update(JSON.stringify(guriSnapshot.records)).digest("hex"),
+  );
+  assert.equal(
+    guriSnapshot.schemaFingerprint,
+    createHash("sha256").update(JSON.stringify([
+      "providerTuple", "stationName", "operatorName", "elevatorCount", "escalatorCount",
+      "officialUrl", "rawSha256", "providerRecordHash",
+    ])).digest("hex"),
+  );
+  for (const record of guriSnapshot.records) {
+    const providerRecords = guRoster.stations.filter(({ railOprIsttCd, lnCd, stinCd, stinNm }) => (
+      `${railOprIsttCd}/${lnCd}/${stinCd}` === record.providerTuple && stinNm === record.stationName
+    ));
+    assert.equal(providerRecords.length, 1);
+    const [providerRecord] = providerRecords;
+    assert.equal(createHash("sha256").update(JSON.stringify(providerRecord)).digest("hex"), record.providerRecordHash);
+    assert.equal(record.operatorName, "구리도시공사 교통사업부");
+  }
 
   const s1 = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "S1");
   assert.equal(s1.state, "OFFICIAL_SOURCE_CANONICAL_STATION_MATCHED");
