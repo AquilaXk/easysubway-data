@@ -86,14 +86,13 @@ export async function collectFacilityGapSourceEvidence({
   const evaluatedGaps = gapStations.filter((gap) => Object.hasOwn(source.lineNames, gap.lnCd));
   const outOfScopeGaps = gapStations.filter((gap) => !Object.hasOwn(source.lineNames, gap.lnCd));
 
-  const detailResponse = await fetchOfficial(new URL(source.detailUrl), fetchImpl, "detail page");
-  const detailHtml = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(await detailResponse.arrayBuffer()));
+  const detailBytes = await fetchOfficialBytes(new URL(source.detailUrl), fetchImpl, "detail page");
+  const detailHtml = new TextDecoder("utf-8", { fatal: true }).decode(detailBytes);
   if (!/이용허락범위[\s\S]{0,200}제한 없음/.test(detailHtml)) {
     throw new Error(`official source license is invalid: ${sourceId}`);
   }
   const downloadUrl = resolveOfficialDownloadUrl(detailHtml);
-  const csvResponse = await fetchOfficial(downloadUrl, fetchImpl, "CSV");
-  const rawBytes = new Uint8Array(await csvResponse.arrayBuffer());
+  const rawBytes = await fetchOfficialBytes(downloadUrl, fetchImpl, "CSV");
   const { text, encoding } = decodeCsv(rawBytes);
   const { columns, records } = parseCsv(text);
   if (source.columns.some((column) => !columns.includes(column))) {
@@ -164,7 +163,7 @@ export function formatGapClassification(snapshot) {
   ].join("\n");
 }
 
-async function fetchOfficial(url, fetchImpl, label) {
+async function fetchOfficialBytes(url, fetchImpl, label) {
   let response;
   try {
     response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
@@ -172,10 +171,15 @@ async function fetchOfficial(url, fetchImpl, label) {
     throw new Error(`official data.go.kr ${label} request failed; code=${transportCode(error)}`);
   }
   if (!response?.ok) throw new Error(`official data.go.kr ${label} HTTP status is invalid`);
-  return response;
+  try {
+    return new Uint8Array(await response.arrayBuffer());
+  } catch (error) {
+    throw new Error(`official data.go.kr ${label} request failed; code=${transportCode(error)}`);
+  }
 }
 
 function transportCode(error) {
+  if (error?.name === "TimeoutError" || error?.cause?.name === "TimeoutError") return "ETIMEDOUT";
   const code = error?.cause?.code ?? error?.code;
   return TRANSPORT_CODES.has(code) ? code : "UNKNOWN";
 }
