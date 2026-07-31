@@ -24,4 +24,4 @@ EasySubway Data는 공식 대중교통 정보를 정리해 데이터팩과 노�
 
 ## 문의
 
-데이터 출처·정정·협업 문의는 [GitHub Issues](https://github.com/AquilaXk/easysubway-data/issues)로 남겨 주세요.
+데이터 출처·정정·협업 문의는 [aquila@aquilaxk.site](mailto:aquila@aquilaxk.site)로 남겨 주세요.
