@@ -7,6 +7,10 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo";
 const FIELDS = ["lnCd", "mreaWideCd", "railOprIsttCd", "routCd", "routNm", "stinCd", "stinConsOrdr", "stinNm"];
+const TRANSPORT_CODES = new Set([
+  "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "EAI_AGAIN", "ECONNREFUSED", "ECONNRESET",
+  "EHOSTUNREACH", "ENETUNREACH", "ENOTFOUND", "ETIMEDOUT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
 
 export async function collectKricRouteRoster({ mreaWideCd, lnCd, serviceKey, fetchImpl = fetch, now = new Date() } = {}) {
   const key = requiredString(serviceKey, "KRIC_SERVICE_KEY");
@@ -71,10 +75,15 @@ async function fetchWithRetry(url, fetchImpl) {
     try {
       return await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(15_000), headers: { accept: "application/xml,text/xml" } });
     } catch (error) {
-      if (attempt === 1) throw new Error("KRIC route roster transport failure", { cause: error });
+      if (attempt === 1) throw new Error(`KRIC route roster transport failure; code=${transportCode(error)}`, { cause: error });
     }
   }
   throw new Error("KRIC route roster transport failure");
+}
+
+function transportCode(error) {
+  const code = error?.cause?.code ?? error?.code;
+  return TRANSPORT_CODES.has(code) ? code : "UNKNOWN";
 }
 
 function scalar(raw, field) {

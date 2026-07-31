@@ -351,6 +351,34 @@ test("KRIC evidence collector는 HTTP 200 XML application error를 고정된 안
   }
 });
 
+test("KRIC evidence collector는 HTTP 200 JSON diagnostic의 resultCode만 노출한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-json-envelope-"));
+  const serviceKey = "credential-sentinel-json-error";
+  try {
+    await assert.rejects(collectKricSourceCandidateEvidence({
+      candidateId: candidate.id,
+      candidatesDocument: { candidates: [candidate] },
+      runnerTemp,
+      serviceKey,
+      fetchImpl: async () => new Response(JSON.stringify([{
+        resultCode: 30,
+        resultMsg: `등록되지 않은 서비스키입니다: ${serviceKey}`,
+      }]), { status: 200, headers: { "content-type": "application/json" } }),
+    }), (error) => {
+      assert.match(error.message, /KRIC JSON diagnostic:/);
+      assert.match(error.message, /httpStatus=200/);
+      assert.match(error.message, /resultCode=30/);
+      assert.match(error.message, /classification=authorization/);
+      assert.doesNotMatch(error.message, /등록되지 않은 서비스키/);
+      assert.doesNotMatch(error.message, new RegExp(serviceKey));
+      return true;
+    });
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
 test("KRIC evidence collector는 HTTP 200 XML zero-item envelope를 application error와 구분한다", async () => {
   const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-zero-item-"));
   try {

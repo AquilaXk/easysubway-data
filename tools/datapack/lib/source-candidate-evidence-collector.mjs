@@ -256,6 +256,68 @@ export function buildXmlDiagnostic({ response, requestedFormat, raw, label }) {
   ].join(" ");
 }
 
+function parseJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function appendJsonChildren(pending, value) {
+  for (const child of Object.values(value)) {
+    if (pending.length === 128) return;
+    if (child && typeof child === "object") pending.push(child);
+  }
+}
+
+function findJsonFailureEnvelope(payload) {
+  const pending = [payload];
+  for (let cursor = 0; cursor < pending.length && cursor < 128; cursor += 1) {
+    const value = pending[cursor];
+    if (!value || typeof value !== "object") continue;
+    if (!Array.isArray(value) && Object.hasOwn(value, "resultCode")
+      && !/^(?:0+|ok|success)$/i.test(String(value.resultCode))) {
+      return value;
+    }
+    appendJsonChildren(pending, value);
+  }
+  return null;
+}
+
+function jsonResultCode(value) {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  return String(value);
+}
+
+function safeResultCode(resultCode) {
+  if (resultCode == null) return MISSING_PLACEHOLDER;
+  if (SAFE_RESULT_CODE.test(resultCode)) return resultCode;
+  return SAFE_PLACEHOLDER;
+}
+
+export function buildJsonDiagnostic({ response, raw, label }) {
+  const envelope = findJsonFailureEnvelope(parseJson(raw));
+  if (!envelope) return null;
+  const resultCode = jsonResultCode(envelope.resultCode);
+  const resultMessage = typeof envelope.resultMsg === "string" ? envelope.resultMsg : null;
+  const httpStatus = Number.isInteger(response.status) && response.status >= 100 && response.status <= 599
+    ? response.status
+    : SAFE_PLACEHOLDER;
+  return [
+    label.replace("XML", "JSON"),
+    `httpStatus=${httpStatus}`,
+    `resultCode=${safeResultCode(resultCode)}`,
+    `classification=${classifyXmlFailure({ itemCount: 0, resultCode, resultMessage })}`,
+  ].join(" ");
+}
+
+function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel }) {
+  if (request.format !== "json") return;
+  const diagnostic = buildJsonDiagnostic({ response, raw: rawResponse, label: diagnosticLabel });
+  if (diagnostic) throw new Error(diagnostic);
+}
+
 export async function runEvidenceTool(scriptName, args) {
   return execFileAsync(process.execPath, [path.join(TOOL_DIRECTORY, scriptName), ...args], {
     cwd: REPOSITORY_ROOT,
@@ -329,6 +391,7 @@ export async function collectSourceCandidateEvidence({
     }
     const rawResponse = await response.text();
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
+    assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel });
 
     let sample;
     try {
