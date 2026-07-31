@@ -7,6 +7,10 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const ENDPOINT = "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayRouteInfo";
 const FIELDS = ["lnCd", "mreaWideCd", "railOprIsttCd", "routCd", "routNm", "stinCd", "stinConsOrdr", "stinNm"];
+const TRANSPORT_CODES = new Set([
+  "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "EAI_AGAIN", "ECONNREFUSED", "ECONNRESET",
+  "EHOSTUNREACH", "ENETUNREACH", "ENOTFOUND", "ETIMEDOUT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
 
 export async function collectKricRouteRoster({ mreaWideCd, lnCd, serviceKey, fetchImpl = fetch, now = new Date() } = {}) {
   const key = requiredString(serviceKey, "KRIC_SERVICE_KEY");
@@ -79,7 +83,7 @@ async function fetchWithRetry(url, fetchImpl) {
 
 function transportCode(error) {
   const code = error?.cause?.code ?? error?.code;
-  return /^[A-Z0-9_]{1,32}$/.test(code ?? "") ? code : "UNKNOWN";
+  return TRANSPORT_CODES.has(code) ? code : "UNKNOWN";
 }
 
 function scalar(raw, field) {

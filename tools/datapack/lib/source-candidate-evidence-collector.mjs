@@ -265,15 +265,18 @@ export function buildJsonDiagnostic({ response, raw, label }) {
   }
   const pending = [payload];
   let envelope = null;
-  for (let inspected = 0; pending.length > 0 && inspected < 128; inspected += 1) {
-    const value = pending.shift();
+  for (let cursor = 0; cursor < pending.length && cursor < 128; cursor += 1) {
+    const value = pending[cursor];
     if (!value || typeof value !== "object") continue;
     if (!Array.isArray(value) && Object.hasOwn(value, "resultCode")
       && !/^(?:0+|ok|success)$/i.test(String(value.resultCode))) {
       envelope = value;
       break;
     }
-    pending.push(...Object.values(value).filter((child) => child && typeof child === "object"));
+    for (const child of Object.values(value)) {
+      if (pending.length === 128) break;
+      if (child && typeof child === "object") pending.push(child);
+    }
   }
   if (!envelope) return null;
   const resultCode = typeof envelope.resultCode === "string" || typeof envelope.resultCode === "number"
