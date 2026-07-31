@@ -22,10 +22,22 @@ const gaps = {
 
 const routeRosters = {
   schemaVersion: 1,
-  artifactKind: "kric-nationwide-route-roster-snapshot",
+  artifactKind: "kric-nationwide-route-rosters",
   sourceId: "kric-subway-route-info",
   capturedAt: "2026-07-30T20:39:26.676Z",
-  rosters: [{ stations: [
+  credentialRedacted: true,
+  providerScopes: [{ mreaWideCd: "01", lnCd: "8", railOprIsttCd: "GU" }],
+  rosters: [{
+    schemaVersion: 1,
+    artifactKind: "kric-route-roster",
+    sourceId: "kric-subway-route-info",
+    mreaWideCd: "01",
+    lnCd: "8",
+    capturedAt: "2026-07-30T20:39:26.676Z",
+    resultCode: "00",
+    credentialRedacted: true,
+    stationCount: 3,
+    stations: [
     { railOprIsttCd: "GU", lnCd: "8", stinCd: "2805", stinNm: "구리" },
     { railOprIsttCd: "GU", lnCd: "8", stinCd: "2807", stinNm: "동구릉" },
     { railOprIsttCd: "GU", lnCd: "8", stinCd: "2808", stinNm: "장자호수공원" },
@@ -117,4 +129,21 @@ test("URL·title·operator drift를 snapshot 전에 거부한다", async () => {
     routeRosters,
     fetchImpl: async () => assert.fail("unexpected request"),
   }), /official Guri gap set is invalid/);
+});
+
+test("KRIC roster provenance와 01/8 scope drift를 요청 전에 거부한다", async () => {
+  for (const invalidRouteRosters of [
+    { ...routeRosters, artifactKind: "other" },
+    { ...routeRosters, sourceId: "other" },
+    { ...routeRosters, capturedAt: "invalid" },
+    { ...routeRosters, providerScopes: [] },
+    { ...routeRosters, rosters: [...routeRosters.rosters, routeRosters.rosters[0]] },
+    { ...routeRosters, rosters: [{ ...routeRosters.rosters[0], resultCode: "03" }] },
+  ]) {
+    await assert.rejects(() => collectGuriStationFacilityEvidence({
+      gapEvidence: gaps,
+      routeRosters: invalidRouteRosters,
+      fetchImpl: async () => assert.fail("unexpected request"),
+    }), /official Guri KRIC route roster is invalid/);
+  }
 });

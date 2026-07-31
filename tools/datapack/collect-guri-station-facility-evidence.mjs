@@ -31,7 +31,7 @@ export async function collectGuriStationFacilityEvidence({
     .filter(({ railOprIsttCd }) => railOprIsttCd === "GU")
     .map((gap) => [providerTuple(gap), gap]));
   if (gaps.size !== STATIONS.length) throw new Error("official Guri gap set is invalid");
-  const rosterStations = (routeRosters?.rosters ?? []).flatMap(({ stations = [] }) => stations);
+  const rosterStations = validatedGuriRoster(routeRosters).stations;
   const capturedAt = now.toISOString();
   if (!Number.isFinite(Date.parse(capturedAt))) throw new Error("capture time is invalid");
 
@@ -84,6 +84,35 @@ export async function collectGuriStationFacilityEvidence({
     ]),
     records,
   };
+}
+
+function validatedGuriRoster(snapshot) {
+  const validCapture = Number.isFinite(Date.parse(snapshot?.capturedAt));
+  const scopes = Array.isArray(snapshot?.providerScopes) ? snapshot.providerScopes : [];
+  const rosters = Array.isArray(snapshot?.rosters)
+    ? snapshot.rosters.filter(({ mreaWideCd, lnCd }) => mreaWideCd === "01" && lnCd === "8")
+    : [];
+  const scopeCount = scopes.filter(({ mreaWideCd, lnCd, railOprIsttCd }) => (
+    mreaWideCd === "01" && lnCd === "8" && railOprIsttCd === "GU"
+  )).length;
+  const [roster] = rosters;
+  if (snapshot?.schemaVersion !== 1
+    || snapshot?.artifactKind !== "kric-nationwide-route-rosters"
+    || snapshot?.sourceId !== "kric-subway-route-info"
+    || snapshot?.credentialRedacted !== true
+    || !validCapture
+    || scopeCount !== 1
+    || rosters.length !== 1
+    || roster?.schemaVersion !== 1
+    || roster?.artifactKind !== "kric-route-roster"
+    || roster?.sourceId !== snapshot.sourceId
+    || roster?.capturedAt !== snapshot.capturedAt
+    || roster?.resultCode !== "00"
+    || roster?.credentialRedacted !== true
+    || roster?.stationCount !== roster?.stations?.length) {
+    throw new Error("official Guri KRIC route roster is invalid");
+  }
+  return roster;
 }
 
 function parseStationPage(html, { key, stationName }) {
