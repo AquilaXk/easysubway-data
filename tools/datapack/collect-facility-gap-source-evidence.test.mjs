@@ -134,8 +134,16 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
       gu.officialSourceObservation.schemaFingerprint],
   );
   assert.equal(guriSnapshot.rowCount, guriSnapshot.records.length);
-  assert.deepEqual(guriSnapshot.records.map(({ providerTuple }) => providerTuple), gu.providerTuples);
-  assert.equal(new Set(guriSnapshot.records.map(({ providerTuple }) => providerTuple)).size, gu.providerTuples.length);
+  assert.deepEqual(
+    guriSnapshot.records.map(({ providerTuple, stationName, elevatorCount }) => (
+      { providerTuple, stationName, elevatorCount }
+    )),
+    [
+      { providerTuple: "GU/8/2805", stationName: "구리", elevatorCount: 6 },
+      { providerTuple: "GU/8/2807", stationName: "동구릉", elevatorCount: 4 },
+      { providerTuple: "GU/8/2808", stationName: "장자호수공원", elevatorCount: 4 },
+    ],
+  );
   assert.equal(
     guriSnapshot.contentSha256,
     createHash("sha256").update(JSON.stringify(guriSnapshot.records)).digest("hex"),
@@ -155,7 +163,6 @@ test("미해결 provider evidence는 production admission을 fail closed하고 S
     const [providerRecord] = providerRecords;
     assert.equal(createHash("sha256").update(JSON.stringify(providerRecord)).digest("hex"), record.providerRecordHash);
     assert.equal(record.operatorName, "구리도시공사 교통사업부");
-    assert.ok(record.elevatorCount > 0);
   }
 
   const s1 = evidence.resolvedGroups.find(({ operatorCode }) => operatorCode === "S1");
