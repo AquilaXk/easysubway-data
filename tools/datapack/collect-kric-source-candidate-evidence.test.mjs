@@ -861,3 +861,99 @@ test("KRIC evidence collector는 전송 실패도 분류와 근거를 남긴다"
     }
   }
 });
+
+test("KRIC evidence collector는 JSON evidence builder 실패에도 분류와 근거를 남긴다", async () => {
+  const builderFailures = [
+    ["깨진 JSON", '{"items": [{'],
+    ["빈 객체", "{}"],
+    ["빈 배열", "[]"],
+  ];
+
+  for (const [label, body] of builderFailures) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-json-builder-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+          },
+        }),
+        (error) => {
+          assert.match(error.message, /failureClass=request-error/, label);
+          assert.match(error.message, /controlOperation=not-run/, label);
+          assert.match(error.message, /build-source-candidate-sample-evidence\.mjs/, label);
+          assert.doesNotMatch(error.message, /Aa0/, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 1, label);
+      await assertCollectorCleanup(runnerTemp);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 sanitized sample 검증 실패에도 분류와 근거를 남긴다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-json-validator-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => new Response(JSON.stringify([{ railOprIsttCd: "S1" }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /output field missing: "railOprIsttNm"/);
+        assert.match(error.message, /failureClass=request-error/);
+        assert.match(error.message, /controlOperation=not-run/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 body 전송 실패도 전송 오류로 분류한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-body-transport-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => {
+            throw Object.assign(new Error("terminated"), { cause: { code: "ECONNRESET" } });
+          },
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /failureClass=transport-error/);
+        assert.match(error.message, /controlOperation=not-run/);
+        assert.doesNotMatch(error.message, /Aa0/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});

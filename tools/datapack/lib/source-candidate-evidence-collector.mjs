@@ -424,6 +424,14 @@ async function providerFailureEvidence({ controlOperation, serviceKey, fetchImpl
   return ` ${formatProviderFailureEvidence(diagnosis)}`;
 }
 
+// provider 응답을 입력으로 삼는 실패에 분류를 붙인다. 근거가 비어 있으면(=provider 계약 미선언)
+// 원래 오류를 그대로 올려 기존 redaction 동작을 바꾸지 않는다.
+async function classifiedProviderError(error, { failureEvidence, response, raw, format }) {
+  const evidence = await failureEvidence({ response, raw, format });
+  if (!evidence) return error;
+  return new Error(`${error instanceof Error ? error.message : String(error)}${evidence}`);
+}
+
 async function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence }) {
   if (request.format !== "json") return;
   const diagnostic = buildJsonDiagnostic({ response, raw: rawResponse, label: diagnosticLabel });
@@ -507,14 +515,28 @@ export async function collectSourceCandidateEvidence({
       });
     } catch (error) {
       // DNS·TLS·redirect 거부·timeout은 응답 분기 전에 reject된다. 분류 없이 빠져나가지 않게 근거를 붙인다.
-      const evidence = await failureEvidence({ response: null, raw: null, format: request.format });
-      if (!evidence) throw error;
-      throw new Error(`${error instanceof Error ? error.message : String(error)}${evidence}`);
+      throw await classifiedProviderError(error, {
+        failureEvidence,
+        response: null,
+        raw: null,
+        format: request.format,
+      });
     }
     if (!response.ok) {
       throw new Error(`${requestFailureLabel} ${response.status}${await failureEvidence({ response, raw: null, format: request.format })}`);
     }
-    const rawResponse = await response.text();
+    let rawResponse;
+    try {
+      rawResponse = await response.text();
+    } catch (error) {
+      // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
+      throw await classifiedProviderError(error, {
+        failureEvidence,
+        response: null,
+        raw: null,
+        format: request.format,
+      });
+    }
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
     await assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence });
 
@@ -532,16 +554,31 @@ export async function collectSourceCandidateEvidence({
         const evidence = await failureEvidence({ response, raw: rawResponse, format: request.format });
         throw new Error(`${error instanceof Error ? error.message : String(error)} ${diagnostic}${evidence}`);
       }
-      throw error;
+      throw await classifiedProviderError(error, {
+        failureEvidence,
+        response,
+        raw: rawResponse,
+        format: request.format,
+      });
     }
-    JSON.parse(sample);
-    await writeFile(stagedSamplePath, sample, { mode: 0o600 });
 
-    const { stdout: report } = await runEvidenceTool(validateScriptName, [
-      "--candidate", candidateId,
-      "--candidates", candidatesPath,
-      "--sample", stagedSamplePath,
-    ]);
+    let report;
+    try {
+      JSON.parse(sample);
+      await writeFile(stagedSamplePath, sample, { mode: 0o600 });
+      ({ stdout: report } = await runEvidenceTool(validateScriptName, [
+        "--candidate", candidateId,
+        "--candidates", candidatesPath,
+        "--sample", stagedSamplePath,
+      ]));
+    } catch (error) {
+      throw await classifiedProviderError(error, {
+        failureEvidence,
+        response,
+        raw: rawResponse,
+        format: request.format,
+      });
+    }
     await writeFile(stagedReportPath, report, { mode: 0o600 });
 
     const evidence = JSON.parse(sample);
