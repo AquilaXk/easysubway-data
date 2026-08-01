@@ -9,6 +9,7 @@ import {
   KRIC_SOURCE_CANDIDATE_IDS,
   resolveKricCandidateRequest,
 } from "./collect-kric-source-candidate-evidence.mjs";
+import { countXmlControlRows } from "./lib/source-candidate-evidence-collector.mjs";
 
 const candidate = {
   id: "kric-train-operation-organ",
@@ -999,4 +1000,59 @@ test("KRIC evidence collector는 값이 빈 XML 대조군 row를 성공으로 �
       await rm(runnerTemp, { recursive: true, force: true });
     }
   }
+});
+
+test("KRIC evidence collector는 header 없는 정상 XML 대조군을 성공으로 인정한다", async () => {
+  const item = "<item><dtlLoc>3번 출구 방면</dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item>";
+  const headerCases = [
+    ["header 없는 정상 응답", `<ROOT><body><items>${item}</items></body></ROOT>`, "succeeded"],
+    ["명시적 실패 코드", `<ROOT><header><resultCode>30</resultCode></header><body><items>${item}</items></body></ROOT>`, "failed"],
+    ["header 없고 필수 필드도 없음", "<ROOT><body><items><item><railOprIsttCd>S1</railOprIsttCd></item></items></body></ROOT>", "failed"],
+    ["성공 코드와 정상 row", `<ROOT><header><resultCode>00</resultCode></header><body><items>${item}</items></body></ROOT>`, "succeeded"],
+  ];
+
+  for (const [label, controlBody, expectedStatus] of headerCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-xml-header-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate], { controlFormat: "xml" }),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: providerFailureFetch({
+            calls,
+            control: new Response(controlBody, { status: 200, headers: { "content-type": "application/xml" } }),
+          }),
+        }),
+        (error) => {
+          assert.match(error.message, new RegExp(`controlOperation=${expectedStatus}`), label);
+          assert.match(
+            error.message,
+            expectedStatus === "succeeded" ? /failureClass=authorization-missing/ : /failureClass=authentication-error/,
+            label,
+          );
+          return true;
+        },
+      );
+      assert.equal(calls.length, 2, label);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("countXmlControlRows는 목표치를 채우면 나머지 item을 훑지 않는다", () => {
+  const qualifying = "<item><dtlLoc>3번 출구</dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item>";
+  const requiredFields = ["dtlLoc", "gubun", "stinFlor"];
+  const raw = `<ROOT><body><items>${qualifying.repeat(5)}</items></body></ROOT>`;
+
+  assert.equal(countXmlControlRows(raw, requiredFields, 1), 1);
+  assert.equal(countXmlControlRows(raw, requiredFields, 3), 3);
+  assert.equal(countXmlControlRows(raw, requiredFields, 9), 5);
+
+  const leading = "<item><dtlLoc></dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item>";
+  assert.equal(countXmlControlRows(`<ROOT>${leading}${qualifying.repeat(3)}</ROOT>`, requiredFields, 2), 2);
+  assert.equal(countXmlControlRows(`<ROOT>${leading}</ROOT>`, requiredFields, 1), 0);
 });

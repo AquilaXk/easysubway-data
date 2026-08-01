@@ -375,10 +375,15 @@ function countJsonControlRows(payload, requiredFields) {
   return rows;
 }
 
-function countXmlControlRows(raw, requiredFields) {
-  return [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
-    .filter(([, fragment]) => requiredFields.every((field) => hasXmlFieldValue(fragment, field)))
-    .length;
+// provider가 크기를 정하는 XML이므로 응답 전체를 물질화하지 않는다. limit을 채우면 즉시 멈춘다.
+export function countXmlControlRows(raw, requiredFields, limit) {
+  let qualifying = 0;
+  for (const [, fragment] of raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
+    if (!requiredFields.every((field) => hasXmlFieldValue(fragment, field))) continue;
+    qualifying += 1;
+    if (qualifying >= limit) break;
+  }
+  return qualifying;
 }
 
 // 대조군은 "실패가 아님"이 아니라 카탈로그가 선언한 "기대 성공 형태"를 충족해야 성공이다.
@@ -390,8 +395,11 @@ function controlOperationSucceeded(raw, format, expectedSuccess) {
     if (payload == null || findJsonFailureEnvelope(payload) != null) return false;
     return countJsonControlRows(payload, requiredFields) >= minimumRowCount;
   }
-  if (!/^(?:0+|ok|success)$/i.test(scanXmlStructure(raw).resultCode ?? "")) return false;
-  return countXmlControlRows(raw, requiredFields) >= minimumRowCount;
+  // KRIC XML 성공 응답에는 header가 없을 수 있다(성공 경로가 그 형태를 그대로 받는다).
+  // 명시적 실패 코드만 거부하고, 코드가 없으면 필수 행이 성공을 증명하게 한다.
+  const resultCode = scanXmlStructure(raw).resultCode;
+  if (resultCode != null && !/^(?:0+|ok|success)$/i.test(resultCode)) return false;
+  return countXmlControlRows(raw, requiredFields, minimumRowCount) >= minimumRowCount;
 }
 
 // 같은 실행·같은 키로 카탈로그가 지정한 대조군을 호출한다. 실패는 어떤 이유든 "failed"로 닫는다.
