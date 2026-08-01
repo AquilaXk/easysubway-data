@@ -627,7 +627,7 @@ const CONTROL_SUCCESS_ROW = Object.freeze({
   stinFlor: "B1",
 });
 
-function integrityDocument(candidates, { length = INTEGRITY_SERVICE_KEY.length } = {}) {
+function integrityDocument(candidates, { length = INTEGRITY_SERVICE_KEY.length, controlFormat = "json" } = {}) {
   return {
     candidates,
     providers: {
@@ -642,7 +642,7 @@ function integrityDocument(candidates, { length = INTEGRITY_SERVICE_KEY.length }
         controlOperation: {
           candidateId: "kric-station-convenience-standard",
           endpoint: `https://openapi.kric.go.kr${CONTROL_OPERATION_PATHNAME}`,
-          sampleUrl: `https://openapi.kric.go.kr${CONTROL_OPERATION_PATHNAME}?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322`,
+          sampleUrl: `https://openapi.kric.go.kr${CONTROL_OPERATION_PATHNAME}?serviceKey=[서비스키값]&format=${controlFormat}&railOprIsttCd=S1&lnCd=3&stinCd=322`,
           expectedSuccess: CONTROL_EXPECTED_SUCCESS,
           verifiedAt: "2026-08-02",
         },
@@ -794,6 +794,9 @@ test("KRIC evidence collector는 기대 성공 형태가 아닌 대조군 응답
     ["빈 배열", "[]"],
     ["resultCode 없는 게이트웨이 본문", JSON.stringify({ message: "Service Unavailable" })],
     ["필수 필드가 없는 row", JSON.stringify([{ railOprIsttCd: "S1", gubun: "EV" }])],
+    ["필수 필드가 null인 row", JSON.stringify([{ dtlLoc: null, gubun: null, stinFlor: null }])],
+    ["필수 필드가 빈 문자열인 row", JSON.stringify([{ dtlLoc: "", gubun: "", stinFlor: "" }])],
+    ["필수 필드가 공백뿐인 row", JSON.stringify([{ dtlLoc: "   ", gubun: "EV", stinFlor: " " }])],
   ];
 
   for (const [label, body] of emptyEnvelopes) {
@@ -955,5 +958,45 @@ test("KRIC evidence collector는 body 전송 실패도 전송 오류로 분류�
     await assertCollectorCleanup(runnerTemp);
   } finally {
     await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 값이 빈 XML 대조군 row를 성공으로 세지 않는다", async () => {
+  const xmlControlCases = [
+    ["자기 종료 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc/><gubun/><stinFlor/></item></items></body></ROOT>", "failed"],
+    ["빈 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc></dtlLoc><gubun></gubun><stinFlor></stinFlor></item></items></body></ROOT>", "failed"],
+    ["공백뿐인 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc>  </dtlLoc><gubun> </gubun><stinFlor> </stinFlor></item></items></body></ROOT>", "failed"],
+    ["값이 있는 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc>3번 출구 방면</dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item></items></body></ROOT>", "succeeded"],
+  ];
+
+  for (const [label, controlBody, expectedStatus] of xmlControlCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-xml-control-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate], { controlFormat: "xml" }),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: providerFailureFetch({
+            calls,
+            control: new Response(controlBody, { status: 200, headers: { "content-type": "application/xml" } }),
+          }),
+        }),
+        (error) => {
+          assert.match(error.message, new RegExp(`controlOperation=${expectedStatus}`), label);
+          assert.match(
+            error.message,
+            expectedStatus === "succeeded" ? /failureClass=authorization-missing/ : /failureClass=authentication-error/,
+            label,
+          );
+          return true;
+        },
+      );
+      assert.equal(calls.length, 2, label);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
   }
 });

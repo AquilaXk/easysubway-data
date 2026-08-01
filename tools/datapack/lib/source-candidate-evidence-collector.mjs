@@ -343,9 +343,21 @@ function providerResponseSignal({ raw, format }) {
   };
 }
 
+// 필드 이름만 있고 값이 비어 있는 row는 대조군 성공으로 세지 않는다.
+// 자리표시자만 담긴 게이트웨이 응답이 대조군을 통과하면 잘못된 blocker를 증거로 뒷받침한다.
 function hasRequiredControlFields(value, requiredFields) {
-  return requiredFields.every((field) => Object.hasOwn(value, field)
-    && (value[field] == null || typeof value[field] !== "object"));
+  return requiredFields.every((field) => {
+    if (!Object.hasOwn(value, field)) return false;
+    const fieldValue = value[field];
+    if (fieldValue == null || typeof fieldValue === "object") return false;
+    return typeof fieldValue !== "string" || fieldValue.trim() !== "";
+  });
+}
+
+function hasXmlFieldValue(fragment, field) {
+  const match = new RegExp(String.raw`<${field}(?:\s[^>]*)?>([\s\S]*?)</${field}>`).exec(fragment);
+  if (match == null) return false;
+  return match[1].replace(/<!\[CDATA\[([\s\S]*?)]]>/g, "$1").trim() !== "";
 }
 
 function countJsonControlRows(payload, requiredFields) {
@@ -365,7 +377,7 @@ function countJsonControlRows(payload, requiredFields) {
 
 function countXmlControlRows(raw, requiredFields) {
   return [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
-    .filter(([, fragment]) => requiredFields.every((field) => new RegExp(String.raw`<${field}[\s>/]`).test(fragment)))
+    .filter(([, fragment]) => requiredFields.every((field) => hasXmlFieldValue(fragment, field)))
     .length;
 }
 
