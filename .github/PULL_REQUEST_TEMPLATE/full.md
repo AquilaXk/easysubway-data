@@ -1,5 +1,7 @@
 ## 관련 이슈
 
+<!-- 타 레포 이슈는 `AquilaXk/easysubway#N` 형태로 명기. -->
+
 close #
 
 ## 작업 배경
@@ -16,7 +18,7 @@ close #
 
 ## 검증 증거
 
-데이터 정확성, 접근성 시설 근거, provenance, 배포 artifact 확인이 필요한 항목은 증거 첨부, 링크, 또는 로컬 evidence 경로를 적습니다. 증거가 필요 없는 항목은 사유를 적습니다.
+데이터 정확성, 접근성 시설 근거, provenance, 배포 artifact 확인이 필요한 항목은 증거 첨부, 링크, 또는 로컬 evidence 경로(절대 경로·사용자명 등 환경 정보 제외, 레포 상대 경로 권장)를 적습니다. 증거가 필요 없는 항목은 사유를 적습니다.
 
 | 항목 | 대상 artifact | 확인 방법 | 증거 | 결과 |
 | --- | --- | --- | --- | --- |
@@ -34,7 +36,7 @@ close #
 ## Product gate impact
 
 - [ ] release/product-gates/** 영향 없음
-- [ ] datapack freshness SLA, production datapack scope, mobility profile policy, train-search 제외 gate 중 변경한 항목의 근거를 갱신했다.
+- [ ] release/product-gates/** 중 변경한 gate(현재: datapack freshness SLA, production datapack scope, mobility profile policy, train-search 제외 gate)의 근거를 갱신했다.
 - [ ] 검증되지 않은 지원 범위(지역·운영기관·노선) claim을 추가하거나 확대하지 않는다.
 
 ## Provenance impact
@@ -43,13 +45,13 @@ close #
 - [ ] tools/datapack/source-inventory.json 또는 tools/route-map/geometry-provenance-manifest.json의 제공처·라이선스·갱신 시점·적용 범위를 갱신했다.
 - [ ] 공식 source로 확인되지 않은 값을 배포 artifact에 추가하지 않는다.
 
-### Version decision
+## Version decision
 
 - datapack version:
 - data contract:
 - route-map artifact:
 - product gate:
-- promotion request:
+- promotion request id:
 
 ## 리뷰어 메모
 

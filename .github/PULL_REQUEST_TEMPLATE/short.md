@@ -1,8 +1,8 @@
-<!-- B/C등급(일반 코드 변경·낮은 위험 maintenance) 전용. A등급(제품/운영 위험, datapack release, contract·product gate JSON, CI workflow·계약 테스트 변경)은 full.md를 사용합니다. -->
+<!-- B/C등급(일반 코드 변경·낮은 위험 maintenance) 전용. A등급(제품/운영 위험, datapack release, contract·product gate JSON, CI workflow·계약 테스트, 서명·시크릿·무결성(manifest signing, attestation, workflow secret 취급) 변경)은 full.md를 사용합니다. -->
 
 ## 관련 이슈
 
-<!-- umbrella `Refs #N` 또는 `이슈 없음(C등급)` 명기. 빈 칸 금지. -->
+<!-- 단일 PR은 `Closes #N`, 스택 중간/umbrella는 `Refs #N`, C등급 issue 생략 시 `이슈 없음(C등급)` 명기. 타 레포 이슈는 `AquilaXk/easysubway#N` 형태로 명기. 빈 칸 금지. -->
 
 Refs #
 
