@@ -9,6 +9,12 @@ import {
   requiredText,
   sanitizeErrorMessage,
 } from "./lib/source-candidate-evidence-collector.mjs";
+import {
+  assertProviderCredentialIntegrity,
+  resolveProviderCallIntegrity,
+} from "./lib/provider-call-integrity.mjs";
+
+const KRIC_PROVIDER_ID = "kric";
 
 export const KRIC_SOURCE_CANDIDATE_IDS = Object.freeze([
   "kric-subway-route-info",
@@ -37,6 +43,26 @@ function assertKricUrl(url, label) {
   if (!url.pathname.startsWith("/openapi/") || url.username || url.password || url.hash) {
     throw new Error(`${label} must be a credential-free KRIC OpenAPI URL`);
   }
+}
+
+// #22: 대조군 URL에는 라이브 serviceKey가 치환돼 나간다. 본 요청과 같은 KRIC origin 불변식을 적용하고
+// 추적 중인 카탈로그 candidate에 바인딩해, 계약 문서만으로 임의 호스트에 자격증명이 나가지 못하게 한다.
+export function assertKricControlOperation(candidatesDocument, controlOperation) {
+  const label = "kric.controlOperation";
+  assertKricUrl(new URL(controlOperation.endpoint), `${label}.endpoint`);
+  assertKricUrl(new URL(controlOperation.sampleUrl), `${label}.sampleUrl`);
+
+  const control = candidatesDocument.candidates?.find((entry) => entry.id === controlOperation.candidateId);
+  if (!control) {
+    throw new Error(`${label} candidate is not tracked: ${controlOperation.candidateId}`);
+  }
+  if (controlOperation.endpoint !== control.requestUrl) {
+    throw new Error(`${label} must match the tracked candidate request URL`);
+  }
+  if (controlOperation.sampleUrl !== (control.operation?.sampleUrl ?? control.evidence?.sampleUrl)) {
+    throw new Error(`${label} must match the tracked candidate sample URL`);
+  }
+  return controlOperation;
 }
 
 export function resolveKricCandidateRequest(candidatesDocument, candidateId) {
@@ -100,6 +126,17 @@ export async function collectKricSourceCandidateEvidence({
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
   const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+  // #22: 저장소 카탈로그로 실행할 때는 provider 호출 정합성 계약을 반드시 통과해야 한다.
+  // 주입된 문서는 계약을 선언한 경우에만 검사한다.
+  const integrity = resolveProviderCallIntegrity(document, KRIC_PROVIDER_ID, { required: candidatesDocument == null });
+  if (integrity != null) {
+    assertProviderCredentialIntegrity({
+      providerId: KRIC_PROVIDER_ID,
+      credential: serviceKey,
+      contract: integrity.credential,
+    });
+    assertKricControlOperation(document, integrity.controlOperation);
+  }
   const request = resolveKricCandidateRequest(document, candidateId);
   const effectiveDocument = {
     ...document,
@@ -132,6 +169,8 @@ export async function collectKricSourceCandidateEvidence({
     writeStagedCandidates: true,
     buildScriptName: "build-source-candidate-sample-evidence.mjs",
     validateScriptName: "validate-source-candidate-sample.mjs",
+    controlOperation: integrity?.controlOperation ?? null,
+    credentialSignalResultCodes: integrity?.credentialSignalResultCodes ?? null,
   });
 }
 

@@ -31,3 +31,6 @@ jobs:
           tools/ci/require-workflow-artifact.test.mjs
           tools/release/validate-promotion-request.test.mjs
           tools/ci/datapack-release-workflow.test.mjs
+          tools/datapack/lib/provider-call-integrity.test.mjs
+          tools/datapack/source-candidate-endpoint-contract.test.mjs
+          tools/datapack/collect-kric-source-candidate-evidence.test.mjs

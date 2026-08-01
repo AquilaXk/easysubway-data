@@ -9,6 +9,10 @@ import {
   KRIC_SOURCE_CANDIDATE_IDS,
   resolveKricCandidateRequest,
 } from "./collect-kric-source-candidate-evidence.mjs";
+import {
+  countXmlControlRows,
+  MAX_RETAINED_ERROR_BODY_LENGTH,
+} from "./lib/source-candidate-evidence-collector.mjs";
 
 const candidate = {
   id: "kric-train-operation-organ",
@@ -611,5 +615,758 @@ test("KRIC evidence collector는 기존 XML item 성공 경로를 그대로 유�
     assert.doesNotMatch(JSON.stringify(sample), new RegExp(serviceKey));
   } finally {
     await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+// #22: provider 호출 정합성 계약 — 키 형상 사전 검사, 대조군 강제, 실패 분류.
+const INTEGRITY_SERVICE_KEY = "Aa0$Aa0$Aa0$Aa0$";
+const CONTROL_OPERATION_PATHNAME = "/openapi/handicapped/stationCnvFacl";
+const CONTROL_EXPECTED_SUCCESS = Object.freeze({
+  minimumRowCount: 1,
+  requiredFields: ["dtlLoc", "gubun", "stinFlor"],
+});
+const CONTROL_SUCCESS_ROW = Object.freeze({
+  dtlLoc: "3번 출구 방면",
+  gubun: "EV",
+  stinFlor: "B1",
+});
+
+const CONTROL_CANDIDATE_ID = "kric-station-convenience-standard";
+const CONTROL_ENDPOINT = `https://openapi.kric.go.kr${CONTROL_OPERATION_PATHNAME}`;
+
+function controlSampleUrl(controlFormat) {
+  return `${CONTROL_ENDPOINT}?serviceKey=[서비스키값]&format=${controlFormat}&railOprIsttCd=S1&lnCd=3&stinCd=322`;
+}
+
+function controlCandidate(controlFormat) {
+  return {
+    id: CONTROL_CANDIDATE_ID,
+    requestUrl: CONTROL_ENDPOINT,
+    evidence: {
+      endpoint: CONTROL_ENDPOINT,
+      sampleUrl: controlSampleUrl(controlFormat),
+      formats: ["JSON", "XML"],
+      outputFields: ["dtlLoc", "gubun", "stinFlor"],
+    },
+  };
+}
+
+function integrityDocument(candidates, {
+  length = INTEGRITY_SERVICE_KEY.length,
+  controlFormat = "json",
+  controlOperation = {},
+} = {}) {
+  const tracked = candidates.some(({ id }) => id === CONTROL_CANDIDATE_ID)
+    ? candidates
+    : [...candidates, controlCandidate(controlFormat)];
+  return {
+    candidates: tracked,
+    providers: {
+      kric: {
+        credential: {
+          env: "KRIC_SERVICE_KEY",
+          length,
+          characterClasses: ["digit", "lower", "symbol", "upper"],
+          fingerprintAlgorithm: "sha256-12",
+          fingerprint: null,
+        },
+        controlOperation: {
+          candidateId: CONTROL_CANDIDATE_ID,
+          endpoint: CONTROL_ENDPOINT,
+          sampleUrl: controlSampleUrl(controlFormat),
+          expectedSuccess: CONTROL_EXPECTED_SUCCESS,
+          verifiedAt: "2026-08-02",
+          ...controlOperation,
+        },
+        credentialSignalResultCodes: ["30"],
+      },
+    },
+  };
+}
+
+function providerFailureFetch({ control, calls }) {
+  return async (url) => {
+    calls.push(url);
+    return url.pathname === CONTROL_OPERATION_PATHNAME
+      ? control
+      : new Response(JSON.stringify([{ resultCode: "30", resultMsg: "등록되지 않은 서비스키입니다." }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+  };
+}
+
+test("KRIC evidence collector는 카탈로그 키 형상과 어긋난 credential로 provider를 호출하지 않는다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-credential-shape-"));
+  const calls = [];
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate], { length: 60 }),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async (url) => {
+          calls.push(url);
+          return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /kric credential length does not match the catalog contract \(expected 60\)/);
+        assert.doesNotMatch(error.message, /Aa0/);
+        return true;
+      },
+    );
+    assert.deepEqual(calls, []);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 대조군이 실패하면 권한 문제 대신 키·전송 문제로 분류한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-control-failed-"));
+  const calls = [];
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: providerFailureFetch({
+          calls,
+          control: new Response(JSON.stringify([{ resultCode: "30", resultMsg: "등록되지 않은 서비스키입니다." }]), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /classification=authorization/);
+        assert.match(error.message, /failureClass=authentication-error/);
+        assert.match(error.message, /controlOperation=failed/);
+        assert.doesNotMatch(error.message, /Aa0/);
+        return true;
+      },
+    );
+    assert.deepEqual(calls.map((url) => url.pathname), [
+      "/openapi/convenientInfo/trainOperationOrgan",
+      CONTROL_OPERATION_PATHNAME,
+    ]);
+    assert.equal(calls[1].searchParams.get("serviceKey"), INTEGRITY_SERVICE_KEY);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 대조군이 성공했을 때만 권한 미보유로 분류한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-control-succeeded-"));
+  const calls = [];
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: providerFailureFetch({
+          calls,
+          control: new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /failureClass=authorization-missing/);
+        assert.match(error.message, /controlOperation=succeeded/);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 2);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 credential 신호가 아닌 실패에 대조군을 호출하지 않는다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-control-not-run-"));
+  const calls = [];
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: xmlCandidate.id,
+        candidatesDocument: integrityDocument([xmlCandidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async (url) => {
+          calls.push(url);
+          return new Response(
+            "<ROOT><header><resultCode>03</resultCode><resultMsg>데이터가 없습니다.</resultMsg></header></ROOT>",
+            { status: 200, headers: { "content-type": "application/xml" } },
+          );
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /classification=no-data/);
+        assert.match(error.message, /failureClass=no-data/);
+        assert.match(error.message, /controlOperation=not-run/);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 1);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 기대 성공 형태가 아닌 대조군 응답을 성공으로 인정하지 않는다", async () => {
+  const emptyEnvelopes = [
+    ["빈 객체", "{}"],
+    ["스칼라 true", "true"],
+    ["빈 배열", "[]"],
+    ["resultCode 없는 게이트웨이 본문", JSON.stringify({ message: "Service Unavailable" })],
+    ["필수 필드가 없는 row", JSON.stringify([{ railOprIsttCd: "S1", gubun: "EV" }])],
+    ["필수 필드가 null인 row", JSON.stringify([{ dtlLoc: null, gubun: null, stinFlor: null }])],
+    ["필수 필드가 빈 문자열인 row", JSON.stringify([{ dtlLoc: "", gubun: "", stinFlor: "" }])],
+    ["필수 필드가 공백뿐인 row", JSON.stringify([{ dtlLoc: "   ", gubun: "EV", stinFlor: " " }])],
+  ];
+
+  for (const [label, body] of emptyEnvelopes) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-control-shape-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: providerFailureFetch({
+            calls,
+            control: new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+          }),
+        }),
+        (error) => {
+          assert.match(error.message, /failureClass=authentication-error/, label);
+          assert.match(error.message, /controlOperation=failed/, label);
+          assert.doesNotMatch(error.message, /authorization-missing/, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 2, label);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 전송 실패도 분류와 근거를 남긴다", async () => {
+  const transportFailures = [
+    ["DNS 실패", () => Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } })],
+    ["timeout", () => Object.assign(new Error("The operation was aborted"), { name: "TimeoutError" })],
+    ["redirect 거부", () => new TypeError("unexpected redirect")],
+  ];
+
+  for (const [label, buildError] of transportFailures) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-transport-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            throw buildError();
+          },
+        }),
+        (error) => {
+          assert.match(error.message, /failureClass=transport-error/, label);
+          assert.match(error.message, /controlOperation=not-run/, label);
+          assert.doesNotMatch(error.message, /Aa0/, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 1, label);
+      await assertCollectorCleanup(runnerTemp);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 JSON evidence builder 실패에도 분류와 근거를 남긴다", async () => {
+  const builderFailures = [
+    ["깨진 JSON", '{"items": [{'],
+    ["빈 객체", "{}"],
+    ["빈 배열", "[]"],
+  ];
+
+  for (const [label, body] of builderFailures) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-json-builder-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+          },
+        }),
+        (error) => {
+          assert.match(error.message, /failureClass=request-error/, label);
+          assert.match(error.message, /controlOperation=not-run/, label);
+          assert.match(error.message, /build-source-candidate-sample-evidence\.mjs/, label);
+          assert.doesNotMatch(error.message, /Aa0/, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 1, label);
+      await assertCollectorCleanup(runnerTemp);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 sanitized sample 검증 실패에도 분류와 근거를 남긴다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-json-validator-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => new Response(JSON.stringify([{ railOprIsttCd: "S1" }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /output field missing: "railOprIsttNm"/);
+        assert.match(error.message, /failureClass=request-error/);
+        assert.match(error.message, /controlOperation=not-run/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 body 전송 실패도 전송 오류로 분류한다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-body-transport-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => {
+            throw Object.assign(new Error("terminated"), { cause: { code: "ECONNRESET" } });
+          },
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /failureClass=transport-error/);
+        assert.match(error.message, /controlOperation=not-run/);
+        assert.doesNotMatch(error.message, /Aa0/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 값이 빈 XML 대조군 row를 성공으로 세지 않는다", async () => {
+  const xmlControlCases = [
+    ["자기 종료 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc/><gubun/><stinFlor/></item></items></body></ROOT>", "failed"],
+    ["빈 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc></dtlLoc><gubun></gubun><stinFlor></stinFlor></item></items></body></ROOT>", "failed"],
+    ["공백뿐인 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc>  </dtlLoc><gubun> </gubun><stinFlor> </stinFlor></item></items></body></ROOT>", "failed"],
+    ["값이 있는 태그", "<ROOT><header><resultCode>00</resultCode></header><body><items><item><dtlLoc>3번 출구 방면</dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item></items></body></ROOT>", "succeeded"],
+  ];
+
+  for (const [label, controlBody, expectedStatus] of xmlControlCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-xml-control-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate], { controlFormat: "xml" }),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: providerFailureFetch({
+            calls,
+            control: new Response(controlBody, { status: 200, headers: { "content-type": "application/xml" } }),
+          }),
+        }),
+        (error) => {
+          assert.match(error.message, new RegExp(`controlOperation=${expectedStatus}`), label);
+          assert.match(
+            error.message,
+            expectedStatus === "succeeded" ? /failureClass=authorization-missing/ : /failureClass=authentication-error/,
+            label,
+          );
+          return true;
+        },
+      );
+      assert.equal(calls.length, 2, label);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 header 없는 정상 XML 대조군을 성공으로 인정한다", async () => {
+  const item = "<item><dtlLoc>3번 출구 방면</dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item>";
+  const headerCases = [
+    ["header 없는 정상 응답", `<ROOT><body><items>${item}</items></body></ROOT>`, "succeeded"],
+    ["명시적 실패 코드", `<ROOT><header><resultCode>30</resultCode></header><body><items>${item}</items></body></ROOT>`, "failed"],
+    ["header 없고 필수 필드도 없음", "<ROOT><body><items><item><railOprIsttCd>S1</railOprIsttCd></item></items></body></ROOT>", "failed"],
+    ["성공 코드와 정상 row", `<ROOT><header><resultCode>00</resultCode></header><body><items>${item}</items></body></ROOT>`, "succeeded"],
+  ];
+
+  for (const [label, controlBody, expectedStatus] of headerCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-xml-header-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate], { controlFormat: "xml" }),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: providerFailureFetch({
+            calls,
+            control: new Response(controlBody, { status: 200, headers: { "content-type": "application/xml" } }),
+          }),
+        }),
+        (error) => {
+          assert.match(error.message, new RegExp(`controlOperation=${expectedStatus}`), label);
+          assert.match(
+            error.message,
+            expectedStatus === "succeeded" ? /failureClass=authorization-missing/ : /failureClass=authentication-error/,
+            label,
+          );
+          return true;
+        },
+      );
+      assert.equal(calls.length, 2, label);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("countXmlControlRows는 목표치를 채우면 나머지 item을 훑지 않는다", () => {
+  const qualifying = "<item><dtlLoc>3번 출구</dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item>";
+  const requiredFields = ["dtlLoc", "gubun", "stinFlor"];
+  const raw = `<ROOT><body><items>${qualifying.repeat(5)}</items></body></ROOT>`;
+
+  assert.equal(countXmlControlRows(raw, requiredFields, 1), 1);
+  assert.equal(countXmlControlRows(raw, requiredFields, 3), 3);
+  assert.equal(countXmlControlRows(raw, requiredFields, 9), 5);
+
+  const leading = "<item><dtlLoc></dtlLoc><gubun>EV</gubun><stinFlor>B1</stinFlor></item>";
+  assert.equal(countXmlControlRows(`<ROOT>${leading}${qualifying.repeat(3)}</ROOT>`, requiredFields, 2), 2);
+  assert.equal(countXmlControlRows(`<ROOT>${leading}</ROOT>`, requiredFields, 1), 0);
+});
+
+// 명백한 더미 호스트. `.invalid`는 예약 TLD라 해석되지 않으며, 아래 테스트는 요청이 0건임을 단언한다.
+const FOREIGN_CONTROL_ORIGIN = "https://control.invalid";
+
+test("KRIC evidence collector는 어긋난 대조군 계약으로 credential을 내보내지 않는다", async () => {
+  const foreignEndpoint = `${FOREIGN_CONTROL_ORIGIN}${CONTROL_OPERATION_PATHNAME}`;
+  const strayEndpoint = "https://openapi.kric.go.kr/openapi/handicapped/stationMovement";
+  const contractCases = [
+    [
+      "외부 origin",
+      { endpoint: foreignEndpoint, sampleUrl: `${foreignEndpoint}?serviceKey=[서비스키값]&format=json` },
+      /provider origin must be https:\/\/openapi\.kric\.go\.kr/,
+    ],
+    [
+      "참조 candidate와 다른 endpoint",
+      { endpoint: strayEndpoint, sampleUrl: `${strayEndpoint}?serviceKey=[서비스키값]&format=json` },
+      /controlOperation must match the tracked candidate request URL/,
+    ],
+    [
+      "참조 candidate와 다른 sampleUrl",
+      { sampleUrl: `${CONTROL_ENDPOINT}?serviceKey=[서비스키값]&format=json&stinCd=999` },
+      /controlOperation must match the tracked candidate sample URL/,
+    ],
+    [
+      "카탈로그에 없는 candidateId",
+      { candidateId: "kric-station-platform" },
+      /controlOperation candidate is not tracked/,
+    ],
+  ];
+
+  for (const [label, controlOperation, expectedError] of contractCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-control-contract-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate], { controlOperation }),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+          },
+        }),
+        (error) => {
+          assert.match(error.message, expectedError, label);
+          return true;
+        },
+      );
+      assert.deepEqual(calls, [], `${label}: provider 요청이 발생하면 안 된다`);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 자기 대조군 재시도로 권한 미보유를 성립시키지 않는다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-self-control-"));
+  let attempts = 0;
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: CONTROL_CANDIDATE_ID,
+        candidatesDocument: integrityDocument([]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => {
+          attempts += 1;
+          return attempts === 1
+            ? new Response(JSON.stringify([{ resultCode: "30", resultMsg: "등록되지 않은 서비스키입니다." }]), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              })
+            : new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              });
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /failureClass=request-error/);
+        assert.match(error.message, /controlOperation=self-succeeded/);
+        assert.doesNotMatch(error.message, /authorization-missing/);
+        return true;
+      },
+    );
+    assert.equal(attempts, 2);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 non-ok 응답의 provider result code를 근거로 남긴다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-non-ok-body-"));
+  const calls = [];
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async (url) => {
+          calls.push(url);
+          return url.pathname === CONTROL_OPERATION_PATHNAME
+            ? new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              })
+            : new Response(JSON.stringify({ resultCode: "AUTH-403", resultMsg: "권한이 없습니다." }), {
+                status: 403,
+                headers: { "content-type": "application/json" },
+              });
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /KRIC request failed with HTTP 403/);
+        assert.match(error.message, /resultCode=AUTH-403/);
+        assert.match(error.message, /failureClass=authorization-missing/);
+        assert.match(error.message, /controlOperation=succeeded/);
+        assert.doesNotMatch(error.message, /권한이 없습니다/);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 2);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 non-ok 응답 본문의 credential 에코와 unsafe code를 숨긴다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-non-ok-redaction-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => new Response(
+          JSON.stringify({ resultCode: `rejected serviceKey=${INTEGRITY_SERVICE_KEY}`, resultMsg: INTEGRITY_SERVICE_KEY }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        ),
+      }),
+      (error) => {
+        assert.match(error.message, /KRIC request failed with HTTP 401/);
+        assert.match(error.message, /resultCode=\[unsafe\]/);
+        assert.doesNotMatch(error.message, /Aa0/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 non-ok 본문을 못 읽어도 새 예외 경로를 만들지 않는다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-non-ok-body-failure-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => ({
+          ok: false,
+          status: 403,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => {
+            throw Object.assign(new Error("terminated"), { cause: { code: "ECONNRESET" } });
+          },
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /KRIC request failed with HTTP 403/);
+        assert.match(error.message, /resultCode=\[missing\]/);
+        assert.match(error.message, /failureClass=/);
+        assert.doesNotMatch(error.message, /terminated/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+// 상한의 범위를 문서가 아니라 테스트로 고정한다. 다운로드·순간 메모리가 아니라 보관·스캔 분량만 제한한다.
+test("KRIC evidence collector는 보관 상한을 넘긴 non-ok 본문의 result code를 근거로 쓰지 않는다", async () => {
+  const withinLimit = JSON.stringify({
+    padding: "x".repeat(1024),
+    resultCode: "AUTH-403",
+    resultMsg: "권한이 없습니다.",
+  });
+  const overLimit = JSON.stringify({
+    padding: "x".repeat(MAX_RETAINED_ERROR_BODY_LENGTH + 1),
+    resultCode: "AUTH-403",
+    resultMsg: "권한이 없습니다.",
+  });
+  const retentionCases = [
+    ["상한 이내", withinLimit, /resultCode=AUTH-403/],
+    ["상한 초과", overLimit, /resultCode=\[missing\]/],
+  ];
+
+  for (const [label, body, expectedResultCode] of retentionCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-body-retention-"));
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => url.pathname === CONTROL_OPERATION_PATHNAME
+            ? new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              })
+            : new Response(body, { status: 403, headers: { "content-type": "application/json" } }),
+        }),
+        (error) => {
+          assert.match(error.message, /KRIC request failed with HTTP 403/, label);
+          assert.match(error.message, expectedResultCode, label);
+          assert.match(error.message, /failureClass=authorization-missing/, label);
+          assert.doesNotMatch(error.message, /xxxx/, label);
+          return true;
+        },
+      );
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+// #22: provider가 코드만 주고 메시지를 생략·변경해도 credential 판별이 우회되면 안 된다.
+test("KRIC evidence collector는 메시지 없는 credential result code에도 대조군을 실행한다", async () => {
+  const xmlEnvelope = (inner) => `<ROOT><header>${inner}</header></ROOT>`;
+  const signalCases = [
+    ["JSON code-only", "json", JSON.stringify([{ resultCode: "30" }]), "application/json", 2, /failureClass=authorization-missing/],
+    ["JSON 낯선 문구", "json", JSON.stringify([{ resultCode: "30", resultMsg: "Denied by policy engine." }]), "application/json", 2, /failureClass=authorization-missing/],
+    ["XML code-only", "xml", xmlEnvelope("<resultCode>30</resultCode>"), "application/xml", 2, /failureClass=authorization-missing/],
+    ["XML 낯선 문구", "xml", xmlEnvelope("<resultCode>30</resultCode><resultMsg>Denied by policy engine.</resultMsg>"), "application/xml", 2, /failureClass=authorization-missing/],
+    // 선언되지 않은 코드는 그대로다. 03은 credential 신호가 아니므로 대조군을 부르지 않는다.
+    ["JSON code-only 03", "json", JSON.stringify([{ resultCode: "03" }]), "application/json", 1, /failureClass=request-error/],
+    ["XML 데이터 없음 03", "xml", xmlEnvelope("<resultCode>03</resultCode><resultMsg>데이터가 없습니다.</resultMsg>"), "application/xml", 1, /failureClass=no-data/],
+  ];
+
+  for (const [label, format, body, contentType, expectedCalls, expectedFailureClass] of signalCases) {
+    const target = {
+      ...candidate,
+      evidence: { ...candidate.evidence, sampleUrl: candidate.evidence.sampleUrl.replace("format=json", `format=${format}`), formats: ["JSON", "XML"] },
+    };
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-code-signal-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: target.id,
+          candidatesDocument: integrityDocument([target]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            return url.pathname === CONTROL_OPERATION_PATHNAME
+              ? new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), { status: 200, headers: { "content-type": "application/json" } })
+              : new Response(body, { status: 200, headers: { "content-type": contentType } });
+          },
+        }),
+        (error) => {
+          assert.match(error.message, expectedFailureClass, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, expectedCalls, `${label}: 대조군 실행 여부`);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
   }
 });

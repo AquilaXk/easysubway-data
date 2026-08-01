@@ -5,6 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import {
+  classifyProviderFailure,
+  formatProviderFailureEvidence,
+  requiresControlOperation,
+} from "./provider-call-integrity.mjs";
+
 const libDir = path.dirname(fileURLToPath(import.meta.url));
 export const TOOL_DIRECTORY = path.resolve(libDir, "..");
 export const REPOSITORY_ROOT = path.resolve(libDir, "../../..");
@@ -21,6 +27,10 @@ export const SAFE_RESULT_CODE = /^[A-Za-z0-9._-]{1,32}$/;
 export const MAX_XML_TAG_LENGTH = 40;
 export const MAX_XML_DEPTH = 32;
 export const MAX_XML_SCALAR_LENGTH = 512;
+// 오류 본문에서 보관·스캔하는 분량의 상한이다. 다운로드 바이트나 순간 메모리는 제한하지 않는다.
+// provider 본문은 이 collector의 세 지점(성공 sample, 대조군, 오류 본문)에서 모두 물질화되고,
+// 앞의 두 곳은 잘라내면 산출물과 판정이 깨져 잘라낼 수 없다. 이름을 그 범위에 맞춘다.
+export const MAX_RETAINED_ERROR_BODY_LENGTH = 64 * 1024;
 
 export function requiredText(value, label) {
   if (typeof value !== "string" || value.length === 0) {
@@ -312,10 +322,225 @@ export function buildJsonDiagnostic({ response, raw, label }) {
   ].join(" ");
 }
 
-function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel }) {
+function safeHttpStatus(response) {
+  const status = response?.status;
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+}
+
+// classifyXmlFailure는 메시지 문구에 의존한다. provider가 코드만 주거나 문구를 바꾸면 credential 신호를
+// 놓쳐 대조군 호출이 통째로 건너뛰어진다. 카탈로그가 선언한 코드는 문구와 무관하게 credential 신호로 본다.
+function credentialSignalOverride(resultCode, credentialSignalResultCodes) {
+  return resultCode != null && credentialSignalResultCodes?.includes(resultCode) ? "authorization" : null;
+}
+
+// #22: provider가 돌려준 실패 신호. 키 훼손과 권한 미보유가 같은 코드로 오기 때문에 신호만으로 판정하지 않는다.
+function providerResponseSignal({ raw, format, credentialSignalResultCodes }) {
+  if (raw == null) return { providerResultCode: null, providerResultSignal: null };
+  if (format === "json") {
+    const envelope = findJsonFailureEnvelope(parseJson(raw));
+    if (!envelope) return { providerResultCode: null, providerResultSignal: null };
+    const resultCode = jsonResultCode(envelope.resultCode);
+    const resultMessage = typeof envelope.resultMsg === "string" ? envelope.resultMsg : null;
+    return {
+      providerResultCode: resultCode,
+      providerResultSignal: credentialSignalOverride(resultCode, credentialSignalResultCodes)
+        ?? classifyXmlFailure({ itemCount: 0, resultCode, resultMessage }),
+    };
+  }
+  const { itemCount, resultCode, resultMessage } = scanXmlStructure(raw);
+  return {
+    providerResultCode: resultCode,
+    providerResultSignal: credentialSignalOverride(resultCode, credentialSignalResultCodes)
+      ?? classifyXmlFailure({ itemCount, resultCode, resultMessage }),
+  };
+}
+
+// 필드 이름만 있고 값이 비어 있는 row는 대조군 성공으로 세지 않는다.
+// 자리표시자만 담긴 게이트웨이 응답이 대조군을 통과하면 잘못된 blocker를 증거로 뒷받침한다.
+function hasRequiredControlFields(value, requiredFields) {
+  return requiredFields.every((field) => {
+    if (!Object.hasOwn(value, field)) return false;
+    const fieldValue = value[field];
+    if (fieldValue == null || typeof fieldValue === "object") return false;
+    return typeof fieldValue !== "string" || fieldValue.trim() !== "";
+  });
+}
+
+function hasXmlFieldValue(fragment, field) {
+  const match = new RegExp(String.raw`<${field}(?:\s[^>]*)?>([\s\S]*?)</${field}>`).exec(fragment);
+  if (match == null) return false;
+  return match[1].replace(/<!\[CDATA\[([\s\S]*?)]]>/g, "$1").trim() !== "";
+}
+
+function countJsonControlRows(payload, requiredFields) {
+  const pending = [payload];
+  let rows = 0;
+  for (let cursor = 0; cursor < pending.length && cursor < 128; cursor += 1) {
+    const value = pending[cursor];
+    if (!value || typeof value !== "object") continue;
+    if (!Array.isArray(value) && hasRequiredControlFields(value, requiredFields)) {
+      rows += 1;
+      continue;
+    }
+    appendJsonChildren(pending, value);
+  }
+  return rows;
+}
+
+// provider가 크기를 정하는 XML이므로 응답 전체를 물질화하지 않는다. limit을 채우면 즉시 멈춘다.
+export function countXmlControlRows(raw, requiredFields, limit) {
+  let qualifying = 0;
+  for (const [, fragment] of raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
+    if (!requiredFields.every((field) => hasXmlFieldValue(fragment, field))) continue;
+    qualifying += 1;
+    if (qualifying >= limit) break;
+  }
+  return qualifying;
+}
+
+// 대조군은 "실패가 아님"이 아니라 카탈로그가 선언한 "기대 성공 형태"를 충족해야 성공이다.
+// 그렇지 않으면 빈 응답이나 게이트웨이 오류 페이지가 대조군을 통과해 잘못된 blocker를 증거로 뒷받침한다.
+function controlOperationSucceeded(raw, format, expectedSuccess) {
+  const { minimumRowCount, requiredFields } = expectedSuccess;
+  if (format === "json") {
+    const payload = parseJson(raw);
+    if (payload == null || findJsonFailureEnvelope(payload) != null) return false;
+    return countJsonControlRows(payload, requiredFields) >= minimumRowCount;
+  }
+  // KRIC XML 성공 응답에는 header가 없을 수 있다(성공 경로가 그 형태를 그대로 받는다).
+  // 명시적 실패 코드만 거부하고, 코드가 없으면 필수 행이 성공을 증명하게 한다.
+  const resultCode = scanXmlStructure(raw).resultCode;
+  if (resultCode != null && !/^(?:0+|ok|success)$/i.test(resultCode)) return false;
+  return countXmlControlRows(raw, requiredFields, minimumRowCount) >= minimumRowCount;
+}
+
+// 같은 실행·같은 키로 카탈로그가 지정한 대조군을 호출한다. 실패는 어떤 이유든 "failed"로 닫는다.
+async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) {
+  try {
+    const url = new URL(controlOperation.sampleUrl);
+    url.searchParams.set("serviceKey", serviceKey);
+    const response = await fetchImpl(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        accept: controlOperation.format === "json" ? "application/json" : "application/xml,text/xml",
+      },
+    });
+    if (!response.ok) return "failed";
+    // 본문을 잘라내지 않는다. 상한을 넘긴 자리에 조건을 만족하는 row가 있으면 실제 성공이 failed로
+    // 뒤집혀 분류가 반대로 간다. 크기는 provider가 정한다.
+    return controlOperationSucceeded(
+      await response.text(),
+      controlOperation.format,
+      controlOperation.expectedSuccess,
+    ) ? "succeeded" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+// 대상 operation이 곧 대조군이면 그 호출은 독립 대조가 아니라 같은 operation의 재시도다.
+// 성공을 그대로 인정하면 방금 접근 가능함이 증명된 operation에 권한 미보유 판정이 나온다.
+async function resolveControlOperationStatus({ controlOperation, candidateId, serviceKey, fetchImpl }) {
+  const status = await runControlOperation({ controlOperation, serviceKey, fetchImpl });
+  return status === "succeeded" && controlOperation.candidateId === candidateId ? "self-succeeded" : status;
+}
+
+async function providerFailureEvidence({
+  controlOperation,
+  credentialSignalResultCodes,
+  candidateId,
+  serviceKey,
+  fetchImpl,
+  response,
+  raw,
+  format,
+}) {
+  if (!controlOperation) return "";
+  const httpStatus = safeHttpStatus(response);
+  const { providerResultCode, providerResultSignal } = providerResponseSignal({ raw, format, credentialSignalResultCodes });
+  const controlOperationStatus = requiresControlOperation({ httpStatus, providerResultSignal })
+    ? await resolveControlOperationStatus({ controlOperation, candidateId, serviceKey, fetchImpl })
+    : "not-run";
+  const diagnosis = classifyProviderFailure({
+    httpStatus,
+    providerResultCode,
+    providerResultSignal,
+    controlOperationStatus,
+  });
+  return ` ${formatProviderFailureEvidence(diagnosis)}`;
+}
+
+// provider 응답을 입력으로 삼는 실패에 분류를 붙인다. 근거가 비어 있으면(=provider 계약 미선언)
+// 원래 오류를 그대로 올려 기존 redaction 동작을 바꾸지 않는다.
+async function classifiedProviderError(error, { failureEvidence, response, raw, format }) {
+  const evidence = await failureEvidence({ response, raw, format });
+  if (!evidence) return error;
+  return new Error(`${error instanceof Error ? error.message : String(error)}${evidence}`);
+}
+
+// non-ok 응답 본문에는 provider result code가 실린다. 본문 읽기 실패가 새 예외 경로가 되지 않도록
+// 방어적으로 읽고, 못 읽으면 null로 낮춘다 — status 기반 판정은 유지되고, 근거가 빈 승격은
+// assertProviderBlockerPromotable이 이미 거부한다.
+// 상한은 이후 보관·스캔하는 분량에만 걸린다. 본문은 이미 전부 내려받은 뒤이므로 다운로드 바이트와
+// 순간 메모리는 provider가 정한다. 상한을 넘긴 본문의 result code는 [missing]으로 닫힌다.
+async function readErrorResponseBody(response) {
+  try {
+    const raw = await response.text();
+    return raw.length > MAX_RETAINED_ERROR_BODY_LENGTH ? raw.slice(0, MAX_RETAINED_ERROR_BODY_LENGTH) : raw;
+  } catch {
+    return null;
+  }
+}
+
+// provider 요청과 body 수신. 이 구간의 실패는 전부 분류를 달고 나간다.
+async function readProviderResponse({
+  request,
+  serviceKey,
+  fetchImpl,
+  failureEvidence,
+  requestFailureLabel,
+  credentialSignalResultCodes,
+}) {
+  const liveUrl = new URL(request.sampleUrl);
+  liveUrl.searchParams.set("serviceKey", serviceKey);
+  const transportEvidence = { failureEvidence, response: null, raw: null, format: request.format };
+
+  let response;
+  try {
+    response = await fetchImpl(liveUrl, {
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+      headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
+    });
+  } catch (error) {
+    // DNS·TLS·redirect 거부·timeout은 응답 분기 전에 reject된다. 분류 없이 빠져나가지 않게 근거를 붙인다.
+    throw await classifiedProviderError(error, transportEvidence);
+  }
+  if (!response.ok) {
+    // 401·403은 credential 신호로 지원한다고 선언한 경로다. 본문을 버리면 provider result code가 사라져
+    // 대조군이 성공해도 blocker 승격에 필요한 근거를 만들 수 없다.
+    const errorBody = await readErrorResponseBody(response);
+    const { providerResultCode } = providerResponseSignal({ raw: errorBody, format: request.format, credentialSignalResultCodes });
+    const evidence = await failureEvidence({ response, raw: errorBody, format: request.format });
+    throw new Error(`${requestFailureLabel} ${response.status} resultCode=${safeResultCode(providerResultCode)}${evidence}`);
+  }
+  try {
+    // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
+    // 여기서도 본문을 잘라내지 않는다. sample evidence의 해시·row 수·schema fingerprint가
+    // 본문 전체를 전제로 하므로 자르면 산출물이 깨진다. 크기는 provider가 정한다.
+    return { response, rawResponse: await response.text() };
+  } catch (error) {
+    throw await classifiedProviderError(error, transportEvidence);
+  }
+}
+
+async function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence }) {
   if (request.format !== "json") return;
   const diagnostic = buildJsonDiagnostic({ response, raw: rawResponse, label: diagnosticLabel });
-  if (diagnostic) throw new Error(diagnostic);
+  if (diagnostic) {
+    throw new Error(`${diagnostic}${await failureEvidence({ response, raw: rawResponse, format: request.format })}`);
+  }
 }
 
 export async function runEvidenceTool(scriptName, args) {
@@ -347,8 +572,20 @@ export async function collectSourceCandidateEvidence({
   writeStagedCandidates = false,
   buildScriptName,
   validateScriptName,
+  controlOperation = null,
+  credentialSignalResultCodes = null,
 } = {}) {
   requiredText(serviceKey, serviceKeyLabel);
+  const failureEvidence = ({ response, raw, format }) => providerFailureEvidence({
+    controlOperation,
+    credentialSignalResultCodes,
+    candidateId,
+    serviceKey,
+    fetchImpl,
+    response,
+    raw,
+    format,
+  });
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
@@ -379,19 +616,16 @@ export async function collectSourceCandidateEvidence({
       candidatesPath = stagedCandidatesPath;
     }
 
-    const liveUrl = new URL(request.sampleUrl);
-    liveUrl.searchParams.set("serviceKey", serviceKey);
-    const response = await fetchImpl(liveUrl, {
-      redirect: "error",
-      signal: AbortSignal.timeout(30_000),
-      headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
+    const { response, rawResponse } = await readProviderResponse({
+      request,
+      serviceKey,
+      fetchImpl,
+      failureEvidence,
+      requestFailureLabel,
+      credentialSignalResultCodes,
     });
-    if (!response.ok) {
-      throw new Error(`${requestFailureLabel} ${response.status}`);
-    }
-    const rawResponse = await response.text();
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
-    assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel });
+    await assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence });
 
     let sample;
     try {
@@ -403,18 +637,35 @@ export async function collectSourceCandidateEvidence({
       ]));
     } catch (error) {
       if (request.format === "xml") {
-        throw new Error(`${error instanceof Error ? error.message : String(error)} ${buildXmlDiagnostic({ response, requestedFormat: request.format, raw: rawResponse, label: diagnosticLabel })}`);
+        const diagnostic = buildXmlDiagnostic({ response, requestedFormat: request.format, raw: rawResponse, label: diagnosticLabel });
+        const evidence = await failureEvidence({ response, raw: rawResponse, format: request.format });
+        throw new Error(`${error instanceof Error ? error.message : String(error)} ${diagnostic}${evidence}`);
       }
-      throw error;
+      throw await classifiedProviderError(error, {
+        failureEvidence,
+        response,
+        raw: rawResponse,
+        format: request.format,
+      });
     }
-    JSON.parse(sample);
-    await writeFile(stagedSamplePath, sample, { mode: 0o600 });
 
-    const { stdout: report } = await runEvidenceTool(validateScriptName, [
-      "--candidate", candidateId,
-      "--candidates", candidatesPath,
-      "--sample", stagedSamplePath,
-    ]);
+    let report;
+    try {
+      JSON.parse(sample);
+      await writeFile(stagedSamplePath, sample, { mode: 0o600 });
+      ({ stdout: report } = await runEvidenceTool(validateScriptName, [
+        "--candidate", candidateId,
+        "--candidates", candidatesPath,
+        "--sample", stagedSamplePath,
+      ]));
+    } catch (error) {
+      throw await classifiedProviderError(error, {
+        failureEvidence,
+        response,
+        raw: rawResponse,
+        format: request.format,
+      });
+    }
     await writeFile(stagedReportPath, report, { mode: 0o600 });
 
     const evidence = JSON.parse(sample);
