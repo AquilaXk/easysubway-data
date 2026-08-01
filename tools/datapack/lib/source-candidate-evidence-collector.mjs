@@ -27,7 +27,10 @@ export const SAFE_RESULT_CODE = /^[A-Za-z0-9._-]{1,32}$/;
 export const MAX_XML_TAG_LENGTH = 40;
 export const MAX_XML_DEPTH = 32;
 export const MAX_XML_SCALAR_LENGTH = 512;
-export const MAX_ERROR_BODY_LENGTH = 64 * 1024;
+// 오류 본문에서 보관·스캔하는 분량의 상한이다. 다운로드 바이트나 순간 메모리는 제한하지 않는다.
+// provider 본문은 이 collector의 세 지점(성공 sample, 대조군, 오류 본문)에서 모두 물질화되고,
+// 앞의 두 곳은 잘라내면 산출물과 판정이 깨져 잘라낼 수 없다. 이름을 그 범위에 맞춘다.
+export const MAX_RETAINED_ERROR_BODY_LENGTH = 64 * 1024;
 
 export function requiredText(value, label) {
   if (typeof value !== "string" || value.length === 0) {
@@ -416,6 +419,8 @@ async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) 
       },
     });
     if (!response.ok) return "failed";
+    // 본문을 잘라내지 않는다. 상한을 넘긴 자리에 조건을 만족하는 row가 있으면 실제 성공이 failed로
+    // 뒤집혀 분류가 반대로 간다. 크기는 provider가 정한다.
     return controlOperationSucceeded(
       await response.text(),
       controlOperation.format,
@@ -459,11 +464,13 @@ async function classifiedProviderError(error, { failureEvidence, response, raw, 
 
 // non-ok 응답 본문에는 provider result code가 실린다. 본문 읽기 실패가 새 예외 경로가 되지 않도록
 // 방어적으로 읽고, 못 읽으면 null로 낮춘다 — status 기반 판정은 유지되고, 근거가 빈 승격은
-// assertProviderBlockerPromotable이 이미 거부한다. 스캔·보관 분량은 provider가 정하지 못하도록 상한을 둔다.
+// assertProviderBlockerPromotable이 이미 거부한다.
+// 상한은 이후 보관·스캔하는 분량에만 걸린다. 본문은 이미 전부 내려받은 뒤이므로 다운로드 바이트와
+// 순간 메모리는 provider가 정한다. 상한을 넘긴 본문의 result code는 [missing]으로 닫힌다.
 async function readErrorResponseBody(response) {
   try {
     const raw = await response.text();
-    return raw.length > MAX_ERROR_BODY_LENGTH ? raw.slice(0, MAX_ERROR_BODY_LENGTH) : raw;
+    return raw.length > MAX_RETAINED_ERROR_BODY_LENGTH ? raw.slice(0, MAX_RETAINED_ERROR_BODY_LENGTH) : raw;
   } catch {
     return null;
   }
@@ -496,6 +503,8 @@ async function readProviderResponse({ request, serviceKey, fetchImpl, failureEvi
   }
   try {
     // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
+    // 여기서도 본문을 잘라내지 않는다. sample evidence의 해시·row 수·schema fingerprint가
+    // 본문 전체를 전제로 하므로 자르면 산출물이 깨진다. 크기는 provider가 정한다.
     return { response, rawResponse: await response.text() };
   } catch (error) {
     throw await classifiedProviderError(error, transportEvidence);

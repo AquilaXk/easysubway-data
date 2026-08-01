@@ -9,7 +9,10 @@ import {
   KRIC_SOURCE_CANDIDATE_IDS,
   resolveKricCandidateRequest,
 } from "./collect-kric-source-candidate-evidence.mjs";
-import { countXmlControlRows } from "./lib/source-candidate-evidence-collector.mjs";
+import {
+  countXmlControlRows,
+  MAX_RETAINED_ERROR_BODY_LENGTH,
+} from "./lib/source-candidate-evidence-collector.mjs";
 
 const candidate = {
   id: "kric-train-operation-organ",
@@ -1271,5 +1274,52 @@ test("KRIC evidence collector는 non-ok 본문을 못 읽어도 새 예외 경�
     await assertCollectorCleanup(runnerTemp);
   } finally {
     await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+// 상한의 범위를 문서가 아니라 테스트로 고정한다. 다운로드·순간 메모리가 아니라 보관·스캔 분량만 제한한다.
+test("KRIC evidence collector는 보관 상한을 넘긴 non-ok 본문의 result code를 근거로 쓰지 않는다", async () => {
+  const withinLimit = JSON.stringify({
+    padding: "x".repeat(1024),
+    resultCode: "AUTH-403",
+    resultMsg: "권한이 없습니다.",
+  });
+  const overLimit = JSON.stringify({
+    padding: "x".repeat(MAX_RETAINED_ERROR_BODY_LENGTH + 1),
+    resultCode: "AUTH-403",
+    resultMsg: "권한이 없습니다.",
+  });
+  const retentionCases = [
+    ["상한 이내", withinLimit, /resultCode=AUTH-403/],
+    ["상한 초과", overLimit, /resultCode=\[missing\]/],
+  ];
+
+  for (const [label, body, expectedResultCode] of retentionCases) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-body-retention-"));
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => url.pathname === CONTROL_OPERATION_PATHNAME
+            ? new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              })
+            : new Response(body, { status: 403, headers: { "content-type": "application/json" } }),
+        }),
+        (error) => {
+          assert.match(error.message, /KRIC request failed with HTTP 403/, label);
+          assert.match(error.message, expectedResultCode, label);
+          assert.match(error.message, /failureClass=authorization-missing/, label);
+          assert.doesNotMatch(error.message, /xxxx/, label);
+          return true;
+        },
+      );
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
   }
 });
