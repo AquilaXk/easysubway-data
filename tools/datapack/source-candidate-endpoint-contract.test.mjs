@@ -133,4 +133,11 @@ test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카
     "control operation sampleUrl must match the tracked candidate sample",
   );
   assert.equal(new URL(control.requestUrl).pathname, "/openapi/handicapped/stationCnvFacl");
+
+  // 기대 성공 형태는 창작이 아니라 대조군 candidate가 카탈로그에 기록한 provider 출력 필드에서만 나온다.
+  const documentedFields = new Set(control.operation?.responseFields ?? control.evidence.outputFields);
+  const undocumented = integrity.controlOperation.expectedSuccess.requiredFields
+    .filter((field) => !documentedFields.has(field));
+  assert.deepEqual(undocumented, [], "expectedSuccess.requiredFields must be documented provider output fields");
+  assert.ok(integrity.controlOperation.expectedSuccess.minimumRowCount >= 1);
 });

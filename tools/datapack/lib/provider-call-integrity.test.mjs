@@ -27,18 +27,22 @@ const CONTROL_OPERATION = Object.freeze({
   candidateId: "kric-station-convenience-standard",
   endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
   sampleUrl: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+  expectedSuccess: { minimumRowCount: 1, requiredFields: ["dtlLoc", "gubun", "stinFlor"] },
   verifiedAt: "2026-08-02",
 });
 
+// 실제 자격증명처럼 보이지 않는 명백한 더미. 실키는 어떤 형태로도 두지 않는다.
+const DUMMY_CREDENTIAL = "DUMMY-NOT-A-CREDENTIAL";
+
 function document(overrides = {}) {
-  return {
-    providers: {
-      kric: {
-        credential: { ...CREDENTIAL_CONTRACT, ...overrides.credential },
-        controlOperation: { ...CONTROL_OPERATION, ...overrides.controlOperation },
-      },
-    },
-  };
+  return documentWithControlOperation(
+    { ...CONTROL_OPERATION, ...overrides.controlOperation },
+    { ...CREDENTIAL_CONTRACT, ...overrides.credential },
+  );
+}
+
+function documentWithControlOperation(controlOperation, credential = CREDENTIAL_CONTRACT) {
+  return { providers: { kric: { credential, controlOperation } } };
 }
 
 test("provider credential shape는 값이 아니라 길이·문자 클래스·지문만 노출한다", () => {
@@ -106,6 +110,7 @@ test("provider 호출 정합성 계약은 카탈로그에서만 나오고 형상
   assert.deepEqual(resolved.credential, CREDENTIAL_CONTRACT);
   assert.equal(resolved.controlOperation.candidateId, CONTROL_OPERATION.candidateId);
   assert.equal(resolved.controlOperation.format, "json");
+  assert.deepEqual(resolved.controlOperation.expectedSuccess, CONTROL_OPERATION.expectedSuccess);
 
   assert.equal(resolveProviderCallIntegrity({}, "kric", { required: false }), null);
   assert.throws(
@@ -121,7 +126,7 @@ test("provider 호출 정합성 계약은 카탈로그에서만 나오고 형상
     /kric.credential.characterClasses must be sorted/,
   );
   assert.throws(
-    () => resolveProviderCallIntegrity(document({ controlOperation: { sampleUrl: `${CONTROL_OPERATION.endpoint}?serviceKey=live-key&format=json` } }), "kric"),
+    () => resolveProviderCallIntegrity(document({ controlOperation: { sampleUrl: `${CONTROL_OPERATION.endpoint}?format=json` } }), "kric"),
     /kric.controlOperation.sampleUrl must contain exactly one redacted serviceKey/,
   );
   assert.throws(
@@ -240,4 +245,62 @@ test("분류와 근거 없이는 provider blocker로 승격할 수 없다", () =
     /provider blocker promotion requires HTTP status and provider result code evidence/,
   );
   assert.throws(() => assertProviderBlockerPromotable(null), /provider blocker promotion requires/);
+});
+
+test("endpoint는 query 자격증명을 거부하고 sampleUrl은 정확한 redaction 자리표시자만 허용한다", () => {
+  for (const parameter of ["serviceKey", "apiKey", "key", "token", "access_token", "secret", "clientSecret"]) {
+    assert.throws(
+      () => resolveProviderCallIntegrity(
+        document({ controlOperation: { endpoint: `${CONTROL_OPERATION.endpoint}?${parameter}=${DUMMY_CREDENTIAL}` } }),
+        "kric",
+      ),
+      new RegExp(`kric\\.controlOperation\\.endpoint must not carry a credential query parameter: ${parameter}`),
+    );
+  }
+
+  // endpoint에는 redaction 자리표시자도 허용하지 않는다. endpoint는 자격증명을 실을 자리가 아니다.
+  assert.throws(
+    () => resolveProviderCallIntegrity(
+      document({ controlOperation: { endpoint: `${CONTROL_OPERATION.endpoint}?serviceKey=[서비스키값]` } }),
+      "kric",
+    ),
+    /kric\.controlOperation\.endpoint must not carry a credential query parameter: serviceKey/,
+  );
+
+  assert.throws(
+    () => resolveProviderCallIntegrity(
+      document({ controlOperation: { sampleUrl: `${CONTROL_OPERATION.sampleUrl}&apiKey=${DUMMY_CREDENTIAL}` } }),
+      "kric",
+    ),
+    /kric\.controlOperation\.sampleUrl must not carry a credential query parameter: apiKey/,
+  );
+
+  // 자격증명이 아닌 query 파라미터는 그대로 통과한다.
+  assert.doesNotThrow(() => resolveProviderCallIntegrity(
+    document({ controlOperation: { endpoint: `${CONTROL_OPERATION.endpoint}?format=json&lnCd=3` } }),
+    "kric",
+  ));
+});
+
+test("대조군 계약은 기대 성공 형태를 선언해야 한다", () => {
+  const withoutExpectedSuccess = { ...CONTROL_OPERATION };
+  delete withoutExpectedSuccess.expectedSuccess;
+  assert.throws(
+    () => resolveProviderCallIntegrity(documentWithControlOperation(withoutExpectedSuccess), "kric"),
+    /kric\.controlOperation\.expectedSuccess must be an object/,
+  );
+
+  const cases = [
+    [{ minimumRowCount: 0, requiredFields: ["gubun"] }, /minimumRowCount must be a positive integer/],
+    [{ minimumRowCount: 1, requiredFields: [] }, /requiredFields must be a sorted non-empty provider field name array/],
+    [{ minimumRowCount: 1, requiredFields: ["gubun", "dtlLoc"] }, /requiredFields must be a sorted non-empty provider field name array/],
+    [{ minimumRowCount: 1, requiredFields: ["not-a-field"] }, /requiredFields must be a sorted non-empty provider field name array/],
+    [{ minimumRowCount: 1, requiredFields: ["gubun"], unexpected: true }, /expectedSuccess has unsupported fields: unexpected/],
+  ];
+  for (const [expectedSuccess, pattern] of cases) {
+    assert.throws(
+      () => resolveProviderCallIntegrity(document({ controlOperation: { expectedSuccess } }), "kric"),
+      pattern,
+    );
+  }
 });

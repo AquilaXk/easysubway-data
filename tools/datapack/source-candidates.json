@@ -22,6 +22,14 @@
         "candidateId": "kric-station-convenience-standard",
         "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
         "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+        "expectedSuccess": {
+          "minimumRowCount": 1,
+          "requiredFields": [
+            "dtlLoc",
+            "gubun",
+            "stinFlor"
+          ]
+        },
         "verifiedAt": "2026-08-02"
       }
     }

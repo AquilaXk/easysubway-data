@@ -617,6 +617,15 @@ test("KRIC evidence collector는 기존 XML item 성공 경로를 그대로 유�
 // #22: provider 호출 정합성 계약 — 키 형상 사전 검사, 대조군 강제, 실패 분류.
 const INTEGRITY_SERVICE_KEY = "Aa0$Aa0$Aa0$Aa0$";
 const CONTROL_OPERATION_PATHNAME = "/openapi/handicapped/stationCnvFacl";
+const CONTROL_EXPECTED_SUCCESS = Object.freeze({
+  minimumRowCount: 1,
+  requiredFields: ["dtlLoc", "gubun", "stinFlor"],
+});
+const CONTROL_SUCCESS_ROW = Object.freeze({
+  dtlLoc: "3번 출구 방면",
+  gubun: "EV",
+  stinFlor: "B1",
+});
 
 function integrityDocument(candidates, { length = INTEGRITY_SERVICE_KEY.length } = {}) {
   return {
@@ -634,6 +643,7 @@ function integrityDocument(candidates, { length = INTEGRITY_SERVICE_KEY.length }
           candidateId: "kric-station-convenience-standard",
           endpoint: `https://openapi.kric.go.kr${CONTROL_OPERATION_PATHNAME}`,
           sampleUrl: `https://openapi.kric.go.kr${CONTROL_OPERATION_PATHNAME}?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322`,
+          expectedSuccess: CONTROL_EXPECTED_SUCCESS,
           verifiedAt: "2026-08-02",
         },
       },
@@ -728,7 +738,7 @@ test("KRIC evidence collector는 대조군이 성공했을 때만 권한 미보�
         serviceKey: INTEGRITY_SERVICE_KEY,
         fetchImpl: providerFailureFetch({
           calls,
-          control: new Response(JSON.stringify([{ railOprIsttCd: "S1", gubun: "EV" }]), {
+          control: new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
             status: 200,
             headers: { "content-type": "application/json" },
           }),
@@ -774,5 +784,80 @@ test("KRIC evidence collector는 credential 신호가 아닌 실패에 대조군
     assert.equal(calls.length, 1);
   } finally {
     await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 기대 성공 형태가 아닌 대조군 응답을 성공으로 인정하지 않는다", async () => {
+  const emptyEnvelopes = [
+    ["빈 객체", "{}"],
+    ["스칼라 true", "true"],
+    ["빈 배열", "[]"],
+    ["resultCode 없는 게이트웨이 본문", JSON.stringify({ message: "Service Unavailable" })],
+    ["필수 필드가 없는 row", JSON.stringify([{ railOprIsttCd: "S1", gubun: "EV" }])],
+  ];
+
+  for (const [label, body] of emptyEnvelopes) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-control-shape-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: providerFailureFetch({
+            calls,
+            control: new Response(body, { status: 200, headers: { "content-type": "application/json" } }),
+          }),
+        }),
+        (error) => {
+          assert.match(error.message, /failureClass=authentication-error/, label);
+          assert.match(error.message, /controlOperation=failed/, label);
+          assert.doesNotMatch(error.message, /authorization-missing/, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 2, label);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+test("KRIC evidence collector는 전송 실패도 분류와 근거를 남긴다", async () => {
+  const transportFailures = [
+    ["DNS 실패", () => Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } })],
+    ["timeout", () => Object.assign(new Error("The operation was aborted"), { name: "TimeoutError" })],
+    ["redirect 거부", () => new TypeError("unexpected redirect")],
+  ];
+
+  for (const [label, buildError] of transportFailures) {
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-transport-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: candidate.id,
+          candidatesDocument: integrityDocument([candidate]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            throw buildError();
+          },
+        }),
+        (error) => {
+          assert.match(error.message, /failureClass=transport-error/, label);
+          assert.match(error.message, /controlOperation=not-run/, label);
+          assert.doesNotMatch(error.message, /Aa0/, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, 1, label);
+      await assertCollectorCleanup(runnerTemp);
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
   }
 });

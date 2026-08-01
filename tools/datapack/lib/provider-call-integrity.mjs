@@ -12,6 +12,9 @@ const CREDENTIAL_FINGERPRINT_LENGTH = 12;
 const CREDENTIAL_CHARACTER_CLASSES = Object.freeze(["digit", "lower", "symbol", "upper"]);
 const REDACTED_SERVICE_KEY = "[서비스키값]";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const PROVIDER_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+// source-operation.mjs의 CREDENTIAL_NAME과 같은 목록. 공개 저장소에 라이브 키가 커밋되는 경로를 닫는다.
+const CREDENTIAL_PARAMETER_NAME = /^(?:accesskey|accesstoken|apikey|authorization|clientsecret|credential|key|password|privatekey|refreshtoken|secret|servicekey|signature|token|xamzcredential|xamzsecuritytoken|xamzsignature|xapikey)$/;
 
 export const PROVIDER_FAILURE_CLASSIFICATIONS = Object.freeze([
   "request-error",
@@ -129,7 +132,8 @@ export function assertProviderCredentialIntegrity({ providerId, credential, cont
   };
 }
 
-function credentialFreeProviderUrl(value, label) {
+// 자격증명성 query 파라미터는 endpoint에서 전면 거부하고, sampleUrl에서는 정확한 redaction 자리표시자만 허용한다.
+function credentialFreeProviderUrl(value, label, { allowRedactedCredential = false } = {}) {
   let url;
   try {
     url = new URL(requiredText(value, label));
@@ -139,16 +143,43 @@ function credentialFreeProviderUrl(value, label) {
   if (url.protocol !== "https:" || url.username || url.password || url.hash) {
     throw new Error(`${label} must be a credential-free HTTPS URL`);
   }
+  for (const [name, parameterValue] of url.searchParams) {
+    if (!CREDENTIAL_PARAMETER_NAME.test(name.replace(/[^A-Za-z0-9]/g, "").toLowerCase())) continue;
+    if (allowRedactedCredential && parameterValue === REDACTED_SERVICE_KEY) continue;
+    throw new Error(`${label} must not carry a credential query parameter: ${name}`);
+  }
   return url;
+}
+
+function validateExpectedControlSuccess(label, expectedSuccess) {
+  requireObject(expectedSuccess, label);
+  requireAllowedKeys(expectedSuccess, new Set(["minimumRowCount", "requiredFields"]), label);
+  if (!Number.isInteger(expectedSuccess.minimumRowCount) || expectedSuccess.minimumRowCount < 1) {
+    throw new Error(`${label}.minimumRowCount must be a positive integer`);
+  }
+  const requiredFields = expectedSuccess.requiredFields;
+  if (!Array.isArray(requiredFields) || requiredFields.length === 0
+    || requiredFields.some((field) => typeof field !== "string" || !PROVIDER_FIELD_NAME.test(field))
+    || new Set(requiredFields).size !== requiredFields.length
+    || requiredFields.join(",") !== [...requiredFields].sort().join(",")) {
+    throw new Error(`${label}.requiredFields must be a sorted non-empty provider field name array`);
+  }
+  return { minimumRowCount: expectedSuccess.minimumRowCount, requiredFields: [...requiredFields] };
 }
 
 export function validateProviderControlOperation(providerId, controlOperation) {
   const label = `${providerId}.controlOperation`;
   requireObject(controlOperation, label);
-  requireAllowedKeys(controlOperation, new Set(["candidateId", "endpoint", "sampleUrl", "verifiedAt"]), label);
+  requireAllowedKeys(
+    controlOperation,
+    new Set(["candidateId", "endpoint", "sampleUrl", "expectedSuccess", "verifiedAt"]),
+    label,
+  );
   const candidateId = requiredText(controlOperation.candidateId, `${label}.candidateId`);
   const endpoint = credentialFreeProviderUrl(controlOperation.endpoint, `${label}.endpoint`);
-  const sampleUrl = credentialFreeProviderUrl(controlOperation.sampleUrl, `${label}.sampleUrl`);
+  const sampleUrl = credentialFreeProviderUrl(controlOperation.sampleUrl, `${label}.sampleUrl`, {
+    allowRedactedCredential: true,
+  });
   if (sampleUrl.origin !== endpoint.origin || sampleUrl.pathname !== endpoint.pathname) {
     throw new Error(`${label}.sampleUrl must use the control operation endpoint`);
   }
@@ -160,12 +191,17 @@ export function validateProviderControlOperation(providerId, controlOperation) {
   if (!new Set(["json", "xml"]).has(format)) {
     throw new Error(`${label}.sampleUrl format is not supported: ${format}`);
   }
+  const expectedSuccess = validateExpectedControlSuccess(
+    `${label}.expectedSuccess`,
+    controlOperation.expectedSuccess,
+  );
   if (!ISO_DATE.test(requiredText(controlOperation.verifiedAt, `${label}.verifiedAt`))) {
     throw new Error(`${label}.verifiedAt must be an ISO date`);
   }
   return {
     candidateId,
     endpoint: endpoint.href,
+    expectedSuccess,
     format,
     sampleUrl: controlOperation.sampleUrl,
     verifiedAt: controlOperation.verifiedAt,

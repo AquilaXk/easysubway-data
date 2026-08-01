@@ -343,12 +343,46 @@ function providerResponseSignal({ raw, format }) {
   };
 }
 
-function controlOperationSucceeded(raw, format) {
+function hasRequiredControlFields(value, requiredFields) {
+  return requiredFields.every((field) => Object.hasOwn(value, field)
+    && (value[field] == null || typeof value[field] !== "object"));
+}
+
+function countJsonControlRows(payload, requiredFields) {
+  const pending = [payload];
+  let rows = 0;
+  for (let cursor = 0; cursor < pending.length && cursor < 128; cursor += 1) {
+    const value = pending[cursor];
+    if (!value || typeof value !== "object") continue;
+    if (!Array.isArray(value) && hasRequiredControlFields(value, requiredFields)) {
+      rows += 1;
+      continue;
+    }
+    for (const child of Object.values(value)) {
+      if (pending.length === 128) break;
+      if (child && typeof child === "object") pending.push(child);
+    }
+  }
+  return rows;
+}
+
+function countXmlControlRows(raw, requiredFields) {
+  return [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
+    .filter(([, fragment]) => requiredFields.every((field) => new RegExp(`<${field}[\\s>/]`).test(fragment)))
+    .length;
+}
+
+// 대조군은 "실패가 아님"이 아니라 카탈로그가 선언한 "기대 성공 형태"를 충족해야 성공이다.
+// 그렇지 않으면 빈 응답이나 게이트웨이 오류 페이지가 대조군을 통과해 잘못된 blocker를 증거로 뒷받침한다.
+function controlOperationSucceeded(raw, format, expectedSuccess) {
+  const { minimumRowCount, requiredFields } = expectedSuccess;
   if (format === "json") {
     const payload = parseJson(raw);
-    return payload != null && findJsonFailureEnvelope(payload) == null;
+    if (payload == null || findJsonFailureEnvelope(payload) != null) return false;
+    return countJsonControlRows(payload, requiredFields) >= minimumRowCount;
   }
-  return /^(?:0+|ok|success)$/i.test(scanXmlStructure(raw).resultCode ?? "");
+  if (!/^(?:0+|ok|success)$/i.test(scanXmlStructure(raw).resultCode ?? "")) return false;
+  return countXmlControlRows(raw, requiredFields) >= minimumRowCount;
 }
 
 // 같은 실행·같은 키로 카탈로그가 지정한 대조군을 호출한다. 실패는 어떤 이유든 "failed"로 닫는다.
@@ -364,7 +398,11 @@ async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) 
       },
     });
     if (!response.ok) return "failed";
-    return controlOperationSucceeded(await response.text(), controlOperation.format) ? "succeeded" : "failed";
+    return controlOperationSucceeded(
+      await response.text(),
+      controlOperation.format,
+      controlOperation.expectedSuccess,
+    ) ? "succeeded" : "failed";
   } catch {
     return "failed";
   }
@@ -460,11 +498,19 @@ export async function collectSourceCandidateEvidence({
 
     const liveUrl = new URL(request.sampleUrl);
     liveUrl.searchParams.set("serviceKey", serviceKey);
-    const response = await fetchImpl(liveUrl, {
-      redirect: "error",
-      signal: AbortSignal.timeout(30_000),
-      headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
-    });
+    let response;
+    try {
+      response = await fetchImpl(liveUrl, {
+        redirect: "error",
+        signal: AbortSignal.timeout(30_000),
+        headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
+      });
+    } catch (error) {
+      // DNS·TLS·redirect 거부·timeout은 응답 분기 전에 reject된다. 분류 없이 빠져나가지 않게 근거를 붙인다.
+      const evidence = await failureEvidence({ response: null, raw: null, format: request.format });
+      if (!evidence) throw error;
+      throw new Error(`${error instanceof Error ? error.message : String(error)}${evidence}`);
+    }
     if (!response.ok) {
       throw new Error(`${requestFailureLabel} ${response.status}${await failureEvidence({ response, raw: null, format: request.format })}`);
     }
