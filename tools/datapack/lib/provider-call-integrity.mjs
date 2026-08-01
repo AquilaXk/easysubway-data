@@ -6,13 +6,15 @@
 //   3) 실패 분류 — 모든 provider 실패를 5개 값으로 분류하고 근거(HTTP status, result code, 대조군)를 남긴다.
 import { createHash } from "node:crypto";
 
+import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+
 const CREDENTIAL_FINGERPRINT_LABEL = "easysubway-data:provider-credential:v1";
 const CREDENTIAL_FINGERPRINT_ALGORITHM = "sha256-12";
 const CREDENTIAL_FINGERPRINT_LENGTH = 12;
 const CREDENTIAL_CHARACTER_CLASSES = Object.freeze(["digit", "lower", "symbol", "upper"]);
 const REDACTED_SERVICE_KEY = "[서비스키값]";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const PROVIDER_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+const PROVIDER_FIELD_NAME = /^[A-Za-z]\w*$/;
 // source-operation.mjs의 CREDENTIAL_NAME과 같은 목록. 공개 저장소에 라이브 키가 커밋되는 경로를 닫는다.
 const CREDENTIAL_PARAMETER_NAME = /^(?:accesskey|accesstoken|apikey|authorization|clientsecret|credential|key|password|privatekey|refreshtoken|secret|servicekey|signature|token|xamzcredential|xamzsecuritytoken|xamzsignature|xapikey)$/;
 
@@ -161,7 +163,7 @@ function validateExpectedControlSuccess(label, expectedSuccess) {
   if (!Array.isArray(requiredFields) || requiredFields.length === 0
     || requiredFields.some((field) => typeof field !== "string" || !PROVIDER_FIELD_NAME.test(field))
     || new Set(requiredFields).size !== requiredFields.length
-    || requiredFields.join(",") !== [...requiredFields].sort().join(",")) {
+    || requiredFields.join(",") !== [...requiredFields].sort(codepointCompare).join(",")) {
     throw new Error(`${label}.requiredFields must be a sorted non-empty provider field name array`);
   }
   return { minimumRowCount: expectedSuccess.minimumRowCount, requiredFields: [...requiredFields] };

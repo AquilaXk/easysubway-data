@@ -358,17 +358,14 @@ function countJsonControlRows(payload, requiredFields) {
       rows += 1;
       continue;
     }
-    for (const child of Object.values(value)) {
-      if (pending.length === 128) break;
-      if (child && typeof child === "object") pending.push(child);
-    }
+    appendJsonChildren(pending, value);
   }
   return rows;
 }
 
 function countXmlControlRows(raw, requiredFields) {
   return [...raw.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
-    .filter(([, fragment]) => requiredFields.every((field) => new RegExp(`<${field}[\\s>/]`).test(fragment)))
+    .filter(([, fragment]) => requiredFields.every((field) => new RegExp(String.raw`<${field}[\s>/]`).test(fragment)))
     .length;
 }
 
@@ -430,6 +427,34 @@ async function classifiedProviderError(error, { failureEvidence, response, raw, 
   const evidence = await failureEvidence({ response, raw, format });
   if (!evidence) return error;
   return new Error(`${error instanceof Error ? error.message : String(error)}${evidence}`);
+}
+
+// provider 요청과 body 수신. 이 구간의 실패는 전부 분류를 달고 나간다.
+async function readProviderResponse({ request, serviceKey, fetchImpl, failureEvidence, requestFailureLabel }) {
+  const liveUrl = new URL(request.sampleUrl);
+  liveUrl.searchParams.set("serviceKey", serviceKey);
+  const transportEvidence = { failureEvidence, response: null, raw: null, format: request.format };
+
+  let response;
+  try {
+    response = await fetchImpl(liveUrl, {
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+      headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
+    });
+  } catch (error) {
+    // DNS·TLS·redirect 거부·timeout은 응답 분기 전에 reject된다. 분류 없이 빠져나가지 않게 근거를 붙인다.
+    throw await classifiedProviderError(error, transportEvidence);
+  }
+  if (!response.ok) {
+    throw new Error(`${requestFailureLabel} ${response.status}${await failureEvidence({ response, raw: null, format: request.format })}`);
+  }
+  try {
+    // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
+    return { response, rawResponse: await response.text() };
+  } catch (error) {
+    throw await classifiedProviderError(error, transportEvidence);
+  }
 }
 
 async function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence }) {
@@ -504,39 +529,13 @@ export async function collectSourceCandidateEvidence({
       candidatesPath = stagedCandidatesPath;
     }
 
-    const liveUrl = new URL(request.sampleUrl);
-    liveUrl.searchParams.set("serviceKey", serviceKey);
-    let response;
-    try {
-      response = await fetchImpl(liveUrl, {
-        redirect: "error",
-        signal: AbortSignal.timeout(30_000),
-        headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
-      });
-    } catch (error) {
-      // DNS·TLS·redirect 거부·timeout은 응답 분기 전에 reject된다. 분류 없이 빠져나가지 않게 근거를 붙인다.
-      throw await classifiedProviderError(error, {
-        failureEvidence,
-        response: null,
-        raw: null,
-        format: request.format,
-      });
-    }
-    if (!response.ok) {
-      throw new Error(`${requestFailureLabel} ${response.status}${await failureEvidence({ response, raw: null, format: request.format })}`);
-    }
-    let rawResponse;
-    try {
-      rawResponse = await response.text();
-    } catch (error) {
-      // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
-      throw await classifiedProviderError(error, {
-        failureEvidence,
-        response: null,
-        raw: null,
-        format: request.format,
-      });
-    }
+    const { response, rawResponse } = await readProviderResponse({
+      request,
+      serviceKey,
+      fetchImpl,
+      failureEvidence,
+      requestFailureLabel,
+    });
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
     await assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence });
 
