@@ -1176,3 +1176,100 @@ test("KRIC evidence collector는 자기 대조군 재시도로 권한 미보유�
     await rm(runnerTemp, { recursive: true, force: true });
   }
 });
+
+test("KRIC evidence collector는 non-ok 응답의 provider result code를 근거로 남긴다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-non-ok-body-"));
+  const calls = [];
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async (url) => {
+          calls.push(url);
+          return url.pathname === CONTROL_OPERATION_PATHNAME
+            ? new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              })
+            : new Response(JSON.stringify({ resultCode: "AUTH-403", resultMsg: "권한이 없습니다." }), {
+                status: 403,
+                headers: { "content-type": "application/json" },
+              });
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /KRIC request failed with HTTP 403/);
+        assert.match(error.message, /resultCode=AUTH-403/);
+        assert.match(error.message, /failureClass=authorization-missing/);
+        assert.match(error.message, /controlOperation=succeeded/);
+        assert.doesNotMatch(error.message, /권한이 없습니다/);
+        return true;
+      },
+    );
+    assert.equal(calls.length, 2);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 non-ok 응답 본문의 credential 에코와 unsafe code를 숨긴다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-non-ok-redaction-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => new Response(
+          JSON.stringify({ resultCode: `rejected serviceKey=${INTEGRITY_SERVICE_KEY}`, resultMsg: INTEGRITY_SERVICE_KEY }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        ),
+      }),
+      (error) => {
+        assert.match(error.message, /KRIC request failed with HTTP 401/);
+        assert.match(error.message, /resultCode=\[unsafe\]/);
+        assert.doesNotMatch(error.message, /Aa0/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});
+
+test("KRIC evidence collector는 non-ok 본문을 못 읽어도 새 예외 경로를 만들지 않는다", async () => {
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-non-ok-body-failure-"));
+  try {
+    await assert.rejects(
+      collectKricSourceCandidateEvidence({
+        candidateId: candidate.id,
+        candidatesDocument: integrityDocument([candidate]),
+        runnerTemp,
+        serviceKey: INTEGRITY_SERVICE_KEY,
+        fetchImpl: async () => ({
+          ok: false,
+          status: 403,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => {
+            throw Object.assign(new Error("terminated"), { cause: { code: "ECONNRESET" } });
+          },
+        }),
+      }),
+      (error) => {
+        assert.match(error.message, /KRIC request failed with HTTP 403/);
+        assert.match(error.message, /resultCode=\[missing\]/);
+        assert.match(error.message, /failureClass=/);
+        assert.doesNotMatch(error.message, /terminated/);
+        return true;
+      },
+    );
+    await assertCollectorCleanup(runnerTemp);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+});

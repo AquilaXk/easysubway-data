@@ -27,6 +27,7 @@ export const SAFE_RESULT_CODE = /^[A-Za-z0-9._-]{1,32}$/;
 export const MAX_XML_TAG_LENGTH = 40;
 export const MAX_XML_DEPTH = 32;
 export const MAX_XML_SCALAR_LENGTH = 512;
+export const MAX_ERROR_BODY_LENGTH = 64 * 1024;
 
 export function requiredText(value, label) {
   if (typeof value !== "string" || value.length === 0) {
@@ -456,6 +457,18 @@ async function classifiedProviderError(error, { failureEvidence, response, raw, 
   return new Error(`${error instanceof Error ? error.message : String(error)}${evidence}`);
 }
 
+// non-ok 응답 본문에는 provider result code가 실린다. 본문 읽기 실패가 새 예외 경로가 되지 않도록
+// 방어적으로 읽고, 못 읽으면 null로 낮춘다 — status 기반 판정은 유지되고, 근거가 빈 승격은
+// assertProviderBlockerPromotable이 이미 거부한다. 스캔·보관 분량은 provider가 정하지 못하도록 상한을 둔다.
+async function readErrorResponseBody(response) {
+  try {
+    const raw = await response.text();
+    return raw.length > MAX_ERROR_BODY_LENGTH ? raw.slice(0, MAX_ERROR_BODY_LENGTH) : raw;
+  } catch {
+    return null;
+  }
+}
+
 // provider 요청과 body 수신. 이 구간의 실패는 전부 분류를 달고 나간다.
 async function readProviderResponse({ request, serviceKey, fetchImpl, failureEvidence, requestFailureLabel }) {
   const liveUrl = new URL(request.sampleUrl);
@@ -474,7 +487,12 @@ async function readProviderResponse({ request, serviceKey, fetchImpl, failureEvi
     throw await classifiedProviderError(error, transportEvidence);
   }
   if (!response.ok) {
-    throw new Error(`${requestFailureLabel} ${response.status}${await failureEvidence({ response, raw: null, format: request.format })}`);
+    // 401·403은 credential 신호로 지원한다고 선언한 경로다. 본문을 버리면 provider result code가 사라져
+    // 대조군이 성공해도 blocker 승격에 필요한 근거를 만들 수 없다.
+    const errorBody = await readErrorResponseBody(response);
+    const { providerResultCode } = providerResponseSignal({ raw: errorBody, format: request.format });
+    const evidence = await failureEvidence({ response, raw: errorBody, format: request.format });
+    throw new Error(`${requestFailureLabel} ${response.status} resultCode=${safeResultCode(providerResultCode)}${evidence}`);
   }
   try {
     // body 스트림이 끊기면 응답을 받지 못한 것과 같다. HTTP status를 근거로 쓰지 않고 전송 실패로 닫는다.
