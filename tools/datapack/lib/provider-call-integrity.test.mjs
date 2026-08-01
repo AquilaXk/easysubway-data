@@ -143,7 +143,7 @@ test("실패 분류는 5개 값과 근거를 함께 남긴다", () => {
     "no-data",
     "transport-error",
   ]);
-  assert.deepEqual(CONTROL_OPERATION_STATUSES, ["succeeded", "failed", "not-run"]);
+  assert.deepEqual(CONTROL_OPERATION_STATUSES, ["succeeded", "failed", "not-run", "self-succeeded"]);
 
   assert.equal(classifyProviderFailure({ httpStatus: null }).classification, "transport-error");
   assert.equal(classifyProviderFailure({ httpStatus: 503 }).classification, "transport-error");
@@ -203,6 +203,19 @@ test("권한 미보유 판정은 같은 실행의 대조군 성공을 전제조�
       controlOperationStatus: "not-run",
     }),
     /provider credential signal requires a same-run control operation result/,
+  );
+
+  // 자기 대조군: 같은 operation이 같은 실행에서 성공했으므로 권한 미보유가 성립하지 않는다.
+  const selfControl = classifyProviderFailure({
+    httpStatus: 200,
+    providerResultCode: "30",
+    providerResultSignal: "authorization",
+    controlOperationStatus: "self-succeeded",
+  });
+  assert.equal(selfControl.classification, "request-error");
+  assert.throws(
+    () => assertProviderBlockerPromotable(selfControl),
+    /provider blocker promotion requires the authorization-missing classification/,
   );
 });
 

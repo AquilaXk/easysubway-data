@@ -26,7 +26,9 @@ export const PROVIDER_FAILURE_CLASSIFICATIONS = Object.freeze([
   "transport-error",
 ]);
 
-export const CONTROL_OPERATION_STATUSES = Object.freeze(["succeeded", "failed", "not-run"]);
+// self-succeeded: 대상 operation이 곧 대조군인 경우의 성공. 재시도가 성공한 것이라
+// 접근 가능이 같은 실행에서 증명됐고, 권한 미보유를 성립시킬 근거가 되지 못한다.
+export const CONTROL_OPERATION_STATUSES = Object.freeze(["succeeded", "failed", "not-run", "self-succeeded"]);
 
 function requiredText(value, label) {
   if (typeof value !== "string" || value.length === 0) {
@@ -252,8 +254,13 @@ export function classifyProviderFailure({
     if (controlOperationStatus === "not-run") {
       throw new Error("provider credential signal requires a same-run control operation result");
     }
+    if (controlOperationStatus === "succeeded") {
+      return { classification: "authorization-missing", ...diagnosis };
+    }
+    // 자기 대조군 성공은 같은 operation이 같은 실행에서 접근 가능함을 증명한 것이다.
+    // 권한 미보유도 키 문제도 아니므로 blocker 승격 자격이 없는 요청오류로 닫는다.
     return {
-      classification: controlOperationStatus === "succeeded" ? "authorization-missing" : "authentication-error",
+      classification: controlOperationStatus === "self-succeeded" ? "request-error" : "authentication-error",
       ...diagnosis,
     };
   }

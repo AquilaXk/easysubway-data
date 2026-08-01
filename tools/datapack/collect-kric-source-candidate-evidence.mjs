@@ -45,6 +45,26 @@ function assertKricUrl(url, label) {
   }
 }
 
+// #22: 대조군 URL에는 라이브 serviceKey가 치환돼 나간다. 본 요청과 같은 KRIC origin 불변식을 적용하고
+// 추적 중인 카탈로그 candidate에 바인딩해, 계약 문서만으로 임의 호스트에 자격증명이 나가지 못하게 한다.
+export function assertKricControlOperation(candidatesDocument, controlOperation) {
+  const label = "kric.controlOperation";
+  assertKricUrl(new URL(controlOperation.endpoint), `${label}.endpoint`);
+  assertKricUrl(new URL(controlOperation.sampleUrl), `${label}.sampleUrl`);
+
+  const control = candidatesDocument.candidates?.find((entry) => entry.id === controlOperation.candidateId);
+  if (!control) {
+    throw new Error(`${label} candidate is not tracked: ${controlOperation.candidateId}`);
+  }
+  if (controlOperation.endpoint !== control.requestUrl) {
+    throw new Error(`${label} must match the tracked candidate request URL`);
+  }
+  if (controlOperation.sampleUrl !== (control.operation?.sampleUrl ?? control.evidence?.sampleUrl)) {
+    throw new Error(`${label} must match the tracked candidate sample URL`);
+  }
+  return controlOperation;
+}
+
 export function resolveKricCandidateRequest(candidatesDocument, candidateId) {
   if (!KRIC_SOURCE_CANDIDATE_IDS.includes(candidateId)) {
     throw new Error(`candidate is not allowed: ${candidateId}`);
@@ -115,6 +135,7 @@ export async function collectKricSourceCandidateEvidence({
       credential: serviceKey,
       contract: integrity.credential,
     });
+    assertKricControlOperation(document, integrity.controlOperation);
   }
   const request = resolveKricCandidateRequest(document, candidateId);
   const effectiveDocument = {

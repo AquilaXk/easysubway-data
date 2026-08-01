@@ -425,12 +425,19 @@ async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) 
   }
 }
 
-async function providerFailureEvidence({ controlOperation, serviceKey, fetchImpl, response, raw, format }) {
+// 대상 operation이 곧 대조군이면 그 호출은 독립 대조가 아니라 같은 operation의 재시도다.
+// 성공을 그대로 인정하면 방금 접근 가능함이 증명된 operation에 권한 미보유 판정이 나온다.
+async function resolveControlOperationStatus({ controlOperation, candidateId, serviceKey, fetchImpl }) {
+  const status = await runControlOperation({ controlOperation, serviceKey, fetchImpl });
+  return status === "succeeded" && controlOperation.candidateId === candidateId ? "self-succeeded" : status;
+}
+
+async function providerFailureEvidence({ controlOperation, candidateId, serviceKey, fetchImpl, response, raw, format }) {
   if (!controlOperation) return "";
   const httpStatus = safeHttpStatus(response);
   const { providerResultCode, providerResultSignal } = providerResponseSignal({ raw, format });
   const controlOperationStatus = requiresControlOperation({ httpStatus, providerResultSignal })
-    ? await runControlOperation({ controlOperation, serviceKey, fetchImpl })
+    ? await resolveControlOperationStatus({ controlOperation, candidateId, serviceKey, fetchImpl })
     : "not-run";
   const diagnosis = classifyProviderFailure({
     httpStatus,
@@ -518,7 +525,7 @@ export async function collectSourceCandidateEvidence({
 } = {}) {
   requiredText(serviceKey, serviceKeyLabel);
   const failureEvidence = ({ response, raw, format }) =>
-    providerFailureEvidence({ controlOperation, serviceKey, fetchImpl, response, raw, format });
+    providerFailureEvidence({ controlOperation, candidateId, serviceKey, fetchImpl, response, raw, format });
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
