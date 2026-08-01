@@ -15,6 +15,8 @@ const CREDENTIAL_CHARACTER_CLASSES = Object.freeze(["digit", "lower", "symbol", 
 const REDACTED_SERVICE_KEY = "[서비스키값]";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PROVIDER_FIELD_NAME = /^[A-Za-z]\w*$/;
+// source-candidate-evidence-collector.mjs의 SAFE_RESULT_CODE와 같은 형태.
+const PROVIDER_RESULT_CODE = /^[\w.-]{1,32}$/;
 // source-operation.mjs의 CREDENTIAL_NAME과 같은 목록. 공개 저장소에 라이브 키가 커밋되는 경로를 닫는다.
 const CREDENTIAL_PARAMETER_NAME = /^(?:accesskey|accesstoken|apikey|authorization|clientsecret|credential|key|password|privatekey|refreshtoken|secret|servicekey|signature|token|xamzcredential|xamzsecuritytoken|xamzsignature|xapikey)$/;
 
@@ -212,6 +214,20 @@ export function validateProviderControlOperation(providerId, controlOperation) {
   };
 }
 
+// provider가 credential 문제와 권한 미보유를 같은 코드로 알려오는 result code 목록.
+// 코드 의미는 provider 속성이므로 코드에 박지 않고 카탈로그가 선언하게 한다.
+// 메시지 문구에 의존하면 provider가 문구를 바꾸거나 생략하는 순간 대조군 판별이 통째로 우회된다.
+function validateCredentialSignalResultCodes(providerId, codes) {
+  const label = `${providerId}.credentialSignalResultCodes`;
+  if (!Array.isArray(codes) || codes.length === 0
+    || codes.some((code) => typeof code !== "string" || !PROVIDER_RESULT_CODE.test(code))
+    || new Set(codes).size !== codes.length
+    || codes.join(",") !== [...codes].sort(codepointCompare).join(",")) {
+    throw new Error(`${label} must be a sorted non-empty provider result code array`);
+  }
+  return [...codes];
+}
+
 export function resolveProviderCallIntegrity(document, providerId, { required = true } = {}) {
   const provider = document?.providers?.[providerId];
   if (provider == null) {
@@ -219,10 +235,15 @@ export function resolveProviderCallIntegrity(document, providerId, { required = 
     throw new Error(`provider call integrity contract is missing: ${providerId}`);
   }
   requireObject(provider, `${providerId} provider contract`);
-  requireAllowedKeys(provider, new Set(["credential", "controlOperation"]), `${providerId} provider contract`);
+  requireAllowedKeys(
+    provider,
+    new Set(["credential", "controlOperation", "credentialSignalResultCodes"]),
+    `${providerId} provider contract`,
+  );
   return {
     credential: validateProviderCredentialContract(providerId, provider.credential),
     controlOperation: validateProviderControlOperation(providerId, provider.controlOperation),
+    credentialSignalResultCodes: validateCredentialSignalResultCodes(providerId, provider.credentialSignalResultCodes),
   };
 }
 

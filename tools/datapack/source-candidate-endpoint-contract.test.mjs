@@ -140,4 +140,14 @@ test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카
     .filter((field) => !documentedFields.has(field));
   assert.deepEqual(undocumented, [], "expectedSuccess.requiredFields must be documented provider output fields");
   assert.ok(integrity.controlOperation.expectedSuccess.minimumRowCount >= 1);
+
+  // credential 신호 코드도 창작이 아니다. 카탈로그가 실측으로 기록한 AUTHORIZATION_REQUIRED 관찰이 출처다.
+  const observedAuthorizationCodes = new Set(document.candidates
+    .map((entry) => entry.evidence?.operationLiveValidation)
+    .filter((observation) => observation?.schemaStatus === "AUTHORIZATION_REQUIRED")
+    .map((observation) => observation.providerResultCode));
+  assert.ok(observedAuthorizationCodes.size > 0, "catalog must record at least one AUTHORIZATION_REQUIRED observation");
+  const unobserved = integrity.credentialSignalResultCodes
+    .filter((code) => !observedAuthorizationCodes.has(code));
+  assert.deepEqual(unobserved, [], "credentialSignalResultCodes must come from recorded AUTHORIZATION_REQUIRED observations");
 });

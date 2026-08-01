@@ -31,7 +31,10 @@
           ]
         },
         "verifiedAt": "2026-08-02"
-      }
+      },
+      "credentialSignalResultCodes": [
+        "30"
+      ]
     }
   },
   "candidates": [

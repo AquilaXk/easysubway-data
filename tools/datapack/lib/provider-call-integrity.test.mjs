@@ -41,8 +41,14 @@ function document(overrides = {}) {
   );
 }
 
+const CREDENTIAL_SIGNAL_RESULT_CODES = Object.freeze(["30"]);
+
 function documentWithControlOperation(controlOperation, credential = CREDENTIAL_CONTRACT) {
-  return { providers: { kric: { credential, controlOperation } } };
+  return {
+    providers: {
+      kric: { credential, controlOperation, credentialSignalResultCodes: [...CREDENTIAL_SIGNAL_RESULT_CODES] },
+    },
+  };
 }
 
 test("provider credential shape는 값이 아니라 길이·문자 클래스·지문만 노출한다", () => {
@@ -111,6 +117,7 @@ test("provider 호출 정합성 계약은 카탈로그에서만 나오고 형상
   assert.equal(resolved.controlOperation.candidateId, CONTROL_OPERATION.candidateId);
   assert.equal(resolved.controlOperation.format, "json");
   assert.deepEqual(resolved.controlOperation.expectedSuccess, CONTROL_OPERATION.expectedSuccess);
+  assert.deepEqual(resolved.credentialSignalResultCodes, CREDENTIAL_SIGNAL_RESULT_CODES);
 
   assert.equal(resolveProviderCallIntegrity({}, "kric", { required: false }), null);
   assert.throws(
@@ -314,6 +321,26 @@ test("대조군 계약은 기대 성공 형태를 선언해야 한다", () => {
     assert.throws(
       () => resolveProviderCallIntegrity(document({ controlOperation: { expectedSuccess } }), "kric"),
       pattern,
+    );
+  }
+});
+
+test("provider 계약은 credential 신호 result code를 선언해야 한다", () => {
+  const withoutCodes = documentWithControlOperation(CONTROL_OPERATION);
+  delete withoutCodes.providers.kric.credentialSignalResultCodes;
+  assert.throws(
+    () => resolveProviderCallIntegrity(withoutCodes, "kric"),
+    /kric\.credentialSignalResultCodes must be a sorted non-empty provider result code array/,
+  );
+
+  const invalid = [[], ["30", "30"], ["31", "30"], ["코드"], ["x".repeat(33)], "30"];
+  for (const credentialSignalResultCodes of invalid) {
+    const document = documentWithControlOperation(CONTROL_OPERATION);
+    document.providers.kric.credentialSignalResultCodes = credentialSignalResultCodes;
+    assert.throws(
+      () => resolveProviderCallIntegrity(document, "kric"),
+      /kric\.credentialSignalResultCodes must be a sorted non-empty provider result code array/,
+      JSON.stringify(credentialSignalResultCodes),
     );
   }
 });

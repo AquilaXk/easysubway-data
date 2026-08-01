@@ -327,8 +327,14 @@ function safeHttpStatus(response) {
   return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
 }
 
+// classifyXmlFailure는 메시지 문구에 의존한다. provider가 코드만 주거나 문구를 바꾸면 credential 신호를
+// 놓쳐 대조군 호출이 통째로 건너뛰어진다. 카탈로그가 선언한 코드는 문구와 무관하게 credential 신호로 본다.
+function credentialSignalOverride(resultCode, credentialSignalResultCodes) {
+  return resultCode != null && credentialSignalResultCodes?.includes(resultCode) ? "authorization" : null;
+}
+
 // #22: provider가 돌려준 실패 신호. 키 훼손과 권한 미보유가 같은 코드로 오기 때문에 신호만으로 판정하지 않는다.
-function providerResponseSignal({ raw, format }) {
+function providerResponseSignal({ raw, format, credentialSignalResultCodes }) {
   if (raw == null) return { providerResultCode: null, providerResultSignal: null };
   if (format === "json") {
     const envelope = findJsonFailureEnvelope(parseJson(raw));
@@ -337,13 +343,15 @@ function providerResponseSignal({ raw, format }) {
     const resultMessage = typeof envelope.resultMsg === "string" ? envelope.resultMsg : null;
     return {
       providerResultCode: resultCode,
-      providerResultSignal: classifyXmlFailure({ itemCount: 0, resultCode, resultMessage }),
+      providerResultSignal: credentialSignalOverride(resultCode, credentialSignalResultCodes)
+        ?? classifyXmlFailure({ itemCount: 0, resultCode, resultMessage }),
     };
   }
   const { itemCount, resultCode, resultMessage } = scanXmlStructure(raw);
   return {
     providerResultCode: resultCode,
-    providerResultSignal: classifyXmlFailure({ itemCount, resultCode, resultMessage }),
+    providerResultSignal: credentialSignalOverride(resultCode, credentialSignalResultCodes)
+      ?? classifyXmlFailure({ itemCount, resultCode, resultMessage }),
   };
 }
 
@@ -438,10 +446,19 @@ async function resolveControlOperationStatus({ controlOperation, candidateId, se
   return status === "succeeded" && controlOperation.candidateId === candidateId ? "self-succeeded" : status;
 }
 
-async function providerFailureEvidence({ controlOperation, candidateId, serviceKey, fetchImpl, response, raw, format }) {
+async function providerFailureEvidence({
+  controlOperation,
+  credentialSignalResultCodes,
+  candidateId,
+  serviceKey,
+  fetchImpl,
+  response,
+  raw,
+  format,
+}) {
   if (!controlOperation) return "";
   const httpStatus = safeHttpStatus(response);
-  const { providerResultCode, providerResultSignal } = providerResponseSignal({ raw, format });
+  const { providerResultCode, providerResultSignal } = providerResponseSignal({ raw, format, credentialSignalResultCodes });
   const controlOperationStatus = requiresControlOperation({ httpStatus, providerResultSignal })
     ? await resolveControlOperationStatus({ controlOperation, candidateId, serviceKey, fetchImpl })
     : "not-run";
@@ -477,7 +494,14 @@ async function readErrorResponseBody(response) {
 }
 
 // provider 요청과 body 수신. 이 구간의 실패는 전부 분류를 달고 나간다.
-async function readProviderResponse({ request, serviceKey, fetchImpl, failureEvidence, requestFailureLabel }) {
+async function readProviderResponse({
+  request,
+  serviceKey,
+  fetchImpl,
+  failureEvidence,
+  requestFailureLabel,
+  credentialSignalResultCodes,
+}) {
   const liveUrl = new URL(request.sampleUrl);
   liveUrl.searchParams.set("serviceKey", serviceKey);
   const transportEvidence = { failureEvidence, response: null, raw: null, format: request.format };
@@ -497,7 +521,7 @@ async function readProviderResponse({ request, serviceKey, fetchImpl, failureEvi
     // 401·403은 credential 신호로 지원한다고 선언한 경로다. 본문을 버리면 provider result code가 사라져
     // 대조군이 성공해도 blocker 승격에 필요한 근거를 만들 수 없다.
     const errorBody = await readErrorResponseBody(response);
-    const { providerResultCode } = providerResponseSignal({ raw: errorBody, format: request.format });
+    const { providerResultCode } = providerResponseSignal({ raw: errorBody, format: request.format, credentialSignalResultCodes });
     const evidence = await failureEvidence({ response, raw: errorBody, format: request.format });
     throw new Error(`${requestFailureLabel} ${response.status} resultCode=${safeResultCode(providerResultCode)}${evidence}`);
   }
@@ -549,10 +573,19 @@ export async function collectSourceCandidateEvidence({
   buildScriptName,
   validateScriptName,
   controlOperation = null,
+  credentialSignalResultCodes = null,
 } = {}) {
   requiredText(serviceKey, serviceKeyLabel);
-  const failureEvidence = ({ response, raw, format }) =>
-    providerFailureEvidence({ controlOperation, candidateId, serviceKey, fetchImpl, response, raw, format });
+  const failureEvidence = ({ response, raw, format }) => providerFailureEvidence({
+    controlOperation,
+    credentialSignalResultCodes,
+    candidateId,
+    serviceKey,
+    fetchImpl,
+    response,
+    raw,
+    format,
+  });
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
@@ -589,6 +622,7 @@ export async function collectSourceCandidateEvidence({
       fetchImpl,
       failureEvidence,
       requestFailureLabel,
+      credentialSignalResultCodes,
     });
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
     await assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence });

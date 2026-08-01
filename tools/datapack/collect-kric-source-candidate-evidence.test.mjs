@@ -678,6 +678,7 @@ function integrityDocument(candidates, {
           verifiedAt: "2026-08-02",
           ...controlOperation,
         },
+        credentialSignalResultCodes: ["30"],
       },
     },
   };
@@ -1318,6 +1319,52 @@ test("KRIC evidence collector는 보관 상한을 넘긴 non-ok 본문의 result
           return true;
         },
       );
+    } finally {
+      await rm(runnerTemp, { recursive: true, force: true });
+    }
+  }
+});
+
+// #22: provider가 코드만 주고 메시지를 생략·변경해도 credential 판별이 우회되면 안 된다.
+test("KRIC evidence collector는 메시지 없는 credential result code에도 대조군을 실행한다", async () => {
+  const xmlEnvelope = (inner) => `<ROOT><header>${inner}</header></ROOT>`;
+  const signalCases = [
+    ["JSON code-only", "json", JSON.stringify([{ resultCode: "30" }]), "application/json", 2, /failureClass=authorization-missing/],
+    ["JSON 낯선 문구", "json", JSON.stringify([{ resultCode: "30", resultMsg: "Denied by policy engine." }]), "application/json", 2, /failureClass=authorization-missing/],
+    ["XML code-only", "xml", xmlEnvelope("<resultCode>30</resultCode>"), "application/xml", 2, /failureClass=authorization-missing/],
+    ["XML 낯선 문구", "xml", xmlEnvelope("<resultCode>30</resultCode><resultMsg>Denied by policy engine.</resultMsg>"), "application/xml", 2, /failureClass=authorization-missing/],
+    // 선언되지 않은 코드는 그대로다. 03은 credential 신호가 아니므로 대조군을 부르지 않는다.
+    ["JSON code-only 03", "json", JSON.stringify([{ resultCode: "03" }]), "application/json", 1, /failureClass=request-error/],
+    ["XML 데이터 없음 03", "xml", xmlEnvelope("<resultCode>03</resultCode><resultMsg>데이터가 없습니다.</resultMsg>"), "application/xml", 1, /failureClass=no-data/],
+  ];
+
+  for (const [label, format, body, contentType, expectedCalls, expectedFailureClass] of signalCases) {
+    const target = {
+      ...candidate,
+      evidence: { ...candidate.evidence, sampleUrl: candidate.evidence.sampleUrl.replace("format=json", `format=${format}`), formats: ["JSON", "XML"] },
+    };
+    const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-kric-code-signal-"));
+    const calls = [];
+    try {
+      await assert.rejects(
+        collectKricSourceCandidateEvidence({
+          candidateId: target.id,
+          candidatesDocument: integrityDocument([target]),
+          runnerTemp,
+          serviceKey: INTEGRITY_SERVICE_KEY,
+          fetchImpl: async (url) => {
+            calls.push(url);
+            return url.pathname === CONTROL_OPERATION_PATHNAME
+              ? new Response(JSON.stringify([CONTROL_SUCCESS_ROW]), { status: 200, headers: { "content-type": "application/json" } })
+              : new Response(body, { status: 200, headers: { "content-type": contentType } });
+          },
+        }),
+        (error) => {
+          assert.match(error.message, expectedFailureClass, label);
+          return true;
+        },
+      );
+      assert.equal(calls.length, expectedCalls, `${label}: 대조군 실행 여부`);
     } finally {
       await rm(runnerTemp, { recursive: true, force: true });
     }

@@ -170,6 +170,7 @@ export async function collectKricSourceCandidateEvidence({
     buildScriptName: "build-source-candidate-sample-evidence.mjs",
     validateScriptName: "validate-source-candidate-sample.mjs",
     controlOperation: integrity?.controlOperation ?? null,
+    credentialSignalResultCodes: integrity?.credentialSignalResultCodes ?? null,
   });
 }
 
