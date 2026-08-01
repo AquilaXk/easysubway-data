@@ -3,7 +3,29 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-07-29",
+  "updatedAt": "2026-08-02",
+  "providers": {
+    "kric": {
+      "credential": {
+        "env": "KRIC_SERVICE_KEY",
+        "length": 60,
+        "characterClasses": [
+          "digit",
+          "lower",
+          "symbol",
+          "upper"
+        ],
+        "fingerprintAlgorithm": "sha256-12",
+        "fingerprint": null
+      },
+      "controlOperation": {
+        "candidateId": "kric-station-convenience-standard",
+        "endpoint": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+        "sampleUrl": "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl?serviceKey=[서비스키값]&format=json&railOprIsttCd=S1&lnCd=3&stinCd=322",
+        "verifiedAt": "2026-08-02"
+      }
+    }
+  },
   "candidates": [
     {
       "id": "busan-transportation-accessibility",
@@ -3325,7 +3347,7 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "국가철도공단_역사별 엘리베이터 현황",
-      "detailUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=189&service=convenientInfo&operation=stationElevator",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
       "operation": {
         "method": "GET",
@@ -3378,9 +3400,9 @@
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "detailPageUrl": "https://www.data.go.kr/data/15041682/openapi.do",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=189&service=convenientInfo&operation=stationElevator",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://apis.data.go.kr/B551181/stationElevatorInfo/getStationElevatorList",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
           "JSON"
@@ -3452,7 +3474,7 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "국가철도공단_역사별 엘리베이터 이동동선",
-      "detailUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=208&service=vulnerableUserInfo&operation=stationElevatorMovement",
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
       "operation": {
         "method": "GET",
@@ -3503,9 +3525,9 @@
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "detailPageUrl": "https://www.data.go.kr/data/15041689/openapi.do",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=208&service=vulnerableUserInfo&operation=stationElevatorMovement",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://apis.data.go.kr/B551181/stationElevatorMovement/getStationElevatorMovementList",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
           "JSON"
@@ -3571,7 +3593,7 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "국가철도공단_역사별 에스컬레이터 현황",
-      "detailUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=190&service=convenientInfo&operation=stationEscalator",
       "requestUrl": "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
       "operation": {
         "method": "GET",
@@ -3623,9 +3645,9 @@
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "detailPageUrl": "https://www.data.go.kr/data/15041683/openapi.do",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=190&service=convenientInfo&operation=stationEscalator",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://apis.data.go.kr/B551181/stationEscalatorInfo/getStationEscalatorList",
+        "endpoint": "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
           "JSON"
@@ -5362,7 +5384,7 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "국가철도공단_역사별 휠체어리프트 위치",
-      "detailUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=205&service=vulnerableUserInfo&operation=stationWheelchairLiftLocation",
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
       "operation": {
         "method": "GET",
@@ -5416,9 +5438,9 @@
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "detailPageUrl": "https://www.data.go.kr/data/15041686/openapi.do",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=205&service=vulnerableUserInfo&operation=stationWheelchairLiftLocation",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://apis.data.go.kr/B551181/wheelchairLiftLocation/getWheelchairLiftLocationList",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
           "JSON"
@@ -5478,7 +5500,7 @@
       "priority": "P0",
       "domain": "accessibility_facilities",
       "displayName": "국가철도공단_역사별 휠체어리프트 이동동선",
-      "detailUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+      "detailUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=209&service=vulnerableUserInfo&operation=stationWheelchairLiftMovement",
       "requestUrl": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
       "operation": {
         "method": "GET",
@@ -5529,9 +5551,9 @@
       "serviceKeyHandling": "offline_import_secret_only",
       "mobileEmbeddingAllowed": false,
       "evidence": {
-        "detailPageUrl": "https://www.data.go.kr/data/15041690/openapi.do",
+        "detailPageUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=209&service=vulnerableUserInfo&operation=stationWheelchairLiftMovement",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://apis.data.go.kr/B551181/wheelchairLiftMovement/getWheelchairLiftMovementList",
+        "endpoint": "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
           "JSON"

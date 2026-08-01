@@ -9,6 +9,12 @@ import {
   requiredText,
   sanitizeErrorMessage,
 } from "./lib/source-candidate-evidence-collector.mjs";
+import {
+  assertProviderCredentialIntegrity,
+  resolveProviderCallIntegrity,
+} from "./lib/provider-call-integrity.mjs";
+
+const KRIC_PROVIDER_ID = "kric";
 
 export const KRIC_SOURCE_CANDIDATE_IDS = Object.freeze([
   "kric-subway-route-info",
@@ -100,6 +106,16 @@ export async function collectKricSourceCandidateEvidence({
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
   const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+  // #22: 저장소 카탈로그로 실행할 때는 provider 호출 정합성 계약을 반드시 통과해야 한다.
+  // 주입된 문서는 계약을 선언한 경우에만 검사한다.
+  const integrity = resolveProviderCallIntegrity(document, KRIC_PROVIDER_ID, { required: candidatesDocument == null });
+  if (integrity != null) {
+    assertProviderCredentialIntegrity({
+      providerId: KRIC_PROVIDER_ID,
+      credential: serviceKey,
+      contract: integrity.credential,
+    });
+  }
   const request = resolveKricCandidateRequest(document, candidateId);
   const effectiveDocument = {
     ...document,
@@ -132,6 +148,7 @@ export async function collectKricSourceCandidateEvidence({
     writeStagedCandidates: true,
     buildScriptName: "build-source-candidate-sample-evidence.mjs",
     validateScriptName: "validate-source-candidate-sample.mjs",
+    controlOperation: integrity?.controlOperation ?? null,
   });
 }
 

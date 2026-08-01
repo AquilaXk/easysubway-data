@@ -624,7 +624,8 @@ test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", 
     const source = document.candidates.find((entry) => entry.id === id);
     assert.match(source.operation.endpoint, /^https:\/\/openapi\.kric\.go\.kr\//);
     assert.match(source.operation.sampleUrl, /^https:\/\/openapi\.kric\.go\.kr\//);
-    assert.match(source.evidence.endpoint, /^https:\/\/apis\.data\.go\.kr\/B551181\//);
+    // #22: evidence.endpoint는 실재하지 않던 조직코드 경로를 버리고 provider operation endpoint를 가리킨다.
+    assert.equal(source.evidence.endpoint, source.operation.endpoint);
     assert.match(source.evidence.liveSampleNote, /legacy data\.go\.kr endpoint/);
   }
 

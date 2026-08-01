@@ -5,6 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import {
+  classifyProviderFailure,
+  formatProviderFailureEvidence,
+  requiresControlOperation,
+} from "./provider-call-integrity.mjs";
+
 const libDir = path.dirname(fileURLToPath(import.meta.url));
 export const TOOL_DIRECTORY = path.resolve(libDir, "..");
 export const REPOSITORY_ROOT = path.resolve(libDir, "../../..");
@@ -312,10 +318,80 @@ export function buildJsonDiagnostic({ response, raw, label }) {
   ].join(" ");
 }
 
-function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel }) {
+function safeHttpStatus(response) {
+  const status = response?.status;
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+}
+
+// #22: provider가 돌려준 실패 신호. 키 훼손과 권한 미보유가 같은 코드로 오기 때문에 신호만으로 판정하지 않는다.
+function providerResponseSignal({ raw, format }) {
+  if (raw == null) return { providerResultCode: null, providerResultSignal: null };
+  if (format === "json") {
+    const envelope = findJsonFailureEnvelope(parseJson(raw));
+    if (!envelope) return { providerResultCode: null, providerResultSignal: null };
+    const resultCode = jsonResultCode(envelope.resultCode);
+    const resultMessage = typeof envelope.resultMsg === "string" ? envelope.resultMsg : null;
+    return {
+      providerResultCode: resultCode,
+      providerResultSignal: classifyXmlFailure({ itemCount: 0, resultCode, resultMessage }),
+    };
+  }
+  const { itemCount, resultCode, resultMessage } = scanXmlStructure(raw);
+  return {
+    providerResultCode: resultCode,
+    providerResultSignal: classifyXmlFailure({ itemCount, resultCode, resultMessage }),
+  };
+}
+
+function controlOperationSucceeded(raw, format) {
+  if (format === "json") {
+    const payload = parseJson(raw);
+    return payload != null && findJsonFailureEnvelope(payload) == null;
+  }
+  return /^(?:0+|ok|success)$/i.test(scanXmlStructure(raw).resultCode ?? "");
+}
+
+// 같은 실행·같은 키로 카탈로그가 지정한 대조군을 호출한다. 실패는 어떤 이유든 "failed"로 닫는다.
+async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) {
+  try {
+    const url = new URL(controlOperation.sampleUrl);
+    url.searchParams.set("serviceKey", serviceKey);
+    const response = await fetchImpl(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        accept: controlOperation.format === "json" ? "application/json" : "application/xml,text/xml",
+      },
+    });
+    if (!response.ok) return "failed";
+    return controlOperationSucceeded(await response.text(), controlOperation.format) ? "succeeded" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+async function providerFailureEvidence({ controlOperation, serviceKey, fetchImpl, response, raw, format }) {
+  if (!controlOperation) return "";
+  const httpStatus = safeHttpStatus(response);
+  const { providerResultCode, providerResultSignal } = providerResponseSignal({ raw, format });
+  const controlOperationStatus = requiresControlOperation({ httpStatus, providerResultSignal })
+    ? await runControlOperation({ controlOperation, serviceKey, fetchImpl })
+    : "not-run";
+  const diagnosis = classifyProviderFailure({
+    httpStatus,
+    providerResultCode,
+    providerResultSignal,
+    controlOperationStatus,
+  });
+  return ` ${formatProviderFailureEvidence(diagnosis)}`;
+}
+
+async function assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence }) {
   if (request.format !== "json") return;
   const diagnostic = buildJsonDiagnostic({ response, raw: rawResponse, label: diagnosticLabel });
-  if (diagnostic) throw new Error(diagnostic);
+  if (diagnostic) {
+    throw new Error(`${diagnostic}${await failureEvidence({ response, raw: rawResponse, format: request.format })}`);
+  }
 }
 
 export async function runEvidenceTool(scriptName, args) {
@@ -347,8 +423,11 @@ export async function collectSourceCandidateEvidence({
   writeStagedCandidates = false,
   buildScriptName,
   validateScriptName,
+  controlOperation = null,
 } = {}) {
   requiredText(serviceKey, serviceKeyLabel);
+  const failureEvidence = ({ response, raw, format }) =>
+    providerFailureEvidence({ controlOperation, serviceKey, fetchImpl, response, raw, format });
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
@@ -387,11 +466,11 @@ export async function collectSourceCandidateEvidence({
       headers: { accept: request.format === "json" ? "application/json" : "application/xml,text/xml" },
     });
     if (!response.ok) {
-      throw new Error(`${requestFailureLabel} ${response.status}`);
+      throw new Error(`${requestFailureLabel} ${response.status}${await failureEvidence({ response, raw: null, format: request.format })}`);
     }
     const rawResponse = await response.text();
     await writeFile(rawPath, rawResponse, { mode: 0o600 });
-    assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel });
+    await assertNoJsonDiagnostic({ request, response, rawResponse, diagnosticLabel, failureEvidence });
 
     let sample;
     try {
@@ -403,7 +482,9 @@ export async function collectSourceCandidateEvidence({
       ]));
     } catch (error) {
       if (request.format === "xml") {
-        throw new Error(`${error instanceof Error ? error.message : String(error)} ${buildXmlDiagnostic({ response, requestedFormat: request.format, raw: rawResponse, label: diagnosticLabel })}`);
+        const diagnostic = buildXmlDiagnostic({ response, requestedFormat: request.format, raw: rawResponse, label: diagnosticLabel });
+        const evidence = await failureEvidence({ response, raw: rawResponse, format: request.format });
+        throw new Error(`${error instanceof Error ? error.message : String(error)} ${diagnostic}${evidence}`);
       }
       throw error;
     }
