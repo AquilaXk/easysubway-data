@@ -125,7 +125,10 @@ jobs:
             "repos/${repo}/actions/workflows/${producer}/runs?per_page=1" \
             --jq '.workflow_runs[0].head_sha // ""')" || base_sha=""
           changed=yes
-          if [[ "${base_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+          # base_sha가 main_sha와 같으면 그 실행이 곧 이 head_sha에 대한 시도다(여기까지
+          # 왔다는 것은 그 시도가 실패했다는 뜻이다). 자기 자신과의 compare는 항상 빈
+          # files라, 이 조건이 없으면 위 attempt_limit 재시도가 영구히 막힌다.
+          if [[ "${base_sha}" =~ ^[0-9a-f]{40}$ && "${base_sha}" != "${main_sha}" ]]; then
             # 조회가 실패하면 모르는 상태다. 모르면 dispatch하는 쪽이 안전하고, dispatch하면
             # 그 head_sha에 실행이 생겨 다음 실행에서 위 판정이 곧바로 끊는다.
             changed="$(gh api "repos/${repo}/compare/${base_sha}...${main_sha}" \
@@ -490,8 +493,15 @@ jobs:
                 # 미해결 thread·required context를 모두 통과한 뒤에만 닿으므로 `--auto`가
                 # 대신 기다려 줄 대상이 남아 있지 않다. --match-head-commit이 판정 시점
                 # 이후의 head 변경을 서버에서 거른다.
-                gh pr merge --squash "${pr}" --repo "${repo}" \
-                  --match-head-commit "${head}"
+                if ! gh pr merge --squash "${pr}" --repo "${repo}" \
+                  --match-head-commit "${head}"; then
+                  # 판정 이후 head가 바뀌었거나 서버가 거부했다. 셋 다(head 변경·ruleset
+                  # 거부·일시적 API 오류) 다음 트리거에서 다시 판정하면 되는 상태이고,
+                  # 여기서 실행을 죽이면 그 실패가 이 워크플로의 check로 남아 다음 판정
+                  # 입력을 오염시킨다.
+                  echo "::warning::PR #${pr} merge call failed; retrying on the next trigger."
+                  exit 0
+                fi
                 echo "PR #${pr}: merged (${merge_state})."
                 exit 0
                 ;;
@@ -500,8 +510,12 @@ jobs:
                   echo "::warning::PR #${pr} uses a fork head; refusing base-repository CI dispatch."
                   continue
                 fi
-                gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
-                  -f expected_head_sha="${head}" >/dev/null
+                if ! gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
+                  -f expected_head_sha="${head}" >/dev/null; then
+                  # 병합 호출과 같은 이유로 실행을 죽이지 않는다.
+                  echo "::warning::PR #${pr} base update call failed; retrying on the next trigger."
+                  exit 0
+                fi
                 # ponytail: bounded wait only; the API applies the base merge asynchronously.
                 for _ in {1..12}; do
                   new_head="$(gh pr view "${pr}" --repo "${repo}" --json headRefOid --jq '.headRefOid')"
