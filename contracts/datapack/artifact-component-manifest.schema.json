@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Artifact component manifest",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestVersion", "artifactKind", "mapPackId", "stationSetSha256", "payloadSha256"],
+      "properties": {
+        "manifestVersion": { "const": 1 },
+        "artifactKind": { "const": "map-pack" },
+        "mapPackId": { "type": "string", "minLength": 1 },
+        "stationSetSha256": { "$ref": "#/$defs/sha256" },
+        "payloadSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestVersion", "artifactKind", "catalogPackId", "stationSetSha256", "payloadSha256"],
+      "properties": {
+        "manifestVersion": { "const": 1 },
+        "artifactKind": { "const": "station-catalog-pack" },
+        "catalogPackId": { "type": "string", "minLength": 1 },
+        "stationSetSha256": { "$ref": "#/$defs/sha256" },
+        "payloadSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256", "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "keyId", "signature"],
+      "properties": {
+        "manifestVersion": { "const": 1 },
+        "artifactKind": { "const": "server-route-bundle" },
+        "bundleId": { "type": "string", "minLength": 1 },
+        "releaseSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "stationSetSha256": { "$ref": "#/$defs/sha256" },
+        "payloadSha256": { "$ref": "#/$defs/sha256" },
+        "topologySha256": { "$ref": "#/$defs/sha256" },
+        "timetableSha256": { "$ref": "#/$defs/sha256" },
+        "accessibilitySha256": { "$ref": "#/$defs/sha256" },
+        "fareSha256": { "$ref": "#/$defs/sha256" },
+        "keyId": { "type": "string", "minLength": 1 },
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "value"],
+          "properties": {
+            "algorithm": { "const": "rsa-sha256-server-route-bundle-v1" },
+            "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

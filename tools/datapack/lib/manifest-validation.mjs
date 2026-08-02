@@ -119,6 +119,84 @@ export function canonicalJson(value) {
   return parts.join("");
 }
 
+export function validateArtifactComponentManifest(manifest, expectedStationSetSha256 = undefined) {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error("artifact component manifest must be an object");
+  }
+
+  const artifactKind = requiredString(manifest.artifactKind, "artifactKind");
+  const requiredFields = artifactKind === "map-pack"
+    ? ["manifestVersion", "artifactKind", "mapPackId", "stationSetSha256", "payloadSha256"]
+    : artifactKind === "station-catalog-pack"
+      ? ["manifestVersion", "artifactKind", "catalogPackId", "stationSetSha256", "payloadSha256"]
+      : artifactKind === "server-route-bundle"
+        ? [
+          "manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256",
+          "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "keyId", "signature",
+        ]
+        : null;
+  if (!requiredFields) {
+    throw new Error("artifactKind is unsupported");
+  }
+  validateExactFields(manifest, requiredFields, "artifact component manifest");
+  if (manifest.manifestVersion !== 1) {
+    throw new Error("manifestVersion must be 1");
+  }
+
+  if (artifactKind === "map-pack") requiredString(manifest.mapPackId, "mapPackId");
+  if (artifactKind === "station-catalog-pack") requiredString(manifest.catalogPackId, "catalogPackId");
+  if (artifactKind === "server-route-bundle") {
+    requiredString(manifest.bundleId, "bundleId");
+    if (!Number.isSafeInteger(manifest.releaseSequence) || manifest.releaseSequence < 1) {
+      throw new Error("releaseSequence must be a safe positive integer");
+    }
+    requiredSha256(manifest.topologySha256, "topologySha256");
+    requiredSha256(manifest.timetableSha256, "timetableSha256");
+    requiredSha256(manifest.accessibilitySha256, "accessibilitySha256");
+    requiredSha256(manifest.fareSha256, "fareSha256");
+    requiredString(manifest.keyId, "keyId");
+    validateArtifactComponentSignature(manifest.signature);
+  }
+
+  const stationSetSha256 = requiredSha256(manifest.stationSetSha256, "stationSetSha256");
+  requiredSha256(manifest.payloadSha256, "payloadSha256");
+  if (expectedStationSetSha256 !== undefined && stationSetSha256 !== requiredSha256(expectedStationSetSha256, "expectedStationSetSha256")) {
+    throw new Error("stationSetSha256 must match expectedStationSetSha256");
+  }
+  if (artifactKind === "server-route-bundle") {
+    canonicalJson(withoutSignature(manifest));
+  }
+  return stationSetSha256;
+}
+
+function validateExactFields(value, requiredFields, label) {
+  for (const field of requiredFields) {
+    if (!(field in value)) {
+      throw new Error(`${label} required field missing: ${field}`);
+    }
+  }
+  const allowedFields = new Set(requiredFields);
+  for (const field of Object.keys(value)) {
+    if (!allowedFields.has(field)) {
+      throw new Error(`${label} additional field is unsupported: ${field}`);
+    }
+  }
+}
+
+function validateArtifactComponentSignature(signature) {
+  if (!signature || typeof signature !== "object" || Array.isArray(signature)) {
+    throw new Error("signature must be an object");
+  }
+  validateExactFields(signature, ["algorithm", "value"], "signature");
+  if (requiredString(signature.algorithm, "signature.algorithm") !== "rsa-sha256-server-route-bundle-v1") {
+    throw new Error("signature algorithm is unsupported");
+  }
+  const value = requiredString(signature.value, "signature.value");
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error("signature.value must be a base64url string");
+  }
+}
+
 function writeCanonical(value, out) {
   if (value === null) {
     out.push("null");
