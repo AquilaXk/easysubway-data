@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
@@ -40,6 +40,48 @@ function contained(root, relative) {
 function transactionPaths(repositoryRoot) {
   const root = path.resolve(repositoryRoot);
   return { root, journal: path.join(root, "tools/datapack/.kric-standard-registration-transaction.json") };
+}
+
+async function acquireRegistrationLock(repositoryRoot) {
+  const root = path.resolve(repositoryRoot);
+  const lockDirectory = path.join(root, "tools/datapack/.kric-standard-registration.lock");
+  await mkdir(path.dirname(lockDirectory), { recursive: true });
+  try {
+    await mkdir(lockDirectory);
+  } catch (error) {
+    if (error?.code === "EEXIST") throw new Error("KRIC standard registration is already in progress");
+    throw error;
+  }
+  const ownerPath = path.join(lockDirectory, `.owner-${randomUUID()}`);
+  const lockRecoveryRequired = () => new Error("KRIC registration lock RECOVERY_REQUIRED");
+  const release = async () => {
+    let ownerMissing = false;
+    try { await rm(ownerPath); } catch (error) {
+      if (error?.code === "ENOENT") ownerMissing = true;
+      else throw lockRecoveryRequired();
+    }
+    try { await syncDirectory(lockDirectory); } catch (error) {
+      if (ownerMissing && error?.code === "ENOENT") return;
+      throw lockRecoveryRequired();
+    }
+    try {
+      await rmdir(lockDirectory);
+    } catch (error) {
+      if (error?.code === "ENOTEMPTY" || error?.code === "ENOENT") return;
+      throw lockRecoveryRequired();
+    }
+    try { await syncDirectory(path.dirname(lockDirectory)); } catch { throw lockRecoveryRequired(); }
+  };
+  try {
+    await syncedWrite(ownerPath, `${process.pid}\n`);
+    await syncDirectory(lockDirectory);
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  return async () => {
+    await release();
+  };
 }
 
 export async function recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot = REPOSITORY_ROOT, atomicReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncDirectoryImpl = syncDirectory } = {}) {
@@ -162,14 +204,16 @@ function validateReceipt(snapshot, receipt, now) {
     throw new Error("raw receipt snapshot binding is invalid");
   }
   if (!Number.isInteger(receipt?.byteSize) || receipt.byteSize < 1) throw new Error("raw receipt byteSize is invalid");
-  if (!Number.isFinite(Date.parse(requiredText(receipt?.storedAt, "raw receipt storedAt")))) {
+  const storedAt = Date.parse(requiredText(receipt?.storedAt, "raw receipt storedAt"));
+  if (!Number.isFinite(storedAt) || storedAt > now.getTime()) {
     throw new Error("raw receipt storedAt is invalid");
   }
-  if (Date.parse(receipt.storedAt) < Date.parse(snapshot.capturedAt)) {
+  if (storedAt < capturedAt) {
     throw new Error("raw receipt storedAt precedes snapshot capture");
   }
-  if (!Number.isFinite(Date.parse(requiredText(receipt?.rawRetentionExpiresAt, "raw receipt rawRetentionExpiresAt")))
-    || Date.parse(receipt.rawRetentionExpiresAt) <= Date.parse(snapshot.freshUntil)) {
+  const rawRetentionExpiresAt = Date.parse(requiredText(receipt?.rawRetentionExpiresAt, "raw receipt rawRetentionExpiresAt"));
+  if (!Number.isFinite(rawRetentionExpiresAt)
+    || rawRetentionExpiresAt <= freshUntil || rawRetentionExpiresAt <= storedAt) {
     throw new Error("raw receipt rawRetentionExpiresAt is invalid");
   }
 }
@@ -371,6 +415,7 @@ export async function registerKricStandardAccessibilitySnapshot({
   commitJournalReplaceImpl,
   cleanupTransactionDirectoryImpl,
   syncTransactionDirectoryImpl,
+  onLockAcquired,
 } = {}) {
   const paths = [
     registryPaths?.["tools/datapack/source-inventory.json"],
@@ -383,40 +428,94 @@ export async function registerKricStandardAccessibilitySnapshot({
     path.join(path.resolve(repositoryRoot), "tools/datapack/inputs/capital-pilot-production-source-input.json"),
   ];
   if (paths.some((file, index) => path.resolve(file) !== expectedPaths[index])) throw new Error("registry path is invalid");
-  await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
-  const [snapshotBytes, ...original] = await Promise.all([
-    readFile(requiredText(snapshotFilePath, "snapshot file path")),
-    ...paths.map((file) => readFile(file)),
-  ]);
-  const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
-  if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
-  validateReceipt(snapshot, rawReceipt, now);
-  const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
-  const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
-  if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
-    || path.resolve(snapshotTargetPath) !== expectedSnapshotTargetPath) {
-    throw new Error("snapshot target path is invalid");
+  const releaseLock = await acquireRegistrationLock(repositoryRoot);
+  try {
+    await onLockAcquired?.();
+    await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
+    const [snapshotBytes, ...original] = await Promise.all([
+      readFile(requiredText(snapshotFilePath, "snapshot file path")),
+      ...paths.map((file) => readFile(file)),
+    ]);
+    const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
+    if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
+    validateReceipt(snapshot, rawReceipt, now);
+    const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+    const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
+    if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
+      || path.resolve(snapshotTargetPath) !== expectedSnapshotTargetPath) {
+      throw new Error("snapshot target path is invalid");
+    }
+    const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
+    await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
+    const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
+    const staged = stageRegistries({
+      inventory, snapshots, input,
+      snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, now,
+    });
+    let targetBytes = null;
+    try { targetBytes = await readFile(snapshotTargetPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    if (targetBytes != null && !targetBytes.equals(snapshotBytes)) throw new Error("snapshot target already exists with different bytes");
+    await commitTransaction({
+      repositoryRoot,
+      atomicReplaceImpl,
+      rollbackAtomicReplaceImpl,
+      commitJournalReplaceImpl,
+      cleanupTransactionDirectoryImpl,
+      syncTransactionDirectoryImpl,
+      outputs: [
+        ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
+        ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
+      ],
+    });
+  } finally {
+    await releaseLock();
   }
-  const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
-  await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
-  const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
-  const staged = stageRegistries({
-    inventory, snapshots, input,
-    snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, now,
-  });
-  let targetBytes = null;
-  try { targetBytes = await readFile(snapshotTargetPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
-  if (targetBytes != null && !targetBytes.equals(snapshotBytes)) throw new Error("snapshot target already exists with different bytes");
-  await commitTransaction({
+}
+
+export function parseKricStandardAccessibilitySnapshotRegistrationArgs(args) {
+  const options = { repositoryRoot: REPOSITORY_ROOT };
+  const seen = new Set();
+  const names = new Map([
+    ["--repository-root", "repositoryRoot"], ["--snapshot", "snapshotFilePath"],
+    ["--snapshot-sha256", "snapshotFileSha256"], ["--raw-receipt", "rawReceiptPath"],
+    ["--seoul-snapshot", "seoulSnapshotPath"],
+  ]);
+  for (let index = 0; index < args.length; index += 2) {
+    const name = args[index];
+    const key = names.get(name);
+    const value = args[index + 1];
+    if (!key || value == null || names.has(value) || seen.has(key)) throw new Error("registration CLI arguments are invalid");
+    seen.add(key);
+    options[key] = value;
+  }
+  for (const key of ["snapshotFilePath", "snapshotFileSha256", "rawReceiptPath", "seoulSnapshotPath"]) {
+    if (typeof options[key] !== "string" || options[key].trim() === "") throw new Error("registration CLI arguments are invalid");
+  }
+  return options;
+}
+
+export async function runKricStandardAccessibilitySnapshotRegistration(args) {
+  const options = parseKricStandardAccessibilitySnapshotRegistrationArgs(args);
+  const repositoryRoot = path.resolve(options.repositoryRoot);
+  const snapshotBytes = await readFile(options.snapshotFilePath);
+  const snapshot = readStagedSnapshot(snapshotBytes, options.snapshotFileSha256);
+  return registerKricStandardAccessibilitySnapshot({
+    snapshotFilePath: options.snapshotFilePath,
+    snapshotFileSha256: options.snapshotFileSha256,
+    snapshotTargetPath: path.join(repositoryRoot, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
+    rawReceipt: JSON.parse(await readFile(options.rawReceiptPath, "utf8")),
+    seoulSnapshot: JSON.parse(await readFile(options.seoulSnapshotPath, "utf8")),
+    registryPaths: Object.fromEntries([
+      "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+      "tools/datapack/inputs/capital-pilot-production-source-input.json",
+    ].map((relative) => [relative, path.join(repositoryRoot, relative)])),
     repositoryRoot,
-    atomicReplaceImpl,
-    rollbackAtomicReplaceImpl,
-    commitJournalReplaceImpl,
-    cleanupTransactionDirectoryImpl,
-    syncTransactionDirectoryImpl,
-    outputs: [
-      ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
-      ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
-    ],
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runKricStandardAccessibilitySnapshotRegistration(process.argv.slice(2)).catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
   });
 }

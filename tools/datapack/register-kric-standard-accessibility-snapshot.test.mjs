@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
-import { recoverKricStandardAccessibilitySnapshotTransaction, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
+import { parseKricStandardAccessibilitySnapshotRegistrationArgs, recoverKricStandardAccessibilitySnapshotTransaction, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registryPaths = [
@@ -29,12 +30,12 @@ const operation = {
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
-async function snapshotFor(kricRoster) {
+async function snapshotFor(kricRoster, now = new Date("2026-08-03T00:00:00.000Z")) {
   return (await collectKricAccessibilitySnapshots({
     roster: kricRoster,
     operations: [operation],
     serviceKey: "fixture-only-key",
-    now: new Date("2026-08-03T00:00:00.000Z"),
+    now,
     fetchImpl: async (url) => ({
       ok: true,
       status: 200,
@@ -58,7 +59,7 @@ async function stageSnapshot(values, snapshot) {
   values.snapshotFileSha256 = sha256(bytes);
 }
 
-async function fixture(t) {
+async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-registration-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await Promise.all(registryPaths.map(async (relativePath) => {
@@ -69,7 +70,7 @@ async function fixture(t) {
   await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
   await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
   const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
-  admittedSeoul.freshUntil = "2026-08-04T15:35:25.704Z";
+  admittedSeoul.freshUntil = new Date(now.getTime() + 86_400_000).toISOString();
   const admittedSeoulBytes = Buffer.from(`${JSON.stringify(admittedSeoul, null, 2)}\n`);
   await writeFile(path.join(directory, seoulSnapshotPath), admittedSeoulBytes);
   const inventory = JSON.parse(await readFile(path.join(directory, registryPaths[0]), "utf8"));
@@ -77,7 +78,7 @@ async function fixture(t) {
   seoulEvidence.freshUntil = admittedSeoul.freshUntil;
   seoulEvidence.snapshotFileSha256 = sha256(admittedSeoulBytes);
   await writeFile(path.join(directory, registryPaths[0]), `${JSON.stringify(inventory, null, 2)}\n`);
-  const snapshot = await snapshotFor(roster);
+  const snapshot = await snapshotFor(roster, now);
   const snapshotFilePath = path.join(directory, "staging", `${snapshot.snapshotId}.json`);
   await mkdir(path.dirname(snapshotFilePath), { recursive: true });
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
@@ -105,7 +106,7 @@ function receipt(snapshot, snapshotFileSha256) {
     rawObjectSha256: "e".repeat(64),
     byteSize: 1234,
     storedAt: snapshot.capturedAt,
-    rawRetentionExpiresAt: "2026-11-01T00:00:00.000Z",
+    rawRetentionExpiresAt: new Date(Math.max(Date.parse(snapshot.freshUntil), Date.parse(snapshot.capturedAt)) + 86_400_000).toISOString(),
   };
 }
 
@@ -411,4 +412,70 @@ test("commit point 뒤 transaction directory cleanup 실패는 성공 결과를 
   const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
   assert.equal(inventory.sources.find(({ id }) => id === values.snapshot.sourceId).productionUseAllowed, true);
   await assert.rejects(readFile(journalPath(values)), { code: "ENOENT" });
+});
+
+test("동시 등록은 첫 등록의 배타 lock 동안 읽기나 staging 전에 fail closed 한다", async (t) => {
+  const values = await fixture(t);
+  let acquired;
+  const lockAcquired = new Promise((resolve) => { acquired = resolve; });
+  let release;
+  const holdLock = new Promise((resolve) => { release = resolve; });
+  const first = register(values, { onLockAcquired: async () => { acquired(); await holdLock; } });
+  await lockAcquired;
+  await assert.rejects(register(values), /already in progress/);
+  await assertUnchanged(values);
+  release();
+  await first;
+  assert.equal(sha256(await readFile(values.snapshotTargetPath)), values.snapshotFileSha256);
+});
+
+test("receipt 시간은 저장 시각과 raw retention 순서를 엄격히 검증한다", async (t) => {
+  for (const mutate of [
+    (value) => { value.storedAt = "2026-08-03T00:02:00.000Z"; },
+    (value) => { value.rawRetentionExpiresAt = value.storedAt; },
+  ]) {
+    const values = await fixture(t);
+    const invalidReceipt = receipt(values.snapshot, values.snapshotFileSha256);
+    mutate(invalidReceipt);
+    await assert.rejects(register(values, { rawReceipt: invalidReceipt }), /raw receipt (storedAt|rawRetentionExpiresAt) is invalid/);
+    await assertUnchanged(values);
+  }
+});
+
+test("직접 실행 CLI 인자는 중복, 누락, 알 수 없는 값을 거부한다", () => {
+  const parsed = parseKricStandardAccessibilitySnapshotRegistrationArgs([
+    "--repository-root", "/repository", "--snapshot", "/staging/snapshot.json",
+    "--snapshot-sha256", "a".repeat(64), "--raw-receipt", "/staging/receipt.json",
+    "--seoul-snapshot", "/staging/seoul.json",
+  ]);
+  assert.deepEqual(parsed, {
+    repositoryRoot: "/repository", snapshotFilePath: "/staging/snapshot.json", snapshotFileSha256: "a".repeat(64),
+    rawReceiptPath: "/staging/receipt.json", seoulSnapshotPath: "/staging/seoul.json",
+  });
+  for (const args of [
+    ["--snapshot", "/a", "--snapshot", "/b", "--snapshot-sha256", "a".repeat(64), "--raw-receipt", "/c", "--seoul-snapshot", "/d"],
+    ["--snapshot", "/a", "--snapshot-sha256", "a".repeat(64), "--raw-receipt", "/c"],
+    ["--unknown", "/a"],
+  ]) assert.throws(() => parseKricStandardAccessibilitySnapshotRegistrationArgs(args), /CLI arguments/);
+});
+
+test("직접 실행 CLI는 절대 경로로 격리 fixture를 등록하고 상대 경로 인자 누락을 거부한다", async (t) => {
+  const values = await fixture(t, new Date());
+  const script = fileURLToPath(new URL("./register-kric-standard-accessibility-snapshot.mjs", import.meta.url));
+  const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
+  const rawReceiptPath = path.join(repositoryRoot, "staging", "raw-receipt.json");
+  await writeFile(rawReceiptPath, `${JSON.stringify(receipt(values.snapshot, values.snapshotFileSha256))}\n`);
+  const successful = spawnSync(process.execPath, [
+    script, "--repository-root", repositoryRoot, "--snapshot", values.snapshotFilePath,
+    "--snapshot-sha256", values.snapshotFileSha256, "--raw-receipt", rawReceiptPath,
+    "--seoul-snapshot", path.join(repositoryRoot, seoulSnapshotPath),
+  ], { encoding: "utf8" });
+  assert.equal(successful.status, 0, successful.stderr);
+  assert.equal(sha256(await readFile(values.snapshotTargetPath)), values.snapshotFileSha256);
+  const missingArgs = spawnSync(process.execPath, ["tools/datapack/register-kric-standard-accessibility-snapshot.mjs"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(missingArgs.status, 1);
+  assert.match(missingArgs.stderr, /registration CLI arguments are invalid/);
 });
