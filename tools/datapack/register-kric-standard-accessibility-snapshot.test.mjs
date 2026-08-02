@@ -15,6 +15,7 @@ const registryPaths = [
   "tools/datapack/release/source-snapshots.json",
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
 ];
+const seoulSnapshotPath = "tools/datapack/sources/seoul-metro-accessibility-20260728.json";
 const roster = [
   { stationId: "station-sangnoksu", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "448", canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-sangnoksu", lineId: "seoul-4" }] },
   { stationId: "station-sadang", lineId: "seoul-4", railOprIsttCd: "S1", lnCd: "4", stinCd: "433", canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-sadang", lineId: "seoul-4" }] },
@@ -28,16 +29,9 @@ const operation = {
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
-async function fixture(t) {
-  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-registration-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  await Promise.all(registryPaths.map(async (relativePath) => {
-    const target = path.join(directory, relativePath);
-    await mkdir(path.dirname(target), { recursive: true });
-    await cp(path.join(root, relativePath), target, { recursive: true });
-  }));
-  const snapshot = (await collectKricAccessibilitySnapshots({
-    roster,
+async function snapshotFor(kricRoster) {
+  return (await collectKricAccessibilitySnapshots({
+    roster: kricRoster,
     operations: [operation],
     serviceKey: "fixture-only-key",
     now: new Date("2026-08-03T00:00:00.000Z"),
@@ -55,6 +49,35 @@ async function fixture(t) {
       })) }),
     }),
   }))[0];
+}
+
+async function stageSnapshot(values, snapshot) {
+  const bytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  await writeFile(values.snapshotFilePath, bytes);
+  values.snapshot = snapshot;
+  values.snapshotFileSha256 = sha256(bytes);
+}
+
+async function fixture(t) {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-registration-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await Promise.all(registryPaths.map(async (relativePath) => {
+    const target = path.join(directory, relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    await cp(path.join(root, relativePath), target, { recursive: true });
+  }));
+  await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
+  await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
+  const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
+  admittedSeoul.freshUntil = "2026-08-04T15:35:25.704Z";
+  const admittedSeoulBytes = Buffer.from(`${JSON.stringify(admittedSeoul, null, 2)}\n`);
+  await writeFile(path.join(directory, seoulSnapshotPath), admittedSeoulBytes);
+  const inventory = JSON.parse(await readFile(path.join(directory, registryPaths[0]), "utf8"));
+  const seoulEvidence = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence;
+  seoulEvidence.freshUntil = admittedSeoul.freshUntil;
+  seoulEvidence.snapshotFileSha256 = sha256(admittedSeoulBytes);
+  await writeFile(path.join(directory, registryPaths[0]), `${JSON.stringify(inventory, null, 2)}\n`);
+  const snapshot = await snapshotFor(roster);
   const snapshotFilePath = path.join(directory, "staging", `${snapshot.snapshotId}.json`);
   await mkdir(path.dirname(snapshotFilePath), { recursive: true });
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
@@ -66,7 +89,7 @@ async function fixture(t) {
     snapshotFilePath,
     snapshotFileSha256: sha256(snapshotBytes),
     snapshotTargetPath: path.join(directory, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
-    seoulSnapshot: JSON.parse(await readFile(path.join(root, "tools/datapack/sources/seoul-metro-accessibility-20260728.json"), "utf8")),
+    seoulSnapshot: JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8")),
     before: await Promise.all(registryPaths.map((relativePath) => readFile(paths[relativePath]))),
   };
 }
@@ -104,6 +127,10 @@ async function assertUnchanged(values) {
   assert.deepEqual(await Promise.all(registryPaths.map((relativePath) => readFile(values.paths[relativePath]))), values.before);
 }
 
+async function registryBytes(values) {
+  return Promise.all(registryPaths.map((relativePath) => readFile(values.paths[relativePath])));
+}
+
 function journalPath(values) {
   return path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), "tools/datapack/.kric-standard-registration-transaction.json");
 }
@@ -136,11 +163,111 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
     contentSha256: values.snapshot.contentSha256,
     freshUntil: values.snapshot.freshUntil,
   });
+  assert.deepEqual(input.kricStandardAccessibilityRoster, [
+    { stationId: "station-sadang", lineId: "seoul-4", railOprIsttCd: "S1", lnCd: "4", stinCd: "433" },
+    { stationId: "station-sangnoksu", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "448" },
+  ]);
   assert.deepEqual(await readFile(values.snapshotTargetPath), await readFile(values.snapshotFilePath));
   assert.equal(sha256(await readFile(values.snapshotTargetPath)), values.snapshotFileSha256);
   assert.equal(kricRows.length, 4);
   assert.ok(kricRows.every(({ sourceSnapshotId, description }) => sourceSnapshotId === values.snapshot.snapshotId && description.startsWith("fresh ")));
   assert.ok(kricStatus.length > 0 && kricStatus.every(({ sourceSnapshotId }) => sourceSnapshotId === values.snapshot.snapshotId));
+});
+
+test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject before writes", async (t) => {
+  const cases = [
+    [async (values) => ({ seoulSnapshot: { ...values.seoulSnapshot, stations: [] } }), /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      await writeFile(path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), seoulSnapshotPath), "{}");
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence.snapshotId = "wrong";
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const snapshots = JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8"));
+      snapshots.find(({ sourceId, snapshotId }) => sourceId === "seoul-metro-accessibility" && snapshotId === values.seoulSnapshot.snapshotId).retrievedAt = "wrong";
+      await writeFile(values.paths[registryPaths[1]], `${JSON.stringify(snapshots, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const rootDirectory = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
+      const seoulPath = path.join(rootDirectory, seoulSnapshotPath);
+      const stale = JSON.parse(await readFile(seoulPath, "utf8"));
+      stale.freshUntil = "2026-08-03T00:00:00.000Z";
+      const staleBytes = Buffer.from(`${JSON.stringify(stale, null, 2)}\n`);
+      await writeFile(seoulPath, staleBytes);
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      const evidence = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence;
+      evidence.freshUntil = stale.freshUntil;
+      evidence.snapshotFileSha256 = sha256(staleBytes);
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return { seoulSnapshot: stale };
+    }, /Seoul snapshot admission freshness is invalid/],
+  ];
+  for (const [arrange, expected] of cases) {
+    const values = await fixture(t);
+    const overrides = await arrange(values);
+    const before = await registryBytes(values);
+    await assert.rejects(register(values, overrides), expected);
+    assert.deepEqual(await registryBytes(values), before);
+  }
+});
+
+test("KRIC snapshot requires the admitted full tuple roster and persists it", async (t) => {
+  for (const invalidRoster of [
+    roster.slice(1),
+    [...roster, {
+      ...roster[0],
+      stationId: "station-extra",
+      stinCd: "999",
+      canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-extra", lineId: "seoul-4" }],
+    }],
+    [{ ...roster[0], stinCd: "999" }, roster[1]],
+  ]) {
+    const values = await fixture(t);
+    await stageSnapshot(values, await snapshotFor(invalidRoster));
+    await assert.rejects(register(values), /KRIC accessibility (roster|snapshot) coverage is invalid/);
+    await assertUnchanged(values);
+  }
+  const values = await fixture(t);
+  await register(values);
+  const input = JSON.parse(await readFile(values.paths[registryPaths[2]], "utf8"));
+  assert.equal(input.kricStandardAccessibilityRoster.length, 2);
+});
+
+test("pending PREPARED recovery runs before registration reads", async (t) => {
+  const values = await fixture(t);
+  await assert.rejects(register(values, {
+    atomicReplaceImpl: async (target, bytes, phase) => {
+      if (phase === 3) throw new Error("replace 3");
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, bytes);
+    },
+    rollbackAtomicReplaceImpl: async () => { throw new Error("rollback"); },
+  }), /RECOVERY_REQUIRED/);
+  await register(values);
+  assert.equal(JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8")).at(-1).snapshotId, values.snapshot.snapshotId);
+});
+
+test("transaction directory is synced before the PREPARED journal exists", async (t) => {
+  const values = await fixture(t);
+  const journalSeenDuringSync = [];
+  await register(values, {
+    syncTransactionDirectoryImpl: async () => {
+      journalSeenDuringSync.push(await readFile(journalPath(values)).then(
+        () => true,
+        (error) => {
+          if (error?.code === "ENOENT") return false;
+          throw error;
+        },
+      ));
+    },
+  });
+  assert.deepEqual(journalSeenDuringSync, [false]);
 });
 
 test("provider/schema/hash/receipt/partial-write 오류는 세 registry bytes를 모두 유지한다", async (t) => {

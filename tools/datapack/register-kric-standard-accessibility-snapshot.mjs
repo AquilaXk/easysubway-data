@@ -3,12 +3,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
+const SEOUL_SOURCE_ID = "seoul-metro-accessibility";
 const SHA256 = /^[0-9a-f]{64}$/;
 const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -86,7 +88,7 @@ export async function recoverKricStandardAccessibilitySnapshotTransaction({ repo
   return outcome;
 }
 
-async function commitTransaction({ repositoryRoot, outputs, atomicReplaceImpl = atomicReplace, rollbackAtomicReplaceImpl = atomicReplace, commitJournalReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }) }) {
+async function commitTransaction({ repositoryRoot, outputs, atomicReplaceImpl = atomicReplace, rollbackAtomicReplaceImpl = atomicReplace, commitJournalReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncTransactionDirectoryImpl = syncDirectory }) {
   const { root, journal } = transactionPaths(repositoryRoot);
   await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot: root });
   const directory = path.join(root, "tools/datapack", `.kric-standard-registration-${randomUUID()}`);
@@ -102,6 +104,7 @@ async function commitTransaction({ repositoryRoot, outputs, atomicReplaceImpl = 
     await syncedWrite(path.join(directory, `staged-${index}`), output.bytes);
     records.push({ target: relative, existed: original != null, backup, expected: sha256(output.bytes) });
   } } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+  await syncTransactionDirectoryImpl(directory);
   const entry = { state: "PREPARED", transactionDirectory: path.relative(root, directory), records };
   await atomicReplace(journal, Buffer.from(JSON.stringify(entry)));
   try {
@@ -171,7 +174,108 @@ function validateReceipt(snapshot, receipt, now) {
   }
 }
 
-function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, now }) {
+async function validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now }) {
+  const sources = inventory?.sources?.filter(({ id }) => id === SEOUL_SOURCE_ID) ?? [];
+  if (sources.length !== 1) throw new Error("Seoul snapshot admission is invalid");
+  const evidence = sources[0].accessibilityAdmissionEvidence;
+  const expected = {
+    schemaVersion: 1,
+    artifactKind: "seoul-accessibility-snapshot",
+    sourceId: SEOUL_SOURCE_ID,
+    snapshotId: evidence?.snapshotId,
+    capturedAt: evidence?.capturedAt,
+    observedAt: evidence?.observedAt,
+    freshUntil: evidence?.freshUntil,
+    absenceEvidenceMode: evidence?.absenceEvidenceMode,
+    rawSha256: evidence?.rawSha256,
+    contentSha256: evidence?.contentSha256,
+    schemaFingerprint: evidence?.schemaFingerprint,
+  };
+  if (!Object.entries(expected).every(([field, value]) => seoulSnapshot?.[field] === value)
+    || !SHA256.test(evidence?.snapshotFileSha256 ?? "")
+    || sha256(JSON.stringify(seoulSnapshot?.stations)) !== evidence.contentSha256) {
+    throw new Error("Seoul snapshot admission is invalid");
+  }
+  if (!Number.isFinite(Date.parse(evidence.freshUntil)) || Date.parse(evidence.freshUntil) <= now.getTime()) {
+    throw new Error("Seoul snapshot admission freshness is invalid");
+  }
+  let admitted;
+  let bytes;
+  try {
+    bytes = await readFile(contained(path.resolve(repositoryRoot), requiredText(evidence?.snapshotPath, "Seoul snapshot path")));
+    admitted = JSON.parse(bytes);
+  } catch {
+    throw new Error("Seoul snapshot admission is invalid");
+  }
+  if (sha256(bytes) !== evidence.snapshotFileSha256 || !isDeepStrictEqual(seoulSnapshot, admitted)) {
+    throw new Error("Seoul snapshot admission is invalid");
+  }
+  const ledger = snapshots?.filter(({ sourceId, snapshotId }) =>
+    sourceId === SEOUL_SOURCE_ID && snapshotId === evidence.snapshotId) ?? [];
+  if (ledger.length !== 1 || ledger[0].retrievedAt !== seoulSnapshot.capturedAt
+    || ledger[0].sourceUpdatedAt !== seoulSnapshot.observedAt) {
+    throw new Error("Seoul snapshot admission is invalid");
+  }
+  return input;
+}
+
+function rosterTuple(value) {
+  if (!value || !["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd"].every((field) =>
+    typeof value[field] === "string" && value[field] !== "")) {
+    throw new Error("KRIC accessibility roster is invalid");
+  }
+  return Object.fromEntries(["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd"].map((field) => [field, value[field]]));
+}
+
+function rosterKey(tuple) { return [tuple.stationId, tuple.lineId, tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0"); }
+
+function sortedUniqueRoster(values) {
+  const roster = values.map(rosterTuple);
+  const keys = new Set(roster.map(rosterKey));
+  if (keys.size !== roster.length) throw new Error("KRIC accessibility roster is invalid");
+  return roster.sort((left, right) => rosterKey(left) < rosterKey(right) ? -1 : rosterKey(left) > rosterKey(right) ? 1 : 0);
+}
+
+function deriveKricAccessibilityRoster(input) {
+  const mappings = new Map((input.stationMappings ?? []).map((mapping) => [
+    [mapping.sourceId, mapping.sourceStationCode, mapping.lineId].join("\0"), mapping.stationId,
+  ]));
+  const tuples = (input.facilityRows ?? [])
+    .filter(({ sourceId }) => sourceId === SOURCE_ID)
+    .map((row) => {
+      const [railOprIsttCd, lnCd, stinCd] = String(row.providerFacilityRef ?? "").split(":");
+      return {
+        stationId: mappings.get([row.station?.sourceId, row.station?.sourceStationCode, row.station?.lineId].join("\0")),
+        lineId: row.station?.lineId,
+        railOprIsttCd,
+        lnCd,
+        stinCd,
+      };
+    });
+  return sortedUniqueRoster([...new Map(tuples.map((tuple) => [rosterKey(tuple), tuple])).values()]);
+}
+
+function validateKricAccessibilityCoverage(snapshot, input) {
+  const roster = Array.isArray(input.kricStandardAccessibilityRoster)
+    ? sortedUniqueRoster(input.kricStandardAccessibilityRoster)
+    : deriveKricAccessibilityRoster(input);
+  const supported = new Set((input.stationMappings ?? [])
+    .filter(({ stationId, lineId }) => input.supportedV1Scope?.includedStationIds?.includes(stationId)
+      && input.supportedV1Scope?.includedLineIds?.includes(lineId))
+    .map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const rosterStations = new Set(roster.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  if (supported.size === 0 || supported.size !== rosterStations.size
+    || [...supported].some((stationLine) => !rosterStations.has(stationLine))) {
+    throw new Error("KRIC accessibility roster coverage is invalid");
+  }
+  const queryRoster = sortedUniqueRoster(snapshot.queries ?? []);
+  if (queryRoster.length !== roster.length || queryRoster.some((tuple, index) => rosterKey(tuple) !== rosterKey(roster[index]))) {
+    throw new Error("KRIC accessibility snapshot coverage is invalid");
+  }
+  return roster;
+}
+
+function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, now }) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (!source) throw new Error("production source inventory entry is missing");
   const previousId = validateLineage(snapshots).headsBySource[SOURCE_ID];
@@ -243,6 +347,7 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     contentSha256: snapshot.contentSha256,
     freshUntil: snapshot.freshUntil,
   };
+  nextInput.kricStandardAccessibilityRoster = kricAccessibilityRoster;
   const kricRows = nextInput.facilityRows.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const kricStatus = nextInput.accessibilityStatusEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
   if (kricRows.length === 0
@@ -265,6 +370,7 @@ export async function registerKricStandardAccessibilitySnapshot({
   rollbackAtomicReplaceImpl = atomicReplace,
   commitJournalReplaceImpl,
   cleanupTransactionDirectoryImpl,
+  syncTransactionDirectoryImpl,
 } = {}) {
   const paths = [
     registryPaths?.["tools/datapack/source-inventory.json"],
@@ -277,6 +383,7 @@ export async function registerKricStandardAccessibilitySnapshot({
     path.join(path.resolve(repositoryRoot), "tools/datapack/inputs/capital-pilot-production-source-input.json"),
   ];
   if (paths.some((file, index) => path.resolve(file) !== expectedPaths[index])) throw new Error("registry path is invalid");
+  await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
   const [snapshotBytes, ...original] = await Promise.all([
     readFile(requiredText(snapshotFilePath, "snapshot file path")),
     ...paths.map((file) => readFile(file)),
@@ -290,9 +397,12 @@ export async function registerKricStandardAccessibilitySnapshot({
     || path.resolve(snapshotTargetPath) !== expectedSnapshotTargetPath) {
     throw new Error("snapshot target path is invalid");
   }
+  const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
+  await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
+  const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
   const staged = stageRegistries({
-    inventory: JSON.parse(original[0]), snapshots: JSON.parse(original[1]), input: JSON.parse(original[2]),
-    snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, now,
+    inventory, snapshots, input,
+    snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, now,
   });
   let targetBytes = null;
   try { targetBytes = await readFile(snapshotTargetPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
@@ -303,6 +413,7 @@ export async function registerKricStandardAccessibilitySnapshot({
     rollbackAtomicReplaceImpl,
     commitJournalReplaceImpl,
     cleanupTransactionDirectoryImpl,
+    syncTransactionDirectoryImpl,
     outputs: [
       ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
       ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
