@@ -4440,7 +4440,8 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -4481,11 +4482,11 @@
           "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
-          "updateFrequency": "realtime",
-          "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "PROVIDER_RESULT_30_20260728",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "stationCnvFacl standard operation supersedes this detailed operation for production"
         }
       },
       "admissionEvidence": {
@@ -6001,7 +6002,8 @@
           "accessibility_facilities"
         ]
       },
-      "requiredForProductionPack": true,
+      "requiredForProductionPack": false,
+      "productionUseAllowed": false,
       "updateFrequency": "realtime",
       "observedDataUpdatedAt": "2026-06-22",
       "retrievedAt": "2026-06-22",
@@ -6042,11 +6044,11 @@
           "unsupportedNotes": "source does not provide realtime arrival data for production live ETA"
         },
         "facility": {
-          "status": "SUPPORTED",
-          "productionUseAllowed": true,
-          "coverageStatus": "SOURCE_INVENTORY_COVERED",
-          "updateFrequency": "realtime",
-          "unsupportedNotes": "production use is limited to official accessibility facility evidence and listed coverageScope regions/operators"
+          "status": "CANDIDATE",
+          "productionUseAllowed": false,
+          "coverageStatus": "PROVIDER_RESULT_30_20260728",
+          "updateFrequency": "provider documented; production cadence not admitted",
+          "unsupportedNotes": "stationCnvFacl standard operation supersedes this detailed operation for production"
         }
       },
       "admissionEvidence": {

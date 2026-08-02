@@ -636,3 +636,42 @@ test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", 
     "--quiet",
   ]);
 });
+
+test("KRIC 이동동선 상세 operation provider result 30은 candidate와 inventory에서 production을 차단한다", async () => {
+  const candidates = JSON.parse(
+    await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"),
+  );
+  const inventory = JSON.parse(
+    await readFile(new URL("./source-inventory.json", import.meta.url), "utf8"),
+  );
+  const ids = [
+    "kric-station-elevator-movement",
+    "kric-wheelchair-lift-movement",
+  ];
+  const expectedFacility = {
+    status: "CANDIDATE",
+    productionUseAllowed: false,
+    coverageStatus: "PROVIDER_RESULT_30_20260728",
+    updateFrequency: "provider documented; production cadence not admitted",
+    unsupportedNotes: "stationCnvFacl standard operation supersedes this detailed operation for production",
+  };
+
+  for (const id of ids) {
+    const candidate = candidates.candidates.find((entry) => entry.id === id);
+    const inventorySource = inventory.sources.find((entry) => entry.id === id);
+
+    assert.equal(candidate.admissionStatus, "superseded_by_standard_operation");
+    assert.equal(
+      candidate.nextAction,
+      "상세 operation은 provider result 30 해소 전까지 candidate로 보존하고 production은 stationCnvFacl standard operation만 소비한다.",
+    );
+    assert.deepEqual(candidate.capabilities.facility, expectedFacility);
+    assert.equal(
+      candidate.productionInventoryRelationship,
+      "candidate_only_standard_operation_supersedes_production_use",
+    );
+    assert.equal(inventorySource.requiredForProductionPack, false);
+    assert.equal(inventorySource.productionUseAllowed, false);
+    assert.deepEqual(inventorySource.capabilities.facility, expectedFacility);
+  }
+});
