@@ -70,8 +70,11 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(root, relativePath), target, { recursive: true });
   }));
-  await cp(path.join(root, governancePolicyPath), path.join(directory, governancePolicyPath));
-  await cp(path.join(root, freshnessPolicyPath), path.join(directory, freshnessPolicyPath));
+  await Promise.all([governancePolicyPath, freshnessPolicyPath].map(async (relativePath) => {
+    const target = path.join(directory, relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    await cp(path.join(root, relativePath), target);
+  }));
   await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
   await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
   const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
