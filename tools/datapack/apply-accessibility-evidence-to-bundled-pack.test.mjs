@@ -195,6 +195,13 @@ const reviewedEdge = {
 test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", () => {
   const reviewedPack = {
     networkEdges: [reviewedEdge],
+    movementPathCandidates: [
+      { id: "retired-elevator", sourceId: "kric-station-elevator-movement" },
+      { id: "retired-lift", sourceId: "kric-wheelchair-lift-movement" },
+      { id: "active-seoul", sourceId: "seoul-metro-accessibility" },
+      { id: "active-unrelated", sourceId: "seoulmetro-station-line-info" },
+      { id: "missing-unrelated", sourceId: "unregistered-source" },
+    ],
     metadata: { productionCoverageEvidence: JSON.stringify([
       {
         sourceDomain: "accessibility_facilities",
@@ -271,6 +278,12 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   ]);
   assert.ok(coverageEvidence.flatMap(({ sourceIds }) => sourceIds)
     .every((sourceId) => synced.packs[0].sourceInventory.some(({ id }) => id === sourceId)));
+  assert.deepEqual(synced.packs[0].movementPathCandidates, [
+    { id: "active-seoul", sourceId: "seoul-metro-accessibility" },
+    { id: "active-unrelated", sourceId: "seoulmetro-station-line-info" },
+  ]);
+  assert.ok(synced.packs[0].movementPathCandidates
+    .every(({ sourceId }) => synced.packs[0].sourceInventory.some(({ id }) => id === sourceId)));
 
   const database = new DatabaseSync(":memory:");
   database.exec(`

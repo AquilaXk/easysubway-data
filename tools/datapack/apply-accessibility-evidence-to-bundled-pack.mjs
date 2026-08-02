@@ -234,6 +234,8 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     .filter(({ id }) => !replacedSourceIds.has(id) && id !== "kric-station-convenience-standard")
     .concat(freshSources);
   const sourceInventoryIds = new Set(pack.sourceInventory.map(({ id }) => id));
+  pack.movementPathCandidates = (reviewedPack.movementPathCandidates ?? [])
+    .filter(({ sourceId }) => sourceInventoryIds.has(sourceId));
   const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
   pack.metadata.productionCoverageEvidence = JSON.stringify(productionCoverageEvidence.map((entry) => ({
     ...entry,
