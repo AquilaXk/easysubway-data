@@ -1,0 +1,44 @@
+# 이 레포가 실제로 소유한 생태계만 등록한다.
+# 2026-08-02 실측(main 5efc5ae, tracked blob 681개): package.json / package-lock.json /
+# pubspec.yaml / build.gradle(.kts) / gradle.lockfile / Dockerfile / *.tf / requirements.txt /
+# Gemfile / go.mod / Cargo.toml / docker-compose.yml 이 모두 0건이다.
+# tools/** 의 Node 스크립트는 런타임 의존성 없이 표준 라이브러리와 `node --test` 만 쓴다.
+# 따라서 갱신 대상이 있는 생태계는 GitHub Actions 뿐이며, npm·terraform·docker·gradle·pub 항목은 넣지 않는다.
+# (향후 package.json 등이 생기면 그 시점에 해당 생태계 항목을 별도로 추가한다.)
+version: 2
+updates:
+  # .github/workflows/{ci,datapack-expiry-alert,datapack-release}.yml 3개가 대상이다.
+  # 이 레포는 action 을 full commit SHA 로 핀한다. dependabot 은 SHA 핀 갱신을 지원하며,
+  # 2026-08-02 실측상 현재 핀 5개(actions/checkout, actions/setup-node, actions/upload-artifact,
+  # actions/download-artifact, slackapi/slack-github-action)가 전부 릴리스 태그를 직접 가리키고 있어
+  # semver 판정과 아래 update-types 분류가 성립한다.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      # hub 기준선(weekly / tuesday / 06:23 / Asia/Seoul)을 그대로 승계한다.
+      # 워크플로 3개·action 5개 규모라 주 1회로 충분하고, CI(Data contracts 단일 job)에
+      # 주 1회 이상의 부하를 얹을 이유가 없다. 주중 오전이라 사람이 그 주에 대응할 수 있다.
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:23"
+      timezone: "Asia/Seoul"
+    # group PR 1건 + major 개별 PR 최대 2건을 상정한 상한이다. hub 기준선과 같다.
+    open-pull-requests-limit: 3
+    commit-message:
+      # 이 레포의 PR 제목 규약은 `[Type] 한국어 요약` 이다.
+      # 2026-08-02 실측상 .github/workflows/** 에 제목 lint job 이 없지만(강제되지 않음),
+      # 나중에 도입되더라도 자동 생성 PR 이 즉시 막히지 않도록 선제적으로 맞춰 둔다.
+      # dependabot 은 prefix 가 문자/숫자/닫는 괄호로 끝나면 `: ` 를 덧붙인다.
+      # 이 값은 콜론이 붙든 안 붙든 결과가 `[CI] 의존성 업데이트...` 로 시작하므로
+      # `^\[(Feat|Fix|Test|Chore|Docs|Build|CI|Style|Refactor|Backend|Mobile)\] .+` 를 항상 만족한다.
+      prefix: "[CI] 의존성 업데이트"
+    groups:
+      # minor/patch 는 한 PR 로 묶어 주간 PR 수를 1건으로 낮춘다.
+      # major 는 runner/Node 런타임 변경을 동반하는 경우가 많아 묶지 않고 개별 PR 로 둔다.
+      github-actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
