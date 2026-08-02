@@ -131,7 +131,7 @@ async function acquireRegistrationLock(repositoryRoot) {
   };
 }
 
-export async function recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot = REPOSITORY_ROOT, atomicReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncDirectoryImpl = syncDirectory } = {}) {
+async function recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot = REPOSITORY_ROOT, atomicReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncDirectoryImpl = syncDirectory } = {}) {
   const { root, journal } = transactionPaths(repositoryRoot);
   const entry = await readRecoveryEntry(journal);
   if (entry === undefined) return false;
@@ -287,7 +287,10 @@ async function validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seou
     || sha256(JSON.stringify(seoulSnapshot?.stations)) !== evidence.contentSha256) {
     throw new Error("Seoul snapshot admission is invalid");
   }
-  if (!Number.isFinite(Date.parse(evidence.freshUntil)) || Date.parse(evidence.freshUntil) <= now.getTime()) {
+  const capturedAt = Date.parse(evidence.capturedAt);
+  const freshUntil = Date.parse(evidence.freshUntil);
+  if (!Number.isFinite(capturedAt) || !Number.isFinite(freshUntil)
+    || freshUntil !== capturedAt + 86_400_000 || freshUntil <= now.getTime()) {
     throw new Error("Seoul snapshot admission freshness is invalid");
   }
   let admitted;

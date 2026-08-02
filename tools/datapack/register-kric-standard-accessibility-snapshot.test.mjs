@@ -8,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
-import { parseKricStandardAccessibilitySnapshotRegistrationArgs, recoverKricStandardAccessibilitySnapshotTransaction, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
+import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -78,14 +78,25 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
   await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
   await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
   const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
+  admittedSeoul.capturedAt = now.toISOString();
+  admittedSeoul.observedAt = admittedSeoul.capturedAt;
   admittedSeoul.freshUntil = new Date(now.getTime() + 86_400_000).toISOString();
   const admittedSeoulBytes = Buffer.from(`${JSON.stringify(admittedSeoul, null, 2)}\n`);
   await writeFile(path.join(directory, seoulSnapshotPath), admittedSeoulBytes);
   const inventory = JSON.parse(await readFile(path.join(directory, registryPaths[0]), "utf8"));
   const seoulEvidence = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence;
+  seoulEvidence.capturedAt = admittedSeoul.capturedAt;
+  seoulEvidence.observedAt = admittedSeoul.observedAt;
   seoulEvidence.freshUntil = admittedSeoul.freshUntil;
   seoulEvidence.snapshotFileSha256 = sha256(admittedSeoulBytes);
   await writeFile(path.join(directory, registryPaths[0]), `${JSON.stringify(inventory, null, 2)}\n`);
+  const snapshots = JSON.parse(await readFile(path.join(directory, registryPaths[1]), "utf8"));
+  const seoulLedger = snapshots.find(({ sourceId, snapshotId }) =>
+    sourceId === "seoul-metro-accessibility" && snapshotId === admittedSeoul.snapshotId);
+  seoulLedger.retrievedAt = admittedSeoul.capturedAt;
+  seoulLedger.sourceUpdatedAt = admittedSeoul.observedAt;
+  seoulLedger.freshnessExpiresAt = admittedSeoul.freshUntil;
+  await writeFile(path.join(directory, registryPaths[1]), `${JSON.stringify(snapshots, null, 2)}\n`);
   const snapshot = await snapshotFor(roster, now);
   const snapshotFilePath = path.join(directory, "staging", `${snapshot.snapshotId}.json`);
   await mkdir(path.dirname(snapshotFilePath), { recursive: true });
@@ -244,6 +255,31 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
       evidence.snapshotFileSha256 = sha256(staleBytes);
       await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
       return { seoulSnapshot: stale };
+    }, /Seoul snapshot admission freshness is invalid/],
+    [async (values) => {
+      const rootDirectory = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
+      const seoulPath = path.join(rootDirectory, seoulSnapshotPath);
+      const relabeled = JSON.parse(await readFile(seoulPath, "utf8"));
+      relabeled.capturedAt = "2020-01-01T00:00:00.000Z";
+      relabeled.observedAt = relabeled.capturedAt;
+      relabeled.freshUntil = "2026-08-04T00:00:00.000Z";
+      const relabeledBytes = Buffer.from(`${JSON.stringify(relabeled, null, 2)}\n`);
+      await writeFile(seoulPath, relabeledBytes);
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      const evidence = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence;
+      evidence.capturedAt = relabeled.capturedAt;
+      evidence.observedAt = relabeled.observedAt;
+      evidence.freshUntil = relabeled.freshUntil;
+      evidence.snapshotFileSha256 = sha256(relabeledBytes);
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      const snapshots = JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8"));
+      const ledger = snapshots.find(({ sourceId, snapshotId }) =>
+        sourceId === "seoul-metro-accessibility" && snapshotId === relabeled.snapshotId);
+      ledger.retrievedAt = relabeled.capturedAt;
+      ledger.sourceUpdatedAt = relabeled.observedAt;
+      ledger.freshnessExpiresAt = relabeled.freshUntil;
+      await writeFile(values.paths[registryPaths[1]], `${JSON.stringify(snapshots, null, 2)}\n`);
+      return { seoulSnapshot: relabeled };
     }, /Seoul snapshot admission freshness is invalid/],
     [async (values) => {
       const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
@@ -445,7 +481,7 @@ test("registry replace phase #3과 #4 실패는 네 surface를 journal backup으
   }
 });
 
-test("rollback replace 실패는 RECOVERY_REQUIRED journal을 보존하고 exported recovery가 복구한다", async (t) => {
+test("pending PREPARED journal은 lock-held registration recovery로 rollback하고 정리한다", async (t) => {
   const values = await fixture(t);
   const failCommit = async (target, bytes, phase) => {
     if (phase === 3) throw new Error("replace 3");
@@ -457,23 +493,8 @@ test("rollback replace 실패는 RECOVERY_REQUIRED journal을 보존하고 expor
     rollbackAtomicReplaceImpl: async () => { throw new Error("rollback replace"); },
   }), /RECOVERY_REQUIRED/);
   await readFile(journalPath(values));
-  const syncCalls = [];
-  const outcome = await recoverKricStandardAccessibilitySnapshotTransaction({
-    repositoryRoot: path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))),
-    cleanupTransactionDirectoryImpl: async () => { throw new Error("recovery cleanup failed"); },
-    syncDirectoryImpl: async (directoryPath) => {
-      const journalExists = await readFile(journalPath(values)).then(
-        () => true,
-        (error) => {
-          if (error?.code === "ENOENT") return false;
-          throw error;
-        },
-      );
-      syncCalls.push([directoryPath, journalExists]);
-    },
-  });
-  assert.equal(outcome, "PREPARED");
-  assert.deepEqual(syncCalls[0], [path.dirname(values.snapshotTargetPath), true]);
+  await writeFile(values.snapshotFilePath, "not JSON");
+  await assert.rejects(register(values), /snapshot file SHA-256 mismatch/);
   await assertUnchanged(values);
   await assert.rejects(readFile(values.snapshotTargetPath), { code: "ENOENT" });
   await assert.rejects(readFile(journalPath(values)), { code: "ENOENT" });
