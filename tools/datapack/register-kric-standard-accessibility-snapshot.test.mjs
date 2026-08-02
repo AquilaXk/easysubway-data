@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { parseKricStandardAccessibilitySnapshotRegistrationArgs, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
@@ -75,6 +76,7 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(root, relativePath), target);
   }));
+  const freshnessPolicy = JSON.parse(await readFile(path.join(directory, freshnessPolicyPath), "utf8"));
   await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
   await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
   const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
@@ -95,7 +97,12 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     sourceId === "seoul-metro-accessibility" && snapshotId === admittedSeoul.snapshotId);
   seoulLedger.retrievedAt = admittedSeoul.capturedAt;
   seoulLedger.sourceUpdatedAt = admittedSeoul.observedAt;
-  seoulLedger.freshnessExpiresAt = admittedSeoul.freshUntil;
+  seoulLedger.freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshnessPolicy,
+    sourceClassId: "static_accessibility_facility",
+    basisAt: admittedSeoul.capturedAt,
+    evaluationAt: now.toISOString(),
+  });
   await writeFile(path.join(directory, registryPaths[1]), `${JSON.stringify(snapshots, null, 2)}\n`);
   const snapshot = await snapshotFor(roster, now);
   const snapshotFilePath = path.join(directory, "staging", `${snapshot.snapshotId}.json`);
@@ -113,6 +120,7 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     snapshotTargetPath: path.join(directory, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
     governancePolicy,
     governancePolicySha256: sha256(governancePolicyBytes),
+    freshnessPolicy,
     rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: "kric-station-convenience-standard", retrievedAt: snapshot.capturedAt }),
     seoulSnapshot: JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8")),
     before: await Promise.all(registryPaths.map((relativePath) => readFile(paths[relativePath]))),
@@ -167,6 +175,8 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
     JSON.parse(await readFile(values.paths[relativePath], "utf8"))));
   const source = inventory.sources.find(({ id }) => id === values.snapshot.sourceId);
   const ledger = snapshots.at(-1);
+  const seoulLedger = snapshots.find(({ sourceId, snapshotId }) =>
+    sourceId === "seoul-metro-accessibility" && snapshotId === values.seoulSnapshot.snapshotId);
   const kricRows = input.facilityRows.filter(({ sourceId }) => sourceId === values.snapshot.sourceId);
   const kricStatus = input.accessibilityStatusEvidence.filter(({ sourceId }) => sourceId === values.snapshot.sourceId);
   assert.equal(source.productionUseAllowed, true);
@@ -181,6 +191,13 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
   assert.equal(ledger.rawObjectUri, receipt(values.snapshot, values.snapshotFileSha256).rawObjectUri);
   assert.equal(ledger.freshnessExpiresAt, "2026-11-01T00:00:00.000Z");
   assert.equal(values.snapshot.freshUntil, "2026-08-04T00:00:00.000Z");
+  assert.equal(seoulLedger.freshnessExpiresAt, deriveFreshnessExpiresAt({
+    policy: values.freshnessPolicy,
+    sourceClassId: "static_accessibility_facility",
+    basisAt: values.seoulSnapshot.capturedAt,
+    evaluationAt: values.seoulSnapshot.capturedAt,
+  }));
+  assert.notEqual(seoulLedger.freshnessExpiresAt, values.seoulSnapshot.freshUntil);
   assert.equal(ledger.rawRetentionExpiresAt, values.rawRetentionExpiresAt);
   assert.equal(ledger.governancePolicySha256, values.governancePolicySha256);
   assert.equal(ledger.governancePolicyVersion, values.governancePolicy.policyVersion);
