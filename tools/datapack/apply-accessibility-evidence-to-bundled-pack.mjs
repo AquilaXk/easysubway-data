@@ -24,6 +24,8 @@ const replacedSourceIds = new Set([
   "kric-station-elevator",
   "kric-station-escalator",
   "kric-wheelchair-lift-location",
+  "kric-station-elevator-movement",
+  "kric-wheelchair-lift-movement",
   "seoul-metro-accessibility",
 ]);
 
@@ -489,16 +491,25 @@ async function stripLegacyCore({ check }) {
   }
 }
 
+export function activeReleaseSnapshots(snapshots, canonical, headsBySource = validateLineage(snapshots).headsBySource) {
+  const capital = canonical.packs?.find(({ id }) => id === "capital");
+  if (!capital) throw new Error("canonical capital pack is missing");
+  const activeSourceIds = new Set((capital.sourceInventory ?? []).map(({ id }) => id));
+  return snapshots.filter((snapshot) => activeSourceIds.has(snapshot.sourceId)
+    && headsBySource[snapshot.sourceId] === snapshot.snapshotId);
+}
+
 async function syncReleaseEvidence({ check }) {
+  const releaseRoot = path.resolve(option("--release-root", root));
   const paths = {
-    spec: path.join(root, "tools/datapack/release/candidate-build-spec.json"),
-    snapshots: path.join(root, "tools/datapack/release/source-snapshots.json"),
-    inventory: path.join(root, "tools/datapack/source-inventory.json"),
-    request: path.join(root, "tools/datapack/release/release-request.json"),
-    hashes: path.join(root, "tools/datapack/release/hash-evidence.json"),
-    canonical: path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"),
-    governance: path.join(root, "tools/datapack/source-governance-policy.json"),
-    freshness: path.join(root, "release/product-gates/datapack-freshness-sla.json"),
+    spec: path.join(releaseRoot, "tools/datapack/release/candidate-build-spec.json"),
+    snapshots: path.join(releaseRoot, "tools/datapack/release/source-snapshots.json"),
+    inventory: path.join(releaseRoot, "tools/datapack/source-inventory.json"),
+    request: path.join(releaseRoot, "tools/datapack/release/release-request.json"),
+    hashes: path.join(releaseRoot, "tools/datapack/release/hash-evidence.json"),
+    canonical: path.join(releaseRoot, "tools/datapack/release/capital-production-canonical-pack.json"),
+    governance: path.join(releaseRoot, "tools/datapack/source-governance-policy.json"),
+    freshness: path.join(releaseRoot, "release/product-gates/datapack-freshness-sla.json"),
   };
   const [specBytes, snapshotBytes, inventoryBytes, requestBytes, hashBytes, canonicalBytes, governanceBytes, freshnessBytes] = await Promise.all(
     Object.values(paths).map((file) => readFile(file)),
@@ -511,8 +522,8 @@ async function syncReleaseEvidence({ check }) {
   const governance = JSON.parse(governanceBytes);
   const freshness = JSON.parse(freshnessBytes);
   const inventoryBySource = new Map(inventory.sources.map((entry) => [entry.id, entry]));
-  const { headsBySource } = validateLineage(snapshots);
-  const releaseSnapshots = snapshots.filter((snapshot) => headsBySource[snapshot.sourceId] === snapshot.snapshotId);
+  const canonical = JSON.parse(canonicalBytes);
+  const releaseSnapshots = activeReleaseSnapshots(snapshots, canonical);
   spec.sourceSnapshotIds = releaseSnapshots.map(({ snapshotId }) => snapshotId);
   spec.sourceSnapshots = releaseSnapshots.map((snapshot) => {
     const source = inventoryBySource.get(snapshot.sourceId);
@@ -552,7 +563,7 @@ async function syncReleaseEvidence({ check }) {
   });
   spec.sourceSnapshotSetHash = sha256(JSON.stringify(releaseSnapshots));
   spec.sourceInventorySha256 = sha256(JSON.stringify(inventory));
-  spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.resolve(root, spec.itxTopologyEvidencePath)));
+  spec.itxTopologyEvidenceSha256 = sha256(await readFile(path.resolve(releaseRoot, spec.itxTopologyEvidencePath)));
   spec.networkEdgeEvidence.sourceInventory.sha256 = sha256(inventoryBytes);
   const nextSpecBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
   request.buildSpecSha256 = sha256(nextSpecBytes);
@@ -560,12 +571,12 @@ async function syncReleaseEvidence({ check }) {
   hashes.truthfulnessRule = "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.";
   hashes.sourceSnapshotSetHash.value = spec.sourceSnapshotSetHash;
   hashes.sourceSnapshotSetHash.contract = `source별 head ${releaseSnapshots.length}종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.`;
-  hashes.sourceSnapshotSetHash.reproductionCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),h=validateLineage(s).headsBySource,r=s.filter(n=>h[n.sourceId]===n.snapshotId);console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\"";
+  hashes.sourceSnapshotSetHash.reproductionCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,r=s.filter(n=>a.has(n.sourceId)&&h[n.sourceId]===n.snapshotId);console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\"";
   hashes.sourceInventorySha256.value = spec.sourceInventorySha256;
   hashes.fixturePath.sha256 = sha256(canonicalBytes);
-  hashes.sourceSnapshots.note = "기존 release source 중 movement·timetable·network identity는 유지하고, detailed location 3종을 KRIC stationCnvFacl standard로 교체했다. 서울 accessibility는 2026-07-28 full snapshot으로 교체했다.";
+  hashes.sourceSnapshots.note = "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.";
   hashes.sourceSnapshots.order = `release snapshot 순서: ${releaseSnapshots.map(({ sourceId }) => sourceId).join(" → ")}`;
-  hashes.sourceSnapshots.committedVerificationCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),h=validateLineage(s).headsBySource,e=require('./tools/datapack/release/hash-evidence.json');for(const n of s.filter(x=>h[x.sourceId]===x.snapshotId)){const p=e.perSourceEvidence.find(x=>x.snapshotId===n.snapshotId);if(!p||c.createHash('sha256').update(JSON.stringify([n])).digest('hex')!==p.perSourceSnapshotSetHash)throw new Error('source snapshot evidence mismatch: '+n.sourceId)}})\"";
+  hashes.sourceSnapshots.committedVerificationCommand = "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,e=require('./tools/datapack/release/hash-evidence.json');for(const n of s.filter(x=>a.has(x.sourceId)&&h[x.sourceId]===x.snapshotId)){const q=e.perSourceEvidence.find(x=>x.snapshotId===n.snapshotId);if(!q||c.createHash('sha256').update(JSON.stringify([n])).digest('hex')!==q.perSourceSnapshotSetHash)throw new Error('source snapshot evidence mismatch: '+n.sourceId)}})\"";
   hashes.perSourceEvidence = releaseSnapshots.map((snapshot) => ({
     sourceId: snapshot.sourceId,
     snapshotId: snapshot.snapshotId,
@@ -635,16 +646,18 @@ export function accessibilityIndexMetadata(pack, spec, inventory, currentFreshne
 }
 
 async function main() {
-  if (process.argv.includes("--core-only")) {
+  const modes = ["--core-only", "--release-evidence-only", "--candidate-fixtures-only"]
+    .filter((mode) => process.argv.includes(mode));
+  if (modes.length > 1) throw new Error("--core-only, --release-evidence-only, and --candidate-fixtures-only are mutually exclusive");
+  if (modes[0] === "--core-only") {
     await stripLegacyCore({ check: process.argv.includes("--check") });
     return;
   }
-  if (process.argv.includes("--release-evidence-only")) {
+  if (modes[0] === "--release-evidence-only") {
     await syncReleaseEvidence({ check: process.argv.includes("--check") });
     return;
   }
-  const packPath = path.resolve(root, option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz"));
-  const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
+  const check = process.argv.includes("--check");
   const fixturePath = path.resolve(root, option("--fixture", "tools/datapack/release/capital-production-reviewed-pack.json"));
   const canonicalPath = path.resolve(root, option("--canonical-fixture", "tools/datapack/release/capital-production-canonical-pack.json"));
   const pack = JSON.parse(await readFile(fixturePath, "utf8")).packs?.find(({ id }) => id === "capital");
@@ -652,15 +665,18 @@ async function main() {
     throw new Error("reviewed capital accessibility evidence must contain 4 facilities and 8 evidence rows");
   }
   const canonical = JSON.parse(await readFile(canonicalPath, "utf8"));
-  if (process.argv.includes("--check")) assertCanonicalFixture(canonical, pack);
+  if (check) assertCanonicalFixture(canonical, pack);
   else await writeFile(canonicalPath, `${JSON.stringify(syncCanonicalFixture(canonical, pack))}\n`);
-  const releaseEvidence = await syncReleaseEvidence({ check: process.argv.includes("--check") });
+  const releaseEvidence = await syncReleaseEvidence({ check });
+  if (modes[0] === "--candidate-fixtures-only") return;
+  const packPath = path.resolve(root, option("--pack", "apps/mobile/assets/datapacks/capital.sqlite.gz"));
+  const indexPath = path.resolve(root, option("--index", "apps/mobile/assets/datapacks/index.json"));
   const directory = await mkdtemp(path.join(os.tmpdir(), `accessibility-pack-${randomUUID()}-`));
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
     const currentGzipBytes = await readFile(packPath);
     await writeFile(sqlitePath, gunzipSync(currentGzipBytes));
-    if (process.argv.includes("--check")) {
+    if (check) {
       assertEvidence(sqlitePath, pack);
       const sqliteBytes = await readFile(sqlitePath);
       const index = JSON.parse(await readFile(indexPath, "utf8"));

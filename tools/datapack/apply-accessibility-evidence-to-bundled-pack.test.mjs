@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   accessibilityIndexMetadata,
@@ -12,8 +14,11 @@ import {
   normalizeUnprovenInternalRouteEdges,
   stripLegacyCoreClaims,
   syncAccessibilityEdges,
+  activeReleaseSnapshots,
   syncCanonicalFixture,
 } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("unproven internal route availability fails check and normalizes to unknown", () => {
   const database = new DatabaseSync(":memory:");
@@ -220,7 +225,11 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
       sourceId: "baseline-exit-source-capital",
       sourceSnapshotId: "baseline-exit-source-capital-20260619",
     }],
-    sourceInventory: [{ id: "seoul-metro-official-od-fares" }],
+    sourceInventory: [
+      { id: "seoul-metro-official-od-fares" },
+      { id: "kric-station-elevator-movement" },
+      { id: "kric-wheelchair-lift-movement" },
+    ],
     officialOdFareQuotes,
     routeServiceArtifactEvidence,
     metadata: { productionCoverageEvidence: "retired-accessibility-sources" },
@@ -270,6 +279,73 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   database.prepare("UPDATE network_edges SET source_snapshot_id = 'stale'").run();
   assert.throws(() => assertAccessibilityEdges(database, reviewedPack), /bundled accessibility edge is stale/);
   database.close();
+});
+
+test("active canonical source inventory excludes retired movement snapshot heads", () => {
+  const snapshots = [
+    { sourceId: "active-source", snapshotId: "active-old", supersededBy: "active-head" },
+    { sourceId: "active-source", snapshotId: "active-head" },
+    { sourceId: "kric-station-elevator-movement", snapshotId: "elevator-movement-head" },
+    { sourceId: "kric-wheelchair-lift-movement", snapshotId: "lift-movement-head" },
+  ];
+  const canonical = { packs: [{
+    id: "capital",
+    sourceInventory: [{ id: "active-source" }],
+  }] };
+
+  assert.deepEqual(activeReleaseSnapshots(snapshots, canonical, {
+    "active-source": "active-head",
+    "kric-station-elevator-movement": "elevator-movement-head",
+    "kric-wheelchair-lift-movement": "lift-movement-head",
+  }), [
+    { sourceId: "active-source", snapshotId: "active-head" },
+  ]);
+});
+
+test("candidate-fixtures-only sync succeeds without reading mobile pack paths", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-candidate-fixtures-"));
+  const repository = path.resolve(import.meta.dirname, "../..");
+  const files = [
+    "tools/datapack/release/candidate-build-spec.json",
+    "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/release/release-request.json",
+    "tools/datapack/release/hash-evidence.json",
+    "tools/datapack/release/capital-production-canonical-pack.json",
+    "tools/datapack/source-governance-policy.json",
+    "release/product-gates/datapack-freshness-sla.json",
+    "tools/datapack/release/capital-production-reviewed-pack.json",
+    "tools/datapack/itx-cheongchun-topology-evidence.json",
+  ];
+  try {
+    for (const relativePath of files) {
+      const target = path.join(directory, relativePath);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, await readFile(path.join(repository, relativePath)));
+    }
+    await execFileAsync(process.execPath, [
+      "tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs",
+      "--candidate-fixtures-only",
+      "--release-root", directory,
+      "--fixture", path.join(directory, "tools/datapack/release/capital-production-reviewed-pack.json"),
+      "--canonical-fixture", path.join(directory, "tools/datapack/release/capital-production-canonical-pack.json"),
+      "--pack", path.join(directory, "missing.sqlite.gz"),
+      "--index", path.join(directory, "missing-index.json"),
+    ], { cwd: repository });
+    await assert.rejects(readFile(path.join(directory, "missing.sqlite.gz")), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(directory, "missing-index.json")), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI rejects simultaneous bounded modes before I/O", async () => {
+  await assert.rejects(execFileAsync(process.execPath, [
+    "tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs",
+    "--core-only",
+    "--candidate-fixtures-only",
+  ], { cwd: path.resolve(import.meta.dirname, "../..") }),
+  /mutually exclusive/);
 });
 
 test("metadata requires admission for facilities-only sources and uses the build clock hook", (t) => {
