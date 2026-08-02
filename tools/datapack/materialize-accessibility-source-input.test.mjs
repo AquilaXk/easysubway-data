@@ -48,7 +48,10 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
   assert.equal(output.routeEdges[0].accessibilityStatus, "UNKNOWN");
   assert.equal(output.routeEdges[0].verificationStatus, "NOT_VERIFIED");
   assert.deepEqual(output.sourceIds, ["kric-station-convenience-standard", "seoul-metro-accessibility"]);
-  assert.ok(output.coverageEvidence[0].sourceIds.includes("seoul-metro-accessibility"));
+  assert.deepEqual(output.coverageEvidence[0].sourceIds, [
+    "kric-station-convenience-standard",
+    "seoul-metro-accessibility",
+  ]);
   const sameTypeRows = [
     { gubun: "EV", grndDvCd: "1", stinFlor: 1, dtlLoc: "대합실 A" },
     { gubun: "EV", grndDvCd: "2", stinFlor: 2, dtlLoc: "대합실 B" },

@@ -164,7 +164,7 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   ])];
   const coverageEvidence = input.coverageEvidence.map((entry) => entry.sourceDomain !== "accessibility_facilities"
     ? entry
-    : { ...entry, sourceIds: [KRIC_SOURCE_ID, "kric-station-elevator-movement", "kric-wheelchair-lift-movement", SEOUL_SOURCE_ID] });
+    : { ...entry, sourceIds: [KRIC_SOURCE_ID, SEOUL_SOURCE_ID] });
   const statusByStation = new Map(seoulRows.map((row) => [row.stationId, row]));
   const routeEdges = (input.routeEdges ?? []).map((edge) => {
     if (edge.sourceId !== SEOUL_SOURCE_ID || !["ENTRY", "EXIT"].includes(edge.edgeType)) return edge;

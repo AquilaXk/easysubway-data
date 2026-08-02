@@ -679,6 +679,11 @@ test("KRIC 이동동선 상세 operation provider result 30은 모든 production
     assert.equal(inventorySource.requiredForProductionPack, false);
     assert.equal(inventorySource.productionUseAllowed, false);
     assert.deepEqual(inventorySource.capabilities.facility, expectedFacility);
+    assert.equal(inventorySource.admissionEvidence.quotaEvidence.productionUseAllowed, false);
+    assert.equal(
+      inventorySource.admissionEvidence.productionUseNoteKo,
+      "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다.",
+    );
     assert.ok(!productionScope.productionSourceSet.requiredSourceIds.includes(id));
     assert.ok(!capitalPilotInput.sourceIds.includes(id));
     assert.ok(

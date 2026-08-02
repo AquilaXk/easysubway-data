@@ -4515,9 +4515,9 @@
           "portal": "공공데이터포털",
           "defaultDailyLimit": "unlimited",
           "unlockStatus": "approved",
-          "productionUseAllowed": true
+          "productionUseAllowed": false
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+        "productionUseNoteKo": "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다."
       }
     },
     {
@@ -6077,9 +6077,9 @@
           "portal": "공공데이터포털",
           "defaultDailyLimit": "unlimited",
           "unlockStatus": "approved",
-          "productionUseAllowed": true
+          "productionUseAllowed": false
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격한다."
+        "productionUseNoteKo": "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다."
       }
     },
     {
