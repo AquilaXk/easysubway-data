@@ -11,7 +11,12 @@ const execFileAsync = promisify(execFile);
 
 test("fresh KRIC codes와 Seoul status만 production source input으로 materialize한다", () => {
   const input = {
-    sourceIds: [],
+    sourceIds: ["kric-station-elevator-movement", "kric-wheelchair-lift-movement"],
+    movementPathCandidates: [
+      { sourceId: "kric-station-elevator-movement" },
+      { sourceId: "kric-wheelchair-lift-movement" },
+      { sourceId: "seoul-metro-accessibility", id: "seoul-status-candidate" },
+    ],
     stationMappings: [{ sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L-1", lineId: "line-1", stationId: "station-a" }],
     stationLineRows: [{
       sourceId: "molit-urban-rail-full-route", sourceStationCode: "MOLIT-L-1",
@@ -23,7 +28,10 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     }],
     supportedV1Scope: { includedStationIds: ["station-a"] },
     minimumProductionCoverage: { facilities: 1 },
-    coverageEvidence: [{ sourceDomain: "accessibility_facilities", sourceIds: ["old"] }],
+    coverageEvidence: [{
+      sourceDomain: "accessibility_facilities",
+      sourceIds: ["kric-station-elevator-movement", "kric-wheelchair-lift-movement"],
+    }],
   };
   const kricSnapshot = {
     sourceId: "kric-station-convenience-standard", snapshotId: "kric-1", observedAt: "2026-07-28T00:00:00Z", capturedAt: "2026-07-28T00:00:00Z",
@@ -48,6 +56,9 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
   assert.equal(output.routeEdges[0].accessibilityStatus, "UNKNOWN");
   assert.equal(output.routeEdges[0].verificationStatus, "NOT_VERIFIED");
   assert.deepEqual(output.sourceIds, ["kric-station-convenience-standard", "seoul-metro-accessibility"]);
+  assert.deepEqual(output.movementPathCandidates, [
+    { sourceId: "seoul-metro-accessibility", id: "seoul-status-candidate" },
+  ]);
   assert.deepEqual(output.coverageEvidence[0].sourceIds, [
     "kric-station-convenience-standard",
     "seoul-metro-accessibility",
