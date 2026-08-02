@@ -19,6 +19,7 @@ const registryPaths = [
 ];
 const seoulSnapshotPath = "tools/datapack/sources/seoul-metro-accessibility-20260728.json";
 const governancePolicyPath = "tools/datapack/source-governance-policy.json";
+const freshnessPolicyPath = "release/product-gates/datapack-freshness-sla.json";
 const roster = [
   { stationId: "station-sangnoksu", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "448", canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-sangnoksu", lineId: "seoul-4" }] },
   { stationId: "station-sadang", lineId: "seoul-4", railOprIsttCd: "S1", lnCd: "4", stinCd: "433", canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-sadang", lineId: "seoul-4" }] },
@@ -70,6 +71,7 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     await cp(path.join(root, relativePath), target, { recursive: true });
   }));
   await cp(path.join(root, governancePolicyPath), path.join(directory, governancePolicyPath));
+  await cp(path.join(root, freshnessPolicyPath), path.join(directory, freshnessPolicyPath));
   await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
   await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
   const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
@@ -167,6 +169,11 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
   assert.equal(ledger.rawRetentionExpiresAt, values.rawRetentionExpiresAt);
   assert.equal(ledger.governancePolicySha256, values.governancePolicySha256);
   assert.equal(ledger.governancePolicyVersion, values.governancePolicy.policyVersion);
+  assert.equal(ledger.snapshotStatus, "LOCKED");
+  assert.equal(ledger.fetchStatus, "SUCCESS");
+  assert.equal(ledger.schemaStatus, "PASS");
+  assert.equal(ledger.licenseStatus, "PASS");
+  assert.equal(ledger.redistributionAllowed, true);
   assert.equal(source.retrievedAt, values.snapshot.capturedAt.slice(0, 10));
   assert.equal(source.observedDataUpdatedAt, values.snapshot.observedAt.slice(0, 10));
   assert.match(source.retrievedAt, /^\d{4}-\d{2}-\d{2}$/);
@@ -234,6 +241,30 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
       await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
       return { seoulSnapshot: stale };
     }, /Seoul snapshot admission freshness is invalid/],
+    [async (values) => {
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").productionUseAllowed = false;
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").license.redistributionAllowed = false;
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence.decision = "REJECTED";
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const snapshots = JSON.parse(await readFile(values.paths[registryPaths[1]], "utf8"));
+      snapshots.find(({ sourceId, snapshotId }) => sourceId === "seoul-metro-accessibility" && snapshotId === values.seoulSnapshot.snapshotId).licenseStatus = "FAIL";
+      await writeFile(values.paths[registryPaths[1]], `${JSON.stringify(snapshots, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
   ];
   for (const [arrange, expected] of cases) {
     const values = await fixture(t);
@@ -519,6 +550,20 @@ test("receipt 시간은 저장 시각과 raw retention 순서를 엄격히 검�
     const invalidReceipt = receipt(values.snapshot, values.snapshotFileSha256);
     mutate(invalidReceipt);
     await assert.rejects(register(values, { rawReceipt: invalidReceipt }), /raw receipt (storedAt|rawRetentionExpiresAt) (is invalid|does not match governance policy)/);
+    await assertUnchanged(values);
+  }
+});
+
+test("KRIC license governance 불일치는 registry write 전에 거부한다", async (t) => {
+  for (const mutate of [
+    (policy) => { policy.sources.find(({ sourceId }) => sourceId === "kric-station-convenience-standard").licenseReview.termsHash = "0".repeat(64); },
+    (policy) => { policy.sources.find(({ sourceId }) => sourceId === "kric-station-convenience-standard").licenseReview.redistributionScopes = ["NOT_DERIVED_DATAPACK"]; },
+  ]) {
+    const values = await fixture(t);
+    const policy = JSON.parse(await readFile(path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), governancePolicyPath), "utf8"));
+    mutate(policy);
+    await writeFile(path.join(path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))), governancePolicyPath), `${JSON.stringify(policy, null, 2)}\n`);
+    await assert.rejects(register(values), /KRIC license governance is invalid|REDISTRIBUTION_NOT_APPROVED/);
     await assertUnchanged(values);
   }
 });

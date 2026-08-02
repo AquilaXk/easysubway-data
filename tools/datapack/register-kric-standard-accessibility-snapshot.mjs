@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
-import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
+import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
@@ -265,7 +265,8 @@ function validateReceipt(snapshot, receipt, now) {
 async function validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now }) {
   const sources = inventory?.sources?.filter(({ id }) => id === SEOUL_SOURCE_ID) ?? [];
   if (sources.length !== 1) throw new Error("Seoul snapshot admission is invalid");
-  const evidence = sources[0].accessibilityAdmissionEvidence;
+  const source = sources[0];
+  const evidence = source.accessibilityAdmissionEvidence;
   const expected = {
     schemaVersion: 1,
     artifactKind: "seoul-accessibility-snapshot",
@@ -302,7 +303,13 @@ async function validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seou
   const ledger = snapshots?.filter(({ sourceId, snapshotId }) =>
     sourceId === SEOUL_SOURCE_ID && snapshotId === evidence.snapshotId) ?? [];
   if (ledger.length !== 1 || ledger[0].retrievedAt !== seoulSnapshot.capturedAt
-    || ledger[0].sourceUpdatedAt !== seoulSnapshot.observedAt) {
+    || ledger[0].sourceUpdatedAt !== seoulSnapshot.observedAt
+    || source.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
+    || evidence.decision !== "APPROVED" || evidence.productionUseAllowed !== true
+    || !["LOCKED", "SUCCESS", "PASS", "PASS"].every((value, index) =>
+      [ledger[0].snapshotStatus, ledger[0].fetchStatus, ledger[0].schemaStatus, ledger[0].licenseStatus][index] === value)
+    || ledger[0].redistributionAllowed !== true
+    || !Number.isFinite(Date.parse(ledger[0].freshnessExpiresAt)) || Date.parse(ledger[0].freshnessExpiresAt) <= now.getTime()) {
     throw new Error("Seoul snapshot admission is invalid");
   }
   return input;
@@ -494,7 +501,28 @@ async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
   if (rawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
     throw new Error("raw receipt rawRetentionExpiresAt does not match governance policy");
   }
-  return { bytes, version: requiredText(policy.policyVersion, "governance policy version") };
+  return { bytes, policy, version: requiredText(policy.policyVersion, "governance policy version") };
+}
+
+async function readFreshnessPolicy(repositoryRoot) {
+  const bytes = await readFile(path.join(path.resolve(repositoryRoot), "release/product-gates/datapack-freshness-sla.json"));
+  try { return JSON.parse(bytes); } catch { throw new Error("datapack freshness SLA is invalid"); }
+}
+
+function validateKricLicenseGovernance({ inventory, policySources, now }) {
+  const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
+  const entry = policySources.get(SOURCE_ID);
+  const review = entry?.licenseReview;
+  const reviewedAt = Date.parse(review?.reviewedAt);
+  const nextReviewAt = Date.parse(review?.nextReviewAt);
+  if (!source || review?.status !== "APPROVED"
+    || review.termsHash !== source.admissionEvidence?.licenseEvidenceHash
+    || review.reviewedProvider !== source.provider || review.reviewedDatasetUrl !== source.datasetUrl
+    || review.approvedByRole !== entry?.approvalRole
+    || !Number.isFinite(reviewedAt) || !Number.isFinite(nextReviewAt) || reviewedAt > now.getTime() || nextReviewAt <= now.getTime()
+    || source.license?.redistributionAllowed !== true || !review.redistributionScopes?.includes("DERIVED_DATAPACK")) {
+    throw new Error("KRIC license governance is invalid");
+  }
 }
 
 async function readOptionalFile(file) {
@@ -519,6 +547,7 @@ async function prepareRegistration({
   if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
   validateReceipt(snapshot, rawReceipt, now);
   const governancePolicy = await readGovernancePolicy(repositoryRoot, snapshot, rawReceipt);
+  const freshnessPolicy = await readFreshnessPolicy(repositoryRoot);
   const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
   const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
   if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
@@ -526,6 +555,8 @@ async function prepareRegistration({
     throw new Error("snapshot target path is invalid");
   }
   const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
+  const { policySources } = validateSourceGovernancePolicy({ policy: governancePolicy.policy, inventory, freshnessPolicy });
+  validateKricLicenseGovernance({ inventory, policySources, now });
   await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
   const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
   const staged = stageRegistries({
