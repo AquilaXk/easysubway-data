@@ -637,12 +637,18 @@ test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", 
   ]);
 });
 
-test("KRIC 이동동선 상세 operation provider result 30은 candidate와 inventory에서 production을 차단한다", async () => {
+test("KRIC 이동동선 상세 operation provider result 30은 모든 production 경로에서 차단한다", async () => {
   const candidates = JSON.parse(
     await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"),
   );
   const inventory = JSON.parse(
     await readFile(new URL("./source-inventory.json", import.meta.url), "utf8"),
+  );
+  const productionScope = JSON.parse(
+    await readFile(new URL("../../release/product-gates/production-datapack-scope.json", import.meta.url), "utf8"),
+  );
+  const capitalPilotInput = JSON.parse(
+    await readFile(new URL("./inputs/capital-pilot-production-source-input.json", import.meta.url), "utf8"),
   );
   const ids = [
     "kric-station-elevator-movement",
@@ -673,5 +679,11 @@ test("KRIC 이동동선 상세 operation provider result 30은 candidate와 inve
     assert.equal(inventorySource.requiredForProductionPack, false);
     assert.equal(inventorySource.productionUseAllowed, false);
     assert.deepEqual(inventorySource.capabilities.facility, expectedFacility);
+    assert.ok(!productionScope.productionSourceSet.requiredSourceIds.includes(id));
+    assert.ok(!capitalPilotInput.sourceIds.includes(id));
+    assert.ok(
+      !capitalPilotInput.coverageEvidence.some((entry) => entry.sourceIds.includes(id)),
+    );
+    assert.ok(!capitalPilotInput.movementPathCandidates.some((entry) => entry.sourceId === id));
   }
 });
