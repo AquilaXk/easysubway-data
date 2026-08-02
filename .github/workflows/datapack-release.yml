@@ -618,7 +618,7 @@ jobs:
             [[ -z "${EASYSUBWAY_ENV_FILE:-}" ]] && { printf ''; return; }
             local line
             line="$(grep -m1 "^$1=" "${EASYSUBWAY_ENV_FILE}" 2>/dev/null || true)"
-            printf '%s' "${line#$1=}"
+            printf '%s' "${line#"$1"=}"
           }
           token="$(_envfile_val EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN)"
           curl -fsS -H "Authorization: Bearer ${token}" \

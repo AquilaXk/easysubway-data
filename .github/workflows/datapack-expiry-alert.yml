@@ -141,6 +141,7 @@ jobs:
             --current-manifest "${EASYSUBWAY_DATAPACK_EXPIRY_MANIFEST}" \
             --freshness-policy "${EASYSUBWAY_DATAPACK_FRESHNESS_POLICY}" \
             --output "${EASYSUBWAY_DATAPACK_EXPIRY_DECISION}"
+          # shellcheck disable=SC2016
           node -e '
             const fs = require("fs");
             const evidence = JSON.parse(fs.readFileSync(process.env.EASYSUBWAY_DATAPACK_EXPIRY_EVIDENCE, "utf8"));
