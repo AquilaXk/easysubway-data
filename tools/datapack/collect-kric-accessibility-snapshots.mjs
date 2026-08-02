@@ -128,16 +128,77 @@ export async function collectKricAccessibilitySnapshots({
       observedAt: capturedAt,
       freshUntil,
       credentialRedacted: true,
+      providerResultCode: "00",
+      schemaStatus: "PASS",
       absenceEvidenceMode: "EXHAUSTIVE_LIST",
       queryCount: queries.length,
       rowCount: queries.reduce((sum, query) => sum + query.rows.length, 0),
       rawSha256,
       contentSha256,
       schemaFingerprint: hash([...operation.responseFields].sort(compare)),
+      redactedRequestFingerprint: hash({
+        endpoint: operation.endpoint,
+        tuples: queries.map(({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd })),
+      }),
       queries,
     });
   }
   return snapshots;
+}
+
+export function validateKricAccessibilitySnapshotIdentity(snapshot) {
+  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
+  if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
+    || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "PASS"
+    || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST" || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
+    || typeof snapshot.snapshotId !== "string" || typeof snapshot.sourceId !== "string"
+    || !Number.isFinite(Date.parse(snapshot.capturedAt)) || !Number.isFinite(Date.parse(snapshot.observedAt))
+    || !Number.isFinite(Date.parse(snapshot.freshUntil))) {
+    throw new Error("KRIC accessibility snapshot identity is invalid");
+  }
+  const timestamp = snapshot.capturedAt.replaceAll(/[-:.]/g, "");
+  if (snapshot.snapshotId !== `${snapshot.sourceId}-${timestamp}` || snapshot.observedAt !== snapshot.capturedAt) {
+    throw new Error("KRIC accessibility snapshot identity is invalid");
+  }
+  const tupleKeys = new Set();
+  for (const query of snapshot.queries) {
+    if (!query || !["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd"].every((field) =>
+      typeof query[field] === "string" && query[field] !== "")
+      || !Array.isArray(query.rows) || !Array.isArray(query.canonicalMappings)
+      || !/^[0-9a-f]{64}$/.test(query.rawResponseSha256 ?? "")
+      || !/^[0-9a-f]{64}$/.test(query.providerRecordHash ?? "")
+      || query.status !== (query.rows.length === 0 ? "ABSENT_EXPLICIT_ZERO" : "PRESENT")
+      || query.canonicalMappings.length === 0
+      || query.canonicalMappings.some((mapping) => !mapping
+        || !["artifactId", "stationId", "lineId"].every((field) => typeof mapping[field] === "string" && mapping[field] !== "")
+        || mapping.stationId !== query.stationId || mapping.lineId !== query.lineId)
+      || query.providerRecordHash !== hash(query.rows)
+      || query.rows.some((row) => !row || typeof row !== "object"
+        || Object.keys(row).length !== operation.responseFields.length
+        || Object.keys(row).some((field) => !operation.responseFields.includes(field)))) {
+      throw new Error("KRIC accessibility snapshot identity is invalid");
+    }
+    const tupleKey = [query.stationId, query.lineId, query.railOprIsttCd, query.lnCd, query.stinCd].join("\0");
+    if (tupleKeys.has(tupleKey)) throw new Error("KRIC accessibility snapshot identity is invalid");
+    tupleKeys.add(tupleKey);
+  }
+  const contentSha256 = hash(snapshot.queries.map(({ rawResponseSha256: _, ...query }) => query));
+  const rawSha256 = hash(snapshot.queries.map(({
+    stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256,
+  }) => ({ stationId, lineId, railOprIsttCd, lnCd, stinCd, rawResponseSha256 })));
+  const schemaFingerprint = hash([...operation.responseFields].sort(compare));
+  const redactedRequestFingerprint = hash({
+    endpoint: operation.endpoint,
+    tuples: snapshot.queries.map(({ railOprIsttCd, lnCd, stinCd }) => ({ railOprIsttCd, lnCd, stinCd })),
+  });
+  if (snapshot.queryCount !== snapshot.queries.length
+    || snapshot.rowCount !== snapshot.queries.reduce((sum, query) => sum + (query.rows?.length ?? 0), 0)
+    || snapshot.contentSha256 !== contentSha256 || snapshot.rawSha256 !== rawSha256
+    || snapshot.schemaFingerprint !== schemaFingerprint
+    || snapshot.redactedRequestFingerprint !== redactedRequestFingerprint) {
+    throw new Error("KRIC accessibility snapshot identity is invalid");
+  }
+  return snapshot;
 }
 
 export function buildKricAccessibilityRoster({ activeLineScopes, fixture, canonicalStationLines, routeRosters }) {
@@ -343,15 +404,11 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   url.searchParams.set("format", "json");
   for (const field of ["railOprIsttCd", "lnCd", "stinCd"]) url.searchParams.set(field, tuple[field]);
   let response;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await paceRequest();
-    try {
-      response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
-    } catch {
-      if (attempt === 0) continue;
-      throw new Error(`KRIC accessibility request failed: ${requestIdentity}`);
-    }
-    if (response.ok || response.status < 500 || attempt === 1) break;
+  await paceRequest();
+  try {
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
+  } catch {
+    throw new Error(`KRIC accessibility request failed: ${requestIdentity}`);
   }
   if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
   let payload;
