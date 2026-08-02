@@ -43,6 +43,51 @@ function transactionPaths(repositoryRoot) {
   return { root, journal: path.join(root, "tools/datapack/.kric-standard-registration-transaction.json") };
 }
 
+async function readRecoveryEntry(journal) {
+  try {
+    return JSON.parse(await readFile(journal, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    throw new Error("RECOVERY_REQUIRED");
+  }
+}
+
+function validateRecoveryEntry(entry, root) {
+  if (!["PREPARED", "COMMITTED"].includes(entry?.state) || !Array.isArray(entry.records) || entry.records.length === 0
+    || typeof entry.transactionDirectory !== "string"
+    || !/^\.kric-standard-registration-[0-9a-f-]{36}$/.test(path.basename(entry.transactionDirectory))) {
+    throw new Error("journal");
+  }
+  return contained(root, entry.transactionDirectory);
+}
+
+async function recoverJournalRecord({ entry, record, root, directory, seen, atomicReplaceImpl, syncDirectoryImpl }) {
+  const allowed = new Set([
+    "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
+    "tools/datapack/inputs/capital-pilot-production-source-input.json",
+  ]);
+  if (!record || typeof record.target !== "string" || typeof record.backup !== "string"
+    || typeof record.existed !== "boolean" || !SHA256.test(record.expected ?? "") || seen.has(record.target)) {
+    throw new Error("journal");
+  }
+  seen.add(record.target);
+  if (!allowed.has(record.target) && !/^tools\/datapack\/sources\/kric-station-convenience-standard-[A-Za-z0-9]+\.json$/.test(record.target)) {
+    throw new Error("journal");
+  }
+  const target = contained(root, record.target);
+  if (record.existed && path.dirname(contained(root, record.backup)) !== directory) throw new Error("journal");
+  if (entry.state === "COMMITTED") {
+    if (sha256(await readFile(target)) !== record.expected) throw new Error("journal");
+    return;
+  }
+  if (record.existed) {
+    await atomicReplaceImpl(target, await readFile(contained(root, record.backup)), "recovery");
+    return;
+  }
+  await rm(target, { force: true });
+  await syncDirectoryImpl(path.dirname(target));
+}
+
 async function acquireRegistrationLock(repositoryRoot) {
   const root = path.resolve(repositoryRoot);
   const lockDirectory = path.join(root, "tools/datapack/.kric-standard-registration.lock");
@@ -87,39 +132,15 @@ async function acquireRegistrationLock(repositoryRoot) {
 
 export async function recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot = REPOSITORY_ROOT, atomicReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncDirectoryImpl = syncDirectory } = {}) {
   const { root, journal } = transactionPaths(repositoryRoot);
-  let entry;
-  try { entry = JSON.parse(await readFile(journal, "utf8")); } catch (error) {
-    if (error?.code === "ENOENT") return false;
-    throw new Error("RECOVERY_REQUIRED");
-  }
+  const entry = await readRecoveryEntry(journal);
+  if (entry === undefined) return false;
   let outcome;
   let directory;
   try {
-    if (!['PREPARED', 'COMMITTED'].includes(entry?.state) || !Array.isArray(entry.records) || entry.records.length === 0
-      || typeof entry.transactionDirectory !== "string"
-      || !/^\.kric-standard-registration-[0-9a-f-]{36}$/.test(path.basename(entry.transactionDirectory))) throw new Error("journal");
-    directory = contained(root, entry.transactionDirectory);
-    const allowed = new Set([
-      "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
-      "tools/datapack/inputs/capital-pilot-production-source-input.json",
-    ]);
+    directory = validateRecoveryEntry(entry, root);
     const seen = new Set();
     for (const record of entry.records) {
-      if (!record || typeof record.target !== "string" || typeof record.backup !== "string"
-        || typeof record.existed !== "boolean" || !SHA256.test(record.expected ?? "") || seen.has(record.target)) throw new Error("journal");
-      seen.add(record.target);
-      if (!allowed.has(record.target) && !/^tools\/datapack\/sources\/kric-station-convenience-standard-[A-Za-z0-9]+\.json$/.test(record.target)) throw new Error("journal");
-      const target = contained(root, record.target);
-      if (record.existed && path.dirname(contained(root, record.backup)) !== directory) throw new Error("journal");
-      if (entry.state === 'COMMITTED') {
-        if (sha256(await readFile(target)) !== record.expected) throw new Error("journal");
-      } else if (record.existed) {
-        const backup = contained(root, record.backup);
-        await atomicReplaceImpl(target, await readFile(backup), "recovery");
-      } else {
-        await rm(target, { force: true });
-        await syncDirectoryImpl(path.dirname(target));
-      }
+      await recoverJournalRecord({ entry, record, root, directory, seen, atomicReplaceImpl, syncDirectoryImpl });
     }
     await rm(journal, { force: true });
     await syncDirectory(path.dirname(journal));
@@ -131,34 +152,56 @@ export async function recoverKricStandardAccessibilitySnapshotTransaction({ repo
   return outcome;
 }
 
+async function stageTransactionOutputs({ root, directory, outputs }) {
+  const records = [];
+  try {
+    for (const [index, output] of outputs.entries()) {
+      contained(root, path.relative(root, output.target));
+      const relative = path.relative(root, output.target);
+      const backup = path.relative(root, path.join(directory, `backup-${index}`));
+      let original = null;
+      try { original = await readFile(output.target); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+      if (original != null) await syncedWrite(contained(root, backup), original);
+      await syncedWrite(path.join(directory, `staged-${index}`), output.bytes);
+      records.push({ target: relative, existed: original != null, backup, expected: sha256(output.bytes) });
+    }
+    return records;
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function publishPreparedTransaction({ root, journal, entry, records, outputs, atomicReplaceImpl, commitJournalReplaceImpl }) {
+  for (const [index, output] of outputs.entries()) await atomicReplaceImpl(output.target, output.bytes, index + 1);
+  for (const record of records) {
+    if (sha256(await readFile(contained(root, record.target))) !== record.expected) throw new Error("transaction hash mismatch");
+  }
+  await commitJournalReplaceImpl(journal, Buffer.from(JSON.stringify({ ...entry, state: "COMMITTED" }), "utf8"), "COMMITTED");
+  await syncDirectory(path.dirname(journal));
+}
+
+async function recoverFailedCommit({ root, rollbackAtomicReplaceImpl }) {
+  try {
+    return await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot: root, atomicReplaceImpl: rollbackAtomicReplaceImpl });
+  } catch {
+    throw new Error("RECOVERY_REQUIRED");
+  }
+}
+
 async function commitTransaction({ repositoryRoot, outputs, atomicReplaceImpl = atomicReplace, rollbackAtomicReplaceImpl = atomicReplace, commitJournalReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncTransactionDirectoryImpl = syncDirectory }) {
   const { root, journal } = transactionPaths(repositoryRoot);
   await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot: root });
   const directory = path.join(root, "tools/datapack", `.kric-standard-registration-${randomUUID()}`);
   await mkdir(directory, { recursive: true });
-  const records = [];
-  try { for (const [index, output] of outputs.entries()) {
-    contained(root, path.relative(root, output.target));
-    const relative = path.relative(root, output.target);
-    const backup = path.relative(root, path.join(directory, `backup-${index}`));
-    let original = null;
-    try { original = await readFile(output.target); } catch (error) { if (error?.code !== "ENOENT") throw error; }
-    if (original != null) await syncedWrite(contained(root, backup), original);
-    await syncedWrite(path.join(directory, `staged-${index}`), output.bytes);
-    records.push({ target: relative, existed: original != null, backup, expected: sha256(output.bytes) });
-  } } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+  const records = await stageTransactionOutputs({ root, directory, outputs });
   await syncTransactionDirectoryImpl(directory);
   const entry = { state: "PREPARED", transactionDirectory: path.relative(root, directory), records };
   await atomicReplace(journal, Buffer.from(JSON.stringify(entry)));
   try {
-    for (const [index, output] of outputs.entries()) await atomicReplaceImpl(output.target, output.bytes, index + 1);
-    for (const record of records) if (sha256(await readFile(contained(root, record.target))) !== record.expected) throw new Error("transaction hash mismatch");
-    await commitJournalReplaceImpl(journal, Buffer.from(JSON.stringify({ ...entry, state: "COMMITTED" }), "utf8"), "COMMITTED");
-    await syncDirectory(path.dirname(journal));
+    await publishPreparedTransaction({ root, journal, entry, records, outputs, atomicReplaceImpl, commitJournalReplaceImpl });
   } catch (error) {
-    let recovery;
-    try { recovery = await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot: root, atomicReplaceImpl: rollbackAtomicReplaceImpl }); }
-    catch { throw new Error("RECOVERY_REQUIRED"); }
+    const recovery = await recoverFailedCommit({ root, rollbackAtomicReplaceImpl });
     if (recovery === "COMMITTED") return;
     throw error;
   }
@@ -423,6 +466,101 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
   return [nextInventory, nextSnapshots, nextInput].map((value) => `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function resolveRegistryPaths(repositoryRoot, registryPaths) {
+  const root = path.resolve(repositoryRoot);
+  const paths = [
+    registryPaths?.["tools/datapack/source-inventory.json"],
+    registryPaths?.["tools/datapack/release/source-snapshots.json"],
+    registryPaths?.["tools/datapack/inputs/capital-pilot-production-source-input.json"],
+  ].map((file) => requiredText(file, "registry path"));
+  const expectedPaths = [
+    path.join(root, "tools/datapack/source-inventory.json"),
+    path.join(root, "tools/datapack/release/source-snapshots.json"),
+    path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"),
+  ];
+  if (paths.some((file, index) => path.resolve(file) !== expectedPaths[index])) throw new Error("registry path is invalid");
+  return paths;
+}
+
+async function readGovernancePolicy(repositoryRoot, snapshot, rawReceipt) {
+  const bytes = await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"));
+  let policy;
+  try { policy = JSON.parse(bytes); } catch { throw new Error("source governance policy is invalid"); }
+  const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+    policy,
+    sourceId: SOURCE_ID,
+    retrievedAt: snapshot.capturedAt,
+  });
+  if (rawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
+    throw new Error("raw receipt rawRetentionExpiresAt does not match governance policy");
+  }
+  return { bytes, version: requiredText(policy.policyVersion, "governance policy version") };
+}
+
+async function readOptionalFile(file) {
+  try {
+    return await readFile(file);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function prepareRegistration({
+  repositoryRoot, paths, snapshotFilePath, snapshotFileSha256, snapshotTargetPath,
+  rawReceipt, seoulSnapshot, now,
+}) {
+  await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
+  const [snapshotBytes, ...original] = await Promise.all([
+    readFile(requiredText(snapshotFilePath, "snapshot file path")),
+    ...paths.map((file) => readFile(file)),
+  ]);
+  const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
+  if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
+  validateReceipt(snapshot, rawReceipt, now);
+  const governancePolicy = await readGovernancePolicy(repositoryRoot, snapshot, rawReceipt);
+  const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
+  if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
+    || path.resolve(snapshotTargetPath) !== expectedSnapshotTargetPath) {
+    throw new Error("snapshot target path is invalid");
+  }
+  const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
+  await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
+  const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
+  const staged = stageRegistries({
+    inventory, snapshots, input,
+    snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster,
+    governancePolicySha256: sha256(governancePolicy.bytes), governancePolicyVersion: governancePolicy.version, now,
+  });
+  const targetBytes = await readOptionalFile(snapshotTargetPath);
+  if (targetBytes != null && !targetBytes.equals(snapshotBytes)) throw new Error("snapshot target already exists with different bytes");
+  return [
+    ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
+    ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
+  ];
+}
+
+function asError(value, message) {
+  return value instanceof Error ? value : new Error(message, { cause: value });
+}
+
+function handleReleaseFailure(registrationError, releaseError) {
+  const normalizedReleaseError = asError(releaseError, "KRIC registration lock RECOVERY_REQUIRED");
+  if (!registrationError) throw normalizedReleaseError;
+  if (registrationError instanceof Error) {
+    registrationError.cause = registrationError.cause === undefined
+      ? normalizedReleaseError
+      : new AggregateError([
+        asError(registrationError.cause, "registration failure cause"), normalizedReleaseError,
+      ], "registration and lock recovery causes");
+    return;
+  }
+  throw new AggregateError([
+    asError(registrationError, "registration failed"), normalizedReleaseError,
+  ], "registration failed and KRIC registration lock RECOVERY_REQUIRED");
+}
+
 export async function registerKricStandardAccessibilitySnapshot({
   snapshotFilePath,
   snapshotFileSha256,
@@ -439,58 +577,15 @@ export async function registerKricStandardAccessibilitySnapshot({
   syncTransactionDirectoryImpl,
   onLockAcquired,
 } = {}) {
-  const paths = [
-    registryPaths?.["tools/datapack/source-inventory.json"],
-    registryPaths?.["tools/datapack/release/source-snapshots.json"],
-    registryPaths?.["tools/datapack/inputs/capital-pilot-production-source-input.json"],
-  ].map((file) => requiredText(file, "registry path"));
-  const expectedPaths = [
-    path.join(path.resolve(repositoryRoot), "tools/datapack/source-inventory.json"),
-    path.join(path.resolve(repositoryRoot), "tools/datapack/release/source-snapshots.json"),
-    path.join(path.resolve(repositoryRoot), "tools/datapack/inputs/capital-pilot-production-source-input.json"),
-  ];
-  if (paths.some((file, index) => path.resolve(file) !== expectedPaths[index])) throw new Error("registry path is invalid");
+  const paths = resolveRegistryPaths(repositoryRoot, registryPaths);
   const releaseLock = await acquireRegistrationLock(repositoryRoot);
   let registrationError;
   try {
     await onLockAcquired?.();
-    await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
-    const [snapshotBytes, ...original] = await Promise.all([
-      readFile(requiredText(snapshotFilePath, "snapshot file path")),
-      ...paths.map((file) => readFile(file)),
-    ]);
-    const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
-    if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
-    validateReceipt(snapshot, rawReceipt, now);
-    const governancePolicyBytes = await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"));
-    let governancePolicy;
-    try { governancePolicy = JSON.parse(governancePolicyBytes); } catch { throw new Error("source governance policy is invalid"); }
-    const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
-      policy: governancePolicy,
-      sourceId: SOURCE_ID,
-      retrievedAt: snapshot.capturedAt,
+    const outputs = await prepareRegistration({
+      repositoryRoot, paths, snapshotFilePath, snapshotFileSha256, snapshotTargetPath,
+      rawReceipt, seoulSnapshot, now,
     });
-    if (rawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
-      throw new Error("raw receipt rawRetentionExpiresAt does not match governance policy");
-    }
-    const governancePolicyVersion = requiredText(governancePolicy.policyVersion, "governance policy version");
-    const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
-    const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
-    if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
-      || path.resolve(snapshotTargetPath) !== expectedSnapshotTargetPath) {
-      throw new Error("snapshot target path is invalid");
-    }
-    const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
-    await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
-    const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
-    const staged = stageRegistries({
-      inventory, snapshots, input,
-      snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster,
-      governancePolicySha256: sha256(governancePolicyBytes), governancePolicyVersion, now,
-    });
-    let targetBytes = null;
-    try { targetBytes = await readFile(snapshotTargetPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
-    if (targetBytes != null && !targetBytes.equals(snapshotBytes)) throw new Error("snapshot target already exists with different bytes");
     await commitTransaction({
       repositoryRoot,
       atomicReplaceImpl,
@@ -498,22 +593,14 @@ export async function registerKricStandardAccessibilitySnapshot({
       commitJournalReplaceImpl,
       cleanupTransactionDirectoryImpl,
       syncTransactionDirectoryImpl,
-      outputs: [
-        ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
-        ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
-      ],
+      outputs,
     });
   } catch (error) {
     registrationError = error;
     throw error;
   } finally {
     try { await releaseLock(); } catch (releaseError) {
-      if (!registrationError) throw releaseError;
-      if (registrationError instanceof Error) {
-        registrationError.cause = registrationError.cause === undefined
-          ? releaseError
-          : new AggregateError([registrationError.cause, releaseError], "registration and lock recovery causes");
-      } else throw new AggregateError([registrationError, releaseError], "registration failed and KRIC registration lock RECOVERY_REQUIRED");
+      handleReleaseFailure(registrationError, releaseError);
     }
   }
 }
