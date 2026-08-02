@@ -628,10 +628,21 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
   assert.equal(missing.reached, false);
   assert.equal(missing.dispatchedCi, true, 'required context 부재는 CI dispatch로 푼다');
 
-  // BEHIND는 제외한다. 그 경로가 base를 갱신하면서 어차피 새 head에 CI를 쏜다.
+  // BEHIND는 여기서 쏘지 않는다. 대신 병합 분기로 내려보내 base 갱신이 일어나게 한다.
+  // 여기서 건너뛰면 base가 영영 갱신되지 않고, base가 갱신되지 않으면 required context도
+  // 영영 붙지 않는다 — 방금 라벨이 붙어 아직 CI가 없는 behind PR이 그대로 정체한다.
   const missingBehind = runContextLoop([], 'BEHIND');
   assert.equal(missingBehind.status, 0);
   assert.equal(missingBehind.dispatchedCi, false, 'BEHIND는 base 갱신 경로가 맡는다');
+  assert.equal(
+    missingBehind.reached,
+    true,
+    'BEHIND + context 부재는 base 갱신 분기로 내려가야 한다',
+  );
+  // 부재가 아닌 사유(대기·실패)는 BEHIND라도 내려보내지 않는다. 대기는 곧 끝나고,
+  // 실패는 사람이 고칠 상태다.
+  assert.equal(runContextLoop(run(null), 'BEHIND').reached, false);
+  assert.equal(runContextLoop(run('failure'), 'BEHIND').reached, false);
   // 명시적 실패도 실행을 죽이지 않고 이 후보만 건너뛰되, 신호는 남긴다.
   const failed = runContextLoop(run('failure'));
   assert.equal(failed.status, 0);
@@ -1038,6 +1049,17 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
       `required context ${checkState} must skip only that candidate`,
     );
   }
+  // BEHIND인데 required context가 아직 없는 후보는 base 갱신 분기까지 내려가야 한다.
+  // 여기서 건너뛰면 base 갱신도, CI도 영영 일어나지 않는다.
+  const behindMissing = runQueue([
+    { number: 1, mergeStateStatus: 'BEHIND', checkState: 'missing' },
+    { number: 2, mergeStateStatus: 'CLEAN' },
+  ]);
+  assert.equal(behindMissing.status, 0);
+  assert.equal(behindMissing.updatedBranch, true, 'BEHIND + 부재는 base를 갱신해야 한다');
+  assert.equal(behindMissing.mergedPr, null);
+  assert.deepEqual(behindMissing.evaluated, [1], 'base 갱신도 한 실행에 한 건이다');
+
   // 부재는 건너뛰기만 하는 것이 아니라 CI를 쏴서 교착을 푼다. 그러면서도 뒤의 병합 가능한
   // 후보를 굶기지 않아야 한다 — 이 dispatch는 실행을 끝내지 않는다.
   const missingContext = runQueue([
@@ -1548,12 +1570,22 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
   assert.doesNotMatch(producerBlock, /mode=(production-publish|release-candidate|rollback|rollout-update)/);
   const attemptLimit = Number(workflow.match(/attempt_limit=(\d+)/)?.[1]);
   assert.ok(Number.isInteger(attemptLimit) && attemptLimit >= 1, 'attempt limit must stay declared');
+  // 기준점 선택 규칙은 워크플로에서 읽어 스텁에 그대로 주입한다.
+  const baselineSuffix = workflow.match(
+    /--jq "\$\{producer_attempts_filter\}"'([^']*)'\)" \|\| base_sha=""/,
+  )?.[1];
+  assert.ok(baselineSuffix, 'baseline selection program must stay testable');
+  assert.ok(
+    baselineSuffix.includes('map(select(.conclusion == "success"))'),
+    'baseline must be the last successful eligible run',
+  );
 
   // runs: [{ status, conclusion }]
   const runProducer = ({
     runs = [],
     mainSha = 'a'.repeat(40),
     baseSha = 'b'.repeat(40),
+    baselineRuns = null,
     changed = 'yes',
     compareFails = false,
     dispatchFails = false,
@@ -1571,6 +1603,22 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
       triggering_actor: { login: run.actor ?? 'github-actions[bot]' },
     }));
     writeFileSync(join(dir, 'runs.json'), JSON.stringify({ workflow_runs: runRecords }));
+    // baseline 목록은 새 실행이 앞에 오는 API 정렬을 그대로 흉내낸다.
+    writeFileSync(
+      join(dir, 'baseline.json'),
+      JSON.stringify({
+        workflow_runs: (baselineRuns ?? [
+          { head_sha: baseSha, conclusion: 'success', event: 'push' },
+        ]).map((run, index) => ({
+          id: 500 + index,
+          head_sha: run.head_sha,
+          status: 'completed',
+          conclusion: run.conclusion ?? 'success',
+          event: run.event ?? 'push',
+          triggering_actor: { login: run.actor ?? 'github-actions[bot]' },
+        })),
+      }),
+    );
     writeFileSync(
       join(dir, 'runs-after.json'),
       JSON.stringify({
@@ -1607,9 +1655,13 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
       '        *"| length"*) jq -r "${producer_attempts_filter} | length" "$runs_file" ;;',
       `        *) jq -r "\${producer_attempts_filter}"' | .[] | "\\(.status) \\(.conclusion // "none")"' "$runs_file" ;;`,
       '      esac ;;',
-      `    *"runs?branch=main&per_page=1"*) printf '%s\\n' ${JSON.stringify(baseSha)} ;;`,
-      // 필터가 빠지면 feature ref 실행이 최신으로 잡힌다. 그 경우를 스텁으로 재현해 둔다.
+      // baseline 조회는 워크플로의 jq를 그대로 적용한다. 스텁이 완성된 SHA를 내면
+      // 선택 규칙("마지막으로 성공한 적격 실행")이 검증되지 않는다.
+      `    *"branch=main&per_page=100"*) jq -r "\${producer_attempts_filter}\${baseline_suffix}" "$DIR/baseline.json" ;;`,
+      // 필터가 빠지면 feature ref 실행이나 main의 최신 실패 실행이 기준점이 된다. 그
+      // 경우를 스텁으로 재현해 둔다.
       `    *"runs?per_page=1"*) printf '%s\\n' ${JSON.stringify('f'.repeat(40))} ;;`,
+      `    *"runs?branch=main&per_page=1"*) printf '%s\\n' ${JSON.stringify('e'.repeat(40))} ;;`,
       `    *"compare/"*) ${compareFails ? 'return 1' : `printf '%s\\n' ${JSON.stringify(changed)}`} ;;`,
       `    *"workflow run"*) : > "$DISPATCHED"; ${dispatchFails ? 'return 1' : ':'} ;;`,
       `    *) printf 'unstubbed gh call: %s\\n' "$*" >&2; return 1 ;;`,
@@ -1619,6 +1671,7 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
       'repo=o/r',
       'producer=datapack-release.yml',
       `attempt_limit=${attemptLimit}`,
+      `baseline_suffix=${JSON.stringify(baselineSuffix)}`,
       dedent(producerBlock),
     ]);
     return {
@@ -1638,7 +1691,7 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
   // 비교 기준점은 main 이력 위의 실행이어야 한다. branch 필터가 빠지면 feature ref를
   // 대상으로 한 dispatch 실행이 기준점이 되어 compare 범위가 통째로 어긋난다.
   assert.ok(
-    producerBlock.includes('runs?branch=main&per_page=1'),
+    producerBlock.includes('runs?branch=main&per_page=100'),
     'baseline query must stay restricted to main',
   );
   assert.match(missing.calls, /compare\/b{40}\.\.\.a{40}/);
@@ -1701,6 +1754,71 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
   assert.equal(failedTwice.dispatched, false);
   assert.match(failedTwice.stdout + failedTwice.stderr, /::warning::/);
   assert.doesNotMatch(failedTwice.stdout + failedTwice.stderr, /::error::/);
+
+  // 실패한 실행을 기준점으로 삼으면 그 SHA의 변경이 검증되지 않은 채 기준선 뒤로 넘어간다.
+  // datapack을 건드린 A에서 producer가 실패하고 무관한 B가 병합된 상황을 그대로 돌린다:
+  // 기준점은 실패한 A가 아니라 마지막으로 성공한 X여야 하고, 그래야 A의 변경이 B 시점
+  // 비교에 남는다.
+  const failedThenUnrelated = runProducer({
+    runs: [],
+    baselineRuns: [
+      { head_sha: 'a'.repeat(39) + '1', conclusion: 'failure', event: 'workflow_dispatch' },
+      { head_sha: 'b'.repeat(40), conclusion: 'success', event: 'push' },
+    ],
+  });
+  assert.equal(failedThenUnrelated.status, 0);
+  assert.match(
+    failedThenUnrelated.calls,
+    /compare\/b{40}\.\.\.a{40}/,
+    '기준점은 마지막으로 성공한 실행이어야 한다',
+  );
+  assert.doesNotMatch(
+    failedThenUnrelated.calls,
+    /compare\/a{39}1/,
+    '실패한 실행을 기준점으로 쓰면 그 SHA의 변경이 소실된다',
+  );
+
+  // 성공한 적격 실행이 하나도 없으면 기준점이 없다. 비교하지 않고 그대로 dispatch한다
+  // (누락보다 중복이 낫다).
+  const noSuccessfulBaseline = runProducer({
+    runs: [],
+    baselineRuns: [
+      { head_sha: 'c'.repeat(40), conclusion: 'failure', event: 'workflow_dispatch' },
+    ],
+  });
+  assert.equal(noSuccessfulBaseline.status, 0);
+  assert.equal(noSuccessfulBaseline.dispatched, true);
+  assert.doesNotMatch(noSuccessfulBaseline.calls, /compare\//);
+
+  // schedule·사람 dispatch의 성공은 기준점이 되지 못한다. exploratory 경로만 기준이다.
+  const ineligibleBaseline = runProducer({
+    runs: [],
+    baselineRuns: [
+      { head_sha: 'd'.repeat(40), conclusion: 'success', event: 'schedule', actor: 'AquilaXk' },
+      { head_sha: 'b'.repeat(40), conclusion: 'success', event: 'push' },
+    ],
+  });
+  assert.match(ineligibleBaseline.calls, /compare\/b{40}\.\.\.a{40}/);
+
+  // 같은 SHA 안에서의 재시도는 여전히 attempt_limit 경로가 담당한다. 기준점이 성공 실행이
+  // 되어도 실패분 재시도 계약은 그대로다.
+  const retryWithSuccessBaseline = runProducer({
+    runs: Array.from({ length: attemptLimit - 1 }, () => ({
+      status: 'completed',
+      conclusion: 'failure',
+    })),
+    baselineRuns: [{ head_sha: 'b'.repeat(40), conclusion: 'success', event: 'push' }],
+  });
+  assert.equal(retryWithSuccessBaseline.dispatched, true);
+  const exhaustedWithSuccessBaseline = runProducer({
+    runs: Array.from({ length: attemptLimit }, () => ({
+      status: 'completed',
+      conclusion: 'failure',
+    })),
+    baselineRuns: [{ head_sha: 'b'.repeat(40), conclusion: 'success', event: 'push' }],
+  });
+  assert.equal(exhaustedWithSuccessBaseline.dispatched, false);
+  assert.match(exhaustedWithSuccessBaseline.stdout + exhaustedWithSuccessBaseline.stderr, /::warning::/);
 
   // push 트리거 실행의 성공은 exploratory 완료다(정의상 push 경로는 exploratory).
   const pushProduced = runProducer({

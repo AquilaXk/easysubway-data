@@ -150,13 +150,21 @@ jobs:
           # 지점"이어야 하는데, 필터가 없으면 feature ref를 대상으로 한 dispatch 실행이
           # 최신으로 잡혀 기준점이 main 이력 밖 커밋이 된다. 그러면 compare가 엉뚱한 범위를
           # 보고 dispatch 판정이 통째로 어긋난다.
+          #
+          # 기준점은 "마지막 실행"이 아니라 "마지막으로 성공한 적격 실행"이다. 실패한 실행을
+          # 기준점으로 삼으면 그 SHA의 변경이 검증되지 않은 채로 기준선 뒤로 넘어간다 —
+          # datapack을 건드린 A에서 producer가 실패하고 무관한 B가 병합되면 A...B 비교가
+          # "변경 없음"이 되어 A의 변경이 영영 다시 시도되지 않는다. 성공 기준으로 두면 그
+          # 변경이 B 시점 비교에 계속 들어온다. 같은 SHA 안에서의 재시도는 여전히 위
+          # attempt_limit 경로가 담당하고, 이 기준점은 SHA가 넘어간 뒤의 누락을 막는다.
           base_sha="$(gh api \
-            "repos/${repo}/actions/workflows/${producer}/runs?branch=main&per_page=1" \
-            --jq '.workflow_runs[0].head_sha // ""')" || base_sha=""
+            "repos/${repo}/actions/workflows/${producer}/runs?branch=main&per_page=100" \
+            --jq "${producer_attempts_filter}"' | map(select(.conclusion == "success")) | .[0].head_sha // ""')" || base_sha=""
           changed=yes
-          # base_sha가 main_sha와 같으면 그 실행이 곧 이 head_sha에 대한 시도다(여기까지
-          # 왔다는 것은 그 시도가 실패했다는 뜻이다). 자기 자신과의 compare는 항상 빈
-          # files라, 이 조건이 없으면 위 attempt_limit 재시도가 영구히 막힌다.
+          # base_sha가 main_sha와 같으면 비교할 것이 없다. 자기 자신과의 compare는 항상 빈
+          # files라 dispatch가 조용히 막히므로, 그 경우 경로 판정을 건너뛴다. 기준점이 성공
+          # 실행이 된 지금은 위 produced 판정이 먼저 걸러 내지만, 두 조회(head_sha 기준과
+          # branch 기준)가 어긋나는 순간을 대비한 안전장치로 남긴다.
           if [[ "${base_sha}" =~ ^[0-9a-f]{40}$ && "${base_sha}" != "${main_sha}" ]]; then
             # 조회가 실패하면 모르는 상태다. 모르면 dispatch하는 쪽이 안전하고, dispatch하면
             # 그 head_sha에 실행이 생겨 다음 실행에서 위 판정이 곧바로 끊는다.
@@ -574,9 +582,14 @@ jobs:
               # 이 dispatch는 병합·base 갱신과 달리 실행을 끝내지 않는다. 병합 직렬화와
               # 무관하고, 여기서 실행을 끝내면 뒤의 병합 가능한 후보가 다시 굶는다.
               # missing-context-dispatch-begin
-              if [[ "${contexts_missing}" == true &&
-                "${merge_state}" != "BEHIND" &&
-                "${head_repo}" == "${repo}" ]]; then
+              behind_missing=false
+              if [[ "${contexts_missing}" == true && "${merge_state}" == "BEHIND" ]]; then
+                # BEHIND는 base 갱신이 먼저다. 아래 BEHIND 분기가 update-branch 후 새 head에
+                # CI를 쏘므로 여기서는 쏘지 않고 그 분기로 내려보낸다. 여기서 건너뛰면
+                # base가 영영 갱신되지 않고, base가 갱신되지 않으면 required context도 영영
+                # 붙지 않는다 — 방금 라벨이 붙어 아직 CI가 없는 behind PR이 그대로 정체한다.
+                behind_missing=true
+              elif [[ "${contexts_missing}" == true && "${head_repo}" == "${repo}" ]]; then
                 if gh workflow run ci.yml --repo "${repo}" --ref "${head_ref}"; then
                   echo "PR #${pr}: required context missing; CI dispatched."
                 else
@@ -584,8 +597,9 @@ jobs:
                   echo "::warning::PR #${pr} CI dispatch failed for a missing required context; retrying on the next trigger."
                 fi
               fi
+              # BEHIND + context 부재만 아래 병합 분기로 내려간다. 나머지는 이 후보를 건너뛴다.
+              [[ "${behind_missing}" == true ]] || continue
               # missing-context-dispatch-end
-              continue
             fi
             # required-context-loop-end
 
