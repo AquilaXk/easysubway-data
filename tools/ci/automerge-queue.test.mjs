@@ -145,7 +145,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
   const workflow = await readWorkflow();
 
   const reviewProgram = workflow.match(
-    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --arg author "\$\{pr_author\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
@@ -161,15 +161,11 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     user: { login: 'reviewer' },
     ...overrides,
   });
-  const runReviewFilter = (reviews, author = 'pr-author') => {
-    const result = spawnSync(
-      'jq',
-      ['-e', '--arg', 'head', 'head', '--arg', 'author', author, reviewProgram],
-      {
-        input: JSON.stringify([reviews]),
-        encoding: 'utf8',
-      },
-    );
+  const runReviewFilter = (reviews) => {
+    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', reviewProgram], {
+      input: JSON.stringify([reviews]),
+      encoding: 'utf8',
+    });
     // jq -e는 결과가 false/null이면 1, 컴파일 오류면 3, 런타임 오류면 5를 낸다.
     // 0/1만 판정으로 인정해야 프로그램 파손이 "차단 성공"으로 새지 않는다.
     assert.ok(
@@ -342,47 +338,15 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     0,
   );
 
-  // PR 작성자 본인의 리뷰는 신뢰 집합에서 빠진다. GitHub은 자기 PR에 APPROVED를 막지만
-  // COMMENTED는 허용하므로, 폴백 양식 본문을 스스로 붙여 게이트를 통과시키는 경로가
-  // 열려 있었다. 셀프 리뷰 금지가 이 큐의 전제다.
-  assert.notEqual(
-    runReviewFilter(
-      [review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+  // PR 작성자가 게시한 리뷰도 게이트에서 인정한다. 형제 저장소(backend·mobile)와 판정을
+  // 일치시키기 위한 오너 결정이며, 네 저장소가 같은 입력에 같은 판정을 내야 한다.
+  // 신뢰 기준은 author_association 하나다.
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
         user: { login: 'pr-author' },
-      })],
-      'pr-author',
-    ),
-    0,
-  );
-  // 작성자 리뷰가 섞여 있어도 다른 리뷰어의 긍정 리뷰는 그대로 인정된다.
-  assert.equal(
-    runReviewFilter(
-      [
-        review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
-          user: { login: 'pr-author' },
-        }),
-        review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', {
-          user: { login: 'reviewer-two' },
-        }),
-      ],
-      'pr-author',
-    ),
-    0,
-  );
-  // 작성자가 남긴 CHANGES_REQUESTED도 신뢰 집합 밖이므로 큐를 막지 않는다(GitHub이 애초에
-  // 허용하지 않는 상태이며, 허용되더라도 셀프 판정이 되어선 안 된다).
-  assert.equal(
-    runReviewFilter(
-      [
-        review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z', '', {
-          user: { login: 'pr-author' },
-        }),
-        review(2, 'APPROVED', '2026-08-01T00:01:00Z', '', {
-          user: { login: 'reviewer-two' },
-        }),
-      ],
-      'pr-author',
-    ),
+      }),
+    ]),
     0,
   );
 });
@@ -774,7 +738,6 @@ const makeRunQueue =
     writeFileSync(
       join(dir, `pr-${pr.number}.json`),
       JSON.stringify({
-        author: { login: 'pr-author' },
         state: pr.state ?? 'OPEN',
         isDraft: false,
         baseRefName: 'main',
@@ -897,7 +860,7 @@ const makeRunQueue =
     mergedPr: merged ? Number(merged) : null,
     // 후보 평가 1건당 1회만 세야 한다. bounded wait의 headRefOid 조회까지 세면 같은
     // 후보가 두 번 잡혀 "실행당 실제 동작 최대 한 건" 계약이 헐거워진다.
-    evaluated: [...calls.matchAll(/gh pr view (\d+) --repo [^\n]*--json author,baseRefName/g)].map((m) =>
+    evaluated: [...calls.matchAll(/gh pr view (\d+) --repo [^\n]*--json baseRefName/g)].map((m) =>
       Number(m[1]),
     ),
     updatedBranch: calls.includes('update-branch'),
@@ -1449,6 +1412,14 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
   assert.ok(producerBlock.includes('-f mode=exploratory'));
   assert.ok(producerBlock.includes('-f targetChannel=dev'));
   assert.ok(producerBlock.includes('tools/datapack/fixtures/candidate-build-spec.json'));
+  // allowGaps를 생략하면 producer의 기본값 분기가 dispatch 경로에서만 false로 뒤집힌다.
+  assert.ok(
+    producerBlock.includes('"allowGaps":"true"'),
+    'dispatch must pin allowGaps to the value the push path used',
+  );
+  // 판정은 exploratory가 되는 실행 경로만 센다.
+  assert.ok(producerBlock.includes('producer_attempts_filter='));
+  assert.ok(producerBlock.includes('.triggering_actor.login == "github-actions[bot]"'));
   // release·rollback 모드를 코디네이터가 자동으로 쏘면 안 된다.
   assert.doesNotMatch(producerBlock, /mode=(production-publish|release-candidate|rollback|rollout-update)/);
   const attemptLimit = Number(workflow.match(/attempt_limit=(\d+)/)?.[1]);
@@ -1466,16 +1437,29 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
   } = {}) => {
     const dir = mkdtempSync(join(tmpdir(), 'producer-dispatch-'));
     const dispatched = join(dir, 'dispatched');
+    // event·triggering_actor 기본값은 "이 코디네이터가 쏜 dispatch"다. 판정에서 제외돼야
+    // 하는 실행(schedule, 사람이 쏜 dispatch)은 케이스마다 명시한다.
     const runRecords = runs.map((run, index) => ({
       id: index + 1,
       status: run.status,
       conclusion: run.conclusion ?? null,
+      event: run.event ?? 'workflow_dispatch',
+      triggering_actor: { login: run.actor ?? 'github-actions[bot]' },
     }));
     writeFileSync(join(dir, 'runs.json'), JSON.stringify({ workflow_runs: runRecords }));
     writeFileSync(
       join(dir, 'runs-after.json'),
       JSON.stringify({
-        workflow_runs: [...runRecords, { id: 9999, status: 'queued', conclusion: null }],
+        workflow_runs: [
+          ...runRecords,
+          {
+            id: 9999,
+            status: 'queued',
+            conclusion: null,
+            event: 'workflow_dispatch',
+            triggering_actor: { login: 'github-actions[bot]' },
+          },
+        ],
       }),
     );
 
@@ -1487,14 +1471,18 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
       `    *"commits/main"*) printf '%s\\n' ${JSON.stringify(mainSha)} ;;`,
-      // 좁은 패턴을 먼저 둔다. bounded wait는 같은 URL을 `--jq`로 부른다.
-      '    *"head_sha="*"--jq"*)',
+      // 두 호출 모두 같은 URL을 `--jq`로 부른다. 스텁이 워크플로의 필터를 그대로 적용해야
+      // "exploratory 시도만 센다"는 계약이 실제로 검증된다.
+      '    *"head_sha="*)',
       `      if [ -f "$DISPATCHED" ] && [ ${appearsAfterDispatch ? '1' : '0'} -eq 1 ]; then`,
-      '        jq -r ".workflow_runs | length" "$DIR/runs-after.json"',
+      '        runs_file="$DIR/runs-after.json"',
       '      else',
-      '        jq -r ".workflow_runs | length" "$DIR/runs.json"',
-      '      fi ;;',
-      '    *"head_sha="*) cat "$DIR/runs.json" ;;',
+      '        runs_file="$DIR/runs.json"',
+      '      fi',
+      '      case "$*" in',
+      '        *"| length"*) jq -r "${producer_attempts_filter} | length" "$runs_file" ;;',
+      `        *) jq -r "\${producer_attempts_filter}"' | .[] | "\\(.status) \\(.conclusion // "none")"' "$runs_file" ;;`,
+      '      esac ;;',
       `    *"runs?per_page=1"*) printf '%s\\n' ${JSON.stringify(baseSha)} ;;`,
       `    *"compare/"*) ${compareFails ? 'return 1' : `printf '%s\\n' ${JSON.stringify(changed)}`} ;;`,
       `    *"workflow run"*) : > "$DISPATCHED"; ${dispatchFails ? 'return 1' : ':'} ;;`,
@@ -1579,6 +1567,42 @@ test('data pack producer는 head_sha로 판정하고 실패해도 큐를 멈추�
   assert.equal(failedTwice.dispatched, false);
   assert.match(failedTwice.stdout + failedTwice.stderr, /::warning::/);
   assert.doesNotMatch(failedTwice.stdout + failedTwice.stderr, /::error::/);
+
+  // push 트리거 실행의 성공은 exploratory 완료다(정의상 push 경로는 exploratory).
+  const pushProduced = runProducer({
+    runs: [{ status: 'completed', conclusion: 'success', event: 'push', actor: 'someone' }],
+  });
+  assert.equal(pushProduced.dispatched, false);
+  assert.match(pushProduced.stdout, /이미 실행을 마쳤다/);
+
+  // 같은 SHA의 schedule 실행 성공은 exploratory 완료가 아니다. mode가 다를 수 있으므로
+  // 중립으로 두고 exploratory를 따로 쏜다.
+  const scheduledSuccess = runProducer({
+    runs: [{ status: 'completed', conclusion: 'success', event: 'schedule', actor: 'someone' }],
+  });
+  assert.equal(scheduledSuccess.status, 0);
+  assert.equal(
+    scheduledSuccess.dispatched,
+    true,
+    'schedule 실행 성공을 exploratory 완료로 읽으면 안 된다',
+  );
+
+  // 사람이 쏜 dispatch(rollback·rollout-update 등)는 성공이든 실패든 판정 밖이다.
+  // 특히 그 실패로 재시도 한도를 태우면 무관한 사유로 그 SHA가 영구 억제된다.
+  const humanDispatchFailures = runProducer({
+    runs: Array.from({ length: attemptLimit + 1 }, () => ({
+      status: 'completed',
+      conclusion: 'failure',
+      event: 'workflow_dispatch',
+      actor: 'AquilaXk',
+    })),
+  });
+  assert.equal(humanDispatchFailures.status, 0);
+  assert.equal(
+    humanDispatchFailures.dispatched,
+    true,
+    '다른 mode 실행의 실패가 attempt_limit을 태우면 안 된다',
+  );
 
   // producer 경로에 변경이 없으면 dispatch하지 않는다. push 트리거의 paths 필터와 같다.
   const untouched = runProducer({ runs: [], changed: 'no' });
@@ -1776,4 +1800,56 @@ test('명시 dispatch 경로가 required context와 producer 양쪽에서 성립
   }
   // dispatch 입력이 없을 때의 push 기본값과 같은 모드로 쏜다.
   assert.match(producerWorkflow, /mode="\$\{MODE_INPUT:-exploratory\}"/);
+
+  // allowGaps 기본값은 mode가 같아도 이벤트에 따라 갈린다. push의 exploratory는 true,
+  // dispatch의 exploratory는 false다. 코디네이터가 이 값을 명시하는 근거가 그 divergence이므로
+  // 분기 자체를 고정한다 — producer가 분기를 바꾸면 코디네이터 입력도 다시 판정해야 한다.
+  const allowGapsBranch = producerWorkflow.match(
+    /if \[\[ -z "\$\{allow_gaps\}" \]\]; then\n([\s\S]*?\n\s+fi)\n\s+fi\n/,
+  )?.[1];
+  assert.ok(allowGapsBranch, 'producer allowGaps default branch must stay testable');
+  assert.match(
+    allowGapsBranch,
+    /if \[\[ "\$\{GITHUB_EVENT_NAME\}" != "workflow_dispatch" && "\$\{mode\}" == "exploratory" \]\]; then\n\s+allow_gaps=true\n\s+else\n\s+allow_gaps=false/,
+  );
+
+  // 분기를 그대로 실행해 두 경로의 값이 실제로 갈리는지 보고, 코디네이터가 보내는 값이
+  // push 경로의 값과 같은지 확인한다.
+  const resolveAllowGaps = (eventName) => {
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        [
+          'set -euo pipefail',
+          'allow_gaps=""',
+          'mode=exploratory',
+          `GITHUB_EVENT_NAME=${JSON.stringify(eventName)}`,
+          'if [[ -z "${allow_gaps}" ]]; then',
+          // 셸은 들여쓰기를 신경 쓰지 않으므로 추출한 분기를 그대로 넣는다.
+          allowGapsBranch,
+          'fi',
+          `printf '%s\\n' "\${allow_gaps}"`,
+        ].join('\n'),
+      ],
+      { encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, `allowGaps 하네스 파손: ${result.stderr}`);
+    return result.stdout.trim();
+  };
+  assert.equal(resolveAllowGaps('push'), 'true');
+  assert.equal(
+    resolveAllowGaps('workflow_dispatch'),
+    'false',
+    'dispatch 경로에서 기본값이 뒤집히는 것이 이 계약의 이유다',
+  );
+
+  const workflow = await readWorkflow();
+  const dispatchedModeArgs = workflow.match(/-f modeArgs='([^']+)'/)?.[1];
+  assert.ok(dispatchedModeArgs, 'dispatch modeArgs must stay testable');
+  assert.equal(
+    JSON.parse(dispatchedModeArgs).allowGaps,
+    resolveAllowGaps('push'),
+    'coordinator dispatch must reproduce the value the push path used',
+  );
 });

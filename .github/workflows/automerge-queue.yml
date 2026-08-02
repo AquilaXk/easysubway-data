@@ -66,9 +66,26 @@ jobs:
           # 형제 구현은 발행 job 단위로 다시 나누지만 이 producer는 그럴 필요가 없다 —
           # pull_request 트리거가 없어 실행 목록에 preflight이 섞이지 않고, 유일한 실행
           # job에 if 가드가 없어 run conclusion이 곧 그 SHA의 실행 결과다.
+          #
+          # 다만 head_sha만으로 모으면 mode가 다른 실행까지 함께 잡힌다. 같은 SHA에
+          # rollback·rollout-update 같은 pointer-only 실행이 성공하면 "exploratory 검증이
+          # 끝났다"로 오판하고, 그 실행이 실패하면 무관한 사유로 재시도 한도를 태운다.
+          # mode는 run 객체로 관측되지 않는다 — 실측상 name은 항상 "Data Pack Release",
+          # display_title은 커밋 메시지(push)나 워크플로 이름(schedule)이고 dispatch 입력은
+          # 목록 API에 없다. 그래서 mode 대신 "exploratory가 되는 실행 경로"로 좁힌다:
+          # push 트리거(paths 필터를 통과한 병합이라 정의상 exploratory)와 이 코디네이터의
+          # dispatch(GITHUB_TOKEN이므로 triggering_actor가 github-actions[bot]. 실측:
+          # backend release-artifacts run 30737743662). schedule과 사람이 쏜 dispatch는
+          # 중립으로 둔다 — 판정에도, 재시도 한도에도 넣지 않는다.
+          producer_attempts_filter='
+            [.workflow_runs[] |
+              select(.event == "push" or
+                (.event == "workflow_dispatch" and
+                  .triggering_actor.login == "github-actions[bot]"))]
+          '
           candidate_runs="$(gh api \
             "repos/${repo}/actions/workflows/${producer}/runs?head_sha=${main_sha}&per_page=100" \
-            | jq -r '.workflow_runs[] | "\(.status) \(.conclusion // "none")"')"
+            --jq "${producer_attempts_filter}"' | .[] | "\(.status) \(.conclusion // "none")"')"
 
           produced=0
           in_flight=0
@@ -144,12 +161,18 @@ jobs:
           # exploratory로, build spec이 fixture 기본값으로 떨어졌다. dispatch는 입력이
           # 필수이므로 그 기본값을 그대로 명시한다. releaseRequestId는 비워 둬야 워크플로가
           # push 때와 같은 `exploratory-<run id>` 폴백을 쓴다.
+          #
+          # allowGaps는 반드시 명시한다. producer의 기본값 분기는
+          # `event != workflow_dispatch && mode == exploratory`일 때만 true라서, 입력을
+          # 비우면 dispatch 경로에서만 false로 뒤집힌다. 갭이 남아 있는 현재 데이터 상태에서
+          # false는 coverage 검증 실패를 뜻하고, 그 실패가 attempt_limit을 태워 해당 SHA의
+          # producer를 영구히 억제한다. push 경로가 쓰던 값(true)을 그대로 준다.
           # dispatch 호출 실패로 이 스텝을 죽이면 뒤의 큐 스텝까지 건너뛴다. 다음 트리거가
           # 같은 head_sha 키로 다시 판정하므로 경고만 남기고 물러난다.
           if ! gh workflow run "${producer}" --repo "${repo}" --ref main \
             -f mode=exploratory \
             -f targetChannel=dev \
-            -f modeArgs='{"buildSpecPath":"tools/datapack/fixtures/candidate-build-spec.json"}'; then
+            -f modeArgs='{"buildSpecPath":"tools/datapack/fixtures/candidate-build-spec.json","allowGaps":"true"}'; then
             echo "::warning::main ${main_sha}의 data pack producer dispatch 호출이 실패했다; 다음 트리거에서 재시도한다."
             exit 0
           fi
@@ -157,7 +180,7 @@ jobs:
           for _ in {1..12}; do
             observed="$(gh api \
               "repos/${repo}/actions/workflows/${producer}/runs?head_sha=${main_sha}&per_page=100" \
-              --jq '.workflow_runs | length')"
+              --jq "${producer_attempts_filter}"' | length')"
             if [[ "${observed}" -gt "${unproductive}" ]]; then
               echo "data pack producer dispatch 확인: main ${main_sha}"
               exit 0
@@ -358,7 +381,7 @@ jobs:
             fi
             # budget-recheck-end
             info="$(gh pr view "${pr}" --repo "${repo}" \
-              --json author,baseRefName,headRefName,headRefOid,headRepository,isDraft,labels,mergeStateStatus,state)"
+              --json baseRefName,headRefName,headRefOid,headRepository,isDraft,labels,mergeStateStatus,state)"
             if ! jq -e '
               .state == "OPEN" and
               .isDraft == false and
@@ -369,7 +392,6 @@ jobs:
               continue
             fi
 
-            pr_author="$(jq -r '.author.login // ""' <<<"${info}")"
             head="$(jq -r '.headRefOid' <<<"${info}")"
             head_ref="$(jq -r '.headRefName' <<<"${info}")"
             head_repo="$(jq -r '.headRepository.nameWithOwner // ""' <<<"${info}")"
@@ -378,13 +400,11 @@ jobs:
             reviews="$(gh api --paginate --slurp \
               "repos/${repo}/pulls/${pr}/reviews?per_page=100")"
             # review-state-filter-begin
-            # PR 작성자의 리뷰는 신뢰 집합에서 뺀다. GitHub은 자기 PR에 APPROVED와
-            # CHANGES_REQUESTED를 막지만 COMMENTED는 허용하므로, 작성자가 폴백 양식
-            # 본문을 스스로 붙이면 다른 리뷰어 없이 게이트를 통과시킬 수 있다. 셀프 리뷰
-            # 금지가 이 큐의 전제이므로 그 경로를 원천 차단한다.
-            if ! jq -e --arg head "${head}" --arg author "${pr_author}" '
+            # 신뢰 기준은 author_association 하나다. PR 작성자 리뷰를 따로 배제하지 않는
+            # 것은 형제 저장소(backend·mobile)와 게이트 판정을 일치시키기 위한 결정이다 —
+            # 네 저장소가 같은 입력에 같은 판정을 내야 한다.
+            if ! jq -e --arg head "${head}" '
               [flatten[] |
-                select(.user.login != $author) |
                 select(
                   .author_association == "OWNER" or
                   .author_association == "MEMBER" or
