@@ -115,9 +115,7 @@
       "seoulmetro-station-line-info",
       "seoul-metro-accessibility",
       "kric-station-convenience-standard",
-      "kric-station-elevator-movement",
-      "kric-subway-timetable",
-      "kric-wheelchair-lift-movement"
+      "kric-subway-timetable"
     ],
     "optionalAccessibilitySourceIds": [
       "kric-disabled-toilet",

@@ -636,3 +636,59 @@ test("migrated KRIC evidence provenance와 TAGO output 경로를 보존한다", 
     "--quiet",
   ]);
 });
+
+test("KRIC 이동동선 상세 operation provider result 30은 모든 production 경로에서 차단한다", async () => {
+  const candidates = JSON.parse(
+    await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"),
+  );
+  const inventory = JSON.parse(
+    await readFile(new URL("./source-inventory.json", import.meta.url), "utf8"),
+  );
+  const productionScope = JSON.parse(
+    await readFile(new URL("../../release/product-gates/production-datapack-scope.json", import.meta.url), "utf8"),
+  );
+  const capitalPilotInput = JSON.parse(
+    await readFile(new URL("./inputs/capital-pilot-production-source-input.json", import.meta.url), "utf8"),
+  );
+  const ids = [
+    "kric-station-elevator-movement",
+    "kric-wheelchair-lift-movement",
+  ];
+  const expectedFacility = {
+    status: "CANDIDATE",
+    productionUseAllowed: false,
+    coverageStatus: "PROVIDER_RESULT_30_20260728",
+    updateFrequency: "provider documented; production cadence not admitted",
+    unsupportedNotes: "stationCnvFacl standard operation supersedes this detailed operation for production",
+  };
+
+  for (const id of ids) {
+    const candidate = candidates.candidates.find((entry) => entry.id === id);
+    const inventorySource = inventory.sources.find((entry) => entry.id === id);
+
+    assert.equal(candidate.admissionStatus, "superseded_by_standard_operation");
+    assert.equal(
+      candidate.nextAction,
+      "상세 operation은 provider result 30 해소 전까지 candidate로 보존하고 production은 stationCnvFacl standard operation만 소비한다.",
+    );
+    assert.deepEqual(candidate.capabilities.facility, expectedFacility);
+    assert.equal(
+      candidate.productionInventoryRelationship,
+      "candidate_only_standard_operation_supersedes_production_use",
+    );
+    assert.equal(inventorySource.requiredForProductionPack, false);
+    assert.equal(inventorySource.productionUseAllowed, false);
+    assert.deepEqual(inventorySource.capabilities.facility, expectedFacility);
+    assert.equal(inventorySource.admissionEvidence.quotaEvidence.productionUseAllowed, false);
+    assert.equal(
+      inventorySource.admissionEvidence.productionUseNoteKo,
+      "2026-07-28 provider resultCode 30으로 상세 endpoint production 소비를 중단하고 standard stationCnvFacl로 대체한다.",
+    );
+    assert.ok(!productionScope.productionSourceSet.requiredSourceIds.includes(id));
+    assert.ok(!capitalPilotInput.sourceIds.includes(id));
+    assert.ok(
+      !capitalPilotInput.coverageEvidence.some((entry) => entry.sourceIds.includes(id)),
+    );
+    assert.ok(!capitalPilotInput.movementPathCandidates.some((entry) => entry.sourceId === id));
+  }
+});

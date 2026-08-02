@@ -22,8 +22,6 @@
     "molit-urban-rail-full-route",
     "seoulmetro-station-line-info",
     "seoulmetro-cyberstation-route-map",
-    "kric-station-elevator-movement",
-    "kric-wheelchair-lift-movement",
     "kric-subway-timetable",
     "seoul-metro-accessibility",
     "kric-station-convenience-standard"
@@ -85,11 +83,9 @@
       "sourceDomain": "accessibility_facilities",
       "sourceIds": [
         "kric-station-convenience-standard",
-        "kric-station-elevator-movement",
-        "kric-wheelchair-lift-movement",
         "seoul-metro-accessibility"
       ],
-      "evidence": "국가철도공단 접근성 시설 위치와 이동동선 source inventory coverageScope"
+      "evidence": "국가철도공단 접근성 시설 위치와 서울교통공사 접근성 source inventory coverageScope"
     },
     {
       "regionId": "capital",
@@ -699,42 +695,7 @@
       "note": "서울교통공사 전체 승강기 운행상황 snapshot 실측."
     }
   ],
-  "movementPathCandidates": [
-    {
-      "sourceId": "kric-station-elevator-movement",
-      "id": "movement-sangnoksu-elevator-kric-1",
-      "station": {
-        "sourceId": "molit-urban-rail-full-route",
-        "sourceStationCode": "MOLIT-SEOUL-4-448",
-        "lineId": "seoul-4"
-      },
-      "facilityType": "ELEVATOR",
-      "sourceSnapshotId": "kric-station-elevator-movement-snapshot-20260622",
-      "providerRecordHash": "425dd4503d963c2954792cbfe7946a4932899873bcfeda20b4ab8309ffbe1b12",
-      "evidenceHash": "51b4ac1b21da7a911bc49e64d7b32f26dbc86dc8ec47e3a9880786277ce9e31c",
-      "fromLabel": "출입구",
-      "toLabel": "승강장",
-      "movementOrder": 1,
-      "instruction": "KRIC 엘리베이터 이동동선 후보이며 검수 전 route edge로 승격하지 않습니다."
-    },
-    {
-      "sourceId": "kric-wheelchair-lift-movement",
-      "id": "movement-sangnoksu-wheelchair-lift-kric-1",
-      "station": {
-        "sourceId": "molit-urban-rail-full-route",
-        "sourceStationCode": "MOLIT-SEOUL-4-448",
-        "lineId": "seoul-4"
-      },
-      "facilityType": "WHEELCHAIR_LIFT",
-      "sourceSnapshotId": "kric-wheelchair-lift-movement-snapshot-20260622",
-      "providerRecordHash": "2991c4a0ad58d6c1b035028e6747e05a4ab8af3f3c5cd3a644f9e3a64e144d67",
-      "evidenceHash": "368d8d883e75d402355e29c26154869b5ae0434db9ba6cbe0020193c7e4af2b3",
-      "fromLabel": "대합실",
-      "toLabel": "승강장",
-      "movementOrder": 2,
-      "instruction": "KRIC 휠체어리프트 이동동선 후보이며 검수 전 route edge로 승격하지 않습니다."
-    }
-  ],
+  "movementPathCandidates": [],
   "representativeRouteRegressions": [],
   "scheduleProvenance": {
     "sourceId": "kric-subway-timetable",
