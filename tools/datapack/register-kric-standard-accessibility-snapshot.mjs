@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
@@ -387,7 +388,7 @@ function validateKricAccessibilityCoverage(snapshot, input) {
   return roster;
 }
 
-function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, governancePolicySha256, governancePolicyVersion, now }) {
+function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, freshnessExpiresAt, governancePolicySha256, governancePolicyVersion, now }) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (!source) throw new Error("production source inventory entry is missing");
   const previousId = validateLineage(snapshots).headsBySource[SOURCE_ID];
@@ -425,7 +426,7 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     redistributionAllowed: true,
     credentialRedacted: true,
     previousSnapshotId: previous.snapshotId,
-    freshnessExpiresAt: snapshot.freshUntil,
+    freshnessExpiresAt,
     rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
     governancePolicySha256,
     governancePolicyVersion,
@@ -559,9 +560,16 @@ async function prepareRegistration({
   validateKricLicenseGovernance({ inventory, policySources, now });
   await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
   const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshnessPolicy,
+    sourceClassId: policySources.get(SOURCE_ID).sourceClassId,
+    basisAt: snapshot.capturedAt,
+    evaluationAt: now.toISOString(),
+  });
   const staged = stageRegistries({
     inventory, snapshots, input,
     snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster,
+    freshnessExpiresAt,
     governancePolicySha256: sha256(governancePolicy.bytes), governancePolicyVersion: governancePolicy.version, now,
   });
   const targetBytes = await readOptionalFile(snapshotTargetPath);

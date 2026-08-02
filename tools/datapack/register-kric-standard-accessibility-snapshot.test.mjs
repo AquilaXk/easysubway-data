@@ -168,7 +168,8 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
   assert.equal(ledger.contentSha256, values.snapshot.contentSha256);
   assert.equal(source.accessibilityAdmissionEvidence.rawSha256, values.snapshot.rawSha256);
   assert.equal(ledger.rawObjectUri, receipt(values.snapshot, values.snapshotFileSha256).rawObjectUri);
-  assert.equal(ledger.freshnessExpiresAt, values.snapshot.freshUntil);
+  assert.equal(ledger.freshnessExpiresAt, "2026-11-01T00:00:00.000Z");
+  assert.equal(values.snapshot.freshUntil, "2026-08-04T00:00:00.000Z");
   assert.equal(ledger.rawRetentionExpiresAt, values.rawRetentionExpiresAt);
   assert.equal(ledger.governancePolicySha256, values.governancePolicySha256);
   assert.equal(ledger.governancePolicyVersion, values.governancePolicy.policyVersion);

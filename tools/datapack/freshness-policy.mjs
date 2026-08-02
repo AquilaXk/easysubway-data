@@ -10,6 +10,35 @@ export function deriveFreshness({
   storedExpiresAt,
   evaluationAt,
 }) {
+  const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy,
+    sourceClassId,
+    basisAt,
+    providerValidUntil,
+    evaluationAt,
+  });
+  const derivedMillis = requiredUtcInstant(freshnessExpiresAt, "freshnessExpiresAt");
+  const storedMillis = requiredUtcInstant(storedExpiresAt, "storedExpiresAt");
+  if (storedMillis !== derivedMillis) {
+    throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
+  }
+
+  const stale = evaluatedMillis >= derivedMillis;
+  return {
+    status: stale ? "STALE" : "FRESH",
+    freshnessExpiresAt,
+    reasonCodes: stale ? ["SOURCE_SNAPSHOT_EXPIRED"] : [],
+  };
+}
+
+export function deriveFreshnessExpiresAt({
+  policy,
+  sourceClassId,
+  basisAt,
+  providerValidUntil,
+  evaluationAt,
+}) {
   const sourceClass = policy?.sourceClasses?.find((entry) => entry.id === sourceClassId);
   if (!sourceClass || !basisAt) {
     throw new Error("SOURCE_FRESHNESS_POLICY_MISSING");
@@ -30,17 +59,7 @@ export function deriveFreshness({
   if (providerValidUntil != null) {
     derivedMillis = Math.min(derivedMillis, requiredUtcInstant(providerValidUntil, "providerValidUntil"));
   }
-  const storedMillis = requiredUtcInstant(storedExpiresAt, "storedExpiresAt");
-  if (storedMillis !== derivedMillis) {
-    throw new Error("SOURCE_FRESHNESS_DERIVATION_MISMATCH");
-  }
-
-  const stale = evaluatedMillis >= derivedMillis;
-  return {
-    status: stale ? "STALE" : "FRESH",
-    freshnessExpiresAt: new Date(derivedMillis).toISOString(),
-    reasonCodes: stale ? ["SOURCE_SNAPSHOT_EXPIRED"] : [],
-  };
+  return new Date(derivedMillis).toISOString();
 }
 
 export function decideScheduledRun({
