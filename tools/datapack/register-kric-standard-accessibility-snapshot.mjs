@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SOURCE_ID = "kric-station-convenience-standard";
@@ -336,7 +337,7 @@ function validateKricAccessibilityCoverage(snapshot, input) {
   return roster;
 }
 
-function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, now }) {
+function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, governancePolicySha256, governancePolicyVersion, now }) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (!source) throw new Error("production source inventory entry is missing");
   const previousId = validateLineage(snapshots).headsBySource[SOURCE_ID];
@@ -376,11 +377,15 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     previousSnapshotId: previous.snapshotId,
     freshnessExpiresAt: snapshot.freshUntil,
     rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
+    governancePolicySha256,
+    governancePolicyVersion,
   };
   nextLedger.diffSummary = buildSnapshotDiff(previous, nextLedger);
   const nextInventory = structuredClone(inventory);
   const nextSource = nextInventory.sources.find(({ id }) => id === SOURCE_ID);
   nextSource.productionUseAllowed = true;
+  nextSource.retrievedAt = snapshot.capturedAt.slice(0, 10);
+  nextSource.observedDataUpdatedAt = snapshot.observedAt.slice(0, 10);
   nextSource.accessibilityAdmissionEvidence = {
     ...nextSource.accessibilityAdmissionEvidence,
     productionUseAllowed: true,
@@ -457,6 +462,18 @@ export async function registerKricStandardAccessibilitySnapshot({
     const snapshot = readStagedSnapshot(snapshotBytes, snapshotFileSha256);
     if (rawReceipt?.snapshotFileSha256 !== snapshotFileSha256) throw new Error("raw receipt snapshot binding is invalid");
     validateReceipt(snapshot, rawReceipt, now);
+    const governancePolicyBytes = await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"));
+    let governancePolicy;
+    try { governancePolicy = JSON.parse(governancePolicyBytes); } catch { throw new Error("source governance policy is invalid"); }
+    const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+      policy: governancePolicy,
+      sourceId: SOURCE_ID,
+      retrievedAt: snapshot.capturedAt,
+    });
+    if (rawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
+      throw new Error("raw receipt rawRetentionExpiresAt does not match governance policy");
+    }
+    const governancePolicyVersion = requiredText(governancePolicy.policyVersion, "governance policy version");
     const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
     const expectedSnapshotTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
     if (!path.isAbsolute(requiredText(snapshotTargetPath, "snapshot target path"))
@@ -468,7 +485,8 @@ export async function registerKricStandardAccessibilitySnapshot({
     const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
     const staged = stageRegistries({
       inventory, snapshots, input,
-      snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, now,
+      snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster,
+      governancePolicySha256: sha256(governancePolicyBytes), governancePolicyVersion, now,
     });
     let targetBytes = null;
     try { targetBytes = await readFile(snapshotTargetPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }

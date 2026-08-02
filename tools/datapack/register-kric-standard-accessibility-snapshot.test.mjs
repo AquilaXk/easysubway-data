@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { parseKricStandardAccessibilitySnapshotRegistrationArgs, recoverKricStandardAccessibilitySnapshotTransaction, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
+import { deriveRawRetentionExpiresAt } from "./source-governance-policy.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registryPaths = [
@@ -17,6 +18,7 @@ const registryPaths = [
   "tools/datapack/inputs/capital-pilot-production-source-input.json",
 ];
 const seoulSnapshotPath = "tools/datapack/sources/seoul-metro-accessibility-20260728.json";
+const governancePolicyPath = "tools/datapack/source-governance-policy.json";
 const roster = [
   { stationId: "station-sangnoksu", lineId: "seoul-4", railOprIsttCd: "KR", lnCd: "4", stinCd: "448", canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-sangnoksu", lineId: "seoul-4" }] },
   { stationId: "station-sadang", lineId: "seoul-4", railOprIsttCd: "S1", lnCd: "4", stinCd: "433", canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-sadang", lineId: "seoul-4" }] },
@@ -67,6 +69,7 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     await mkdir(path.dirname(target), { recursive: true });
     await cp(path.join(root, relativePath), target, { recursive: true });
   }));
+  await cp(path.join(root, governancePolicyPath), path.join(directory, governancePolicyPath));
   await mkdir(path.dirname(path.join(directory, seoulSnapshotPath)), { recursive: true });
   await cp(path.join(root, seoulSnapshotPath), path.join(directory, seoulSnapshotPath));
   const admittedSeoul = JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8"));
@@ -83,6 +86,8 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
   await mkdir(path.dirname(snapshotFilePath), { recursive: true });
   const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
   await writeFile(snapshotFilePath, snapshotBytes);
+  const governancePolicyBytes = await readFile(path.join(directory, governancePolicyPath));
+  const governancePolicy = JSON.parse(governancePolicyBytes);
   const paths = Object.fromEntries(registryPaths.map((relativePath) => [relativePath, path.join(directory, relativePath)]));
   return {
     paths,
@@ -90,12 +95,15 @@ async function fixture(t, now = new Date("2026-08-03T00:00:00.000Z")) {
     snapshotFilePath,
     snapshotFileSha256: sha256(snapshotBytes),
     snapshotTargetPath: path.join(directory, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
+    governancePolicy,
+    governancePolicySha256: sha256(governancePolicyBytes),
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({ policy: governancePolicy, sourceId: "kric-station-convenience-standard", retrievedAt: snapshot.capturedAt }),
     seoulSnapshot: JSON.parse(await readFile(path.join(directory, seoulSnapshotPath), "utf8")),
     before: await Promise.all(registryPaths.map((relativePath) => readFile(paths[relativePath]))),
   };
 }
 
-function receipt(snapshot, snapshotFileSha256) {
+function receipt(snapshot, snapshotFileSha256, rawRetentionExpiresAt = new Date(Date.parse(snapshot.capturedAt) + 90 * 86_400_000).toISOString()) {
   return {
     rawObjectUri: "s3://easysubway-datapack-sources/kric-station-convenience-standard/20260803.json",
     sourceId: snapshot.sourceId,
@@ -106,7 +114,7 @@ function receipt(snapshot, snapshotFileSha256) {
     rawObjectSha256: "e".repeat(64),
     byteSize: 1234,
     storedAt: snapshot.capturedAt,
-    rawRetentionExpiresAt: new Date(Math.max(Date.parse(snapshot.freshUntil), Date.parse(snapshot.capturedAt)) + 86_400_000).toISOString(),
+    rawRetentionExpiresAt,
   };
 }
 
@@ -115,7 +123,7 @@ async function register(values, overrides = {}) {
     snapshotFilePath: values.snapshotFilePath,
     snapshotFileSha256: values.snapshotFileSha256,
     snapshotTargetPath: values.snapshotTargetPath,
-    rawReceipt: receipt(values.snapshot, values.snapshotFileSha256),
+    rawReceipt: receipt(values.snapshot, values.snapshotFileSha256, values.rawRetentionExpiresAt),
     seoulSnapshot: values.seoulSnapshot,
     registryPaths: values.paths,
     repositoryRoot: path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))),
@@ -156,7 +164,13 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
   assert.equal(source.accessibilityAdmissionEvidence.rawSha256, values.snapshot.rawSha256);
   assert.equal(ledger.rawObjectUri, receipt(values.snapshot, values.snapshotFileSha256).rawObjectUri);
   assert.equal(ledger.freshnessExpiresAt, values.snapshot.freshUntil);
-  assert.equal(ledger.rawRetentionExpiresAt, receipt(values.snapshot, values.snapshotFileSha256).rawRetentionExpiresAt);
+  assert.equal(ledger.rawRetentionExpiresAt, values.rawRetentionExpiresAt);
+  assert.equal(ledger.governancePolicySha256, values.governancePolicySha256);
+  assert.equal(ledger.governancePolicyVersion, values.governancePolicy.policyVersion);
+  assert.equal(source.retrievedAt, values.snapshot.capturedAt.slice(0, 10));
+  assert.equal(source.observedDataUpdatedAt, values.snapshot.observedAt.slice(0, 10));
+  assert.match(source.retrievedAt, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(source.observedDataUpdatedAt, /^\d{4}-\d{2}-\d{2}$/);
   assert.match(source.admissionEvidence.productionUseNoteKo, new RegExp(values.snapshot.snapshotId));
   assert.doesNotMatch(source.admissionEvidence.productionUseNoteKo, /Data #39.*차단/);
   assert.deepEqual(input.kricStandardAccessibilitySnapshot, {
@@ -499,11 +513,12 @@ test("receipt 시간은 저장 시각과 raw retention 순서를 엄격히 검�
   for (const mutate of [
     (value) => { value.storedAt = "2026-08-03T00:02:00.000Z"; },
     (value) => { value.rawRetentionExpiresAt = value.storedAt; },
+    (value) => { value.rawRetentionExpiresAt = "2099-01-01T00:00:00.000Z"; },
   ]) {
     const values = await fixture(t);
     const invalidReceipt = receipt(values.snapshot, values.snapshotFileSha256);
     mutate(invalidReceipt);
-    await assert.rejects(register(values, { rawReceipt: invalidReceipt }), /raw receipt (storedAt|rawRetentionExpiresAt) is invalid/);
+    await assert.rejects(register(values, { rawReceipt: invalidReceipt }), /raw receipt (storedAt|rawRetentionExpiresAt) (is invalid|does not match governance policy)/);
     await assertUnchanged(values);
   }
 });
@@ -531,7 +546,7 @@ test("직접 실행 CLI는 절대 경로로 격리 fixture를 등록하고 상�
   const script = fileURLToPath(new URL("./register-kric-standard-accessibility-snapshot.mjs", import.meta.url));
   const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
   const rawReceiptPath = path.join(repositoryRoot, "staging", "raw-receipt.json");
-  await writeFile(rawReceiptPath, `${JSON.stringify(receipt(values.snapshot, values.snapshotFileSha256))}\n`);
+  await writeFile(rawReceiptPath, `${JSON.stringify(receipt(values.snapshot, values.snapshotFileSha256, values.rawRetentionExpiresAt))}\n`);
   const successful = spawnSync(process.execPath, [
     script, "--repository-root", repositoryRoot, "--snapshot", values.snapshotFilePath,
     "--snapshot-sha256", values.snapshotFileSha256, "--raw-receipt", rawReceiptPath,
