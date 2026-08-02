@@ -124,7 +124,7 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
     throw new Error("artifact component manifest must be an object");
   }
 
-  const artifactKind = requiredString(manifest.artifactKind, "artifactKind");
+  const artifactKind = requiredArtifactComponentRawString(manifest.artifactKind, "artifactKind");
   const requiredFields = artifactKind === "map-pack"
     ? ["manifestVersion", "artifactKind", "mapPackId", "stationSetSha256", "payloadSha256"]
     : artifactKind === "station-catalog-pack"
@@ -143,24 +143,24 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
     throw new Error("manifestVersion must be 1");
   }
 
-  if (artifactKind === "map-pack") requiredString(manifest.mapPackId, "mapPackId");
-  if (artifactKind === "station-catalog-pack") requiredString(manifest.catalogPackId, "catalogPackId");
+  if (artifactKind === "map-pack") requiredArtifactComponentRawString(manifest.mapPackId, "mapPackId");
+  if (artifactKind === "station-catalog-pack") requiredArtifactComponentRawString(manifest.catalogPackId, "catalogPackId");
   if (artifactKind === "server-route-bundle") {
-    requiredString(manifest.bundleId, "bundleId");
+    requiredArtifactComponentRawString(manifest.bundleId, "bundleId");
     if (!Number.isSafeInteger(manifest.releaseSequence) || manifest.releaseSequence < 1) {
       throw new Error("releaseSequence must be a safe positive integer");
     }
-    requiredSha256(manifest.topologySha256, "topologySha256");
-    requiredSha256(manifest.timetableSha256, "timetableSha256");
-    requiredSha256(manifest.accessibilitySha256, "accessibilitySha256");
-    requiredSha256(manifest.fareSha256, "fareSha256");
-    requiredString(manifest.keyId, "keyId");
+    requiredArtifactComponentSha256(manifest.topologySha256, "topologySha256");
+    requiredArtifactComponentSha256(manifest.timetableSha256, "timetableSha256");
+    requiredArtifactComponentSha256(manifest.accessibilitySha256, "accessibilitySha256");
+    requiredArtifactComponentSha256(manifest.fareSha256, "fareSha256");
+    requiredArtifactComponentRawString(manifest.keyId, "keyId");
     validateArtifactComponentSignature(manifest.signature);
   }
 
-  const stationSetSha256 = requiredSha256(manifest.stationSetSha256, "stationSetSha256");
-  requiredSha256(manifest.payloadSha256, "payloadSha256");
-  if (expectedStationSetSha256 !== undefined && stationSetSha256 !== requiredSha256(expectedStationSetSha256, "expectedStationSetSha256")) {
+  const stationSetSha256 = requiredArtifactComponentSha256(manifest.stationSetSha256, "stationSetSha256");
+  requiredArtifactComponentSha256(manifest.payloadSha256, "payloadSha256");
+  if (expectedStationSetSha256 !== undefined && stationSetSha256 !== requiredArtifactComponentSha256(expectedStationSetSha256, "expectedStationSetSha256")) {
     throw new Error("stationSetSha256 must match expectedStationSetSha256");
   }
   if (artifactKind === "server-route-bundle") {
@@ -171,7 +171,7 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
 
 function validateExactFields(value, requiredFields, label) {
   for (const field of requiredFields) {
-    if (!(field in value)) {
+    if (!Object.hasOwn(value, field)) {
       throw new Error(`${label} required field missing: ${field}`);
     }
   }
@@ -188,13 +188,28 @@ function validateArtifactComponentSignature(signature) {
     throw new Error("signature must be an object");
   }
   validateExactFields(signature, ["algorithm", "value"], "signature");
-  if (requiredString(signature.algorithm, "signature.algorithm") !== "rsa-sha256-server-route-bundle-v1") {
+  if (requiredArtifactComponentRawString(signature.algorithm, "signature.algorithm") !== "rsa-sha256-server-route-bundle-v1") {
     throw new Error("signature algorithm is unsupported");
   }
-  const value = requiredString(signature.value, "signature.value");
+  const value = requiredArtifactComponentRawString(signature.value, "signature.value");
   if (!/^[A-Za-z0-9_-]+$/.test(value)) {
     throw new Error("signature.value must be a base64url string");
   }
+}
+
+function requiredArtifactComponentRawString(value, label) {
+  if (typeof value !== "string" || value === "" || value.trim() !== value) {
+    throw new Error(`${label} must be a non-empty raw string`);
+  }
+  return value;
+}
+
+function requiredArtifactComponentSha256(value, label) {
+  const hash = requiredArtifactComponentRawString(value, label);
+  if (!/^[a-f0-9]{64}$/.test(hash)) {
+    throw new Error(`${label} must be a lowercase sha256 hex string`);
+  }
+  return hash;
 }
 
 function writeCanonical(value, out) {
