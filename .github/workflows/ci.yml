@@ -42,6 +42,7 @@ jobs:
           node --test
           tools/ci/automerge-queue.test.mjs
           tools/datapack/stage-contracts.test.mjs
+          tools/datapack/bundle-component-contract.test.mjs
           tools/datapack/build-data-component-manifest.test.mjs
           tools/ci/require-workflow-artifact.test.mjs
           tools/release/validate-promotion-request.test.mjs

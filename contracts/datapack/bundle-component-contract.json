@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "bundle-component-contract",
+  "artifacts": {
+    "map-pack": {
+      "identityField": "mapPackId",
+      "allowedCategories": ["geometry", "hashes", "layout", "line-style", "map-contract-version", "symbols"],
+      "deniedCategories": ["accessibility-routing-state", "eta", "route-edges", "timetable", "transfer-cost"]
+    },
+    "station-catalog-pack": {
+      "identityField": "catalogPackId",
+      "allowedCategories": ["aliases", "line-ids", "localized-names", "search-index", "station-ids"],
+      "deniedCategories": ["accessibility-path-calculation", "route-graph", "routing-cost", "stop-times", "transfer-graph", "trips"]
+    },
+    "server-route-bundle": {
+      "identityField": "bundleId",
+      "allowedCategories": ["accessibility", "compatibility", "fare", "provenance", "signed-manifest", "timetable", "topology"],
+      "deniedCategories": ["aliases", "geometry", "layout", "line-style", "localized-names", "search-index", "symbols"]
+    }
+  },
+  "sharedCompatibility": {
+    "field": "stationSetSha256",
+    "pattern": "^[0-9a-f]{64}$",
+    "mustMatchAcrossArtifacts": true
+  },
+  "serverRouteBundle": {
+    "components": ["topology", "timetable", "accessibility", "fare"],
+    "atomicIdentityFields": ["bundleId", "releaseSequence", "stationSetSha256"],
+    "releaseSequence": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
