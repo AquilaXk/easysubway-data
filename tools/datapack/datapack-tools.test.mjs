@@ -11474,12 +11474,14 @@ test("공식 source ingest adapter는 provenance 전용 source를 production row
     "kric-station-elevator",
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
+    "kric-station-convenience-standard",
   ]) {
     const outputDir = path.join(tmpdir(), `easysubway-source-ingest-provenance-only-${sourceId}-${Date.now()}`);
     const input = JSON.parse(await readFile(
       path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"),
       "utf8",
     ));
+    input.sourceIds = input.sourceIds.filter((id) => id !== "kric-station-convenience-standard");
     input.sourceIds.push(sourceId);
     const inputPath = path.join(outputDir, "official-source-input.json");
     const outputPath = path.join(outputDir, "catalog-fixture.json");
