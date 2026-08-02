@@ -409,11 +409,11 @@ test("provider resultCode 00 body array envelope는 표준 rows로 검증한다"
   assert.equal(snapshots[0].queries[0].status, "PRESENT");
 });
 
-test("transport와 5xx는 정확히 한 번만 retry한다", async () => {
+test("transport와 5xx는 한 번 요청 후 fail closed한다", async () => {
   for (const firstFailure of [new Error("timeout"), response(503, [])]) {
     let calls = 0;
     const delays = [];
-    const snapshots = await collectKricAccessibilitySnapshots({
+    await assert.rejects(collectKricAccessibilitySnapshots({
       roster: roster.slice(0, 1),
       operations: [operation],
       serviceKey: "key",
@@ -421,20 +421,16 @@ test("transport와 5xx는 정확히 한 번만 retry한다", async () => {
       delayImpl: async (milliseconds) => { delays.push(milliseconds); },
       fetchImpl: async () => {
         calls += 1;
-        if (calls === 1) {
-          if (firstFailure instanceof Error) throw firstFailure;
-          return firstFailure;
-        }
-        return response(200, []);
+        if (firstFailure instanceof Error) throw firstFailure;
+        return firstFailure;
       },
-    });
-    assert.equal(calls, 2);
-    assert.deepEqual(delays, [250]);
-    assert.equal(snapshots[0].queries[0].status, "ABSENT_EXPLICIT_ZERO");
+    }));
+    assert.equal(calls, 1);
+    assert.deepEqual(delays, []);
   }
 });
 
-test("두 번째 transport 실패 뒤에는 fail closed다", async () => {
+test("transport 실패는 한 번 요청 후 fail closed다", async () => {
   let calls = 0;
   await assert.rejects(() => collectKricAccessibilitySnapshots({
     roster: roster.slice(0, 1),
@@ -445,7 +441,7 @@ test("두 번째 transport 실패 뒤에는 fail closed다", async () => {
     name: "Error",
     message: "KRIC accessibility request failed: kric-station-elevator/S1/2/202",
   });
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
 });
 
 function response(status, body, resultCode = "00") {
