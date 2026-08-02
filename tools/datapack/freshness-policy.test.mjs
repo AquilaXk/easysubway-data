@@ -38,6 +38,18 @@ test("evaluationAt이 expiry와 같으면 source snapshot은 stale이다", () =>
   });
 });
 
+test("missing policy 또는 basis는 invalid evaluationAt보다 먼저 거부한다", () => {
+  for (const [candidatePolicy, basisAt] of [[undefined, "2026-07-01T00:00:00.000Z"], [policy, undefined]]) {
+    assert.throws(() => deriveFreshness({
+      policy: candidatePolicy,
+      sourceClassId: "static_accessibility_facility",
+      basisAt,
+      storedExpiresAt: "2026-09-29T00:00:00.000Z",
+      evaluationAt: "invalid",
+    }), /SOURCE_FRESHNESS_POLICY_MISSING/);
+  }
+});
+
 test("provider validity end가 cadence보다 이르면 더 이른 expiry를 적용한다", () => {
   assert.deepEqual(deriveFreshness({
     policy,

@@ -10,7 +10,6 @@ export function deriveFreshness({
   storedExpiresAt,
   evaluationAt,
 }) {
-  const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy,
     sourceClassId,
@@ -18,6 +17,7 @@ export function deriveFreshness({
     providerValidUntil,
     evaluationAt,
   });
+  const evaluatedMillis = requiredUtcInstant(evaluationAt, "evaluationAt");
   const derivedMillis = requiredUtcInstant(freshnessExpiresAt, "freshnessExpiresAt");
   const storedMillis = requiredUtcInstant(storedExpiresAt, "storedExpiresAt");
   if (storedMillis !== derivedMillis) {
