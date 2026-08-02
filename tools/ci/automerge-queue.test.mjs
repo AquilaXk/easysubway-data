@@ -1186,7 +1186,8 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   // 한도를 Data Pack Release가 함께 쓰므로 형제 저장소(300)보다 크다.
   assert.equal(reserve, 400, 'data pack chain reserve must stay pinned');
   assert.equal(fixedCost, 15);
-  // 후보당 청구는 호출 5회가 아니라 --paginate 추가 페이지까지 덮는 여유값이다.
+  // 후보당 청구는 호출 5회가 아니라 read_pages의 page_limit=3까지 덮는 값이다
+  // (pr view 1 + reviewThreads 1 + REST 3종 * 3페이지). `--paginate`는 쓰지 않는다.
   assert.equal(perCandidate, 11, 'per-candidate charge must match the page-capped reads');
 
   // 응답 payload를 주고 워크플로의 jq 질의를 실제 jq로 적용해 `gh --jq`를 그대로 흉내낸다.
