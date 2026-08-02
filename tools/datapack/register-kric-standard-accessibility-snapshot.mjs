@@ -235,7 +235,8 @@ async function validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seou
     contentSha256: evidence?.contentSha256,
     schemaFingerprint: evidence?.schemaFingerprint,
   };
-  if (!Object.entries(expected).every(([field, value]) => seoulSnapshot?.[field] === value)
+  if (Object.values(expected).some((value) => value === undefined)
+    || !Object.entries(expected).every(([field, value]) => seoulSnapshot?.[field] === value)
     || !SHA256.test(evidence?.snapshotFileSha256 ?? "")
     || sha256(JSON.stringify(seoulSnapshot?.stations)) !== evidence.contentSha256) {
     throw new Error("Seoul snapshot admission is invalid");
@@ -303,13 +304,29 @@ function validateKricAccessibilityCoverage(snapshot, input) {
   const roster = Array.isArray(input.kricStandardAccessibilityRoster)
     ? sortedUniqueRoster(input.kricStandardAccessibilityRoster)
     : deriveKricAccessibilityRoster(input);
-  const supported = new Set((input.stationMappings ?? [])
-    .filter(({ stationId, lineId }) => input.supportedV1Scope?.includedStationIds?.includes(stationId)
-      && input.supportedV1Scope?.includedLineIds?.includes(lineId))
-    .map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const includedStations = new Set(input.supportedV1Scope?.includedStationIds);
+  const includedLines = new Set(input.supportedV1Scope?.includedLineIds);
+  const mappings = new Map((input.stationMappings ?? []).map((mapping) => [
+    [mapping.sourceId, mapping.sourceStationCode, mapping.lineId].join("\0"), mapping.stationId,
+  ]));
+  const supported = new Set();
+  for (const row of input.stationLineRows ?? []) {
+    const station = row.station ?? row;
+    const lineId = station?.lineId;
+    const mappedStationId = mappings.get([station?.sourceId, station?.sourceStationCode, lineId].join("\0"));
+    if (includedLines.has(lineId) && (typeof mappedStationId !== "string" || mappedStationId === "")) {
+      throw new Error("KRIC accessibility scope mapping is invalid");
+    }
+    if (!includedLines.has(lineId) || !includedStations.has(mappedStationId)) continue;
+    supported.add(`${mappedStationId}\0${lineId}`);
+  }
   const rosterStations = new Set(roster.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const supportedStationProjection = new Set([...supported].map((stationLine) => stationLine.split("\0")[0]));
+  const supportedLineProjection = new Set([...supported].map((stationLine) => stationLine.split("\0")[1]));
   if (supported.size === 0 || supported.size !== rosterStations.size
-    || [...supported].some((stationLine) => !rosterStations.has(stationLine))) {
+    || [...supported].some((stationLine) => !rosterStations.has(stationLine))
+    || supportedStationProjection.size !== includedStations.size || [...includedStations].some((stationId) => !supportedStationProjection.has(stationId))
+    || supportedLineProjection.size !== includedLines.size || [...includedLines].some((lineId) => !supportedLineProjection.has(lineId))) {
     throw new Error("KRIC accessibility roster coverage is invalid");
   }
   const queryRoster = sortedUniqueRoster(snapshot.queries ?? []);
@@ -429,6 +446,7 @@ export async function registerKricStandardAccessibilitySnapshot({
   ];
   if (paths.some((file, index) => path.resolve(file) !== expectedPaths[index])) throw new Error("registry path is invalid");
   const releaseLock = await acquireRegistrationLock(repositoryRoot);
+  let registrationError;
   try {
     await onLockAcquired?.();
     await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
@@ -467,8 +485,18 @@ export async function registerKricStandardAccessibilitySnapshot({
         ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
       ],
     });
+  } catch (error) {
+    registrationError = error;
+    throw error;
   } finally {
-    await releaseLock();
+    try { await releaseLock(); } catch (releaseError) {
+      if (!registrationError) throw releaseError;
+      if (registrationError instanceof Error) {
+        registrationError.cause = registrationError.cause === undefined
+          ? releaseError
+          : new AggregateError([registrationError.cause, releaseError], "registration and lock recovery causes");
+      } else throw new AggregateError([registrationError, releaseError], "registration failed and KRIC registration lock RECOVERY_REQUIRED");
+    }
   }
 }
 
@@ -488,7 +516,7 @@ export function parseKricStandardAccessibilitySnapshotRegistrationArgs(args) {
     seen.add(key);
     options[key] = value;
   }
-  for (const key of ["snapshotFilePath", "snapshotFileSha256", "rawReceiptPath", "seoulSnapshotPath"]) {
+  for (const key of ["repositoryRoot", "snapshotFilePath", "snapshotFileSha256", "rawReceiptPath", "seoulSnapshotPath"]) {
     if (typeof options[key] !== "string" || options[key].trim() === "") throw new Error("registration CLI arguments are invalid");
   }
   return options;

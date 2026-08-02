@@ -184,6 +184,18 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
     }, /Seoul snapshot admission is invalid/],
     [async (values) => {
       const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      delete inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence.absenceEvidenceMode;
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
+      delete inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence.observedAt;
+      await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
+      return {};
+    }, /Seoul snapshot admission is invalid/],
+    [async (values) => {
+      const inventory = JSON.parse(await readFile(values.paths[registryPaths[0]], "utf8"));
       inventory.sources.find(({ id }) => id === "seoul-metro-accessibility").accessibilityAdmissionEvidence.snapshotId = "wrong";
       await writeFile(values.paths[registryPaths[0]], `${JSON.stringify(inventory, null, 2)}\n`);
       return {};
@@ -238,6 +250,43 @@ test("KRIC snapshot requires the admitted full tuple roster and persists it", as
   await register(values);
   const input = JSON.parse(await readFile(values.paths[registryPaths[2]], "utf8"));
   assert.equal(input.kricStandardAccessibilityRoster.length, 2);
+});
+
+test("KRIC scope의 station과 line projection은 실제 station-line rows로 충족해야 한다", async (t) => {
+  for (const [field, missing] of [["includedStationIds", "station-missing"], ["includedLineIds", "line-missing"]]) {
+    const values = await fixture(t);
+    const input = JSON.parse(await readFile(values.paths[registryPaths[2]], "utf8"));
+    input.supportedV1Scope[field].push(missing);
+    await writeFile(values.paths[registryPaths[2]], `${JSON.stringify(input, null, 2)}\n`);
+    const before = await registryBytes(values);
+    await assert.rejects(register(values), /KRIC accessibility roster coverage is invalid/);
+    assert.deepEqual(await registryBytes(values), before);
+  }
+});
+
+test("KRIC scope의 mapping과 station-line row 누락은 등록 전에 거부한다", async (t) => {
+  for (const [remove, expected] of [
+    [(input, sourceKeys) => { input.stationMappings = input.stationMappings.filter((mapping) => !sourceKeys.has([mapping.sourceId, mapping.sourceStationCode, mapping.lineId].join("\0"))); }, /KRIC accessibility scope mapping is invalid/],
+    [(input, sourceKeys) => {
+      input.stationLineRows = input.stationLineRows.filter((row) => {
+        const station = row.station ?? row;
+        return !sourceKeys.has([station.sourceId, station.sourceStationCode, station.lineId].join("\0"));
+      });
+    }, /KRIC accessibility roster coverage is invalid/],
+  ]) {
+    const values = await fixture(t);
+    const input = JSON.parse(await readFile(values.paths[registryPaths[2]], "utf8"));
+    input.kricStandardAccessibilityRoster = values.snapshot.queries;
+    const sourceKeys = new Set(input.stationMappings
+      .filter(({ stationId, lineId }) => stationId === roster[0].stationId && lineId === roster[0].lineId)
+      .map(({ sourceId, sourceStationCode, lineId }) => [sourceId, sourceStationCode, lineId].join("\0")));
+    assert.ok(sourceKeys.size > 0);
+    remove(input, sourceKeys);
+    await writeFile(values.paths[registryPaths[2]], `${JSON.stringify(input, null, 2)}\n`);
+    const before = await registryBytes(values);
+    await assert.rejects(register(values), expected);
+    assert.deepEqual(await registryBytes(values), before);
+  }
 });
 
 test("pending PREPARED recovery runs before registration reads", async (t) => {
@@ -429,6 +478,23 @@ test("동시 등록은 첫 등록의 배타 lock 동안 읽기나 staging 전에
   assert.equal(sha256(await readFile(values.snapshotTargetPath)), values.snapshotFileSha256);
 });
 
+test("등록 오류와 lock release 오류가 함께 나면 원래 오류와 표준 cause를 보존한다", async (t) => {
+  const values = await fixture(t);
+  const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
+  const lockDirectory = path.join(repositoryRoot, "tools/datapack/.kric-standard-registration.lock");
+  await assert.rejects(register(values, {
+    onLockAcquired: async () => {
+      await rm(lockDirectory, { recursive: true, force: true });
+      await writeFile(lockDirectory, "sabotaged lock directory");
+      throw new Error("original registration failure");
+    },
+  }), (error) => {
+    assert.equal(error.message, "original registration failure");
+    assert.match(error.cause?.message, /KRIC registration lock RECOVERY_REQUIRED/);
+    return true;
+  });
+});
+
 test("receipt 시간은 저장 시각과 raw retention 순서를 엄격히 검증한다", async (t) => {
   for (const mutate of [
     (value) => { value.storedAt = "2026-08-03T00:02:00.000Z"; },
@@ -455,6 +521,7 @@ test("직접 실행 CLI 인자는 중복, 누락, 알 수 없는 값을 거부�
   for (const args of [
     ["--snapshot", "/a", "--snapshot", "/b", "--snapshot-sha256", "a".repeat(64), "--raw-receipt", "/c", "--seoul-snapshot", "/d"],
     ["--snapshot", "/a", "--snapshot-sha256", "a".repeat(64), "--raw-receipt", "/c"],
+    ["--repository-root", "", "--snapshot", "/a", "--snapshot-sha256", "a".repeat(64), "--raw-receipt", "/c", "--seoul-snapshot", "/d"],
     ["--unknown", "/a"],
   ]) assert.throws(() => parseKricStandardAccessibilitySnapshotRegistrationArgs(args), /CLI arguments/);
 });
