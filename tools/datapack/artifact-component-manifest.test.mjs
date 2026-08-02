@@ -44,6 +44,9 @@ function serverRouteBundleManifest() {
     timetableSha256: "d".repeat(64),
     accessibilitySha256: "e".repeat(64),
     fareSha256: "f".repeat(64),
+    provenanceSha256: "0".repeat(64),
+    compatibilitySha256: "1".repeat(64),
+    serviceTimezone: "Asia/Seoul",
     keyId: "production-v1",
     signature: {
       algorithm: "rsa-sha256-server-route-bundle-v1",
@@ -79,10 +82,16 @@ test("unknown 또는 missing top-level field를 거부한다", () => {
   assertRejectedByBoth(missing, /required field missing/);
 });
 
-test("server component digest 누락·추가와 비정상 hash를 거부한다", () => {
+test("server component와 metadata digest 누락·추가와 비정상 hash를 거부한다", () => {
   const missing = serverRouteBundleManifest();
   delete missing.fareSha256;
   assertRejectedByBoth(missing, /required field missing/);
+
+  for (const field of ["provenanceSha256", "compatibilitySha256"]) {
+    const manifest = serverRouteBundleManifest();
+    delete manifest[field];
+    assertRejectedByBoth(manifest, /required field missing/);
+  }
 
   const extra = serverRouteBundleManifest();
   extra.extraSha256 = "0".repeat(64);
@@ -91,6 +100,30 @@ test("server component digest 누락·추가와 비정상 hash를 거부한다",
   const uppercase = serverRouteBundleManifest();
   uppercase.topologySha256 = "C".repeat(64);
   assertRejectedByBoth(uppercase, /lowercase sha256 hex string/);
+
+  for (const [field, value] of [
+    ["provenanceSha256", "0".repeat(63)],
+    ["compatibilitySha256", "1".repeat(63)],
+    ["provenanceSha256", "A".repeat(64)],
+    ["compatibilitySha256", `${"1".repeat(64)} `],
+    ["provenanceSha256", `${"0".repeat(64)}\n`],
+  ]) {
+    const manifest = serverRouteBundleManifest();
+    manifest[field] = value;
+    assertRejectedByBoth(manifest, /lowercase sha256 hex string|must be a non-empty raw string/);
+  }
+});
+
+test("server service timezone의 exact value와 own field를 강제한다", () => {
+  const missing = serverRouteBundleManifest();
+  delete missing.serviceTimezone;
+  assertRejectedByBoth(missing, /required field missing/);
+
+  for (const serviceTimezone of ["UTC", "+09:00", "ROK", "Asia/Seoul ", "Asia/Seoul\n"]) {
+    const manifest = serverRouteBundleManifest();
+    manifest.serviceTimezone = serviceTimezone;
+    assertRejectedByBoth(manifest, /serviceTimezone must be Asia\/Seoul/);
+  }
 });
 
 test("server signature의 algorithm, value shape, nested field를 거부한다", () => {
@@ -149,7 +182,7 @@ test("server envelope의 signature 제외 canonical signing input을 고정한�
   const manifest = serverRouteBundleManifest();
   assert.equal(
     canonicalJson(withoutSignature(manifest)),
-    `{"accessibilitySha256":"${"e".repeat(64)}","artifactKind":"server-route-bundle","bundleId":"route-2026-08-03","fareSha256":"${"f".repeat(64)}","keyId":"production-v1","manifestVersion":1,"payloadSha256":"${"b".repeat(64)}","releaseSequence":1,"stationSetSha256":"${"a".repeat(64)}","timetableSha256":"${"d".repeat(64)}","topologySha256":"${"c".repeat(64)}"}`,
+    `{"accessibilitySha256":"${"e".repeat(64)}","artifactKind":"server-route-bundle","bundleId":"route-2026-08-03","compatibilitySha256":"${"1".repeat(64)}","fareSha256":"${"f".repeat(64)}","keyId":"production-v1","manifestVersion":1,"payloadSha256":"${"b".repeat(64)}","provenanceSha256":"${"0".repeat(64)}","releaseSequence":1,"serviceTimezone":"Asia/Seoul","stationSetSha256":"${"a".repeat(64)}","timetableSha256":"${"d".repeat(64)}","topologySha256":"${"c".repeat(64)}"}`,
   );
   assert.equal(assertValidByBoth(manifest), stationSetSha256);
 });

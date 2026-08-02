@@ -25,8 +25,9 @@ const ARTIFACTS = {
 };
 
 const COMPONENTS = ["topology", "timetable", "accessibility", "fare"];
-const ATOMIC_IDENTITY_FIELDS = ["bundleId", "releaseSequence", "stationSetSha256"];
+const ATOMIC_IDENTITY_FIELDS = ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"];
 const STATION_SET_SHA256 = "a".repeat(64);
+const SERVICE_TIMEZONE = "Asia/Seoul";
 
 function assertExactKeys(value, expected, label) {
   assert.deepEqual(Object.keys(value), expected, `${label} keys`);
@@ -63,9 +64,10 @@ function validateContract(document) {
   assert.equal(document.sharedCompatibility.pattern, "^[0-9a-f]{64}$");
   assert.equal(document.sharedCompatibility.mustMatchAcrossArtifacts, true);
 
-  assertExactKeys(document.serverRouteBundle, ["components", "atomicIdentityFields", "releaseSequence"], "serverRouteBundle");
+  assertExactKeys(document.serverRouteBundle, ["components", "atomicIdentityFields", "serviceTimezone", "releaseSequence"], "serverRouteBundle");
   assert.deepEqual(document.serverRouteBundle.components, COMPONENTS);
   assert.deepEqual(document.serverRouteBundle.atomicIdentityFields, ATOMIC_IDENTITY_FIELDS);
+  assert.equal(document.serverRouteBundle.serviceTimezone, SERVICE_TIMEZONE);
   assertExactKeys(document.serverRouteBundle.releaseSequence, ["type", "minimum"], "serverRouteBundle.releaseSequence");
   assert.deepEqual(document.serverRouteBundle.releaseSequence, { type: "integer", minimum: 1 });
 }
@@ -100,6 +102,7 @@ function validateServerComponents(components, document = contract) {
     assert.equal(Number.isInteger(component.releaseSequence), true, `${componentName}.releaseSequence must be an integer`);
     assert.ok(component.releaseSequence >= document.serverRouteBundle.releaseSequence.minimum, `${componentName}.releaseSequence must be positive`);
     assert.match(component.stationSetSha256, new RegExp(document.sharedCompatibility.pattern));
+    assert.equal(component.serviceTimezone, document.serverRouteBundle.serviceTimezone, `${componentName}.serviceTimezone must be ${document.serverRouteBundle.serviceTimezone}`);
     for (const field of document.serverRouteBundle.atomicIdentityFields) {
       assert.equal(component[field], first[field], `${componentName}.${field} must equal ${firstName}.${field}`);
     }
@@ -119,6 +122,7 @@ function validServerComponents() {
     bundleId: "route-2026-08-03",
     releaseSequence: 1,
     stationSetSha256: STATION_SET_SHA256,
+    serviceTimezone: SERVICE_TIMEZONE,
   }]));
 }
 
@@ -170,6 +174,10 @@ test("contract mutations fail closed", () => {
   const unknownServerComponent = structuredClone(contract);
   unknownServerComponent.serverRouteBundle.components.push("unknown");
   assert.throws(() => validateContract(unknownServerComponent), /unknown/);
+
+  const wrongServiceTimezone = structuredClone(contract);
+  wrongServiceTimezone.serverRouteBundle.serviceTimezone = "UTC";
+  assert.throws(() => validateContract(wrongServiceTimezone), /Asia\/Seoul/);
 });
 
 test("identity mutations reject missing or extra fields and invalid compatibility values", () => {
@@ -210,4 +218,10 @@ test("server component mutations reject missing or extra fields and non-atomic i
   const nonAtomicIdentity = validServerComponents();
   nonAtomicIdentity.accessibility.stationSetSha256 = "b".repeat(64);
   assert.throws(() => validateServerComponents(nonAtomicIdentity), /must equal topology/);
+
+  for (const serviceTimezone of ["UTC", "+09:00", "ROK", "Asia/Seoul ", "Asia/Seoul\n"]) {
+    const nonAtomicTimezone = validServerComponents();
+    nonAtomicTimezone.fare.serviceTimezone = serviceTimezone;
+    assert.throws(() => validateServerComponents(nonAtomicTimezone), /serviceTimezone must be Asia\/Seoul/);
+  }
 });
