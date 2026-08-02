@@ -195,7 +195,13 @@ const reviewedEdge = {
 test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", () => {
   const reviewedPack = {
     networkEdges: [reviewedEdge],
-    metadata: { productionCoverageEvidence: "reviewed-accessibility-sources" },
+    metadata: { productionCoverageEvidence: JSON.stringify([
+      {
+        sourceDomain: "accessibility_facilities",
+        sourceIds: ["kric-station-elevator-movement", "kric-wheelchair-lift-movement", "seoul-metro-accessibility"],
+      },
+      { sourceDomain: "station_line_membership", sourceIds: ["seoulmetro-station-line-info"] },
+    ]) },
   };
   const officialOdFareQuotes = [{ originStationId: "station-sadang", destinationStationId: "station-sangnoksu" }];
   const routeServiceArtifactEvidence = [{ serviceClass: "ITX_CHEONGCHUN", admissionStatus: "MISSING" }];
@@ -226,7 +232,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
       sourceSnapshotId: "baseline-exit-source-capital-20260619",
     }],
     sourceInventory: [
-      { id: "seoul-metro-official-od-fares" },
+      { id: "seoulmetro-station-line-info" },
       { id: "kric-station-elevator-movement" },
       { id: "kric-wheelchair-lift-movement" },
     ],
@@ -239,19 +245,32 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     ...reviewedPack,
     facilities: [],
     stationFacilityEvidence: [],
-    sourceInventory: [],
+    sourceInventory: [
+      { id: "kric-station-convenience-standard" },
+      { id: "seoul-metro-accessibility" },
+    ],
   });
   assert.deepEqual(synced.packs[0].networkEdges, [reviewedEdge]);
   assert.equal(synced.packs[0].internalRouteEdges[0].accessibilityStatus, "UNKNOWN");
   assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, false);
   assert.deepEqual(synced.packs[0].officialOdFareQuotes, officialOdFareQuotes);
   assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, routeServiceArtifactEvidence);
-  assert.deepEqual(synced.packs[0].sourceInventory, [{ id: "seoul-metro-official-od-fares" }]);
+  assert.deepEqual(synced.packs[0].sourceInventory, [
+    { id: "seoulmetro-station-line-info" },
+    { id: "kric-station-convenience-standard" },
+    { id: "seoul-metro-accessibility" },
+  ]);
   assert.deepEqual(synced.packs[0].dataQualityRecords, [
     { targetType: "facility", targetId: "surviving-toilet", qualityLevel: "FIELD_STALE" },
     { targetType: "station_exit", targetId: "exit-sadang-1", qualityLevel: "FIELD_VERIFIED" },
   ]);
-  assert.equal(synced.packs[0].metadata.productionCoverageEvidence, "reviewed-accessibility-sources");
+  const coverageEvidence = JSON.parse(synced.packs[0].metadata.productionCoverageEvidence);
+  assert.deepEqual(coverageEvidence, [
+    { sourceDomain: "accessibility_facilities", sourceIds: ["seoul-metro-accessibility"] },
+    { sourceDomain: "station_line_membership", sourceIds: ["seoulmetro-station-line-info"] },
+  ]);
+  assert.ok(coverageEvidence.flatMap(({ sourceIds }) => sourceIds)
+    .every((sourceId) => synced.packs[0].sourceInventory.some(({ id }) => id === sourceId)));
 
   const database = new DatabaseSync(":memory:");
   database.exec(`

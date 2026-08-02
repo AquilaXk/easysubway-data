@@ -233,7 +233,12 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   pack.sourceInventory = pack.sourceInventory
     .filter(({ id }) => !replacedSourceIds.has(id) && id !== "kric-station-convenience-standard")
     .concat(freshSources);
-  pack.metadata.productionCoverageEvidence = reviewedPack.metadata.productionCoverageEvidence;
+  const sourceInventoryIds = new Set(pack.sourceInventory.map(({ id }) => id));
+  const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
+  pack.metadata.productionCoverageEvidence = JSON.stringify(productionCoverageEvidence.map((entry) => ({
+    ...entry,
+    sourceIds: entry.sourceIds.filter((sourceId) => !replacedSourceIds.has(sourceId) || sourceInventoryIds.has(sourceId)),
+  })));
   pack.minimumTableRows.facilities = pack.facilities.length;
   pack.minimumTableRows.station_facility_evidence = pack.stationFacilityEvidence.length;
   return canonical;
