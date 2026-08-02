@@ -29,7 +29,7 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256", "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "keyId", "signature"],
+      "required": ["manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256", "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "provenanceSha256", "compatibilitySha256", "serviceTimezone", "keyId", "signature"],
       "properties": {
         "manifestVersion": { "const": 1 },
         "artifactKind": { "const": "server-route-bundle" },
@@ -41,6 +41,9 @@
         "timetableSha256": { "$ref": "#/$defs/sha256" },
         "accessibilitySha256": { "$ref": "#/$defs/sha256" },
         "fareSha256": { "$ref": "#/$defs/sha256" },
+        "provenanceSha256": { "$ref": "#/$defs/sha256" },
+        "compatibilitySha256": { "$ref": "#/$defs/sha256" },
+        "serviceTimezone": { "const": "Asia/Seoul" },
         "keyId": { "$ref": "#/$defs/rawString" },
         "signature": {
           "type": "object",

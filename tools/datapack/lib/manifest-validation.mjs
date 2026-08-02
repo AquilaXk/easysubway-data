@@ -132,7 +132,8 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
       : artifactKind === "server-route-bundle"
         ? [
           "manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256",
-          "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "keyId", "signature",
+          "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "provenanceSha256",
+          "compatibilitySha256", "serviceTimezone", "keyId", "signature",
         ]
         : null;
   if (!requiredFields) {
@@ -154,6 +155,11 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
     requiredArtifactComponentSha256(manifest.timetableSha256, "timetableSha256");
     requiredArtifactComponentSha256(manifest.accessibilitySha256, "accessibilitySha256");
     requiredArtifactComponentSha256(manifest.fareSha256, "fareSha256");
+    requiredArtifactComponentSha256(manifest.provenanceSha256, "provenanceSha256");
+    requiredArtifactComponentSha256(manifest.compatibilitySha256, "compatibilitySha256");
+    if (manifest.serviceTimezone !== "Asia/Seoul") {
+      throw new Error("serviceTimezone must be Asia/Seoul");
+    }
     requiredArtifactComponentRawString(manifest.keyId, "keyId");
     validateArtifactComponentSignature(manifest.signature);
   }

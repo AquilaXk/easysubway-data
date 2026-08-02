@@ -25,7 +25,8 @@
   },
   "serverRouteBundle": {
     "components": ["topology", "timetable", "accessibility", "fare"],
-    "atomicIdentityFields": ["bundleId", "releaseSequence", "stationSetSha256"],
+    "atomicIdentityFields": ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
+    "serviceTimezone": "Asia/Seoul",
     "releaseSequence": {
       "type": "integer",
       "minimum": 1
