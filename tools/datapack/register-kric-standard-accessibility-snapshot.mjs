@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
@@ -9,7 +10,7 @@ import { buildSnapshotDiff, requiredCredentialFreeObjectUri, validateLineage } f
 
 const SOURCE_ID = "kric-station-convenience-standard";
 const SHA256 = /^[0-9a-f]{64}$/;
-const REPOSITORY_ROOT = path.resolve(new URL("../..", import.meta.url).pathname);
+const REPOSITORY_ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
 async function syncedWrite(file, bytes) {
@@ -39,7 +40,7 @@ function transactionPaths(repositoryRoot) {
   return { root, journal: path.join(root, "tools/datapack/.kric-standard-registration-transaction.json") };
 }
 
-export async function recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot = REPOSITORY_ROOT, atomicReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }) } = {}) {
+export async function recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot = REPOSITORY_ROOT, atomicReplaceImpl = atomicReplace, cleanupTransactionDirectoryImpl = (directory) => rm(directory, { recursive: true, force: true }), syncDirectoryImpl = syncDirectory } = {}) {
   const { root, journal } = transactionPaths(repositoryRoot);
   let entry;
   try { entry = JSON.parse(await readFile(journal, "utf8")); } catch (error) {
@@ -72,6 +73,7 @@ export async function recoverKricStandardAccessibilitySnapshotTransaction({ repo
         await atomicReplaceImpl(target, await readFile(backup), "recovery");
       } else {
         await rm(target, { force: true });
+        await syncDirectoryImpl(path.dirname(target));
       }
     }
     await rm(journal, { force: true });

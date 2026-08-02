@@ -148,9 +148,9 @@ export async function collectKricAccessibilitySnapshots({
 
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
-  if (!operation || snapshot?.artifactKind !== "kric-accessibility-snapshot"
+  if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
     || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "PASS"
-    || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
+    || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST" || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
     || typeof snapshot.snapshotId !== "string" || typeof snapshot.sourceId !== "string"
     || !Number.isFinite(Date.parse(snapshot.capturedAt)) || !Number.isFinite(Date.parse(snapshot.observedAt))
     || !Number.isFinite(Date.parse(snapshot.freshUntil))) {

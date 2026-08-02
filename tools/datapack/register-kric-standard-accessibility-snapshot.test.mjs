@@ -4,11 +4,12 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { collectKricAccessibilitySnapshots } from "./collect-kric-accessibility-snapshots.mjs";
 import { recoverKricStandardAccessibilitySnapshotTransaction, registerKricStandardAccessibilitySnapshot } from "./register-kric-standard-accessibility-snapshot.mjs";
 
-const root = path.resolve(new URL("../..", import.meta.url).pathname);
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registryPaths = [
   "tools/datapack/source-inventory.json",
   "tools/datapack/release/source-snapshots.json",
@@ -230,11 +231,23 @@ test("rollback replace 실패는 RECOVERY_REQUIRED journal을 보존하고 expor
     rollbackAtomicReplaceImpl: async () => { throw new Error("rollback replace"); },
   }), /RECOVERY_REQUIRED/);
   await readFile(journalPath(values));
+  const syncCalls = [];
   const outcome = await recoverKricStandardAccessibilitySnapshotTransaction({
     repositoryRoot: path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath)))),
     cleanupTransactionDirectoryImpl: async () => { throw new Error("recovery cleanup failed"); },
+    syncDirectoryImpl: async (directoryPath) => {
+      const journalExists = await readFile(journalPath(values)).then(
+        () => true,
+        (error) => {
+          if (error?.code === "ENOENT") return false;
+          throw error;
+        },
+      );
+      syncCalls.push([directoryPath, journalExists]);
+    },
   });
   assert.equal(outcome, "PREPARED");
+  assert.deepEqual(syncCalls[0], [path.dirname(values.snapshotTargetPath), true]);
   await assertUnchanged(values);
   await assert.rejects(readFile(values.snapshotTargetPath), { code: "ENOENT" });
   await assert.rejects(readFile(journalPath(values)), { code: "ENOENT" });

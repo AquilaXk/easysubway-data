@@ -11,6 +11,7 @@ import {
   buildKricAccessibilityRoster,
   collectKricAccessibilitySnapshots,
   loadCanonicalStationLinesFromBundledIndex,
+  validateKricAccessibilitySnapshotIdentity,
   validateKricAccessibilityProviderGapEvidence,
 } from "./collect-kric-accessibility-snapshots.mjs";
 
@@ -250,6 +251,14 @@ test("표준 편의정보 row는 request tuple envelope로 provenance를 보존�
 
   assert.equal(snapshots[0].queries[0].status, "PRESENT");
   assert.deepEqual(snapshots[0].queries[0].canonicalMappings, standardRoster[0].canonicalMappings);
+  assert.throws(
+    () => validateKricAccessibilitySnapshotIdentity({ ...snapshots[0], schemaVersion: 2 }),
+    /KRIC accessibility snapshot identity is invalid/,
+  );
+  assert.throws(
+    () => validateKricAccessibilitySnapshotIdentity({ ...snapshots[0], absenceEvidenceMode: "PARTIAL_LIST" }),
+    /KRIC accessibility snapshot identity is invalid/,
+  );
 });
 
 test("소비하지 않는 provider 필드 drift는 raw hash만 바꾼다", async () => {
