@@ -116,22 +116,20 @@ test("unsafe release sequence을 canonicalization 전에 거부한다", () => {
 });
 
 test("raw string contract와 inherited required field를 fail closed한다", () => {
-  for (const [field, mutate] of [
-    ["artifactKind", (manifest) => { manifest.artifactKind = " map-pack"; }],
-    ["mapPackId", (manifest) => { manifest.mapPackId = " map-2026-08-03"; }],
-    ["mapPackId final newline", (manifest) => { manifest.mapPackId = "map-2026-08-03\n"; }],
-    ["stationSetSha256", (manifest) => { manifest.stationSetSha256 = ` ${stationSetSha256}`; }],
-    ["stationSetSha256 final newline", (manifest) => { manifest.stationSetSha256 = `${stationSetSha256}\n`; }],
-    ["payloadSha256", (manifest) => { manifest.payloadSha256 = `${payloadSha256} `; }],
-    ["bundleId", (manifest) => { manifest.bundleId = " route-2026-08-03"; }],
-    ["keyId", (manifest) => { manifest.keyId = "production-v1 "; }],
-    ["signature.algorithm", (manifest) => { manifest.signature.algorithm = " rsa-sha256-server-route-bundle-v1"; }],
-    ["signature.value", (manifest) => { manifest.signature.value = "AA-_09 "; }],
-    ["signature.value final newline", (manifest) => { manifest.signature.value = "AA-_09\n"; }],
+  for (const [factory, field, mutate] of [
+    [mapPackManifest, "artifactKind", (manifest) => { manifest.artifactKind = " map-pack"; }],
+    [mapPackManifest, "mapPackId", (manifest) => { manifest.mapPackId = " map-2026-08-03"; }],
+    [mapPackManifest, "mapPackId final newline", (manifest) => { manifest.mapPackId = "map-2026-08-03\n"; }],
+    [mapPackManifest, "stationSetSha256", (manifest) => { manifest.stationSetSha256 = ` ${stationSetSha256}`; }],
+    [mapPackManifest, "stationSetSha256 final newline", (manifest) => { manifest.stationSetSha256 = `${stationSetSha256}\n`; }],
+    [mapPackManifest, "payloadSha256", (manifest) => { manifest.payloadSha256 = `${payloadSha256} `; }],
+    [serverRouteBundleManifest, "bundleId", (manifest) => { manifest.bundleId = " route-2026-08-03"; }],
+    [serverRouteBundleManifest, "keyId", (manifest) => { manifest.keyId = "production-v1 "; }],
+    [serverRouteBundleManifest, "signature.algorithm", (manifest) => { manifest.signature.algorithm = " rsa-sha256-server-route-bundle-v1"; }],
+    [serverRouteBundleManifest, "signature.value", (manifest) => { manifest.signature.value = "AA-_09 "; }],
+    [serverRouteBundleManifest, "signature.value final newline", (manifest) => { manifest.signature.value = "AA-_09\n"; }],
   ]) {
-    const manifest = field.startsWith("map") || field === "artifactKind" || field === "stationSetSha256" || field === "payloadSha256"
-      ? mapPackManifest()
-      : serverRouteBundleManifest();
+    const manifest = factory();
     mutate(manifest);
     assertRejectedByBoth(manifest, /must be a non-empty raw string|artifactKind is unsupported|base64url string|algorithm is unsupported/);
   }
