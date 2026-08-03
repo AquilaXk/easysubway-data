@@ -657,6 +657,10 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
     /# merge-state-dispatch-begin\n([\s\S]*?)\n\s+# merge-state-dispatch-end/,
   )?.[1];
   assert.ok(dispatchBlock, 'merge state dispatch must stay testable');
+  const failClosedHelper = workflow.match(
+    /# fail-closed-pr-begin\n([\s\S]*?)\n\s+# fail-closed-pr-end/,
+  )?.[1];
+  assert.ok(failClosedHelper, 'fail-closed helper must stay testable');
 
   // gh 호출을 기록만 하는 스텁으로 대체해 상태별 분기 결과를 실측한다. 분기는 큐 루프
   // 안에 있으므로 `continue`가 유효하도록 1회 루프로 감싸고, 루프를 빠져나오면
@@ -668,6 +672,7 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       newHead = 'updated-head',
       mergeFails = false,
       updateFails = false,
+      commentFails = false,
       ciDispatchFails = false,
     } = {},
   ) => {
@@ -677,8 +682,10 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
       `    *"pr view"*headRefOid*) printf '%s\\n' ${JSON.stringify(newHead)} ;;`,
-      `    "pr merge"*) ${mergeFails ? 'return 1' : ':'} ;;`,
-      `    *update-branch*) ${updateFails ? 'return 1' : ':'} ;;`,
+      `    "pr merge"*) ${mergeFails ? 'return 17' : ':'} ;;`,
+      `    *update-branch*) ${updateFails ? 'return 29' : ':'} ;;`,
+      `    "pr comment"*) ${commentFails ? 'return 1' : ':'} ;;`,
+      `    "pr edit"*) : ;;`,
       `    "workflow run"*) ${ciDispatchFails ? 'return 1' : ':'} ;;`,
       '  esac',
       '}',
@@ -689,6 +696,10 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       `head_repo=${JSON.stringify(headRepo)}`,
       'head_ref=feature',
       `merge_state=${JSON.stringify(mergeState)}`,
+      'GITHUB_SERVER_URL=https://github.example',
+      'GITHUB_REPOSITORY=o/r',
+      'GITHUB_RUN_ID=123456',
+      dedent(failClosedHelper),
       'for _ in 1; do',
       dedent(dispatchBlock, 12),
       'done',
@@ -699,6 +710,8 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       merged: result.calls.includes('gh pr merge'),
       updatedBranch: result.calls.includes('update-branch'),
       dispatchedCi: result.calls.includes('workflow run ci.yml'),
+      commented: result.calls.includes('gh pr comment'),
+      removedLabel: result.calls.includes('gh pr edit') && result.calls.includes('--remove-label automerge'),
       skipped: result.calls.includes('SKIPPED'),
       warned: (result.stdout + result.stderr).includes('::warning::'),
       calls: result.calls,
@@ -715,10 +728,21 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
         merged: result.merged,
         updatedBranch: result.updatedBranch,
         dispatchedCi: result.dispatchedCi,
+        commented: result.commented,
+        removedLabel: result.removedLabel,
         skipped: result.skipped,
         warned: result.warned,
       },
-      { status: 0, merged: true, updatedBranch: false, dispatchedCi: false, skipped: false, warned: false },
+      {
+        status: 0,
+        merged: true,
+        updatedBranch: false,
+        dispatchedCi: false,
+        commented: false,
+        removedLabel: false,
+        skipped: false,
+        warned: false,
+      },
       `${mergeState} must proceed to merge`,
     );
     // 이 저장소는 auto-merge가 꺼져 있으므로 즉시 병합이고, head 고정은 서버가 한다.
@@ -730,12 +754,16 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   assert.equal(behind.merged, false);
   assert.equal(behind.updatedBranch, true);
   assert.equal(behind.dispatchedCi, true);
+  assert.equal(behind.commented, false);
+  assert.equal(behind.removedLabel, false);
   // update-branch는 비동기라 bounded wait 안에 head가 안 바뀔 수 있다. 계약 위반이
   // 아니라 대기 상태이므로 stale ref로 CI를 쏘지 않고 실패하지도 않는다.
   const behindPending = runDispatch('BEHIND', { newHead: 'old-head' });
   assert.equal(behindPending.status, 0);
   assert.equal(behindPending.updatedBranch, true);
   assert.equal(behindPending.dispatchedCi, false);
+  assert.equal(behindPending.commented, false);
+  assert.equal(behindPending.removedLabel, false);
   // 병합할 수 없는 상태는 전부 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
   // 그 실패 check가 PR을 UNSTABLE로 만들고 큐 전체가 뒤의 후보까지 굶긴다.
   for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
@@ -744,6 +772,8 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
     assert.equal(result.merged, false);
     assert.equal(result.skipped, true, `${mergeState} must skip to the next candidate`);
     assert.equal(result.warned, false);
+    assert.equal(result.commented, false);
+    assert.equal(result.removedLabel, false);
   }
   // 사람이 봐야 하는 상태는 건너뛰되 신호를 남긴다. 실행은 실패시키지 않는다.
   for (const mergeState of ['DIRTY', 'SOME_NEW_STATE']) {
@@ -752,17 +782,35 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
     assert.equal(result.merged, false);
     assert.equal(result.skipped, true);
     assert.equal(result.warned, true, `${mergeState} must skip with an operator-visible warning`);
+    assert.equal(result.commented, false);
+    assert.equal(result.removedLabel, false);
   }
-  // 병합·base 갱신 API 호출 실패도 다른 상태와 같게 다룬다. 판정 이후의 head 변경·
-  // ruleset 거부·일시적 오류는 전부 "다음 트리거에서 다시 판정"으로 수렴하며, 여기서
-  // 실행을 죽이면 그 실패 check가 다음 판정 입력을 오염시킨다.
+  // 병합·base 갱신 API 호출 실패는 fail closed다. 실패를 PR conversation에 남기고
+  // automerge 라벨을 제거한 뒤, coordinator job 자체를 실패시킨다.
   const mergeFailed = runDispatch('CLEAN', { mergeFails: true });
-  assert.equal(mergeFailed.status, 0, 'merge call failure must not fail the run');
-  assert.equal(mergeFailed.warned, true, 'merge call failure must stay operator-visible');
+  assert.notEqual(mergeFailed.status, 0, 'merge call failure must fail the run');
+  assert.equal(mergeFailed.commented, true, 'merge failure must leave a PR comment');
+  assert.equal(mergeFailed.removedLabel, true, 'merge failure must remove the automerge label');
+  assert.match(mergeFailed.calls, /PR #26 merge 실패: 상태 CLEAN, 종료 코드 17\./);
+  assert.match(mergeFailed.calls, /https:\/\/github\.example\/o\/r\/actions\/runs\/123456/);
+  assert.match(mergeFailed.calls, /automerge 라벨을 제거합니다/);
   const updateFailed = runDispatch('BEHIND', { updateFails: true });
-  assert.equal(updateFailed.status, 0, 'update-branch failure must not fail the run');
-  assert.equal(updateFailed.warned, true, 'update-branch failure must stay operator-visible');
+  assert.notEqual(updateFailed.status, 0, 'update-branch failure must fail the run');
+  assert.equal(updateFailed.commented, true, 'update-branch failure must leave a PR comment');
+  assert.equal(updateFailed.removedLabel, true, 'update-branch failure must remove the automerge label');
+  assert.match(
+    updateFailed.calls,
+    /PR #26 update-branch 실패: 상태 BEHIND, 종료 코드 29\./,
+  );
+  assert.match(updateFailed.calls, /https:\/\/github\.example\/o\/r\/actions\/runs\/123456/);
+  assert.match(updateFailed.calls, /automerge 라벨을 제거합니다/);
   assert.equal(updateFailed.dispatchedCi, false, '갱신에 실패했으면 CI를 쏘지 않는다');
+
+  // comment가 실패해도 라벨 제거는 건너뛰지 않는다. 어느 실패든 job은 fail closed다.
+  const commentFailed = runDispatch('CLEAN', { mergeFails: true, commentFails: true });
+  assert.notEqual(commentFailed.status, 0);
+  assert.equal(commentFailed.commented, true);
+  assert.equal(commentFailed.removedLabel, true);
 
   // CI dispatch 호출 실패도 같다. base는 이미 갱신됐고 다음 트리거가 다시 판정한다.
   const ciDispatchFailed = runDispatch('BEHIND', { ciDispatchFails: true });
