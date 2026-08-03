@@ -7,7 +7,7 @@
 //   [--evidence <server-timetable-snapshot-evidence.json>] \
 //   [--output <evidence.json>] [--metrics-output <metrics.prom>] \
 //   [--warn-seconds N] [--critical-seconds N] [--refresh-lead-seconds N] \
-//   [--github-output <path>] [--fail-on-critical]
+//   [--github-output <path>]
 import { readFile, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -191,8 +191,7 @@ export async function runCheckTimetableSnapshotFreshnessCli({
     `remainingSeconds=${result.remainingSeconds} expired=${result.expired} ` +
     `shouldRefresh=${result.shouldRefresh} freshUntil=${result.freshUntil}`,
   );
-  const failOnCritical = args["fail-on-critical"] === true;
-  return { result, serviceDates, exitCode: failOnCritical && result.severity === "critical" ? 1 : 0 };
+  return { result, serviceDates, exitCode: result.severity === "critical" ? 1 : 0 };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

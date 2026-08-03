@@ -47,6 +47,7 @@ jobs:
           tools/datapack/server-route-bundle-build-contract.test.mjs
           tools/datapack/artifact-component-table-layout.test.mjs
           tools/datapack/emit-artifact-components.test.mjs
+          tools/datapack/check-timetable-snapshot-freshness.test.mjs
           tools/datapack/build-data-component-manifest.test.mjs
           tools/ci/require-workflow-artifact.test.mjs
           tools/release/validate-promotion-request.test.mjs
