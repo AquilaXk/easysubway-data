@@ -172,6 +172,12 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   assert.equal(await exists(path.join(temp, "reversed-entry")), false);
   mutate("DELETE FROM network_edges WHERE id='reversed-entry'");
 
+  mutate("INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type) VALUES('station-walkway','s1','s1:l1','WALKWAY')");
+  await writeBindings(temp, source, current, spec);
+  await assert.rejects(() => run("station-walkway"), /network edge endpoint mismatch/);
+  assert.equal(await exists(path.join(temp, "station-walkway")), false);
+  mutate("DELETE FROM network_edges WHERE id='station-walkway'");
+
   mutate("INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('orphan','고아','고아')");
   await writeBindings(temp, source, current, spec);
   const beforeOrphanTemps = await taskTemps(temp);
