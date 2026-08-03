@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "server-route-bundle-build-contract",
+  "manifestLifecycle": {
+    "activeFromPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$",
+    "freshUntilPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$",
+    "ordering": "activeFrom < freshUntil",
+    "clockEvaluation": "backend-active-bundle-only",
+    "schemaCompatibility": { "backendMin": 3, "backendMax": 3 }
+  },
+  "capitalMap": {
+    "payloadPath": "payload/metropolitan.svg",
+    "basemapManifestPath": "tools/route-map/basemap-build-manifest.json",
+    "mapId": "seoul",
+    "sourcePath": "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
+    "sourceSha256": "821b636eac0f3b04c5baa995d39ae938d7648d04f7c32802fbef22e60537bf08"
+  },
+  "compressionProfile": {
+    "format": "zstd",
+    "api": "node:zlib.zstdCompressSync",
+    "requiredNodeMajor": 24,
+    "compressionLevel": 10,
+    "checksumFlag": 1,
+    "dictionary": null,
+    "runtimeIdentityFields": ["node", "zstd"],
+    "rebuildCount": 3,
+    "reproducibilityScope": "same-input-contract-runtime"
+  },
+  "metadata": {
+    "serialization": {
+      "encoding": "utf-8",
+      "canonicalization": "canonicalJson",
+      "bom": false,
+      "trailingNewline": false
+    },
+    "provenance": {
+      "path": "provenance.json",
+      "exactFields": ["schemaVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone", "activeFrom", "freshUntil", "builtAt", "buildSpecSha256", "sourceSnapshotSetHash", "sourceInventorySha256", "sourceSnapshotIds"],
+      "fieldTypes": {
+        "schemaVersion": "integer",
+        "artifactKind": "raw-string",
+        "bundleId": "raw-string",
+        "releaseSequence": "safe-positive-integer",
+        "stationSetSha256": "lowercase-sha256",
+        "serviceTimezone": "raw-string",
+        "activeFrom": "exact-kst-millisecond-instant",
+        "freshUntil": "exact-kst-millisecond-instant",
+        "builtAt": "exact-utc-millisecond-instant",
+        "buildSpecSha256": "lowercase-sha256",
+        "sourceSnapshotSetHash": "lowercase-sha256",
+        "sourceInventorySha256": "lowercase-sha256",
+        "sourceSnapshotIds": "non-empty-raw-string-array"
+      },
+      "bindings": {
+        "schemaVersion": { "source": "constant", "value": 1 },
+        "artifactKind": { "source": "constant", "value": "server-route-bundle-provenance" },
+        "bundleId": { "source": "manifest-field", "field": "bundleId" },
+        "releaseSequence": { "source": "manifest-field", "field": "releaseSequence" },
+        "stationSetSha256": { "source": "manifest-field", "field": "stationSetSha256" },
+        "serviceTimezone": { "source": "constant", "value": "Asia/Seoul" },
+        "activeFrom": { "source": "manifest-field", "field": "activeFrom" },
+        "freshUntil": { "source": "manifest-field", "field": "freshUntil" },
+        "builtAt": { "source": "producer-input", "field": "builtAt" },
+        "buildSpecSha256": { "source": "raw-file-sha256", "path": "tools/datapack/release/candidate-build-spec.json" },
+        "sourceSnapshotSetHash": { "source": "validated-json-field", "path": "tools/datapack/release/candidate-build-spec.json", "field": "sourceSnapshotSetHash", "validator": "validateSourceSnapshotFreshness" },
+        "sourceInventorySha256": { "source": "validated-json-field", "path": "tools/datapack/release/candidate-build-spec.json", "field": "sourceInventorySha256", "validator": "validateSourceSnapshotFreshness" },
+        "sourceSnapshotIds": { "source": "validated-json-field", "path": "tools/datapack/release/candidate-build-spec.json", "field": "sourceSnapshotIds", "validator": "validateSourceSnapshotFreshness", "transform": "utf8-bytewise-sorted-unique" }
+      }
+    },
+    "compatibility": {
+      "path": "compatibility.json",
+      "exactFields": ["schemaVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone", "manifestVersion", "tableLayoutSchemaVersion", "sourceSchemaPath", "sourceSqliteUserVersion", "sourceSchemaSha256", "schemaCompatibility", "compressionProfile", "encoderRuntime"],
+      "fieldTypes": {
+        "schemaVersion": "integer",
+        "artifactKind": "raw-string",
+        "bundleId": "raw-string",
+        "releaseSequence": "safe-positive-integer",
+        "stationSetSha256": "lowercase-sha256",
+        "serviceTimezone": "raw-string",
+        "manifestVersion": "integer",
+        "tableLayoutSchemaVersion": "integer",
+        "sourceSchemaPath": "repository-relative-path",
+        "sourceSqliteUserVersion": "safe-nonnegative-integer",
+        "sourceSchemaSha256": "lowercase-sha256",
+        "schemaCompatibility": "exact-object",
+        "compressionProfile": "exact-object",
+        "encoderRuntime": "exact-object"
+      },
+      "bindings": {
+        "schemaVersion": { "source": "constant", "value": 1 },
+        "artifactKind": { "source": "constant", "value": "server-route-bundle-compatibility" },
+        "bundleId": { "source": "manifest-field", "field": "bundleId" },
+        "releaseSequence": { "source": "manifest-field", "field": "releaseSequence" },
+        "stationSetSha256": { "source": "manifest-field", "field": "stationSetSha256" },
+        "serviceTimezone": { "source": "constant", "value": "Asia/Seoul" },
+        "manifestVersion": { "source": "constant", "value": 1 },
+        "tableLayoutSchemaVersion": { "source": "json-pointer", "path": "contracts/datapack/artifact-component-table-layout.json", "pointer": "/schemaVersion" },
+        "sourceSchemaPath": { "source": "json-pointer", "path": "contracts/datapack/artifact-component-table-layout.json", "pointer": "/serverRouteBundle/sourceSchema/path" },
+        "sourceSqliteUserVersion": { "source": "json-pointer", "path": "contracts/datapack/artifact-component-table-layout.json", "pointer": "/serverRouteBundle/sourceSchema/sqliteUserVersion", "verify": "sqlite-pragma-user-version" },
+        "sourceSchemaSha256": { "source": "json-pointer", "path": "contracts/datapack/artifact-component-table-layout.json", "pointer": "/serverRouteBundle/sourceSchema/sha256", "verify": "raw-file-sha256" },
+        "schemaCompatibility": { "source": "manifest-field", "field": "schemaCompatibility" },
+        "compressionProfile": { "source": "build-contract-field", "field": "compressionProfile" },
+        "encoderRuntime": { "source": "process-versions", "fields": ["node", "zstd"] }
+      }
+    }
+  }
+}
