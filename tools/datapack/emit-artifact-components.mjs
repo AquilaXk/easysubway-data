@@ -214,12 +214,10 @@ function requiredUniqueKeys(source, presentTables, selected) {
 }
 function groupedForeignKeys(source, table) { const groups = new Map(); for (const row of source.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all()) { const group = groups.get(row.id) ?? { table: row.table, from: [], to: [], onUpdate: row.on_update, onDelete: row.on_delete, match: row.match }; group.from[row.seq] = row.from; group.to[row.seq] = row.to; groups.set(row.id, group); } return [...groups.values()]; }
 function validateComponent(db, name, layout) {
-  validateLocalReferences(db, name);
   if (db.prepare("PRAGMA foreign_key_check").all().length) throw new Error(`${name} component foreign key mismatch`);
   const identity = db.prepare("SELECT * FROM artifact_component_identity").all(); if (identity.length !== 1) throw new Error(`${name} component identity mismatch`);
   if (name === "topology") validateNetworkEdges(db);
 }
-function validateLocalReferences(db, name) { for (const table of [...Object.keys(REFERENCES), ...COMPONENTS[name]]) for (const foreign of groupedForeignKeys(db, table)) { const rows = db.prepare(`SELECT * FROM ${quote(table)}`).all(); const target = db.prepare(`SELECT 1 FROM ${quote(foreign.table)} WHERE ${foreign.to.map((column) => `${quote(column)} IS ?`).join(" AND ")}`); for (const row of rows) { const values = foreign.from.map((column) => row[column]); if (values.some((value) => value == null)) continue; if (!target.get(...values)) throw new Error(`${name} local foreign key mismatch`); } } }
 function validateBundleReferences(db, layout) {
   for (const reference of layout.crossComponentReferences) {
     const [sourceComponent, sourceTable, sourceColumn] = reference.source.split(".");
