@@ -47,6 +47,7 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   const catalogRoot = path.join(temp, "one", "station-catalog-pack");
   const catalogManifest = JSON.parse(await readFile(path.join(catalogRoot, "manifest.json"), "utf8"));
   assert.equal(catalogManifest.payloadSha256, await payloadDigest(catalogRoot));
+  assert.equal((await readFile(path.join(catalogRoot, "payload/catalog.sqlite"))).readUInt32BE(96), 3053000);
   const catalog = new DatabaseSync(path.join(catalogRoot, "payload/catalog.sqlite"), { readOnly: true });
   assert.deepEqual(catalog.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name COLLATE BINARY").all().map((row) => row.name), ["lines", "station_aliases", "station_lines", "station_search_index", "stations"]);
   assert.deepEqual(catalog.prepare("PRAGMA table_info(stations)").all().map((column) => column.name), ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"]);

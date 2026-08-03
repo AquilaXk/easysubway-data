@@ -133,7 +133,7 @@ async function emitCatalog(out, source, ids, stationSetSha256) {
   project(source, target, "stations", ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"], ["id"]); project(source, target, "station_aliases", ["station_id", "alias", "normalized_alias"], ["station_id", "alias", "normalized_alias"]); project(source, target, "lines", ["id", "name_ko", "name_en"], ["id"]); project(source, target, "station_lines", ["station_id", "line_id", "station_code", "line_sequence"], ["station_id", "line_id"]);
   const index = [...source.prepare("SELECT id AS station_id,name_ko AS token,normalized_name AS normalized_token,'STATION_NAME' AS source_kind FROM stations").all(), ...source.prepare("SELECT station_id,alias AS token,normalized_alias AS normalized_token,'STATION_ALIAS' AS source_kind FROM station_aliases").all()].sort((a, b) => tupleCompare(a, b, ["station_id", "source_kind", "normalized_token", "token"]));
   const insert = target.prepare("INSERT OR IGNORE INTO station_search_index VALUES(?,?,?,?)"); for (const row of index) insert.run(row.station_id, row.token, row.normalized_token, row.source_kind);
-  finishSqlite(target); target.close();
+  finishSqlite(target); target.close(); await normalizeHeader(file);
   const manifest = { manifestVersion: 1, artifactKind: "station-catalog-pack", catalogPackId: ids.catalogPackId, stationSetSha256, payloadSha256: await inventory(artifact, new Set(["payload/catalog.sqlite"])) };
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.json"), manifest);
 }
@@ -171,7 +171,14 @@ function copyTable(source, target, table, projection = undefined, presentTables 
   for (const foreign of groupedForeignKeys(source, table)) if (presentTables?.has(foreign.table) && foreign.from.every((column) => columns.includes(column))) definitions.push(`FOREIGN KEY (${foreign.from.map(quote).join(",")}) REFERENCES ${quote(foreign.table)} (${foreign.to.map(quote).join(",")}) ON UPDATE ${foreign.onUpdate} ON DELETE ${foreign.onDelete} MATCH ${foreign.match}`);
   target.exec(`CREATE TABLE ${quote(table)} (${definitions.join(",")})`);
   const select = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${columns.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`);
-  for (const row of source.prepare(select).all()) insert.run(...columns.map((column) => row[column]));
+  target.exec("BEGIN");
+  try {
+    for (const row of source.prepare(select).all()) insert.run(...columns.map((column) => row[column]));
+    target.exec("COMMIT");
+  } catch (error) {
+    target.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function groupedForeignKeys(source, table) { const groups = new Map(); for (const row of source.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all()) { const group = groups.get(row.id) ?? { table: row.table, from: [], to: [], onUpdate: row.on_update, onDelete: row.on_delete, match: row.match }; group.from[row.seq] = row.from; group.to[row.seq] = row.to; groups.set(row.id, group); } return [...groups.values()]; }
@@ -200,7 +207,7 @@ function endpoint(value, stations, pairs) { if (typeof value !== "string" || !va
 function sqliteProfile(db) { db.exec("PRAGMA page_size=4096; PRAGMA auto_vacuum=NONE; PRAGMA encoding='UTF-8'; PRAGMA foreign_keys=OFF;"); }
 function finishSqlite(db) { db.exec("PRAGMA user_version=18; VACUUM;"); }
 async function normalizeHeader(file) { const value = await readFile(file); value.writeUInt32BE(3053000, 96); await writeFile(file, value); }
-function project(source, target, table, columns, order) { const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); const sql = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${order.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; for (const row of source.prepare(sql).all()) insert.run(...columns.map((column) => row[column])); }
+function project(source, target, table, columns, order) { const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); const sql = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${order.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; target.exec("BEGIN"); try { for (const row of source.prepare(sql).all()) insert.run(...columns.map((column) => row[column])); target.exec("COMMIT"); } catch (error) { target.exec("ROLLBACK"); throw error; } }
 function stationSetDigest(db) { return sha(Buffer.from(canonicalJson([...new Set(db.prepare("SELECT id FROM stations ORDER BY id COLLATE BINARY").all().map((row) => row.id))].sort(bytes)))); }
 async function inventory(root, expected) { const payload = path.join(root, "payload"); const entries = []; for (const name of await readdir(payload)) { const file = path.join(payload, name); const stat = await lstat(file); const relative = `payload/${name}`; if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0 || !expected.has(relative)) throw new Error("payload has unknown or invalid file"); const value = await readFile(file); entries.push({ path: relative, sizeBytes: value.length, sha256: sha(value) }); } if (entries.length !== expected.size || entries.some((entry) => !expected.has(entry.path))) throw new Error("payload paths mismatch"); return sha(Buffer.from(canonicalJson(entries.sort((a, b) => bytes(a.path, b.path))))); }
 async function validateOutput(root) { const children = (await readdir(root)).sort(bytes); if (canonicalJson(children) !== canonicalJson([...EXPECTED_CHILDREN].sort(bytes))) throw new Error("output children mismatch"); for (const [artifact, files] of [["map-pack", new Set(["manifest.json", "payload/metropolitan.svg", "payload/stations-layout.json", "payload/line-styles.json", "payload/interchange-layout.json"])], ["station-catalog-pack", new Set(["manifest.json", "payload/catalog.sqlite"])], ["server-route-bundle", new Set(["manifest.signing-input.json", "provenance.json", "compatibility.json", "payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"])]] ) { const actual = new Set(); await collectFiles(path.join(root, artifact), path.join(root, artifact), actual); if (actual.size !== files.size || [...actual].some((file) => !files.has(file))) throw new Error("unknown artifact output"); } }
