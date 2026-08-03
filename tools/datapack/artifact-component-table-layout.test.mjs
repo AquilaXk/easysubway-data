@@ -92,7 +92,7 @@ test("map and catalog projections keep only their owned table and field sets", (
   ]);
   assert.deepEqual(contract.artifacts.mapPack.projections, {
     stationsLayout: ["stationId", "lineId", "region", "x", "y", "labelDx", "labelDy", "labelPolygon", "upPath", "downPath"],
-    lineStyles: ["lineId", "nameKo", "nameEn", "color"],
+    lineStyles: ["lineId", "color"],
     interchangeLayout: ["stationId", "lineIds"],
   });
   assert.equal(contract.artifacts.mapPack.interchangeLineIds, "sorted-unique");
@@ -109,7 +109,11 @@ test("map and catalog projections keep only their owned table and field sets", (
 test("server components repeat exact references and retain only their assigned tables", () => {
   const components = contract.serverRouteBundle.components;
   assert.deepEqual(contract.serverRouteBundle.componentIdentity, {
-    fields: ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
+    source: {
+      table: "artifact_component_identity",
+      columns: ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
+      rowCount: 1,
+    },
     exactValues: { serviceTimezone: "Asia/Seoul" },
     equality: "identical-across-all-four-components",
   });
@@ -169,11 +173,19 @@ test("bundle references, metadata digests, topology node grammar, raw component 
     station: "stations.id",
     stationLine: "<stationId>:<lineId>[:<non-empty-suffix>...]",
     stationLinePair: "station_lines(station_id,line_id)",
+    delimiter: ":",
+    stationIdSegmentPattern: "^[^:]+$",
+    lineIdSegmentPattern: "^[^:]+$",
     forbidEmptySegment: true,
     stationEndpointTypes: ["ENTRY", "EXIT"],
     stationEndpointConnectsTo: "same-station-station-line-endpoint",
     forbidden: ["accessibility.internal_route_nodes", "accessibility.station_pathway_nodes"],
   });
+  assertStationLineSegments("station-a", "line-1");
+  assert.throws(() => assertStationLineSegments("", "line-1"), /invalid station ID segment/);
+  assert.throws(() => assertStationLineSegments("station:a", "line-1"), /invalid station ID segment/);
+  assert.throws(() => assertStationLineSegments("station-a", ""), /invalid line ID segment/);
+  assert.throws(() => assertStationLineSegments("station-a", "line:1"), /invalid line ID segment/);
   assert.deepEqual(contract.serverRouteBundle.componentDigest, {
     input: "raw-file-bytes",
     algorithm: "sha256",
@@ -213,14 +225,23 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.artifacts.mapPack.payloadPaths.push("payload/metropolitan.svg"); },
     (value) => { value.artifacts.mapPack.sourceTables.push("route_graph"); },
     (value) => { value.artifacts.mapPack.sourceTables.push("stations"); },
+    (value) => { value.artifacts.mapPack.projections.lineStyles.push("nameKo"); },
+    (value) => { value.artifacts.mapPack.projections.lineStyles.push("nameEn"); },
     (value) => { value.artifacts.stationCatalogPack.projections.stations.push("latitude"); },
     (value) => { value.serverRouteBundle.components.topology.ownedTables = value.serverRouteBundle.components.topology.ownedTables.filter((table) => table !== "realtime_provider_station_mappings"); },
     (value) => { value.serverRouteBundle.components.timetable.ownedTables = value.serverRouteBundle.components.timetable.ownedTables.filter((table) => table !== "route_service_artifact_evidence"); },
     (value) => { value.serverRouteBundle.components.topology.ownedTables.push("route_service_artifact_evidence"); },
     (value) => { value.serverRouteBundle.components.timetable.ownedTables.push("realtime_provider_line_mappings"); },
     (value) => { value.serverRouteBundle.componentIdentity.equality = "component-specific"; },
+    (value) => { value.serverRouteBundle.componentIdentity.source.table = "component_identity"; },
+    (value) => { value.serverRouteBundle.componentIdentity.source.columns.pop(); },
+    (value) => { value.serverRouteBundle.componentIdentity.source.columns.push("extra"); },
+    (value) => { value.serverRouteBundle.componentIdentity.source.rowCount = 2; },
     (value) => { value.serverRouteBundle.componentIdentity.exactValues.serviceTimezone = "UTC"; },
     (value) => { value.serverRouteBundle.crossComponentReferences[0].target = "accessibility.station_exits.id"; },
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.delimiter = "-"; },
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationIdSegmentPattern = ".+"; },
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.lineIdSegmentPattern = "^[^;]+$"; },
     (value) => { value.stationSet.sort = "locale"; },
     (value) => { value.payloadInventory.metadataPaths.push("payload/manifest.json"); },
     (value) => { value.payloadInventory.metadataPaths.pop(); },
@@ -284,13 +305,19 @@ function sha256(value) {
 function assertComponentIdentities(components) {
   const [first, ...remaining] = Object.values(components);
   for (const component of remaining) {
-    for (const field of contract.serverRouteBundle.componentIdentity.fields) {
+    for (const field of contract.serverRouteBundle.componentIdentity.source.columns) {
       assert.equal(component[field], first[field], `component identity mismatch: ${field}`);
     }
   }
   for (const [field, value] of Object.entries(contract.serverRouteBundle.componentIdentity.exactValues)) {
     assert.equal(first[field], value, `component identity exact value mismatch: ${field}`);
   }
+}
+
+function assertStationLineSegments(stationId, lineId) {
+  const endpoints = contract.serverRouteBundle.networkEdgeEndpoints;
+  assert.match(stationId, new RegExp(endpoints.stationIdSegmentPattern), "invalid station ID segment");
+  assert.match(lineId, new RegExp(endpoints.lineIdSegmentPattern), "invalid line ID segment");
 }
 
 function componentIdentities() {

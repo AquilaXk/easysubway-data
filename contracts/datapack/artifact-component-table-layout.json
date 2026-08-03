@@ -26,7 +26,7 @@
       "sourceTables": ["route_map_positions", "route_map_line_tracks", "stations", "lines", "station_lines"],
       "projections": {
         "stationsLayout": ["stationId", "lineId", "region", "x", "y", "labelDx", "labelDy", "labelPolygon", "upPath", "downPath"],
-        "lineStyles": ["lineId", "nameKo", "nameEn", "color"],
+        "lineStyles": ["lineId", "color"],
         "interchangeLayout": ["stationId", "lineIds"]
       },
       "interchangeLineIds": "sorted-unique"
@@ -47,7 +47,11 @@
     "payloadPaths": ["payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"],
     "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
     "componentIdentity": {
-      "fields": ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
+      "source": {
+        "table": "artifact_component_identity",
+        "columns": ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
+        "rowCount": 1
+      },
       "exactValues": { "serviceTimezone": "Asia/Seoul" },
       "equality": "identical-across-all-four-components"
     },
@@ -101,6 +105,9 @@
       "station": "stations.id",
       "stationLine": "<stationId>:<lineId>[:<non-empty-suffix>...]",
       "stationLinePair": "station_lines(station_id,line_id)",
+      "delimiter": ":",
+      "stationIdSegmentPattern": "^[^:]+$",
+      "lineIdSegmentPattern": "^[^:]+$",
       "forbidEmptySegment": true,
       "stationEndpointTypes": ["ENTRY", "EXIT"],
       "stationEndpointConnectsTo": "same-station-station-line-endpoint",
