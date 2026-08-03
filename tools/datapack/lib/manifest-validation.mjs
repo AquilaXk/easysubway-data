@@ -133,7 +133,7 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
         ? [
           "manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256",
           "topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256", "provenanceSha256",
-          "compatibilitySha256", "serviceTimezone", "keyId", "signature",
+          "compatibilitySha256", "serviceTimezone", "activeFrom", "freshUntil", "schemaCompatibility", "keyId", "signature",
         ]
         : null;
   if (!requiredFields) {
@@ -160,6 +160,12 @@ export function validateArtifactComponentManifest(manifest, expectedStationSetSh
     if (manifest.serviceTimezone !== "Asia/Seoul") {
       throw new Error("serviceTimezone must be Asia/Seoul");
     }
+    const activeFrom = requiredKstMillisecondInstant(manifest.activeFrom, "activeFrom");
+    const freshUntil = requiredKstMillisecondInstant(manifest.freshUntil, "freshUntil");
+    if (activeFrom >= freshUntil) {
+      throw new Error("activeFrom must be before freshUntil");
+    }
+    validateSchemaCompatibility(manifest.schemaCompatibility);
     requiredArtifactComponentRawString(manifest.keyId, "keyId");
     validateArtifactComponentSignature(manifest.signature);
   }
@@ -216,6 +222,28 @@ function requiredArtifactComponentSha256(value, label) {
     throw new Error(`${label} must be a lowercase sha256 hex string`);
   }
   return hash;
+}
+
+function requiredKstMillisecondInstant(value, label) {
+  const instant = requiredArtifactComponentRawString(value, label);
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\+09:00$/.test(instant)) {
+    throw new Error(`${label} must be an exact KST millisecond instant`);
+  }
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime()) || new Date(date.getTime() + (9 * 60 * 60 * 1000)).toISOString().replace("Z", "+09:00") !== instant) {
+    throw new Error(`${label} must be a valid KST millisecond instant`);
+  }
+  return date.getTime();
+}
+
+function validateSchemaCompatibility(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("schemaCompatibility must be an object");
+  }
+  validateExactFields(value, ["backendMin", "backendMax"], "schemaCompatibility");
+  if (value.backendMin !== 3 || value.backendMax !== 3) {
+    throw new Error("schemaCompatibility must be exactly backendMin=backendMax=3");
+  }
 }
 
 function writeCanonical(value, out) {
