@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "artifact-component-table-layout",
+  "stationSet": {
+    "source": { "table": "stations", "column": "id" },
+    "deduplicate": true,
+    "sort": "utf8-bytewise",
+    "canonicalization": "canonicalJson",
+    "encoding": "utf-8",
+    "digest": "sha256"
+  },
+  "payloadInventory": {
+    "root": "payload/",
+    "fileKind": "regular-file-only",
+    "pathSort": "utf8-bytewise",
+    "entryFields": ["path", "sizeBytes", "sha256"],
+    "canonicalization": "canonicalJson",
+    "encoding": "utf-8",
+    "digest": "sha256",
+    "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
+    "reject": ["symlink", "unknown-path", "empty-file"]
+  },
+  "artifacts": {
+    "mapPack": {
+      "payloadPaths": ["payload/metropolitan.svg", "payload/stations-layout.json", "payload/line-styles.json", "payload/interchange-layout.json"],
+      "sourceTables": ["route_map_positions", "route_map_line_tracks", "stations", "lines", "station_lines"],
+      "projections": {
+        "stationsLayout": ["stationId", "lineId", "region", "x", "y", "labelDx", "labelDy", "labelPolygon", "upPath", "downPath"],
+        "lineStyles": ["lineId", "nameKo", "nameEn", "color"],
+        "interchangeLayout": ["stationId", "lineIds"]
+      },
+      "interchangeLineIds": "sorted-unique"
+    },
+    "stationCatalogPack": {
+      "payloadPaths": ["payload/catalog.sqlite"],
+      "projections": {
+        "stations": ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"],
+        "station_aliases": ["station_id", "alias", "normalized_alias"],
+        "lines": ["id", "name_ko", "name_en", "color"],
+        "station_lines": ["station_id", "line_id", "station_code", "line_sequence"],
+        "station_search_index": ["station_id", "token", "normalized_token", "source_kind"]
+      },
+      "generatedTables": ["station_search_index"]
+    }
+  },
+  "serverRouteBundle": {
+    "payloadPaths": ["payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"],
+    "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
+    "componentIdentity": {
+      "fields": ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
+      "exactValues": { "serviceTimezone": "Asia/Seoul" },
+      "equality": "identical-across-all-four-components"
+    },
+    "components": {
+      "topology": {
+        "payloadPath": "payload/topology.sqlite.zst",
+        "referenceProjections": { "stations": ["id"], "lines": ["id"], "station_lines": ["station_id", "line_id", "line_sequence"] },
+        "referenceRows": "canonical-rows-identical-across-components",
+        "ownedTables": ["network_edges", "out_of_station_transfer_links", "transfer_rules", "realtime_provider_line_mappings", "realtime_provider_station_mappings"],
+        "ownedTableColumns": "exact-source-schema",
+        "foreignKeys": "within-component-only",
+        "componentReferences": "declared-non-null-references-must-resolve-within-component"
+      },
+      "timetable": {
+        "payloadPath": "payload/timetable.sqlite.zst",
+        "referenceProjections": { "stations": ["id"], "lines": ["id"], "station_lines": ["station_id", "line_id", "line_sequence"] },
+        "referenceRows": "canonical-rows-identical-across-components",
+        "ownedTables": ["service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence"],
+        "ownedTableColumns": "exact-source-schema",
+        "foreignKeys": "within-component-only",
+        "componentReferences": "declared-non-null-references-must-resolve-within-component"
+      },
+      "accessibility": {
+        "payloadPath": "payload/accessibility.sqlite.zst",
+        "referenceProjections": { "stations": ["id"], "lines": ["id"], "station_lines": ["station_id", "line_id", "line_sequence"] },
+        "referenceRows": "canonical-rows-identical-across-components",
+        "ownedTables": ["station_exits", "facilities", "facility_status_snapshots", "station_facility_evidence", "station_accessibility_summaries", "internal_route_nodes", "internal_route_edges", "station_pathway_nodes", "station_pathway_edges", "station_car_door_hints"],
+        "ownedTableColumns": "exact-source-schema",
+        "foreignKeys": "within-component-only",
+        "componentReferences": "declared-non-null-references-must-resolve-within-component"
+      },
+      "fare": {
+        "payloadPath": "payload/fare.sqlite.zst",
+        "referenceProjections": { "stations": ["id"], "lines": ["id"], "station_lines": ["station_id", "line_id", "line_sequence"] },
+        "referenceRows": "canonical-rows-identical-across-components",
+        "ownedTables": ["fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes"],
+        "ownedTableColumns": "exact-source-schema",
+        "foreignKeys": "within-component-only",
+        "componentReferences": "declared-non-null-references-must-resolve-within-component"
+      }
+    },
+    "forbiddenProjectionKinds": ["map", "search", "localized-name", "alias", "line-color"],
+    "crossComponentReferences": [
+      { "source": "topology.network_edges.facility_id", "target": "accessibility.facilities.id", "nullable": true },
+      { "source": "topology.transfer_rules.pathway_edge_id", "target": "accessibility.station_pathway_edges.id", "nullable": true },
+      { "source": "topology.transfer_rules.strict_step_free_pathway_edge_id", "target": "accessibility.station_pathway_edges.id", "nullable": true },
+      { "source": "topology.out_of_station_transfer_links.from_exit_id", "target": "accessibility.station_exits.id", "nullable": true },
+      { "source": "topology.out_of_station_transfer_links.to_exit_id", "target": "accessibility.station_exits.id", "nullable": true }
+    ],
+    "networkEdgeEndpoints": {
+      "station": "stations.id",
+      "stationLine": "<stationId>:<lineId>[:<non-empty-suffix>...]",
+      "stationLinePair": "station_lines(station_id,line_id)",
+      "forbidEmptySegment": true,
+      "stationEndpointTypes": ["ENTRY", "EXIT"],
+      "stationEndpointConnectsTo": "same-station-station-line-endpoint",
+      "forbidden": ["accessibility.internal_route_nodes", "accessibility.station_pathway_nodes"]
+    },
+    "componentDigest": {
+      "input": "raw-file-bytes",
+      "algorithm": "sha256",
+      "fields": ["topologySha256", "timetableSha256", "accessibilitySha256", "fareSha256"]
+    },
+    "metadataDigest": {
+      "input": "raw-file-bytes",
+      "algorithm": "sha256",
+      "bindings": {
+        "provenance.json": "provenanceSha256",
+        "compatibility.json": "compatibilitySha256"
+      }
+    },
+    "unsignedSigningInput": {
+      "allowedPath": "manifest.signing-input.json",
+      "value": "canonicalJson(withoutSignature(serverManifest))",
+      "forbidden": ["manifest.json", "signature", "placeholder-signature"]
+    }
+  }
+}
