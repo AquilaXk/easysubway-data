@@ -554,7 +554,7 @@ jobs:
 
       - name: Data Pack Release / Download exact production artifacts
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: easysubway-datapack-candidate-${{ steps.release-mode.outputs.candidate_run_id }}
           path: ${{ runner.temp }}/downloaded-candidate
@@ -563,7 +563,7 @@ jobs:
 
       - name: Data Pack Release / Download exact promotion artifact
         if: ${{ steps.release-mode.outputs.mode == 'production-publish' }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           repository: AquilaXk/easysubway
           name: easysubway-datapack-promotion-${{ steps.release-mode.outputs.promotion_run_id }}
