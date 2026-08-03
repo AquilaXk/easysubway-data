@@ -49,6 +49,7 @@ test("station set and payload inventory digest boundaries exclude metadata self-
     canonicalization: "canonicalJson",
     encoding: "utf-8",
     digest: "sha256",
+    manifestField: "payloadSha256",
     metadataPaths: ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
     reject: ["symlink", "unknown-path", "empty-file"],
   });
@@ -108,6 +109,14 @@ test("map and catalog projections keep only their owned table and field sets", (
 
 test("server components repeat exact references and retain only their assigned tables", () => {
   const components = contract.serverRouteBundle.components;
+  assert.deepEqual(contract.serverRouteBundle.sourceSchema, {
+    path: "tools/datapack/schema/catalog-schema.sql",
+    sqliteUserVersion: 18,
+    sha256: "0a5ded95d48ffb203c58acbf15183972257c8717be97caf3f6db3560718ebb17",
+  });
+  const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
+  assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);
+  assert.match(sourceSchemaBytes.toString("utf8"), /^PRAGMA user_version = 18;$/m);
   assert.deepEqual(contract.serverRouteBundle.componentIdentity, {
     source: {
       table: "artifact_component_identity",
@@ -239,10 +248,15 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.serverRouteBundle.componentIdentity.source.rowCount = 2; },
     (value) => { value.serverRouteBundle.componentIdentity.exactValues.serviceTimezone = "UTC"; },
     (value) => { value.serverRouteBundle.crossComponentReferences[0].target = "accessibility.station_exits.id"; },
+    (value) => { value.serverRouteBundle.sourceSchema.path = "tools/datapack/schema/other.sql"; },
+    (value) => { value.serverRouteBundle.sourceSchema.sqliteUserVersion = 17; },
+    (value) => { value.serverRouteBundle.sourceSchema.sha256 = "b".repeat(64); },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.delimiter = "-"; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationIdSegmentPattern = ".+"; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.lineIdSegmentPattern = "^[^;]+$"; },
     (value) => { value.stationSet.sort = "locale"; },
+    (value) => { delete value.payloadInventory.manifestField; },
+    (value) => { value.payloadInventory.manifestField = "inventorySha256"; },
     (value) => { value.payloadInventory.metadataPaths.push("payload/manifest.json"); },
     (value) => { value.payloadInventory.metadataPaths.pop(); },
     (value) => { value.payloadInventory.metadataPaths[3] = "unknown.json"; },

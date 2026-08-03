@@ -5,12 +5,13 @@
     "schemaVersion": 1,
     "artifactKind": "artifact-component-table-layout",
     "stationSet": { "source": { "table": "stations", "column": "id" }, "deduplicate": true, "sort": "utf8-bytewise", "canonicalization": "canonicalJson", "encoding": "utf-8", "digest": "sha256" },
-    "payloadInventory": { "root": "payload/", "fileKind": "regular-file-only", "pathSort": "utf8-bytewise", "entryFields": ["path", "sizeBytes", "sha256"], "canonicalization": "canonicalJson", "encoding": "utf-8", "digest": "sha256", "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"], "reject": ["symlink", "unknown-path", "empty-file"] },
+    "payloadInventory": { "root": "payload/", "fileKind": "regular-file-only", "pathSort": "utf8-bytewise", "entryFields": ["path", "sizeBytes", "sha256"], "canonicalization": "canonicalJson", "encoding": "utf-8", "digest": "sha256", "manifestField": "payloadSha256", "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"], "reject": ["symlink", "unknown-path", "empty-file"] },
     "artifacts": {
       "mapPack": { "payloadPaths": ["payload/metropolitan.svg", "payload/stations-layout.json", "payload/line-styles.json", "payload/interchange-layout.json"], "sourceTables": ["route_map_positions", "route_map_line_tracks", "stations", "lines", "station_lines"], "projections": { "stationsLayout": ["stationId", "lineId", "region", "x", "y", "labelDx", "labelDy", "labelPolygon", "upPath", "downPath"], "lineStyles": ["lineId", "color"], "interchangeLayout": ["stationId", "lineIds"] }, "interchangeLineIds": "sorted-unique" },
       "stationCatalogPack": { "payloadPaths": ["payload/catalog.sqlite"], "projections": { "stations": ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"], "station_aliases": ["station_id", "alias", "normalized_alias"], "lines": ["id", "name_ko", "name_en", "color"], "station_lines": ["station_id", "line_id", "station_code", "line_sequence"], "station_search_index": ["station_id", "token", "normalized_token", "source_kind"] }, "generatedTables": ["station_search_index"] }
     },
     "serverRouteBundle": {
+      "sourceSchema": { "path": "tools/datapack/schema/catalog-schema.sql", "sqliteUserVersion": 18, "sha256": "0a5ded95d48ffb203c58acbf15183972257c8717be97caf3f6db3560718ebb17" },
       "payloadPaths": ["payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"],
       "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
       "componentIdentity": { "source": { "table": "artifact_component_identity", "columns": ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"], "rowCount": 1 }, "exactValues": { "serviceTimezone": "Asia/Seoul" }, "equality": "identical-across-all-four-components" },

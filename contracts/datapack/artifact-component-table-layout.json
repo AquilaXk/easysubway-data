@@ -17,6 +17,7 @@
     "canonicalization": "canonicalJson",
     "encoding": "utf-8",
     "digest": "sha256",
+    "manifestField": "payloadSha256",
     "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
     "reject": ["symlink", "unknown-path", "empty-file"]
   },
@@ -44,6 +45,11 @@
     }
   },
   "serverRouteBundle": {
+    "sourceSchema": {
+      "path": "tools/datapack/schema/catalog-schema.sql",
+      "sqliteUserVersion": 18,
+      "sha256": "0a5ded95d48ffb203c58acbf15183972257c8717be97caf3f6db3560718ebb17"
+    },
     "payloadPaths": ["payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"],
     "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],
     "componentIdentity": {
