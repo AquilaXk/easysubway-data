@@ -159,8 +159,10 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   for (const [name, owned] of Object.entries(COMPONENTS)) {
     const componentPath = path.join(artifact, `.${name}.sqlite`); const target = new DatabaseSync(componentPath); sqliteProfile(target);
     const present = new Set([...Object.keys(REFERENCES), ...owned]);
-    for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present);
-    for (const table of owned) copyTable(source, target, table, undefined, present);
+    const selected = new Map([...present].map((table) => [table, REFERENCES[table] ?? tableColumns(source, table)]));
+    const requiredKeys = requiredUniqueKeys(source, present, selected);
+    for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present, selected, requiredKeys.get(table));
+    for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
     validateComponent(target, name, layout.serverRouteBundle);
     finishSqlite(target); target.close(); await normalizeHeader(componentPath);
@@ -177,14 +179,15 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
 }
 
-function copyTable(source, target, table, projection = undefined, presentTables = undefined) {
+function copyTable(source, target, table, projection = undefined, presentTables = undefined, selected = undefined, uniqueKeys = []) {
   const info = source.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().filter((column) => !column.hidden); if (!info.length) throw new Error(`source table missing: ${table}`);
   const columns = projection ?? info.map((column) => column.name); if (columns.some((column) => !info.some((entry) => entry.name === column))) throw new Error(`source projection missing: ${table}`);
   const sourcePk = info.filter((column) => column.pk).sort((a, b) => a.pk - b.pk).map((column) => column.name);
   const pk = sourcePk.every((column) => columns.includes(column)) ? sourcePk : [];
   const definitions = columns.map((name) => { const column = info.find((entry) => entry.name === name); return `${quote(name)} ${column.type || ""}${column.notnull ? " NOT NULL" : ""}${column.dflt_value == null ? "" : ` DEFAULT ${column.dflt_value}`}`; });
   if (pk.length) definitions.push(`PRIMARY KEY (${pk.map(quote).join(",")})`);
-  for (const foreign of groupedForeignKeys(source, table)) if (presentTables?.has(foreign.table) && foreign.from.every((column) => columns.includes(column))) definitions.push(`FOREIGN KEY (${foreign.from.map(quote).join(",")}) REFERENCES ${quote(foreign.table)} (${foreign.to.map(quote).join(",")}) ON UPDATE ${foreign.onUpdate} ON DELETE ${foreign.onDelete} MATCH ${foreign.match}`);
+  for (const key of uniqueKeys) definitions.push(`UNIQUE (${key.map(quote).join(",")})`);
+  for (const foreign of retainedForeignKeys(source, table, columns, presentTables, selected)) definitions.push(`FOREIGN KEY (${foreign.from.map(quote).join(",")}) REFERENCES ${quote(foreign.table)} (${foreign.to.map(quote).join(",")}) ON UPDATE ${foreign.onUpdate} ON DELETE ${foreign.onDelete} MATCH ${foreign.match}`);
   target.exec(`CREATE TABLE ${quote(table)} (${definitions.join(",")})`);
   const select = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${columns.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`);
   target.exec("BEGIN");
@@ -197,9 +200,21 @@ function copyTable(source, target, table, projection = undefined, presentTables 
   }
 }
 
+function tableColumns(source, table) { return source.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().filter((column) => !column.hidden).map((column) => column.name); }
+function retainedForeignKeys(source, table, columns, presentTables, selected) { return groupedForeignKeys(source, table).filter((foreign) => presentTables?.has(foreign.table) && foreign.from.every((column) => columns.includes(column)) && foreign.to.every((column) => selected.get(foreign.table)?.includes(column))); }
+function requiredUniqueKeys(source, presentTables, selected) {
+  const required = new Map();
+  for (const table of presentTables) for (const foreign of retainedForeignKeys(source, table, selected.get(table), presentTables, selected)) {
+    const parentPk = source.prepare(`PRAGMA table_info(${quote(foreign.table)})`).all().filter((column) => column.pk).sort((a, b) => a.pk - b.pk).map((column) => column.name);
+    if (canonicalJson(foreign.to) === canonicalJson(parentPk)) continue;
+    const keys = required.get(foreign.table) ?? new Map(); keys.set(canonicalJson(foreign.to), foreign.to); required.set(foreign.table, keys);
+  }
+  return new Map([...required].map(([table, keys]) => [table, [...keys.values()]]));
+}
 function groupedForeignKeys(source, table) { const groups = new Map(); for (const row of source.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all()) { const group = groups.get(row.id) ?? { table: row.table, from: [], to: [], onUpdate: row.on_update, onDelete: row.on_delete, match: row.match }; group.from[row.seq] = row.from; group.to[row.seq] = row.to; groups.set(row.id, group); } return [...groups.values()]; }
 function validateComponent(db, name, layout) {
   validateLocalReferences(db, name);
+  if (db.prepare("PRAGMA foreign_key_check").all().length) throw new Error(`${name} component foreign key mismatch`);
   const identity = db.prepare("SELECT * FROM artifact_component_identity").all(); if (identity.length !== 1) throw new Error(`${name} component identity mismatch`);
   if (name === "topology") validateNetworkEdges(db);
 }
