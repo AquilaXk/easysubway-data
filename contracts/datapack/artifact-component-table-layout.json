@@ -60,6 +60,12 @@
         "generatedIn": "each-server-component"
       },
       "exactValues": { "serviceTimezone": "Asia/Seoul" },
+      "signedManifestBindings": {
+        "bundleId": "bundleId",
+        "releaseSequence": "releaseSequence",
+        "stationSetSha256": "stationSetSha256",
+        "serviceTimezone": "serviceTimezone"
+      },
       "equality": "identical-across-all-four-components"
     },
     "components": {

@@ -125,6 +125,12 @@ test("server components repeat exact references and retain only their assigned t
       generatedIn: "each-server-component",
     },
     exactValues: { serviceTimezone: "Asia/Seoul" },
+    signedManifestBindings: {
+      bundleId: "bundleId",
+      releaseSequence: "releaseSequence",
+      stationSetSha256: "stationSetSha256",
+      serviceTimezone: "serviceTimezone",
+    },
     equality: "identical-across-all-four-components",
   });
   for (const component of Object.values(components)) {
@@ -152,6 +158,13 @@ test("server components repeat exact references and retain only their assigned t
 });
 
 test("server component identities cannot diverge", () => {
+  const signedServerManifest = {
+    bundleId: "route-1",
+    releaseSequence: 7,
+    stationSetSha256: "a".repeat(64),
+    serviceTimezone: "Asia/Seoul",
+    signature: "signed-value",
+  };
   for (const [field, value] of [
     ["bundleId", "route-2"],
     ["releaseSequence", 8],
@@ -159,14 +172,17 @@ test("server component identities cannot diverge", () => {
     ["serviceTimezone", "UTC"],
   ]) {
     const components = componentIdentities();
-    assertComponentIdentities(components);
+    assertComponentIdentities(components, signedServerManifest);
 
     components.fare[field] = value;
-    assert.throws(() => assertComponentIdentities(components), /component identity mismatch/);
+    assert.throws(() => assertComponentIdentities(components, signedServerManifest), /component identity mismatch/);
   }
   const components = componentIdentities();
   for (const component of Object.values(components)) component.serviceTimezone = "UTC";
-  assert.throws(() => assertComponentIdentities(components), /component identity exact value mismatch/);
+  assert.throws(() => assertComponentIdentities(components, signedServerManifest), /component identity exact value mismatch/);
+  const staleComponents = componentIdentities();
+  for (const component of Object.values(staleComponents)) component.bundleId = "route-stale";
+  assert.throws(() => assertComponentIdentities(staleComponents, signedServerManifest), /signed server manifest identity mismatch/);
 });
 
 test("bundle references, metadata digests, topology node grammar, raw component digests, and manifest-output signing input are closed", () => {
@@ -250,6 +266,8 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.serverRouteBundle.componentIdentity.source.rowCount = 2; },
     (value) => { delete value.serverRouteBundle.componentIdentity.source.generatedIn; },
     (value) => { value.serverRouteBundle.componentIdentity.source.generatedIn = "shared-server-bundle"; },
+    (value) => { delete value.serverRouteBundle.componentIdentity.signedManifestBindings.bundleId; },
+    (value) => { value.serverRouteBundle.componentIdentity.signedManifestBindings.releaseSequence = "sequence"; },
     (value) => { value.serverRouteBundle.componentIdentity.exactValues.serviceTimezone = "UTC"; },
     (value) => { value.serverRouteBundle.crossComponentReferences[0].target = "accessibility.station_exits.id"; },
     (value) => { value.serverRouteBundle.sourceSchema.path = "tools/datapack/schema/other.sql"; },
@@ -320,7 +338,7 @@ function sha256(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function assertComponentIdentities(components) {
+function assertComponentIdentities(components, signedServerManifest) {
   const [first, ...remaining] = Object.values(components);
   for (const component of remaining) {
     for (const field of contract.serverRouteBundle.componentIdentity.source.columns) {
@@ -329,6 +347,11 @@ function assertComponentIdentities(components) {
   }
   for (const [field, value] of Object.entries(contract.serverRouteBundle.componentIdentity.exactValues)) {
     assert.equal(first[field], value, `component identity exact value mismatch: ${field}`);
+  }
+  for (const [componentField, manifestField] of Object.entries(contract.serverRouteBundle.componentIdentity.signedManifestBindings)) {
+    assert.equal(first[componentField], signedServerManifest[manifestField],
+      `signed server manifest identity mismatch: ${componentField}`,
+    );
   }
 }
 
