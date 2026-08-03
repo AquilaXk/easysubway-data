@@ -100,7 +100,7 @@ test("map and catalog projections keep only their owned table and field sets", (
   assert.deepEqual(contract.artifacts.stationCatalogPack.projections, {
     stations: ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"],
     station_aliases: ["station_id", "alias", "normalized_alias"],
-    lines: ["id", "name_ko", "name_en", "color"],
+    lines: ["id", "name_ko", "name_en"],
     station_lines: ["station_id", "line_id", "station_code", "line_sequence"],
     station_search_index: ["station_id", "token", "normalized_token", "source_kind"],
   });
@@ -122,6 +122,7 @@ test("server components repeat exact references and retain only their assigned t
       table: "artifact_component_identity",
       columns: ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
       rowCount: 1,
+      generatedIn: "each-server-component",
     },
     exactValues: { serviceTimezone: "Asia/Seoul" },
     equality: "identical-across-all-four-components",
@@ -236,6 +237,7 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.artifacts.mapPack.sourceTables.push("stations"); },
     (value) => { value.artifacts.mapPack.projections.lineStyles.push("nameKo"); },
     (value) => { value.artifacts.mapPack.projections.lineStyles.push("nameEn"); },
+    (value) => { value.artifacts.stationCatalogPack.projections.lines.push("color"); },
     (value) => { value.artifacts.stationCatalogPack.projections.stations.push("latitude"); },
     (value) => { value.serverRouteBundle.components.topology.ownedTables = value.serverRouteBundle.components.topology.ownedTables.filter((table) => table !== "realtime_provider_station_mappings"); },
     (value) => { value.serverRouteBundle.components.timetable.ownedTables = value.serverRouteBundle.components.timetable.ownedTables.filter((table) => table !== "route_service_artifact_evidence"); },
@@ -246,6 +248,8 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.serverRouteBundle.componentIdentity.source.columns.pop(); },
     (value) => { value.serverRouteBundle.componentIdentity.source.columns.push("extra"); },
     (value) => { value.serverRouteBundle.componentIdentity.source.rowCount = 2; },
+    (value) => { delete value.serverRouteBundle.componentIdentity.source.generatedIn; },
+    (value) => { value.serverRouteBundle.componentIdentity.source.generatedIn = "shared-server-bundle"; },
     (value) => { value.serverRouteBundle.componentIdentity.exactValues.serviceTimezone = "UTC"; },
     (value) => { value.serverRouteBundle.crossComponentReferences[0].target = "accessibility.station_exits.id"; },
     (value) => { value.serverRouteBundle.sourceSchema.path = "tools/datapack/schema/other.sql"; },

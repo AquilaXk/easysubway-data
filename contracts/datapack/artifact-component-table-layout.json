@@ -37,7 +37,7 @@
       "projections": {
         "stations": ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"],
         "station_aliases": ["station_id", "alias", "normalized_alias"],
-        "lines": ["id", "name_ko", "name_en", "color"],
+        "lines": ["id", "name_ko", "name_en"],
         "station_lines": ["station_id", "line_id", "station_code", "line_sequence"],
         "station_search_index": ["station_id", "token", "normalized_token", "source_kind"]
       },
@@ -56,7 +56,8 @@
       "source": {
         "table": "artifact_component_identity",
         "columns": ["bundleId", "releaseSequence", "stationSetSha256", "serviceTimezone"],
-        "rowCount": 1
+        "rowCount": 1,
+        "generatedIn": "each-server-component"
       },
       "exactValues": { "serviceTimezone": "Asia/Seoul" },
       "equality": "identical-across-all-four-components"
