@@ -116,6 +116,7 @@
     ],
     "networkEdgeEndpoints": {
       "station": "stations.id",
+      "stationEndpointPattern": "^[^:]+$",
       "stationLine": "<stationId>:<lineId>[:<non-empty-suffix>...]",
       "stationLinePair": "station_lines(station_id,line_id)",
       "delimiter": ":",

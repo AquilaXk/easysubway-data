@@ -116,7 +116,7 @@ test("server components repeat exact references and retain only their assigned t
   });
   const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
   assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);
-  assert.match(sourceSchemaBytes.toString("utf8"), /^PRAGMA user_version = 18;$/m);
+  assert.match(sourceSchemaBytes.toString("utf8"), new RegExp(`^PRAGMA user_version = ${contract.serverRouteBundle.sourceSchema.sqliteUserVersion};$`, "m"));
   assert.deepEqual(contract.serverRouteBundle.componentIdentity, {
     source: {
       table: "artifact_component_identity",
@@ -197,6 +197,7 @@ test("bundle references, metadata digests, topology node grammar, raw component 
   ]);
   assert.deepEqual(contract.serverRouteBundle.networkEdgeEndpoints, {
     station: "stations.id",
+    stationEndpointPattern: "^[^:]+$",
     stationLine: "<stationId>:<lineId>[:<non-empty-suffix>...]",
     stationLinePair: "station_lines(station_id,line_id)",
     delimiter: ":",
@@ -207,6 +208,8 @@ test("bundle references, metadata digests, topology node grammar, raw component 
     stationEndpointConnectsTo: "same-station-station-line-endpoint",
     forbidden: ["accessibility.internal_route_nodes", "accessibility.station_pathway_nodes"],
   });
+  assert.match("station-a", new RegExp(contract.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern));
+  assert.doesNotMatch("station:a", new RegExp(contract.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern));
   assertStationLineSegments("station-a", "line-1");
   assert.throws(() => assertStationLineSegments("", "line-1"), /invalid station ID segment/);
   assert.throws(() => assertStationLineSegments("station:a", "line-1"), /invalid station ID segment/);
@@ -274,6 +277,8 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.serverRouteBundle.sourceSchema.sqliteUserVersion = 17; },
     (value) => { value.serverRouteBundle.sourceSchema.sha256 = "b".repeat(64); },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.delimiter = "-"; },
+    (value) => { delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; },
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointIdPattern = value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationIdSegmentPattern = ".+"; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.lineIdSegmentPattern = "^[^;]+$"; },
     (value) => { value.stationSet.sort = "locale"; },
