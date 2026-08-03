@@ -94,6 +94,21 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   const allBytes = Buffer.concat(await Promise.all(paths.map((file) => readFile(path.join(temp, "one", file))))).toString("utf8");
   assert.doesNotMatch(allBytes, /"signature"|"probe"/);
 
+  const walSource = path.join(temp, "wal-source.sqlite");
+  await cp(source, walSource);
+  const walWriter = new DatabaseSync(walSource);
+  try {
+    walWriter.exec("PRAGMA journal_mode=WAL; INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('wal-only','WAL 역','WAL','wal','수도권')");
+    await writeBindings(temp, walSource, current, spec);
+    await run("wal", { sourceSqlite: walSource });
+    const walCatalog = new DatabaseSync(path.join(temp, "wal/station-catalog-pack/payload/catalog.sqlite"), { readOnly: true });
+    assert.equal(walCatalog.prepare("SELECT 1 FROM stations WHERE id='wal-only'").get(), undefined);
+    walCatalog.close();
+  } finally {
+    walWriter.close();
+  }
+  await writeBindings(temp, source, current, spec);
+
   await assert.rejects(() => run("late", { freshUntil: "2026-08-04T00:00:00.001+09:00" }), /source freshness/);
   assert.equal(await exists(path.join(temp, "late")), false);
 
@@ -144,6 +159,14 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   await assert.rejects(() => run("reversed-entry"), /network edge endpoint mismatch/);
   assert.equal(await exists(path.join(temp, "reversed-entry")), false);
   mutate("DELETE FROM network_edges WHERE id='reversed-entry'");
+
+  mutate("INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('orphan','고아','고아')");
+  await writeBindings(temp, source, current, spec);
+  const beforeOrphanTemps = await taskTemps(temp);
+  await assert.rejects(() => run("orphan-alias"), /source foreign key mismatch/);
+  assert.equal(await exists(path.join(temp, "orphan-alias")), false);
+  assert.deepEqual(await taskTemps(temp), beforeOrphanTemps);
+  mutate("DELETE FROM station_aliases WHERE station_id='orphan'");
 
   mutate("ALTER TABLE network_edges ADD COLUMN schema_drift TEXT");
   await writeBindings(temp, source, current, spec);

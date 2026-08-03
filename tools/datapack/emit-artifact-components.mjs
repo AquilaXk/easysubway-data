@@ -53,9 +53,11 @@ export async function emitArtifactComponents(input) {
   if (Date.parse(ids.freshUntil) > cap) throw new Error("--fresh-until exceeds source freshness");
 
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
+  const snapshot = path.join(temp, ".source.sqlite");
   let sourceDb;
   try {
-    sourceDb = new DatabaseSync(source, { open: true, readOnly: true });
+    await writeFile(snapshot, sourceBytes, { flag: "wx" });
+    sourceDb = new DatabaseSync(snapshot, { open: true, readOnly: true });
     if (sourceDb.prepare("PRAGMA user_version").get().user_version !== sourceSchema.sqliteUserVersion) throw new Error("source SQLite user_version mismatch");
     validateSourceSchema(sourceDb, sourceSchemaBytes);
     const stationSetSha256 = stationSetDigest(sourceDb);
@@ -64,6 +66,7 @@ export async function emitArtifactComponents(input) {
     await emitCatalog(temp, sourceDb, ids, stationSetSha256);
     await emitServer(temp, sourceDb, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, buildContract);
     sourceDb.close(); sourceDb = undefined;
+    await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
     await validateOutput(temp);
     await rename(temp, output);
   } catch (error) {
@@ -88,12 +91,25 @@ function validateSourceSchema(source, sourceSchemaBytes) {
   const canonical = new DatabaseSync(":memory:");
   try {
     canonical.exec(Buffer.from(sourceSchemaBytes).toString("utf8"));
-    const tables = [...new Set(["route_map_positions", "route_map_line_tracks", "stations", "station_aliases", "lines", "station_lines", ...Object.keys(REFERENCES), ...Object.values(COMPONENTS).flat()])];
+    const tables = [...new Set(["operators", "route_map_positions", "route_map_line_tracks", "stations", "station_aliases", "lines", "station_lines", ...Object.keys(REFERENCES), ...Object.values(COMPONENTS).flat()])];
     for (const table of tables) {
       const columns = (db) => db.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().map((column) => ({ name: column.name, type: column.type, notnull: column.notnull, dflt_value: column.dflt_value, pk: column.pk, hidden: column.hidden }));
       const foreignKeys = (db) => db.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all().map((foreign) => ({ id: foreign.id, seq: foreign.seq, table: foreign.table, from: foreign.from, to: foreign.to, on_update: foreign.on_update, on_delete: foreign.on_delete, match: foreign.match }));
       if (canonicalJson(columns(source)) !== canonicalJson(columns(canonical)) || canonicalJson(foreignKeys(source)) !== canonicalJson(foreignKeys(canonical)) || canonicalJson(groupedForeignKeys(source, table)) !== canonicalJson(groupedForeignKeys(canonical, table))) throw new Error("source schema mismatch");
     }
+    canonical.exec("PRAGMA foreign_keys=OFF; BEGIN");
+    try {
+      for (const table of tables) {
+        const columns = canonical.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().filter((column) => !column.hidden).map((column) => column.name);
+        const insert = canonical.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`);
+        for (const row of source.prepare(`SELECT ${columns.map(quote).join(",")} FROM ${quote(table)}`).all()) insert.run(...columns.map((column) => row[column]));
+      }
+      canonical.exec("COMMIT");
+    } catch (error) {
+      canonical.exec("ROLLBACK");
+      throw error;
+    }
+    if (canonical.prepare("PRAGMA foreign_key_check").all().length) throw new Error("source foreign key mismatch");
   } finally {
     canonical.close();
   }
