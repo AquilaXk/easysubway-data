@@ -44,6 +44,7 @@ jobs:
           tools/datapack/stage-contracts.test.mjs
           tools/datapack/bundle-component-contract.test.mjs
           tools/datapack/artifact-component-manifest.test.mjs
+          tools/datapack/server-route-bundle-build-contract.test.mjs
           tools/datapack/artifact-component-table-layout.test.mjs
           tools/datapack/build-data-component-manifest.test.mjs
           tools/ci/require-workflow-artifact.test.mjs

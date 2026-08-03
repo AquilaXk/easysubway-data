@@ -47,6 +47,9 @@ function serverRouteBundleManifest() {
     provenanceSha256: "0".repeat(64),
     compatibilitySha256: "1".repeat(64),
     serviceTimezone: "Asia/Seoul",
+    activeFrom: "2026-08-03T00:00:00.000+09:00",
+    freshUntil: "2026-08-04T00:00:00.000+09:00",
+    schemaCompatibility: { backendMin: 3, backendMax: 3 },
     keyId: "production-v1",
     signature: {
       algorithm: "rsa-sha256-server-route-bundle-v1",
@@ -126,6 +129,50 @@ test("server service timezone의 exact value와 own field를 강제한다", () =
   }
 });
 
+test("server lifecycle의 exact KST instant, ordering, backend schema compatibility를 강제한다", () => {
+  const yearZeroLeapDay = serverRouteBundleManifest();
+  yearZeroLeapDay.activeFrom = "0000-02-29T00:00:00.000+09:00";
+  yearZeroLeapDay.freshUntil = "0000-03-01T00:00:00.000+09:00";
+  assert.equal(assertValidByBoth(yearZeroLeapDay), stationSetSha256);
+
+  for (const [field, value] of [
+    ["activeFrom", "2026-08-03T00:00:00.00+09:00"],
+    ["activeFrom", "2026-08-03T00:00:00.000Z"],
+    ["activeFrom", "2026-02-30T00:00:00.000+09:00"],
+    ["activeFrom", "2026-08-03T00:00:00.000+09:00\n"],
+  ]) {
+    const manifest = serverRouteBundleManifest();
+    manifest[field] = value;
+    assertRejectedByBoth(manifest, /activeFrom|freshUntil/);
+  }
+
+  for (const mutate of [
+    (manifest) => { manifest.schemaCompatibility.backendMax = 4; },
+    (manifest) => { delete manifest.schemaCompatibility.backendMin; },
+    (manifest) => { manifest.schemaCompatibility.unknown = true; },
+  ]) {
+    const manifest = serverRouteBundleManifest();
+    mutate(manifest);
+    assertRejectedByBoth(manifest, /schemaCompatibility/);
+  }
+
+  for (const field of ["activeFrom", "freshUntil", "schemaCompatibility"]) {
+    const manifest = serverRouteBundleManifest();
+    delete manifest[field];
+    assertRejectedByBoth(manifest, /required field missing/);
+  }
+
+  for (const freshUntil of [
+    "2026-08-03T00:00:00.000+09:00",
+    "2026-08-02T23:59:59.999+09:00",
+  ]) {
+    const manifest = serverRouteBundleManifest();
+    manifest.freshUntil = freshUntil;
+    assert.equal(validateSchema(manifest), true, "schema only validates the structural instant shape");
+    assert.throws(() => validateArtifactComponentManifest(manifest), /activeFrom must be before freshUntil/);
+  }
+});
+
 test("server signature의 algorithm, value shape, nested field를 거부한다", () => {
   const wrongAlgorithm = serverRouteBundleManifest();
   wrongAlgorithm.signature.algorithm = "rsa-sha256-manifest-v2";
@@ -182,7 +229,7 @@ test("server envelope의 signature 제외 canonical signing input을 고정한�
   const manifest = serverRouteBundleManifest();
   assert.equal(
     canonicalJson(withoutSignature(manifest)),
-    `{"accessibilitySha256":"${"e".repeat(64)}","artifactKind":"server-route-bundle","bundleId":"route-2026-08-03","compatibilitySha256":"${"1".repeat(64)}","fareSha256":"${"f".repeat(64)}","keyId":"production-v1","manifestVersion":1,"payloadSha256":"${"b".repeat(64)}","provenanceSha256":"${"0".repeat(64)}","releaseSequence":1,"serviceTimezone":"Asia/Seoul","stationSetSha256":"${"a".repeat(64)}","timetableSha256":"${"d".repeat(64)}","topologySha256":"${"c".repeat(64)}"}`,
+    `{"accessibilitySha256":"${"e".repeat(64)}","activeFrom":"2026-08-03T00:00:00.000+09:00","artifactKind":"server-route-bundle","bundleId":"route-2026-08-03","compatibilitySha256":"${"1".repeat(64)}","fareSha256":"${"f".repeat(64)}","freshUntil":"2026-08-04T00:00:00.000+09:00","keyId":"production-v1","manifestVersion":1,"payloadSha256":"${"b".repeat(64)}","provenanceSha256":"${"0".repeat(64)}","releaseSequence":1,"schemaCompatibility":{"backendMax":3,"backendMin":3},"serviceTimezone":"Asia/Seoul","stationSetSha256":"${"a".repeat(64)}","timetableSha256":"${"d".repeat(64)}","topologySha256":"${"c".repeat(64)}"}`,
   );
   assert.equal(assertValidByBoth(manifest), stationSetSha256);
 });
