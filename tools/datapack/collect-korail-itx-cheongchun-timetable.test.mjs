@@ -747,6 +747,19 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     assert.doesNotMatch(JSON.stringify(artifact), /503/);
   });
 
+  await context.test("provider resultCode는 credential 없이 분류한다", async () => {
+    const artifact = await collectKorailItxCheongchunCompleteness({
+      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      now: new Date("2026-07-14T00:00:00.000Z"),
+      collectRosterImpl: async () => {
+        throw new Error("TAGO GetVhcleKndList provider resultCode 30");
+      },
+      collectTimetableImpl: async () => assert.fail("must not run"),
+    });
+    assert.equal(artifact.serviceDays[0].failureReasonCode, "PROVIDER_RESULT_FAILURE");
+    assert.equal(artifact.serviceDays[0].failureContext, "operation=GetVhcleKndList,resultCode=30");
+  });
+
   await context.test("OD 일부 실패", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
       serviceKey: "key", serviceDates, packPath: PACK_PATH,

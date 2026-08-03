@@ -1937,6 +1937,8 @@ function completenessFailureReason(error) {
 
 function completenessFailureContext(error) {
   const message = error instanceof Error ? error.message : "";
+  const resultCode = /^TAGO ([A-Za-z0-9]+) provider resultCode ([A-Za-z0-9_.-]+)$/.exec(message);
+  if (resultCode) return `operation=${resultCode[1]},resultCode=${resultCode[2]}`;
   const station = /station mapping is missing or ambiguous: (.+)$/.exec(message)?.[1];
   if (station) return safeLabel(station);
   const requiredStations = /^TAGO required station mapping is incomplete: ([\p{L}\p{N},._-]+)$/u.exec(message)?.[1];
