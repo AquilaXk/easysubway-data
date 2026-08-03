@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { constants, zstdCompressSync } from "node:zlib";
 
 import { canonicalJson, validateArtifactComponentManifest, withoutSignature } from "./lib/manifest-validation.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id"]);
@@ -49,7 +50,7 @@ export async function emitArtifactComponents(input) {
   const current = parseJson(currentBytes, "current manifest");
   validateInputBinding(provenance, current, sha(currentBytes), sha(sourceBytes), sha(buildSpecBytes));
   const freshness = validateSourceSnapshotFreshness({ buildSpec, snapshots, policy, evaluationAt: ids.builtAt, governancePolicy: parseJson(governanceBytes, "governance policy"), inventory: parseJson(inventoryBytes, "source inventory"), governancePolicySha256: sha(governanceBytes) });
-  const cap = Math.min(requiredInstant(current.expiresAt, "current.json.expiresAt"), ...freshness.results.map((result) => requiredInstant(result.freshnessExpiresAt, "source freshness")));
+  const cap = Math.min(requiredUtcInstant(current.expiresAt, "current.json.expiresAt"), ...freshness.results.map((result) => requiredUtcInstant(result.freshnessExpiresAt, "source freshness")));
   if (Date.parse(ids.freshUntil) > cap) throw new Error("--fresh-until exceeds source freshness");
 
   const temp = await mkdtemp(path.join(path.dirname(output), ".artifact-components-"));
@@ -245,7 +246,6 @@ async function validateOutput(root) { const children = (await readdir(root)).sor
 async function collectFiles(root, current, output) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await collectFiles(root, target, output); else if (entry.isFile() && !entry.isSymbolicLink()) output.add(path.relative(root, target).split(path.sep).join("/")); else throw new Error("artifact output must be regular files"); } }
 function validateInputBinding(provenance, current, currentHash, sourceHash, buildSpecHash) { if (provenance?.schemaVersion !== 1 || provenance.artifactKind !== "datapack-field-provenance" || provenance.manifestSha256 !== currentHash) throw new Error("source provenance does not bind raw current.json"); for (const packs of [current?.packs, provenance?.packs]) { if (!Array.isArray(packs)) throw new Error("source pack identities are required"); const matching = packs.filter((pack) => pack?.id === "capital" && pack?.artifactKind === "production"); if (matching.length !== 1 || matching[0].sqliteSha256 !== sourceHash) throw new Error("source pack identity mismatch"); } if (!provenance?.candidateBuild || typeof provenance.candidateBuild !== "object" || Array.isArray(provenance.candidateBuild) || provenance.candidateBuild.buildSpecSha256 !== buildSpecHash) throw new Error("build spec identity mismatch"); }
 function parseJson(bytes, label) { try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error(`${label} must be JSON`); } }
-function requiredInstant(value, label) { if (typeof value !== "string" || Number.isNaN(Date.parse(value))) throw new Error(`${label} must be an instant`); return Date.parse(value); }
 function tupleCompare(a, b, fields) { for (const field of fields) { const result = bytes(a[field], b[field]); if (result) return result; } return 0; }
 function sha(value) { return createHash("sha256").update(value).digest("hex"); }
 function bytes(a, b) { return Buffer.compare(Buffer.from(a), Buffer.from(b)); }

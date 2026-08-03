@@ -113,6 +113,17 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   await assert.rejects(() => run("late", { freshUntil: "2026-08-04T00:00:00.001+09:00" }), /source freshness/);
   assert.equal(await exists(path.join(temp, "late")), false);
 
+  const timezoneLessCurrent = { ...current, expiresAt: "2026-08-03T15:00:00.000" };
+  await writeBindings(temp, source, timezoneLessCurrent, spec);
+  await assert.rejects(() => run("timezone-less-current"), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
+  assert.equal(await exists(path.join(temp, "timezone-less-current")), false);
+
+  const overflowCurrent = { ...current, expiresAt: "2026-02-30T15:00:00.000Z" };
+  await writeBindings(temp, source, overflowCurrent, spec);
+  await assert.rejects(() => run("overflow-current"), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
+  assert.equal(await exists(path.join(temp, "overflow-current")), false);
+
+  await writeBindings(temp, source, current, spec);
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: "0".repeat(64), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
   await assert.rejects(() => run("rejected"), /raw current\.json/);
   assert.equal(await exists(path.join(temp, "rejected")), false);
