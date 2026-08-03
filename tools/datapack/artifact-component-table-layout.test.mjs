@@ -205,6 +205,10 @@ test("bundle references, metadata digests, topology node grammar, raw component 
     lineIdSegmentPattern: "^[^:]+$",
     forbidEmptySegment: true,
     stationEndpointTypes: ["ENTRY", "EXIT"],
+    stationEndpointDirections: {
+      ENTRY: { from: "station", to: "station-line" },
+      EXIT: { from: "station-line", to: "station" },
+    },
     stationEndpointConnectsTo: "same-station-station-line-endpoint",
     forbidden: ["accessibility.internal_route_nodes", "accessibility.station_pathway_nodes"],
   });
@@ -279,6 +283,8 @@ test("schema rejects physical-layout mutations that would widen or corrupt the c
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.delimiter = "-"; },
     (value) => { delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointIdPattern = value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointPattern; },
+    (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationEndpointDirections.ENTRY = { from: "station-line", to: "station" }; },
+    (value) => { delete value.serverRouteBundle.networkEdgeEndpoints.stationEndpointDirections.EXIT; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.stationIdSegmentPattern = ".+"; },
     (value) => { value.serverRouteBundle.networkEdgeEndpoints.lineIdSegmentPattern = "^[^;]+$"; },
     (value) => { value.stationSet.sort = "locale"; },

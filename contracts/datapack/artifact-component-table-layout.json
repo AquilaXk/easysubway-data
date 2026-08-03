@@ -124,6 +124,10 @@
       "lineIdSegmentPattern": "^[^:]+$",
       "forbidEmptySegment": true,
       "stationEndpointTypes": ["ENTRY", "EXIT"],
+      "stationEndpointDirections": {
+        "ENTRY": { "from": "station", "to": "station-line" },
+        "EXIT": { "from": "station-line", "to": "station" }
+      },
       "stationEndpointConnectsTo": "same-station-station-line-endpoint",
       "forbidden": ["accessibility.internal_route_nodes", "accessibility.station_pathway_nodes"]
     },
