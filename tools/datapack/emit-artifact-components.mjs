@@ -57,6 +57,7 @@ export async function emitArtifactComponents(input) {
   try {
     sourceDb = new DatabaseSync(source, { open: true, readOnly: true });
     if (sourceDb.prepare("PRAGMA user_version").get().user_version !== sourceSchema.sqliteUserVersion) throw new Error("source SQLite user_version mismatch");
+    validateSourceSchema(sourceDb, sourceSchemaBytes);
     const stationSetSha256 = stationSetDigest(sourceDb);
     validateBundleReferences(sourceDb, layout.serverRouteBundle);
     await emitMap(root, temp, sourceDb, ids, stationSetSha256, buildContract);
@@ -81,6 +82,21 @@ function validateFixedContracts(layout, build, sourceSchema, sourceSchemaBytes) 
   if (!sourceSchema || sourceSchema.path !== "tools/datapack/schema/catalog-schema.sql" || sourceSchema.sqliteUserVersion !== 18 || sha(sourceSchemaBytes) !== sourceSchema.sha256) throw new Error("source schema contract mismatch");
   if (build?.artifactKind !== "server-route-bundle-build-contract" || build?.compressionProfile?.api !== "node:zlib.zstdCompressSync" || build.compressionProfile.requiredNodeMajor !== 24 || build.compressionProfile.compressionLevel !== 10 || build.compressionProfile.checksumFlag !== 1 || build.compressionProfile.dictionary !== null || build?.capitalMapInput?.sourcePath !== "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg") throw new Error("build contract mismatch");
   if (Number(process.versions.node.split(".")[0]) !== 24 || !raw(process.versions.node, "process.versions.node") || !raw(process.versions.zstd, "process.versions.zstd")) throw new Error("Node 24 Zstd runtime is required");
+}
+
+function validateSourceSchema(source, sourceSchemaBytes) {
+  const canonical = new DatabaseSync(":memory:");
+  try {
+    canonical.exec(Buffer.from(sourceSchemaBytes).toString("utf8"));
+    const tables = [...new Set(["route_map_positions", "route_map_line_tracks", "stations", "station_aliases", "lines", "station_lines", ...Object.keys(REFERENCES), ...Object.values(COMPONENTS).flat()])];
+    for (const table of tables) {
+      const columns = (db) => db.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().map((column) => ({ name: column.name, type: column.type, notnull: column.notnull, dflt_value: column.dflt_value, pk: column.pk, hidden: column.hidden }));
+      const foreignKeys = (db) => db.prepare(`PRAGMA foreign_key_list(${quote(table)})`).all().map((foreign) => ({ id: foreign.id, seq: foreign.seq, table: foreign.table, from: foreign.from, to: foreign.to, on_update: foreign.on_update, on_delete: foreign.on_delete, match: foreign.match }));
+      if (canonicalJson(columns(source)) !== canonicalJson(columns(canonical)) || canonicalJson(foreignKeys(source)) !== canonicalJson(foreignKeys(canonical)) || canonicalJson(groupedForeignKeys(source, table)) !== canonicalJson(groupedForeignKeys(canonical, table))) throw new Error("source schema mismatch");
+    }
+  } finally {
+    canonical.close();
+  }
 }
 
 async function emitMap(root, out, db, ids, stationSetSha256, build) {

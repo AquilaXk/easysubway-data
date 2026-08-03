@@ -144,6 +144,13 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   assert.equal(await exists(path.join(temp, "reversed-entry")), false);
   mutate("DELETE FROM network_edges WHERE id='reversed-entry'");
 
+  mutate("ALTER TABLE network_edges ADD COLUMN schema_drift TEXT");
+  await writeBindings(temp, source, current, spec);
+  const beforeSchemaDriftTemps = await taskTemps(temp);
+  await assert.rejects(() => run("schema-drift"), /source schema mismatch/);
+  assert.equal(await exists(path.join(temp, "schema-drift")), false);
+  assert.deepEqual(await taskTemps(temp), beforeSchemaDriftTemps);
+
   const occupied = path.join(temp, "occupied");
   await writeFile(occupied, "marker");
   const beforeTemps = await taskTemps(temp);
