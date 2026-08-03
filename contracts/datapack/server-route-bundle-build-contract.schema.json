@@ -5,8 +5,14 @@
     "schemaVersion": 1,
     "artifactKind": "server-route-bundle-build-contract",
     "manifestLifecycle": {
-      "activeFromPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$",
-      "freshUntilPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$",
+      "instantSchema": {
+        "path": "contracts/datapack/artifact-component-manifest.schema.json",
+        "pointer": "/$defs/kstMillisecondInstant"
+      },
+      "runtimeValidator": {
+        "path": "tools/datapack/lib/manifest-validation.mjs",
+        "export": "validateArtifactComponentManifest"
+      },
       "ordering": "activeFrom < freshUntil",
       "clockEvaluation": "backend-active-bundle-only",
       "schemaCompatibility": {
@@ -14,8 +20,10 @@
         "backendMax": 3
       }
     },
-    "capitalMap": {
-      "payloadPath": "payload/metropolitan.svg",
+    "capitalMapInput": {
+      "targetArtifactKind": "map-pack",
+      "targetPayloadPath": "payload/metropolitan.svg",
+      "sourceRole": "producer-input",
       "basemapManifestPath": "tools/route-map/basemap-build-manifest.json",
       "mapId": "seoul",
       "sourcePath": "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",

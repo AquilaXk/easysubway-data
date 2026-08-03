@@ -4,31 +4,43 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
-import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest-validation.mjs";
 
 const contract = JSON.parse(readFileSync("contracts/datapack/server-route-bundle-build-contract.json", "utf8"));
 const schema = JSON.parse(readFileSync("contracts/datapack/server-route-bundle-build-contract.schema.json", "utf8"));
+const manifestSchema = JSON.parse(readFileSync("contracts/datapack/artifact-component-manifest.schema.json", "utf8"));
 
 test("정본 build contract의 parsed object와 폐쇄 schema가 일치한다", () => {
+  assert.deepEqual(Object.keys(schema), ["$schema", "title", "const"]);
+  assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
+  assert.equal(schema.title, "Server route bundle build contract");
   assert.deepEqual(schema.const, contract);
   assert.equal(
     sha256(Buffer.from(canonicalJson(contract), "utf8")),
-    "d9fa9c0456764c951ccfad6ebdb846970f7bb5d0a32951ac4ad2858a6f1388be",
+    "61c0a525b6f3ce18787fdccadf816baa1a71929c5a49458ca2203c0520dacd8f",
   );
   assert.deepEqual(Object.keys(contract), [
-    "schemaVersion", "artifactKind", "manifestLifecycle", "capitalMap", "compressionProfile", "metadata",
+    "schemaVersion", "artifactKind", "manifestLifecycle", "capitalMapInput", "compressionProfile", "metadata",
   ]);
   assert.equal(contract.schemaVersion, 1);
   assert.equal(contract.artifactKind, "server-route-bundle-build-contract");
   assert.deepEqual(contract.manifestLifecycle, {
-    activeFromPattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$",
-    freshUntilPattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$",
+    instantSchema: {
+      path: "contracts/datapack/artifact-component-manifest.schema.json",
+      pointer: "/$defs/kstMillisecondInstant",
+    },
+    runtimeValidator: {
+      path: "tools/datapack/lib/manifest-validation.mjs",
+      export: "validateArtifactComponentManifest",
+    },
     ordering: "activeFrom < freshUntil",
     clockEvaluation: "backend-active-bundle-only",
     schemaCompatibility: { backendMin: 3, backendMax: 3 },
   });
-  assert.deepEqual(contract.capitalMap, {
-    payloadPath: "payload/metropolitan.svg",
+  assert.deepEqual(contract.capitalMapInput, {
+    targetArtifactKind: "map-pack",
+    targetPayloadPath: "payload/metropolitan.svg",
+    sourceRole: "producer-input",
     basemapManifestPath: "tools/route-map/basemap-build-manifest.json",
     mapId: "seoul",
     sourcePath: "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg",
@@ -66,6 +78,11 @@ test("정본 build contract의 parsed object와 폐쇄 schema가 일치한다", 
   assert.deepEqual(contract.metadata.compatibility.bindings.encoderRuntime, {
     source: "process-versions", fields: ["node", "zstd"],
   });
+  assert.deepEqual(
+    resolveJsonPointer(manifestSchema, contract.manifestLifecycle.instantSchema.pointer),
+    manifestSchema.$defs.kstMillisecondInstant,
+  );
+  assert.equal(validateArtifactComponentManifest.name, contract.manifestLifecycle.runtimeValidator.export);
 });
 
 test("폐쇄 schema는 unknown 및 nested mutation을 거부한다", () => {
@@ -75,7 +92,7 @@ test("폐쇄 schema는 unknown 및 nested mutation을 거부한다", () => {
   assert.equal(validateBuildContract(unknown), false);
 
   const alias = structuredClone(contract);
-  alias.capitalMap.sourceSvgSha256 = alias.capitalMap.sourceSha256;
+  alias.capitalMapInput.sourceSvgSha256 = alias.capitalMapInput.sourceSha256;
   assert.equal(validateBuildContract(alias), false);
 
   const changed = structuredClone(contract);
@@ -84,12 +101,12 @@ test("폐쇄 schema는 unknown 및 nested mutation을 거부한다", () => {
 });
 
 test("capital basemap과 source schema는 raw path와 sha256으로 결속된다", () => {
-  const basemap = JSON.parse(readFileSync(contract.capitalMap.basemapManifestPath, "utf8"));
-  const seoul = basemap.maps.find((map) => map.id === contract.capitalMap.mapId);
+  const basemap = JSON.parse(readFileSync(contract.capitalMapInput.basemapManifestPath, "utf8"));
+  const seoul = basemap.maps.find((map) => map.id === contract.capitalMapInput.mapId);
   assert.ok(seoul);
-  assert.equal(seoul.source, contract.capitalMap.sourcePath);
-  assert.equal(seoul.sourceSvgSha256, contract.capitalMap.sourceSha256);
-  assert.equal(sha256(readFileSync(contract.capitalMap.sourcePath)), contract.capitalMap.sourceSha256);
+  assert.equal(seoul.source, contract.capitalMapInput.sourcePath);
+  assert.equal(seoul.sourceSvgSha256, contract.capitalMapInput.sourceSha256);
+  assert.equal(sha256(readFileSync(contract.capitalMapInput.sourcePath)), contract.capitalMapInput.sourceSha256);
 
   const layout = JSON.parse(readFileSync("contracts/datapack/artifact-component-table-layout.json", "utf8"));
   const sourceSchema = layout.serverRouteBundle.sourceSchema;
@@ -104,7 +121,7 @@ test("capital basemap과 source schema는 raw path와 sha256으로 결속된다"
 });
 
 test("Node 24 Zstd fixed profile은 same runtime에서 roundtrip과 세 번 byte identity를 보장한다", () => {
-  assert.equal(Number.parseInt(process.versions.node.split(".", 1)[0], 10), 24);
+  assert.equal(Number.parseInt(process.versions.node.split(".", 1)[0], 10), contract.compressionProfile.requiredNodeMajor);
   assert.match(process.versions.node, /^(?!\s).+\S$/);
   assert.match(process.versions.zstd, /^(?!\s).+\S$/);
   const options = {
@@ -122,6 +139,10 @@ test("Node 24 Zstd fixed profile은 same runtime에서 roundtrip과 세 번 byte
 
 function validateBuildContract(value) {
   return deepEqual(value, schema.const);
+}
+
+function resolveJsonPointer(value, pointer) {
+  return pointer.slice(1).split("/").reduce((current, token) => current[token.replaceAll("~1", "/").replaceAll("~0", "~")], value);
 }
 
 function deepEqual(left, right) {

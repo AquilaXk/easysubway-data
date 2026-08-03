@@ -139,6 +139,7 @@ test("server lifecycle의 exact KST instant, ordering, backend schema compatibil
     ["activeFrom", "2026-08-03T00:00:00.00+09:00"],
     ["activeFrom", "2026-08-03T00:00:00.000Z"],
     ["activeFrom", "2026-02-30T00:00:00.000+09:00"],
+    ["activeFrom", "2026-08-03T00:00:00.000+09:00\n"],
   ]) {
     const manifest = serverRouteBundleManifest();
     manifest[field] = value;

@@ -226,10 +226,11 @@ function requiredArtifactComponentSha256(value, label) {
 
 function requiredKstMillisecondInstant(value, label) {
   const instant = requiredArtifactComponentRawString(value, label);
-  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\+09:00$/.test(instant)) {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}\+09:00(?![\s\S])/.test(instant)) {
     throw new Error(`${label} must be an exact KST millisecond instant`);
   }
   const date = new Date(instant);
+  // Date accepts overflow calendar dates; reformatting at +09:00 proves the parsed instant preserved the supplied KST fields.
   if (Number.isNaN(date.getTime()) || new Date(date.getTime() + (9 * 60 * 60 * 1000)).toISOString().replace("Z", "+09:00") !== instant) {
     throw new Error(`${label} must be a valid KST millisecond instant`);
   }
