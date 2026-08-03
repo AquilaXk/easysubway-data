@@ -77,9 +77,9 @@ test("admission service dates는 창 안의 평일·토·일을 고른다", () =
 });
 
 test("parseArgs는 --로 시작하지만 플래그 이름 형태가 아닌 값을 값으로 인식한다", () => {
-  const result = parseArgs(["--evidence", "--not-a-flag.json", "--fail-on-critical"]);
+  const result = parseArgs(["--evidence", "--not-a-flag.json", "--github-output", "output.txt"]);
   assert.equal(result.evidence, "--not-a-flag.json");
-  assert.equal(result["fail-on-critical"], true);
+  assert.equal(result["github-output"], "output.txt");
 });
 
 test("parseArgs는 실제 플래그 이름 형태의 다음 토큰은 여전히 플래그 경계로 인식한다", () => {
@@ -88,7 +88,7 @@ test("parseArgs는 실제 플래그 이름 형태의 다음 토큰은 여전히 
   assert.equal(result["critical-seconds"], "60");
 });
 
-test("CLI는 evidence를 읽어 evidence/metrics/github-output를 남기고 fail-on-critical을 반영한다", async () => {
+test("CLI는 critical snapshot을 무조건 fail-closed하고 evidence/metrics/github-output를 남긴다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "freshness-cli-"));
   const evidencePath = path.join(dir, "evidence.json");
   await writeFile(evidencePath, `${JSON.stringify({ freshUntil: FRESH_UNTIL })}\n`);
@@ -103,7 +103,6 @@ test("CLI는 evidence를 읽어 evidence/metrics/github-output를 남기고 fail
       "--output", outputPath,
       "--metrics-output", metricsPath,
       "--github-output", githubOutputPath,
-      "--fail-on-critical",
     ],
     now: at(DEFAULT_CRITICAL_SECONDS - 60),
     cwd: dir,
