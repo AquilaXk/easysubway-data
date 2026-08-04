@@ -461,15 +461,20 @@ jobs:
               continue
             }
             # review-state-filter-begin
-            # 신뢰 기준은 author_association 하나다. PR 작성자 리뷰를 따로 배제하지 않는
-            # 것은 형제 저장소(backend·mobile)와 게이트 판정을 일치시키기 위한 결정이다 —
-            # 네 저장소가 같은 입력에 같은 판정을 내야 한다.
+            # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit Bot tuple만 신뢰한다.
+            # 임의 NONE association이나 같은 이름의 User는 게이트를 통과하지 못한다.
             if ! jq -e --arg head "${head}" '
+              def is_coderabbit:
+                .author_association == "NONE" and
+                .user.login == "coderabbitai[bot]" and
+                .user.id == 136622811 and
+                .user.type == "Bot";
               [flatten[] |
                 select(
                   .author_association == "OWNER" or
                   .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR"
+                  .author_association == "COLLABORATOR" or
+                  is_coderabbit
                 )] as $trusted |
               ($trusted | map(select(.commit_id == $head))) as $current |
               ($trusted |
@@ -487,8 +492,9 @@ jobs:
               any($current[];
                 .state == "APPROVED" or
                 (.state == "COMMENTED" and
-                  (.body // "" | startswith("**Actionable comments posted: ")) and
-                  (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))))
+                  (is_coderabbit or
+                    ((.body // "" | startswith("**Actionable comments posted: ")) and
+                    (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))))))
             ' <<<"${reviews}" >/dev/null; then
               echo "PR #${pr}: no trusted review on the current head, or an active change request is open; skipping."
               continue
