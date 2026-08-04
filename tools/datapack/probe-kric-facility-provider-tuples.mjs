@@ -15,6 +15,7 @@ const FACILITY_OPERATION_IDS = Object.freeze([
 const RESOLUTION_PATH = new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url);
 const ROUTE_ROSTERS_PATH = new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url);
 const CANDIDATES_PATH = new URL("./source-candidates.json", import.meta.url);
+const ROUTE_ROSTERS_FILE = "kric-nationwide-route-rosters-20260730T203926676Z.json";
 
 export function resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument } = {}) {
   if (resolution?.schemaVersion !== 1
@@ -22,13 +23,37 @@ export function resolveKricFacilityProviderProbe({ resolution, routeRosters, can
     || resolution?.admissionState !== "BLOCKED"
     || resolution?.productionAdmissionAllowed !== false
     || !Array.isArray(resolution?.blockedGroups)
+    || !resolution?.evaluatedSourceSnapshots?.includes(ROUTE_ROSTERS_FILE)
+    || routeRosters?.schemaVersion !== 1
+    || routeRosters?.artifactKind !== "kric-nationwide-route-rosters"
+    || routeRosters?.sourceId !== "kric-subway-route-info"
+    || routeRosters?.credentialRedacted !== true
+    || !Number.isFinite(Date.parse(routeRosters?.capturedAt))
     || !Array.isArray(routeRosters?.rosters)
+    || routeRosters.requestCount !== routeRosters.rosters.length
+    || routeRosters.rosters.some((roster) => (
+      roster?.schemaVersion !== 1
+      || roster?.artifactKind !== "kric-route-roster"
+      || roster?.sourceId !== routeRosters.sourceId
+      || roster?.capturedAt !== routeRosters.capturedAt
+      || roster?.credentialRedacted !== true
+      || roster?.resultCode !== "00"
+      || roster?.stationCount !== roster?.stations?.length
+    ))
     || !Array.isArray(candidatesDocument?.candidates)) {
     throw new Error("KRIC FACILITY provider probe inputs are invalid");
   }
-  const providerTupleStrings = resolution.blockedGroups
-    .filter(({ operatorCode }) => ["GX", "KR"].includes(operatorCode))
-    .flatMap(({ providerTuples }) => providerTuples ?? [])
+  const blockedGroups = resolution.blockedGroups.filter(({ operatorCode }) => ["GX", "KR"].includes(operatorCode));
+  if (blockedGroups.length !== 2 || new Set(blockedGroups.map(({ operatorCode }) => operatorCode)).size !== 2) {
+    throw new Error("KRIC FACILITY blocked groups are invalid");
+  }
+  const providerTupleStrings = blockedGroups
+    .flatMap(({ operatorCode, providerTuples }) => {
+      if (!Array.isArray(providerTuples) || providerTuples.some((tuple) => !tuple.startsWith(`${operatorCode}/`))) {
+        throw new Error(`KRIC FACILITY blocked group is invalid: ${operatorCode}`);
+      }
+      return providerTuples;
+    })
     .sort(compare);
   if (providerTupleStrings.length !== 20 || new Set(providerTupleStrings).size !== 20) {
     throw new Error("KRIC FACILITY provider tuple set is invalid");
@@ -51,10 +76,12 @@ export function resolveKricFacilityProviderProbe({ resolution, routeRosters, can
     return { railOprIsttCd, lnCd, stinCd, stationName: names[0] };
   });
   const operations = FACILITY_OPERATION_IDS.map((sourceId) => {
-    const candidate = candidatesDocument.candidates.find(({ id }) => id === sourceId);
+    const matches = candidatesDocument.candidates.filter(({ id }) => id === sourceId);
+    const [candidate] = matches;
     const endpoint = candidate?.operation?.endpoint;
     const responseFields = candidate?.operation?.responseFields;
-    if (candidate?.requestUrl !== endpoint || !Array.isArray(responseFields) || responseFields.length === 0) {
+    if (matches.length !== 1 || candidate?.requestUrl !== endpoint
+      || !Array.isArray(responseFields) || responseFields.length === 0) {
       throw new Error(`KRIC FACILITY operation contract is invalid: ${sourceId}`);
     }
     return {
@@ -71,7 +98,11 @@ function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     if (!argv[index]?.startsWith("--") || argv[index + 1] === undefined) throw new Error("invalid arguments");
-    args[argv[index].slice(2)] = argv[index + 1];
+    const name = argv[index].slice(2);
+    if (!["output", "request-interval-ms"].includes(name) || Object.hasOwn(args, name)) {
+      throw new Error("invalid arguments");
+    }
+    args[name] = argv[index + 1];
   }
   if (!path.isAbsolute(args.output ?? "")) throw new Error("--output must be absolute");
   const requestIntervalMs = Number(args["request-interval-ms"] ?? 250);

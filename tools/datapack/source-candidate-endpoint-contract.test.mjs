@@ -115,7 +115,25 @@ test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 
     resolution,
     routeRosters: { ...routeRosters, rosters: [] },
     candidatesDocument: document,
-  }), /KRIC FACILITY provider tuple identity is invalid/);
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution,
+    routeRosters: {
+      ...routeRosters,
+      rosters: [{ ...routeRosters.rosters[0], resultCode: "03" }, ...routeRosters.rosters.slice(1)],
+    },
+    candidatesDocument: document,
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution: {
+      ...resolution,
+      blockedGroups: resolution.blockedGroups.map((group, index) => index === 0
+        ? { ...group, providerTuples: ["KR/A/X101", ...group.providerTuples.slice(1)] }
+        : group),
+    },
+    routeRosters,
+    candidatesDocument: document,
+  }), /KRIC FACILITY blocked group is invalid/);
 });
 
 function response(status, body, resultCode = "00") {
