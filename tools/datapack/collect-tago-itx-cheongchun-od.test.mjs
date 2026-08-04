@@ -3,11 +3,13 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  TagoProviderBoundaryError,
   buildItxOdMatrix,
   collectTagoItxCheongchunOd,
   collectTagoItxCheongchunRoster,
   materializeTagoItxOdRows,
   normalizeTrainNumber,
+  providerFailureEvidence,
   validateItxServiceDates,
 } from "./collect-tago-itx-cheongchun-od.mjs";
 
@@ -26,6 +28,56 @@ function tagoCatalogResponse(items) {
     body: { items: { item: items } },
   } }), { status: 200, headers: { "content-type": "application/json" } });
 }
+
+function tagoFailure(resultCode) {
+  return new Response(JSON.stringify({
+    response: { header: { resultCode }, body: { items: { item: [] } } },
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+async function captureRejected(run) {
+  let captured;
+  try {
+    await run();
+  } catch (error) {
+    captured = error;
+  }
+  assert.ok(captured instanceof Error, "expected rejection");
+  return captured;
+}
+
+test("TAGO key 누락은 provider 호출 전에 실패한다", async () => {
+  let calls = 0;
+  await assert.rejects(collectTagoItxCheongchunOd({
+    serviceKey: "",
+    departureDate: "2026-08-04",
+    kricServiceDayCode: "8",
+    fetchImpl: async () => { calls += 1; },
+  }), /DATA_GO_KR_SERVICE_KEY is required/);
+  assert.equal(calls, 0);
+});
+
+test("TAGO resultCode 01은 secret 없는 structured failure evidence를 만든다", async () => {
+  const secret = "never-print-this";
+  const error = await captureRejected(() => collectTagoItxCheongchunOd({
+    serviceKey: secret,
+    departureDate: "2026-08-04",
+    kricServiceDayCode: "8",
+    fetchImpl: async () => tagoFailure("01"),
+  }));
+  assert.ok(error instanceof TagoProviderBoundaryError);
+  const evidence = providerFailureEvidence(error, { observedAt: "2026-08-04T08:00:38.000Z" });
+  assert.deepEqual(evidence.providerBoundary, {
+    operation: "GetVhcleKndList",
+    transportStatus: "HTTP_SUCCESS",
+    httpStatus: 200,
+    schemaStatus: "EXPECTED",
+    resultCode: "01",
+  });
+  assert.equal(evidence.credentialPresent, true);
+  assert.equal(evidence.credentialRedacted, true);
+  assert.doesNotMatch(`${error.message}\n${JSON.stringify(evidence)}`, new RegExp(secret));
+});
 
 async function withoutTotalCount(response) {
   const payload = await response.json();

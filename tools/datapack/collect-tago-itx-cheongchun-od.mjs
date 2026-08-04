@@ -17,6 +17,32 @@ const CANONICAL_STATIONS = Object.freeze({
   "춘천": "station-dd14cfb89cbc",
 });
 
+export class TagoProviderBoundaryError extends Error {
+  constructor(message, detail) {
+    super(message);
+    this.name = "TagoProviderBoundaryError";
+    this.detail = Object.freeze({ ...detail });
+  }
+}
+
+export function providerFailureEvidence(error, { observedAt } = {}) {
+  if (!(error instanceof TagoProviderBoundaryError)) throw error;
+  const timestamp = requiredString(observedAt, "observedAt");
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(timestamp)
+    || !Number.isFinite(Date.parse(timestamp))) {
+    throw new Error("observedAt must be UTC ISO-8601");
+  }
+  const evidence = {
+    schemaVersion: 1,
+    artifactKind: "tago-provider-failure-evidence",
+    observedAt: timestamp,
+    providerBoundary: error.detail,
+    credentialPresent: true,
+    credentialRedacted: true,
+  };
+  return { ...evidence, failureFingerprint: sha256(JSON.stringify(evidence)) };
+}
+
 export function validateItxServiceDates(serviceDates, { now = new Date(), replay = false } = {}) {
   const result = {};
   const today = calendarDate(kstDate(now));
@@ -571,7 +597,15 @@ async function fetchAll(operation, query, key, fetchImpl, requestBudget = null, 
     try { json = JSON.parse(raw); } catch { throw new Error(`TAGO ${operation} schema mismatch: invalid JSON`); }
     const root = json.response ?? json;
     const code = String(root?.header?.resultCode ?? "");
-    if (code !== "00") throw new Error(`TAGO ${operation} provider resultCode ${safeCode(code)}`);
+    if (code !== "00") {
+      throw new TagoProviderBoundaryError(`TAGO ${operation} provider resultCode ${safeCode(code)}`, {
+        operation,
+        transportStatus: "HTTP_SUCCESS",
+        httpStatus: response.status,
+        schemaStatus: "EXPECTED",
+        resultCode: safeCode(code),
+      });
+    }
     const body = root?.body;
     if (!body || typeof body !== "object") throw new Error(`TAGO ${operation} schema mismatch: body`);
     const items = body.items?.item;
