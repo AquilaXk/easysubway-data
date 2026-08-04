@@ -760,6 +760,7 @@ function validateCapitalTopologyReverification(evidence, topology, candidateTopo
   if (candidateSnapshotId !== "capital-route-topology-20260804"
     || candidateTopology.contentSha256 !== evidence.candidate.contentSha256
     || candidateTopology.capturedAt !== evidence.candidate.capturedAt
+    || candidateTopology.lines.some(({ capturedAt }) => capturedAt !== candidateTopology.capturedAt)
     || candidateTopology.freshUntil !== evidence.candidate.freshUntil
     || candidateTopology.lineCount !== evidence.candidate.lineCount
     || candidateTopology.totalEdgeCount !== evidence.candidate.totalEdgeCount

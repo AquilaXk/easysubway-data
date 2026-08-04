@@ -415,6 +415,39 @@ test("capital topology reverification은 independently pinned candidate와 다�
   }
 });
 
+test("capital topology reverification은 candidate line capture clock repin을 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-line-clock-"));
+  try {
+    const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+    const candidate = JSON.parse(await readFile(
+      spec.networkEdgeEvidence.capitalTopologyCandidate.path,
+      "utf8",
+    ));
+    candidate.lines[0].capturedAt = "2026-08-03T17:30:34.901Z";
+    const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+    const candidatePath = path.join(workspace, "capital-route-topology.json");
+    await writeFile(candidatePath, candidateBytes);
+    spec.networkEdgeEvidence.capitalTopologyCandidate = {
+      ...spec.networkEdgeEvidence.capitalTopologyCandidate,
+      path: candidatePath,
+      sha256: sha256(candidateBytes),
+    };
+    const specPath = path.join(workspace, "candidate-build-spec.json");
+    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--build-spec", specPath,
+      "--output", path.join(workspace, "output"),
+    ], {
+      cwd: root,
+      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
+    }), /capital topology reverification candidate snapshot mismatch/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("unchanged capital topology reverification은 content review와 fresh review 시각을 분리한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-review-clock-"));
   try {
