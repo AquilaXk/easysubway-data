@@ -12,6 +12,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
 import { approvedLegacyGovernanceBinding } from "./legacy-source-governance.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { validateTagoEmergencyReadmission } from "./tago-emergency-readmission.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
@@ -50,6 +51,11 @@ export function buildServerTimetableSnapshot({
   subwayRosterBytes,
   reviewedPackBytes,
   sourceSnapshotsBytes,
+  admissionBytes,
+  failureEvidenceBytes,
+  capitalTopologyBytes,
+  capitalReverificationBytes,
+  capitalTopologyAdmission,
   canonicalGzipBytes,
   buildNow = new Date(),
 }) {
@@ -64,12 +70,18 @@ export function buildServerTimetableSnapshot({
     ? null
     : parseJson(readmissionEvidenceBytes, "readmission evidence");
   const subwayRoster = parseJson(subwayRosterBytes, "subway roster");
-  const admittedCanonicalPackIdentity = validateAdmission({
+  const { canonicalPackIdentity: admittedCanonicalPackIdentity, admission } = validateServerTimetableAdmission({
     contract,
+    contractBytes,
     source,
     sourceBytes,
     completeness,
     completenessBytes,
+    admissionBytes,
+    failureEvidenceBytes,
+    capitalTopologyBytes,
+    capitalReverificationBytes,
+    capitalTopologyAdmission,
     buildNow,
   });
   // 순수 freshness 리프레시(topology 불변)는 apply-itx가 산출하는 topology evidence 없이
@@ -110,7 +122,7 @@ export function buildServerTimetableSnapshot({
     canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
     admissionStatus: "ADMITTED",
     admissionEligible: true,
-    freshUntil: source.freshUntil,
+    freshUntil: admission.freshUntil,
     sourceIssue: 2135,
   }];
   const itxSeed = buildBackendTimetableSeed({
@@ -161,7 +173,13 @@ export function buildServerTimetableSnapshot({
     snapshotSqlByteSize: sqlBytes.length,
     snapshotGzipSha256: sha256(gzipBytes),
     snapshotGzipByteSize: gzipBytes.length,
-    freshUntil: source.freshUntil,
+    admissionStatus: admission.status,
+    sourceFreshUntil: admission.sourceFreshUntil,
+    freshUntil: admission.freshUntil,
+    ...(admission.status === "EMERGENCY_REVALIDATED" ? {
+      emergencyAdmissionExpiresAt: admission.emergencyAdmissionExpiresAt,
+      emergencyDecisionSha256: admission.emergencyDecisionSha256,
+    } : {}),
     serviceIdentity: {
       serviceId: contract.serviceId,
       canonicalLineId: contract.canonicalLineId,
@@ -886,12 +904,18 @@ function orderedStationIds(stops = []) {
     .map(({ stationId }) => stationId);
 }
 
-function validateAdmission({
+export function validateServerTimetableAdmission({
   contract,
+  contractBytes,
   source,
   sourceBytes,
   completeness,
   completenessBytes,
+  admissionBytes,
+  failureEvidenceBytes,
+  capitalTopologyBytes,
+  capitalReverificationBytes,
+  capitalTopologyAdmission,
   buildNow,
 }) {
   const reference = contract?.sourceTimetableArtifact;
@@ -931,10 +955,6 @@ function validateAdmission({
     || completenessEvidenceHash !== sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)))) {
     throw new Error("completeness evidence schema or lineage mismatch");
   }
-  const freshUntil = Date.parse(source.freshUntil);
-  if (!Number.isFinite(freshUntil) || freshUntil <= buildNow.getTime()) {
-    throw new Error("source artifact is stale");
-  }
   if (!Array.isArray(source.transitTrips) || source.transitTrips.length === 0
     || !Array.isArray(source.transitStopTimes) || source.transitStopTimes.length === 0
     || !Array.isArray(source.sourceLineage) || source.sourceLineage.length !== 3) {
@@ -947,7 +967,37 @@ function validateAdmission({
     || source.canonicalPackIdentity?.sha256 !== canonical.sha256) {
     throw new Error("canonical pack identity mismatch");
   }
-  return { id: canonical.id, sha256: canonical.sha256, sqliteSha256: canonical.sqliteSha256 };
+  const sourceFreshUntil = source.freshUntil;
+  const freshUntil = Date.parse(sourceFreshUntil);
+  if (!Number.isFinite(freshUntil)) throw new Error("source artifact is stale");
+  let admission = { status: "FRESH", sourceFreshUntil, freshUntil: sourceFreshUntil };
+  if (freshUntil <= buildNow.getTime()) {
+    if (admissionBytes == null) throw new Error("source artifact is stale");
+    const emergency = validateTagoEmergencyReadmission({
+      admissionBytes,
+      failureEvidenceBytes,
+      itxCoverageContractBytes: contractBytes,
+      capitalTopologyBytes,
+      capitalReverificationBytes,
+      capitalTopologyAdmission,
+      now: buildNow,
+    });
+    admission = {
+      status: emergency.status,
+      sourceFreshUntil,
+      freshUntil: emergency.expiresAt,
+      emergencyAdmissionExpiresAt: emergency.expiresAt,
+      emergencyDecisionSha256: emergency.decisionSha256,
+    };
+  }
+  return {
+    canonicalPackIdentity: {
+      id: canonical.id,
+      sha256: canonical.sha256,
+      sqliteSha256: canonical.sqliteSha256,
+    },
+    admission,
+  };
 }
 
 function normalizeBaselineSql(baselineGzipBytes) {
@@ -1106,14 +1156,45 @@ async function main() {
     ?? "tools/datapack/release/capital-production-reviewed-pack.json");
   const sourceSnapshotsPath = path.resolve(root, args["source-snapshots"]
     ?? "tools/datapack/release/source-snapshots.json");
+  const candidateBuildSpecPath = path.resolve(root, args["candidate-build-spec"]
+    ?? "tools/datapack/release/candidate-build-spec.json");
   const canonicalGzipBytes = args.check ? await readFile(outputPath) : undefined;
   const contractBytes = await readFile(contractPath);
   const contract = parseJson(contractBytes, "coverage contract");
+  const sourceBytes = await readFile(path.resolve(root, contract.sourceTimetableArtifact.artifactPath));
+  const buildNow = buildClock();
   const trackedTopologyEvidenceBytes = await readFile(topologyEvidencePath);
+  let emergencyInputs = {};
+  if (Date.parse(parseJson(sourceBytes, "source artifact").freshUntil) <= buildNow.getTime()) {
+    const candidateBuildSpec = parseJson(await readFile(candidateBuildSpecPath), "candidate build spec");
+    const networkEvidence = candidateBuildSpec.networkEdgeEvidence;
+    if (networkEvidence?.emergencyReadmission === undefined) throw new Error("source artifact is stale");
+    const [admissionBytes, failureEvidenceBytes, capitalTopologyBytes, capitalReverificationBytes] =
+      await Promise.all([
+        readFile(path.resolve(root, networkEvidence.emergencyReadmission.path)),
+        readFile(path.resolve(root, "tools/datapack/release/tago-provider-failure-20260804.json")),
+        readFile(path.resolve(root, networkEvidence.capitalTopology.path)),
+        readFile(path.resolve(root, networkEvidence.capitalTopologyReverification.path)),
+      ]);
+    for (const [label, reference, bytes] of [
+      ["emergencyReadmission", networkEvidence.emergencyReadmission, admissionBytes],
+      ["capitalTopology", networkEvidence.capitalTopology, capitalTopologyBytes],
+      ["capitalTopologyReverification", networkEvidence.capitalTopologyReverification, capitalReverificationBytes],
+    ]) {
+      if (reference?.sha256 !== sha256(bytes)) throw new Error(`${label} SHA-256 mismatch`);
+    }
+    emergencyInputs = {
+      admissionBytes,
+      failureEvidenceBytes,
+      capitalTopologyBytes,
+      capitalReverificationBytes,
+      capitalTopologyAdmission: networkEvidence.capitalTopologyAdmission,
+    };
+  }
   const result = buildServerTimetableSnapshot({
     baselineGzipBytes: await readFile(baselinePath),
     contractBytes,
-    sourceBytes: await readFile(path.resolve(root, contract.sourceTimetableArtifact.artifactPath)),
+    sourceBytes,
     completenessBytes: await readFile(path.resolve(
       root,
       contract.sourceTimetableArtifact.completenessEvidencePath,
@@ -1124,8 +1205,9 @@ async function main() {
     subwayRosterBytes: await readFile(subwayRosterPath),
     reviewedPackBytes: await readFile(reviewedPackPath),
     sourceSnapshotsBytes: await readFile(sourceSnapshotsPath),
+    ...emergencyInputs,
     canonicalGzipBytes,
-    buildNow: buildClock(),
+    buildNow,
   });
   if (args.check) {
     const [storedSnapshot, storedEvidence, storedRuntimeEvidence] = await Promise.all([

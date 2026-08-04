@@ -8,7 +8,10 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-import { buildServerTimetableSnapshot } from "./build-server-timetable-snapshot.mjs";
+import {
+  buildServerTimetableSnapshot,
+  validateServerTimetableAdmission,
+} from "./build-server-timetable-snapshot.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -22,6 +25,14 @@ const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topo
 const subwayRosterPath = path.join(root, "tools/datapack/sources/kric-line4-route-roster-20260706.json");
 const reviewedPackPath = path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json");
 const sourceSnapshotsPath = path.join(root, "tools/datapack/release/source-snapshots.json");
+const emergencyDecisionPath = path.join(root, "tools/datapack/release/tago-emergency-readmission-20260804.json");
+const providerFailurePath = path.join(root, "tools/datapack/release/tago-provider-failure-20260804.json");
+const capitalTopologyPath = path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json");
+const capitalReverificationPath = path.join(
+  root,
+  "tools/datapack/release/capital-topology-reverification-20260804.json",
+);
+const candidateBuildSpecPath = path.join(root, "tools/datapack/release/candidate-build-spec.json");
 const buildNow = new Date("2026-07-16T00:00:00.000Z");
 
 function sha256(value) {
@@ -90,7 +101,7 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
     admittedInputSha256: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256,
     admittedInputSqliteSha256:
       contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
-    readmissionCount: 27,
+    readmissionCount: 28,
   });
   assert.deepEqual(first.evidence.serviceIdentity, {
     serviceId: "ITX_CHEONGCHUN",
@@ -404,6 +415,79 @@ test("complete snapshot은 source·completeness identity와 freshness를 fail cl
       buildNow,
     }),
     /canonical topology pack identity mismatch/,
+  );
+});
+
+test("emergency admission은 source expiry를 보존하고 exact decision만 server snapshot에 허용한다", async () => {
+  const [contractBytes, admissionBytes, failureEvidenceBytes, capitalTopologyBytes,
+    capitalReverificationBytes, candidateBuildSpecBytes] = await Promise.all([
+    readFile(contractPath),
+    readFile(emergencyDecisionPath),
+    readFile(providerFailurePath),
+    readFile(capitalTopologyPath),
+    readFile(capitalReverificationPath),
+    readFile(candidateBuildSpecPath),
+  ]);
+  const contract = JSON.parse(contractBytes);
+  const decision = JSON.parse(admissionBytes);
+  const buildSpec = JSON.parse(candidateBuildSpecBytes);
+  const sourceBytes = await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath));
+  const completenessBytes = await readFile(path.join(
+    root,
+    contract.sourceTimetableArtifact.completenessEvidencePath,
+  ));
+  const input = {
+    contract,
+    contractBytes,
+    source: JSON.parse(sourceBytes),
+    sourceBytes,
+    completeness: JSON.parse(completenessBytes),
+    completenessBytes,
+    admissionBytes,
+    failureEvidenceBytes,
+    capitalTopologyBytes,
+    capitalReverificationBytes,
+    capitalTopologyAdmission: buildSpec.networkEdgeEvidence.capitalTopologyAdmission,
+  };
+
+  const emergency = validateServerTimetableAdmission({
+    ...input,
+    buildNow: new Date(decision.admittedAt),
+  });
+  assert.deepEqual(emergency.admission, {
+    status: "EMERGENCY_REVALIDATED",
+    sourceFreshUntil: contract.sourceTimetableArtifact.freshUntil,
+    freshUntil: decision.expiresAt,
+    emergencyAdmissionExpiresAt: decision.expiresAt,
+    emergencyDecisionSha256: sha256(admissionBytes),
+  });
+
+  const fresh = validateServerTimetableAdmission({
+    ...input,
+    admissionBytes: Buffer.from("unused invalid decision"),
+    buildNow,
+  });
+  assert.deepEqual(fresh.admission, {
+    status: "FRESH",
+    sourceFreshUntil: contract.sourceTimetableArtifact.freshUntil,
+    freshUntil: contract.sourceTimetableArtifact.freshUntil,
+  });
+
+  assert.throws(
+    () => validateServerTimetableAdmission({
+      ...input,
+      admissionBytes: null,
+      buildNow: new Date(decision.admittedAt),
+    }),
+    /source artifact is stale/,
+  );
+  assert.throws(
+    () => validateServerTimetableAdmission({
+      ...input,
+      failureEvidenceBytes: Buffer.from("{}"),
+      buildNow: new Date(decision.admittedAt),
+    }),
+    /failure evidence/,
   );
 });
 
