@@ -712,18 +712,30 @@ function validateCapitalTopologyReverification(evidence, topology, admission) {
     throw new Error("capital topology reverification coverage mismatch");
   }
   sha256HexString(evidence.baseline.normalizedLineSetSha256, "capital topology reverification baseline normalizedLineSetSha256");
-  sha256HexString(evidence.candidate.contentSha256, "capital topology reverification candidate contentSha256");
+  const claimedCandidateContentSha256 = sha256HexString(
+    evidence.candidate.contentSha256,
+    "capital topology reverification candidate contentSha256",
+  );
   sha256HexString(evidence.candidate.normalizedLineSetSha256, "capital topology reverification candidate normalizedLineSetSha256");
-  const normalized = (lines, label) => sha256(Buffer.from(JSON.stringify(lines.map((line) => {
+  const topologyByLineId = new Map(topology.lines.map((line) => [line.lineId, line]));
+  const candidateLines = evidence.candidate.lines.map((line) => {
+    const label = "capital topology reverification candidate line";
     assertExactKeys(line, ["lineId", "datasetId", "rawSha256", "contentSha256"], label);
-    requiredString(line.datasetId, `${label}.datasetId`);
-    sha256HexString(line.rawSha256, `${label}.rawSha256`);
+    const lineId = requiredString(line.lineId, `${label}.lineId`);
+    const topologyLine = topologyByLineId.get(lineId);
+    if (topologyLine == null) throw new Error("capital topology reverification coverage mismatch");
     return {
-      lineId: requiredString(line.lineId, `${label}.lineId`),
+      lineId,
+      edgeCount: topologyLine.edgeCount,
+      stationCount: topologyLine.stationCount,
       contentSha256: sha256HexString(line.contentSha256, `${label}.contentSha256`),
+      rawSha256: sha256HexString(line.rawSha256, `${label}.rawSha256`),
+      datasetId: requiredString(line.datasetId, `${label}.datasetId`),
     };
-  }).sort((left, right) => compareStrings(left.lineId, right.lineId)))));
-  const candidateNormalized = normalized(evidence.candidate.lines, "capital topology reverification candidate line");
+  });
+  const candidateNormalized = sha256(Buffer.from(JSON.stringify(candidateLines
+    .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
+    .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
   const topologyNormalized = sha256(Buffer.from(JSON.stringify(topology.lines
     .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
     .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
@@ -731,6 +743,13 @@ function validateCapitalTopologyReverification(evidence, topology, admission) {
     || topologyNormalized !== evidence.baseline.normalizedLineSetSha256
     || candidateNormalized !== topologyNormalized) {
     throw new Error("capital topology reverification normalized content mismatch");
+  }
+  const candidateContentSha256 = sha256(Buffer.from(JSON.stringify({
+    lines: candidateLines,
+    topologyGaps: topology.topologyGaps,
+  })));
+  if (candidateContentSha256 !== claimedCandidateContentSha256) {
+    throw new Error("capital topology reverification candidate contentSha256 mismatch");
   }
   const capturedAt = Date.parse(requiredUtcDateString(
     evidence.candidate.capturedAt,
