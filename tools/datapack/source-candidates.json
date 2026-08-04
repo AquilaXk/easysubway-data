@@ -3,7 +3,7 @@
   "artifactKind": "production-source-candidates",
   "source": "tools/datapack/source-candidates.json",
   "retrievedAt": "2026-06-22",
-  "updatedAt": "2026-08-02",
+  "updatedAt": "2026-08-04",
   "providers": {
     "kric": {
       "credential": {
@@ -37,6 +37,34 @@
       ]
     }
   },
+  "credentialBearingProviderCoverage": [
+    {
+      "providerId": "data-go-kr",
+      "credentialEnv": "DATA_GO_KR_SERVICE_KEY",
+      "requiredClassification": "DETERMINISTIC_CREDENTIAL_VALIDATION_ONLY",
+      "implementationStatus": "MISSING",
+      "missingContracts": [
+        "shared-deterministic-credential-validation"
+      ],
+      "reason": "current runners only load or decode DATA_GO_KR_SERVICE_KEY and do not share deterministic validation evidence",
+      "runners": [
+        "tools/datapack/collect-busan-accessibility.mjs",
+        "tools/datapack/collect-busan-route-topology.mjs",
+        "tools/datapack/collect-busan-timetable.mjs",
+        "tools/datapack/collect-daejeon-route-topology.mjs",
+        "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+        "tools/datapack/collect-gwangju-timetable.mjs",
+        "tools/datapack/collect-korail-itx-cheongchun-timetable.mjs",
+        "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+        "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+        "tools/datapack/collect-tago-itx-cheongchun-od.mjs",
+        "tools/datapack/probe-daejeon-coverage-api.mjs",
+        "tools/datapack/probe-korail-train-operation-api.mjs",
+        "tools/datapack/probe-seoul-fare-api.mjs",
+        "tools/datapack/validate-tago-schedule-sample.mjs"
+      ]
+    }
+  ],
   "candidates": [
     {
       "id": "busan-transportation-accessibility",
