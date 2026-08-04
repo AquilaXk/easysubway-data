@@ -55,3 +55,12 @@ jobs:
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
           tools/datapack/collect-kric-source-candidate-evidence.test.mjs
+
+      - name: Verify TAGO emergency admission contracts
+        run: |
+          node --test --test-name-pattern='TAGO key 누락|TAGO resultCode 01' tools/datapack/collect-tago-itx-cheongchun-od.test.mjs
+          node --test tools/datapack/tago-emergency-readmission.test.mjs
+          node --test --test-name-pattern='network edge evidence' tools/datapack/verify-production-pack-artifact-identity.test.mjs
+          node --test --test-name-pattern='emergency admission' tools/datapack/build-server-timetable-snapshot.test.mjs
+          node --test tools/datapack/launch-candidate-binding.test.mjs
+          node --test --test-name-pattern='emergency-bound' tools/datapack/validate-release-evidence-bundle.test.mjs
