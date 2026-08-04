@@ -42,6 +42,14 @@ test("KRIC normalizer는 닫힌 caller mapping 외 exptCd를 추정하지 않는
   }
   assert.throws(() => normalizeKricSubwayTimetable(KRIC_ROWS, { ...CONTEXT, servicePatternByExptCd: null }), /context.servicePatternByExptCd is required/);
   assert.throws(() => normalizeKricSubwayTimetable([{ ...KRIC_ROWS[0], exptCd: "LOCAL" }], { ...CONTEXT, servicePatternByExptCd: { LOCAL: "BEST" } }), /invalid servicePattern mapping/);
+  assert.throws(
+    () => normalizeKricSubwayTimetable([{ ...KRIC_ROWS[0], exptCd: "LOCAL" }], { ...CONTEXT, servicePatternByExptCd: { LOCAL: "LOCAL", EXPRESS: "BEST" } }),
+    /invalid servicePattern mapping/,
+  );
+  assert.throws(
+    () => normalizeKricSubwayTimetable([{ ...KRIC_ROWS[0], exptCd: "LOCAL" }], { ...CONTEXT, servicePatternByExptCd: { " ": "LOCAL" } }),
+    /invalid servicePattern mapping key/,
+  );
 });
 
 test("KRIC normalizer는 canonical mapping과 입력 형식을 fail closed한다", () => {

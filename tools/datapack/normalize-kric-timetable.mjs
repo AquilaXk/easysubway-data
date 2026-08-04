@@ -111,9 +111,19 @@ function asLookup(value, label) {
 
 function asServicePatternLookup(value) {
   if (Array.isArray(value)) throw new Error("normalize-kric: context.servicePatternByExptCd is required");
-  const lookup = asLookup(value, "servicePatternByExptCd");
-  if (Object.keys(lookup).length === 0) {
+  const entries = value instanceof Map
+    ? [...value.entries()]
+    : Object.entries(asLookup(value, "servicePatternByExptCd"));
+  if (entries.length === 0) {
     throw new Error("normalize-kric: context.servicePatternByExptCd is required");
   }
-  return lookup;
+  for (const [exptCd, servicePattern] of entries) {
+    if (typeof exptCd !== "string" || exptCd.trim() === "") {
+      throw new TypeError("normalize-kric: invalid servicePattern mapping key");
+    }
+    if (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS") {
+      throw new TypeError(`normalize-kric: invalid servicePattern mapping for ${exptCd}`);
+    }
+  }
+  return Object.fromEntries(entries);
 }
