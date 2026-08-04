@@ -1337,11 +1337,12 @@ async function main() {
     "--output",
     path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
   );
-  const capturedAt = option("--captured-at");
   const download = process.argv.includes("--download");
+  const capturedAt = option("--captured-at")
+    ?? (download ? new Date().toISOString() : "2026-07-24T08:20:00.000Z");
   const snapshot = await collectCapitalRouteTopology({
     root,
-    now: capturedAt ? new Date(capturedAt) : new Date(),
+    now: new Date(capturedAt),
     useLocalFiles: !download,
   });
   await writeFile(output, `${JSON.stringify(snapshot)}\n`);

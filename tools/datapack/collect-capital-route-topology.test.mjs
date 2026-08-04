@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   buildCapitalTopologyReverificationEvidence,
@@ -7,6 +12,8 @@ import {
   compareCapitalRouteTopologies,
   parseSeohaeMerged,
 } from "./collect-capital-route-topology.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("MOLIT 전체노선 collector는 공개 FILE 링크의 CSV만 수집한다", async () => {
   const requests = [];
@@ -86,4 +93,23 @@ test("capital topology 비교는 동일 stored hash여도 edge 추가 삭제 수
     modified: [{ before: baselineEdges[0], after: candidateEdges[0] }],
   }]);
   assert.throws(() => buildCapitalTopologyReverificationEvidence(baseline, candidate), /re-admission required/);
+});
+
+test("local CLI 기본 실행은 tracked baseline을 건드리지 않고 고정 freshness를 기록한다", async () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const baselinePath = path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json");
+  const baselineBytes = await readFile(baselinePath);
+  const outputDir = await mkdtemp(path.join(tmpdir(), "capital-topology-test-"));
+  const outputPath = path.join(outputDir, "snapshot.json");
+  try {
+    await execFileAsync(process.execPath, [
+      "tools/datapack/collect-capital-route-topology.mjs", "--output", outputPath,
+    ], { cwd: root });
+    const snapshot = JSON.parse(await readFile(outputPath, "utf8"));
+    assert.equal(snapshot.capturedAt, "2026-07-24T08:20:00.000Z");
+    assert.equal(snapshot.freshUntil, "2026-07-25T08:20:00.000Z");
+    assert.deepEqual(await readFile(baselinePath), baselineBytes);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
 });
