@@ -41,8 +41,11 @@ export function buildLaunchCandidateBinding({
   const serverEvidence = inspectConsumerEvidence(serverEvidenceRaw, expected, now);
   const mobileEvidence = inspectConsumerEvidence(mobileEvidenceRaw, expected, now);
   const evidence = [sourceEvidence, serverEvidence, mobileEvidence];
+  const fresh = evidence.every(({ status }) => status === "FRESH");
+  const emergency = evidence.every(({ status }) => status === "EMERGENCY_REVALIDATED")
+    && evidence.slice(1).every((item) => sameEmergencyAdmission(item, evidence[0]));
   return {
-    status: coreValid && evidence.every(({ status }) => status === "FRESH") ? "BOUND" : "INCOMPLETE",
+    status: coreValid && (fresh || emergency) ? "BOUND" : "INCOMPLETE",
     buildCandidateId,
     packCandidateId,
     candidateBuilderGitSha,
@@ -105,7 +108,12 @@ function inspectSourceEvidence(raw, expected, builderGitSha, now) {
   ) {
     return { status: "INVALID", sha256, freshUntil: null };
   }
-  return freshnessResult(sha256, freshUntil, now);
+  return admissionResult(
+    sha256,
+    freshUntil,
+    value.candidateBuild?.networkEdgeEvidence?.admission,
+    now,
+  );
 }
 
 function inspectConsumerEvidence(raw, expected, now) {
@@ -116,7 +124,45 @@ function inspectConsumerEvidence(raw, expected, now) {
   if (!expected || !value || !sameCandidate(value.candidateBinding, expected) || !freshUntil) {
     return { status: "INVALID", sha256, freshUntil: null };
   }
-  return freshnessResult(sha256, freshUntil, now);
+  return admissionResult(sha256, freshUntil, {
+    status: value.admissionStatus,
+    sourceFreshUntil: value.sourceFreshUntil,
+    emergencyAdmissionExpiresAt: value.emergencyAdmissionExpiresAt,
+    emergencyDecisionSha256: value.emergencyDecisionSha256,
+  }, now);
+}
+
+function admissionResult(sha256, freshUntil, admission, now) {
+  if (admission?.status === undefined || admission.status === "FRESH") {
+    return freshnessResult(sha256, freshUntil, now);
+  }
+  if (admission.status !== "EMERGENCY_REVALIDATED"
+    || !validTimestamp(admission.sourceFreshUntil)
+    || !validTimestamp(admission.emergencyAdmissionExpiresAt)
+    || !SHA256.test(admission.emergencyDecisionSha256 ?? "")) {
+    return { status: "INVALID", sha256, freshUntil: null };
+  }
+  const current = now instanceof Date ? now.getTime() : Date.parse(now);
+  const result = {
+    status: "EMERGENCY_REVALIDATED",
+    sha256,
+    freshUntil,
+    sourceFreshUntil: admission.sourceFreshUntil,
+    emergencyAdmissionExpiresAt: admission.emergencyAdmissionExpiresAt,
+    emergencyDecisionSha256: admission.emergencyDecisionSha256,
+  };
+  if (!Number.isFinite(current)
+    || Date.parse(freshUntil) <= current
+    || Date.parse(admission.emergencyAdmissionExpiresAt) <= current) {
+    result.status = "STALE";
+  }
+  return result;
+}
+
+function sameEmergencyAdmission(left, right) {
+  return left.sourceFreshUntil === right.sourceFreshUntil
+    && left.emergencyAdmissionExpiresAt === right.emergencyAdmissionExpiresAt
+    && left.emergencyDecisionSha256 === right.emergencyDecisionSha256;
 }
 
 function freshnessResult(sha256, freshUntil, now) {

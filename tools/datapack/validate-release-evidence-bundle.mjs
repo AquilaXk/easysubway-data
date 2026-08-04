@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
+import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   buildLaunchDenominatorReport,
   canonicalScopeHash,
@@ -323,6 +324,7 @@ function validateLaunchDenominatorReport(
       }
     }
   }
+  validateEmergencyLaunchDecision(report);
   if (bundle.launchDenominatorDecision !== report.decision) {
     throw new Error("launch denominator report decision must match bundle");
   }
@@ -332,6 +334,15 @@ function validateLaunchDenominatorReport(
   }
   if (requirePass && report.decision !== "GO") {
     throw new Error("launch denominator decision must be GO for publish");
+  }
+}
+
+export function validateEmergencyLaunchDecision(report) {
+  const binding = report?.evaluatorInput?.candidateBinding;
+  const evidence = [binding?.sourceEvidence, binding?.serverEvidence, binding?.mobileEvidence];
+  if (evidence.some(({ status } = {}) => status === "EMERGENCY_REVALIDATED")
+    && report.decision !== "NO_GO") {
+    throw new Error("emergency admission requires NO_GO");
   }
 }
 
@@ -492,7 +503,9 @@ async function main() {
   validateRollbackRescue(bundle, requirePass, rollbackEvidenceRaw, rollbackEvidence, rollbackManifestRaw);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

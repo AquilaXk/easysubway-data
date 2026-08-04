@@ -34,6 +34,32 @@ function boundArtifacts({ candidateId = "candidate-a", manifestVersion = "1" } =
   return { buildSpecRaw, manifestRaw, sourceEvidenceRaw, serverEvidenceRaw, mobileEvidenceRaw };
 }
 
+function emergencyBoundArtifacts({ mobileDecisionSha256 = "e".repeat(64) } = {}) {
+  const artifacts = boundArtifacts();
+  const source = JSON.parse(artifacts.sourceEvidenceRaw);
+  source.candidateBuild.networkEdgeEvidence = { admission: {
+    status: "EMERGENCY_REVALIDATED",
+    sourceFreshUntil: "2026-08-03T00:00:00+09:00",
+    emergencyAdmissionExpiresAt: "2026-08-11T15:24:43.671Z",
+    emergencyDecisionSha256: "e".repeat(64),
+  } };
+  const server = JSON.parse(artifacts.serverEvidenceRaw);
+  const mobile = JSON.parse(artifacts.mobileEvidenceRaw);
+  for (const value of [server, mobile]) {
+    value.admissionStatus = "EMERGENCY_REVALIDATED";
+    value.sourceFreshUntil = "2026-08-03T00:00:00+09:00";
+    value.emergencyAdmissionExpiresAt = "2026-08-11T15:24:43.671Z";
+    value.emergencyDecisionSha256 = "e".repeat(64);
+  }
+  mobile.emergencyDecisionSha256 = mobileDecisionSha256;
+  return {
+    ...artifacts,
+    sourceEvidenceRaw: json(source),
+    serverEvidenceRaw: json(server),
+    mobileEvidenceRaw: json(mobile),
+  };
+}
+
 test("candidate binding binds current build, manifest, and fresh consumer evidence bytes", () => {
   const artifacts = boundArtifacts();
   const binding = buildLaunchCandidateBinding({ ...artifacts, now: new Date("2026-07-15T00:00:00Z") });
@@ -80,6 +106,25 @@ test("candidate binding records missing authoritative evidence without fallback"
   assert.equal(binding.status, "INCOMPLETE");
   assert.deepEqual(binding.serverEvidence, { status: "MISSING", sha256: null, freshUntil: null });
   assert.deepEqual(binding.mobileEvidence, { status: "MISSING", sha256: null, freshUntil: null });
+});
+
+test("same emergency decision은 identity만 BOUND하고 freshness status는 보존한다", () => {
+  const binding = buildLaunchCandidateBinding({
+    ...emergencyBoundArtifacts(),
+    now: new Date("2026-08-04T15:24:43.671Z"),
+  });
+  assert.equal(binding.status, "BOUND");
+  assert.equal(binding.sourceEvidence.status, "EMERGENCY_REVALIDATED");
+  assert.equal(binding.serverEvidence.status, "EMERGENCY_REVALIDATED");
+  assert.equal(binding.mobileEvidence.status, "EMERGENCY_REVALIDATED");
+});
+
+test("emergency decision mismatch는 INCOMPLETE다", () => {
+  const binding = buildLaunchCandidateBinding({
+    ...emergencyBoundArtifacts({ mobileDecisionSha256: "f".repeat(64) }),
+    now: new Date("2026-08-04T15:24:43.671Z"),
+  });
+  assert.equal(binding.status, "INCOMPLETE");
 });
 
 test("authoritative launch evidence overrides forged template consumer domains", () => {

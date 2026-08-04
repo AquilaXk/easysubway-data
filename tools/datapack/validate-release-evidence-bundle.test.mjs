@@ -15,6 +15,7 @@ import {
   buildLaunchCandidateBinding,
 } from "./launch-candidate-binding.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
+import { validateEmergencyLaunchDecision } from "./validate-release-evidence-bundle.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -27,6 +28,29 @@ process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = publicKeyPem;
 test.after(() => {
   if (previousPublicKey === undefined) delete process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM;
   else process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = previousPublicKey;
+});
+
+test("emergency-bound release evidence는 NO_GO만 허용한다", () => {
+  const evidence = {
+    status: "EMERGENCY_REVALIDATED",
+    sourceFreshUntil: "2026-08-03T00:00:00+09:00",
+    freshUntil: "2026-08-11T15:24:43.671Z",
+    emergencyAdmissionExpiresAt: "2026-08-11T15:24:43.671Z",
+    emergencyDecisionSha256: "e".repeat(64),
+  };
+  const report = {
+    decision: "GO",
+    evaluatorInput: {
+      candidateBinding: {
+        sourceEvidence: structuredClone(evidence),
+        serverEvidence: structuredClone(evidence),
+        mobileEvidence: structuredClone(evidence),
+      },
+    },
+  };
+  assert.throws(() => validateEmergencyLaunchDecision(report), /emergency admission requires NO_GO/);
+  report.decision = "NO_GO";
+  assert.doesNotThrow(() => validateEmergencyLaunchDecision(report));
 });
 
 test("release evidence bundle validator는 publish gate status와 deferred headway 예외를 검증한다", async () => {
