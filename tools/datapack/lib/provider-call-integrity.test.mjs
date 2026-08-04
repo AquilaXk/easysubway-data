@@ -300,6 +300,10 @@ test("provider blocked evidence는 폐쇄된 수명주기 증거만 허용하고
     PROVIDER_BLOCKED_EVIDENCE,
     { evaluationAt: "2026-08-05T23:59:59.999Z" },
   ));
+  assert.doesNotThrow(() => validateProviderBlockedEvidence(
+    PROVIDER_BLOCKED_EVIDENCE,
+    { evaluationAt: PROVIDER_BLOCKED_EVIDENCE.lastVerifiedAt },
+  ));
   assert.doesNotThrow(() => validateProviderBlockedEvidence({
     ...PROVIDER_BLOCKED_EVIDENCE,
     reverifyAfter: PROVIDER_BLOCKED_EVIDENCE.expiresAt,
@@ -389,6 +393,10 @@ test("provider blocked evidence는 폐쇄된 수명주기 증거만 허용하고
   assert.throws(
     () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt: "2026-08-06T00:00:00.000Z" }),
     /expiresAt must be after evaluationAt/,
+  );
+  assert.throws(
+    () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt: "2026-08-03T23:59:59.999Z" }),
+    /lastVerifiedAt must not be after evaluationAt/,
   );
   assert.throws(
     () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt: "2026-08-05" }),

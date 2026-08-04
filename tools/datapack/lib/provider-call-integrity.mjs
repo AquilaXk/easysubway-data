@@ -351,6 +351,9 @@ export function validateProviderBlockedEvidence(evidence, { evaluationAt } = {})
   const reverifyAfter = requiredUtcInstant(evidence.reverifyAfter, `${label}.reverifyAfter`);
   const expiresAt = requiredUtcInstant(evidence.expiresAt, `${label}.expiresAt`);
   const evaluatedAt = requiredUtcInstant(evaluationAt, "evaluationAt");
+  if (lastVerifiedAt > evaluatedAt) {
+    throw new Error(`${label}.lastVerifiedAt must not be after evaluationAt`);
+  }
   if (lastVerifiedAt >= reverifyAfter || reverifyAfter > expiresAt) {
     throw new Error(`${label} requires lastVerifiedAt < reverifyAfter <= expiresAt`);
   }
