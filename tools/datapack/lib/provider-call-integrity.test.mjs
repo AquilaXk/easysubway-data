@@ -11,6 +11,7 @@ import {
   providerCredentialShape,
   requiresControlOperation,
   resolveProviderCallIntegrity,
+  validateProviderBlockedEvidence,
 } from "./provider-call-integrity.mjs";
 
 const CREDENTIAL = "Aa0$Aa0$Aa0$Aa0$";
@@ -42,6 +43,18 @@ function document(overrides = {}) {
 }
 
 const CREDENTIAL_SIGNAL_RESULT_CODES = Object.freeze(["30"]);
+
+const PROVIDER_BLOCKED_EVIDENCE = Object.freeze({
+  providerId: "kric",
+  sourceId: "kric-station-elevator",
+  failureClassification: "authorization-missing",
+  lastVerifiedAt: "2026-08-04T00:00:00.000Z",
+  reverifyAfter: "2026-08-05T00:00:00.000Z",
+  expiresAt: "2026-08-06T00:00:00.000Z",
+  controlOperationId: "kric-station-convenience-standard",
+  credentialFingerprint: null,
+  sanitizedEvidenceSha256: "a".repeat(64),
+});
 
 function documentWithControlOperation(controlOperation, credential = CREDENTIAL_CONTRACT) {
   return {
@@ -265,6 +278,119 @@ test("분류와 근거 없이는 provider blocker로 승격할 수 없다", () =
     /provider blocker promotion requires HTTP status and provider result code evidence/,
   );
   assert.throws(() => assertProviderBlockerPromotable(null), /provider blocker promotion requires/);
+});
+
+test("provider blocked evidence는 폐쇄된 수명주기 증거만 허용하고 만료 경계에서 닫힌다", () => {
+  const evaluationAt = "2026-08-05T12:00:00.000Z";
+  const actual = validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt });
+  assert.deepEqual(actual, PROVIDER_BLOCKED_EVIDENCE);
+  assert.notEqual(actual, PROVIDER_BLOCKED_EVIDENCE);
+  assert.deepEqual(Object.keys(actual).sort(), [
+    "controlOperationId",
+    "credentialFingerprint",
+    "expiresAt",
+    "failureClassification",
+    "lastVerifiedAt",
+    "providerId",
+    "reverifyAfter",
+    "sanitizedEvidenceSha256",
+    "sourceId",
+  ]);
+  assert.doesNotThrow(() => validateProviderBlockedEvidence(
+    PROVIDER_BLOCKED_EVIDENCE,
+    { evaluationAt: "2026-08-05T23:59:59.999Z" },
+  ));
+  assert.doesNotThrow(() => validateProviderBlockedEvidence({
+    ...PROVIDER_BLOCKED_EVIDENCE,
+    reverifyAfter: PROVIDER_BLOCKED_EVIDENCE.expiresAt,
+  }, { evaluationAt }));
+  for (const failureClassification of PROVIDER_FAILURE_CLASSIFICATIONS) {
+    assert.doesNotThrow(() => validateProviderBlockedEvidence(
+      { ...PROVIDER_BLOCKED_EVIDENCE, failureClassification },
+      { evaluationAt },
+    ));
+  }
+
+  assert.throws(
+    () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, failureClassification: "unknown" }, { evaluationAt }),
+    /failureClassification must be a provider failure classification/,
+  );
+  for (const failureClassification of ["", null]) {
+    assert.throws(
+      () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, failureClassification }, { evaluationAt }),
+      /failureClassification/,
+    );
+  }
+  for (const [field, value] of [
+    ["providerId", ""],
+    ["sourceId", ""],
+    ["controlOperationId", ""],
+    ["credentialFingerprint", "A".repeat(12)],
+    ["sanitizedEvidenceSha256", "A".repeat(64)],
+  ]) {
+    assert.throws(
+      () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, [field]: value }, { evaluationAt }),
+      new RegExp(field),
+    );
+  }
+  assert.doesNotThrow(() => validateProviderBlockedEvidence({
+    ...PROVIDER_BLOCKED_EVIDENCE,
+    credentialFingerprint: "a".repeat(12),
+  }, { evaluationAt }));
+  for (const [field, value] of [
+    ["credentialFingerprint", "a".repeat(11)],
+    ["credentialFingerprint", "a".repeat(13)],
+    ["sanitizedEvidenceSha256", "a".repeat(63)],
+    ["sanitizedEvidenceSha256", "a".repeat(65)],
+  ]) {
+    assert.throws(
+      () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, [field]: value }, { evaluationAt }),
+      new RegExp(field),
+    );
+  }
+  for (const field of Object.keys(PROVIDER_BLOCKED_EVIDENCE)) {
+    const missing = { ...PROVIDER_BLOCKED_EVIDENCE };
+    delete missing[field];
+    assert.throws(() => validateProviderBlockedEvidence(missing, { evaluationAt }), new RegExp(`${field}`));
+  }
+  assert.throws(
+    () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, unexpected: true }, { evaluationAt }),
+    /provider blocked evidence has unsupported fields: unexpected/,
+  );
+  const inheritedSourceId = { ...PROVIDER_BLOCKED_EVIDENCE };
+  delete inheritedSourceId.sourceId;
+  Object.setPrototypeOf(inheritedSourceId, { sourceId: PROVIDER_BLOCKED_EVIDENCE.sourceId });
+  assert.throws(
+    () => validateProviderBlockedEvidence(inheritedSourceId, { evaluationAt }),
+    /provider blocked evidence.sourceId is required/,
+  );
+  for (const field of ["lastVerifiedAt", "reverifyAfter", "expiresAt"]) {
+    for (const value of ["2026-08-05", "2026-08-05T00:00:00.000+09:00"]) {
+      assert.throws(
+        () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, [field]: value }, { evaluationAt }),
+        new RegExp(`${field} must be an RFC 3339 UTC timestamp`),
+      );
+    }
+  }
+  for (const [field, value] of [
+    ["lastVerifiedAt", "2026-08-05T00:00:00.000Z"],
+    ["reverifyAfter", "2026-08-04T00:00:00.000Z"],
+    ["expiresAt", "2026-08-04T00:00:00.000Z"],
+    ["lastVerifiedAt", "2026-08-05T00:00:00.001Z"],
+  ]) {
+    assert.throws(
+      () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, [field]: value }, { evaluationAt }),
+      /lastVerifiedAt < reverifyAfter <= expiresAt/,
+    );
+  }
+  assert.throws(
+    () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt: "2026-08-06T00:00:00.000Z" }),
+    /expiresAt must be after evaluationAt/,
+  );
+  assert.throws(
+    () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt: "2026-08-05" }),
+    /evaluationAt must be an RFC 3339 UTC timestamp/,
+  );
 });
 
 test("endpoint는 query 자격증명을 거부하고 sampleUrl은 정확한 redaction 자리표시자만 허용한다", () => {

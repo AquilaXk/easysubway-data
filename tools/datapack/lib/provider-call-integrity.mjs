@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 
 import { codepointCompare } from "../../lib/codepoint-compare.mjs";
+import { requiredUtcInstant } from "./utc-instant.mjs";
 
 const CREDENTIAL_FINGERPRINT_LABEL = "easysubway-data:provider-credential:v1";
 const CREDENTIAL_FINGERPRINT_ALGORITHM = "sha256-12";
@@ -26,6 +27,18 @@ export const PROVIDER_FAILURE_CLASSIFICATIONS = Object.freeze([
   "authorization-missing",
   "no-data",
   "transport-error",
+]);
+
+const PROVIDER_BLOCKED_EVIDENCE_FIELDS = Object.freeze([
+  "providerId",
+  "sourceId",
+  "failureClassification",
+  "lastVerifiedAt",
+  "reverifyAfter",
+  "expiresAt",
+  "controlOperationId",
+  "credentialFingerprint",
+  "sanitizedEvidenceSha256",
 ]);
 
 // self-succeeded: 대상 operation이 곧 대조군인 경우의 성공. 재시도가 성공한 것이라
@@ -308,4 +321,47 @@ export function assertProviderBlockerPromotable(diagnosis) {
     throw new Error("provider blocker promotion requires HTTP status and provider result code evidence");
   }
   return diagnosis;
+}
+
+// provider blocker는 재검증 기한 안의 같은 실패 증거만 가리킨다. 만료·미확인 증거는 호출자가
+// 새 provider 호출을 하도록 닫고, 여기서 이전 evidence를 연장하거나 대체하지 않는다.
+export function validateProviderBlockedEvidence(evidence, { evaluationAt } = {}) {
+  const label = "provider blocked evidence";
+  requireObject(evidence, label);
+  requireAllowedKeys(evidence, new Set(PROVIDER_BLOCKED_EVIDENCE_FIELDS), label);
+  for (const field of PROVIDER_BLOCKED_EVIDENCE_FIELDS) {
+    if (!Object.hasOwn(evidence, field)) throw new Error(`${label}.${field} is required`);
+  }
+  const providerId = requiredText(evidence.providerId, `${label}.providerId`);
+  const sourceId = requiredText(evidence.sourceId, `${label}.sourceId`);
+  const failureClassification = requiredText(evidence.failureClassification, `${label}.failureClassification`);
+  if (!PROVIDER_FAILURE_CLASSIFICATIONS.includes(failureClassification)) {
+    throw new Error(`${label}.failureClassification must be a provider failure classification`);
+  }
+  const controlOperationId = requiredText(evidence.controlOperationId, `${label}.controlOperationId`);
+  if (evidence.credentialFingerprint !== null && !/^[0-9a-f]{12}$/.test(evidence.credentialFingerprint)) {
+    throw new Error(`${label}.credentialFingerprint must be a 12 character hex fingerprint or null`);
+  }
+  if (!/^[0-9a-f]{64}$/.test(evidence.sanitizedEvidenceSha256)) {
+    throw new Error(`${label}.sanitizedEvidenceSha256 must be a 64 character hex digest`);
+  }
+  const lastVerifiedAt = requiredUtcInstant(evidence.lastVerifiedAt, `${label}.lastVerifiedAt`);
+  const reverifyAfter = requiredUtcInstant(evidence.reverifyAfter, `${label}.reverifyAfter`);
+  const expiresAt = requiredUtcInstant(evidence.expiresAt, `${label}.expiresAt`);
+  const evaluatedAt = requiredUtcInstant(evaluationAt, "evaluationAt");
+  if (lastVerifiedAt >= reverifyAfter || reverifyAfter > expiresAt) {
+    throw new Error(`${label} requires lastVerifiedAt < reverifyAfter <= expiresAt`);
+  }
+  if (expiresAt <= evaluatedAt) throw new Error(`${label}.expiresAt must be after evaluationAt`);
+  return {
+    providerId,
+    sourceId,
+    failureClassification,
+    lastVerifiedAt: evidence.lastVerifiedAt,
+    reverifyAfter: evidence.reverifyAfter,
+    expiresAt: evidence.expiresAt,
+    controlOperationId,
+    credentialFingerprint: evidence.credentialFingerprint,
+    sanitizedEvidenceSha256: evidence.sanitizedEvidenceSha256,
+  };
 }
