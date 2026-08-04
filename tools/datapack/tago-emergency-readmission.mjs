@@ -42,8 +42,8 @@ export function createTagoEmergencyReadmission({
   const failure = parseJson(failureEvidenceBytes, "TAGO failure evidence");
   validateFailureEvidence(failure);
   const admittedEpoch = utcTimestamp(admittedAt, "admittedAt");
-  if (utcTimestamp(failure.observedAt, "failure observedAt") > admittedEpoch) {
-    throw new Error("failure observedAt must not follow admittedAt");
+  if (utcTimestamp(failure.observedAt, "failure observedAt") !== admittedEpoch) {
+    throw new Error("failure observedAt must equal admittedAt");
   }
 
   const itx = parseJson(itxCoverageContractBytes, "ITX coverage contract");
@@ -287,7 +287,9 @@ function validateFailureEvidence(failure) {
   if (boundary.operation !== "GetVhcleKndList") throw new Error("TAGO operation must be GetVhcleKndList");
   if (boundary.transportStatus !== "HTTP_SUCCESS") throw new Error("TAGO transport status must be HTTP_SUCCESS");
   if (boundary.httpStatus !== 200) throw new Error("TAGO HTTP status must be 200");
-  if (boundary.schemaStatus !== "EXPECTED") throw new Error("TAGO schema status must be EXPECTED");
+  if (boundary.schemaStatus !== "PROVIDER_ERROR_HEADER_ONLY") {
+    throw new Error("TAGO schema status must be PROVIDER_ERROR_HEADER_ONLY");
+  }
   if (boundary.resultCode !== "01") throw new Error("TAGO resultCode must be 01");
   if (failure.credentialPresent !== true || failure.credentialRedacted !== true) {
     throw new Error("TAGO credential evidence must be present and redacted");

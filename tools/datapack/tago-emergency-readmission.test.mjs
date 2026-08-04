@@ -21,15 +21,15 @@ const EXPIRES_AT = "2026-08-11T14:53:01.000Z";
 const bytes = (value) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
-function failureEvidence(detail = {}) {
+function failureEvidence(detail = {}, observedAt = ADMITTED_AT) {
   return providerFailureEvidence(new TagoProviderBoundaryError("TAGO provider failure", {
     operation: "GetVhcleKndList",
     transportStatus: "HTTP_SUCCESS",
     httpStatus: 200,
-    schemaStatus: "EXPECTED",
+    schemaStatus: "PROVIDER_ERROR_HEADER_ONLY",
     resultCode: "01",
     ...detail,
-  }), { observedAt: "2026-08-04T08:00:38.000Z" });
+  }), { observedAt });
 }
 
 function sourceInputs() {
@@ -160,7 +160,7 @@ test("exact TAGO 01 failure만 7일 decision과 source identity에 결속한다"
     operation: "GetVhcleKndList",
     transportStatus: "HTTP_SUCCESS",
     httpStatus: 200,
-    schemaStatus: "EXPECTED",
+    schemaStatus: "PROVIDER_ERROR_HEADER_ONLY",
     resultCode: "01",
   });
   const sources = sourceInputs();
@@ -171,7 +171,7 @@ test("exact TAGO 01 failure만 7일 decision과 source identity에 결속한다"
       ...sources,
       admittedAt: ADMITTED_AT,
     }),
-    observedAt: "2026-08-04T08:00:38.000Z",
+    observedAt: ADMITTED_AT,
   });
 
   assert.equal(result.mode, "EMERGENCY_REVALIDATED");
@@ -200,6 +200,10 @@ test("decision validator는 exact bytes와 반개방 7일 window만 허용한다
   assert.throws(
     () => validateDecision(decision, failure, { now: new Date("2026-08-04T14:53:00.999Z") }),
     /emergency TAGO readmission is not active/,
+  );
+  assert.throws(
+    () => createDecision(failureEvidence({}, "2026-08-04T14:53:00.999Z")),
+    /failure observedAt must equal admittedAt/,
   );
 });
 
@@ -293,7 +297,7 @@ test("CLI exact outage는 provider attempt 종료 시각으로 decision을 쓰�
         operation: "GetVhcleKndList",
         transportStatus: "HTTP_SUCCESS",
         httpStatus: 200,
-        schemaStatus: "EXPECTED",
+        schemaStatus: "PROVIDER_ERROR_HEADER_ONLY",
         resultCode: "01",
       });
     },

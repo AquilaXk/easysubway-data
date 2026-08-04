@@ -602,6 +602,15 @@ async function fetchAll(operation, query, key, fetchImpl, requestBudget = null, 
     }
     const code = String(header.resultCode ?? "");
     if (!code) throw new Error(`TAGO ${operation} schema mismatch: resultCode`);
+    if (code !== "00" && !Object.hasOwn(root, "body")) {
+      throw new TagoProviderBoundaryError(`TAGO ${operation} provider resultCode ${safeCode(code)}`, {
+        operation,
+        transportStatus: "HTTP_SUCCESS",
+        httpStatus: response.status,
+        schemaStatus: "PROVIDER_ERROR_HEADER_ONLY",
+        resultCode: safeCode(code),
+      });
+    }
     const body = root?.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new Error(`TAGO ${operation} schema mismatch: body`);

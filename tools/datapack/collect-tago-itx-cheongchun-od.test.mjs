@@ -29,10 +29,11 @@ function tagoCatalogResponse(items) {
   } }), { status: 200, headers: { "content-type": "application/json" } });
 }
 
-function tagoFailure(resultCode) {
-  return new Response(JSON.stringify({
-    response: { header: { resultCode }, body: { items: { item: [] } } },
-  }), { status: 200, headers: { "content-type": "application/json" } });
+function tagoHeaderOnlyFailure(resultCode) {
+  return new Response(JSON.stringify({ response: { header: { resultCode } } }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 async function captureRejected(run) {
@@ -63,7 +64,7 @@ test("TAGO resultCode 01은 secret 없는 structured failure evidence를 만든�
     serviceKey: secret,
     departureDate: "2026-08-04",
     kricServiceDayCode: "8",
-    fetchImpl: async () => tagoFailure("01"),
+    fetchImpl: async () => tagoHeaderOnlyFailure("01"),
   }));
   assert.ok(error instanceof TagoProviderBoundaryError);
   const evidence = providerFailureEvidence(error, { observedAt: "2026-08-04T08:00:38.000Z" });
@@ -71,7 +72,7 @@ test("TAGO resultCode 01은 secret 없는 structured failure evidence를 만든�
     operation: "GetVhcleKndList",
     transportStatus: "HTTP_SUCCESS",
     httpStatus: 200,
-    schemaStatus: "EXPECTED",
+    schemaStatus: "PROVIDER_ERROR_HEADER_ONLY",
     resultCode: "01",
   });
   assert.equal(evidence.credentialPresent, true);
@@ -79,13 +80,13 @@ test("TAGO resultCode 01은 secret 없는 structured failure evidence를 만든�
   assert.doesNotMatch(`${error.message}\n${JSON.stringify(evidence)}`, new RegExp(secret));
 });
 
-test("malformed TAGO resultCode 01은 schema mismatch로 실패한다", async () => {
+test("body가 존재하지만 malformed인 TAGO resultCode 01은 schema mismatch로 실패한다", async () => {
   const error = await captureRejected(() => collectTagoItxCheongchunOd({
     serviceKey: "key",
     departureDate: "2026-08-04",
     kricServiceDayCode: "8",
     fetchImpl: async () => new Response(JSON.stringify({
-      response: { header: { resultCode: "01" } },
+      response: { header: { resultCode: "01" }, body: null },
     }), { status: 200, headers: { "content-type": "application/json" } }),
   }));
   assert.equal(error instanceof TagoProviderBoundaryError, false);

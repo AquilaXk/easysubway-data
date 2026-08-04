@@ -445,10 +445,11 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     await runRejectedBuild(futureInventorySpec, /capital topology admission is future-dated/);
 
     const earlyInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
+    const earlyFreshUntil = new Date(Date.parse(decision.admittedAt) + 60_000).toISOString();
     earlyInventory.sources.find(({ id, routeMapAdmissionEvidence }) =>
       id === "kric-everline-route-map-positions"
       && routeMapAdmissionEvidence?.topologySnapshotId === "capital-route-topology-20260724"
-    ).routeMapAdmissionEvidence.freshUntil = "2026-08-04T16:00:00.000Z";
+    ).routeMapAdmissionEvidence.freshUntil = earlyFreshUntil;
     const earlyBytes = Buffer.from(`${JSON.stringify(earlyInventory, null, 2)}\n`);
     const earlyPath = path.join(workspace, "early-source-inventory.json");
     await writeFile(earlyPath, earlyBytes);
@@ -464,7 +465,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
       "--output", earlyOutputDir,
     ], { cwd: root, env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: decision.admittedAt } });
     const earlyManifest = JSON.parse(await readFile(path.join(earlyOutputDir, "current.json"), "utf8"));
-    assert.equal(earlyManifest.expiresAt, "2026-08-04T16:00:00.000Z");
+    assert.equal(earlyManifest.expiresAt, earlyFreshUntil);
 
     const missingEdgeAdmission = structuredClone(spec);
     delete missingEdgeAdmission.networkEdgeEvidence.capitalTopologyAdmission;

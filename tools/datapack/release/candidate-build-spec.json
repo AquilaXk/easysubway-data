@@ -36,7 +36,7 @@
     },
     "emergencyReadmission": {
       "path": "tools/datapack/release/tago-emergency-readmission-20260804.json",
-      "sha256": "fcd4a4d01e1045d90696b8a7a602ccc323609624bbfd816c5c0c752561115f67"
+      "sha256": "c30a5251b4304d945073eede13d6fd95ff164c5ebc6cd9d326a19119a3da6c9f"
     }
   },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
