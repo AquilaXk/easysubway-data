@@ -366,7 +366,7 @@ function edgeKey(fromName, toName) {
 
 export function compareCapitalRouteTopologies(baseline, candidate) {
   if (!Array.isArray(baseline?.lines) || !Array.isArray(candidate?.lines)) {
-    throw new Error("capital topology snapshots require lines arrays");
+    throw new TypeError("capital topology snapshots require lines arrays");
   }
   const baselineLines = new Map(baseline.lines.map((line) => [line.lineId, line]));
   const candidateLines = new Map(candidate.lines.map((line) => [line.lineId, line]));
@@ -793,9 +793,9 @@ export async function collectMolitFullRouteCsv({ fetchImpl = fetch } = {}) {
   });
   if (!page.ok) throw new Error(`MOLIT full-route detail HTTP ${page.status}`);
   const html = await page.text();
-  const direct = html.match(/\/cmm\/cmm\/fileDownload\.do\?[^"'<>\s]+/u)?.[0]
+  const direct = /\/cmm\/cmm\/fileDownload\.do\?[^"'<>\s]+/u.exec(html)?.[0]
     ?.replaceAll("&amp;", "&");
-  const args = html.match(/(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?/u);
+  const args = /(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?/u.exec(html);
   const pathname = direct ?? (args
     ? `/cmm/cmm/fileDownload.do?atchFileId=${encodeURIComponent(args[1])}&fileDetailSn=${args[2]}&insertDataPrcus=N`
     : null);
@@ -1197,20 +1197,8 @@ export async function collectCapitalRouteTopology({
     return molitBytes;
   };
   for (const source of sources) {
-    const bytes = useLocalFiles
-      ? await readFile(path.resolve(root, source.localCsv))
-      : source.kind === "molit-sequence"
-        ? await getMolitBytes()
-        : await downloadBytes(fetchImpl, source);
-    let secondaryBytes = null;
-    if (source.kind === "seohae-merged") {
-      if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
-        throw new Error(`${source.slug}: localMolitCsv required`);
-      }
-      secondaryBytes = useLocalFiles
-        ? await readFile(path.resolve(root, source.localMolitCsv))
-        : await getMolitBytes();
-    }
+    const bytes = await primarySourceBytes(source, { root, fetchImpl, useLocalFiles, getMolitBytes });
+    const secondaryBytes = await secondarySourceBytes(source, { root, useLocalFiles, getMolitBytes });
     try {
       lines.push(parseLineSource(source, bytes, { capturedAt: captured, secondaryBytes }));
     } catch (error) {
@@ -1278,6 +1266,21 @@ export async function collectCapitalRouteTopology({
       lineId: LINE1_LINE_ID,
     },
   };
+}
+
+async function primarySourceBytes(source, { root, fetchImpl, useLocalFiles, getMolitBytes }) {
+  if (useLocalFiles) return readFile(path.resolve(root, source.localCsv));
+  if (source.kind === "molit-sequence") return getMolitBytes();
+  return downloadBytes(fetchImpl, source);
+}
+
+async function secondarySourceBytes(source, { root, useLocalFiles, getMolitBytes }) {
+  if (source.kind !== "seohae-merged") return null;
+  if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
+    throw new Error(`${source.slug}: localMolitCsv required`);
+  }
+  if (useLocalFiles) return readFile(path.resolve(root, source.localMolitCsv));
+  return getMolitBytes();
 }
 
 async function downloadBytes(fetchImpl, source) {

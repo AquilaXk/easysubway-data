@@ -687,26 +687,14 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     capitalFreshUntil: admissionIdentity.freshUntil,
     itxFreshUntil: sourceItxAdmission.sourceFreshUntil,
   }, now);
-  let emergencyAdmission = null;
-  if (!normalFresh && evidence.emergencyReadmission !== undefined) {
-    const emergency = await readPinnedBuildJson(
-      evidence.emergencyReadmission,
-      "buildSpec.networkEdgeEvidence.emergencyReadmission",
-    );
-    const failureEvidenceBytes = await readFile(await resolveBuildInputPath(
-      emergency.value?.failureEvidence?.path,
-      "TAGO emergency decision failureEvidence.path",
-    ));
-    emergencyAdmission = validateTagoEmergencyReadmission({
-      admissionBytes: emergency.bytes,
-      failureEvidenceBytes,
-      itxCoverageContractBytes: itxContract.bytes,
-      capitalTopologyBytes: capitalTopology.bytes,
-      capitalReverificationBytes: capitalTopologyReverification.bytes,
-      capitalTopologyAdmission: evidence.capitalTopologyAdmission,
-      now,
-    });
-  }
+  const emergencyAdmission = await validatedEmergencyNetworkEdgeAdmission({
+    normalFresh,
+    evidence,
+    itxContract,
+    capitalTopology,
+    capitalTopologyReverification,
+    now,
+  });
   const topologyAdmission = candidateCapitalTopologyAdmission(
     evidence.capitalTopologyAdmission,
     emergencyAdmission,
@@ -719,21 +707,13 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
   };
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
-  for (const pack of productionPacks) {
-    const hasFixtureProvenance = (edge) => [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
-      edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
-      || edge.fieldProvenance !== undefined
-      || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
-      || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
-    if ((pack.networkEdges ?? []).some((edge) => !isReviewedAccessibilityEdge(edge, pack) && hasFixtureProvenance(edge))
-      || (pack.outOfStationTransferLinks ?? []).some(hasFixtureProvenance)) {
-      throw new Error("production network edge fixture must not contain provenance");
-    }
-    materializeCapitalTopologySource(pack, topology, capitalAdmissions);
-    applyCapitalNetworkEdgeEvidence(pack, topology, capitalTopology.pinned.snapshotId, capitalAdmissions);
-    applyItxNetworkEdgeEvidence(pack, itxAdmission);
-    normalizeUnverifiedNetworkEdgeStates(pack);
-  }
+  applyNetworkEdgeEvidenceToPacks(
+    productionPacks,
+    topology,
+    capitalTopology.pinned.snapshotId,
+    capitalAdmissions,
+    itxAdmission,
+  );
   const accessibilityFreshUntil = productionAccessibilityFreshUntil(
     productionPacks,
     sourceInventory.value,
@@ -759,6 +739,58 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
           emergencyDecisionSha256: emergencyAdmission.decisionSha256,
         },
   };
+}
+
+function applyNetworkEdgeEvidenceToPacks(
+  productionPacks,
+  topology,
+  topologySnapshotId,
+  capitalAdmissions,
+  itxAdmission,
+) {
+  for (const pack of productionPacks) {
+    const hasFixtureProvenance = (edge) => [edge.sourceId, edge.sourceSnapshotId, edge.providerRecordHash,
+      edge.evidenceHash, edge.lastFieldVerifiedAt, edge.lastVerifiedAt, edge.verifiedAt].some(Boolean)
+      || edge.fieldProvenance !== undefined
+      || ![undefined, "UNKNOWN"].includes(edge.provenanceKind)
+      || ![undefined, "UNKNOWN"].includes(edge.verificationStatus);
+    if ((pack.networkEdges ?? []).some((edge) => !isReviewedAccessibilityEdge(edge, pack) && hasFixtureProvenance(edge))
+      || (pack.outOfStationTransferLinks ?? []).some(hasFixtureProvenance)) {
+      throw new Error("production network edge fixture must not contain provenance");
+    }
+    materializeCapitalTopologySource(pack, topology, capitalAdmissions);
+    applyCapitalNetworkEdgeEvidence(pack, topology, topologySnapshotId, capitalAdmissions);
+    applyItxNetworkEdgeEvidence(pack, itxAdmission);
+    normalizeUnverifiedNetworkEdgeStates(pack);
+  }
+}
+
+async function validatedEmergencyNetworkEdgeAdmission({
+  normalFresh,
+  evidence,
+  itxContract,
+  capitalTopology,
+  capitalTopologyReverification,
+  now,
+}) {
+  if (normalFresh || evidence.emergencyReadmission === undefined) return null;
+  const emergency = await readPinnedBuildJson(
+    evidence.emergencyReadmission,
+    "buildSpec.networkEdgeEvidence.emergencyReadmission",
+  );
+  const failureEvidenceBytes = await readFile(await resolveBuildInputPath(
+    emergency.value?.failureEvidence?.path,
+    "TAGO emergency decision failureEvidence.path",
+  ));
+  return validateTagoEmergencyReadmission({
+    admissionBytes: emergency.bytes,
+    failureEvidenceBytes,
+    itxCoverageContractBytes: itxContract.bytes,
+    capitalTopologyBytes: capitalTopology.bytes,
+    capitalReverificationBytes: capitalTopologyReverification.bytes,
+    capitalTopologyAdmission: evidence.capitalTopologyAdmission,
+    now,
+  });
 }
 
 export function networkEdgeEvidenceRequiresEmergency({ capitalFreshUntil, itxFreshUntil }, now) {

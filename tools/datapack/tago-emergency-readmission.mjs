@@ -9,6 +9,7 @@ import {
   collectTagoItxCheongchunOd,
   providerFailureEvidence,
 } from "./collect-tago-itx-cheongchun-od.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_PATH = "tools/datapack/release/tago-provider-failure-20260804.json";
@@ -347,8 +348,8 @@ function validateCapitalSources(topology, reverification, admission, admittedEpo
 }
 
 function exactKeys(value, expected, label) {
-  const actual = Object.keys(requiredObject(value, label)).sort();
-  const wanted = [...expected].sort();
+  const actual = Object.keys(requiredObject(value, label)).sort(codepointCompare);
+  const wanted = [...expected].sort(codepointCompare);
   if (JSON.stringify(actual) !== JSON.stringify(wanted)) throw new Error(`${label} keys mismatch`);
 }
 
@@ -418,7 +419,10 @@ function parseArgs(argv) {
     const key = argv[index]?.replace(/^--/, "");
     if (!key) throw new Error("CLI arguments must use --name");
     if (argv[index + 1] === undefined || argv[index + 1].startsWith("--")) result[key] = true;
-    else result[key] = argv[index += 1];
+    else {
+      index += 1;
+      result[key] = argv[index];
+    }
   }
   return result;
 }
@@ -445,8 +449,10 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((error) => {
+  try {
+    await main();
+  } catch (error) {
     console.error(error instanceof Error ? error.message : "TAGO emergency readmission failed");
     process.exitCode = 1;
-  });
+  }
 }
