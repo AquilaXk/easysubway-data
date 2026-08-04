@@ -207,7 +207,8 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
       || query.providerRecordHash !== hash(query.rows)
       || query.rows.some((row) => !row || typeof row !== "object"
         || Object.keys(row).length !== operation.responseFields.length
-        || Object.keys(row).some((field) => !operation.responseFields.includes(field)))) {
+        || Object.keys(row).some((field) => !operation.responseFields.includes(field))
+        || operation.tupleIdentityFields.some((field) => row[field] !== query[field]))) {
       throw new Error("KRIC accessibility snapshot identity is invalid");
     }
     const tupleKey = [query.stationId, query.lineId, query.railOprIsttCd, query.lnCd, query.stinCd].join("\0");

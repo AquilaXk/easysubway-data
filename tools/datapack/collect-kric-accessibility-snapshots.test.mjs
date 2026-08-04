@@ -106,6 +106,30 @@ test("승인된 KRIC 접근성 profile은 표준 편의정보 없이 exact 다�
   assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
 });
 
+test("승인 profile snapshot은 row tuple이 query와 다르면 내부 hash가 일치해도 거부한다", async () => {
+  const tuple = {
+    ...roster[0],
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "line-2" }],
+  };
+  const [snapshot] = await collectKricAccessibilitySnapshots({
+    roster: [tuple],
+    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 1),
+    serviceKey: "super-secret",
+    fetchImpl: async () => response(200, [Object.fromEntries(
+      KRIC_APPROVED_ACCESSIBILITY_OPERATIONS[0].responseFields.map((field) => [field, tuple[field] ?? field]),
+    )]),
+  });
+  const tampered = structuredClone(snapshot);
+  tampered.queries[0].rows[0].stinCd = "999";
+  tampered.queries[0].providerRecordHash = hashForTest(tampered.queries[0].rows);
+  tampered.contentSha256 = hashForTest(tampered.queries.map(({ rawResponseSha256: _, ...query }) => query));
+
+  assert.throws(
+    () => validateKricAccessibilitySnapshotIdentity(tampered),
+    /KRIC accessibility snapshot identity is invalid/,
+  );
+});
+
 test("기본 다섯 operation 중간 실패는 부분 snapshot 없이 즉시 거부한다", async () => {
   const tuple = roster[0];
   const seen = [];
@@ -552,4 +576,8 @@ function response(status, body, resultCode = "00") {
       ? { header: { resultCode, resultMsg: "redacted" }, body }
       : { resultCode, resultMsg: "redacted" },
   };
+}
+
+function hashForTest(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
