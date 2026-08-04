@@ -375,7 +375,6 @@ export function compareCapitalRouteTopologies(baseline, candidate) {
     .sort(codepointCompare)) {
     const before = baselineLines.get(lineId);
     const after = candidateLines.get(lineId);
-    if (before?.contentSha256 === after?.contentSha256) continue;
     const beforeEdges = new Map((before?.edges ?? [])
       .map((edge) => [`${edge.fromStationName}\u0000${edge.toStationName}`, edge]));
     const afterEdges = new Map((after?.edges ?? [])
@@ -390,6 +389,7 @@ export function compareCapitalRouteTopologies(baseline, candidate) {
       }
     }
     for (const [key, edge] of beforeEdges) if (!afterEdges.has(key)) removed.push(edge);
+    if (added.length === 0 && removed.length === 0 && modified.length === 0) continue;
     changes.push({ lineId, added, removed, modified });
   }
   return {

@@ -59,6 +59,7 @@ jobs:
       - name: Verify TAGO emergency admission contracts
         run: |
           node --test --test-name-pattern='TAGO key 누락|TAGO resultCode 01' tools/datapack/collect-tago-itx-cheongchun-od.test.mjs
+          node --test tools/datapack/collect-capital-route-topology.test.mjs
           node --test tools/datapack/tago-emergency-readmission.test.mjs
           node --test --test-name-pattern='network edge evidence' tools/datapack/verify-production-pack-artifact-identity.test.mjs
           node --test --test-name-pattern='emergency admission' tools/datapack/build-server-timetable-snapshot.test.mjs

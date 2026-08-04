@@ -985,7 +985,7 @@ export function validateServerTimetableAdmission({
     admission = {
       status: emergency.status,
       sourceFreshUntil,
-      freshUntil: emergency.expiresAt,
+      freshUntil: sourceFreshUntil,
       emergencyAdmissionExpiresAt: emergency.expiresAt,
       emergencyDecisionSha256: emergency.decisionSha256,
     };

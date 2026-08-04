@@ -457,7 +457,7 @@ test("emergency admission은 source expiry를 보존하고 exact decision만 ser
   assert.deepEqual(emergency.admission, {
     status: "EMERGENCY_REVALIDATED",
     sourceFreshUntil: contract.sourceTimetableArtifact.freshUntil,
-    freshUntil: decision.expiresAt,
+    freshUntil: contract.sourceTimetableArtifact.freshUntil,
     emergencyAdmissionExpiresAt: decision.expiresAt,
     emergencyDecisionSha256: sha256(admissionBytes),
   });

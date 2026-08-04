@@ -60,7 +60,7 @@ test("capital topology 비교는 노선별 edge 변경만 보고한다", () => {
   const edge = { fromStationName: "가", toStationName: "나", distanceMeters: 100 };
   const comparison = compareCapitalRouteTopologies(
     { contentSha256: "before", lines: [{ lineId: "line-1", contentSha256: "a", edges: [edge] }] },
-    { contentSha256: "after", lines: [{ lineId: "line-1", contentSha256: "b", edges: [{ ...edge, distanceMeters: 200 }] }] },
+    { contentSha256: "after", lines: [{ lineId: "line-1", contentSha256: "a", edges: [{ ...edge, distanceMeters: 200 }] }] },
   );
   assert.deepEqual(comparison.changes, [{
     lineId: "line-1",
@@ -68,9 +68,8 @@ test("capital topology 비교는 노선별 edge 변경만 보고한다", () => {
     removed: [],
     modified: [{ before: edge, after: { ...edge, distanceMeters: 200 } }],
   }]);
-  assert.notEqual(comparison.baselineNormalizedLineSetSha256, comparison.candidateNormalizedLineSetSha256);
   assert.throws(() => buildCapitalTopologyReverificationEvidence(
     { contentSha256: "before", lines: [{ lineId: "line-1", contentSha256: "a", edges: [edge] }] },
-    { contentSha256: "after", lines: [{ lineId: "line-1", contentSha256: "b", edges: [{ ...edge, distanceMeters: 200 }] }] },
+    { contentSha256: "after", lines: [{ lineId: "line-1", contentSha256: "a", edges: [{ ...edge, distanceMeters: 200 }] }] },
   ), /re-admission required/);
 });
