@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tago-provider-failure-evidence",
+  "observedAt": "2026-08-04T15:24:43.553Z",
+  "providerBoundary": {
+    "operation": "GetVhcleKndList",
+    "transportStatus": "HTTP_SUCCESS",
+    "httpStatus": 200,
+    "schemaStatus": "EXPECTED",
+    "resultCode": "01"
+  },
+  "credentialPresent": true,
+  "credentialRedacted": true,
+  "failureFingerprint": "17b7a74d68632448070b33d7bb4833c3ad64e6a7b48d5116de42d46d54ffff54"
+}

@@ -30,6 +30,7 @@ import {
 import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { isUnchangedRefresh } from "./apply-itx-topology-to-bundled-pack.mjs";
+import { validateTagoEmergencyReadmission } from "./tago-emergency-readmission.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
@@ -267,7 +268,7 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
   const buildSpec = JSON.parse(buildSpecBytes);
   const fixture = JSON.parse(await readFile(await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath"), "utf8"));
   rejectTestOnlyBuildInput(fixture);
-  const { officialOdFareEvidence, artifactFreshUntil } = await validateCandidateBuildSpec(
+  const { officialOdFareEvidence, artifactFreshUntil, networkEdgeValidation } = await validateCandidateBuildSpec(
     buildSpec,
     fixture,
     officialOdFareAdmissions,
@@ -275,7 +276,12 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
   );
   return {
     fixture,
-    candidateBuild: candidateBuildProvenance(buildSpec, sha256(buildSpecBytes), officialOdFareEvidence),
+    candidateBuild: candidateBuildProvenance(
+      buildSpec,
+      sha256(buildSpecBytes),
+      officialOdFareEvidence,
+      networkEdgeValidation,
+    ),
     artifactFreshUntil,
   };
 }
@@ -462,7 +468,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
   const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
-  const artifactFreshUntil = await validateAndApplyNetworkEdgeProvenance(
+  const networkEdgeValidation = await validateAndApplyNetworkEdgeProvenance(
     buildSpec,
     fixture,
     itxTopologyEvidence,
@@ -474,11 +480,12 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
       admissions,
       admissionBytes,
     ),
-    artifactFreshUntil,
+    artifactFreshUntil: networkEdgeValidation?.artifactFreshUntil ?? null,
+    networkEdgeValidation,
   };
 }
 
-function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence) {
+function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence, networkEdgeValidation) {
   const normalizedHashes = Object.fromEntries(candidateBuildSpecHashFields.map((field) => [
     field,
     sha256HexString(buildSpec[field], `buildSpec.${field}`),
@@ -506,16 +513,20 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
         ) }
       : {}),
     ...(buildSpec.networkEdgeEvidence
-      ? { networkEdgeEvidence: candidateNetworkEdgeEvidence(buildSpec.networkEdgeEvidence) }
+      ? { networkEdgeEvidence: candidateNetworkEdgeEvidence(buildSpec.networkEdgeEvidence, networkEdgeValidation) }
       : {}),
     ...(officialOdFareEvidence ? { officialOdFareEvidence } : {}),
   };
 }
 
-function candidateNetworkEdgeEvidence(evidence) {
+function candidateNetworkEdgeEvidence(evidence, validated) {
+  const hasEmergency = evidence.emergencyReadmission !== undefined;
   assertExactKeys(
     evidence,
-    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyReverification", "itxCoverageContract"],
+    [
+      "sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyReverification",
+      "itxCoverageContract", ...(hasEmergency ? ["emergencyReadmission"] : []),
+    ],
     "buildSpec.networkEdgeEvidence",
   );
   const sourceInventory = pinnedBuildInput(evidence.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory");
@@ -537,12 +548,32 @@ function candidateNetworkEdgeEvidence(evidence) {
     capitalTopologySnapshotId: capitalTopology.snapshotId,
     capitalTopologySha256: capitalTopology.sha256,
     capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
-    capitalTopologyAdmission: candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
+    capitalTopologyAdmission: validated?.capitalTopologyAdmission
+      ?? candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
     itxCoverageContractSha256: itxCoverageContract.sha256,
+    ...(validated?.admission?.status === "EMERGENCY_REVALIDATED" ? {
+      emergencyReadmissionSha256: pinnedBuildInput(
+        evidence.emergencyReadmission,
+        "buildSpec.networkEdgeEvidence.emergencyReadmission",
+      ).sha256,
+    } : {}),
+    ...(validated?.admission ? { admission: validated.admission } : {}),
   };
 }
 
-function candidateCapitalTopologyAdmission(admission) {
+function candidateCapitalTopologyAdmission(admission, emergencyAdmission = null) {
+  const normalized = normalizedCapitalTopologyAdmission(admission);
+  const now = candidateBuildNow().getTime();
+  if (Date.parse(normalized.reviewedAt) > now) throw new Error("capital topology edge admission is future-dated");
+  if (Date.parse(normalized.freshUntil) <= now
+    && (emergencyAdmission?.status !== "EMERGENCY_REVALIDATED"
+      || Date.parse(emergencyAdmission.expiresAt) <= now)) {
+    throw new Error("capital topology edge admission is stale");
+  }
+  return normalized;
+}
+
+function normalizedCapitalTopologyAdmission(admission) {
   if (admission == null) throw new Error("production build requires capital topology edge admission");
   assertExactKeys(
     admission,
@@ -565,9 +596,6 @@ function candidateCapitalTopologyAdmission(admission) {
     || normalized.status !== "ADMITTED") {
     throw new Error("capital topology edge admission identity is invalid");
   }
-  const now = candidateBuildNow().getTime();
-  if (Date.parse(normalized.reviewedAt) > now) throw new Error("capital topology edge admission is future-dated");
-  if (Date.parse(normalized.freshUntil) <= now) throw new Error("capital topology edge admission is stale");
   return normalized;
 }
 
@@ -586,7 +614,7 @@ async function readPinnedBuildJson(reference, label, keys) {
   const pinned = pinnedBuildInput(reference, label, keys);
   const bytes = await readFile(await resolveBuildInputPath(pinned.path, `${label}.path`));
   if (sha256(bytes) !== pinned.sha256) throw new Error(`${label}.sha256 must match tracked input bytes`);
-  return { pinned, value: JSON.parse(bytes) };
+  return { pinned, value: JSON.parse(bytes), bytes };
 }
 
 async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopologyEvidence) {
@@ -602,7 +630,10 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
   }
   assertExactKeys(
     evidence,
-    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyReverification", "itxCoverageContract"],
+    [
+      "sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyReverification",
+      "itxCoverageContract", ...(evidence.emergencyReadmission === undefined ? [] : ["emergencyReadmission"]),
+    ],
     "buildSpec.networkEdgeEvidence",
   );
   const sourceInventory = await readPinnedBuildJson(
@@ -631,23 +662,61 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     !== JSON.stringify(["branch_name", "distance_meters", "line", "network_edges", "station_name"])) {
     throw new Error("capital topology fieldsProvided is invalid");
   }
-  const topologyAdmission = candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission);
-  if (topologyAdmission.snapshotId !== capitalTopology.pinned.snapshotId
-    || topologyAdmission.contentSha256 !== topology.contentSha256) {
+  const admissionIdentity = normalizedCapitalTopologyAdmission(evidence.capitalTopologyAdmission);
+  if (admissionIdentity.snapshotId !== capitalTopology.pinned.snapshotId
+    || admissionIdentity.contentSha256 !== topology.contentSha256) {
     throw new Error("capital topology edge admission does not match pinned snapshot");
   }
   validateCapitalTopologyReverification(
     capitalTopologyReverification.value,
     topology,
-    topologyAdmission,
+    admissionIdentity,
   );
   const capitalAdmissions = admittedCapitalLineEvidence(
     sourceInventory.value,
     topology,
     capitalTopology.pinned.snapshotId,
-    topologyAdmission.reviewedAt,
+    admissionIdentity.reviewedAt,
   );
-  const itxAdmission = await admittedItxNetworkEdgeEvidence(itxContract.value, itxTopologyEvidence);
+  const sourceItxAdmission = await admittedItxNetworkEdgeEvidence(
+    itxContract.value,
+    itxTopologyEvidence,
+  );
+  const now = candidateBuildNow();
+  const normalFresh = !networkEdgeEvidenceRequiresEmergency({
+    capitalFreshUntil: admissionIdentity.freshUntil,
+    itxFreshUntil: sourceItxAdmission.sourceFreshUntil,
+  }, now);
+  let emergencyAdmission = null;
+  if (!normalFresh && evidence.emergencyReadmission !== undefined) {
+    const emergency = await readPinnedBuildJson(
+      evidence.emergencyReadmission,
+      "buildSpec.networkEdgeEvidence.emergencyReadmission",
+    );
+    const failureEvidenceBytes = await readFile(await resolveBuildInputPath(
+      emergency.value?.failureEvidence?.path,
+      "TAGO emergency decision failureEvidence.path",
+    ));
+    emergencyAdmission = validateTagoEmergencyReadmission({
+      admissionBytes: emergency.bytes,
+      failureEvidenceBytes,
+      itxCoverageContractBytes: itxContract.bytes,
+      capitalTopologyBytes: capitalTopology.bytes,
+      capitalReverificationBytes: capitalTopologyReverification.bytes,
+      capitalTopologyAdmission: evidence.capitalTopologyAdmission,
+      now,
+    });
+  }
+  const topologyAdmission = candidateCapitalTopologyAdmission(
+    evidence.capitalTopologyAdmission,
+    emergencyAdmission,
+  );
+  const sourceItxFresh = Date.parse(sourceItxAdmission.sourceFreshUntil) > now.getTime();
+  if (!sourceItxFresh && emergencyAdmission === null) throw new Error("ITX network edge admission is stale");
+  const itxAdmission = {
+    ...sourceItxAdmission,
+    freshUntil: sourceItxFresh ? sourceItxAdmission.sourceFreshUntil : emergencyAdmission.expiresAt,
+  };
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
   for (const pack of productionPacks) {
@@ -670,12 +739,30 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     sourceInventory.value,
     buildSpec.sourceSnapshots,
   );
-  return new Date(Math.min(
-    Date.parse(topologyAdmission.freshUntil),
+  const artifactFreshUntil = new Date(Math.min(
+    Date.parse(topologyAdmission.freshUntil) > now.getTime()
+      ? Date.parse(topologyAdmission.freshUntil)
+      : Date.parse(emergencyAdmission.expiresAt),
     Date.parse(itxAdmission.freshUntil),
     ...[...capitalAdmissions.values()].map(({ freshUntil }) => Date.parse(freshUntil)),
     Date.parse(accessibilityFreshUntil),
   )).toISOString();
+  return {
+    artifactFreshUntil,
+    capitalTopologyAdmission: topologyAdmission,
+    admission: emergencyAdmission === null
+      ? { status: "FRESH", sourceFreshUntil: itxAdmission.sourceFreshUntil }
+      : {
+          status: emergencyAdmission.status,
+          sourceFreshUntil: itxAdmission.sourceFreshUntil,
+          emergencyAdmissionExpiresAt: emergencyAdmission.expiresAt,
+          emergencyDecisionSha256: emergencyAdmission.decisionSha256,
+        },
+  };
+}
+
+export function networkEdgeEvidenceRequiresEmergency({ capitalFreshUntil, itxFreshUntil }, now) {
+  return Date.parse(capitalFreshUntil) <= now.getTime() || Date.parse(itxFreshUntil) <= now.getTime();
 }
 
 function validateCapitalTopologyReverification(evidence, topology, admission) {
@@ -1062,8 +1149,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     throw new Error("ITX network edge unchanged admission is invalid");
   }
   const observedAt = requiredUtcDateString(source.observedAt, "ITX network edge source observedAt");
-  const freshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
-  if (Date.parse(freshUntil) <= candidateBuildNow().getTime()) throw new Error("ITX network edge admission is stale");
+  const sourceFreshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
   const pairHashes = new Map();
   for (const sequence of source.stationSequences ?? []) {
     for (let index = 0; index < (sequence.stops?.length ?? 0) - 1; index += 1) {
@@ -1079,7 +1165,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     sourceSnapshotId: source.artifactId,
     evidenceHash: sourceEvidenceHash,
     verifiedAt: observedAt,
-    freshUntil,
+    sourceFreshUntil,
     pairHashes,
   };
 }

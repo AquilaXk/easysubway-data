@@ -8,7 +8,10 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
-import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
+import {
+  networkEdgeEvidenceRequiresEmergency,
+  normalizeUnverifiedNetworkEdgeStates,
+} from "./build-datapack.mjs";
 import { verifyProductionPackArtifactIdentity } from "./verify-production-pack-artifact-identity.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -293,14 +296,14 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-network-edge-evidence-"));
   const outputDir = path.join(workspace, "output");
   const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-  const runRejectedBuild = async (candidate, pattern) => {
+  const runRejectedBuild = async (candidate, pattern, envOverride = {}) => {
     const specPath = path.join(workspace, `spec-${Date.now()}.json`);
     await writeFile(specPath, `${JSON.stringify(candidate, null, 2)}\n`);
     await assert.rejects(execFileAsync(process.execPath, [
       "tools/datapack/build-datapack.mjs",
       "--build-spec", specPath,
       "--output", outputDir,
-    ], { cwd: root, env }), pattern);
+    ], { cwd: root, env: { ...env, ...envOverride } }), pattern);
   };
   const runRejectedContractBuild = async (label, mutate, pattern) => {
     const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
@@ -340,6 +343,47 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     await runRejectedBuild(candidate, pattern);
   };
   try {
+    const decisionBytes = await readFile("tools/datapack/release/tago-emergency-readmission-20260804.json");
+    const decision = JSON.parse(decisionBytes);
+    const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
+    const emergencyOutput = path.join(workspace, "accepted-emergency-output");
+    const emergencySpecPath = path.join(workspace, "accepted-emergency.json");
+    await writeFile(emergencySpecPath, `${JSON.stringify(spec, null, 2)}\n`);
+    await execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--build-spec", emergencySpecPath,
+      "--output", emergencyOutput,
+    ], { cwd: root, env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: decision.admittedAt } });
+    const emergencyManifest = JSON.parse(await readFile(path.join(emergencyOutput, "current.json"), "utf8"));
+    const emergencyProvenance = JSON.parse(await readFile(
+      path.join(emergencyOutput, "current.provenance.json"),
+      "utf8",
+    ));
+    assert.ok(Date.parse(emergencyManifest.expiresAt) <= Date.parse(decision.expiresAt));
+    assert.deepEqual(emergencyProvenance.candidateBuild.networkEdgeEvidence.admission, {
+      status: "EMERGENCY_REVALIDATED",
+      sourceFreshUntil: contract.sourceTimetableArtifact.freshUntil,
+      emergencyAdmissionExpiresAt: decision.expiresAt,
+      emergencyDecisionSha256: sha256(decisionBytes),
+    });
+
+    assert.equal(networkEdgeEvidenceRequiresEmergency({
+      capitalFreshUntil: "2026-08-05T00:00:00.000Z",
+      itxFreshUntil: "2026-08-05T00:00:00.000Z",
+    }, new Date("2026-08-04T00:00:00.000Z")), false);
+
+    const withoutDecision = structuredClone(spec);
+    delete withoutDecision.networkEdgeEvidence.emergencyReadmission;
+    await runRejectedBuild(withoutDecision, /ITX network edge admission is stale/, {
+      EASYSUBWAY_DATAPACK_BUILD_NOW: decision.admittedAt,
+    });
+
+    const tamperedDecision = structuredClone(spec);
+    tamperedDecision.networkEdgeEvidence.emergencyReadmission.sha256 = "f".repeat(64);
+    await runRejectedBuild(tamperedDecision, /emergencyReadmission\.sha256 must match tracked input bytes/, {
+      EASYSUBWAY_DATAPACK_BUILD_NOW: decision.admittedAt,
+    });
+
     const missingEvidence = structuredClone(spec);
     delete missingEvidence.networkEdgeEvidence;
     await runRejectedBuild(missingEvidence, /production build requires network edge evidence/);
@@ -388,7 +432,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     const futureInventory = JSON.parse(await readFile("tools/datapack/source-inventory.json", "utf8"));
     futureInventory.sources.find(({ routeMapAdmissionEvidence }) =>
       routeMapAdmissionEvidence?.topologySnapshotId === "capital-route-topology-20260724"
-    ).routeMapAdmissionEvidence.capturedAt = "2026-07-27T21:38:30.000Z";
+    ).routeMapAdmissionEvidence.capturedAt = "2099-01-01T00:00:00.000Z";
     const futureInventoryBytes = Buffer.from(`${JSON.stringify(futureInventory, null, 2)}\n`);
     const futureInventoryPath = path.join(workspace, "future-source-inventory.json");
     await writeFile(futureInventoryPath, futureInventoryBytes);
@@ -404,7 +448,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
     earlyInventory.sources.find(({ id, routeMapAdmissionEvidence }) =>
       id === "kric-everline-route-map-positions"
       && routeMapAdmissionEvidence?.topologySnapshotId === "capital-route-topology-20260724"
-    ).routeMapAdmissionEvidence.freshUntil = "2026-08-01T00:00:00.000Z";
+    ).routeMapAdmissionEvidence.freshUntil = "2026-08-04T16:00:00.000Z";
     const earlyBytes = Buffer.from(`${JSON.stringify(earlyInventory, null, 2)}\n`);
     const earlyPath = path.join(workspace, "early-source-inventory.json");
     await writeFile(earlyPath, earlyBytes);
@@ -418,9 +462,9 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
       "tools/datapack/build-datapack.mjs",
       "--build-spec", earlySpecPath,
       "--output", earlyOutputDir,
-    ], { cwd: root, env });
+    ], { cwd: root, env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: decision.admittedAt } });
     const earlyManifest = JSON.parse(await readFile(path.join(earlyOutputDir, "current.json"), "utf8"));
-    assert.equal(earlyManifest.expiresAt, "2026-08-01T00:00:00.000Z");
+    assert.equal(earlyManifest.expiresAt, "2026-08-04T16:00:00.000Z");
 
     const missingEdgeAdmission = structuredClone(spec);
     delete missingEdgeAdmission.networkEdgeEvidence.capitalTopologyAdmission;
@@ -437,7 +481,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
       reviewedAt: "2026-07-27T21:38:29.000Z",
       freshUntil: "2026-07-27T21:38:30.000Z",
     };
-    await runRejectedBuild(staleEdgeAdmission, /capital topology edge admission is stale/);
+    await runRejectedBuild(staleEdgeAdmission, /capital topology reverification identity is invalid/);
 
     await runRejectedContractBuild("missing-itx-topology-admission", (contract) => {
       contract.coverageStates.route_graph_topology = "MISSING";
@@ -483,7 +527,7 @@ test("network edge evidence는 pinned bytes·freshness·fixture projection misma
       source.freshUntil = "2026-08-10T00:00:00+09:00";
       completeness.sourceTimetableArtifact.freshUntil = source.freshUntil;
       reference.freshUntil = source.freshUntil;
-    }, /ITX network edge admission evidence mismatch/);
+    }, /built ITX pack identity does not match tracked readmission output/);
 
     await runRejectedCompletenessBuild("unbound-itx-freshness", ({ source, completeness, reference }) => {
       source.freshUntil = "2026-08-04T00:00:00+09:00";

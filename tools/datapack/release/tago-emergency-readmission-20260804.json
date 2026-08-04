@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tago-emergency-readmission-decision",
+  "status": "EMERGENCY_REVALIDATED",
+  "reasonCode": "TAGO_PROVIDER_OUTAGE",
+  "decisionBasis": "DIRECT_PROVIDER_INQUIRY",
+  "dataIssue": 60,
+  "hubIssue": 2649,
+  "admittedAt": "2026-08-04T15:24:43.671Z",
+  "expiresAt": "2026-08-11T15:24:43.671Z",
+  "failureEvidence": {
+    "path": "tools/datapack/release/tago-provider-failure-20260804.json",
+    "sha256": "83d8c2812fdf69ca69470d0f2c717ff5dfa469f72cfc3add27e26b277de23bd8",
+    "fingerprint": "17b7a74d68632448070b33d7bb4833c3ad64e6a7b48d5116de42d46d54ffff54"
+  },
+  "itx": {
+    "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
+    "contractSha256": "8e45ce12b513c5e16109141314d8c5c0390f6621875b18ddd440cc26e8f3a1d5",
+    "artifactId": "itx-cheongchun-source-timetable-20260727071853886",
+    "artifactPath": "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
+    "artifactSha256": "71b70844a0ce93f2c137610a6472e7c824434e6ef97a38bf02a414146b1de6a0",
+    "sourceFreshUntil": "2026-08-03T00:00:00+09:00"
+  },
+  "capitalTopology": {
+    "path": "tools/datapack/sources/capital-route-topology-20260724.json",
+    "sha256": "1026e93ae3c6fd81bf9a6ac92b810439fc7e7e9fdd0a7c8167840cb5876d84a4",
+    "snapshotId": "capital-route-topology-20260724",
+    "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+    "sourceFreshUntil": "2026-07-25T08:20:00.000Z"
+  },
+  "capitalReverification": {
+    "path": "tools/datapack/release/capital-topology-reverification-20260804.json",
+    "sha256": "799e8e7a4e8818eb3501807fc39ded469cfc614a217c47c4f8997fbb47ed5f6f",
+    "candidateContentSha256": "811e87798345422217f518fbac669f0fc248c88aab4a1bae13e0eb0d1e80d4b1",
+    "normalizedLineSetSha256": "eef637b86afcc0ae6d6d97639ea02e8f4bf661f11635047393542e496532e21c",
+    "sourceFreshUntil": "2026-08-04T17:53:50.204Z"
+  },
+  "capitalAdmission": {
+    "reviewedAt": "2026-08-03T17:57:46.000Z",
+    "sourceFreshUntil": "2026-08-04T17:53:50.204Z"
+  },
+  "launchDenominatorDecision": "NO_GO"
+}

@@ -28,10 +28,10 @@
     "inputSha256": "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
     "inputSqliteSha256": "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     "inputByteSize": 359319,
-    "outputSha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
-    "outputSqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
-    "byteSize": 1463745,
-    "byteSizeDelta": 1104426
+    "outputSha256": "2f72ffd1c4d773b09bf3d8c6c47ec85cdf3ef0ad31986ad29d446adde3a393dc",
+    "outputSqliteSha256": "0709c8799524aadf9eaf9a8fac532b2f544b54af93bfd9e2dd5ce78cc5fd2c06",
+    "byteSize": 1463722,
+    "byteSizeDelta": 1104403
   },
   "readmissions": [
     {
@@ -5023,6 +5023,63 @@
               }
             ]
           }
+        }
+      ]
+    },
+    {
+      "readmittedAt": "2026-08-04T15:34:13.410Z",
+      "provenance": "#60 수도권 topology 공식 재검증 시각 반영; TAGO provider 장애 비상 결정 하 ITX 하위그래프 불변 재승인; QA 승인",
+      "previousPack": {
+        "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+        "sqliteSha256": "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+        "byteSize": 1463745
+      },
+      "newPack": {
+        "sha256": "2f72ffd1c4d773b09bf3d8c6c47ec85cdf3ef0ad31986ad29d446adde3a393dc",
+        "sqliteSha256": "0709c8799524aadf9eaf9a8fac532b2f544b54af93bfd9e2dd5ce78cc5fd2c06",
+        "byteSize": 1463722
+      },
+      "byteSizeDelta": -23,
+      "itxSubgraph": {
+        "unchanged": true,
+        "edgeCount": 48,
+        "edgesSha256": "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
+        "evidenceSha256": "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996"
+      },
+      "rowDiff": [
+        {
+          "table": "catalog_metadata",
+          "previousRowCount": 3,
+          "newRowCount": 3,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 1,
+          "detail": {
+            "removed": [],
+            "added": [],
+            "changed": [
+              {
+                "previous": {
+                  "key": "productionCoverageEvidence",
+                  "value": "[{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"accessibility_facilities\",\"sourceIds\":[\"kric-station-convenience-standard\",\"kric-station-elevator-movement\",\"kric-wheelchair-lift-movement\",\"seoul-metro-accessibility\"]},{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"route_map_positions\",\"sourceIds\":[\"seoulmetro-cyberstation-route-map\"]},{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"schedule_timetable\",\"sourceIds\":[\"kric-subway-timetable\"]},{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"station_line_membership\",\"sourceIds\":[\"molit-urban-rail-full-route\",\"seoulmetro-station-line-info\"]}]",
+                  "updated_at": 1781827200
+                },
+                "new": {
+                  "key": "productionCoverageEvidence",
+                  "value": "[{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"accessibility_facilities\",\"sourceIds\":[\"kric-station-convenience-standard\",\"seoul-metro-accessibility\"]},{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"route_map_positions\",\"sourceIds\":[\"seoulmetro-cyberstation-route-map\"]},{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"schedule_timetable\",\"sourceIds\":[\"kric-subway-timetable\"]},{\"regionId\":\"capital\",\"operatorId\":\"seoul-metro\",\"sourceDomain\":\"station_line_membership\",\"sourceIds\":[\"molit-urban-rail-full-route\",\"seoulmetro-station-line-info\"]}]",
+                  "updated_at": 1781827200
+                }
+              }
+            ]
+          }
+        },
+        {
+          "table": "network_edges",
+          "previousRowCount": 2182,
+          "newRowCount": 2182,
+          "rowsRemoved": 0,
+          "rowsAdded": 0,
+          "rowsChanged": 604
         }
       ]
     }
