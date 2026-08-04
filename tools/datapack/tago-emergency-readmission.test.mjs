@@ -11,7 +11,6 @@ import {
 } from "./collect-tago-itx-cheongchun-od.mjs";
 import {
   createTagoEmergencyReadmission,
-  exactTagoProviderErrorFromCompleteness,
   prepareTagoNetworkAdmission,
   runTagoEmergencyReadmissionCli,
   validateTagoEmergencyReadmission,
@@ -97,24 +96,6 @@ function createDecision(failure = failureEvidence(), override = {}) {
   });
 }
 
-function exactCompletenessFailure() {
-  return {
-    schemaVersion: 2,
-    artifactKind: "korail-itx-cheongchun-completeness-evidence",
-    observedAt: "2026-08-04T08:00:38.000Z",
-    validationStatus: "MISSING",
-    admissionStatus: "MISSING",
-    credentialRedacted: true,
-    serviceDays: ["8", "7", "9"].map((dayCd) => ({
-      dayCd,
-      status: "MISSING",
-      failureStage: "ROSTER",
-      failureReasonCode: "PROVIDER_RESULT_FAILURE",
-      failureContext: "operation=GetVhcleKndList,resultCode=01",
-    })),
-  };
-}
-
 function validateDecision(decision, failure = failureEvidence(), override = {}) {
   return validateTagoEmergencyReadmission({
     admissionBytes: bytes(decision),
@@ -155,10 +136,8 @@ async function cliFixture(context) {
 
 function normalCliArgs(fixture) {
   return [
-    "--day8-date", "20260804",
-    "--day7-date", "20260808",
-    "--day9-date", "20260809",
-    "--canonical-pack", "apps/mobile/assets/datapacks/capital.sqlite.gz",
+    "--date", "2026-08-05",
+    "--kric-day-cd", "8",
     "--failure-output", fixture.failurePath,
     "--decision-output", fixture.decisionPath,
     "--build-spec", "tools/datapack/release/candidate-build-spec.json",
@@ -174,28 +153,6 @@ test("fresh 성공은 emergency factory를 호출하지 않는다", async () => 
   });
   assert.deepEqual(result, { mode: "FRESH", freshArtifact: { artifactId: "fresh-itx" } });
   assert.equal(emergencyCalls, 0);
-});
-
-test("current 3-service-day runner의 동일한 TAGO 01만 structured error로 승격한다", () => {
-  const error = exactTagoProviderErrorFromCompleteness(exactCompletenessFailure());
-  assert.ok(error instanceof TagoProviderBoundaryError);
-  assert.deepEqual(error.detail, {
-    operation: "GetVhcleKndList",
-    transportStatus: "HTTP_SUCCESS",
-    httpStatus: 200,
-    schemaStatus: "EXPECTED",
-    resultCode: "01",
-  });
-
-  for (const mutate of [
-    (artifact) => artifact.serviceDays.pop(),
-    (artifact) => { artifact.serviceDays[1].failureContext = "operation=GetVhcleKndList,resultCode=02"; },
-    (artifact) => { artifact.serviceDays[2].failureReasonCode = "PROVIDER_SCHEMA_FAILURE"; },
-  ]) {
-    const artifact = exactCompletenessFailure();
-    mutate(artifact);
-    assert.throws(() => exactTagoProviderErrorFromCompleteness(artifact), /not eligible for emergency readmission/);
-  }
 });
 
 test("exact TAGO 01 failure만 7일 decision과 source identity에 결속한다", async () => {
@@ -290,7 +247,7 @@ test("CLI는 key 누락 시 current runner를 호출하지 않는다", async () 
   await assert.rejects(runTagoEmergencyReadmissionCli({
     argv: [],
     env: {},
-    runFreshImpl: async () => { calls += 1; },
+    collectFreshImpl: async () => { calls += 1; },
   }), /DATA_GO_KR_SERVICE_KEY is required/);
   assert.equal(calls, 0);
 });
@@ -304,14 +261,15 @@ test("CLI fresh 성공은 emergency 파일과 build spec을 변경하지 않는�
     repositoryRoot: fixture.root,
     now: new Date(ADMITTED_AT),
     decisionNow: () => assert.fail("fresh path must not create an emergency decision"),
-    runFreshImpl: async () => ({
-      exitCode: 0,
-      artifact: { validationStatus: "SUPPORTED" },
-      candidate: { artifactKind: "itx-cheongchun-source-timetable-candidate" },
-      outputSha256: "a".repeat(64),
+    collectFreshImpl: async () => ({
+      schemaVersion: 1,
+      artifactKind: "tago-itx-cheongchun-od-evidence",
+      observedAt: ADMITTED_AT,
     }),
   });
-  assert.equal(result.mode, "FRESH");
+  context.after(() => rm(result.temporaryOutputDirectory, { recursive: true, force: true }));
+  assert.equal(result.mode, "FRESH_PROVIDER_AVAILABLE");
+  assert.equal(JSON.parse(await readFile(result.freshOutput)).artifactKind, "tago-itx-cheongchun-od-evidence");
   assert.deepEqual(await readFile(fixture.buildSpecPath), beforeSpec);
   await assert.rejects(readFile(fixture.failurePath), { code: "ENOENT" });
   await assert.rejects(readFile(fixture.decisionPath), { code: "ENOENT" });
@@ -329,9 +287,15 @@ test("CLI exact outage만 decision을 쓰고 validate mode는 network를 호출�
       assert.equal(freshFinished, true);
       return new Date(ADMITTED_AT);
     },
-    runFreshImpl: async () => {
+    collectFreshImpl: async () => {
       freshFinished = true;
-      return { exitCode: 1, artifact: exactCompletenessFailure(), candidate: null };
+      throw new TagoProviderBoundaryError("TAGO GetVhcleKndList provider resultCode 01", {
+        operation: "GetVhcleKndList",
+        transportStatus: "HTTP_SUCCESS",
+        httpStatus: 200,
+        schemaStatus: "EXPECTED",
+        resultCode: "01",
+      });
     },
   });
   assert.equal(result.mode, "EMERGENCY_REVALIDATED");
@@ -355,7 +319,7 @@ test("CLI exact outage만 decision을 쓰고 validate mode는 network를 호출�
     env: {},
     repositoryRoot: fixture.root,
     now: new Date(ADMITTED_AT),
-    runFreshImpl: async () => { networkCalls += 1; },
+    collectFreshImpl: async () => { networkCalls += 1; },
   });
   assert.equal(validated.status, "EMERGENCY_REVALIDATED");
   assert.equal(networkCalls, 0);

@@ -6,10 +6,9 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
-  TagoProviderBoundaryError,
+  collectTagoItxCheongchunOd,
   providerFailureEvidence,
 } from "./collect-tago-itx-cheongchun-od.mjs";
-import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_PATH = "tools/datapack/release/tago-provider-failure-20260804.json";
@@ -27,32 +26,9 @@ export async function prepareTagoNetworkAdmission({ collectFresh, createEmergenc
     return {
       mode: "EMERGENCY_REVALIDATED",
       failureEvidence,
-      emergencyReadmission: createEmergency(failureEvidence),
+      emergencyReadmission: await createEmergency(failureEvidence),
     };
   }
-}
-
-export function exactTagoProviderErrorFromCompleteness(artifact) {
-  const days = Array.isArray(artifact?.serviceDays) ? artifact.serviceDays : [];
-  const exactDays = days.length === 3
-    && new Set(days.map(({ dayCd }) => dayCd)).size === 3
-    && ["8", "7", "9"].every((dayCd) => days.some((day) => day.dayCd === dayCd))
-    && days.every((day) => day.status === "MISSING"
-      && day.failureStage === "ROSTER"
-      && day.failureReasonCode === "PROVIDER_RESULT_FAILURE"
-      && day.failureContext === "operation=GetVhcleKndList,resultCode=01");
-  if (artifact?.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
-    || artifact.validationStatus !== "MISSING" || artifact.admissionStatus !== "MISSING"
-    || artifact.credentialRedacted !== true || !exactDays) {
-    throw new Error("current completeness result is not eligible for emergency readmission");
-  }
-  return new TagoProviderBoundaryError("TAGO GetVhcleKndList provider resultCode 01", {
-    operation: "GetVhcleKndList",
-    transportStatus: "HTTP_SUCCESS",
-    httpStatus: 200,
-    schemaStatus: "EXPECTED",
-    resultCode: "01",
-  });
 }
 
 export function createTagoEmergencyReadmission({
@@ -169,47 +145,35 @@ export async function runTagoEmergencyReadmissionCli({
   now = new Date(),
   decisionNow = () => new Date(),
   repositoryRoot = DEFAULT_ROOT,
-  runFreshImpl = runKorailItxCompletenessCli,
+  collectFreshImpl = collectTagoItxCheongchunOd,
 } = {}) {
   const args = parseArgs(argv);
   if (args.validate === true) return validateCli(args, repositoryRoot, now);
   requiredString(env.DATA_GO_KR_SERVICE_KEY, "DATA_GO_KR_SERVICE_KEY");
-  const dates = {
-    "8": serviceDate(args["day8-date"], "--day8-date"),
-    "7": serviceDate(args["day7-date"], "--day7-date"),
-    "9": serviceDate(args["day9-date"], "--day9-date"),
-  };
-  const canonicalPack = requiredString(args["canonical-pack"], "--canonical-pack");
+  const date = departureDate(args.date, "--date");
+  const kricServiceDayCode = requiredString(args["kric-day-cd"], "--kric-day-cd");
+  if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("--kric-day-cd must be 7, 8, or 9");
   const failurePath = exactOutput(args["failure-output"], repositoryRoot, FAILURE_PATH, "--failure-output");
   const decisionPath = exactOutput(args["decision-output"], repositoryRoot, "tools/datapack/release/tago-emergency-readmission-20260804.json", "--decision-output");
   const buildSpecPath = exactRepositoryPath(args["build-spec"], repositoryRoot, BUILD_SPEC_PATH, "--build-spec");
   if (args["update-build-spec"] !== true) throw new Error("--update-build-spec is required");
   if (Object.hasOwn(args, "admitted-at")) throw new Error("--admitted-at is not supported");
 
-  const temporaryOutputDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-tago-fresh-"));
-  const freshOutput = path.join(temporaryOutputDirectory, "candidate-or-failure.json");
-  const completenessOutput = path.join(temporaryOutputDirectory, "completeness.json");
-  let fresh;
   try {
-    fresh = await runFreshImpl({
-      argv: [
-        "--day8-date", dates["8"], "--day7-date", dates["7"], "--day9-date", dates["9"],
-        "--canonical-pack", path.resolve(repositoryRoot, canonicalPack),
-        "--output", freshOutput,
-        "--completeness-output", completenessOutput,
-      ],
-      env,
+    const freshArtifact = await collectFreshImpl({
+      serviceKey: env.DATA_GO_KR_SERVICE_KEY,
+      departureDate: date,
+      kricServiceDayCode,
       now,
-      repositoryRoot,
     });
-    if (fresh.exitCode === 0 && fresh.candidate) {
-      return { mode: "FRESH", fresh, temporaryOutputDirectory };
-    }
-
-    const providerError = exactTagoProviderErrorFromCompleteness(fresh.artifact);
+    const temporaryOutputDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-tago-fresh-"));
+    const freshOutput = path.join(temporaryOutputDirectory, "tago-itx-od.json");
+    await writeFile(freshOutput, jsonBytes(freshArtifact), { flag: "wx", mode: 0o600 });
+    return { mode: "FRESH_PROVIDER_AVAILABLE", freshArtifact, freshOutput, temporaryOutputDirectory };
+  } catch (providerError) {
     const admittedAt = decisionNow().toISOString();
     utcTimestamp(admittedAt, "admittedAt");
-    const failure = providerFailureEvidence(providerError, { observedAt: fresh.artifact.observedAt });
+    const failure = providerFailureEvidence(providerError, { observedAt: now.toISOString() });
     const [itxCoverageContractBytes, capitalTopologyBytes, capitalReverificationBytes, buildSpecBytes] = await Promise.all([
       readFile(path.join(repositoryRoot, ITX_PATH)),
       readFile(path.join(repositoryRoot, TOPOLOGY_PATH)),
@@ -249,10 +213,6 @@ export async function runTagoEmergencyReadmissionCli({
       buildSpecBytes: jsonBytes(buildSpec),
     });
     return { mode: "EMERGENCY_REVALIDATED", failure, decision };
-  } finally {
-    if (!(fresh?.exitCode === 0 && fresh.candidate)) {
-      await rm(temporaryOutputDirectory, { recursive: true, force: true });
-    }
   }
 }
 
@@ -428,8 +388,11 @@ function utcTimestamp(value, label) {
   return timestamp(value, label);
 }
 
-function serviceDate(value, label) {
-  if (!/^\d{8}$/.test(value ?? "")) throw new Error(`${label} must be YYYYMMDD`);
+function departureDate(value, label) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? "")
+    || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))) {
+    throw new Error(`${label} must be YYYY-MM-DD`);
+  }
   return value;
 }
 
@@ -468,8 +431,8 @@ function sha256(value) {
 
 async function main() {
   const result = await runTagoEmergencyReadmissionCli();
-  if (result.mode === "FRESH") {
-    console.log(`TAGO network admission ready: mode=FRESH, output=${result.temporaryOutputDirectory}`);
+  if (result.mode === "FRESH_PROVIDER_AVAILABLE") {
+    console.log(`TAGO network admission ready: mode=FRESH_PROVIDER_AVAILABLE, output=${result.freshOutput}`);
     return;
   }
   if (result.mode === "EMERGENCY_REVALIDATED") {
