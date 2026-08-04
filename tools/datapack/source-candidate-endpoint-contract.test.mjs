@@ -9,7 +9,10 @@ import {
   collectKricAccessibilityProviderTupleEvidence,
   KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
 } from "./collect-kric-accessibility-snapshots.mjs";
-import { resolveKricFacilityProviderProbe } from "./probe-kric-facility-provider-tuples.mjs";
+import {
+  preflightKricFacilityProviderProbe,
+  resolveKricFacilityProviderProbe,
+} from "./probe-kric-facility-provider-tuples.mjs";
 
 const CANDIDATES_PATH = path.join(import.meta.dirname, "source-candidates.json");
 const KRIC_OPENAPI_HOST = "openapi.kric.go.kr";
@@ -134,6 +137,44 @@ test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 
     routeRosters,
     candidatesDocument: document,
   }), /KRIC FACILITY blocked group is invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution,
+    routeRosters: {
+      ...routeRosters,
+      rosters: [{ ...routeRosters.rosters[0], stationCount: undefined, stations: undefined }, ...routeRosters.rosters.slice(1)],
+    },
+    candidatesDocument: document,
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+});
+
+test("FACILITY provider probe는 동일 키 control operation 성공 전 target을 호출하지 않는다", async () => {
+  const serviceKey = `Aa1$${"a".repeat(56)}`;
+  let calls = 0;
+  const result = await preflightKricFacilityProviderProbe({
+    candidatesDocument: document,
+    serviceKey,
+    fetchImpl: async (url) => {
+      calls += 1;
+      assert.equal(url.pathname, "/openapi/handicapped/stationCnvFacl");
+      return response(200, [{ dtlLoc: "대합실", grndDvCd: "1", gubun: "1", imgPath: "", mlFmlDvCd: "1", stinFlor: "B1", trfcWeakDvCd: "1" }]);
+    },
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(result, { credentialRedacted: true, controlOperationId: "kric-station-convenience-standard" });
+
+  calls = 0;
+  await assert.rejects(() => preflightKricFacilityProviderProbe({
+    candidatesDocument: document,
+    serviceKey: "short",
+    fetchImpl: async () => { calls += 1; },
+  }), /kric credential length does not match/);
+  assert.equal(calls, 0);
+
+  await assert.rejects(() => preflightKricFacilityProviderProbe({
+    candidatesDocument: document,
+    serviceKey,
+    fetchImpl: async () => response(200, [], "30"),
+  }), /KRIC accessibility provider result invalid/);
 });
 
 function response(status, body, resultCode = "00") {

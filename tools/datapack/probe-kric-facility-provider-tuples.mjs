@@ -3,6 +3,11 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { collectKricAccessibilityProviderTupleEvidence } from "./collect-kric-accessibility-snapshots.mjs";
+import { assertKricControlOperation } from "./collect-kric-source-candidate-evidence.mjs";
+import {
+  assertProviderCredentialIntegrity,
+  resolveProviderCallIntegrity,
+} from "./lib/provider-call-integrity.mjs";
 import { isMainModule } from "../lib/is-main-module.mjs";
 
 const FACILITY_OPERATION_IDS = Object.freeze([
@@ -38,6 +43,9 @@ export function resolveKricFacilityProviderProbe({ resolution, routeRosters, can
       || roster?.capturedAt !== routeRosters.capturedAt
       || roster?.credentialRedacted !== true
       || roster?.resultCode !== "00"
+      || !Number.isInteger(roster?.stationCount)
+      || roster.stationCount < 0
+      || !Array.isArray(roster?.stations)
       || roster?.stationCount !== roster?.stations?.length
     ))
     || !Array.isArray(candidatesDocument?.candidates)) {
@@ -75,23 +83,33 @@ export function resolveKricFacilityProviderProbe({ resolution, routeRosters, can
     }
     return { railOprIsttCd, lnCd, stinCd, stationName: names[0] };
   });
-  const operations = FACILITY_OPERATION_IDS.map((sourceId) => {
-    const matches = candidatesDocument.candidates.filter(({ id }) => id === sourceId);
-    const [candidate] = matches;
-    const endpoint = candidate?.operation?.endpoint;
-    const responseFields = candidate?.operation?.responseFields;
-    if (matches.length !== 1 || candidate?.requestUrl !== endpoint
-      || !Array.isArray(responseFields) || responseFields.length === 0) {
-      throw new Error(`KRIC FACILITY operation contract is invalid: ${sourceId}`);
-    }
-    return {
-      sourceId,
-      endpoint,
-      responseFields: [...responseFields],
-      tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
-    };
-  });
+  const operations = FACILITY_OPERATION_IDS.map((sourceId) => resolveOperation(candidatesDocument, sourceId));
   return { tuples, operations };
+}
+
+export async function preflightKricFacilityProviderProbe({
+  candidatesDocument,
+  serviceKey,
+  fetchImpl = fetch,
+} = {}) {
+  const integrity = resolveProviderCallIntegrity(candidatesDocument, "kric");
+  assertProviderCredentialIntegrity({ providerId: "kric", credential: serviceKey, contract: integrity.credential });
+  const control = assertKricControlOperation(candidatesDocument, integrity.controlOperation);
+  if (control.format !== "json") throw new Error("KRIC FACILITY control operation format is invalid");
+  const sampleUrl = new URL(control.sampleUrl);
+  const tuple = Object.fromEntries(["railOprIsttCd", "lnCd", "stinCd"].map((field) => [
+    field, sampleUrl.searchParams.get(field),
+  ]));
+  await collectKricAccessibilityProviderTupleEvidence({
+    tuples: [{ ...tuple, stationName: "CONTROL" }],
+    operations: [resolveOperation(candidatesDocument, control.candidateId, {
+      allowEvidenceFields: true,
+      tupleIdentityFields: [],
+    })],
+    serviceKey,
+    fetchImpl,
+  });
+  return { credentialRedacted: true, controlOperationId: control.candidateId };
 }
 
 function parseArgs(argv) {
@@ -121,13 +139,31 @@ async function main(argv) {
     readFile(CANDIDATES_PATH, "utf8").then(JSON.parse),
   ]);
   const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument });
+  const serviceKey = process.env.KRIC_SERVICE_KEY;
+  await preflightKricFacilityProviderProbe({ candidatesDocument, serviceKey });
   const evidence = await collectKricAccessibilityProviderTupleEvidence({
     ...input,
-    serviceKey: process.env.KRIC_SERVICE_KEY,
+    serviceKey,
     requestIntervalMs,
   });
   await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
   process.stdout.write(`KRIC FACILITY provider tuple probe ready: operations=${evidence.operationCount} queries=${evidence.queryCount} rows=${evidence.rowCount}\n`);
+}
+
+function resolveOperation(candidatesDocument, sourceId, {
+  allowEvidenceFields = false,
+  tupleIdentityFields = ["railOprIsttCd", "lnCd", "stinCd"],
+} = {}) {
+  const matches = candidatesDocument?.candidates?.filter(({ id }) => id === sourceId) ?? [];
+  const [candidate] = matches;
+  const endpoint = candidate?.operation?.endpoint;
+  const responseFields = candidate?.operation?.responseFields
+    ?? (allowEvidenceFields ? candidate?.evidence?.outputFields : undefined);
+  if (matches.length !== 1 || candidate?.requestUrl !== endpoint
+    || !Array.isArray(responseFields) || responseFields.length === 0) {
+    throw new Error(`KRIC FACILITY operation contract is invalid: ${sourceId}`);
+  }
+  return { sourceId, endpoint, responseFields: [...responseFields], tupleIdentityFields };
 }
 
 function providerTuple(value) {
