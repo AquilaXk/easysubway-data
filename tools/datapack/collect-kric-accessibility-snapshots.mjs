@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
-export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([
+export const KRIC_APPROVED_ACCESSIBILITY_OPERATIONS = Object.freeze([
   {
     sourceId: "kric-station-elevator",
     endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
@@ -42,12 +42,12 @@ export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([
   },
 ]);
 
-const HISTORICAL_KRIC_ACCESSIBILITY_OPERATION = Object.freeze({
+export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([{
   sourceId: "kric-station-convenience-standard",
   endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
   responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
   tupleIdentityFields: [],
-});
+}]);
 
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
 export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
@@ -179,9 +179,7 @@ export async function collectKricAccessibilitySnapshots({
 
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId)
-    ?? (snapshot?.sourceId === HISTORICAL_KRIC_ACCESSIBILITY_OPERATION.sourceId
-      ? HISTORICAL_KRIC_ACCESSIBILITY_OPERATION
-      : undefined);
+    ?? KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
   if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
     || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "PASS"
     || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST" || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
