@@ -55,3 +55,4 @@ jobs:
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
           tools/datapack/collect-kric-source-candidate-evidence.test.mjs
+          tools/datapack/probe-korail-facility-workbook.test.mjs
