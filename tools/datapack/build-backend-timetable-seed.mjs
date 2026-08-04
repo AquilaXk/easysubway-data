@@ -58,6 +58,7 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
     options.buildNow ?? new Date(),
     options.timetableArtifactSha256,
     options.canonicalPackIdentity,
+    options.emergencyAdmission,
   );
 
   const calendars = deriveCalendars(trips, dayMap, startDate, endDate)
@@ -120,6 +121,7 @@ function validateRouteServiceEvidence(
   buildNow,
   timetableArtifactSha256,
   canonicalPackIdentity,
+  emergencyAdmission,
 ) {
   if (!Array.isArray(rows) || rows.length > 1) {
     throw new Error("routeServiceArtifactEvidence must contain at most one row");
@@ -150,10 +152,7 @@ function validateRouteServiceEvidence(
   if (typeof evidence.freshUntil !== "string" || !OFFSET_ISO_8601.test(evidence.freshUntil)) {
     throw new Error("ITX_CHEONGCHUN freshUntil must be offset ISO-8601");
   }
-  const freshUntil = new Date(evidence.freshUntil);
-  if (Number.isNaN(freshUntil.getTime()) || freshUntil <= buildNow) {
-    throw new Error("ITX_CHEONGCHUN route service evidence must be fresh");
-  }
+  validateRouteServiceFreshness(evidence, buildNow, emergencyAdmission);
   if (
     typeof timetableArtifactSha256 !== "string"
     || !/^[a-f0-9]{64}$/.test(timetableArtifactSha256)
@@ -163,6 +162,37 @@ function validateRouteServiceEvidence(
   }
   validateCanonicalPackIdentity(evidence, canonicalPackIdentity);
   return rows;
+}
+
+function validateRouteServiceFreshness(evidence, buildNow, emergencyAdmission) {
+  const freshUntil = new Date(evidence.freshUntil);
+  if (Number.isNaN(freshUntil.getTime())) {
+    throw new Error("ITX_CHEONGCHUN route service evidence must be fresh");
+  }
+  const emergencyFields = [
+    evidence.emergencyAdmissionStatus,
+    evidence.emergencyAdmissionExpiresAt,
+    evidence.emergencyDecisionSha256,
+  ];
+  if (freshUntil > buildNow) {
+    if (emergencyAdmission !== undefined || emergencyFields.some((value) => value !== undefined)) {
+      throw new Error("ITX_CHEONGCHUN fresh evidence must not include emergency admission");
+    }
+    return;
+  }
+  if (emergencyAdmission === undefined && emergencyFields.every((value) => value === undefined)) {
+    throw new Error("ITX_CHEONGCHUN route service evidence must be fresh");
+  }
+  const expiresAt = new Date(emergencyAdmission?.expiresAt);
+  if (emergencyAdmission?.status !== "EMERGENCY_REVALIDATED"
+    || evidence.emergencyAdmissionStatus !== emergencyAdmission.status
+    || evidence.emergencyAdmissionExpiresAt !== emergencyAdmission.expiresAt
+    || evidence.emergencyDecisionSha256 !== emergencyAdmission.decisionSha256
+    || Number.isNaN(expiresAt.getTime())
+    || expiresAt <= buildNow
+    || !/^[a-f0-9]{64}$/.test(emergencyAdmission?.decisionSha256 ?? "")) {
+    throw new Error("ITX_CHEONGCHUN emergency admission is invalid");
+  }
 }
 
 function validateCanonicalPackIdentity(evidence, canonicalPackIdentity) {

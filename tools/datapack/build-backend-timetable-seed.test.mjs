@@ -372,6 +372,55 @@ test("stale ITX evidence는 seed 생성 단계에서 거부한다", () => {
   assert.throws(() => buildBackendTimetableSeed(artifact, OPTIONS), /must be fresh/);
 });
 
+test("stale ITX evidence는 exact emergency admission에서만 seed 조립을 허용한다", async () => {
+  const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+  const artifact = JSON.parse(artifactBytes);
+  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+  artifact.routeServiceArtifactEvidence = [{
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId: artifact.timetableArtifactIdentity.id,
+    timetableArtifactSha256,
+    canonicalPackId: artifact.canonicalPackIdentity.id,
+    canonicalPackSha256: artifact.canonicalPackIdentity.sha256,
+    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible: true,
+    freshUntil: "2026-08-03T00:00:00+09:00",
+    emergencyAdmissionStatus: "EMERGENCY_REVALIDATED",
+    emergencyAdmissionExpiresAt: "2026-08-11T16:12:10.834Z",
+    emergencyDecisionSha256: "c30a5251b4304d945073eede13d6fd95ff164c5ebc6cd9d326a19119a3da6c9f",
+    sourceIssue: 2135,
+  }];
+  const options = {
+    ...OPTIONS,
+    buildNow: new Date("2026-08-04T16:12:10.834Z"),
+    lineId: artifact.canonicalLineId,
+    timetableArtifactSha256,
+    canonicalPackIdentity: artifact.canonicalPackIdentity,
+    emergencyAdmission: {
+      status: "EMERGENCY_REVALIDATED",
+      expiresAt: "2026-08-11T16:12:10.834Z",
+      decisionSha256: "c30a5251b4304d945073eede13d6fd95ff164c5ebc6cd9d326a19119a3da6c9f",
+    },
+    serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [
+      calendar.serviceId,
+      calendar,
+    ])),
+  };
+
+  const { sql } = buildBackendTimetableSeed(artifact, options);
+  assert.match(sql, /'2026-08-03T00:00:00\+09:00'/);
+  for (const [key, value] of [
+    ["emergencyAdmissionStatus", "FRESH"],
+    ["emergencyAdmissionExpiresAt", "2026-08-04T16:12:10.834Z"],
+    ["emergencyDecisionSha256", "0".repeat(64)],
+  ]) {
+    const tampered = structuredClone(artifact);
+    tampered.routeServiceArtifactEvidence[0][key] = value;
+    assert.throws(() => buildBackendTimetableSeed(tampered, options), /emergency admission/);
+  }
+});
+
 test("ITX trip 0건인 seed에는 ADMITTED evidence를 기록하지 않는다", () => {
   const artifact = {
     ...ARTIFACT,

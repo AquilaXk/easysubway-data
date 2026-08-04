@@ -123,6 +123,11 @@ export function buildServerTimetableSnapshot({
     admissionStatus: "ADMITTED",
     admissionEligible: true,
     freshUntil: admission.freshUntil,
+    ...(admission.status === "EMERGENCY_REVALIDATED" ? {
+      emergencyAdmissionStatus: admission.status,
+      emergencyAdmissionExpiresAt: admission.emergencyAdmissionExpiresAt,
+      emergencyDecisionSha256: admission.emergencyDecisionSha256,
+    } : {}),
     sourceIssue: 2135,
   }];
   const itxSeed = buildBackendTimetableSeed({
@@ -139,6 +144,13 @@ export function buildServerTimetableSnapshot({
     buildNow,
     timetableArtifactSha256: sha256(sourceBytes),
     canonicalPackIdentity,
+    ...(admission.status === "EMERGENCY_REVALIDATED" ? {
+      emergencyAdmission: {
+        status: admission.status,
+        expiresAt: admission.emergencyAdmissionExpiresAt,
+        decisionSha256: admission.emergencyDecisionSha256,
+      },
+    } : {}),
   });
   assertNoIdentityCollisions(baselineSql, itxSeed);
   const plannerIdentity = plannerIdentitySql(source, completeness);
