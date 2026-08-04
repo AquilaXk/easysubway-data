@@ -161,7 +161,6 @@ function normalCliArgs(fixture) {
     "--canonical-pack", "apps/mobile/assets/datapacks/capital.sqlite.gz",
     "--failure-output", fixture.failurePath,
     "--decision-output", fixture.decisionPath,
-    "--admitted-at", ADMITTED_AT,
     "--build-spec", "tools/datapack/release/candidate-build-spec.json",
     "--update-build-spec",
   ];
@@ -304,6 +303,7 @@ test("CLI fresh 성공은 emergency 파일과 build spec을 변경하지 않는�
     env: { DATA_GO_KR_SERVICE_KEY: "key" },
     repositoryRoot: fixture.root,
     now: new Date(ADMITTED_AT),
+    decisionNow: () => assert.fail("fresh path must not create an emergency decision"),
     runFreshImpl: async () => ({
       exitCode: 0,
       artifact: { validationStatus: "SUPPORTED" },
@@ -319,12 +319,20 @@ test("CLI fresh 성공은 emergency 파일과 build spec을 변경하지 않는�
 
 test("CLI exact outage만 decision을 쓰고 validate mode는 network를 호출하지 않는다", async (context) => {
   const fixture = await cliFixture(context);
+  let freshFinished = false;
   const result = await runTagoEmergencyReadmissionCli({
     argv: normalCliArgs(fixture),
     env: { DATA_GO_KR_SERVICE_KEY: "key" },
     repositoryRoot: fixture.root,
     now: new Date(ADMITTED_AT),
-    runFreshImpl: async () => ({ exitCode: 1, artifact: exactCompletenessFailure(), candidate: null }),
+    decisionNow: () => {
+      assert.equal(freshFinished, true);
+      return new Date(ADMITTED_AT);
+    },
+    runFreshImpl: async () => {
+      freshFinished = true;
+      return { exitCode: 1, artifact: exactCompletenessFailure(), candidate: null };
+    },
   });
   assert.equal(result.mode, "EMERGENCY_REVALIDATED");
   const decisionBytes = await readFile(fixture.decisionPath);
@@ -343,10 +351,10 @@ test("CLI exact outage만 decision을 쓰고 validate mode는 network를 호출�
       "--failure", fixture.failurePath,
       "--decision", fixture.decisionPath,
       "--build-spec", "tools/datapack/release/candidate-build-spec.json",
-      "--now", ADMITTED_AT,
     ],
     env: {},
     repositoryRoot: fixture.root,
+    now: new Date(ADMITTED_AT),
     runFreshImpl: async () => { networkCalls += 1; },
   });
   assert.equal(validated.status, "EMERGENCY_REVALIDATED");

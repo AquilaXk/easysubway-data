@@ -167,11 +167,12 @@ export async function runTagoEmergencyReadmissionCli({
   argv = process.argv.slice(2),
   env = process.env,
   now = new Date(),
+  decisionNow = () => new Date(),
   repositoryRoot = DEFAULT_ROOT,
   runFreshImpl = runKorailItxCompletenessCli,
 } = {}) {
   const args = parseArgs(argv);
-  if (args.validate === true) return validateCli(args, repositoryRoot);
+  if (args.validate === true) return validateCli(args, repositoryRoot, now);
   requiredString(env.DATA_GO_KR_SERVICE_KEY, "DATA_GO_KR_SERVICE_KEY");
   const dates = {
     "8": serviceDate(args["day8-date"], "--day8-date"),
@@ -183,8 +184,7 @@ export async function runTagoEmergencyReadmissionCli({
   const decisionPath = exactOutput(args["decision-output"], repositoryRoot, "tools/datapack/release/tago-emergency-readmission-20260804.json", "--decision-output");
   const buildSpecPath = exactRepositoryPath(args["build-spec"], repositoryRoot, BUILD_SPEC_PATH, "--build-spec");
   if (args["update-build-spec"] !== true) throw new Error("--update-build-spec is required");
-  const admittedAt = requiredString(args["admitted-at"], "--admitted-at");
-  utcTimestamp(admittedAt, "admittedAt");
+  if (Object.hasOwn(args, "admitted-at")) throw new Error("--admitted-at is not supported");
 
   const temporaryOutputDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-tago-fresh-"));
   const freshOutput = path.join(temporaryOutputDirectory, "candidate-or-failure.json");
@@ -207,6 +207,8 @@ export async function runTagoEmergencyReadmissionCli({
     }
 
     const providerError = exactTagoProviderErrorFromCompleteness(fresh.artifact);
+    const admittedAt = decisionNow().toISOString();
+    utcTimestamp(admittedAt, "admittedAt");
     const failure = providerFailureEvidence(providerError, { observedAt: fresh.artifact.observedAt });
     const [itxCoverageContractBytes, capitalTopologyBytes, capitalReverificationBytes, buildSpecBytes] = await Promise.all([
       readFile(path.join(repositoryRoot, ITX_PATH)),
@@ -254,7 +256,7 @@ export async function runTagoEmergencyReadmissionCli({
   }
 }
 
-async function validateCli(args, repositoryRoot) {
+async function validateCli(args, repositoryRoot, now) {
   const failurePath = exactOutput(args.failure, repositoryRoot, FAILURE_PATH, "--failure");
   const decisionPath = exactOutput(args.decision, repositoryRoot, "tools/datapack/release/tago-emergency-readmission-20260804.json", "--decision");
   const buildSpecPath = exactRepositoryPath(args["build-spec"], repositoryRoot, BUILD_SPEC_PATH, "--build-spec");
@@ -280,7 +282,7 @@ async function validateCli(args, repositoryRoot) {
     capitalTopologyBytes,
     capitalReverificationBytes,
     capitalTopologyAdmission: buildSpec.networkEdgeEvidence?.capitalTopologyAdmission,
-    now: new Date(requiredString(args.now, "--now")),
+    now: args.now === undefined ? now : new Date(requiredString(args.now, "--now")),
   });
 }
 
