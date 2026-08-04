@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { collectKricAccessibilityProviderTupleEvidence } from "./collect-kric-accessibility-snapshots.mjs";
 import { assertKricControlOperation } from "./collect-kric-source-candidate-evidence.mjs";
@@ -91,6 +92,8 @@ export async function preflightKricFacilityProviderProbe({
   candidatesDocument,
   serviceKey,
   fetchImpl = fetch,
+  requestIntervalMs = 0,
+  delayImpl = delay,
 } = {}) {
   const integrity = resolveProviderCallIntegrity(candidatesDocument, "kric");
   assertProviderCredentialIntegrity({ providerId: "kric", credential: serviceKey, contract: integrity.credential });
@@ -100,15 +103,23 @@ export async function preflightKricFacilityProviderProbe({
   const tuple = Object.fromEntries(["railOprIsttCd", "lnCd", "stinCd"].map((field) => [
     field, sampleUrl.searchParams.get(field),
   ]));
-  await collectKricAccessibilityProviderTupleEvidence({
+  const evidence = await collectKricAccessibilityProviderTupleEvidence({
     tuples: [{ ...tuple, stationName: "CONTROL" }],
-    operations: [resolveOperation(candidatesDocument, control.candidateId, {
-      allowEvidenceFields: true,
+    operations: [{
+      sourceId: control.candidateId,
+      endpoint: control.endpoint,
+      responseFields: [...control.expectedSuccess.requiredFields],
       tupleIdentityFields: [],
-    })],
+    }],
     serviceKey,
     fetchImpl,
+    requestIntervalMs,
+    delayImpl,
   });
+  if (evidence.rowCount < control.expectedSuccess.minimumRowCount) {
+    throw new Error("KRIC FACILITY control operation success contract is invalid");
+  }
+  if (requestIntervalMs > 0) await delayImpl(requestIntervalMs);
   return { credentialRedacted: true, controlOperationId: control.candidateId };
 }
 
@@ -140,7 +151,7 @@ async function main(argv) {
   ]);
   const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument });
   const serviceKey = process.env.KRIC_SERVICE_KEY;
-  await preflightKricFacilityProviderProbe({ candidatesDocument, serviceKey });
+  await preflightKricFacilityProviderProbe({ candidatesDocument, serviceKey, requestIntervalMs });
   const evidence = await collectKricAccessibilityProviderTupleEvidence({
     ...input,
     serviceKey,
@@ -150,20 +161,21 @@ async function main(argv) {
   process.stdout.write(`KRIC FACILITY provider tuple probe ready: operations=${evidence.operationCount} queries=${evidence.queryCount} rows=${evidence.rowCount}\n`);
 }
 
-function resolveOperation(candidatesDocument, sourceId, {
-  allowEvidenceFields = false,
-  tupleIdentityFields = ["railOprIsttCd", "lnCd", "stinCd"],
-} = {}) {
+function resolveOperation(candidatesDocument, sourceId) {
   const matches = candidatesDocument?.candidates?.filter(({ id }) => id === sourceId) ?? [];
   const [candidate] = matches;
   const endpoint = candidate?.operation?.endpoint;
-  const responseFields = candidate?.operation?.responseFields
-    ?? (allowEvidenceFields ? candidate?.evidence?.outputFields : undefined);
+  const responseFields = candidate?.operation?.responseFields;
   if (matches.length !== 1 || candidate?.requestUrl !== endpoint
     || !Array.isArray(responseFields) || responseFields.length === 0) {
     throw new Error(`KRIC FACILITY operation contract is invalid: ${sourceId}`);
   }
-  return { sourceId, endpoint, responseFields: [...responseFields], tupleIdentityFields };
+  return {
+    sourceId,
+    endpoint,
+    responseFields: [...responseFields],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  };
 }
 
 function providerTuple(value) {
