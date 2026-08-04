@@ -11,12 +11,43 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([
   {
-    sourceId: "kric-station-convenience-standard",
-    endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
-    responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
-    tupleIdentityFields: [],
+    sourceId: "kric-station-elevator",
+    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-station-escalator",
+    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-wheelchair-lift-location",
+    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
+    responseFields: ["bndWgt", "dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "len", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "wd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-station-elevator-movement",
+    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
+    responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-wheelchair-lift-movement",
+    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
+    responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
   },
 ]);
+
+const HISTORICAL_KRIC_ACCESSIBILITY_OPERATION = Object.freeze({
+  sourceId: "kric-station-convenience-standard",
+  endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+  responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
+  tupleIdentityFields: [],
+});
 
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
 export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
@@ -147,7 +178,10 @@ export async function collectKricAccessibilitySnapshots({
 }
 
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
-  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
+  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId)
+    ?? (snapshot?.sourceId === HISTORICAL_KRIC_ACCESSIBILITY_OPERATION.sourceId
+      ? HISTORICAL_KRIC_ACCESSIBILITY_OPERATION
+      : undefined);
   if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
     || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "PASS"
     || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST" || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
