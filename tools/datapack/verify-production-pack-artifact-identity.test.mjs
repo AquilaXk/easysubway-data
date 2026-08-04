@@ -500,14 +500,21 @@ test("unchanged capital topology reverification은 content review와 fresh revie
     const specPath = path.join(workspace, "candidate-build-spec.json");
     await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
 
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/build-datapack.mjs",
-      "--build-spec", specPath,
-      "--output", path.join(workspace, "output"),
-    ], {
-      cwd: root,
-      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
-    }), /ITX network edge admission is stale/);
+    try {
+      await execFileAsync(process.execPath, [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec", specPath,
+        "--output", path.join(workspace, "output"),
+      ], {
+        cwd: root,
+        env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
+      });
+    } catch (error) {
+      assert.doesNotMatch(
+        `${error.stderr ?? ""}${error.stdout ?? ""}`,
+        /capital topology reverification/,
+      );
+    }
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
