@@ -23,13 +23,24 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "application/x-msdownload",
 ]);
 
-export async function summarizeKorailWorkbook(readEntry) {
-  const workbookXml = await readEntry("xl/workbook.xml");
-  const relationshipsXml = await readEntry("xl/_rels/workbook.xml.rels");
-  const sharedStrings = parseSharedStrings(await readEntry("xl/sharedStrings.xml", true));
+export async function summarizeKorailWorkbook(readEntry, maximumBytes = MAXIMUM_WORKBOOK_BYTES) {
+  if (!Number.isInteger(maximumBytes) || maximumBytes < 1) throw new Error("workbook XML byte limit is invalid");
+  let byteCount = 0;
+  const read = async (entry, optional = false) => {
+    const remainingBytes = maximumBytes - byteCount;
+    if (remainingBytes < 1) throw new Error("Korail XLSX aggregate XML exceeds byte limit");
+    const value = await readEntry(entry, optional, remainingBytes);
+    byteCount += Buffer.byteLength(value);
+    if (byteCount > maximumBytes) throw new Error("Korail XLSX aggregate XML exceeds byte limit");
+    return value;
+  };
+
+  const workbookXml = await read("xl/workbook.xml");
+  const relationshipsXml = await read("xl/_rels/workbook.xml.rels");
+  const sharedStrings = parseSharedStrings(await read("xl/sharedStrings.xml", true));
   const sheets = [];
   for (const sheet of parseWorkbookSheetRefs(workbookXml, relationshipsXml)) {
-    const rows = parseWorksheetRows(await readEntry(sheet.entry), sharedStrings);
+    const rows = parseWorksheetRows(await read(sheet.entry), sharedStrings);
     const nonEmptyRows = rows.filter((row) => row.some((value) => value !== ""));
     sheets.push({
       name: sheet.name,
@@ -44,7 +55,8 @@ export async function summarizeKorailWorkbook(readEntry) {
 }
 
 export async function inspectKorailWorkbook(input) {
-  return summarizeKorailWorkbook((entry, optional = false) => unzipEntry(input, entry, optional));
+  return summarizeKorailWorkbook((entry, optional, maximumBytes) =>
+    unzipEntry(input, entry, optional, maximumBytes));
 }
 
 export async function readBoundedResponseBody(response, maximumBytes) {
@@ -134,11 +146,14 @@ export async function probeKorailFacilityWorkbook({
   }
 }
 
-async function unzipEntry(input, entry, optional = false) {
+async function unzipEntry(input, entry, optional = false, maximumBytes = MAXIMUM_WORKBOOK_BYTES) {
   try {
-    const { stdout } = await execFileAsync("unzip", ["-p", input, entry], { maxBuffer: MAXIMUM_WORKBOOK_BYTES });
+    const { stdout } = await execFileAsync("unzip", ["-p", input, entry], { maxBuffer: maximumBytes });
     return stdout;
   } catch (error) {
+    if (error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      throw new Error("Korail XLSX aggregate XML exceeds byte limit");
+    }
     if (optional && error?.code === 11) return "";
     throw new Error(`Korail XLSX archive entry unavailable: ${entry}`);
   }

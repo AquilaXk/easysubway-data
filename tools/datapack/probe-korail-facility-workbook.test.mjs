@@ -155,6 +155,28 @@ test("Korail workbook summary는 기존 bounded XLSX parser로 leading rows와 r
   });
 });
 
+test("Korail workbook summary는 entry별 제한 안에서도 누적 XML byte limit을 넘으면 거부한다", async () => {
+  const entries = new Map([
+    ["xl/workbook.xml", `<workbook xmlns:r="rels"><sheets><sheet name="Sheet1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`],
+    ["xl/sharedStrings.xml", ""],
+    ["xl/worksheets/sheet1.xml", `<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>row</t></is></c></row></sheetData></worksheet>`],
+  ]);
+  const largestEntryBytes = Math.max(...[...entries.values()].map((value) => Buffer.byteLength(value)));
+
+  await assert.rejects(
+    () => summarizeKorailWorkbook(async (entry, _optional, remainingBytes) => {
+      assert.equal(Number.isInteger(remainingBytes), true);
+      const value = entries.get(entry);
+      if (Buffer.byteLength(value) > remainingBytes) {
+        throw new Error("Korail XLSX aggregate XML exceeds byte limit");
+      }
+      return value;
+    }, largestEntryBytes),
+    /aggregate XML exceeds byte limit/,
+  );
+});
+
 test("Korail workbook summary는 leading rows를 10개로 제한한다", async () => {
   const rows = Array.from({ length: 11 }, (_, index) =>
     `<row r="${index + 1}"><c r="A${index + 1}" t="inlineStr"><is><t>row-${index + 1}</t></is></c></row>`).join("");
