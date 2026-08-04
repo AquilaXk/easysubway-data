@@ -368,6 +368,8 @@ export function compareCapitalRouteTopologies(baseline, candidate) {
   if (!Array.isArray(baseline?.lines) || !Array.isArray(candidate?.lines)) {
     throw new Error("capital topology snapshots require lines arrays");
   }
+  const baselineNormalizedLineSetSha256 = normalizedLineSetSha256(baseline, "baseline");
+  const candidateNormalizedLineSetSha256 = normalizedLineSetSha256(candidate, "candidate");
   const baselineLines = new Map(baseline.lines.map((line) => [line.lineId, line]));
   const candidateLines = new Map(candidate.lines.map((line) => [line.lineId, line]));
   const changes = [];
@@ -396,16 +398,27 @@ export function compareCapitalRouteTopologies(baseline, candidate) {
   return {
     baselineContentSha256: baseline.contentSha256,
     candidateContentSha256: candidate.contentSha256,
-    baselineNormalizedLineSetSha256: normalizedLineSetSha256(baseline),
-    candidateNormalizedLineSetSha256: normalizedLineSetSha256(candidate),
+    baselineNormalizedLineSetSha256,
+    candidateNormalizedLineSetSha256,
     changes,
   };
 }
 
-function normalizedLineSetSha256(snapshot) {
+function normalizedLineSetSha256(snapshot, label) {
   return sha256(JSON.stringify(snapshot.lines
-    .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
+    .map((line) => ({
+      lineId: line.lineId,
+      contentSha256: verifiedLineContentSha256(line, label),
+    }))
     .sort((left, right) => codepointCompare(left.lineId, right.lineId))));
+}
+
+function verifiedLineContentSha256(line, label) {
+  const actual = sha256(JSON.stringify({ scope: line.scope, edges: line.edges }));
+  if (line.contentSha256 !== actual) {
+    throw new Error(`capital topology ${label} line ${line.lineId} contentSha256 mismatch`);
+  }
+  return actual;
 }
 
 export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {

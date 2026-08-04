@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,6 +15,15 @@ import {
 } from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
+
+function topologyLine(lineId, scope, edges) {
+  return {
+    lineId,
+    scope,
+    edges,
+    contentSha256: createHash("sha256").update(JSON.stringify({ scope, edges })).digest("hex"),
+  };
+}
 
 test("MOLIT 전체노선 collector는 공개 FILE 링크의 CSV만 수집한다", async () => {
   const requests = [];
@@ -66,13 +76,13 @@ test("서해선 병합기는 코레일 전체 파일에서 서해선 행만 사�
 test("capital topology 비교는 같은 edge에 변경을 보고하지 않는다", () => {
   const edge = { fromStationName: "가", toStationName: "나", distanceMeters: 100 };
   const comparison = compareCapitalRouteTopologies(
-    { contentSha256: "before", lines: [{ lineId: "line-1", contentSha256: "a", edges: [edge] }] },
-    { contentSha256: "after", lines: [{ lineId: "line-1", contentSha256: "b", edges: [{ ...edge }] }] },
+    { contentSha256: "before", lines: [topologyLine("line-1", ["가", "나"], [edge])] },
+    { contentSha256: "after", lines: [topologyLine("line-1", ["가", "나"], [{ ...edge }])] },
   );
   assert.deepEqual(comparison.changes, []);
 });
 
-test("capital topology 비교는 동일 stored hash여도 edge 추가 삭제 수정을 감지한다", () => {
+test("capital topology 비교는 유효한 line hash에서 edge 추가 삭제 수정을 감지한다", () => {
   const baselineEdges = [
     { fromStationName: "가", toStationName: "나", distanceMeters: 100 },
     { fromStationName: "나", toStationName: "다", distanceMeters: 100 },
@@ -83,8 +93,8 @@ test("capital topology 비교는 동일 stored hash여도 edge 추가 삭제 수
     { fromStationName: "다", toStationName: "라", distanceMeters: 100 },
     { fromStationName: "라", toStationName: "마", distanceMeters: 100 },
   ];
-  const baseline = { contentSha256: "before", lines: [{ lineId: "line-1", contentSha256: "same", edges: baselineEdges }] };
-  const candidate = { contentSha256: "after", lines: [{ lineId: "line-1", contentSha256: "same", edges: candidateEdges }] };
+  const baseline = { contentSha256: "before", lines: [topologyLine("line-1", ["가", "나", "다", "라"], baselineEdges)] };
+  const candidate = { contentSha256: "after", lines: [topologyLine("line-1", ["가", "나", "다", "라", "마"], candidateEdges)] };
   const comparison = compareCapitalRouteTopologies(baseline, candidate);
   assert.deepEqual(comparison.changes, [{
     lineId: "line-1",
@@ -93,6 +103,20 @@ test("capital topology 비교는 동일 stored hash여도 edge 추가 삭제 수
     modified: [{ before: baselineEdges[0], after: candidateEdges[0] }],
   }]);
   assert.throws(() => buildCapitalTopologyReverificationEvidence(baseline, candidate), /re-admission required/);
+});
+
+test("capital topology 비교는 scope 또는 edge의 stale stored hash를 거부한다", () => {
+  const scope = ["가", "나"];
+  const edges = [{ fromStationName: "가", toStationName: "나", distanceMeters: 100 }];
+  const valid = topologyLine("line-1", scope, edges);
+  assert.throws(() => compareCapitalRouteTopologies(
+    { lines: [valid] },
+    { lines: [{ ...valid, scope: [...scope, "다"] }] },
+  ), /contentSha256 mismatch/);
+  assert.throws(() => compareCapitalRouteTopologies(
+    { lines: [valid] },
+    { lines: [{ ...valid, edges: [{ ...edges[0], distanceMeters: 200 }] }] },
+  ), /contentSha256 mismatch/);
 });
 
 test("local CLI 기본 실행은 tracked baseline을 건드리지 않고 고정 freshness를 기록한다", async () => {
