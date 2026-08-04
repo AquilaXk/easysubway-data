@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -68,11 +68,13 @@ test("Korail FACILITY probe는 raw workbook을 삭제하고 sanitized identity�
 
 test("Korail FACILITY probe는 final URL origin drift를 거부한다", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "korail-facility-probe-invalid-"));
+  const output = path.join(root, "drift.json");
   try {
+    await writeFile(output, "stale evidence");
     await assert.rejects(() => probeKorailFacilityWorkbook({
       fetchImpl: async () => response(XLSX_BYTES, "https://example.com/file.xlsx"),
       inspectWorkbookImpl: async () => ({ sheets: [] }),
-      output: path.join(root, "drift.json"),
+      output,
       tempRoot: root,
     }), /final URL/);
     assert.deepEqual(await readdir(root), []);

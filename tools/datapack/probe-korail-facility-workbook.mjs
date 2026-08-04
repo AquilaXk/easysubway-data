@@ -92,6 +92,7 @@ export async function probeKorailFacilityWorkbook({
   if (!path.isAbsolute(output ?? "")) throw new Error("--output must be an absolute path");
   if (!path.isAbsolute(tempRoot ?? "")) throw new Error("RUNNER_TEMP must be an absolute path");
   if (new Date(capturedAt).toISOString() !== capturedAt) throw new Error("capturedAt must be an ISO instant");
+  await rm(output, { force: true });
 
   const response = await fetchImpl(KORAIL_FACILITY_WORKBOOK_URL, {
     redirect: "error",
