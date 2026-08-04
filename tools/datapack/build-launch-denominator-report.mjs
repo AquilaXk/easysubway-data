@@ -144,6 +144,11 @@ function sanitizeCandidateBinding(value) {
     status: evidence?.status ?? "MISSING",
     sha256: evidence?.sha256 ?? null,
     freshUntil: evidence?.freshUntil ?? null,
+    ...(evidence?.status === "EMERGENCY_REVALIDATED" ? {
+      sourceFreshUntil: evidence.sourceFreshUntil ?? null,
+      emergencyAdmissionExpiresAt: evidence.emergencyAdmissionExpiresAt ?? null,
+      emergencyDecisionSha256: evidence.emergencyDecisionSha256 ?? null,
+    } : {}),
   });
   return {
     status: value?.status ?? "INCOMPLETE",
@@ -332,10 +337,17 @@ function validCandidateBinding(value) {
     && /^[a-f0-9]{64}$/.test(value.manifestSha256 ?? "")
     && ["source", "server", "mobile"].every((consumer) => {
       const artifact = value?.[`${consumer}Evidence`];
-      return artifact?.status === "FRESH"
-        && /^[a-f0-9]{64}$/.test(artifact.sha256 ?? "")
+      const identityValid = /^[a-f0-9]{64}$/.test(artifact?.sha256 ?? "")
         && typeof artifact.freshUntil === "string"
         && Number.isFinite(Date.parse(artifact.freshUntil));
+      if (!identityValid) return false;
+      if (artifact.status === "FRESH") return true;
+      return artifact.status === "EMERGENCY_REVALIDATED"
+        && typeof artifact.sourceFreshUntil === "string"
+        && Number.isFinite(Date.parse(artifact.sourceFreshUntil))
+        && typeof artifact.emergencyAdmissionExpiresAt === "string"
+        && Number.isFinite(Date.parse(artifact.emergencyAdmissionExpiresAt))
+        && /^[a-f0-9]{64}$/.test(artifact.emergencyDecisionSha256 ?? "");
     });
 }
 

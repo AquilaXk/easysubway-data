@@ -145,6 +145,30 @@ test("report는 secret 없는 evaluator input만 포함하고 자체 재계산�
   assert.deepEqual(buildLaunchDenominatorReport(scope, report.evaluatorInput), report);
 });
 
+test("emergency binding identity는 canonical report에 보존되고 decision은 NO_GO다", () => {
+  const evidence = passingEvidence();
+  for (const artifact of [
+    evidence.candidateBinding.sourceEvidence,
+    evidence.candidateBinding.serverEvidence,
+    evidence.candidateBinding.mobileEvidence,
+  ]) {
+    Object.assign(artifact, {
+      status: "EMERGENCY_REVALIDATED",
+      sourceFreshUntil: "2026-08-03T00:00:00+09:00",
+      freshUntil: "2026-08-08T00:00:00.000Z",
+      emergencyAdmissionExpiresAt: "2026-08-11T15:24:43.671Z",
+      emergencyDecisionSha256: "f".repeat(64),
+    });
+  }
+
+  const report = buildLaunchDenominatorReport(scope, evidence);
+
+  assert.equal(report.decision, "NO_GO");
+  assert.ok(!report.blockers.includes("CANDIDATE_BINDING_INVALID"));
+  assert.deepEqual(report.evaluatorInput.candidateBinding, evidence.candidateBinding);
+  assert.deepEqual(buildLaunchDenominatorReport(scope, report.evaluatorInput), report);
+});
+
 test("pilot row and each routing exact-set gap block launch", async (context) => {
   const gaps = [
     ["pilot row", (evidence) => evidence.pilot.coveredRowIds.pop(), "PILOT_ROW_GAP"],
