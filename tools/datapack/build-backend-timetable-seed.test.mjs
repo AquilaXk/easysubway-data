@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { buildBackendTimetableSeed } from "./build-backend-timetable-seed.mjs";
+import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -150,6 +151,27 @@ test("EXPRESS 통과역 row는 pickup/drop-off를 모두 금지하고 실제 정
         { ...passThrough, pickupType: 1, dropOffType: 0 },
         terminal,
       ],
+    }, OPTIONS),
+    /EXPRESS.*pickup_type=1.*drop_off_type=1/,
+  );
+});
+
+test("재구성한 EXPRESS의 양 끝 승하차 제한은 허용하고 interior 비대칭 제한은 거부한다", () => {
+  const { transitTrips, transitStopTimes } = reconstructTransitTrips([
+    { stationId: "station-origin", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: null, departureSeconds: 30000, stopRole: "ORIGIN", servicePattern: "EXPRESS" },
+    { stationId: "station-through", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: 30500, departureSeconds: 30500, stopRole: "THROUGH", servicePattern: "EXPRESS" },
+    { stationId: "station-terminal", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: 31000, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "EXPRESS" },
+  ], {
+    lineSequenceByStationLine: { "station-origin|seoul-4": 1, "station-through|seoul-4": 2, "station-terminal|seoul-4": 3 },
+    routeIdByLineDirection: { "seoul-4|up": "route-seoul-4-up" },
+    serviceIdByDayCd: { "01": "weekday-kric" },
+  });
+
+  assert.doesNotThrow(() => buildBackendTimetableSeed({ transitTrips, transitStopTimes }, OPTIONS));
+  assert.throws(
+    () => buildBackendTimetableSeed({
+      transitTrips,
+      transitStopTimes: transitStopTimes.map((row) => row.stopSequence === 2 ? { ...row, pickupType: 1, dropOffType: 0 } : row),
     }, OPTIONS),
     /EXPRESS.*pickup_type=1.*drop_off_type=1/,
   );

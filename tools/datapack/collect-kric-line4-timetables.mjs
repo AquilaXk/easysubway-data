@@ -17,7 +17,7 @@ import { cleanupPackDir, openPack } from "../route-map/pack-io.mjs";
 
 const SERVICE_ID_BY_DAY_CD = { "8": "weekday-kric", "7": "saturday-kric", "9": "holiday-kric" };
 
-export function buildCollectionContext(roster, lineId, fixture = null) {
+export function buildCollectionContext(roster, lineId, fixture = null, servicePatternByExptCd) {
   const stationIdByProviderStation = {};
   const lineIdByProviderLine = {};
   const lineSequenceByStationLine = {};
@@ -38,10 +38,11 @@ export function buildCollectionContext(roster, lineId, fixture = null) {
     lineSequenceByStationLine,
     routeIdByLineDirection: { [`${lineId}|up`]: `route-${lineId}-up`, [`${lineId}|down`]: `route-${lineId}-down` },
     serviceIdByDayCd: SERVICE_ID_BY_DAY_CD,
+    servicePatternByExptCd: requireServicePatternMapping(servicePatternByExptCd),
   };
 }
 
-export function buildCollectionContextFromPack(roster, lineId, packPath) {
+export function buildCollectionContextFromPack(roster, lineId, packPath, servicePatternByExptCd) {
   const opened = openPack(packPath, "kric-canonical-");
   try {
     const rows = opened.db.prepare(`
@@ -54,19 +55,23 @@ export function buildCollectionContextFromPack(roster, lineId, packPath) {
     return buildCollectionContext(roster, lineId, { packs: [{
       stations: rows.map(({ id, name_ko }) => ({ id, nameKo: name_ko })),
       stationLines: rows.map(({ id, line_sequence }) => ({ stationId: id, lineId, lineSequence: line_sequence })),
-    }] });
+    }] }, servicePatternByExptCd);
   } finally {
     opened.db.close();
     cleanupPackDir(opened.dir);
   }
 }
 
-export function filterRowsByTrainNumbers(rows, trainNumbers, servicePattern = "EXPRESS") {
-  const allowed = new Set((trainNumbers ?? []).map(normalizeTrainNumber));
-  if (allowed.size === 0) throw new Error("train number filter must be non-empty");
-  return rows
-    .filter((row) => allowed.has(normalizeTrainNumber(row.trnNo)))
-    .map((row) => ({ ...row, servicePattern }));
+export function filterRowsByTrainNumbers(rows, trainNumbers) {
+  if (!Array.isArray(trainNumbers) || trainNumbers.length === 0) {
+    throw new Error("train number filter must be a non-empty array");
+  }
+  const allowed = new Set(trainNumbers.map(normalizeTrainNumber));
+  const filtered = rows.filter((row) => allowed.has(normalizeTrainNumber(row.trnNo)));
+  if (filtered.some(({ servicePattern }) => servicePattern !== "LOCAL" && servicePattern !== "EXPRESS")) {
+    throw new Error("filtered rows must have servicePattern LOCAL or EXPRESS");
+  }
+  return filtered;
 }
 
 export function validateItxOdJoin(rows, evidence) {
@@ -166,6 +171,19 @@ function normalizeTrainNumber(value) {
   return digits;
 }
 
+function requireServicePatternMapping(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("servicePatternByExptCd is required");
+  }
+  for (const [code, servicePattern] of Object.entries(value)) {
+    if (code.trim() === "" || (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS")) {
+      throw new Error("servicePatternByExptCd values must be LOCAL or EXPRESS");
+    }
+  }
+  if (Object.keys(value).length === 0) throw new Error("servicePatternByExptCd is required");
+  return value;
+}
+
 function canonicalStationIndex(fixture, lineId) {
   const pack = fixture?.packs?.[0];
   if (!pack || !Array.isArray(pack.stations) || !Array.isArray(pack.stationLines)) {
@@ -224,7 +242,7 @@ async function main() {
     try {
       const payload = JSON.parse(await fetchWithRetry(url));
       const rows = validateKricTimetablePayload(payload);
-      // servicePattern은 normalizer가 row별 exptCd로 도출한다(급행 표시 시각표).
+      // servicePattern은 evidence-backed closed exptCd mapping이 있어야만 normalizer가 해석한다.
       const normalized = normalizeKricSubwayTimetable(rows, context);
       intermediate.push(...normalized);
       perRequest.push({ requestKey: request.requestKey, resultCode: "00", rows: rows.length, normalized: normalized.length });
@@ -236,6 +254,9 @@ async function main() {
 
   assertCompleteKricCollection(failed, plan.requestCount, perRequest);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
+  if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
+    throw new Error("ITX OD evidence serviceId is invalid");
+  }
   const reconstructionRows = trainNumberEvidence
     ? filterRowsByTrainNumbers(intermediate, trainNumberEvidence.trainNumbers)
       .filter(({ dayCd }) => evidenceDayCds.has(dayCd))

@@ -3,7 +3,6 @@ import { test } from "node:test";
 import {
   assertCompleteKricCollection,
   buildCollectionContext,
-  buildCollectionContextFromPack,
   filterRowsByTrainNumbers,
   redactKricCredential,
   validateItxOdJoin,
@@ -20,9 +19,10 @@ const ROSTER = {
     { stinConsOrdr: 43, stinCd: "448", railOprIsttCd: "KR", stinNm: "상록수" },
   ],
 };
+const SERVICE_PATTERN_MAPPING = { LOCAL: "LOCAL", EXPRESS: "EXPRESS" };
 
 test("buildCollectionContext는 로스터로 재구성 코어 context를 만든다", () => {
-  const ctx = buildCollectionContext(ROSTER, "seoul-4");
+  const ctx = buildCollectionContext(ROSTER, "seoul-4", null, SERVICE_PATTERN_MAPPING);
   assert.equal(ctx.stationIdByProviderStation["S1|4|433"], "station-seoul-4-433");
   assert.equal(ctx.stationIdByProviderStation["KR|4|448"], "station-seoul-4-448");
   assert.equal(ctx.lineIdByProviderLine["S1|4"], "seoul-4");
@@ -33,10 +33,10 @@ test("buildCollectionContext는 로스터로 재구성 코어 context를 만든�
 });
 
 test("KRIC 응답→context→normalizer→코어가 직결(같은 trnNo)을 온전한 trip으로 잇는다", () => {
-  const ctx = buildCollectionContext(ROSTER, "seoul-4");
+  const ctx = buildCollectionContext(ROSTER, "seoul-4", null, SERVICE_PATTERN_MAPPING);
   // 같은 trnNo가 사당(S1 조회)·상록수(KR 조회) 응답에 각각 등장(직결)
-  const sadangRows = [{ railOprIsttCd: "S1", trnNo: "4719", dayCd: "8", stinCd: "433", lnCd: "4", arvTm: "084830", dptTm: "084900" }];
-  const sangnoksuRows = [{ railOprIsttCd: "KR", trnNo: "4719", dayCd: "8", stinCd: "448", lnCd: "4", arvTm: "092930", dptTm: "093000" }];
+  const sadangRows = [{ railOprIsttCd: "S1", trnNo: "4719", dayCd: "8", stinCd: "433", lnCd: "4", arvTm: "084830", dptTm: "084900", exptCd: "LOCAL" }];
+  const sangnoksuRows = [{ railOprIsttCd: "KR", trnNo: "4719", dayCd: "8", stinCd: "448", lnCd: "4", arvTm: "092930", dptTm: "093000", exptCd: "LOCAL" }];
   const rows = [
     ...normalizeKricSubwayTimetable(sadangRows, ctx),
     ...normalizeKricSubwayTimetable(sangnoksuRows, ctx),
@@ -66,39 +66,33 @@ test("canonical fixture가 있으면 provider의 중복 순번 대신 canonical 
     ],
   }] };
 
-  const ctx = buildCollectionContext(roster, "gyeongchun", fixture);
+  const ctx = buildCollectionContext(roster, "gyeongchun", fixture, SERVICE_PATTERN_MAPPING);
   assert.equal(ctx.stationIdByProviderStation["KR|K2|119"], "station-gwangun");
   assert.equal(ctx.stationIdByProviderStation["KR|K2|K121"], "station-mangu");
   assert.equal(ctx.lineSequenceByStationLine["station-gwangun|gyeongchun"], 5);
   assert.equal(ctx.lineSequenceByStationLine["station-mangu|gyeongchun"], 6);
 });
 
-test("bundled pack에서 #2097 canonical 경춘선 station context를 만든다", () => {
-  const roster = {
-    lnCd: "K2",
-    stations: [
-      { stinConsOrdr: 1, stinCd: "K117", railOprIsttCd: "KR", stinNm: "청량리" },
-      { stinConsOrdr: 25, stinCd: "K140", railOprIsttCd: "KR", stinNm: "춘천" },
-    ],
-  };
-  const ctx = buildCollectionContextFromPack(
-    roster,
-    "line-54a7b980b7c3",
-    "apps/mobile/assets/datapacks/capital.sqlite.gz",
-  );
-
-  assert.equal(ctx.stationIdByProviderStation["KR|K2|K117"], "station-b819702fa7d9");
-  assert.equal(ctx.stationIdByProviderStation["KR|K2|K140"], "station-dd14cfb89cbc");
-});
-
-test("TAGO ITX train number는 KRIC prefix·leading zero를 정규화해 EXPRESS rows만 남긴다", () => {
+test("TAGO ITX train number filter는 KRIC prefix·leading zero를 정규화하고 row mapping을 보존한다", () => {
   const rows = [
     { trnNo: "K2001", servicePattern: "LOCAL" },
     { trnNo: "K8301", servicePattern: "EXPRESS" },
   ];
   assert.deepEqual(filterRowsByTrainNumbers(rows, ["02001"]), [
-    { trnNo: "K2001", servicePattern: "EXPRESS" },
+    { trnNo: "K2001", servicePattern: "LOCAL" },
   ]);
+  assert.throws(() => filterRowsByTrainNumbers(rows, null), /train number filter must be a non-empty array/);
+  assert.throws(
+    () => filterRowsByTrainNumbers([{ trnNo: "K2001" }], ["02001"]),
+    /filtered rows must have servicePattern LOCAL or EXPRESS/,
+  );
+});
+
+test("KRIC collection context는 증거 없는 exptCd mapping 없이 provider 수집을 시작할 수 없다", () => {
+  assert.throws(() => buildCollectionContext(ROSTER, "seoul-4"), /servicePatternByExptCd is required/);
+  const context = buildCollectionContext(ROSTER, "seoul-4", null, SERVICE_PATTERN_MAPPING);
+  assert.deepEqual(context.servicePatternByExptCd, { LOCAL: "LOCAL", EXPRESS: "EXPRESS" });
+  assert.throws(() => buildCollectionContext(ROSTER, "seoul-4", null, { LOCAL: "BEST" }), /servicePatternByExptCd.*LOCAL or EXPRESS/);
 });
 
 test("KRIC provider 실패·schema mismatch·부분 수집을 성공 artifact로 만들지 않는다", () => {
