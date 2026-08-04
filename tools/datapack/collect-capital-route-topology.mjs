@@ -438,7 +438,8 @@ function topologyContentPayload(lines, topologyGaps) {
 export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {
   const comparison = compareCapitalRouteTopologies(baseline, candidate);
   if (comparison.changes.length !== 0
-    || comparison.baselineNormalizedLineSetSha256 !== comparison.candidateNormalizedLineSetSha256) {
+    || comparison.baselineNormalizedLineSetSha256 !== comparison.candidateNormalizedLineSetSha256
+    || JSON.stringify(baseline.topologyGaps ?? []) !== JSON.stringify(candidate.topologyGaps ?? [])) {
     throw new Error("capital topology normalized content changed; re-admission required");
   }
   const candidateContentSha256 = sha256(JSON.stringify(

@@ -148,6 +148,45 @@ test("capital topology evidence는 candidate 최상위 contentSha256 변조를 �
   );
 });
 
+test("capital topology evidence는 topologyGaps 변경을 거부한다", () => {
+  const line = {
+    ...topologyLine(
+      "line-1",
+      ["가", "나"],
+      [{ fromStationName: "가", toStationName: "나", distanceMeters: 100 }],
+    ),
+    datasetId: "dataset-1",
+    rawSha256: "a".repeat(64),
+    edgeCount: 1,
+    stationCount: 2,
+  };
+  const baseline = { contentSha256: "b".repeat(64), topologyGaps: [], lines: [line] };
+  const candidate = {
+    capturedAt: "2026-08-04T17:30:34.901Z",
+    freshUntil: "2026-08-05T17:30:34.901Z",
+    lineCount: 1,
+    totalEdgeCount: 1,
+    topologyGaps: ["line-1"],
+    lines: [line],
+  };
+  candidate.contentSha256 = createHash("sha256").update(JSON.stringify({
+    lines: [{
+      lineId: line.lineId,
+      edgeCount: line.edgeCount,
+      stationCount: line.stationCount,
+      contentSha256: line.contentSha256,
+      rawSha256: line.rawSha256,
+      datasetId: line.datasetId,
+    }],
+    topologyGaps: candidate.topologyGaps,
+  })).digest("hex");
+
+  assert.throws(
+    () => buildCapitalTopologyReverificationEvidence(baseline, candidate),
+    /re-admission required/,
+  );
+});
+
 test("local CLI 기본 실행은 tracked baseline을 건드리지 않고 고정 freshness를 기록한다", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const baselinePath = path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json");
