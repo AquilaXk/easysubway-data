@@ -328,7 +328,7 @@ test("capital topology reverification은 24시간을 넘는 freshness를 거부�
       "--output", path.join(workspace, "output"),
     ], {
       cwd: root,
-      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T18:00:00.000Z" },
+      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
     }), /capital topology reverification freshness is invalid/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -361,7 +361,7 @@ test("capital topology reverification은 candidate line identity repin 변조를
       "--output", path.join(workspace, "output"),
     ], {
       cwd: root,
-      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T18:00:00.000Z" },
+      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
     }), /capital topology reverification candidate snapshot mismatch/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -408,7 +408,7 @@ test("capital topology reverification은 independently pinned candidate와 다�
       "--output", path.join(workspace, "output"),
     ], {
       cwd: root,
-      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T18:00:00.000Z" },
+      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
     }), /capital topology reverification candidate snapshot mismatch/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -430,7 +430,7 @@ test("unchanged capital topology reverification은 content review와 fresh revie
       "--output", path.join(workspace, "output"),
     ], {
       cwd: root,
-      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T18:00:00.000Z" },
+      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
     }), /ITX network edge admission is stale/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
