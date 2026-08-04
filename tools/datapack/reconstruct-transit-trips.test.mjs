@@ -20,6 +20,8 @@ const CONTEXT = {
   serviceIdByDayCd: { "01": "weekday-2026", "02": "saturday-2026", "03": "holiday-2026" },
 };
 
+const withThrough = (row) => ({ ...row, stopRole: "THROUGH", servicePattern: row.servicePattern ?? "LOCAL" });
+
 // ground-truth trip → station-level 중간 행으로 사영(trip 구조 제거)
 function projectTripToRows(trip) {
   return trip.stops.map((stop) => ({
@@ -29,7 +31,8 @@ function projectTripToRows(trip) {
     dayCd: trip.dayCd,
     arrivalSeconds: stop.arrivalSeconds,
     departureSeconds: stop.departureSeconds,
-    servicePattern: trip.servicePattern,
+    stopRole: "THROUGH",
+    servicePattern: trip.servicePattern ?? "LOCAL",
   }));
 }
 
@@ -78,7 +81,7 @@ test("재구성은 lineSequence 감소 방향을 down으로 도출한다", () =>
     { stationId: "station-geumjeong", lineId: "seoul-4", trnNo: "K4502", dayCd: "01", arrivalSeconds: 40600, departureSeconds: 40630 },
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "K4502", dayCd: "01", arrivalSeconds: 41200, departureSeconds: 41200 },
   ];
-  const { transitTrips } = reconstructTransitTrips(rows, CONTEXT);
+  const { transitTrips } = reconstructTransitTrips(rows.map(withThrough), CONTEXT);
   assert.equal(transitTrips[0].directionId, "down");
   assert.equal(transitTrips[0].routeId, "route-seoul-4-danggogae");
   assert.equal(transitTrips[0].tripHeadsign, "station-sadang");
@@ -89,7 +92,7 @@ test("재구성은 dayCd(평일/토/휴일)를 별도 trip과 serviceId로 분�
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "K4600", dayCd, arrivalSeconds: 30000, departureSeconds: 30000 },
     { stationId: "station-sangnoksu", lineId: "seoul-4", trnNo: "K4600", dayCd, arrivalSeconds: 31200, departureSeconds: 31200 },
   ]);
-  const { transitTrips } = reconstructTransitTrips(rows, CONTEXT);
+  const { transitTrips } = reconstructTransitTrips(rows.map(withThrough), CONTEXT);
   assert.equal(transitTrips.length, 3);
   assert.deepEqual(
     transitTrips.map((t) => t.serviceId).sort((left, right) => codepointCompare(left, right)),
@@ -103,7 +106,7 @@ test("재구성은 급행(정차역 skip)을 단조 유지로 허용하고 servi
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: 50000, departureSeconds: 50000, servicePattern: "EXPRESS" },
     { stationId: "station-sangnoksu", lineId: "seoul-4", trnNo: "X4701", dayCd: "01", arrivalSeconds: 50900, departureSeconds: 50900, servicePattern: "EXPRESS" },
   ];
-  const { transitTrips, transitStopTimes } = reconstructTransitTrips(rows, CONTEXT);
+  const { transitTrips, transitStopTimes } = reconstructTransitTrips(rows.map(withThrough), CONTEXT);
   assert.equal(transitTrips[0].servicePattern, "EXPRESS");
   assert.equal(transitStopTimes.length, 2);
 });
@@ -116,7 +119,7 @@ test("재구성은 lineSequence 비단조(zigzag) trip을 거부한다", () => {
     { stationId: "station-geumjeong", lineId: "seoul-4", trnNo: "Z4801", dayCd: "01", arrivalSeconds: 61200, departureSeconds: 61200 },
   ];
   assert.throws(
-    () => reconstructTransitTrips(rows, CONTEXT),
+    () => reconstructTransitTrips(rows.map(withThrough), CONTEXT),
     /stop order must follow station lineSequence/,
   );
 });
@@ -125,7 +128,7 @@ test("재구성은 정차가 1개뿐인 group을 거부한다", () => {
   const rows = [
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "S4901", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000 },
   ];
-  assert.throws(() => reconstructTransitTrips(rows, CONTEXT), /at least 2 stops/);
+  assert.throws(() => reconstructTransitTrips(rows.map(withThrough), CONTEXT), /at least 2 stops/);
 });
 
 test("재구성은 인접 정차의 lineSequence가 같으면 거부한다", () => {
@@ -137,7 +140,7 @@ test("재구성은 인접 정차의 lineSequence가 같으면 거부한다", () 
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "D4001", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000 },
     { stationId: "station-dup", lineId: "seoul-4", trnNo: "D4001", dayCd: "01", arrivalSeconds: 30600, departureSeconds: 30600 },
   ];
-  assert.throws(() => reconstructTransitTrips(rows, ctx), /lineSequence must change/);
+  assert.throws(() => reconstructTransitTrips(rows.map(withThrough), ctx), /lineSequence must change/);
 });
 
 test("재구성은 다른 노선의 동일 trnNo+dayCd를 별도 trip으로 분리한다(lineId 키)", () => {
@@ -160,7 +163,7 @@ test("재구성은 다른 노선의 동일 trnNo+dayCd를 별도 trip으로 분�
     { stationId: "station-a", lineId: "seoul-2", trnNo: "100", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000 },
     { stationId: "station-b", lineId: "seoul-2", trnNo: "100", dayCd: "01", arrivalSeconds: 30300, departureSeconds: 30300 },
   ];
-  const { transitTrips } = reconstructTransitTrips(rows, ctx);
+  const { transitTrips } = reconstructTransitTrips(rows.map(withThrough), ctx);
   assert.equal(transitTrips.length, 2);
   assert.deepEqual(
     transitTrips.map((t) => t.routeId).sort((left, right) => codepointCompare(left, right)),
@@ -173,13 +176,13 @@ test("재구성은 한 trip 안에서 servicePattern이 섞이면 거부한다(�
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "M100", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000, servicePattern: "LOCAL" },
     { stationId: "station-sangnoksu", lineId: "seoul-4", trnNo: "M100", dayCd: "01", arrivalSeconds: 31200, departureSeconds: 31200, servicePattern: "EXPRESS" },
   ];
-  assert.throws(() => reconstructTransitTrips(rows, CONTEXT), /inconsistent servicePattern/);
+  assert.throws(() => reconstructTransitTrips(rows.map(withThrough), CONTEXT), /inconsistent servicePattern/);
 });
 
 test("재구성은 필수 필드 누락·잘못된 시각·arr>dep 행을 거부한다", () => {
-  const base = { stationId: "station-sadang", lineId: "seoul-4", trnNo: "E1", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000 };
+  const base = { stationId: "station-sadang", lineId: "seoul-4", trnNo: "E1", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000, stopRole: "THROUGH", servicePattern: "LOCAL" };
   assert.throws(() => reconstructTransitTrips([{ ...base, stationId: "" }], CONTEXT), /missing field stationId/);
-  assert.throws(() => reconstructTransitTrips([{ ...base, arrivalSeconds: -1 }], CONTEXT), /arrivalSeconds must be a non-negative integer/);
+  assert.throws(() => reconstructTransitTrips([{ ...base, arrivalSeconds: -1 }], CONTEXT), /row time must be a non-negative integer or null/);
   assert.throws(() => reconstructTransitTrips([{ ...base, arrivalSeconds: 31000, departureSeconds: 30000 }], CONTEXT), /arrivalSeconds must be <= departureSeconds/);
 });
 
@@ -188,21 +191,21 @@ test("재구성은 lineSequence·route·serviceId 매핑이 없으면 거부한�
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "E2", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000 },
     { stationId: "station-unknown", lineId: "seoul-4", trnNo: "E2", dayCd: "01", arrivalSeconds: 31000, departureSeconds: 31000 },
   ];
-  assert.throws(() => reconstructTransitTrips(rows, CONTEXT), /unknown lineSequence for station-unknown/);
+  assert.throws(() => reconstructTransitTrips(rows.map(withThrough), CONTEXT), /unknown lineSequence for station-unknown/);
 
   const upOnly = { ...CONTEXT, routeIdByLineDirection: { "seoul-4|up": "route-seoul-4-oido" } };
   const downRows = [
     { stationId: "station-sangnoksu", lineId: "seoul-4", trnNo: "E3", dayCd: "01", arrivalSeconds: 40000, departureSeconds: 40000 },
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "E3", dayCd: "01", arrivalSeconds: 41000, departureSeconds: 41000 },
   ];
-  assert.throws(() => reconstructTransitTrips(downRows, upOnly), /no route mapping for seoul-4\|down/);
+  assert.throws(() => reconstructTransitTrips(downRows.map(withThrough), upOnly), /no route mapping for seoul-4\|down/);
 
   const noService = { ...CONTEXT, serviceIdByDayCd: { "01": "weekday-2026" } };
   const satRows = [
     { stationId: "station-sadang", lineId: "seoul-4", trnNo: "E4", dayCd: "02", arrivalSeconds: 30000, departureSeconds: 30000 },
     { stationId: "station-sangnoksu", lineId: "seoul-4", trnNo: "E4", dayCd: "02", arrivalSeconds: 31000, departureSeconds: 31000 },
   ];
-  assert.throws(() => reconstructTransitTrips(satRows, noService), /no serviceId mapping for 02/);
+  assert.throws(() => reconstructTransitTrips(satRows.map(withThrough), noService), /no serviceId mapping for 02/);
 });
 
 test("재구성 context는 Map도 허용하고, 누락되면 거부한다", () => {
@@ -215,8 +218,38 @@ test("재구성 context는 Map도 허용하고, 누락되면 거부한다", () =
     routeIdByLineDirection: new Map([["seoul-4|up", "route-seoul-4-oido"]]),
     serviceIdByDayCd: new Map([["01", "weekday-2026"]]),
   };
-  const { transitTrips } = reconstructTransitTrips(rows, mapCtx);
+  const { transitTrips } = reconstructTransitTrips(rows.map(withThrough), mapCtx);
   assert.equal(transitTrips[0].routeId, "route-seoul-4-oido");
 
-  assert.throws(() => reconstructTransitTrips(rows, { ...CONTEXT, serviceIdByDayCd: null }), /context.serviceIdByDayCd is required/);
+  assert.throws(() => reconstructTransitTrips(rows.map(withThrough), { ...CONTEXT, serviceIdByDayCd: null }), /context.serviceIdByDayCd is required/);
+});
+
+test("재구성은 명시적 첫 ORIGIN·마지막 TERMINAL만 최종 출력에서 paired time으로 변환한다", () => {
+  const rows = [
+    { stationId: "station-sadang", lineId: "seoul-4", trnNo: "T1", dayCd: "01", arrivalSeconds: null, departureSeconds: 30000, stopRole: "ORIGIN", servicePattern: "LOCAL" },
+    { stationId: "station-sangnoksu", lineId: "seoul-4", trnNo: "T1", dayCd: "01", arrivalSeconds: 31200, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+  ];
+  const { transitStopTimes } = reconstructTransitTrips(rows, CONTEXT);
+  assert.deepEqual(transitStopTimes.map(({ arrivalSeconds, departureSeconds, pickupType, dropOffType }) => [arrivalSeconds, departureSeconds, pickupType, dropOffType]), [
+    [30000, 30000, 0, 1],
+    [31200, 31200, 1, 0],
+  ]);
+});
+
+test("재구성은 servicePattern·정차 역할·배열 입력을 implicit default로 바꾸지 않는다", () => {
+  const base = { stationId: "station-sadang", lineId: "seoul-4", trnNo: "T2", dayCd: "01", arrivalSeconds: 30000, departureSeconds: 30000, stopRole: "THROUGH", servicePattern: "LOCAL" };
+  assert.throws(() => reconstructTransitTrips([], CONTEXT), /rows must be a non-empty array/);
+  assert.throws(() => reconstructTransitTrips(null, CONTEXT), /rows must be a non-empty array/);
+  assert.throws(() => reconstructTransitTrips([{ ...base, servicePattern: undefined }], CONTEXT), /servicePattern must be LOCAL or EXPRESS/);
+  assert.throws(() => reconstructTransitTrips([{ ...base, servicePattern: "BEST" }], CONTEXT), /servicePattern must be LOCAL or EXPRESS/);
+  assert.throws(() => reconstructTransitTrips([{ ...base, arrivalSeconds: null, stopRole: "THROUGH" }], CONTEXT), /THROUGH stop must have both times/);
+  assert.throws(() => reconstructTransitTrips([{ ...base, arrivalSeconds: null, stopRole: "TERMINAL" }], CONTEXT), /TERMINAL stop must have arrival only/);
+  assert.throws(() => reconstructTransitTrips([
+    { ...base, trnNo: "T3" },
+    { ...base, stationId: "station-sangnoksu", trnNo: "T3", arrivalSeconds: null, departureSeconds: 31200, stopRole: "ORIGIN" },
+  ], CONTEXT), /ORIGIN stop must be first/);
+  assert.throws(() => reconstructTransitTrips([
+    { ...base, trnNo: "T4", arrivalSeconds: 30000, departureSeconds: null, stopRole: "TERMINAL" },
+    { ...base, stationId: "station-sangnoksu", trnNo: "T4", arrivalSeconds: 31200, departureSeconds: 31200 },
+  ], CONTEXT), /TERMINAL stop must be last/);
 });
