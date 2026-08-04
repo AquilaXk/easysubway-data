@@ -63,4 +63,5 @@ jobs:
           node --test --test-name-pattern='network edge evidence' tools/datapack/verify-production-pack-artifact-identity.test.mjs
           node --test --test-name-pattern='emergency admission' tools/datapack/build-server-timetable-snapshot.test.mjs
           node --test tools/datapack/launch-candidate-binding.test.mjs
+          node --test --test-name-pattern='emergency binding identity' tools/datapack/build-launch-denominator-report.test.mjs
           node --test --test-name-pattern='emergency-bound' tools/datapack/validate-release-evidence-bundle.test.mjs

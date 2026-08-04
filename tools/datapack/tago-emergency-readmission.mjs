@@ -173,7 +173,7 @@ export async function runTagoEmergencyReadmissionCli({
   } catch (providerError) {
     const admittedAt = decisionNow().toISOString();
     utcTimestamp(admittedAt, "admittedAt");
-    const failure = providerFailureEvidence(providerError, { observedAt: now.toISOString() });
+    const failure = providerFailureEvidence(providerError, { observedAt: admittedAt });
     const [itxCoverageContractBytes, capitalTopologyBytes, capitalReverificationBytes, buildSpecBytes] = await Promise.all([
       readFile(path.join(repositoryRoot, ITX_PATH)),
       readFile(path.join(repositoryRoot, TOPOLOGY_PATH)),

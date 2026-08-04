@@ -596,7 +596,24 @@ async function fetchAll(operation, query, key, fetchImpl, requestBudget = null, 
     let json;
     try { json = JSON.parse(raw); } catch { throw new Error(`TAGO ${operation} schema mismatch: invalid JSON`); }
     const root = json.response ?? json;
-    const code = String(root?.header?.resultCode ?? "");
+    const header = root?.header;
+    if (!header || typeof header !== "object" || Array.isArray(header)) {
+      throw new Error(`TAGO ${operation} schema mismatch: header`);
+    }
+    const code = String(header.resultCode ?? "");
+    if (!code) throw new Error(`TAGO ${operation} schema mismatch: resultCode`);
+    const body = root?.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error(`TAGO ${operation} schema mismatch: body`);
+    }
+    const items = body.items?.item;
+    if (!paginated && (items == null || typeof items !== "object")) {
+      throw new Error(`TAGO ${operation} schema mismatch: item`);
+    }
+    const rows = items == null ? [] : Array.isArray(items) ? items : [items];
+    if (rows.some((row) => !row || typeof row !== "object" || Array.isArray(row))) {
+      throw new Error(`TAGO ${operation} schema mismatch: item`);
+    }
     if (code !== "00") {
       throw new TagoProviderBoundaryError(`TAGO ${operation} provider resultCode ${safeCode(code)}`, {
         operation,
@@ -605,16 +622,6 @@ async function fetchAll(operation, query, key, fetchImpl, requestBudget = null, 
         schemaStatus: "EXPECTED",
         resultCode: safeCode(code),
       });
-    }
-    const body = root?.body;
-    if (!body || typeof body !== "object") throw new Error(`TAGO ${operation} schema mismatch: body`);
-    const items = body.items?.item;
-    if (!paginated && (items == null || typeof items !== "object")) {
-      throw new Error(`TAGO ${operation} schema mismatch: item`);
-    }
-    const rows = items == null ? [] : Array.isArray(items) ? items : [items];
-    if (rows.some((row) => !row || typeof row !== "object" || Array.isArray(row))) {
-      throw new Error(`TAGO ${operation} schema mismatch: item`);
     }
     if (!paginated) {
       all.push(...rows);

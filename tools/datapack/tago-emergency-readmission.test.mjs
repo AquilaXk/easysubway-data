@@ -275,14 +275,14 @@ test("CLI fresh 성공은 emergency 파일과 build spec을 변경하지 않는�
   await assert.rejects(readFile(fixture.decisionPath), { code: "ENOENT" });
 });
 
-test("CLI exact outage만 decision을 쓰고 validate mode는 network를 호출하지 않는다", async (context) => {
+test("CLI exact outage는 provider attempt 종료 시각으로 decision을 쓰고 validate mode는 network를 호출하지 않는다", async (context) => {
   const fixture = await cliFixture(context);
   let freshFinished = false;
   const result = await runTagoEmergencyReadmissionCli({
     argv: normalCliArgs(fixture),
     env: { DATA_GO_KR_SERVICE_KEY: "key" },
     repositoryRoot: fixture.root,
-    now: new Date(ADMITTED_AT),
+    now: new Date("2026-08-04T14:52:00.000Z"),
     decisionNow: () => {
       assert.equal(freshFinished, true);
       return new Date(ADMITTED_AT);
@@ -301,7 +301,10 @@ test("CLI exact outage만 decision을 쓰고 validate mode는 network를 호출�
   assert.equal(result.mode, "EMERGENCY_REVALIDATED");
   const decisionBytes = await readFile(fixture.decisionPath);
   const decision = JSON.parse(decisionBytes);
+  const failure = JSON.parse(await readFile(fixture.failurePath));
   const spec = JSON.parse(await readFile(fixture.buildSpecPath));
+  assert.equal(failure.observedAt, ADMITTED_AT);
+  assert.equal(decision.admittedAt, ADMITTED_AT);
   assert.equal(decision.expiresAt, EXPIRES_AT);
   assert.deepEqual(spec.networkEdgeEvidence.emergencyReadmission, {
     path: "tools/datapack/release/tago-emergency-readmission-20260804.json",

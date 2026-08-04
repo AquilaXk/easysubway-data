@@ -79,6 +79,19 @@ test("TAGO resultCode 01은 secret 없는 structured failure evidence를 만든�
   assert.doesNotMatch(`${error.message}\n${JSON.stringify(evidence)}`, new RegExp(secret));
 });
 
+test("malformed TAGO resultCode 01은 schema mismatch로 실패한다", async () => {
+  const error = await captureRejected(() => collectTagoItxCheongchunOd({
+    serviceKey: "key",
+    departureDate: "2026-08-04",
+    kricServiceDayCode: "8",
+    fetchImpl: async () => new Response(JSON.stringify({
+      response: { header: { resultCode: "01" } },
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+  }));
+  assert.equal(error instanceof TagoProviderBoundaryError, false);
+  assert.match(error.message, /schema mismatch: body/);
+});
+
 async function withoutTotalCount(response) {
   const payload = await response.json();
   delete payload.response.body.totalCount;
