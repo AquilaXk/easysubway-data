@@ -339,10 +339,12 @@ export function validateProviderBlockedEvidence(evidence, { evaluationAt } = {})
     throw new Error(`${label}.failureClassification must be a provider failure classification`);
   }
   const controlOperationId = requiredText(evidence.controlOperationId, `${label}.controlOperationId`);
-  if (evidence.credentialFingerprint !== null && !/^[0-9a-f]{12}$/.test(evidence.credentialFingerprint)) {
+  if (evidence.credentialFingerprint !== null
+    && (typeof evidence.credentialFingerprint !== "string" || !/^[0-9a-f]{12}$/.test(evidence.credentialFingerprint))) {
     throw new Error(`${label}.credentialFingerprint must be a 12 character hex fingerprint or null`);
   }
-  if (!/^[0-9a-f]{64}$/.test(evidence.sanitizedEvidenceSha256)) {
+  if (typeof evidence.sanitizedEvidenceSha256 !== "string"
+    || !/^[0-9a-f]{64}$/.test(evidence.sanitizedEvidenceSha256)) {
     throw new Error(`${label}.sanitizedEvidenceSha256 must be a 64 character hex digest`);
   }
   const lastVerifiedAt = requiredUtcInstant(evidence.lastVerifiedAt, `${label}.lastVerifiedAt`);

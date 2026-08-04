@@ -340,8 +340,11 @@ test("provider blocked evidence는 폐쇄된 수명주기 증거만 허용하고
   for (const [field, value] of [
     ["credentialFingerprint", "a".repeat(11)],
     ["credentialFingerprint", "a".repeat(13)],
+    ["credentialFingerprint", 111111111111],
     ["sanitizedEvidenceSha256", "a".repeat(63)],
     ["sanitizedEvidenceSha256", "a".repeat(65)],
+    ["sanitizedEvidenceSha256", BigInt("1".repeat(64))],
+    ["sanitizedEvidenceSha256", { toString: () => "a".repeat(64) }],
   ]) {
     assert.throws(
       () => validateProviderBlockedEvidence({ ...PROVIDER_BLOCKED_EVIDENCE, [field]: value }, { evaluationAt }),
@@ -389,6 +392,10 @@ test("provider blocked evidence는 폐쇄된 수명주기 증거만 허용하고
   );
   assert.throws(
     () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE, { evaluationAt: "2026-08-05" }),
+    /evaluationAt must be an RFC 3339 UTC timestamp/,
+  );
+  assert.throws(
+    () => validateProviderBlockedEvidence(PROVIDER_BLOCKED_EVIDENCE),
     /evaluationAt must be an RFC 3339 UTC timestamp/,
   );
 });
