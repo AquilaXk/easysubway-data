@@ -177,6 +177,77 @@ export async function collectKricAccessibilitySnapshots({
   return snapshots;
 }
 
+export async function collectKricAccessibilityProviderTupleEvidence({
+  tuples,
+  operations = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
+  serviceKey,
+  fetchImpl = fetch,
+  now = new Date(),
+  requestTimeoutMs = 30_000,
+  requestIntervalMs = 0,
+  delayImpl = delay,
+} = {}) {
+  if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
+  if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
+    throw new Error("KRIC request interval is invalid");
+  }
+  const providerTuples = validateProviderTuples(tuples);
+  if (!Array.isArray(operations) || operations.length === 0) throw new Error("KRIC operations are required");
+  const seenOperations = new Set();
+  const capturedAt = now.toISOString();
+  let requestCount = 0;
+  const paceRequest = async () => {
+    if (requestCount > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
+    requestCount += 1;
+  };
+  const collectedOperations = [];
+  for (const operation of operations) {
+    validateOperation(operation);
+    if (seenOperations.has(operation.sourceId)) throw new Error(`duplicate KRIC operation: ${operation.sourceId}`);
+    seenOperations.add(operation.sourceId);
+    const queries = [];
+    for (const tuple of providerTuples) {
+      const response = await requestRows({
+        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
+      });
+      if (response.rows.length === 0) {
+        throw new Error(`KRIC provider tuple probe empty response: ${operation.sourceId}/${providerTuple(tuple)}`);
+      }
+      queries.push({
+        providerTuple: providerTuple(tuple),
+        stationName: tuple.stationName,
+        rowCount: response.rows.length,
+        rawResponseSha256: response.rawResponseSha256,
+        providerRecordHash: hash(response.rows),
+        rows: response.rows,
+      });
+    }
+    collectedOperations.push({ sourceId: operation.sourceId, queries });
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-facility-provider-tuple-probe",
+    capturedAt,
+    credentialRedacted: true,
+    publishAllowed: false,
+    productionAdmissionAllowed: false,
+    operationCount: collectedOperations.length,
+    queryCount: collectedOperations.reduce((sum, operation) => sum + operation.queries.length, 0),
+    rowCount: collectedOperations.reduce((sum, operation) => (
+      sum + operation.queries.reduce((querySum, query) => querySum + query.rowCount, 0)
+    ), 0),
+    contentSha256: hash(collectedOperations.map((operation) => ({
+      sourceId: operation.sourceId,
+      queries: operation.queries.map(({ rawResponseSha256: _, ...query }) => query),
+    }))),
+    rawSha256: hash(collectedOperations.map(({ sourceId, queries }) => ({
+      sourceId,
+      queries: queries.map(({ providerTuple: tuple, rawResponseSha256 }) => ({ providerTuple: tuple, rawResponseSha256 })),
+    }))),
+    operations: collectedOperations,
+  };
+}
+
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
   const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId)
     ?? KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
@@ -417,6 +488,22 @@ function validateRoster(roster) {
   }).sort((left, right) => compare(tupleKey(left), tupleKey(right)));
 }
 
+function validateProviderTuples(tuples) {
+  if (!Array.isArray(tuples) || tuples.length === 0) throw new Error("KRIC provider tuples are required");
+  const seen = new Set();
+  return tuples.map((tuple) => {
+    for (const field of ["railOprIsttCd", "lnCd", "stinCd", "stationName"]) {
+      if (typeof tuple?.[field] !== "string" || tuple[field] === "") {
+        throw new Error(`KRIC provider tuple ${field} is required`);
+      }
+    }
+    const key = providerTuple(tuple);
+    if (seen.has(key)) throw new Error(`duplicate KRIC provider tuple: ${key}`);
+    seen.add(key);
+    return { ...tuple };
+  }).sort((left, right) => compare(providerTuple(left), providerTuple(right)));
+}
+
 function validateOperation(operation) {
   const endpoint = new URL(operation.endpoint);
   if (endpoint.origin !== "https://openapi.kric.go.kr" || !endpoint.pathname.startsWith("/openapi/")) {
@@ -486,6 +573,10 @@ function tupleKey(tuple) {
 
 function providerTupleKey(tuple) {
   return `${tuple.lineId}\0${tuple.railOprIsttCd}\0${tuple.lnCd}\0${tuple.stinCd}`;
+}
+
+function providerTuple(tuple) {
+  return `${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`;
 }
 
 function hash(value) {
