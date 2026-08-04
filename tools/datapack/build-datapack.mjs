@@ -758,6 +758,10 @@ function validateCapitalTopologyReverification(evidence, topology, candidateTopo
     throw new Error("capital topology reverification normalized content mismatch");
   }
   if (candidateSnapshotId !== "capital-route-topology-20260804"
+    || candidateTopology.official !== true
+    || candidateTopology.fixture !== false
+    || candidateTopology.credentialRequired !== false
+    || candidateTopology.license?.redistributionAllowed !== true
     || candidateTopology.contentSha256 !== evidence.candidate.contentSha256
     || candidateTopology.capturedAt !== evidence.candidate.capturedAt
     || candidateTopology.lines.some(({ capturedAt }) => capturedAt !== candidateTopology.capturedAt)

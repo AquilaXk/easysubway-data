@@ -448,6 +448,47 @@ test("capital topology reverification은 candidate line capture clock repin을 �
   }
 });
 
+test("capital topology reverification은 production eligibility repin을 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-eligibility-"));
+  try {
+    const mutations = [
+      ["unofficial", (candidate) => { candidate.official = false; }],
+      ["fixture", (candidate) => { candidate.fixture = true; }],
+      ["credential", (candidate) => { candidate.credentialRequired = true; }],
+      ["redistribution", (candidate) => { candidate.license.redistributionAllowed = false; }],
+    ];
+    for (const [name, mutate] of mutations) {
+      const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+      const candidate = JSON.parse(await readFile(
+        spec.networkEdgeEvidence.capitalTopologyCandidate.path,
+        "utf8",
+      ));
+      mutate(candidate);
+      const candidateBytes = Buffer.from(`${JSON.stringify(candidate, null, 2)}\n`);
+      const candidatePath = path.join(workspace, `${name}.json`);
+      await writeFile(candidatePath, candidateBytes);
+      spec.networkEdgeEvidence.capitalTopologyCandidate = {
+        ...spec.networkEdgeEvidence.capitalTopologyCandidate,
+        path: candidatePath,
+        sha256: sha256(candidateBytes),
+      };
+      const specPath = path.join(workspace, `${name}-build-spec.json`);
+      await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+
+      await assert.rejects(execFileAsync(process.execPath, [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec", specPath,
+        "--output", path.join(workspace, `${name}-output`),
+      ], {
+        cwd: root,
+        env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
+      }), /capital topology reverification candidate snapshot mismatch/);
+    }
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("unchanged capital topology reverification은 content review와 fresh review 시각을 분리한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-review-clock-"));
   try {
