@@ -1945,7 +1945,7 @@ function completenessFailureContext(error) {
   if (requiredStations) return `missingStations=${requiredStations}`;
   const plan = /^(KORAIL_PLAN_(?:MISSING|DUPLICATE|MISMATCH)): ([0-9]+)$/.exec(message);
   if (plan) return `reason=${plan[1]},trainNumber=${plan[2]}`;
-  const tagoSchema = /^TAGO ([A-Za-z0-9]+) schema mismatch: (content-type|invalid JSON|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
+  const tagoSchema = /^TAGO ([A-Za-z0-9]+) schema mismatch: (content-type|invalid JSON|header|resultCode|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
   if (tagoSchema) {
     const reason = tagoSchema[2] === "invalid JSON" ? "invalid-json" : tagoSchema[2];
     return `operation=${tagoSchema[1]},reason=schema_mismatch,${reason}`

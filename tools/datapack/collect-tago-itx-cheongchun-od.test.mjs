@@ -1034,6 +1034,16 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
         payload.response.body.items.item[0].arrplandtime = "20260714095000";
       },
     },
+    {
+      name: "header 누락",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,header",
+      mutate: (payload) => { delete payload.response.header; },
+    },
+    {
+      name: "resultCode 누락",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,resultCode",
+      mutate: (payload) => { delete payload.response.header.resultCode; },
+    },
   ]) {
     await context.test(scenario.name, async () => {
       const fallback = validFetch();

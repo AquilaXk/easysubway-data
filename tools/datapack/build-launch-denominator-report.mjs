@@ -329,26 +329,33 @@ function validScopeSubsection(subsection, value) {
 }
 
 function validCandidateBinding(value) {
+  const artifacts = ["source", "server", "mobile"]
+    .map((consumer) => value?.[`${consumer}Evidence`]);
+  const artifactsValid = artifacts.every((artifact) => {
+    const identityValid = /^[a-f0-9]{64}$/.test(artifact?.sha256 ?? "")
+      && typeof artifact.freshUntil === "string"
+      && Number.isFinite(Date.parse(artifact.freshUntil));
+    if (!identityValid) return false;
+    if (artifact.status === "FRESH") return true;
+    return artifact.status === "EMERGENCY_REVALIDATED"
+      && typeof artifact.sourceFreshUntil === "string"
+      && Number.isFinite(Date.parse(artifact.sourceFreshUntil))
+      && typeof artifact.emergencyAdmissionExpiresAt === "string"
+      && Number.isFinite(Date.parse(artifact.emergencyAdmissionExpiresAt))
+      && /^[a-f0-9]{64}$/.test(artifact.emergencyDecisionSha256 ?? "");
+  });
+  const status = artifacts[0]?.status;
   return value?.status === "BOUND"
     && nonEmptyString(value.buildCandidateId)
     && nonEmptyString(value.packCandidateId)
     && nonEmptyString(value.candidateBuilderGitSha)
     && /^[a-f0-9]{64}$/.test(value.buildSpecSha256 ?? "")
     && /^[a-f0-9]{64}$/.test(value.manifestSha256 ?? "")
-    && ["source", "server", "mobile"].every((consumer) => {
-      const artifact = value?.[`${consumer}Evidence`];
-      const identityValid = /^[a-f0-9]{64}$/.test(artifact?.sha256 ?? "")
-        && typeof artifact.freshUntil === "string"
-        && Number.isFinite(Date.parse(artifact.freshUntil));
-      if (!identityValid) return false;
-      if (artifact.status === "FRESH") return true;
-      return artifact.status === "EMERGENCY_REVALIDATED"
-        && typeof artifact.sourceFreshUntil === "string"
-        && Number.isFinite(Date.parse(artifact.sourceFreshUntil))
-        && typeof artifact.emergencyAdmissionExpiresAt === "string"
-        && Number.isFinite(Date.parse(artifact.emergencyAdmissionExpiresAt))
-        && /^[a-f0-9]{64}$/.test(artifact.emergencyDecisionSha256 ?? "");
-    });
+    && artifactsValid
+    && artifacts.every((artifact) => artifact.status === status)
+    && (status === "FRESH" || [
+      "sourceFreshUntil", "emergencyAdmissionExpiresAt", "emergencyDecisionSha256",
+    ].every((field) => artifacts.every((artifact) => artifact[field] === artifacts[0][field])));
 }
 
 function validIdentityField(field, value) {

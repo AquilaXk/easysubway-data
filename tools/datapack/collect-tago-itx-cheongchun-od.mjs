@@ -794,7 +794,7 @@ function tagoOdFailure(error) {
       failureContext: `operation=GetStrtpntAlocFndTrainInfo,httpStatus=${httpStatus}`,
     };
   }
-  const schema = /^TAGO GetStrtpntAlocFndTrainInfo schema mismatch: (content-type|invalid JSON|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
+  const schema = /^TAGO GetStrtpntAlocFndTrainInfo schema mismatch: (content-type|invalid JSON|header|resultCode|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
   if (schema) {
     const reason = schema[1] === "invalid JSON" ? "invalid-json" : schema[1];
     return {

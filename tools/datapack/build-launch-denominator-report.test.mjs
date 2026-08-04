@@ -167,6 +167,16 @@ test("emergency binding identity는 canonical report에 보존되고 decision은
   assert.ok(!report.blockers.includes("CANDIDATE_BINDING_INVALID"));
   assert.deepEqual(report.evaluatorInput.candidateBinding, evidence.candidateBinding);
   assert.deepEqual(buildLaunchDenominatorReport(scope, report.evaluatorInput), report);
+
+  for (const mutate of [
+    (value) => { value.candidateBinding.sourceEvidence.status = "FRESH"; },
+    (value) => { value.candidateBinding.mobileEvidence.emergencyDecisionSha256 = "e".repeat(64); },
+  ]) {
+    const mismatched = structuredClone(evidence);
+    mutate(mismatched);
+    assert.ok(buildLaunchDenominatorReport(scope, mismatched)
+      .blockers.includes("CANDIDATE_BINDING_INVALID"));
+  }
 });
 
 test("pilot row and each routing exact-set gap block launch", async (context) => {
