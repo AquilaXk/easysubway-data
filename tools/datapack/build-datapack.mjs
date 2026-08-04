@@ -761,6 +761,7 @@ function validateCapitalTopologyReverification(evidence, topology, candidateTopo
     || candidateTopology.official !== true
     || candidateTopology.fixture !== false
     || candidateTopology.credentialRequired !== false
+    || candidateTopology.credentialRedacted !== true
     || candidateTopology.license?.redistributionAllowed !== true
     || candidateTopology.contentSha256 !== evidence.candidate.contentSha256
     || candidateTopology.capturedAt !== evidence.candidate.capturedAt

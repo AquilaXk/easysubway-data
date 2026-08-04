@@ -455,6 +455,8 @@ test("capital topology reverification은 production eligibility repin을 거부�
       ["unofficial", (candidate) => { candidate.official = false; }],
       ["fixture", (candidate) => { candidate.fixture = true; }],
       ["credential", (candidate) => { candidate.credentialRequired = true; }],
+      ["redaction", (candidate) => { candidate.credentialRedacted = false; }],
+      ["missing-redaction", (candidate) => { delete candidate.credentialRedacted; }],
       ["redistribution", (candidate) => { candidate.license.redistributionAllowed = false; }],
     ];
     for (const [name, mutate] of mutations) {
