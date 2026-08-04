@@ -421,11 +421,31 @@ function verifiedLineContentSha256(line, label) {
   return actual;
 }
 
+function topologyContentPayload(lines, topologyGaps) {
+  return {
+    lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
+      lineId,
+      edgeCount,
+      stationCount,
+      contentSha256,
+      rawSha256,
+      datasetId,
+    })),
+    topologyGaps,
+  };
+}
+
 export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {
   const comparison = compareCapitalRouteTopologies(baseline, candidate);
   if (comparison.changes.length !== 0
     || comparison.baselineNormalizedLineSetSha256 !== comparison.candidateNormalizedLineSetSha256) {
     throw new Error("capital topology normalized content changed; re-admission required");
+  }
+  const candidateContentSha256 = sha256(JSON.stringify(
+    topologyContentPayload(candidate.lines, candidate.topologyGaps),
+  ));
+  if (candidate.contentSha256 !== candidateContentSha256) {
+    throw new Error("capital topology candidate contentSha256 mismatch");
   }
   return {
     schemaVersion: 1,
@@ -1233,17 +1253,7 @@ export async function collectCapitalRouteTopology({
   }
   lines.sort((left, right) => codepointCompare(left.lineId, right.lineId));
   const topologyGaps = [...TOPOLOGY_GAPS];
-  const payload = {
-    lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
-      lineId,
-      edgeCount,
-      stationCount,
-      contentSha256,
-      rawSha256,
-      datasetId,
-    })),
-    topologyGaps,
-  };
+  const payload = topologyContentPayload(lines, topologyGaps);
   return {
     schemaVersion: 1,
     artifactKind: ARTIFACT_KIND,

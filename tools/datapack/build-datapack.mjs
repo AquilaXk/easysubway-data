@@ -22,7 +22,7 @@ import {
   officialOdFareQuoteSetHash,
 } from "./lib/official-od-fare-evidence.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { normalizeStationName } from "./collect-capital-route-topology.mjs";
+import { FRESHNESS_MILLIS, normalizeStationName } from "./collect-capital-route-topology.mjs";
 import {
   validateSourceCandidateSchema,
   validateSourceFreshness,
@@ -732,10 +732,17 @@ function validateCapitalTopologyReverification(evidence, topology, admission) {
     || candidateNormalized !== topologyNormalized) {
     throw new Error("capital topology reverification normalized content mismatch");
   }
-  const capturedAt = Date.parse(evidence.candidate.capturedAt);
-  if (!Number.isFinite(capturedAt)
+  const capturedAt = Date.parse(requiredUtcDateString(
+    evidence.candidate.capturedAt,
+    "capital topology reverification candidate capturedAt",
+  ));
+  const freshUntil = Date.parse(requiredUtcDateString(
+    evidence.candidate.freshUntil,
+    "capital topology reverification candidate freshUntil",
+  ));
+  if (freshUntil - capturedAt !== FRESHNESS_MILLIS
     || capturedAt > Date.parse(admission.reviewedAt)
-    || Date.parse(evidence.candidate.freshUntil) <= Date.parse(admission.reviewedAt)) {
+    || freshUntil <= Date.parse(admission.reviewedAt)) {
     throw new Error("capital topology reverification freshness is invalid");
   }
 }

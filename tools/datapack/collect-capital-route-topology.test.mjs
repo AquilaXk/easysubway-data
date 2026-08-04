@@ -119,6 +119,35 @@ test("capital topology 비교는 scope 또는 edge의 stale stored hash를 거�
   ), /contentSha256 mismatch/);
 });
 
+test("capital topology evidence는 candidate 최상위 contentSha256 변조를 거부한다", () => {
+  const line = {
+    ...topologyLine(
+      "line-1",
+      ["가", "나"],
+      [{ fromStationName: "가", toStationName: "나", distanceMeters: 100 }],
+    ),
+    datasetId: "dataset-1",
+    rawSha256: "a".repeat(64),
+    edgeCount: 1,
+    stationCount: 2,
+  };
+  const baseline = { contentSha256: "b".repeat(64), lines: [line] };
+  const candidate = {
+    contentSha256: "f".repeat(64),
+    capturedAt: "2026-08-04T17:30:34.901Z",
+    freshUntil: "2026-08-05T17:30:34.901Z",
+    lineCount: 1,
+    totalEdgeCount: 1,
+    topologyGaps: [],
+    lines: [line],
+  };
+
+  assert.throws(
+    () => buildCapitalTopologyReverificationEvidence(baseline, candidate),
+    /candidate contentSha256 mismatch/,
+  );
+});
+
 test("local CLI 기본 실행은 tracked baseline을 건드리지 않고 고정 freshness를 기록한다", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const baselinePath = path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json");

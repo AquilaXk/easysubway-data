@@ -289,6 +289,39 @@ test("production build와 bundled asset/index의 artifact identity를 exact-matc
   }
 });
 
+test("capital topology reverification은 24시간을 넘는 freshness를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-topology-reverification-freshness-"));
+  try {
+    const spec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+    const evidence = JSON.parse(await readFile(
+      spec.networkEdgeEvidence.capitalTopologyReverification.path,
+      "utf8",
+    ));
+    evidence.candidate.freshUntil = "2026-08-06T17:30:34.901Z";
+    const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`);
+    const evidencePath = path.join(workspace, "capital-topology-reverification.json");
+    await writeFile(evidencePath, evidenceBytes);
+    spec.networkEdgeEvidence.capitalTopologyReverification = {
+      path: evidencePath,
+      sha256: sha256(evidenceBytes),
+    };
+    spec.networkEdgeEvidence.capitalTopologyAdmission.freshUntil = evidence.candidate.freshUntil;
+    const specPath = path.join(workspace, "candidate-build-spec.json");
+    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--build-spec", specPath,
+      "--output", path.join(workspace, "output"),
+    ], {
+      cwd: root,
+      env: { ...env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T18:00:00.000Z" },
+    }), /capital topology reverification freshness is invalid/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("network edge evidence는 pinned bytes·freshness·fixture projection mismatch를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "easysubway-network-edge-evidence-"));
   const outputDir = path.join(workspace, "output");
