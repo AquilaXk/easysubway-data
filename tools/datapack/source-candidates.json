@@ -2246,7 +2246,7 @@
             "--day8-date",
             "--day7-date",
             "--day9-date",
-            "--canonical-pack",
+            "--station-catalog-pack",
             "--completeness-output",
             "--output"
           ]

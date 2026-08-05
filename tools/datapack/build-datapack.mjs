@@ -1098,7 +1098,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     throw new Error("ITX network edge admission evidence mismatch");
   }
   try {
-    validateSourceCandidateSchema(source);
+    validateSourceCandidateSchema(source, "legacy");
     const observedAt = new Date(source.observedAt);
     if (observedAt.getTime() > candidateBuildNow().getTime()) throw new Error("future-dated ITX observation");
     validateItxServiceDates(source.selectedServiceDates, { now: observedAt });

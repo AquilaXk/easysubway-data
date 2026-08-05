@@ -59,6 +59,23 @@ const LIVE_TAGO_EVIDENCE = JSON.parse(await readFile(
   new URL("./sources/tago-itx-cheongchun-od-20260714.json", import.meta.url),
   "utf8",
 ));
+const SOURCE_CANDIDATES = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+
+test("Korail ITX source candidate는 station catalog materialization runner contract를 고정한다", () => {
+  const candidate = SOURCE_CANDIDATES.candidates.find(({ id }) => id === "korail-traveler-train-run-info");
+  assert.deepEqual(candidate?.evidence?.materializationRunner, {
+    command: "node tools/datapack/collect-korail-itx-cheongchun-timetable.mjs",
+    requiredEnv: ["DATA_GO_KR_SERVICE_KEY"],
+    requiredArguments: [
+      "--day8-date",
+      "--day7-date",
+      "--day9-date",
+      "--station-catalog-pack",
+      "--completeness-output",
+      "--output",
+    ],
+  });
+});
 
 function planRow(trainNumber, departure, arrival, departureAt, arrivalAt) {
   return {
