@@ -633,7 +633,7 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
   )?.[1];
   assert.ok(contextLoop, 'required context loop must stay testable');
 
-  const runContextLoop = (checkRuns, mergeState = 'CLEAN') => {
+  const runContextLoop = (checkRuns) => {
     const result = stubbedBash([
       'set -euo pipefail',
       'gh() {',
@@ -641,9 +641,6 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
       '}',
       'pr=39',
       'repo=o/r',
-      'head_repo=o/r',
-      'head_ref=feature',
-      `merge_state=${JSON.stringify(mergeState)}`,
       `checks=${JSON.stringify(JSON.stringify([{ check_runs: checkRuns }]))}`,
       `statuses=${JSON.stringify(JSON.stringify([[]]))}`,
       `required=${JSON.stringify(JSON.stringify([{ context: 'Data contracts', integration_id: null }]))}`,
@@ -658,7 +655,6 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
       status: result.status,
       reached: result.stdout.includes('REACHED_DISPATCH'),
       warned: (result.stdout + result.stderr).includes('::warning::'),
-      dispatchedCi: result.calls.includes('workflow run ci.yml'),
       stdout: result.stdout,
     };
   };
@@ -672,7 +668,6 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
     status: 0,
     reached: true,
     warned: false,
-    dispatchedCi: false,
     stdout: 'REACHED_DISPATCH\n',
   });
   // 진행 중(pending)은 이미 붙은 check가 끝나기를 기다리는 상태다. 조용히 건너뛰고
@@ -681,31 +676,13 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
   assert.equal(pending.status, 0);
   assert.equal(pending.reached, false, '대기 상태는 병합 분기에 닿으면 안 된다');
   assert.equal(pending.warned, false, '대기 상태는 사람이 볼 신호가 아니다');
-  assert.equal(pending.dispatchedCi, false, '대기 중인 check에 CI를 또 쏘지 않는다');
-
-  // 미부착(missing)은 다르다. GITHUB_TOKEN의 update-branch push는 synchronize를 만들지
-  // 못하므로, bounded wait보다 늦게 base 갱신이 반영된 PR에는 required context가 영영
-  // 붙지 않는다. 여기서 쏘지 않으면 아무도 쏘지 않는다(영구 대기).
+  // 미부착(missing)도 owner push가 붙여야 한다. coordinator가 임의 dispatch하면 native
+  // pull_request check와 다른 실행이 되어 ruleset 판정과 다음 workflow_run이 갈라진다.
   const missing = runContextLoop([]);
   assert.equal(missing.status, 0);
   assert.equal(missing.reached, false);
-  assert.equal(missing.dispatchedCi, true, 'required context 부재는 CI dispatch로 푼다');
-
-  // BEHIND는 여기서 쏘지 않는다. 대신 병합 분기로 내려보내 base 갱신이 일어나게 한다.
-  // 여기서 건너뛰면 base가 영영 갱신되지 않고, base가 갱신되지 않으면 required context도
-  // 영영 붙지 않는다 — 방금 라벨이 붙어 아직 CI가 없는 behind PR이 그대로 정체한다.
-  const missingBehind = runContextLoop([], 'BEHIND');
-  assert.equal(missingBehind.status, 0);
-  assert.equal(missingBehind.dispatchedCi, false, 'BEHIND는 base 갱신 경로가 맡는다');
-  assert.equal(
-    missingBehind.reached,
-    true,
-    'BEHIND + context 부재는 base 갱신 분기로 내려가야 한다',
-  );
-  // 부재가 아닌 사유(대기·실패)는 BEHIND라도 내려보내지 않는다. 대기는 곧 끝나고,
-  // 실패는 사람이 고칠 상태다.
-  assert.equal(runContextLoop(run(null), 'BEHIND').reached, false);
-  assert.equal(runContextLoop(run('failure'), 'BEHIND').reached, false);
+  assert.equal(missing.warned, true);
+  assert.match(missing.stdout, /owning SSD worktree must push a native PR head/);
   // 명시적 실패도 실행을 죽이지 않고 이 후보만 건너뛰되, 신호는 남긴다.
   const failed = runContextLoop(run('failure'));
   assert.equal(failed.status, 0);
@@ -731,12 +708,8 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   const runDispatch = (
     mergeState,
     {
-      headRepo = 'o/r',
-      newHead = 'updated-head',
       mergeFails = false,
-      updateFails = false,
       commentFails = false,
-      ciDispatchFails = false,
     } = {},
   ) => {
     const result = stubbedBash([
@@ -744,20 +717,14 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
-      `    *"pr view"*headRefOid*) printf '%s\\n' ${JSON.stringify(newHead)} ;;`,
       `    "pr merge"*) ${mergeFails ? 'return 17' : ':'} ;;`,
-      `    *update-branch*) ${updateFails ? 'return 29' : ':'} ;;`,
       `    "pr comment"*) ${commentFails ? 'return 1' : ':'} ;;`,
       `    "pr edit"*) : ;;`,
-      `    "workflow run"*) ${ciDispatchFails ? 'return 1' : ':'} ;;`,
       '  esac',
       '}',
-      'sleep() { :; }',
       'pr=26',
       'repo=o/r',
       'head=old-head',
-      `head_repo=${JSON.stringify(headRepo)}`,
-      'head_ref=feature',
       `merge_state=${JSON.stringify(mergeState)}`,
       'GITHUB_SERVER_URL=https://github.example',
       'GITHUB_REPOSITORY=o/r',
@@ -778,6 +745,7 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
       skipped: result.calls.includes('SKIPPED'),
       warned: (result.stdout + result.stderr).includes('::warning::'),
       calls: result.calls,
+      stdout: result.stdout,
     };
   };
 
@@ -811,22 +779,18 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
     // 이 저장소는 auto-merge가 꺼져 있으므로 즉시 병합이고, head 고정은 서버가 한다.
     assert.match(result.calls, /gh pr merge --squash 26 --repo o\/r --match-head-commit old-head/);
   }
-  // base 갱신이 필요한 상태는 update-branch 후 CI를 명시 dispatch한다.
+  // base 갱신은 PR 소유 worktree만 수행한다. coordinator는 head를 바꾸지 않고 다음
+  // 후보를 계속 평가해 owner push → native CI → workflow_run으로 재진입한다.
   const behind = runDispatch('BEHIND');
   assert.equal(behind.status, 0);
   assert.equal(behind.merged, false);
-  assert.equal(behind.updatedBranch, true);
-  assert.equal(behind.dispatchedCi, true);
+  assert.equal(behind.updatedBranch, false);
+  assert.equal(behind.dispatchedCi, false);
   assert.equal(behind.commented, false);
   assert.equal(behind.removedLabel, false);
-  // update-branch는 비동기라 bounded wait 안에 head가 안 바뀔 수 있다. 계약 위반이
-  // 아니라 대기 상태이므로 stale ref로 CI를 쏘지 않고 실패하지도 않는다.
-  const behindPending = runDispatch('BEHIND', { newHead: 'old-head' });
-  assert.equal(behindPending.status, 0);
-  assert.equal(behindPending.updatedBranch, true);
-  assert.equal(behindPending.dispatchedCi, false);
-  assert.equal(behindPending.commented, false);
-  assert.equal(behindPending.removedLabel, false);
+  assert.equal(behind.skipped, true);
+  assert.equal(behind.warned, true);
+  assert.match(behind.calls + behind.stdout, /owning SSD worktree must rebase and push/);
   // 병합할 수 없는 상태는 전부 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
   // 그 실패 check가 PR을 UNSTABLE로 만들고 큐 전체가 뒤의 후보까지 굶긴다.
   for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
@@ -848,8 +812,8 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
     assert.equal(result.commented, false);
     assert.equal(result.removedLabel, false);
   }
-  // 병합·base 갱신 API 호출 실패는 fail closed다. 실패를 PR conversation에 남기고
-  // automerge 라벨을 제거한 뒤, coordinator job 자체를 실패시킨다.
+  // 병합 API 호출 실패는 fail closed다. 실패를 PR conversation에 남기고 automerge
+  // 라벨을 제거한 뒤, coordinator job 자체를 실패시킨다.
   const mergeFailed = runDispatch('CLEAN', { mergeFails: true });
   assert.notEqual(mergeFailed.status, 0, 'merge call failure must fail the run');
   assert.equal(mergeFailed.commented, true, 'merge failure must leave a PR comment');
@@ -857,36 +821,12 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
   assert.match(mergeFailed.calls, /PR #26 merge 실패: 상태 CLEAN, 종료 코드 17\./);
   assert.match(mergeFailed.calls, /https:\/\/github\.example\/o\/r\/actions\/runs\/123456/);
   assert.match(mergeFailed.calls, /automerge 라벨을 제거합니다/);
-  const updateFailed = runDispatch('BEHIND', { updateFails: true });
-  assert.notEqual(updateFailed.status, 0, 'update-branch failure must fail the run');
-  assert.equal(updateFailed.commented, true, 'update-branch failure must leave a PR comment');
-  assert.equal(updateFailed.removedLabel, true, 'update-branch failure must remove the automerge label');
-  assert.match(
-    updateFailed.calls,
-    /PR #26 update-branch 실패: 상태 BEHIND, 종료 코드 29\./,
-  );
-  assert.match(updateFailed.calls, /https:\/\/github\.example\/o\/r\/actions\/runs\/123456/);
-  assert.match(updateFailed.calls, /automerge 라벨을 제거합니다/);
-  assert.equal(updateFailed.dispatchedCi, false, '갱신에 실패했으면 CI를 쏘지 않는다');
-
   // comment가 실패해도 라벨 제거는 건너뛰지 않는다. 어느 실패든 job은 fail closed다.
   const commentFailed = runDispatch('CLEAN', { mergeFails: true, commentFails: true });
   assert.notEqual(commentFailed.status, 0);
   assert.equal(commentFailed.commented, true);
   assert.equal(commentFailed.removedLabel, true);
 
-  // CI dispatch 호출 실패도 같다. base는 이미 갱신됐고 다음 트리거가 다시 판정한다.
-  const ciDispatchFailed = runDispatch('BEHIND', { ciDispatchFails: true });
-  assert.equal(ciDispatchFailed.status, 0, 'CI dispatch failure must not fail the run');
-  assert.equal(ciDispatchFailed.warned, true, 'CI dispatch failure must stay operator-visible');
-
-  // fork head에 base 저장소 CI를 dispatch하지 않는다. 거부하되 큐는 계속 진행한다.
-  const fork = runDispatch('BEHIND', { headRepo: 'fork/r' });
-  assert.equal(fork.status, 0);
-  assert.equal(fork.updatedBranch, false);
-  assert.equal(fork.dispatchedCi, false);
-  assert.equal(fork.skipped, true);
-  assert.equal(fork.warned, true);
 });
 
 test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
@@ -1160,24 +1100,29 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
       `required context ${checkState} must skip only that candidate`,
     );
   }
-  // BEHIND인데 required context가 아직 없는 후보는 base 갱신 분기까지 내려가야 한다.
-  // 여기서 건너뛰면 base 갱신도, CI도 영영 일어나지 않는다.
+  // BEHIND이고 required context가 없어도 coordinator가 head를 만들지 않는다. owner가
+  // rebase/push할 후보만 건너뛰고 뒤의 CLEAN 후보를 처리한다.
   const behindMissing = runQueue([
     { number: 1, mergeStateStatus: 'BEHIND', checkState: 'missing' },
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
   assert.equal(behindMissing.status, 0);
-  assert.equal(behindMissing.updatedBranch, true, 'BEHIND + 부재는 base를 갱신해야 한다');
-  assert.equal(behindMissing.mergedPr, null);
-  assert.deepEqual(behindMissing.evaluated, [1], 'base 갱신도 한 실행에 한 건이다');
+  assert.equal(behindMissing.updatedBranch, false);
+  assert.equal(behindMissing.dispatchedCi, false);
+  assert.equal(behindMissing.mergedPr, 2);
+  assert.deepEqual(behindMissing.evaluated, [1, 2]);
+  assert.match(
+    behindMissing.stdout + behindMissing.stderr,
+    /owning SSD worktree must push a native PR head/,
+  );
 
-  // 부재는 건너뛰기만 하는 것이 아니라 CI를 쏴서 교착을 푼다. 그러면서도 뒤의 병합 가능한
-  // 후보를 굶기지 않아야 한다 — 이 dispatch는 실행을 끝내지 않는다.
+  // required context 부재도 owner의 native CI가 해결한다. coordinator는 dispatch하지 않고
+  // 뒤의 병합 가능한 후보를 계속 평가한다.
   const missingContext = runQueue([
     { number: 1, mergeStateStatus: 'CLEAN', checkState: 'missing' },
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
-  assert.equal(missingContext.dispatchedCi, true, 'required context 부재는 CI dispatch로 푼다');
+  assert.equal(missingContext.dispatchedCi, false);
   assert.equal(missingContext.mergedPr, 2);
   // 게이트를 통과한 가장 오래된 후보가 우선한다(best-effort FIFO).
   assert.equal(
@@ -1193,17 +1138,17 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
   assert.equal(serialized.evaluated.length, 1, '병합하면 그 실행은 거기서 끝난다');
-  // base 갱신도 실제 동작이므로 같은 규칙을 따른다. 픽스처의 head는 갱신 뒤에도 그대로라
-  // bounded wait가 대기로 끝나야 하고, stale ref로 CI를 쏘면 안 된다.
+  // BEHIND 후보는 warning 후 건너뛰므로 뒤의 CLEAN 후보를 굶기지 않는다.
   const behind = runQueue([
     { number: 1, mergeStateStatus: 'BEHIND' },
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
   assert.equal(behind.status, 0);
-  assert.equal(behind.mergedPr, null);
-  assert.deepEqual(behind.evaluated, [1], 'base 갱신도 한 실행에 한 건이다');
-  assert.equal(behind.updatedBranch, true);
-  assert.equal(behind.dispatchedCi, false, 'stale ref에 CI를 dispatch하면 안 된다');
+  assert.equal(behind.mergedPr, 2);
+  assert.deepEqual(behind.evaluated, [1, 2]);
+  assert.equal(behind.updatedBranch, false);
+  assert.equal(behind.dispatchedCi, false);
+  assert.match(behind.stdout + behind.stderr, /owning SSD worktree must rebase and push/);
   // 아무 후보도 병합할 수 없으면 병합 없이 성공으로 끝난다. 라벨은 건드리지 않는다.
   const allBlocked = runQueue([
     { number: 1, mergeStateStatus: 'BLOCKED' },
@@ -2154,11 +2099,7 @@ test('코디네이터는 main push CI를 되살리지 않는다', async () => {
   // 이 계약이 깨지면(= main CI dispatch가 들어오면) 그 결정을 다시 해야 한다.
   const dispatches = [...workflow.matchAll(/gh workflow run ([^\s]+)[^\n]*--ref ([^\s"']+|"[^"]+")/g)]
     .map((match) => `${match[1]} ${match[2]}`);
-  assert.deepEqual(dispatches, [
-    '"${producer}" main',
-    'ci.yml "${head_ref}"',
-    'ci.yml "${head_ref}"',
-  ]);
+  assert.deepEqual(dispatches, ['"${producer}" main']);
   // 판정 근거는 주석으로 남아 있어야 한다. 근거 없이 값만 남으면 다음 사람이 되돌린다.
   for (const basis of [
     'main push 실행은 되살리지 않는다',
@@ -2169,17 +2110,8 @@ test('코디네이터는 main push CI를 되살리지 않는다', async () => {
   }
 });
 
-test('명시 dispatch 경로가 required context와 producer 양쪽에서 성립한다', async () => {
-  const ciWorkflow = await readFile(ciWorkflowUrl, 'utf8');
+test('명시 dispatch는 producer 경로에만 남는다', async () => {
   const producerWorkflow = await readFile(producerWorkflowUrl, 'utf8');
-
-  // GITHUB_TOKEN의 update-branch push는 synchronize를 만들지 못한다. 새 head에 required
-  // context를 붙이는 유일한 경로가 dispatch다.
-  assert.ok(ciWorkflow.includes('  workflow_dispatch:'));
-  // dispatch 실행도 required context와 같은 이름의 check를 만들어야 한다.
-  assert.match(ciWorkflow, /^ {4}name: Data contracts$/m);
-  // 이벤트에 따라 job이 갈리면 dispatch 실행이 다른 check 집합을 만든다.
-  assert.doesNotMatch(ciWorkflow, /github\.event_name/);
 
   // GITHUB_TOKEN 병합은 push 이벤트를 만들지 않으므로 producer는 dispatch로도 실행돼야 한다.
   assert.ok(producerWorkflow.includes('  workflow_dispatch:'));
