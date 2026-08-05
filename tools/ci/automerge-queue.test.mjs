@@ -833,24 +833,28 @@ test('merge-state 분기는 상태별로 병합·물러남·건너뛰기를 구�
 
 });
 
-test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
+test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐 뒤에서 실행된다', async () => {
   const workflow = await readWorkflow();
 
-  // 게이트는 후보마다 수행되고, 통과하지 못하면 그 후보만 건너뛴다. 순서 계약은 유지한다.
+  // 게이트는 후보마다 수행되고, 통과하지 못하면 그 후보만 건너뛴다.
   assert.ok(workflow.includes('set -euo pipefail'));
-  const producerAt = workflow.indexOf('# producer-dispatch-end');
+  const queueStepAt = workflow.indexOf('- name: Coordinate eligible pull requests');
+  const producerStepAt = workflow.indexOf('- name: Dispatch the data pack producer for the current main');
   const queueLoopAt = workflow.indexOf('# queue-loop-begin');
   const reviewGateAt = workflow.indexOf('# review-state-filter-end');
   const contextGateAt = workflow.indexOf('# required-context-filter-end');
   const dispatchAt = workflow.indexOf('# merge-state-dispatch-begin');
-  assert.ok(producerAt > 0, 'producer dispatch marker must exist');
+  assert.ok(queueStepAt > 0, 'queue step must exist');
+  assert.ok(producerStepAt > queueStepAt, 'producer must run after the queue step');
   assert.ok(queueLoopAt > 0, 'queue loop marker must exist');
-  // producer dispatch → 큐 루프 → 리뷰 게이트 → required context 게이트 → 병합 분기.
-  // producer가 큐보다 앞서야 큐가 막힌 동안에도 데이터팩 체인이 끊기지 않는다.
-  assert.ok(queueLoopAt > producerAt, 'producer dispatch must precede the queue loop');
   assert.ok(reviewGateAt > queueLoopAt, 'gates must run inside the candidate loop');
   assert.ok(contextGateAt > reviewGateAt, 'review gate must precede the required context gate');
   assert.ok(dispatchAt > contextGateAt, 'gates must precede the merge dispatch');
+  assert.match(
+    workflow.slice(producerStepAt, producerStepAt + 320),
+    /if: \$\{\{ !cancelled\(\) \}\}/,
+    'queue failure 뒤 producer를 실행하되 cancellation에는 실행하지 않아야 한다',
+  );
 });
 
 const BUDGET_BLOCK_RE = /# candidate-budget-begin\n([\s\S]*?)\n\s+# candidate-budget-end/;
