@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest-validation.mjs";
 
 const INPUT = "tools/datapack/release/capital-production-canonical-pack.json";
+// Keep the last-writer SQLITE_VERSION_NUMBER at SQLite header offset 96 stable.
+const SQLITE_VERSION_NUMBER_OFFSET = 96;
+const SQLITE_VERSION_NUMBER = 3053000;
 const TABLES = {
   stations: { source: "stations", keys: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region"], allowed: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region", "latitude", "longitude", "dataQualityLevel", "dataSourceType", "lastVerifiedAt"], target: ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"] },
   station_aliases: { source: "stationAliases", keys: ["stationId", "alias", "normalizedAlias"], allowed: ["stationId", "alias", "normalizedAlias"], target: ["station_id", "alias", "normalized_alias"] },
@@ -20,6 +23,7 @@ export async function emitStationCatalogPack(input) {
   const sourceRelative = exact(raw(input.input ?? INPUT, "--input"), INPUT, "--input");
   const source = await exactInput(root, sourceRelative);
   const output = path.resolve(raw(input.output, "--output"));
+  await outputParent(output);
   if (await exists(output)) throw new Error("--output must not already exist");
   const catalogPackId = raw(input.catalogPackId, "--catalog-pack-id");
   const value = parse(await readFile(source));
@@ -37,6 +41,7 @@ export async function emitStationCatalogPack(input) {
     validateArtifactComponentManifest(manifest, stationSetSha256);
     await writeFile(path.join(artifact, "manifest.json"), Buffer.from(canonicalJson(manifest)), { flag: "wx" });
     await validateOutput(artifact);
+    if (await exists(output)) throw new Error("--output must not already exist");
     await rename(artifact, output);
   } catch (error) {
     await rm(temp, { recursive: true, force: true });
@@ -101,7 +106,7 @@ function writeSqlite(file, rows) {
 }
 
 function insertRows(db, table, columns, rows) { const insert = db.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); for (const row of [...rows].sort((a, b) => compareTuple(a, b, columns))) insert.run(...columns.map((column) => row[column])); }
-async function normalizeHeader(file) { const value = await readFile(file); value.writeUInt32BE(3053000, 96); await writeFile(file, value); }
+async function normalizeHeader(file) { const value = await readFile(file); value.writeUInt32BE(SQLITE_VERSION_NUMBER, SQLITE_VERSION_NUMBER_OFFSET); await writeFile(file, value); }
 async function inventory(root) { const payload = path.join(root, "payload"); const names = await readdir(payload); if (canonicalJson(names.sort(bytes)) !== canonicalJson(["catalog.sqlite"])) throw new Error("payload paths mismatch"); const file = path.join(payload, "catalog.sqlite"); const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error("payload has unknown or invalid file"); const value = await readFile(file); return digest([{ path: "payload/catalog.sqlite", sizeBytes: value.length, sha256: digest(value) }]); }
 async function validateOutput(root) { const actual = []; async function collect(current) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await collect(target); else if (entry.isFile() && !entry.isSymbolicLink()) actual.push(path.relative(root, target).split(path.sep).join("/")); else throw new Error("artifact output must be regular files"); } } await collect(root); if (canonicalJson(actual.sort(bytes)) !== canonicalJson(["manifest.json", "payload/catalog.sqlite"])) throw new Error("unknown artifact output"); }
 function parse(bytes) { try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("canonical fixture must be JSON"); } }
@@ -112,6 +117,7 @@ function quote(value) { return `"${value.replaceAll('"', '""')}"`; }
 function raw(value, label) { if (typeof value !== "string" || !value || value.trim() !== value) throw new Error(`${label} must be raw`); return value; }
 function exact(value, expected, label) { if (value !== expected) throw new Error(`${label} must be ${expected}`); return value; }
 async function regular(target, label) { let stat; try { stat = await lstat(target); } catch { throw new Error(`${label} must be a regular file`); } if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular file`); return target; }
+async function outputParent(output) { let stat; try { stat = await lstat(path.dirname(output)); } catch { throw new Error("--output parent must be an existing directory"); } if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("--output parent must be an existing directory"); }
 async function exactInput(root, relative) { const target = path.join(root, relative); await regular(target, "--input"); let realRoot; let realTarget; try { [realRoot, realTarget] = await Promise.all([realpath(root), realpath(target)]); } catch { throw new Error("--input must resolve under repository root"); } if (realTarget !== path.join(realRoot, relative)) throw new Error("--input must resolve under repository root"); return target; }
 async function exists(target) { try { await lstat(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
 

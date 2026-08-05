@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -52,9 +52,19 @@ test("capital production canonical fixture에서 deterministic한 station catalo
   assert.equal(db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('network_edges','transit_routes','station_exits','fare_rules')").get().count, 0);
   db.close();
 
-  await assert.rejects(() => run("one"), /must not already exist/);
-  await assert.rejects(() => run("wrong", { catalogPackId: " bad" }), /must be raw/);
-  await assert.rejects(() => emitStationCatalogPack({ repositoryRoot: root, output: path.join(temp, "wrong-input"), catalogPackId: "catalog", input: "fixture.json" }), /must be tools\/datapack\/release\/capital-production-canonical-pack\.json/);
+  await rejectsWithoutTemp(temp, () => run("one"), /must not already exist/);
+  await rejectsWithoutTemp(temp, () => run("missing-parent/output"), /--output parent must be an existing directory/);
+  await writeFile(path.join(temp, "not-a-directory"), "file");
+  await rejectsWithoutTemp(temp, () => run("not-a-directory/output"), /--output parent must be an existing directory/);
+  await rejectsWithoutTemp(temp, () => run("wrong", { catalogPackId: " bad" }), /must be raw/);
+  await rejectsWithoutTemp(temp, () => emitStationCatalogPack({ repositoryRoot: root, output: path.join(temp, "wrong-input"), catalogPackId: "catalog", input: "fixture.json" }), /must be tools\/datapack\/release\/capital-production-canonical-pack\.json/);
+
+  const late = path.join(temp, "late-output");
+  const emitting = run("late-output");
+  await waitForTempArtifact(temp);
+  await mkdir(late);
+  await rejectsWithoutTemp(temp, emitting, /must not already exist/);
+  assert.equal(await exists(late), true);
 });
 
 test("projection row의 누락·unknown·dangling 값은 output 없이 fail closed한다", async (t) => {
@@ -79,15 +89,15 @@ test("projection row의 누락·unknown·dangling 값은 output 없이 fail clos
     ["missing-capital", (value) => { value.packs[0].id = "other"; }, /capital production pack/],
   ]) {
     const value = structuredClone(fixture); mutate(value); await write(value);
-    await assert.rejects(() => run(name), message);
+    await rejectsWithoutTemp(temp, () => run(name), message);
     assert.equal(await exists(path.join(temp, name)), false, name);
   }
   await rm(input);
-  await assert.rejects(() => run("missing-input"), /must be a regular file/);
+  await rejectsWithoutTemp(temp, () => run("missing-input"), /must be a regular file/);
   const target = path.join(root, "source.json");
   await writeFile(target, canonicalJson(fixture));
   await symlink(target, input);
-  await assert.rejects(() => run("symlink-input"), /must be a regular file/);
+  await rejectsWithoutTemp(temp, () => run("symlink-input"), /must be a regular file/);
 
   const escapedRoot = path.join(temp, "escaped-root");
   const external = path.join(temp, "external-datapack");
@@ -95,13 +105,16 @@ test("projection row의 누락·unknown·dangling 값은 output 없이 fail clos
   await mkdir(path.join(external, "release"), { recursive: true });
   await writeFile(path.join(external, "release/capital-production-canonical-pack.json"), canonicalJson(fixture));
   await symlink(external, path.join(escapedRoot, "tools/datapack"));
-  await assert.rejects(() => emitStationCatalogPack({ repositoryRoot: escapedRoot, output: path.join(temp, "ancestor-symlink"), catalogPackId: "catalog" }), /must resolve under repository root/);
+  await rejectsWithoutTemp(temp, () => emitStationCatalogPack({ repositoryRoot: escapedRoot, output: path.join(temp, "ancestor-symlink"), catalogPackId: "catalog" }), /must resolve under repository root/);
 });
 
 async function files(root, current = root, output = []) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await files(root, target, output); else output.push(path.relative(root, target).split(path.sep).join("/")); } return output.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))); }
 async function payloadDigest(root) { const bytes = await readFile(path.join(root, "payload/catalog.sqlite")); return hash(Buffer.from(canonicalJson([{ path: "payload/catalog.sqlite", sizeBytes: bytes.length, sha256: hash(bytes) }]))); }
 function hash(value) { return createHash("sha256").update(value).digest("hex"); }
-async function exists(target) { try { await readFile(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
+async function exists(target) { try { await lstat(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
+async function assertNoTempArtifacts(parent) { assert.deepEqual((await readdir(parent)).filter((name) => name.startsWith(".station-catalog-pack-")), []); }
+async function rejectsWithoutTemp(parent, operation, expected) { await assert.rejects(operation, expected); await assertNoTempArtifacts(parent); }
+async function waitForTempArtifact(parent) { for (let attempt = 0; attempt < 1000; attempt += 1) { if ((await readdir(parent)).some((name) => name.startsWith(".station-catalog-pack-"))) return; await new Promise((resolve) => setTimeout(resolve, 1)); } assert.fail("temporary artifact was not created"); }
 function tableInfo(db, table) { return db.prepare(`PRAGMA table_xinfo(${table})`).all().map((column) => [column.name, column.type, column.notnull, column.dflt_value, column.pk]); }
 function tableRows(db, table, columns, order) { return db.prepare(`SELECT ${columns.join(",")} FROM ${table} ORDER BY ${order.map((column) => `${column} COLLATE BINARY`).join(",")}`).all().map((row) => ({ ...row })); }
 function expectedRows(pack, table) {
