@@ -1,6 +1,6 @@
 // #22: 카탈로그 endpoint·detailUrl 실재 계약. 네트워크 호출 없이 형식과 provider host 규약만 검사한다.
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 
@@ -15,6 +15,7 @@ import {
 } from "./probe-kric-facility-provider-tuples.mjs";
 
 const CANDIDATES_PATH = path.join(import.meta.dirname, "source-candidates.json");
+const DATAPACK_DIRECTORY = import.meta.dirname;
 const KRIC_OPENAPI_HOST = "openapi.kric.go.kr";
 const KRIC_PORTAL_DETAIL_URL = "https://data.kric.go.kr/rips/M_01_02/detail.do";
 const KRIC_OPENAPI_PATH = /^\/openapi\/([A-Za-z][A-Za-z0-9]*)\/([A-Za-z][A-Za-z0-9]*)$/;
@@ -302,4 +303,44 @@ test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카
   const unobserved = integrity.credentialSignalResultCodes
     .filter((code) => !observedAuthorizationCodes.has(code));
   assert.deepEqual(unobserved, [], "credentialSignalResultCodes must come from recorded AUTHORIZATION_REQUIRED observations");
+});
+
+test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validation 계약 누락을 숨기지 않는다", async () => {
+  const coverage = document.credentialBearingProviderCoverage;
+  assert.ok(Array.isArray(coverage), "credentialBearingProviderCoverage must be an array");
+  assert.equal(coverage.length, 1, "DATA_GO_KR_SERVICE_KEY coverage must have one provider entry");
+
+  const [dataGoKr] = coverage;
+  assert.deepEqual(Object.keys(dataGoKr).sort(), [
+    "credentialEnv",
+    "implementationStatus",
+    "missingContracts",
+    "providerId",
+    "reason",
+    "requiredClassification",
+    "runners",
+  ]);
+  assert.equal(dataGoKr.providerId, "data-go-kr");
+  assert.equal(dataGoKr.credentialEnv, "DATA_GO_KR_SERVICE_KEY");
+  assert.equal(dataGoKr.requiredClassification, "DETERMINISTIC_CREDENTIAL_VALIDATION_ONLY");
+  assert.equal(dataGoKr.implementationStatus, "MISSING");
+  assert.deepEqual(dataGoKr.missingContracts, ["shared-deterministic-credential-validation"]);
+  assert.equal(
+    dataGoKr.reason,
+    "current runners only load or decode DATA_GO_KR_SERVICE_KEY and do not share deterministic validation evidence",
+  );
+
+  const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
+  const expectedRunners = [];
+  for (const file of files) {
+    if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
+    const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
+    const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
+    if (source.includes("DATA_GO_KR_SERVICE_KEY")) expectedRunners.push(runner);
+  }
+  expectedRunners.sort();
+
+  assert.deepEqual(dataGoKr.runners, expectedRunners);
+  assert.equal(new Set(dataGoKr.runners).size, dataGoKr.runners.length, "runners must be unique");
+  assert.deepEqual(dataGoKr.runners, [...dataGoKr.runners].sort(), "runners must be path-sorted");
 });
