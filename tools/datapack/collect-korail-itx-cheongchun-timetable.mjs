@@ -1,27 +1,47 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { lstat, link, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { DatabaseSync } from "node:sqlite";
 
-import { cleanupPackDir, openPack, repoRoot } from "../route-map/pack-io.mjs";
+import { repoRoot } from "../route-map/pack-io.mjs";
 import {
   collectTagoItxCheongchunRoster,
   validateItxServiceDates,
 } from "./collect-tago-itx-cheongchun-od.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest-validation.mjs";
 const API_ORIGIN = "https://apis.data.go.kr";
 const DETAIL_URL = "https://www.data.go.kr/data/15125762/openapi.do";
 const LINE_ID = "line-54a7b980b7c3";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
 const CANONICAL_PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
 const TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
-const CAPITAL_APPROACH_STATIONS = Object.freeze([
-  Object.freeze({ canonicalStationId: "station-8aa315864466", nameKo: "용산", corridorSequence: 1, lineId: CAPITAL_APPROACH_LINE_ID }),
-  Object.freeze({ canonicalStationId: "station-c0679b9a6cf8", nameKo: "옥수", corridorSequence: 2, lineId: CAPITAL_APPROACH_LINE_ID }),
-  Object.freeze({ canonicalStationId: "station-e5cf592cf355", nameKo: "왕십리", corridorSequence: 3, lineId: CAPITAL_APPROACH_LINE_ID }),
-]);
+const ITX_CORRIDOR_MATRIX = Object.freeze([
+  ["station-8aa315864466", "용산", CAPITAL_APPROACH_LINE_ID, 28, 1], ["station-c0679b9a6cf8", "옥수", CAPITAL_APPROACH_LINE_ID, 32, 2], ["station-e5cf592cf355", "왕십리", CAPITAL_APPROACH_LINE_ID, 34, 3],
+  ["station-b819702fa7d9", "청량리", LINE_ID, 1, 4], ["station-28e5946b8e67", "회기", LINE_ID, 2, 5], ["station-edf782c1647a", "중랑", LINE_ID, 3, 6], ["station-83bcb1eae340", "상봉", LINE_ID, 4, 7], ["station-0ef4e01fa401", "망우", LINE_ID, 5, 8], ["station-b42d22b753ca", "광운대", LINE_ID, 5, 8], ["station-b49a8c5ce5e5", "신내", LINE_ID, 6, 9], ["station-7bc666ad036c", "갈매", LINE_ID, 7, 10], ["station-6f6328bd8ba0", "별내", LINE_ID, 8, 11], ["station-b52ac4dfe64e", "퇴계원", LINE_ID, 9, 12], ["station-2ccf5647f7f7", "사릉", LINE_ID, 10, 13], ["station-10c3ee5f17ae", "금곡", LINE_ID, 11, 14], ["station-f3d9c93ba7d6", "평내호평", LINE_ID, 12, 15], ["station-7dd96f599b01", "천마산", LINE_ID, 13, 16], ["station-661ff65ea040", "마석", LINE_ID, 14, 17], ["station-c7f9f6a29fc1", "대성리", LINE_ID, 15, 18], ["station-6c1f50a5aa3b", "청평", LINE_ID, 16, 19], ["station-d768f1b7c64e", "상천", LINE_ID, 17, 20], ["station-4f6045ff9103", "가평", LINE_ID, 18, 21], ["station-236845fc4e8b", "굴봉산", LINE_ID, 19, 22], ["station-add5012df314", "백양리", LINE_ID, 20, 23], ["station-30ba86472e55", "강촌", LINE_ID, 21, 24], ["station-67e47e3e2da2", "김유정", LINE_ID, 22, 25], ["station-d5e344125b52", "남춘천", LINE_ID, 23, 26], ["station-dd14cfb89cbc", "춘천", LINE_ID, 24, 27],
+].map(([canonicalStationId, nameKo, lineId, rawLineSequence, corridorSequence]) => Object.freeze({ canonicalStationId, nameKo, lineId, rawLineSequence, corridorSequence })));
+const CAPITAL_APPROACH_STATIONS = Object.freeze(ITX_CORRIDOR_MATRIX.slice(0, 3).map(({ canonicalStationId, nameKo, lineId, corridorSequence }) => Object.freeze({ canonicalStationId, nameKo, lineId, corridorSequence })));
+const ITX_CORRIDOR = Object.freeze(ITX_CORRIDOR_MATRIX.map(({ canonicalStationId, nameKo, lineId, corridorSequence }) => Object.freeze({ canonicalStationId, nameKo, lineId, corridorSequence })));
+const TABLE_XINFO = Object.freeze({
+  stations: [["id", "TEXT", 1, null, 1], ["name_ko", "TEXT", 1, null, 0], ["name_en", "TEXT", 1, "''", 0], ["name_sub", "TEXT", 1, "''", 0], ["normalized_name", "TEXT", 1, null, 0], ["region", "TEXT", 1, "''", 0]],
+  station_aliases: [["station_id", "TEXT", 1, null, 0], ["alias", "TEXT", 1, null, 0], ["normalized_alias", "TEXT", 1, null, 0]],
+  lines: [["id", "TEXT", 1, null, 1], ["name_ko", "TEXT", 1, null, 0], ["name_en", "TEXT", 1, "''", 0]],
+  station_lines: [["station_id", "TEXT", 1, null, 1], ["line_id", "TEXT", 1, null, 2], ["station_code", "TEXT", 1, "''", 0], ["line_sequence", "INTEGER", 1, null, 0]],
+  station_search_index: [["station_id", "TEXT", 1, null, 1], ["token", "TEXT", 1, null, 4], ["normalized_token", "TEXT", 1, null, 3], ["source_kind", "TEXT", 1, null, 2]],
+});
+const TABLE_DDL = Object.freeze({
+  stations: "CREATE TABLE stations(id TEXT NOT NULL PRIMARY KEY,name_ko TEXT NOT NULL,name_en TEXT NOT NULL DEFAULT '',name_sub TEXT NOT NULL DEFAULT '',normalized_name TEXT NOT NULL,region TEXT NOT NULL DEFAULT '')",
+  station_aliases: "CREATE TABLE station_aliases(station_id TEXT NOT NULL,alias TEXT NOT NULL,normalized_alias TEXT NOT NULL,FOREIGN KEY(station_id) REFERENCES stations(id))",
+  lines: "CREATE TABLE lines(id TEXT NOT NULL PRIMARY KEY,name_ko TEXT NOT NULL,name_en TEXT NOT NULL DEFAULT '')",
+  station_lines: "CREATE TABLE station_lines(station_id TEXT NOT NULL,line_id TEXT NOT NULL,station_code TEXT NOT NULL DEFAULT '',line_sequence INTEGER NOT NULL,PRIMARY KEY(station_id,line_id),FOREIGN KEY(station_id) REFERENCES stations(id),FOREIGN KEY(line_id) REFERENCES lines(id))",
+  station_search_index: "CREATE TABLE station_search_index(station_id TEXT NOT NULL,token TEXT NOT NULL,normalized_token TEXT NOT NULL,source_kind TEXT NOT NULL CHECK(source_kind IN ('STATION_NAME','STATION_ALIAS')),PRIMARY KEY(station_id,source_kind,normalized_token,token),FOREIGN KEY(station_id) REFERENCES stations(id))",
+});
+const completenessCatalogSnapshots = new WeakMap();
 const EXPECTED_FIELDS = Object.freeze({
   codes: Object.freeze(["code", "type", "value"]),
   plan: Object.freeze([
@@ -37,23 +57,24 @@ const EXPECTED_FIELDS = Object.freeze({
 export async function collectKorailItxCheongchunCompleteness({
   serviceKey,
   serviceDates,
-  packPath,
+  stationCatalogPackPath,
   fetchImpl = fetch,
   now = new Date(),
   replay = false,
   previousAdmittedArtifact = null,
   collectRosterImpl = collectTagoItxCheongchunRoster,
   collectTimetableImpl = null,
+  stationCatalogSnapshot = null,
 } = {}) {
   const selectedServiceDates = validateItxServiceDates(serviceDates, { now, replay });
   const collectTimetable = collectTimetableImpl ?? (replay
     ? collectKorailItxCheongchunTimetable
     : collectKorailItxCheongchunPlan);
   const usingDefaultAdmissionCollector = collectTimetableImpl === null && !replay;
-  requiredString(packPath, "packPath");
-  const canonical = readCanonicalLine(packPath);
+  requiredString(stationCatalogPackPath, "stationCatalogPackPath");
+  const catalog = stationCatalogSnapshot ?? snapshotStationCatalog(stationCatalogPackPath);
+  const canonical = catalog.canonical;
   const canonicalStations = canonical.rosterStations;
-  canonical.close();
   const serviceDays = [];
   const tagoRequestBudget = { limit: 10_000, remaining: 10_000 };
   for (const dayCd of ["8", "7", "9"]) {
@@ -83,7 +104,8 @@ export async function collectKorailItxCheongchunCompleteness({
         serviceKey,
         runDate: serviceDate,
         kricServiceDayCode: dayCd,
-        packPath,
+        stationCatalogPackPath: stationCatalogPackPath,
+        stationCatalogSnapshot: catalog,
         trainNumberEvidence: roster,
         fetchImpl,
         now,
@@ -210,6 +232,7 @@ export async function collectKorailItxCheongchunCompleteness({
     credentialRedacted: true,
   };
   artifact.evidenceHash = sha256(JSON.stringify(artifact));
+  completenessCatalogSnapshots.set(artifact, catalog);
   return artifact;
 }
 
@@ -287,7 +310,24 @@ function applyStationMappingAuthority(snapshotDiff, currentMappings, previousMap
   return snapshotDiff;
 }
 
-export async function buildItxSourceCandidate({ completeness, packPath, now = new Date(), repositoryRoot = repoRoot }) {
+export async function buildItxSourceCandidate({ completeness, stationCatalogPackPath, now = new Date(), repositoryRoot = repoRoot }) {
+  const catalog = completenessCatalogSnapshots.get(completeness) ?? snapshotStationCatalog(stationCatalogPackPath);
+  const candidate = buildItxSourceCandidatePayload({ completeness, now });
+  candidate.stationCatalogPackIdentity = catalog.identity;
+  validateSourceCandidateSchema(candidate);
+  candidate.evidenceHash = sha256(JSON.stringify(candidate));
+  return candidate;
+}
+
+async function buildLegacyItxSourceCandidate({ completeness, canonicalPackIdentity, now = new Date(), repositoryRoot = repoRoot }) {
+  const candidate = buildItxSourceCandidatePayload({ completeness, now });
+  candidate.canonicalPackIdentity = canonicalPackIdentity ?? await readCanonicalPackIdentity(CANONICAL_PACK_PATH, repositoryRoot);
+  validateSourceCandidateSchema(candidate, "legacy");
+  candidate.evidenceHash = sha256(JSON.stringify(candidate));
+  return candidate;
+}
+
+function buildItxSourceCandidatePayload({ completeness, now }) {
   if (completeness?.validationStatus !== "SUPPORTED" || completeness?.validationMode !== "ADMISSION") {
     throw new Error("ITX source candidate requires SUPPORTED admission completeness");
   }
@@ -316,7 +356,7 @@ export async function buildItxSourceCandidate({ completeness, packPath, now = ne
       code: "KORAIL_PLAN_NOT_AVAILABLE", dayCd, trainNumber,
     }))
   ));
-  const candidate = {
+  return {
     schemaVersion: 1,
     artifactKind: "itx-cheongchun-source-timetable",
     artifactId: completeness.sourceTimetableArtifact.artifactId,
@@ -327,7 +367,6 @@ export async function buildItxSourceCandidate({ completeness, packPath, now = ne
     validationStatus: "SUPPORTED",
     promotionStatus: completeness.sourceTimetableArtifact.status,
     completenessEvidenceSha256: sha256(canonicalJsonBytes(completeness)),
-    canonicalPackIdentity: await readCanonicalPackIdentity(packPath, repositoryRoot),
     selectedServiceDates: completeness.selectedServiceDates,
     sourceLineage: serviceDays.map((day) => ({
       dayCd: day.dayCd,
@@ -346,12 +385,14 @@ export async function buildItxSourceCandidate({ completeness, packPath, now = ne
     snapshotDiff: completeness.snapshotDiff,
     credentialRedacted: true,
   };
-  validateSourceCandidateSchema(candidate);
-  candidate.evidenceHash = sha256(JSON.stringify(candidate));
-  return candidate;
 }
 
 export async function promoteItxSourceCandidate(options = {}) {
+  let preflightCandidate;
+  try { preflightCandidate = JSON.parse(await readFile(options.candidatePath)); } catch { /* locked path reports malformed input */ }
+  if (isPlainObject(preflightCandidate) && Object.hasOwn(preflightCandidate, "stationCatalogPackIdentity")) {
+    throw new Error("STATION_CATALOG_PACK_PROMOTION_UNSUPPORTED");
+  }
   const repositoryRoot = options.repositoryRoot ?? repoRoot;
   const coverageContractPath = validateCoverageContractPath(options.coverageContractPath, repositoryRoot);
   const lockPath = `${coverageContractPath}.promotion.lock`;
@@ -385,7 +426,7 @@ async function promoteItxSourceCandidateLocked({
   const candidateBytes = await readFile(candidatePath);
   const candidateSha256 = sha256(candidateBytes);
   const candidate = JSON.parse(candidateBytes);
-  validateSourceCandidateSchema(candidate);
+  validateSourceCandidateSchema(candidate, "legacy");
   const { evidenceHash, ...candidateWithoutEvidenceHash } = candidate;
   if (evidenceHash !== sha256(JSON.stringify(candidateWithoutEvidenceHash))
     || candidateBytes.toString("utf8") !== `${JSON.stringify(candidate, null, 2)}\n`) {
@@ -394,7 +435,7 @@ async function promoteItxSourceCandidateLocked({
   validateSourceFreshness(candidate, candidate.selectedServiceDates, now);
   validateItxServiceDates(candidate.selectedServiceDates, { now });
   await validateCanonicalPackIdentity(candidate.canonicalPackIdentity, repositoryRoot);
-  validateCanonicalCorridorAuthority(candidate);
+  validateCanonicalCorridorAuthority(candidate, repositoryRoot);
   const candidateSets = validateSourceSnapshotSets(candidate);
   const contract = validateCoverageContractAuthority(JSON.parse(await readFile(coverageContractPath, "utf8")));
   const previousSource = await loadAdmittedSourceReference(contract, repositoryRoot);
@@ -517,9 +558,9 @@ async function loadCompletenessEvidence(completenessPath, candidate, repositoryR
   }
   let expectedCandidate;
   try {
-    expectedCandidate = await buildItxSourceCandidate({
+    expectedCandidate = await buildLegacyItxSourceCandidate({
       completeness,
-      packPath: candidate.canonicalPackIdentity.path,
+      canonicalPackIdentity: candidate.canonicalPackIdentity,
       now,
       repositoryRoot,
     });
@@ -569,7 +610,7 @@ export function validateSourceFreshness(source, selectedServiceDates, now = null
   if (now && now.getTime() >= Date.parse(value)) throw new Error("SOURCE_SNAPSHOT_EXPIRED");
 }
 
-export function validateSourceCandidateSchema(candidate) {
+export function validateSourceCandidateSchema(candidate, identityMode = "new") {
   const dayCodes = ["8", "7", "9"];
   const selectedDayCodes = Object.keys(candidate?.selectedServiceDates ?? {}).sort(naturalCompare);
   const lineage = candidate?.sourceLineage;
@@ -579,7 +620,7 @@ export function validateSourceCandidateSchema(candidate) {
   } catch {
     serviceDatesValid = false;
   }
-  if (!hasClosedCandidateShape(candidate)
+  if (!hasClosedCandidateShape(candidate, identityMode)
     || !sourceWarningsMatchTrainSets(candidate)
     || candidate?.artifactKind !== "itx-cheongchun-source-timetable" || candidate.schemaVersion !== 1
     || !/^itx-cheongchun-source-timetable-\d{17}$/.test(candidate.artifactId ?? "")
@@ -603,12 +644,12 @@ export function validateSourceCandidateSchema(candidate) {
   }
 }
 
-function hasClosedCandidateShape(candidate) {
+function hasClosedCandidateShape(candidate, identityMode = "new") {
   const allowed = (value, keys) => isPlainObject(value)
     && Object.keys(value).every((key) => keys.includes(key));
   const topLevel = [
     "schemaVersion", "artifactKind", "artifactId", "serviceId", "observedAt", "freshUntil",
-    "policyVersion", "validationStatus", "promotionStatus", "completenessEvidenceSha256", "canonicalPackIdentity",
+    "policyVersion", "validationStatus", "promotionStatus", "completenessEvidenceSha256", identityMode === "legacy" ? "canonicalPackIdentity" : "stationCatalogPackIdentity",
     "selectedServiceDates", "sourceLineage", "stationRosters", "stationSequences", "transitTrips",
     "transitStopTimes", "warnings", "normalizedSnapshotSets", "snapshotDiff", "credentialRedacted",
     "evidenceHash",
@@ -628,8 +669,16 @@ function hasClosedCandidateShape(candidate) {
   const stopTimeKeys = ["tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds"];
   const summaryKeys = ["count", "added", "removed", "sha256"];
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
-  if (!allowed(candidate, topLevel)
-    || !allowed(candidate?.canonicalPackIdentity, ["path", "sha256"])
+  const identityValid = identityMode === "legacy"
+    ? allowed(candidate?.canonicalPackIdentity, ["path", "sha256"])
+      && candidate.canonicalPackIdentity.path === CANONICAL_PACK_PATH
+      && /^[a-f0-9]{64}$/.test(candidate.canonicalPackIdentity.sha256 ?? "")
+    : allowed(candidate?.stationCatalogPackIdentity, ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"])
+      && candidate.stationCatalogPackIdentity.artifactKind === "station-catalog-pack"
+      && candidate.stationCatalogPackIdentity.manifestVersion === 1
+      && ["stationSetSha256", "payloadSha256", "manifestSha256"].every((key) => /^[a-f0-9]{64}$/.test(candidate.stationCatalogPackIdentity[key] ?? ""))
+      && typeof candidate.stationCatalogPackIdentity.catalogPackId === "string" && candidate.stationCatalogPackIdentity.catalogPackId.trim() === candidate.stationCatalogPackIdentity.catalogPackId && candidate.stationCatalogPackIdentity.catalogPackId !== "";
+  if (!allowed(candidate, topLevel) || !identityValid
     || !allowed(candidate?.selectedServiceDates, ["7", "8", "9"])
     || !Array.isArray(candidate?.sourceLineage)
     || candidate.sourceLineage.some((row) => !allowed(row, ["dayCd", "rosterEvidenceHash", "timetableEvidenceHash"]))
@@ -694,8 +743,8 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-async function readCanonicalPackIdentity(packPath, repositoryRoot) {
-  const absolutePath = path.resolve(repositoryRoot, packPath);
+async function readCanonicalPackIdentity(canonicalPackPath, repositoryRoot) {
+  const absolutePath = path.resolve(repositoryRoot, canonicalPackPath);
   if (absolutePath !== path.resolve(repositoryRoot, CANONICAL_PACK_PATH)) {
     throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
   }
@@ -708,6 +757,94 @@ async function readCanonicalPackIdentity(packPath, repositoryRoot) {
   return identity;
 }
 
+function snapshotStationCatalog(stationCatalogPackPath) {
+  const canonical = readCanonicalLine(stationCatalogPackPath);
+  canonical.close();
+  const identity = freezePlain(canonical.identity);
+  return freezePlain({
+    canonical: {
+      stationLookups: [...canonical.byName.entries()].map(([name, stations]) => ({ name, stations })),
+      rosterStations: canonical.rosterStations,
+      identity,
+    },
+    identity,
+  });
+}
+
+function openStationCatalogPack(stationCatalogPackPath) {
+  let tempDir = null;
+  let db = null;
+  try {
+    if (process.version !== "v24.19.0" || process.versions.sqlite !== "3.53.3") throw new Error();
+    requiredString(stationCatalogPackPath, "stationCatalogPackPath");
+    const root = path.resolve(stationCatalogPackPath);
+    const rootStat = lstatSync(root);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error();
+    const rootReal = realpathSync(root);
+    const entries = readdirSync(root, { withFileTypes: true });
+    if (entries.length !== 2 || !entries.some(({ name }) => name === "manifest.json") || !entries.some(({ name }) => name === "payload")) throw new Error();
+    const payloadDir = path.join(root, "payload");
+    const manifestStat = lstatSync(path.join(root, "manifest.json"));
+    const payloadStat = lstatSync(payloadDir);
+    if (!manifestStat.isFile() || manifestStat.isSymbolicLink() || !payloadStat.isDirectory() || payloadStat.isSymbolicLink()) throw new Error();
+    if (realpathSync(payloadDir) !== path.join(rootReal, "payload")) throw new Error();
+    const payloadEntries = readdirSync(payloadDir, { withFileTypes: true });
+    if (payloadEntries.length !== 1 || payloadEntries[0].name !== "catalog.sqlite") throw new Error();
+    const sqlitePath = path.join(payloadDir, "catalog.sqlite");
+    const sqliteStat = lstatSync(sqlitePath);
+    if (!sqliteStat.isFile() || sqliteStat.isSymbolicLink() || realpathSync(sqlitePath) !== path.join(rootReal, "payload", "catalog.sqlite")) throw new Error();
+    const manifestBytes = readFileSync(path.join(root, "manifest.json"));
+    const manifest = JSON.parse(manifestBytes);
+    if (manifestBytes.toString("utf8") !== canonicalJson(manifest)) throw new Error();
+    validateArtifactComponentManifest(manifest);
+    if (manifest.artifactKind !== "station-catalog-pack") throw new Error();
+    const payloadBytes = readFileSync(sqlitePath);
+    const inventory = [{ path: "payload/catalog.sqlite", sizeBytes: payloadBytes.length, sha256: sha256(payloadBytes) }];
+    if (sha256(Buffer.from(canonicalJson(inventory))) !== manifest.payloadSha256) throw new Error();
+    tempDir = mkdtempSync(path.join(tmpdir(), "korail-itx-station-catalog-"));
+    const tempSqlitePath = path.join(tempDir, "catalog.sqlite");
+    writeFileSync(tempSqlitePath, payloadBytes);
+    db = new DatabaseSync(tempSqlitePath, { readOnly: true });
+    try {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name COLLATE BINARY").all().map(({ name }) => name);
+      if (JSON.stringify(tables) !== JSON.stringify(["lines", "station_aliases", "station_lines", "station_search_index", "stations"])
+        || JSON.stringify(db.prepare("SELECT name, sql FROM sqlite_schema WHERE type='table' ORDER BY name COLLATE BINARY").all().map(({ name, sql }) => [name, sql])) !== JSON.stringify(Object.entries(TABLE_DDL).sort(([left], [right]) => left.localeCompare(right)))
+        || Object.entries(TABLE_XINFO).some(([table, expected]) => JSON.stringify(db.prepare(`PRAGMA table_xinfo(${table})`).all().map(({ name, type, notnull, dflt_value, pk }) => [name, type, notnull, dflt_value, pk])) !== JSON.stringify(expected))
+        || db.prepare("PRAGMA integrity_check").get().integrity_check !== "ok"
+        || db.prepare("PRAGMA foreign_key_check").all().length
+        || payloadBytes.readUInt32BE(96) !== 3053003
+        || db.prepare("PRAGMA page_size").get().page_size !== 4096
+        || db.prepare("PRAGMA auto_vacuum").get().auto_vacuum !== 0
+        || db.prepare("PRAGMA encoding").get().encoding !== "UTF-8"
+        || db.prepare("PRAGMA user_version").get().user_version !== 18
+        || !foreignKeyMatricesMatch(db)) throw new Error();
+      const stationIds = db.prepare("SELECT id FROM stations ORDER BY id COLLATE BINARY").all().map(({ id }) => id);
+      if (sha256(Buffer.from(canonicalJson(stationIds))) !== manifest.stationSetSha256) throw new Error();
+      let closed = false;
+      return { db, identity: { artifactKind: "station-catalog-pack", manifestVersion: 1, catalogPackId: manifest.catalogPackId, stationSetSha256: manifest.stationSetSha256, payloadSha256: manifest.payloadSha256, manifestSha256: sha256(manifestBytes) }, close() { if (closed) return; closed = true; try { db.close(); } finally { rmSync(tempDir, { recursive: true, force: true }); } } };
+    } catch (error) { throw error; }
+  } catch (error) {
+    try { db?.close(); } finally { if (tempDir) rmSync(tempDir, { recursive: true, force: true }); }
+    throw new Error("STATION_CATALOG_PACK_INVALID", { cause: error });
+  }
+}
+
+function foreignKeyMatricesMatch(db) {
+  const expected = {
+    stations: [], lines: [],
+    station_aliases: [[0, 0, "stations", "station_id", "id", "NO ACTION", "NO ACTION", "NONE"]],
+    station_lines: [[0, 0, "lines", "line_id", "id", "NO ACTION", "NO ACTION", "NONE"], [1, 0, "stations", "station_id", "id", "NO ACTION", "NO ACTION", "NONE"]],
+    station_search_index: [[0, 0, "stations", "station_id", "id", "NO ACTION", "NO ACTION", "NONE"]],
+  };
+  return Object.entries(expected).every(([table, matrix]) => JSON.stringify(db.prepare(`PRAGMA foreign_key_list(${table})`).all().map(({ id, seq, table: target, from, to, on_update, on_delete, match }) => [id, seq, target, from, to, on_update, on_delete, match])) === JSON.stringify(matrix));
+}
+
+function freezePlain(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map(freezePlain));
+  if (value !== null && typeof value === "object") return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, child]) => [key, freezePlain(child)])));
+  return value;
+}
+
 async function validateCanonicalPackIdentity(identity, repositoryRoot) {
   const relativePath = identity?.path;
   if (relativePath !== CANONICAL_PACK_PATH || path.isAbsolute(relativePath)
@@ -715,13 +852,12 @@ async function validateCanonicalPackIdentity(identity, repositoryRoot) {
     || !/^[a-f0-9]{64}$/.test(identity?.sha256 ?? "")) {
     throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
   }
-  const packPath = path.join(repositoryRoot, ...relativePath.split("/"));
+  const canonicalPackPath = path.join(repositoryRoot, ...relativePath.split("/"));
   try {
-    const [realRoot, realParent] = await Promise.all([realpath(repositoryRoot), realpath(path.dirname(packPath))]);
-    const stat = await lstat(packPath);
+    const [realRoot, realParent] = await Promise.all([realpath(repositoryRoot), realpath(path.dirname(canonicalPackPath))]);
+    const stat = await lstat(canonicalPackPath);
     if (!realParent.startsWith(`${realRoot}${path.sep}`) || stat.isSymbolicLink() || !stat.isFile()
-      || sha256(await readFile(packPath)) !== identity.sha256
-      || sha256(await readFile(path.join(repoRoot, CANONICAL_PACK_PATH))) !== identity.sha256) {
+      || sha256(await readFile(canonicalPackPath)) !== identity.sha256) {
       throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
     }
   } catch (error) {
@@ -765,10 +901,10 @@ async function maybeCorrectAdmissionPin({ contract, candidate, promotionMode, re
 
 async function readShippedPackIdentity(repositoryRoot) {
   try {
-    const packPath = path.join(repositoryRoot, ...CANONICAL_PACK_PATH.split("/"));
-    const stat = await lstat(packPath);
+    const canonicalPackPath = path.join(repositoryRoot, ...CANONICAL_PACK_PATH.split("/"));
+    const stat = await lstat(canonicalPackPath);
     if (stat.isSymbolicLink() || !stat.isFile()) return null;
-    const gzipBytes = await readFile(packPath);
+    const gzipBytes = await readFile(canonicalPackPath);
     return {
       gzipSha256: sha256(gzipBytes),
       sqliteSha256: sha256(gunzipSync(gzipBytes)),
@@ -827,8 +963,8 @@ function validateMaterializedProjection(source, dayCd, errorCode) {
   return { sequences, trips, stopTimes: source.transitStopTimes };
 }
 
-function validateCanonicalCorridorAuthority(source) {
-  const canonical = readCanonicalLine(CANONICAL_PACK_PATH);
+function validateCanonicalCorridorAuthority(source, repositoryRoot) {
+  const canonical = readLegacyCanonicalLine(path.join(repositoryRoot, CANONICAL_PACK_PATH));
   try {
     const invalid = () => { throw new Error("CANONICAL_CORRIDOR_AUTHORITY_INVALID"); };
     const stationsById = new Map(canonical.rosterStations.map((station) => (
@@ -1049,9 +1185,9 @@ async function loadAdmittedSourceReference(contract, repositoryRoot) {
     || bytes.toString("utf8") !== `${JSON.stringify(source, null, 2)}\n`) {
     throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
   }
-  validateSourceCandidateSchema(source);
+  validateSourceCandidateSchema(source, "legacy");
   validateSourceFreshness(source, source.selectedServiceDates);
-  validateCanonicalCorridorAuthority(source);
+  validateCanonicalCorridorAuthority(source, repositoryRoot);
   validateSourceSnapshotSets(source);
   if (source.completenessEvidenceSha256 !== undefined) {
     const expectedEvidencePath = `tools/datapack/sources/${source.artifactId}-completeness-evidence.json`;
@@ -1166,13 +1302,17 @@ export async function collectKorailItxCheongchunPlan({
   serviceKey,
   runDate,
   kricServiceDayCode,
+  stationCatalogPackPath,
   trainNumberEvidence,
   fetchImpl = fetch,
   now = new Date(),
+  stationCatalogSnapshot = null,
 } = {}) {
   const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
   if (!/^\d{8}$/.test(runDate ?? "")) throw new Error("runDate must be YYYYMMDD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
+  requiredString(stationCatalogPackPath, "stationCatalogPackPath");
+  stationCatalogSnapshot ?? snapshotStationCatalog(stationCatalogPackPath);
   if (trainNumberEvidence?.schemaVersion !== 2
     || trainNumberEvidence?.artifactKind !== "tago-itx-cheongchun-roster-evidence"
     || trainNumberEvidence.serviceDate !== runDate
@@ -1258,16 +1398,18 @@ export async function collectKorailItxCheongchunTimetable({
   serviceKey,
   runDate,
   kricServiceDayCode,
-  packPath,
+  stationCatalogPackPath,
   trainNumberEvidence,
   fetchImpl = fetch,
   now = new Date(),
+  stationCatalogSnapshot = null,
 } = {}) {
   const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
   if (!/^\d{8}$/.test(runDate ?? "")) throw new Error("runDate must be YYYYMMDD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
-  requiredString(packPath, "packPath");
+  requiredString(stationCatalogPackPath, "stationCatalogPackPath");
   validateTrainNumberEvidence(trainNumberEvidence, kricServiceDayCode);
+  const catalog = stationCatalogSnapshot ?? snapshotStationCatalog(stationCatalogPackPath);
 
   const codes = await fetchAll({
     endpoint: `${API_ORIGIN}/B551457/run/v2/codes2`,
@@ -1319,7 +1461,8 @@ export async function collectKorailItxCheongchunTimetable({
     infoRows: info.rows,
     runDate,
     kricServiceDayCode,
-    packPath,
+    stationCatalogPackPath,
+    stationCatalogSnapshot: catalog,
     trainNumbers: trainNumberEvidence.trainNumbers,
     routeCode: routeCode.code,
     passengerStopCodes,
@@ -1433,20 +1576,22 @@ export function materializeKorailItxRows({
   infoRows,
   runDate,
   kricServiceDayCode,
-  packPath,
+  stationCatalogPackPath,
   trainNumbers,
   routeCode,
   passengerStopCodes,
+  stationCatalogSnapshot = null,
 }) {
   const analyzed = analyzeKorailItxRows({
     plans,
     infoRows,
     runDate,
     kricServiceDayCode,
-    packPath,
+    stationCatalogPackPath,
     trainNumbers,
     routeCode,
     passengerStopCodes,
+    stationCatalogSnapshot,
   });
   if (analyzed.missingTimestampStopCount > 0) throw new Error("Korail ITX planned timestamp missing");
   return materializeAnalyzedKorailItxRows(analyzed, kricServiceDayCode, runDate);
@@ -1516,10 +1661,11 @@ export function analyzeKorailItxRows({
   plans,
   infoRows,
   runDate,
-  packPath,
+  stationCatalogPackPath,
   trainNumbers,
   routeCode,
   passengerStopCodes,
+  stationCatalogSnapshot = null,
 }) {
   if (!Array.isArray(plans) || plans.length === 0) throw new Error("Korail run plan returned zero rows");
   if (!Array.isArray(infoRows) || infoRows.length === 0) throw new Error("Korail ITX run info returned zero rows");
@@ -1529,7 +1675,7 @@ export function analyzeKorailItxRows({
   if (!(passengerStopCodes instanceof Map) || passengerStopCodes.size === 0) {
     throw new Error("Korail passenger stop code mappings are required");
   }
-  const canonical = readCanonicalLine(packPath);
+  const canonical = stationCatalogSnapshot?.canonical ?? readCanonicalLine(stationCatalogPackPath);
   try {
     const grouped = groupKorailInfoRows({ infoRows, runDate, routeCode, allowed, planByTrain });
     const sequenceAnalysis = analyzeStationSequences({ grouped, canonical, passengerStopCodes, planByTrain, runDate });
@@ -1543,9 +1689,7 @@ export function analyzeKorailItxRows({
       requiredTimestampFieldCount: sequenceAnalysis.requiredTimestampFieldCount,
       populatedTimestampFieldCount: sequenceAnalysis.populatedTimestampFieldCount,
     };
-  } finally {
-    canonical.close();
-  }
+  } finally { if (!stationCatalogSnapshot) canonical.close(); }
 }
 
 function groupKorailInfoRows({ infoRows, runDate, routeCode, allowed, planByTrain }) {
@@ -1624,7 +1768,7 @@ function selectPassengerStops({ ordered, canonical, passengerStopCodes, stationM
     if (normalize(expectedStopName) !== normalize(row.stop_se_nm)) {
       throw new Error(`Korail ITX passenger stop name mismatch: ${safeToken(trainNumber)}/${safeLabel(row.stn_nm)}`);
     }
-    const matches = canonical.byName.get(normalizeStationName(row.stn_nm)) ?? [];
+    const matches = canonicalStationMatches(canonical, normalizeStationName(row.stn_nm));
     const station = matches.length === 1 ? matches[0] : null;
     return [{ row, sequence, index, station, stopCode }];
   });
@@ -1974,8 +2118,83 @@ function isoServiceSeconds(value, runDate, label) {
   return serviceDateOffsetSeconds(timestampDate, runDate, label) + hours * 3600 + minutes * 60 + seconds;
 }
 
-function readCanonicalLine(packPath) {
-  const opened = openPack(packPath, "korail-itx-canonical-");
+function readCanonicalLine(stationCatalogPackPath) {
+  const opened = openStationCatalogPack(stationCatalogPackPath);
+  try {
+    const catalogRows = opened.db.prepare(`
+      SELECT stations.id AS canonicalStationId, stations.name_ko AS nameKo,
+        station_lines.line_id AS lineId, station_lines.line_sequence AS rawLineSequence
+      FROM station_lines
+      JOIN stations ON stations.id = station_lines.station_id
+      WHERE (station_lines.station_id, station_lines.line_id) IN (${ITX_CORRIDOR_MATRIX.map(() => "(?, ?)").join(", ")})
+    `).all(...ITX_CORRIDOR_MATRIX.flatMap(({ canonicalStationId, lineId }) => [canonicalStationId, lineId]));
+    const corridorRows = ITX_CORRIDOR_MATRIX.map((expected) => {
+      const row = catalogRows.find(({ canonicalStationId, lineId }) => canonicalStationId === expected.canonicalStationId && lineId === expected.lineId);
+      return row ? { ...row, corridorSequence: expected.corridorSequence } : null;
+    });
+    if (catalogRows.length !== ITX_CORRIDOR_MATRIX.length
+      || JSON.stringify(corridorRows) !== JSON.stringify(ITX_CORRIDOR_MATRIX)) throw new Error("canonical ITX corridor differs from artifact contract");
+    const lineRows = corridorRows.slice(3).map(({ canonicalStationId: id, nameKo: name_ko, rawLineSequence: line_sequence }) => ({ id, name_ko, line_sequence }));
+    if (lineRows.length === 0) throw new Error(`canonical pack has no line: ${LINE_ID}`);
+    const lineSequenceByStation = new Map(lineRows.map((row) => [row.id, row.line_sequence]));
+    const rows = opened.db.prepare(`
+      SELECT stations.id, stations.name_ko, station_lines.line_id, station_lines.line_sequence
+      FROM stations
+      JOIN station_lines ON station_lines.station_id = stations.id
+      WHERE stations.region = '수도권'
+      ORDER BY stations.id, station_lines.line_id
+    `).all();
+    const stationsById = new Map();
+    for (const row of rows) {
+      const station = stationsById.get(row.id) ?? { stationId: row.id, nameKo: row.name_ko, lineMemberships: [] };
+      station.lineMemberships.push({ lineId: row.line_id, lineSequence: row.line_sequence });
+      stationsById.set(row.id, station);
+    }
+    const byName = new Map();
+    for (const station of stationsById.values()) {
+      const name = normalizeStationName(station.nameKo);
+      const matches = byName.get(name) ?? [];
+      matches.push({
+        stationId: station.stationId,
+        lineSequence: lineSequenceByStation.get(station.stationId) ?? null,
+        lineMemberships: station.lineMemberships,
+      });
+      byName.set(name, matches);
+    }
+    const rosterStations = [
+      ...CAPITAL_APPROACH_STATIONS,
+      ...lineRows.map((row) => ({
+        canonicalStationId: row.id,
+        nameKo: row.name_ko,
+        corridorSequence: Number(row.line_sequence) + 3,
+        lineId: LINE_ID,
+      })),
+    ];
+    if (JSON.stringify(rosterStations) !== JSON.stringify(ITX_CORRIDOR)) throw new Error("canonical ITX corridor differs from artifact contract");
+    return {
+      byName,
+      rosterStations,
+      identity: opened.identity,
+      close() {
+        opened.close();
+      },
+    };
+  } catch (error) {
+    opened.close();
+    throw error;
+  }
+}
+
+function canonicalStationMatches(canonical, name) {
+  if (canonical.byName instanceof Map) return canonical.byName.get(name) ?? [];
+  return canonical.stationLookups.find(({ name: lookupName }) => lookupName === name)?.stations ?? [];
+}
+
+function readLegacyCanonicalLine(canonicalPackPath) {
+  const dir = mkdtempSync(path.join(tmpdir(), "korail-itx-canonical-"));
+  const sqlitePath = path.join(dir, "pack.sqlite");
+  writeFileSync(sqlitePath, gunzipSync(readFileSync(canonicalPackPath)));
+  const opened = { db: new DatabaseSync(sqlitePath), dir };
   try {
     const lineRows = opened.db.prepare(`
       SELECT stations.id, stations.name_ko, station_lines.line_sequence
@@ -2027,12 +2246,12 @@ function readCanonicalLine(packPath) {
       rosterStations,
       close() {
         opened.db.close();
-        cleanupPackDir(opened.dir);
+        rmSync(opened.dir, { recursive: true, force: true });
       },
     };
   } catch (error) {
     opened.db.close();
-    cleanupPackDir(opened.dir);
+    rmSync(opened.dir, { recursive: true, force: true });
     throw error;
   }
 }
@@ -2268,6 +2487,79 @@ function parseArgs(argv) {
   return result;
 }
 
+async function prepareOutputPublication({ output, completenessOutput = null, stationCatalogPackPath }) {
+  const targets = [output, ...(completenessOutput ? [completenessOutput] : [])];
+  if (targets.some((target) => !path.isAbsolute(target))) throw new Error("OUTPUT_PATH_INVALID");
+  try {
+    const parents = await Promise.all(targets.map(async (target) => {
+      const parent = path.dirname(target);
+      const stat = await lstat(parent);
+      const real = await realpath(parent);
+      if (!stat.isDirectory() || stat.isSymbolicLink() || real !== parent) throw new Error();
+      return real;
+    }));
+    if (new Set(parents).size !== 1) throw new Error();
+    await Promise.all(targets.map(async (target) => {
+      try { await lstat(target); throw new Error(); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    }));
+    const catalogRoot = await realpath(stationCatalogPackPath);
+    if (targets.some((target) => target === catalogRoot || target.startsWith(`${catalogRoot}${path.sep}`))) throw new Error();
+    return { parent: parents[0] };
+  } catch (error) {
+    if (error instanceof Error && error.message === "OUTPUT_PATH_INVALID") throw error;
+    throw new Error("OUTPUT_PATH_INVALID", { cause: error });
+  }
+}
+
+function hasSameFileIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino; }
+
+async function removeOwnedStage(stage, stageIdentity) {
+  try {
+    if (hasSameFileIdentity(await lstat(stage), stageIdentity)) await rm(stage, { recursive: true, force: true });
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
+async function removeOwnedCompleteness(completenessOutput, completenessIdentity) {
+  try {
+    if (hasSameFileIdentity(await lstat(completenessOutput), completenessIdentity)) await unlink(completenessOutput);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
+async function publishOutputs({ publication, output, outputBytes, completenessOutput = null, completenessBytes = null, onPublicationEvent = null }) {
+  const stage = await mkdtemp(path.join(publication.parent, ".itx-cheongchun-"));
+  const stageIdentity = await lstat(stage);
+  const candidateStage = path.join(stage, "candidate.json");
+  const completenessStage = path.join(stage, "completeness.json");
+  let completenessIdentity = null;
+  try {
+    await onPublicationEvent?.({ event: "stage-created", stage });
+    if (!hasSameFileIdentity(await lstat(stage), stageIdentity)) throw new Error("OUTPUT_PUBLICATION_STAGE_REPLACED");
+    if (completenessOutput) await writeFile(completenessStage, completenessBytes, { flag: "wx", mode: 0o600 });
+    await writeFile(candidateStage, outputBytes, { flag: "wx", mode: 0o600 });
+    const candidateIdentity = await lstat(candidateStage);
+    if (completenessOutput) {
+      completenessIdentity = await lstat(completenessStage);
+      await link(completenessStage, completenessOutput);
+      await onPublicationEvent?.({ event: "completeness-published", stage });
+    }
+    if (!hasSameFileIdentity(await lstat(candidateStage), candidateIdentity)) {
+      throw new Error("OUTPUT_PUBLICATION_STAGE_REPLACED");
+    }
+    await link(candidateStage, output);
+  } catch (error) {
+    if (completenessOutput && completenessIdentity) {
+      await removeOwnedCompleteness(completenessOutput, completenessIdentity);
+    }
+    throw error;
+  } finally {
+    await removeOwnedStage(stage, stageIdentity);
+  }
+}
+
 export async function runKorailItxCompletenessCli({
   argv = process.argv.slice(2),
   env = process.env,
@@ -2275,6 +2567,7 @@ export async function runKorailItxCompletenessCli({
   collectImpl = collectKorailItxCheongchunCompleteness,
   promoteImpl = promoteItxSourceCandidate,
   repositoryRoot = repoRoot,
+  onPublicationEvent = null,
 } = {}) {
   const args = parseArgs(argv);
   if (args["promote-candidate"]) {
@@ -2302,7 +2595,15 @@ export async function runKorailItxCompletenessCli({
     && path.resolve(completenessOutputArg) === path.resolve(output)) {
     throw new Error("candidate and completeness output paths must differ");
   }
-  const packPath = requiredString(args["canonical-pack"], "--canonical-pack");
+  if (completenessOutputArg !== undefined && (!path.isAbsolute(completenessOutputArg) || typeof completenessOutputArg !== "string")) {
+    throw new Error("OUTPUT_PATH_INVALID");
+  }
+  if (Object.hasOwn(args, "canonical-pack")) throw new Error("--canonical-pack is not supported");
+  const stationCatalogPackPath = requiredString(args["station-catalog-pack"], "--station-catalog-pack");
+  const stationCatalogSnapshot = snapshotStationCatalog(stationCatalogPackPath);
+  const publication = await prepareOutputPublication({
+    output, completenessOutput: completenessOutputArg ?? null, stationCatalogPackPath,
+  });
   const serviceKey = requiredString(env.DATA_GO_KR_SERVICE_KEY, "DATA_GO_KR_SERVICE_KEY");
   const replay = args.replay === true;
   if (Object.hasOwn(args, "previous-admitted")) throw new Error("--previous-admitted is not supported");
@@ -2321,8 +2622,9 @@ export async function runKorailItxCompletenessCli({
   let artifact;
   try {
     artifact = await collectImpl({
-      serviceKey, serviceDates, packPath, now, replay, previousAdmittedArtifact,
+      serviceKey, serviceDates, stationCatalogPackPath, stationCatalogSnapshot, now, replay, previousAdmittedArtifact,
     });
+    completenessCatalogSnapshots.set(artifact, stationCatalogSnapshot);
   } catch (error) {
     artifact = {
       schemaVersion: 2,
@@ -2346,7 +2648,7 @@ export async function runKorailItxCompletenessCli({
     artifact.evidenceHash = sha256(JSON.stringify(artifact));
   }
   const candidate = artifact.validationStatus === "SUPPORTED" && !replay
-    ? await buildItxSourceCandidate({ completeness: artifact, packPath, now, repositoryRoot })
+    ? await buildItxSourceCandidate({ completeness: artifact, stationCatalogPackPath, now, repositoryRoot })
     : null;
   let completenessEvidenceSha256 = null;
   if (candidate) {
@@ -2357,11 +2659,14 @@ export async function runKorailItxCompletenessCli({
     if (completenessEvidenceSha256 !== candidate.completenessEvidenceSha256) {
       throw new Error("SOURCE_COMPLETENESS_EVIDENCE_MISMATCH");
     }
-    await writeFile(completenessOutput, completenessBytes, { flag: "wx", mode: 0o600 });
   }
   const outputValue = candidate ?? artifact;
   const outputBytes = canonicalJsonBytes(outputValue);
-  await writeFile(output, outputBytes, { flag: "wx", mode: 0o600 });
+  await publishOutputs({
+    publication, output, outputBytes,
+    ...(candidate ? { completenessOutput: completenessOutputArg, completenessBytes: canonicalJsonBytes(artifact) } : {}),
+    onPublicationEvent,
+  });
   return {
     artifact,
     candidate,
