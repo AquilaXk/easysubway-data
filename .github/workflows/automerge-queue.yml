@@ -6,10 +6,9 @@ name: Automerge Queue
 #
 # 인증은 github.token 하나뿐이다. GITHUB_TOKEN이 만든 이벤트는 새 workflow run을
 # 만들지 않고 예외는 workflow_dispatch와 repository_dispatch뿐이므로, 이 코디네이터가
-# 끊게 되는 두 체인을 명시 dispatch로 잇는다.
-#   - main 병합 후 data pack producer: head_sha 기준으로 실행 유무를 판정해 dispatch
-#   - update-branch 후 PR CI: head_ref로 ci.yml dispatch
-# 그 사이 트리거 공백은 schedule cron이 메운다.
+# 끊게 되는 main 병합 후 data pack producer 체인만 head_sha 기준으로 명시 dispatch한다.
+# PR head는 coordinator가 만들지 않는다. BEHIND는 owning SSD worktree가 rebase/push하고,
+# native CI 완료의 workflow_run이 큐를 다시 깨운다. schedule은 복구 안전망일 뿐이다.
 #
 # ci.yml의 main push 실행은 되살리지 않는다. 형제 저장소 실측(2026-08-02): backend·mobile
 # coordinator 어느 쪽도 main CI를 dispatch하지 않고, 코디네이터가 병합한 SHA에는 main push
@@ -247,12 +246,12 @@ jobs:
           # 없는 후보는 사유를 남기고 건너뛴다. head 하나만 처리하면 그 한 건이 막혔을 때 뒤의
           # PR이 전부 굶는다. 건너뛰기는 병합을 하지 않는 방향이라 게이트를 약화시키지 않으며,
           # 각 후보는 리뷰 객체·미해결 thread·required context 검증을 그대로 통과해야 한다.
-          # 실제 동작(병합 또는 base 갱신)은 한 실행에 최대 한 건이므로 병합 직렬화는
+          # 실제 동작(병합)은 한 실행에 최대 한 건이므로 병합 직렬화는
           # concurrency group과 함께 그대로 유지된다.
           #
           # 병합할 수 없는 사유를 실행 종료 코드로 표현하지 않는다. exit 1은 큐 전체를 멈춰
           # 뒤의 후보를 굶기고, 그 실패가 이 워크플로의 check로 남아 다음 판정 입력을
-          # 오염시킨다. 대신 사람이 봐야 하는 상태(DIRTY·fork head·미지 enum·required
+          # 오염시킨다. 대신 사람이 봐야 하는 상태(DIRTY·BEHIND·미지 enum·required
           # context 실패)는 ::warning:: annotation으로 run 요약에 남긴다.
           # queue-loop-begin
           # 한 실행에서 평가할 후보 수에는 상한이 필요하다. 상한은 아래 세 기준을 모두
@@ -272,8 +271,7 @@ jobs:
           #    쓰지 않는 이유가 이것이다: 페이지 수에 상한이 없으면 이력이 유난히 긴 후보
           #    하나가 예산 모델을 통째로 넘긴다. 상한을 넘는 후보는 판정을 포기하고 건너뛴다.
           #    required context별 jq는 로컬 계산이라 요청을 쓰지 않는다. 후보 평가 밖의 고정
-          #    비용은 BEHIND 경로가 정한다(update-branch 1 + 반영 확인 12 + ci dispatch 1 +
-          #    여유 1 = 15).
+          #    비용은 병합과 실패 처리의 보수적 여유 15회로 둔다.
           #
           #    이 예산을 "실행 빈도"로 나누지 않는다. 빈도는 강제되지 않는다 — concurrency
           #    그룹은 cancel-in-progress: false라 대기 중인 실행만 접을 뿐 실행이 시작되는
@@ -292,8 +290,7 @@ jobs:
           #    실행당 4회(commits/main + head_sha 실행 목록 + 직전 실행 1건 + compare)이므로
           #    400회면 100회 실행분이고, 그 위에 Data Pack Release 자신의 소비가 얹힌다.
           #  - job timeout. 이 job은 10분(600초)이고 producer 스텝이 최대 90초(반영 확인
-          #    12 * 5초 + API 6회), BEHIND 경로의 bounded wait가 최대 60초(이 경로는 루프를
-          #    끝내므로 실행당 한 번), 러너·스텝 오버헤드가 30초쯤 든다. 남는 420초를 후보당
+          #    12 * 5초 + API 6회), 러너·스텝 오버헤드가 30초쯤 든다. 남는 480초를 후보당
           #    5회 * 1초(비관적 왕복)로 나누면 84건이고, API가 느린 날을 감안해 2배 여유를
           #    두면 42건이다.
           #  - 실측 큐 깊이. 2026-08-02 기준 이 저장소의 열린 PR은 3건이고(전부 dependabot)
@@ -410,7 +407,7 @@ jobs:
           }
           # paginated-read-end
           # fail-closed-pr-begin
-          # merge 또는 update-branch API가 실패하면 다음 트리거에 남겨 두지 않는다. comment
+          # merge API가 실패하면 다음 트리거에 남겨 두지 않는다. comment
           # 자체가 실패해도 라벨 제거는 반드시 시도하고, 어느 쪽이 실패해도 이 job은 실패한다.
           fail_closed_pr() {
             local operation="$1" status="$2"
@@ -440,7 +437,7 @@ jobs:
             fi
             # budget-recheck-end
             info="$(gh pr view "${pr}" --repo "${repo}" \
-              --json baseRefName,headRefName,headRefOid,headRepository,isDraft,labels,mergeStateStatus,state)"
+              --json baseRefName,headRefOid,isDraft,labels,mergeStateStatus,state)"
             if ! jq -e '
               .state == "OPEN" and
               .isDraft == false and
@@ -452,8 +449,6 @@ jobs:
             fi
 
             head="$(jq -r '.headRefOid' <<<"${info}")"
-            head_ref="$(jq -r '.headRefName' <<<"${info}")"
-            head_repo="$(jq -r '.headRepository.nameWithOwner // ""' <<<"${info}")"
             merge_state="$(jq -r '.mergeStateStatus' <<<"${info}")"
 
             reviews="$(read_pages "repos/${repo}/pulls/${pr}/reviews")" || {
@@ -532,7 +527,6 @@ jobs:
             }
             # required-context-loop-begin
             contexts_ok=true
-            contexts_missing=false
             while IFS= read -r required_check; do
               # 아직 끝나지 않은 check는 계약 위반이 아니다. 진행 중(conclusion null)이나
               # 새 head에 아직 안 붙은 상태를 실패로 처리하면 그 신호가 그대로 오해를 만든다.
@@ -577,8 +571,7 @@ jobs:
                   ;;
                 missing)
                   contexts_ok=false
-                  contexts_missing=true
-                  echo "PR #${pr}: required context missing: ${context_name}."
+                  echo "::warning::PR #${pr}: required context missing: ${context_name}; its owning SSD worktree must rebase and push a native PR head when behind, or push a native PR head otherwise."
                   break
                   ;;
                 *)
@@ -591,37 +584,7 @@ jobs:
               esac
             done < <(jq -c '.[]' <<<"${required}")
             if [[ "${contexts_ok}" != true ]]; then
-              # 부재는 대기와 다르다. GITHUB_TOKEN의 update-branch push는 synchronize를
-              # 만들지 못하므로, BEHIND 경로의 bounded wait보다 늦게 base 갱신이 반영되면
-              # 새 head에는 required context가 영영 붙지 않는다. 그 상태의 PR은 더 이상
-              # BEHIND가 아니라 이 게이트에서 걸리므로, 여기서 CI를 쏘지 않으면 아무도
-              # 쏘지 않는다(영구 대기). 대기(pending)는 이미 붙은 check가 끝나기를 기다리는
-              # 상태라 쏘지 않는다.
-              #
-              # BEHIND는 제외한다. 그 경로가 base를 갱신하면서 어차피 새 head에 CI를 쏜다.
-              # fork head에는 base 저장소 CI를 쏘지 않는다. 쏜 CI가 pending check를 만들어
-              # 다음 실행은 위 pending 분기로 떨어지므로 head당 한 번만 쏘게 된다.
-              # 이 dispatch는 병합·base 갱신과 달리 실행을 끝내지 않는다. 병합 직렬화와
-              # 무관하고, 여기서 실행을 끝내면 뒤의 병합 가능한 후보가 다시 굶는다.
-              # missing-context-dispatch-begin
-              behind_missing=false
-              if [[ "${contexts_missing}" == true && "${merge_state}" == "BEHIND" ]]; then
-                # BEHIND는 base 갱신이 먼저다. 아래 BEHIND 분기가 update-branch 후 새 head에
-                # CI를 쏘므로 여기서는 쏘지 않고 그 분기로 내려보낸다. 여기서 건너뛰면
-                # base가 영영 갱신되지 않고, base가 갱신되지 않으면 required context도 영영
-                # 붙지 않는다 — 방금 라벨이 붙어 아직 CI가 없는 behind PR이 그대로 정체한다.
-                behind_missing=true
-              elif [[ "${contexts_missing}" == true && "${head_repo}" == "${repo}" ]]; then
-                if gh workflow run ci.yml --repo "${repo}" --ref "${head_ref}"; then
-                  echo "PR #${pr}: required context missing; CI dispatched."
-                else
-                  # 호출 실패는 다음 트리거가 다시 판정한다. 큐를 세우지 않는다.
-                  echo "::warning::PR #${pr} CI dispatch failed for a missing required context; retrying on the next trigger."
-                fi
-              fi
-              # BEHIND + context 부재만 아래 병합 분기로 내려간다. 나머지는 이 후보를 건너뛴다.
-              [[ "${behind_missing}" == true ]] || continue
-              # missing-context-dispatch-end
+              continue
             fi
             # required-context-loop-end
 
@@ -648,41 +611,8 @@ jobs:
                 fi
                 ;;
               BEHIND)
-                if [[ "${head_repo}" != "${repo}" ]]; then
-                  echo "::warning::PR #${pr} uses a fork head; refusing base-repository CI dispatch."
-                  continue
-                fi
-                if gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
-                  -f expected_head_sha="${head}" >/dev/null; then
-                  :
-                else
-                  update_branch_status=$?
-                  fail_closed_pr "update-branch" "${update_branch_status}" || exit 1
-                fi
-                # ponytail: bounded wait only; the API applies the base merge asynchronously.
-                for _ in {1..12}; do
-                  new_head="$(gh pr view "${pr}" --repo "${repo}" --json headRefOid --jq '.headRefOid')"
-                  [[ "${new_head}" != "${head}" ]] && break
-                  sleep 5
-                done
-                if [[ "${new_head}" == "${head}" ]]; then
-                  # update-branch는 비동기라 bounded wait 안에 head가 안 바뀔 수 있다.
-                  # stale ref로 CI를 쏘지 않고 다음 트리거에서 재시도한다. bare `[[ ]]`로
-                  # 두면 bash 5에서는 아무 메시지 없이 job이 죽고 bash 3.2에서는 그냥
-                  # 통과해버린다.
-                  echo "PR #${pr}: base update has not landed yet; retrying on the next trigger."
-                  exit 0
-                fi
-                # GITHUB_TOKEN의 update-branch push는 synchronize 이벤트로 CI를 만들지
-                # 못한다. 새 head에 required context를 다시 붙이려면 명시 dispatch가 필요하다.
-                if ! gh workflow run ci.yml --repo "${repo}" --ref "${head_ref}"; then
-                  # 병합 호출과 같은 이유로 실행을 죽이지 않는다. base는 이미 갱신됐고
-                  # 다음 트리거가 같은 PR을 다시 판정한다.
-                  echo "::warning::PR #${pr} CI dispatch failed after the base update; retrying on the next trigger."
-                  exit 0
-                fi
-                echo "PR #${pr}: base updated; CI dispatched."
-                exit 0
+                echo "::warning::PR #${pr} is behind main; its owning SSD worktree must rebase and push."
+                continue
                 ;;
               DIRTY)
                 # 충돌은 소유 세션이 rebase 해야 풀린다. GitHub이 PR에 충돌을 직접 표시하지만
