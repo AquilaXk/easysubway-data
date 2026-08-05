@@ -2888,6 +2888,45 @@ test("ITX CLI는 completeness event 뒤 staged artifact 변조를 candidate 공�
   }
 });
 
+test("ITX CLI는 output parent replacement 뒤 stage와 link publication을 fail closed한다", async (context) => {
+  for (const scenario of [
+    { event: "before-stage-created", withCompleteness: false },
+    { event: "before-completeness-link", withCompleteness: true },
+    { event: "before-candidate-link", withCompleteness: true },
+  ]) {
+    await context.test(scenario.event, async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-parent-replaced-"));
+      const owned = `${dir}-owned`;
+      const output = path.join(dir, "candidate.json");
+      const completenessOutput = path.join(dir, "completeness.json");
+      const expected = completenessForCandidate(sourceCandidate());
+      try {
+        await writeCoverageContract(dir, "{}");
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: [
+            "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719",
+            "--station-catalog-pack", PACK_PATH,
+            ...(scenario.withCompleteness ? ["--completeness-output", completenessOutput] : []),
+            "--output", output,
+          ],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+          collectImpl: async () => structuredClone(expected),
+          onPublicationEvent: async ({ event }) => {
+            if (event !== scenario.event) return;
+            await rename(dir, owned);
+            await mkdir(dir);
+          },
+        }), /OUTPUT_PUBLICATION_PARENT_REPLACED/);
+        await assert.rejects(readFile(output), /ENOENT/);
+        await assert.rejects(readFile(completenessOutput), /ENOENT/);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+        await rm(owned, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 test("ITX CLI는 replacement task stage를 재귀 삭제하지 않는다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-stage-replacement-"));
   const output = path.join(dir, "missing.json");
@@ -3235,6 +3274,35 @@ test("Korail ITX materialization은 경춘선 밖 역을 포함한 용산~춘천
     "line-54a7b980b7c3",
     "line-54a7b980b7c3",
   ]);
+});
+
+test("station catalog ITX corridor는 row object key order와 무관하게 exact contract를 읽는다", () => {
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  DatabaseSync.prototype.prepare = function prepare(sql) {
+    const statement = originalPrepare.call(this, sql);
+    if (!String(sql).includes("stations.id AS canonicalStationId")) return statement;
+    return {
+      all(...args) {
+        return statement.all(...args).map((row) => Object.fromEntries(Object.entries(row).reverse()));
+      },
+    };
+  };
+  try {
+    const { plans, info } = fixtureRows();
+    const materialized = materializeKorailItxRows({
+      plans,
+      infoRows: info,
+      runDate: "20260713",
+      kricServiceDayCode: "8",
+      stationCatalogPackPath: PACK_PATH,
+      trainNumbers: trainNumberEvidence().trainNumbers,
+      routeCode: "GJ",
+      passengerStopCodes: new Map([["11", "여객승하차"]]),
+    });
+    assert.equal(materialized.transitTrips.length, 2);
+  } finally {
+    DatabaseSync.prototype.prepare = originalPrepare;
+  }
 });
 
 test("Korail ITX materialization은 malformed injected snapshot 뒤 자체 catalog reader temp를 정리한다", () => {

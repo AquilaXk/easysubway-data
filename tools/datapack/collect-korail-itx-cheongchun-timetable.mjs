@@ -2146,7 +2146,13 @@ function readCanonicalLine(stationCatalogPackPath) {
       return row ? { ...row, corridorSequence: expected.corridorSequence } : null;
     });
     if (catalogRows.length !== ITX_CORRIDOR_MATRIX.length
-      || JSON.stringify(corridorRows) !== JSON.stringify(ITX_CORRIDOR_MATRIX)) throw new Error("canonical ITX corridor differs from artifact contract");
+      || corridorRows.some((row, index) => {
+        const expected = ITX_CORRIDOR_MATRIX[index];
+        return row === null || row.canonicalStationId !== expected.canonicalStationId
+          || row.nameKo !== expected.nameKo || row.lineId !== expected.lineId
+          || row.rawLineSequence !== expected.rawLineSequence
+          || row.corridorSequence !== expected.corridorSequence;
+      })) throw new Error("canonical ITX corridor differs from artifact contract");
     const lineRows = corridorRows.slice(3).map(({ canonicalStationId: id, nameKo, rawLineSequence: lineSequence }) => ({ id, nameKo, lineSequence }));
     if (lineRows.length === 0) throw new Error(`canonical pack has no line: ${LINE_ID}`);
     const rows = opened.db.prepare(`
@@ -2489,15 +2495,16 @@ async function prepareOutputPublication({ output, completenessOutput = null, sta
       const stat = await lstat(parent);
       const real = await realpath(parent);
       if (!stat.isDirectory() || stat.isSymbolicLink() || real !== parent) throw new Error();
-      return real;
+      return { real, identity: stat };
     }));
-    if (new Set(parents).size !== 1) throw new Error();
+    if (new Set(parents.map(({ real }) => real)).size !== 1
+      || !parents.every(({ identity }) => hasSameFileIdentity(identity, parents[0].identity))) throw new Error();
     await Promise.all(targets.map(async (target) => {
       try { await lstat(target); throw new Error(); } catch (error) { if (error?.code !== "ENOENT") throw error; }
     }));
     const catalogRoot = await realpath(stationCatalogPackPath);
     if (targets.some((target) => target === catalogRoot || target.startsWith(`${catalogRoot}${path.sep}`))) throw new Error();
-    return { parent: parents[0] };
+    return { parent: parents[0].real, parentIdentity: parents[0].identity };
   } catch (error) {
     if (error instanceof Error && error.message === "OUTPUT_PATH_INVALID") throw error;
     throw new Error("OUTPUT_PATH_INVALID", { cause: error });
@@ -2505,6 +2512,17 @@ async function prepareOutputPublication({ output, completenessOutput = null, sta
 }
 
 function hasSameFileIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino; }
+
+async function assertPublicationParent(publication) {
+  try {
+    const stat = await lstat(publication.parent);
+    if (!stat.isDirectory() || stat.isSymbolicLink()
+      || !hasSameFileIdentity(stat, publication.parentIdentity)
+      || await realpath(publication.parent) !== publication.parent) throw new Error();
+  } catch {
+    throw new Error("OUTPUT_PUBLICATION_PARENT_REPLACED");
+  }
+}
 
 async function removeOwnedStage(stage, stageIdentity) {
   try {
@@ -2523,6 +2541,8 @@ async function removeOwnedCompleteness(completenessOutput, completenessIdentity)
 }
 
 async function publishOutputs({ publication, output, outputBytes, completenessOutput = null, completenessBytes = null, onPublicationEvent = null }) {
+  await onPublicationEvent?.({ event: "before-stage-created", parent: publication.parent });
+  await assertPublicationParent(publication);
   const stage = await mkdtemp(path.join(publication.parent, ".itx-cheongchun-"));
   const stageIdentity = await lstat(stage);
   const candidateStage = path.join(stage, "candidate.json");
@@ -2531,11 +2551,14 @@ async function publishOutputs({ publication, output, outputBytes, completenessOu
   try {
     await onPublicationEvent?.({ event: "stage-created", stage });
     if (!hasSameFileIdentity(await lstat(stage), stageIdentity)) throw new Error("OUTPUT_PUBLICATION_STAGE_REPLACED");
+    await assertPublicationParent(publication);
     if (completenessOutput) await writeFile(completenessStage, completenessBytes, { flag: "wx", mode: 0o600 });
     await writeFile(candidateStage, outputBytes, { flag: "wx", mode: 0o600 });
     const candidateIdentity = await lstat(candidateStage);
     if (completenessOutput) {
       completenessIdentity = await lstat(completenessStage);
+      await onPublicationEvent?.({ event: "before-completeness-link", stage });
+      await assertPublicationParent(publication);
       await link(completenessStage, completenessOutput);
       await onPublicationEvent?.({ event: "completeness-published", stage });
     }
@@ -2547,6 +2570,8 @@ async function publishOutputs({ publication, output, outputBytes, completenessOu
         || !Buffer.from(await readFile(completenessOutput)).equals(completenessBytes)))) {
       throw new Error("OUTPUT_PUBLICATION_STAGE_REPLACED");
     }
+    await onPublicationEvent?.({ event: "before-candidate-link", stage });
+    await assertPublicationParent(publication);
     await link(candidateStage, output);
   } catch (error) {
     if (completenessOutput && completenessIdentity) {
