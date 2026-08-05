@@ -571,7 +571,7 @@ jobs:
                   ;;
                 missing)
                   contexts_ok=false
-                  echo "::warning::PR #${pr}: required context missing: ${context_name}; its owning SSD worktree must push a native PR head."
+                  echo "::warning::PR #${pr}: required context missing: ${context_name}; its owning SSD worktree must rebase and push a native PR head when behind, or push a native PR head otherwise."
                   break
                   ;;
                 *)

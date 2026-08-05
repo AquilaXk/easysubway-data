@@ -682,7 +682,11 @@ test('required context 판정은 후보별 건너뛰기로 수렴하고 실패�
   assert.equal(missing.status, 0);
   assert.equal(missing.reached, false);
   assert.equal(missing.warned, true);
-  assert.match(missing.stdout, /owning SSD worktree must push a native PR head/);
+  assert.match(
+    missing.stdout,
+    /owning SSD worktree must rebase and push a native PR head when behind/,
+  );
+  assert.match(missing.stdout, /or push a native PR head otherwise/);
   // 명시적 실패도 실행을 죽이지 않고 이 후보만 건너뛰되, 신호는 남긴다.
   const failed = runContextLoop(run('failure'));
   assert.equal(failed.status, 0);
@@ -1113,7 +1117,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.deepEqual(behindMissing.evaluated, [1, 2]);
   assert.match(
     behindMissing.stdout + behindMissing.stderr,
-    /owning SSD worktree must push a native PR head/,
+    /owning SSD worktree must rebase and push a native PR head when behind/,
   );
 
   // required context 부재도 owner의 native CI가 해결한다. coordinator는 dispatch하지 않고
@@ -1124,6 +1128,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   ]);
   assert.equal(missingContext.dispatchedCi, false);
   assert.equal(missingContext.mergedPr, 2);
+  assert.match(missingContext.stdout + missingContext.stderr, /or push a native PR head otherwise/);
   // 게이트를 통과한 가장 오래된 후보가 우선한다(best-effort FIFO).
   assert.equal(
     runQueue([
