@@ -3584,6 +3584,7 @@ test("fresh KORAIL admission은 travelerTrainRunPlan2만 호출하고 future inf
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: {
       ...trainNumberEvidence(),
       schemaVersion: 2,
@@ -3617,6 +3618,7 @@ test("KORAIL plan row 0건은 admission을 뒤집지 않고 warning evidence로 
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: {
       ...trainNumberEvidence(),
       schemaVersion: 2,
