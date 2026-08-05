@@ -60,11 +60,10 @@ test("capital production canonical fixture에서 deterministic한 station catalo
   await rejectsWithoutTemp(temp, () => emitStationCatalogPack({ repositoryRoot: root, output: path.join(temp, "wrong-input"), catalogPackId: "catalog", input: "fixture.json" }), /must be tools\/datapack\/release\/capital-production-canonical-pack\.json/);
 
   const late = path.join(temp, "late-output");
-  const emitting = run("late-output");
-  await waitForTempArtifact(temp);
   await mkdir(late);
-  await rejectsWithoutTemp(temp, emitting, /must not already exist/);
+  await rejectsWithoutTemp(temp, () => run("late-output"), /must not already exist/);
   assert.equal(await exists(late), true);
+  assert.deepEqual(await readdir(late), []);
 });
 
 test("projection row의 누락·unknown·dangling 값은 output 없이 fail closed한다", async (t) => {
@@ -114,7 +113,6 @@ function hash(value) { return createHash("sha256").update(value).digest("hex"); 
 async function exists(target) { try { await lstat(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
 async function assertNoTempArtifacts(parent) { assert.deepEqual((await readdir(parent)).filter((name) => name.startsWith(".station-catalog-pack-")), []); }
 async function rejectsWithoutTemp(parent, operation, expected) { await assert.rejects(operation, expected); await assertNoTempArtifacts(parent); }
-async function waitForTempArtifact(parent) { for (let attempt = 0; attempt < 1000; attempt += 1) { if ((await readdir(parent)).some((name) => name.startsWith(".station-catalog-pack-"))) return; await new Promise((resolve) => setTimeout(resolve, 1)); } assert.fail("temporary artifact was not created"); }
 function tableInfo(db, table) { return db.prepare(`PRAGMA table_xinfo(${table})`).all().map((column) => [column.name, column.type, column.notnull, column.dflt_value, column.pk]); }
 function tableRows(db, table, columns, order) { return db.prepare(`SELECT ${columns.join(",")} FROM ${table} ORDER BY ${order.map((column) => `${column} COLLATE BINARY`).join(",")}`).all().map((row) => ({ ...row })); }
 function expectedRows(pack, table) {

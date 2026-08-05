@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -24,12 +24,12 @@ export async function emitStationCatalogPack(input) {
   const source = await exactInput(root, sourceRelative);
   const output = path.resolve(raw(input.output, "--output"));
   await outputParent(output);
-  if (await exists(output)) throw new Error("--output must not already exist");
   const catalogPackId = raw(input.catalogPackId, "--catalog-pack-id");
   const value = parse(await readFile(source));
   const pack = capitalPack(value);
   const rows = projection(pack);
   const temp = await mkdtemp(path.join(path.dirname(output), ".station-catalog-pack-"));
+  let reservation;
   try {
     const artifact = temp;
     const file = path.join(artifact, "payload/catalog.sqlite");
@@ -41,11 +41,16 @@ export async function emitStationCatalogPack(input) {
     validateArtifactComponentManifest(manifest, stationSetSha256);
     await writeFile(path.join(artifact, "manifest.json"), Buffer.from(canonicalJson(manifest)), { flag: "wx" });
     await validateOutput(artifact);
-    if (await exists(output)) throw new Error("--output must not already exist");
-    await rename(artifact, output);
+    reservation = await reserveOutput(output);
+    await mkdir(path.join(output, "payload"));
+    await link(path.join(artifact, "payload/catalog.sqlite"), path.join(output, "payload/catalog.sqlite"));
+    await link(path.join(artifact, "manifest.json"), path.join(output, "manifest.json"));
+    await validateOutput(output);
   } catch (error) {
-    await rm(temp, { recursive: true, force: true });
+    if (reservation) await removeReservation(output, reservation);
     throw error;
+  } finally {
+    await rm(temp, { recursive: true, force: true });
   }
 }
 
@@ -118,8 +123,9 @@ function raw(value, label) { if (typeof value !== "string" || !value || value.tr
 function exact(value, expected, label) { if (value !== expected) throw new Error(`${label} must be ${expected}`); return value; }
 async function regular(target, label) { let stat; try { stat = await lstat(target); } catch { throw new Error(`${label} must be a regular file`); } if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular file`); return target; }
 async function outputParent(output) { let stat; try { stat = await lstat(path.dirname(output)); } catch { throw new Error("--output parent must be an existing directory"); } if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("--output parent must be an existing directory"); }
+async function reserveOutput(output) { try { await mkdir(output); } catch (error) { if (error.code === "EEXIST") throw new Error("--output must not already exist"); throw error; } return lstat(output); }
+async function removeReservation(output, reservation) { try { const current = await lstat(output); if (current.dev === reservation.dev && current.ino === reservation.ino) await rm(output, { recursive: true, force: true }); } catch (error) { if (error.code !== "ENOENT") throw error; } }
 async function exactInput(root, relative) { const target = path.join(root, relative); await regular(target, "--input"); let realRoot; let realTarget; try { [realRoot, realTarget] = await Promise.all([realpath(root), realpath(target)]); } catch { throw new Error("--input must resolve under repository root"); } if (realTarget !== path.join(realRoot, relative)) throw new Error("--input must resolve under repository root"); return target; }
-async function exists(target) { try { await lstat(target); return true; } catch (error) { if (error.code === "ENOENT") return false; throw error; } }
 
 function cli(argv) { if (argv.length !== 4 || argv[0] !== "--output" || argv[2] !== "--catalog-pack-id") throw new Error("exactly --output and --catalog-pack-id are required"); return { output: argv[1], catalogPackId: argv[3] }; }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) emitStationCatalogPack(cli(process.argv.slice(2))).catch((error) => { process.stderr.write(`emit-station-catalog-pack: ${error.message}\n`); process.exitCode = 1; });
