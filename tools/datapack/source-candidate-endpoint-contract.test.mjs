@@ -5,6 +5,14 @@ import path from "node:path";
 import test from "node:test";
 
 import { resolveProviderCallIntegrity } from "./lib/provider-call-integrity.mjs";
+import {
+  collectKricAccessibilityProviderTupleEvidence,
+  KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
+} from "./collect-kric-accessibility-snapshots.mjs";
+import {
+  preflightKricFacilityProviderProbe,
+  resolveKricFacilityProviderProbe,
+} from "./probe-kric-facility-provider-tuples.mjs";
 
 const CANDIDATES_PATH = path.join(import.meta.dirname, "source-candidates.json");
 const KRIC_OPENAPI_HOST = "openapi.kric.go.kr";
@@ -44,6 +52,150 @@ const URL_FIELDS = Object.freeze([
 ]);
 
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
+
+test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
+  const tuple = { railOprIsttCd: "GX", lnCd: "A", stinCd: "X101", stationName: "운정중앙" };
+  const evidence = await collectKricAccessibilityProviderTupleEvidence({
+    tuples: [tuple],
+    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 2),
+    serviceKey: "super-secret",
+    now: new Date("2026-08-05T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS
+        .find(({ endpoint }) => new URL(endpoint).pathname === url.pathname);
+      return response(200, [Object.fromEntries(operationForRequest.responseFields.map((field) => [
+        field, tuple[field] ?? field,
+      ]))]);
+    },
+  });
+
+  assert.equal(evidence.artifactKind, "kric-facility-provider-tuple-probe");
+  assert.equal(evidence.productionAdmissionAllowed, false);
+  assert.equal(evidence.operationCount, 2);
+  assert.equal(evidence.queryCount, 2);
+  assert.deepEqual(evidence.operations.map(({ sourceId, queries }) => ({ sourceId, tuples: queries.map((query) => query.providerTuple) })), [
+    { sourceId: "kric-station-elevator", tuples: ["GX/A/X101"] },
+    { sourceId: "kric-station-escalator", tuples: ["GX/A/X101"] },
+  ]);
+  assert.doesNotMatch(JSON.stringify(evidence), /stationId|lineId|super-secret|serviceKey/);
+});
+
+test("FACILITY provider probe는 empty 또는 partial operation을 evidence로 만들지 않는다", async () => {
+  await assert.rejects(() => collectKricAccessibilityProviderTupleEvidence({
+    tuples: [{ railOprIsttCd: "KR", lnCd: "1", stinCd: "116", stationName: "창동" }],
+    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 2),
+    serviceKey: "key",
+    fetchImpl: async (url) => {
+      const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS
+        .find(({ endpoint }) => new URL(endpoint).pathname === url.pathname);
+      return response(200, url.pathname.endsWith("stationElevator") ? [Object.fromEntries(
+        operationForRequest.responseFields.map((field) => [
+          field, { railOprIsttCd: "KR", lnCd: "1", stinCd: "116" }[field] ?? field,
+        ]),
+      )] : []);
+    },
+  }), /KRIC provider tuple probe empty response: kric-station-escalator\/KR\/1\/116/);
+});
+
+test("FACILITY provider probe input은 tracked ledger·roster·catalog의 exact 20 tuple만 허용한다", async () => {
+  const [resolution, routeRosters] = await Promise.all([
+    readFile(new URL("./sources/facility-gap-resolution-evidence-20260731.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("./sources/kric-nationwide-route-rosters-20260730T203926676Z.json", import.meta.url), "utf8").then(JSON.parse),
+  ]);
+
+  const input = resolveKricFacilityProviderProbe({ resolution, routeRosters, candidatesDocument: document });
+  assert.equal(input.tuples.length, 20);
+  assert.equal(input.tuples.filter(({ railOprIsttCd }) => railOprIsttCd === "GX").length, 5);
+  assert.equal(input.tuples.filter(({ railOprIsttCd }) => railOprIsttCd === "KR").length, 15);
+  assert.deepEqual(input.operations.map(({ sourceId }) => sourceId), [
+    "kric-station-elevator",
+    "kric-station-escalator",
+    "kric-wheelchair-lift-location",
+    "kric-station-elevator-movement",
+    "kric-wheelchair-lift-movement",
+  ]);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution,
+    routeRosters: { ...routeRosters, rosters: [] },
+    candidatesDocument: document,
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution,
+    routeRosters: {
+      ...routeRosters,
+      rosters: [{ ...routeRosters.rosters[0], resultCode: "03" }, ...routeRosters.rosters.slice(1)],
+    },
+    candidatesDocument: document,
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution: {
+      ...resolution,
+      blockedGroups: resolution.blockedGroups.map((group, index) => index === 0
+        ? { ...group, providerTuples: ["KR/A/X101", ...group.providerTuples.slice(1)] }
+        : group),
+    },
+    routeRosters,
+    candidatesDocument: document,
+  }), /KRIC FACILITY blocked group is invalid/);
+  assert.throws(() => resolveKricFacilityProviderProbe({
+    resolution,
+    routeRosters: {
+      ...routeRosters,
+      rosters: [{ ...routeRosters.rosters[0], stationCount: undefined, stations: undefined }, ...routeRosters.rosters.slice(1)],
+    },
+    candidatesDocument: document,
+  }), /KRIC FACILITY provider probe inputs are invalid/);
+});
+
+test("FACILITY provider probe는 동일 키 control operation 성공 전 target을 호출하지 않는다", async () => {
+  const serviceKey = `Aa1$${"a".repeat(56)}`;
+  let calls = 0;
+  const delays = [];
+  const result = await preflightKricFacilityProviderProbe({
+    candidatesDocument: document,
+    serviceKey,
+    requestIntervalMs: 250,
+    delayImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      calls += 1;
+      assert.equal(url.pathname, "/openapi/handicapped/stationCnvFacl");
+      return response(200, [{ dtlLoc: "대합실", gubun: "1", stinFlor: "B1" }]);
+    },
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(delays, [250]);
+  assert.deepEqual(result, { credentialRedacted: true, controlOperationId: "kric-station-convenience-standard" });
+
+  calls = 0;
+  await assert.rejects(() => preflightKricFacilityProviderProbe({
+    candidatesDocument: document,
+    serviceKey: "short",
+    fetchImpl: async () => { calls += 1; },
+  }), /kric credential length does not match/);
+  assert.equal(calls, 0);
+
+  await assert.rejects(() => preflightKricFacilityProviderProbe({
+    candidatesDocument: document,
+    serviceKey,
+    fetchImpl: async () => response(200, [], "30"),
+  }), /KRIC accessibility provider result invalid/);
+
+  const twoRowControl = structuredClone(document);
+  twoRowControl.providers.kric.controlOperation.expectedSuccess.minimumRowCount = 2;
+  await assert.rejects(() => preflightKricFacilityProviderProbe({
+    candidatesDocument: twoRowControl,
+    serviceKey,
+    fetchImpl: async () => response(200, [{ dtlLoc: "대합실", gubun: "1", stinFlor: "B1" }]),
+  }), /KRIC FACILITY control operation success contract is invalid/);
+});
+
+function response(status, body, resultCode = "00") {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => ({ header: { resultCode, resultMsg: "redacted" }, body }),
+  };
+}
 
 function kricOpenApiCandidates() {
   return document.candidates.filter((candidate) => {
