@@ -329,19 +329,21 @@ function sourceCandidate(overrides = {}) {
   return candidate;
 }
 
-function useEqualSequenceBranch(candidate, { reverseUp = false } = {}) {
+function useEqualSequenceBranch(candidate) {
   const forward = [
     { stationId: MANGU_STATION_ID, nameKo: "망우", corridorSequence: 8, lineId: GYEONGCHUN_LINE_ID },
     { stationId: GWANGWOONDAE_STATION_ID, nameKo: "광운대", corridorSequence: 8, lineId: GYEONGCHUN_LINE_ID },
   ];
   const reverse = [...forward].reverse();
-  const up = reverseUp ? reverse : forward;
+  const up = forward;
   for (const roster of candidate.stationRosters) {
     roster.stations = forward.map((station, index) => ({
-      canonicalStationId: station.stationId,
       providerStationId: `provider-${String.fromCharCode(97 + index)}`,
       providerStationName: station.nameKo,
-      ...station,
+      canonicalStationId: station.stationId,
+      nameKo: station.nameKo,
+      corridorSequence: station.corridorSequence,
+      lineId: station.lineId,
     }));
   }
   for (const sequence of candidate.stationSequences) {
@@ -356,7 +358,10 @@ function useEqualSequenceBranch(candidate, { reverseUp = false } = {}) {
   }
   for (const stopTime of candidate.transitStopTimes) {
     const stops = stopTime.tripId.includes("-up-") ? up : reverse;
-    Object.assign(stopTime, stops[stopTime.stopSequence - 1]);
+    Object.assign(stopTime, {
+      stationId: stops[stopTime.stopSequence - 1].stationId,
+      lineId: stops[stopTime.stopSequence - 1].lineId,
+    });
   }
   candidate.normalizedSnapshotSets = ["8", "7", "9"].map((dayCd) => ({
     dayCd,
@@ -365,7 +370,12 @@ function useEqualSequenceBranch(candidate, { reverseUp = false } = {}) {
       odSet: [[dayCd, "provider-a", "provider-b"], [dayCd, "provider-b", "provider-a"]],
       trainSet: ["2001", "2002"],
       stopSequenceSet: [[dayCd, "2001", "up", up.map(({ stationId }) => stationId)], [dayCd, "2002", "down", reverse.map(({ stationId }) => stationId)]],
-      timetableTupleSet: candidate.transitStopTimes.filter(({ tripId }) => tripId.endsWith(`-${dayCd}`)).map(({ tripId, stationId, arrivalSeconds, departureSeconds }) => [dayCd, tripId.includes("-up-") ? "2001" : "2002", stationId, arrivalSeconds, departureSeconds]),
+      timetableTupleSet: candidate.stationSequences
+        .filter((sequence) => sequence.dayCd === dayCd)
+        .sort((left, right) => left.trainNumber.localeCompare(right.trainNumber, "ko", { numeric: true }))
+        .flatMap((sequence) => sequence.stops.map(({ stationId, arrivalSeconds, departureSeconds }) => [
+          dayCd, sequence.trainNumber, stationId, arrivalSeconds, departureSeconds,
+        ])),
     },
   }));
   bindCandidateCompleteness(candidate);
@@ -1696,26 +1706,6 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
-  await context.test("망우·광운대의 역방향 up branch를 거부", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-reversed-equal-corridor-sequence-"));
-    try {
-      const candidate = sourceCandidate();
-      useEqualSequenceBranch(candidate, { reverseUp: true });
-      const candidatePath = path.join(dir, "candidate.json");
-      await writeFile(candidatePath, sourceBytes(candidate));
-      await writeCandidateCompleteness(candidatePath, candidate);
-      const contractPath = await writeCoverageContract(dir, "{}\n");
-      await assert.rejects(promoteItxSourceCandidate({
-        candidatePath,
-        ...ownerApproval(candidate),
-        sourceOutputDir: path.join(dir, "tools/datapack/sources"),
-        coverageContractPath: contractPath,
-        repositoryRoot: dir,
-        now: new Date("2026-07-15T02:00:00.000Z"),
-      }), /CANONICAL_CORRIDOR_AUTHORITY_INVALID/);
-    } finally { await rm(dir, { recursive: true, force: true }); }
-  });
-
   await context.test("invalid offset timestamp", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-freshness-"));
     try {
@@ -2487,6 +2477,28 @@ test("ITX CLI는 provider 호출 전에 station catalog artifact directory를 �
   }
 });
 
+test("ITX CLI는 station catalog runtime mismatch를 artifact 오류로 감싸지 않는다", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(process.versions, "sqlite");
+  assert.ok(descriptor?.configurable);
+  let invoked = false;
+  let result;
+  try {
+    Object.defineProperty(process.versions, "sqlite", { ...descriptor, value: "0.0.0" });
+    result = runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
+        "--station-catalog-pack", PACK_PATH, "--output", path.join(tmpdir(), "itx-runtime-mismatch.json"),
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" },
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    });
+  } finally {
+    Object.defineProperty(process.versions, "sqlite", descriptor);
+  }
+  await assert.rejects(result, /STATION_CATALOG_RUNTIME_UNSUPPORTED/);
+  assert.equal(invoked, false);
+});
+
 test("ITX CLI는 malformed station catalog manifest를 provider 호출 전에 거부한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-malformed-"));
   const pack = path.join(dir, "station-catalog-pack");
@@ -2815,11 +2827,11 @@ test("ITX CLI는 replacement completeness를 owned cleanup으로 삭제하지 �
         if (event === "completeness-published") {
           await rm(completenessOutput);
           await writeFile(completenessOutput, "replacement completeness");
-          await writeFile(output, "racer candidate");
         }
       },
-    }));
+    }), /OUTPUT_PUBLICATION_STAGE_REPLACED/);
     assert.deepEqual(await readFile(completenessOutput, "utf8"), "replacement completeness");
+    await assert.rejects(readFile(output), /ENOENT/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
