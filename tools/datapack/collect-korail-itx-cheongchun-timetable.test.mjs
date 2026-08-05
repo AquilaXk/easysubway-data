@@ -3280,7 +3280,8 @@ test("station catalog ITX corridor는 row object key order와 무관하게 exact
   const originalPrepare = DatabaseSync.prototype.prepare;
   DatabaseSync.prototype.prepare = function prepare(sql) {
     const statement = originalPrepare.call(this, sql);
-    if (!String(sql).includes("stations.id AS canonicalStationId")) return statement;
+    if (!String(sql).includes("stations.id AS canonicalStationId")
+      && !String(sql).includes("WHERE stations.region = '수도권'")) return statement;
     return {
       all(...args) {
         return statement.all(...args).map((row) => Object.fromEntries(Object.entries(row).reverse()));

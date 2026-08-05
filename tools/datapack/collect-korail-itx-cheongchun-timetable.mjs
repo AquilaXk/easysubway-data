@@ -2163,7 +2163,11 @@ function readCanonicalLine(stationCatalogPackPath) {
       ORDER BY stations.id, station_lines.line_id
     `).all();
     const { byName, rosterStations } = buildCanonicalStationLookup({ lineRows, rows });
-    if (JSON.stringify(rosterStations) !== JSON.stringify(ITX_CORRIDOR)) throw new Error("canonical ITX corridor differs from artifact contract");
+    if (rosterStations.length !== ITX_CORRIDOR.length || rosterStations.some((station, index) => {
+      const expected = ITX_CORRIDOR[index];
+      return station.canonicalStationId !== expected.canonicalStationId || station.nameKo !== expected.nameKo
+        || station.corridorSequence !== expected.corridorSequence || station.lineId !== expected.lineId;
+    })) throw new Error("canonical ITX corridor differs from artifact contract");
     return {
       byName,
       rosterStations,
