@@ -9,7 +9,7 @@ import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest
 
 const INPUT = "tools/datapack/release/capital-production-canonical-pack.json";
 const NODE_VERSION = "24.19.0";
-const SQLITE_VERSION = "3.53.4";
+const SQLITE_VERSION = "3.53.3";
 const TABLES = {
   stations: { source: "stations", keys: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region"], allowed: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region", "latitude", "longitude", "dataQualityLevel", "dataSourceType", "lastVerifiedAt"], target: ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"] },
   station_aliases: { source: "stationAliases", keys: ["stationId", "alias", "normalizedAlias"], allowed: ["stationId", "alias", "normalizedAlias"], target: ["station_id", "alias", "normalized_alias"] },
