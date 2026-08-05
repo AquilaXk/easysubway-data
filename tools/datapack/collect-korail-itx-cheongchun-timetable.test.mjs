@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readdirSync } from "node:fs";
 import { link, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -46,6 +47,8 @@ const PACK_IDENTITY = {
 };
 const YONGSAN_STATION_ID = "station-8aa315864466";
 const CHUNCHEON_STATION_ID = "station-dd14cfb89cbc";
+const MANGU_STATION_ID = "station-0ef4e01fa401";
+const GWANGWOONDAE_STATION_ID = "station-b42d22b753ca";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
 const GYEONGCHUN_LINE_ID = "line-54a7b980b7c3";
 const LIVE_EVIDENCE = JSON.parse(await readFile(
@@ -324,6 +327,48 @@ function sourceCandidate(overrides = {}) {
     .digest("hex");
   candidate.evidenceHash = createHash("sha256").update(JSON.stringify(candidate)).digest("hex");
   return candidate;
+}
+
+function useEqualSequenceBranch(candidate, { reverseUp = false } = {}) {
+  const forward = [
+    { stationId: MANGU_STATION_ID, nameKo: "망우", corridorSequence: 8, lineId: GYEONGCHUN_LINE_ID },
+    { stationId: GWANGWOONDAE_STATION_ID, nameKo: "광운대", corridorSequence: 8, lineId: GYEONGCHUN_LINE_ID },
+  ];
+  const reverse = [...forward].reverse();
+  const up = reverseUp ? reverse : forward;
+  for (const roster of candidate.stationRosters) {
+    roster.stations = forward.map((station, index) => ({
+      canonicalStationId: station.stationId,
+      providerStationId: `provider-${String.fromCharCode(97 + index)}`,
+      providerStationName: station.nameKo,
+      ...station,
+    }));
+  }
+  for (const sequence of candidate.stationSequences) {
+    const stops = sequence.directionId === "up" ? up : reverse;
+    sequence.originStationName = stops[0].nameKo;
+    sequence.destinationStationName = stops[1].nameKo;
+    sequence.terminalVariant = `${stops[0].nameKo}→${stops[1].nameKo}`;
+    sequence.stops = sequence.stops.map((stop, index) => ({ ...stop, ...stops[index] }));
+  }
+  for (const trip of candidate.transitTrips) {
+    trip.tripHeadsign = trip.directionId === "up" ? up[1].nameKo : reverse[1].nameKo;
+  }
+  for (const stopTime of candidate.transitStopTimes) {
+    const stops = stopTime.tripId.includes("-up-") ? up : reverse;
+    Object.assign(stopTime, stops[stopTime.stopSequence - 1]);
+  }
+  candidate.normalizedSnapshotSets = ["8", "7", "9"].map((dayCd) => ({
+    dayCd,
+    sets: {
+      stationSet: forward.map(({ stationId }) => stationId).sort(),
+      odSet: [[dayCd, "provider-a", "provider-b"], [dayCd, "provider-b", "provider-a"]],
+      trainSet: ["2001", "2002"],
+      stopSequenceSet: [[dayCd, "2001", "up", up.map(({ stationId }) => stationId)], [dayCd, "2002", "down", reverse.map(({ stationId }) => stationId)]],
+      timetableTupleSet: candidate.transitStopTimes.filter(({ tripId }) => tripId.endsWith(`-${dayCd}`)).map(({ tripId, stationId, arrivalSeconds, departureSeconds }) => [dayCd, tripId.includes("-up-") ? "2001" : "2002", stationId, arrivalSeconds, departureSeconds]),
+    },
+  }));
+  bindCandidateCompleteness(candidate);
 }
 
 function rehashCandidate(candidate) {
@@ -1630,6 +1675,47 @@ test("ITX promotion은 동일 artifact ID에 다른 bytes가 있으면 immutable
 });
 
 test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 재검증한다", async (context) => {
+  await context.test("망우·광운대의 동일 corridorSequence branch를 canonical candidate로 허용", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-equal-corridor-sequence-"));
+    try {
+      const candidate = sourceCandidate();
+      useEqualSequenceBranch(candidate);
+      const candidatePath = path.join(dir, "candidate.json");
+      await writeFile(candidatePath, sourceBytes(candidate));
+      await writeCandidateCompleteness(candidatePath, candidate);
+      const contractPath = await writeCoverageContract(dir, "{}\n");
+      const result = await promoteItxSourceCandidate({
+        candidatePath,
+        ...ownerApproval(candidate),
+        sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+        coverageContractPath: contractPath,
+        repositoryRoot: dir,
+        now: new Date("2026-07-15T02:00:00.000Z"),
+      });
+      assert.equal(result.sourceTimetableArtifact.status, "ADMITTED");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  await context.test("망우·광운대의 역방향 up branch를 거부", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-reversed-equal-corridor-sequence-"));
+    try {
+      const candidate = sourceCandidate();
+      useEqualSequenceBranch(candidate, { reverseUp: true });
+      const candidatePath = path.join(dir, "candidate.json");
+      await writeFile(candidatePath, sourceBytes(candidate));
+      await writeCandidateCompleteness(candidatePath, candidate);
+      const contractPath = await writeCoverageContract(dir, "{}\n");
+      await assert.rejects(promoteItxSourceCandidate({
+        candidatePath,
+        ...ownerApproval(candidate),
+        sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+        coverageContractPath: contractPath,
+        repositoryRoot: dir,
+        now: new Date("2026-07-15T02:00:00.000Z"),
+      }), /CANONICAL_CORRIDOR_AUTHORITY_INVALID/);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
   await context.test("invalid offset timestamp", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-freshness-"));
     try {
@@ -2442,7 +2528,40 @@ test("ITX CLI는 station catalog private temp 초기화 실패 뒤 task temp를 
       env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
       collectImpl: async () => assert.fail("provider collection must not run"),
     }), /STATION_CATALOG_PACK_INVALID/);
-    assert.deepEqual(new Set((await readdir(tmpdir())).filter((name) => name.startsWith(prefix))), before);
+    const after = (await readdir(tmpdir())).filter((name) => name.startsWith(prefix));
+    assert.deepEqual(after.filter((name) => !before.has(name)), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("legacy canonical corridor authority는 gzip 초기화 실패 뒤 task temp를 남기지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-legacy-canonical-temp-cleanup-"));
+  const prefix = "korail-itx-canonical-";
+  try {
+    await writeCoverageContract(dir, "{}");
+    const brokenPackBytes = Buffer.from("not a gzip stream");
+    await writeFile(path.join(dir, LEGACY_PACK_PATH), brokenPackBytes);
+    const candidate = sourceCandidate({
+      canonicalPackIdentity: { path: LEGACY_PACK_PATH, sha256: createHash("sha256").update(brokenPackBytes).digest("hex") },
+    });
+    const completeness = bindCandidateCompleteness(candidate);
+    const candidatePath = path.join(dir, "candidate.json");
+    const completenessPath = path.join(dir, "completeness.json");
+    await Promise.all([
+      writeFile(candidatePath, sourceBytes(candidate)),
+      writeFile(completenessPath, completenessBytes(completeness)),
+    ]);
+    const before = new Set((await readdir(tmpdir())).filter((name) => name.startsWith(prefix)));
+    await assert.rejects(promoteItxSourceCandidate({
+      candidatePath,
+      completenessPath,
+      ...ownerApproval(candidate),
+      sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+      coverageContractPath: path.join(dir, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+      repositoryRoot: dir,
+      now: new Date("2026-07-15T02:00:00.000Z"),
+    }), { code: "Z_DATA_ERROR" });
+    const after = (await readdir(tmpdir())).filter((name) => name.startsWith(prefix));
+    assert.deepEqual(after.filter((name) => !before.has(name)), []);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -2600,8 +2719,8 @@ test("ITX CLI는 provider 호출 전에 station catalog 내부와 manifest/paylo
     await copyStationCatalogPack(pack);
     for (const scenario of [
       { name: "catalog child", output: path.join(pack, "candidate.json") },
-      { name: "manifest hardlink", output: path.join(dir, "manifest-alias.json"), source: path.join(pack, "manifest.json") },
-      { name: "payload hardlink", output: path.join(dir, "payload-alias.json"), source: path.join(pack, "payload/catalog.sqlite") },
+      { name: "preexisting manifest hardlink target", output: path.join(dir, "manifest-alias.json"), source: path.join(pack, "manifest.json") },
+      { name: "preexisting payload hardlink target", output: path.join(dir, "payload-alias.json"), source: path.join(pack, "payload/catalog.sqlite") },
     ]) {
       await context.test(scenario.name, async () => {
         if (scenario.source) await link(scenario.source, scenario.output);
@@ -2612,11 +2731,24 @@ test("ITX CLI는 provider 호출 전에 station catalog 내부와 manifest/paylo
           collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
         }), /OUTPUT_PATH_INVALID/);
         assert.equal(invoked, false);
-        if (scenario.name === "existing completeness") {
-          assert.deepEqual(await readFile(completeness, "utf8"), "preexisting completeness");
-        }
       });
     }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 값 없는 completeness output flag를 OUTPUT_PATH_INVALID로 거부한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-completeness-output-type-"));
+  let invoked = false;
+  try {
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
+        "--station-catalog-pack", PACK_PATH, "--completeness-output", "--output", path.join(dir, "candidate.json"),
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    }), /OUTPUT_PATH_INVALID/);
+    assert.equal(invoked, false);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -2689,6 +2821,42 @@ test("ITX CLI는 replacement completeness를 owned cleanup으로 삭제하지 �
     }));
     assert.deepEqual(await readFile(completenessOutput, "utf8"), "replacement completeness");
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 completeness event 뒤 staged artifact 변조를 candidate 공개 없이 거부한다", async (context) => {
+  const expected = completenessForCandidate(sourceCandidate());
+  for (const scenario of [
+    { name: "published completeness in-place mutation", mutate: async ({ completenessOutput }) => writeFile(completenessOutput, "tampered completeness") },
+    { name: "staged candidate in-place mutation", mutate: async ({ stage }) => writeFile(path.join(stage, "candidate.json"), "tampered candidate") },
+    {
+      name: "staged completeness replacement with original published inode mutation",
+      mutate: async ({ stage, completenessOutput }) => {
+        const original = await readFile(completenessOutput);
+        await rm(path.join(stage, "completeness.json"));
+        await writeFile(path.join(stage, "completeness.json"), original);
+        await writeFile(completenessOutput, "tampered completeness");
+      },
+    },
+  ]) {
+    await context.test(scenario.name, async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-byte-mutation-"));
+      const output = path.join(dir, "candidate.json");
+      const completenessOutput = path.join(dir, "completeness.json");
+      try {
+        await writeCoverageContract(dir, "{}");
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--completeness-output", completenessOutput, "--output", output],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+          collectImpl: async () => structuredClone(expected),
+          onPublicationEvent: async ({ event, stage }) => {
+            if (event === "completeness-published") await scenario.mutate({ stage, completenessOutput });
+          },
+        }), /OUTPUT_PUBLICATION_STAGE_REPLACED/);
+        await assert.rejects(readFile(output), /ENOENT/);
+        await assert.rejects(readFile(completenessOutput), /ENOENT/);
+      } finally { await rm(dir, { recursive: true, force: true }); }
+    });
+  }
 });
 
 test("ITX CLI는 replacement task stage를 재귀 삭제하지 않는다", async () => {
@@ -3038,6 +3206,25 @@ test("Korail ITX materialization은 경춘선 밖 역을 포함한 용산~춘천
     "line-54a7b980b7c3",
     "line-54a7b980b7c3",
   ]);
+});
+
+test("Korail ITX materialization은 malformed injected snapshot 뒤 자체 catalog reader temp를 정리한다", () => {
+  const prefix = "korail-itx-station-catalog-";
+  const before = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith(prefix)));
+  const { plans, info } = fixtureRows();
+  materializeKorailItxRows({
+    plans,
+    infoRows: info,
+    runDate: "20260713",
+    kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
+    stationCatalogSnapshot: {},
+    trainNumbers: trainNumberEvidence().trainNumbers,
+    routeCode: "GJ",
+    passengerStopCodes: new Map([["11", "여객승하차"]]),
+  });
+  const after = readdirSync(tmpdir()).filter((name) => name.startsWith(prefix));
+  assert.deepEqual(after.filter((name) => !before.has(name)), []);
 });
 
 test("Korail collector는 한 방향 roster를 timetable로 admission하지 않는다", async () => {

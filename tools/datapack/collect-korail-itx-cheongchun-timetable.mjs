@@ -21,6 +21,8 @@ const LINE_ID = "line-54a7b980b7c3";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
 const CANONICAL_PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
 const TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
+const STATION_CATALOG_NODE_VERSION = "24.19.0";
+const STATION_CATALOG_SQLITE_VERSION = "3.53.3";
 const ITX_CORRIDOR_MATRIX = Object.freeze([
   ["station-8aa315864466", "용산", CAPITAL_APPROACH_LINE_ID, 28, 1], ["station-c0679b9a6cf8", "옥수", CAPITAL_APPROACH_LINE_ID, 32, 2], ["station-e5cf592cf355", "왕십리", CAPITAL_APPROACH_LINE_ID, 34, 3],
   ["station-b819702fa7d9", "청량리", LINE_ID, 1, 4], ["station-28e5946b8e67", "회기", LINE_ID, 2, 5], ["station-edf782c1647a", "중랑", LINE_ID, 3, 6], ["station-83bcb1eae340", "상봉", LINE_ID, 4, 7], ["station-0ef4e01fa401", "망우", LINE_ID, 5, 8], ["station-b42d22b753ca", "광운대", LINE_ID, 5, 8], ["station-b49a8c5ce5e5", "신내", LINE_ID, 6, 9], ["station-7bc666ad036c", "갈매", LINE_ID, 7, 10], ["station-6f6328bd8ba0", "별내", LINE_ID, 8, 11], ["station-b52ac4dfe64e", "퇴계원", LINE_ID, 9, 12], ["station-2ccf5647f7f7", "사릉", LINE_ID, 10, 13], ["station-10c3ee5f17ae", "금곡", LINE_ID, 11, 14], ["station-f3d9c93ba7d6", "평내호평", LINE_ID, 12, 15], ["station-7dd96f599b01", "천마산", LINE_ID, 13, 16], ["station-661ff65ea040", "마석", LINE_ID, 14, 17], ["station-c7f9f6a29fc1", "대성리", LINE_ID, 15, 18], ["station-6c1f50a5aa3b", "청평", LINE_ID, 16, 19], ["station-d768f1b7c64e", "상천", LINE_ID, 17, 20], ["station-4f6045ff9103", "가평", LINE_ID, 18, 21], ["station-236845fc4e8b", "굴봉산", LINE_ID, 19, 22], ["station-add5012df314", "백양리", LINE_ID, 20, 23], ["station-30ba86472e55", "강촌", LINE_ID, 21, 24], ["station-67e47e3e2da2", "김유정", LINE_ID, 22, 25], ["station-d5e344125b52", "남춘천", LINE_ID, 23, 26], ["station-dd14cfb89cbc", "춘천", LINE_ID, 24, 27],
@@ -772,10 +774,13 @@ function snapshotStationCatalog(stationCatalogPackPath) {
 }
 
 function openStationCatalogPack(stationCatalogPackPath) {
+  if (process.versions.node !== STATION_CATALOG_NODE_VERSION
+    || process.versions.sqlite !== STATION_CATALOG_SQLITE_VERSION) {
+    throw new Error(`STATION_CATALOG_RUNTIME_UNSUPPORTED: requires Node ${STATION_CATALOG_NODE_VERSION} / SQLite ${STATION_CATALOG_SQLITE_VERSION}, received Node ${process.versions.node} / SQLite ${process.versions.sqlite ?? "unknown"}`);
+  }
   let tempDir = null;
   let db = null;
   try {
-    if (process.version !== "v24.19.0" || process.versions.sqlite !== "3.53.3") throw new Error();
     requiredString(stationCatalogPackPath, "stationCatalogPackPath");
     const root = path.resolve(stationCatalogPackPath);
     const rootStat = lstatSync(root);
@@ -805,9 +810,8 @@ function openStationCatalogPack(stationCatalogPackPath) {
     const tempSqlitePath = path.join(tempDir, "catalog.sqlite");
     writeFileSync(tempSqlitePath, payloadBytes);
     db = new DatabaseSync(tempSqlitePath, { readOnly: true });
-    try {
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name COLLATE BINARY").all().map(({ name }) => name);
-      if (JSON.stringify(tables) !== JSON.stringify(["lines", "station_aliases", "station_lines", "station_search_index", "stations"])
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name COLLATE BINARY").all().map(({ name }) => name);
+    if (JSON.stringify(tables) !== JSON.stringify(["lines", "station_aliases", "station_lines", "station_search_index", "stations"])
         || JSON.stringify(db.prepare("SELECT name, sql FROM sqlite_schema WHERE type='table' ORDER BY name COLLATE BINARY").all().map(({ name, sql }) => [name, sql])) !== JSON.stringify(Object.entries(TABLE_DDL).sort(([left], [right]) => left.localeCompare(right)))
         || Object.entries(TABLE_XINFO).some(([table, expected]) => JSON.stringify(db.prepare(`PRAGMA table_xinfo(${table})`).all().map(({ name, type, notnull, dflt_value, pk }) => [name, type, notnull, dflt_value, pk])) !== JSON.stringify(expected))
         || db.prepare("PRAGMA integrity_check").get().integrity_check !== "ok"
@@ -820,9 +824,8 @@ function openStationCatalogPack(stationCatalogPackPath) {
         || !foreignKeyMatricesMatch(db)) throw new Error();
       const stationIds = db.prepare("SELECT id FROM stations ORDER BY id COLLATE BINARY").all().map(({ id }) => id);
       if (sha256(Buffer.from(canonicalJson(stationIds))) !== manifest.stationSetSha256) throw new Error();
-      let closed = false;
-      return { db, identity: { artifactKind: "station-catalog-pack", manifestVersion: 1, catalogPackId: manifest.catalogPackId, stationSetSha256: manifest.stationSetSha256, payloadSha256: manifest.payloadSha256, manifestSha256: sha256(manifestBytes) }, close() { if (closed) return; closed = true; try { db.close(); } finally { rmSync(tempDir, { recursive: true, force: true }); } } };
-    } catch (error) { throw error; }
+    let closed = false;
+    return { db, identity: { artifactKind: "station-catalog-pack", manifestVersion: 1, catalogPackId: manifest.catalogPackId, stationSetSha256: manifest.stationSetSha256, payloadSha256: manifest.payloadSha256, manifestSha256: sha256(manifestBytes) }, close() { if (closed) return; closed = true; try { db.close(); } finally { rmSync(tempDir, { recursive: true, force: true }); } } };
   } catch (error) {
     try { db?.close(); } finally { if (tempDir) rmSync(tempDir, { recursive: true, force: true }); }
     throw new Error("STATION_CATALOG_PACK_INVALID", { cause: error });
@@ -1008,7 +1011,9 @@ function validateCanonicalCorridorAuthority(source, repositoryRoot) {
         const previousStop = sequence.stops[index - 1];
         const currentStop = sequence.stops[index];
         if (direction === 0
-          || direction * (currentStop.corridorSequence - previousStop.corridorSequence) <= 0
+          || (currentStop.corridorSequence === previousStop.corridorSequence
+            ? !isCanonicalEqualSequencePair(sequence.directionId, previousStop, currentStop)
+            : direction * (currentStop.corridorSequence - previousStop.corridorSequence) < 0)
           || previousStop.departureSeconds > currentStop.arrivalSeconds) invalid();
       }
       sequenceByTripId.set(
@@ -1025,6 +1030,13 @@ function validateCanonicalCorridorAuthority(source, repositoryRoot) {
   } finally {
     canonical.close();
   }
+}
+
+function isCanonicalEqualSequencePair(directionId, left, right) {
+  return directionId === "up"
+    ? left.stationId === "station-0ef4e01fa401" && right.stationId === "station-b42d22b753ca"
+    : directionId === "down"
+      && left.stationId === "station-b42d22b753ca" && right.stationId === "station-0ef4e01fa401";
 }
 
 function validateSourceSnapshotSets(source) {
@@ -1312,7 +1324,7 @@ export async function collectKorailItxCheongchunPlan({
   if (!/^\d{8}$/.test(runDate ?? "")) throw new Error("runDate must be YYYYMMDD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
   requiredString(stationCatalogPackPath, "stationCatalogPackPath");
-  stationCatalogSnapshot ?? snapshotStationCatalog(stationCatalogPackPath);
+  if (stationCatalogSnapshot == null) void snapshotStationCatalog(stationCatalogPackPath);
   if (trainNumberEvidence?.schemaVersion !== 2
     || trainNumberEvidence?.artifactKind !== "tago-itx-cheongchun-roster-evidence"
     || trainNumberEvidence.serviceDate !== runDate
@@ -1675,7 +1687,8 @@ export function analyzeKorailItxRows({
   if (!(passengerStopCodes instanceof Map) || passengerStopCodes.size === 0) {
     throw new Error("Korail passenger stop code mappings are required");
   }
-  const canonical = stationCatalogSnapshot?.canonical ?? readCanonicalLine(stationCatalogPackPath);
+  const suppliedCanonical = stationCatalogSnapshot?.canonical;
+  const canonical = suppliedCanonical ?? readCanonicalLine(stationCatalogPackPath);
   try {
     const grouped = groupKorailInfoRows({ infoRows, runDate, routeCode, allowed, planByTrain });
     const sequenceAnalysis = analyzeStationSequences({ grouped, canonical, passengerStopCodes, planByTrain, runDate });
@@ -1689,7 +1702,7 @@ export function analyzeKorailItxRows({
       requiredTimestampFieldCount: sequenceAnalysis.requiredTimestampFieldCount,
       populatedTimestampFieldCount: sequenceAnalysis.populatedTimestampFieldCount,
     };
-  } finally { if (!stationCatalogSnapshot) canonical.close(); }
+  } finally { if (!suppliedCanonical) canonical.close(); }
 }
 
 function groupKorailInfoRows({ infoRows, runDate, routeCode, allowed, planByTrain }) {
@@ -2134,9 +2147,8 @@ function readCanonicalLine(stationCatalogPackPath) {
     });
     if (catalogRows.length !== ITX_CORRIDOR_MATRIX.length
       || JSON.stringify(corridorRows) !== JSON.stringify(ITX_CORRIDOR_MATRIX)) throw new Error("canonical ITX corridor differs from artifact contract");
-    const lineRows = corridorRows.slice(3).map(({ canonicalStationId: id, nameKo: name_ko, rawLineSequence: line_sequence }) => ({ id, name_ko, line_sequence }));
+    const lineRows = corridorRows.slice(3).map(({ canonicalStationId: id, nameKo, rawLineSequence: lineSequence }) => ({ id, nameKo, lineSequence }));
     if (lineRows.length === 0) throw new Error(`canonical pack has no line: ${LINE_ID}`);
-    const lineSequenceByStation = new Map(lineRows.map((row) => [row.id, row.line_sequence]));
     const rows = opened.db.prepare(`
       SELECT stations.id, stations.name_ko, station_lines.line_id, station_lines.line_sequence
       FROM stations
@@ -2144,32 +2156,7 @@ function readCanonicalLine(stationCatalogPackPath) {
       WHERE stations.region = '수도권'
       ORDER BY stations.id, station_lines.line_id
     `).all();
-    const stationsById = new Map();
-    for (const row of rows) {
-      const station = stationsById.get(row.id) ?? { stationId: row.id, nameKo: row.name_ko, lineMemberships: [] };
-      station.lineMemberships.push({ lineId: row.line_id, lineSequence: row.line_sequence });
-      stationsById.set(row.id, station);
-    }
-    const byName = new Map();
-    for (const station of stationsById.values()) {
-      const name = normalizeStationName(station.nameKo);
-      const matches = byName.get(name) ?? [];
-      matches.push({
-        stationId: station.stationId,
-        lineSequence: lineSequenceByStation.get(station.stationId) ?? null,
-        lineMemberships: station.lineMemberships,
-      });
-      byName.set(name, matches);
-    }
-    const rosterStations = [
-      ...CAPITAL_APPROACH_STATIONS,
-      ...lineRows.map((row) => ({
-        canonicalStationId: row.id,
-        nameKo: row.name_ko,
-        corridorSequence: Number(row.line_sequence) + 3,
-        lineId: LINE_ID,
-      })),
-    ];
+    const { byName, rosterStations } = buildCanonicalStationLookup({ lineRows, rows });
     if (JSON.stringify(rosterStations) !== JSON.stringify(ITX_CORRIDOR)) throw new Error("canonical ITX corridor differs from artifact contract");
     return {
       byName,
@@ -2190,54 +2177,62 @@ function canonicalStationMatches(canonical, name) {
   return canonical.stationLookups.find(({ name: lookupName }) => lookupName === name)?.stations ?? [];
 }
 
+function buildCanonicalStationLookup({ lineRows, rows }) {
+  const lineSequenceByStation = new Map(lineRows.map(({ id, lineSequence }) => [id, lineSequence]));
+  const stationsById = new Map();
+  for (const row of rows) {
+    const station = stationsById.get(row.id) ?? { stationId: row.id, nameKo: row.name_ko, lineMemberships: [] };
+    station.lineMemberships.push({ lineId: row.line_id, lineSequence: row.line_sequence });
+    stationsById.set(row.id, station);
+  }
+  const byName = new Map();
+  for (const station of stationsById.values()) {
+    const name = normalizeStationName(station.nameKo);
+    const matches = byName.get(name) ?? [];
+    matches.push({
+      stationId: station.stationId,
+      lineSequence: lineSequenceByStation.get(station.stationId) ?? null,
+      lineMemberships: station.lineMemberships,
+    });
+    byName.set(name, matches);
+  }
+  return {
+    byName,
+    rosterStations: [
+      ...CAPITAL_APPROACH_STATIONS,
+      ...lineRows.map(({ id, nameKo, lineSequence }) => ({
+        canonicalStationId: id,
+        nameKo,
+        corridorSequence: Number(lineSequence) + 3,
+        lineId: LINE_ID,
+      })),
+    ],
+  };
+}
+
 function readLegacyCanonicalLine(canonicalPackPath) {
   const dir = mkdtempSync(path.join(tmpdir(), "korail-itx-canonical-"));
-  const sqlitePath = path.join(dir, "pack.sqlite");
-  writeFileSync(sqlitePath, gunzipSync(readFileSync(canonicalPackPath)));
-  const opened = { db: new DatabaseSync(sqlitePath), dir };
+  let db = null;
   try {
-    const lineRows = opened.db.prepare(`
+    const sqlitePath = path.join(dir, "pack.sqlite");
+    writeFileSync(sqlitePath, gunzipSync(readFileSync(canonicalPackPath)));
+    db = new DatabaseSync(sqlitePath);
+    const lineRows = db.prepare(`
       SELECT stations.id, stations.name_ko, station_lines.line_sequence
       FROM station_lines
       JOIN stations ON stations.id = station_lines.station_id
       WHERE station_lines.line_id = ?
       ORDER BY station_lines.line_sequence, stations.id
-    `).all(LINE_ID);
+    `).all(LINE_ID).map(({ id, name_ko: nameKo, line_sequence: lineSequence }) => ({ id, nameKo, lineSequence }));
     if (lineRows.length === 0) throw new Error(`canonical pack has no line: ${LINE_ID}`);
-    const lineSequenceByStation = new Map(lineRows.map((row) => [row.id, row.line_sequence]));
-    const rows = opened.db.prepare(`
+    const rows = db.prepare(`
       SELECT stations.id, stations.name_ko, station_lines.line_id, station_lines.line_sequence
       FROM stations
       JOIN station_lines ON station_lines.station_id = stations.id
       WHERE stations.region = '수도권'
       ORDER BY stations.id, station_lines.line_id
     `).all();
-    const stationsById = new Map();
-    for (const row of rows) {
-      const station = stationsById.get(row.id) ?? { stationId: row.id, nameKo: row.name_ko, lineMemberships: [] };
-      station.lineMemberships.push({ lineId: row.line_id, lineSequence: row.line_sequence });
-      stationsById.set(row.id, station);
-    }
-    const byName = new Map();
-    for (const station of stationsById.values()) {
-      const name = normalizeStationName(station.nameKo);
-      const matches = byName.get(name) ?? [];
-      matches.push({
-        stationId: station.stationId,
-        lineSequence: lineSequenceByStation.get(station.stationId) ?? null,
-        lineMemberships: station.lineMemberships,
-      });
-      byName.set(name, matches);
-    }
-    const rosterStations = [
-      ...CAPITAL_APPROACH_STATIONS,
-      ...lineRows.map((row) => ({
-        canonicalStationId: row.id,
-        nameKo: row.name_ko,
-        corridorSequence: Number(row.line_sequence) + 3,
-        lineId: LINE_ID,
-      })),
-    ];
+    const { byName, rosterStations } = buildCanonicalStationLookup({ lineRows, rows });
     if (rosterStations.length !== 28 || new Set(rosterStations.map(({ canonicalStationId }) => canonicalStationId)).size !== 28) {
       throw new Error("canonical ITX corridor must contain exactly 28 unique stations");
     }
@@ -2245,13 +2240,11 @@ function readLegacyCanonicalLine(canonicalPackPath) {
       byName,
       rosterStations,
       close() {
-        opened.db.close();
-        rmSync(opened.dir, { recursive: true, force: true });
+        try { db?.close(); } finally { rmSync(dir, { recursive: true, force: true }); }
       },
     };
   } catch (error) {
-    opened.db.close();
-    rmSync(opened.dir, { recursive: true, force: true });
+    try { db?.close(); } finally { rmSync(dir, { recursive: true, force: true }); }
     throw error;
   }
 }
@@ -2546,7 +2539,12 @@ async function publishOutputs({ publication, output, outputBytes, completenessOu
       await link(completenessStage, completenessOutput);
       await onPublicationEvent?.({ event: "completeness-published", stage });
     }
-    if (!hasSameFileIdentity(await lstat(candidateStage), candidateIdentity)) {
+    if (!hasSameFileIdentity(await lstat(candidateStage), candidateIdentity)
+      || !Buffer.from(await readFile(candidateStage)).equals(outputBytes)
+      || (completenessOutput && (!hasSameFileIdentity(await lstat(completenessStage), completenessIdentity)
+        || !hasSameFileIdentity(await lstat(completenessOutput), completenessIdentity)
+        || !Buffer.from(await readFile(completenessStage)).equals(completenessBytes)
+        || !Buffer.from(await readFile(completenessOutput)).equals(completenessBytes)))) {
       throw new Error("OUTPUT_PUBLICATION_STAGE_REPLACED");
     }
     await link(candidateStage, output);
@@ -2591,12 +2589,12 @@ export async function runKorailItxCompletenessCli({
   const output = requiredString(args.output, "--output");
   if (!path.isAbsolute(output)) throw new Error("--output must be absolute");
   const completenessOutputArg = args["completeness-output"];
-  if (typeof completenessOutputArg === "string"
+  if (completenessOutputArg !== undefined && (typeof completenessOutputArg !== "string" || !path.isAbsolute(completenessOutputArg))) {
+    throw new Error("OUTPUT_PATH_INVALID");
+  }
+  if (completenessOutputArg !== undefined
     && path.resolve(completenessOutputArg) === path.resolve(output)) {
     throw new Error("candidate and completeness output paths must differ");
-  }
-  if (completenessOutputArg !== undefined && (!path.isAbsolute(completenessOutputArg) || typeof completenessOutputArg !== "string")) {
-    throw new Error("OUTPUT_PATH_INVALID");
   }
   if (Object.hasOwn(args, "canonical-pack")) throw new Error("--canonical-pack is not supported");
   const stationCatalogPackPath = requiredString(args["station-catalog-pack"], "--station-catalog-pack");
