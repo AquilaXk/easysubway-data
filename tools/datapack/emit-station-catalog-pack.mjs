@@ -8,9 +8,8 @@ import { fileURLToPath } from "node:url";
 import { canonicalJson, validateArtifactComponentManifest } from "./lib/manifest-validation.mjs";
 
 const INPUT = "tools/datapack/release/capital-production-canonical-pack.json";
-// Keep the last-writer SQLITE_VERSION_NUMBER at SQLite header offset 96 stable.
-const SQLITE_VERSION_NUMBER_OFFSET = 96;
-const SQLITE_VERSION_NUMBER = 3053000;
+const NODE_VERSION = "24.19.0";
+const SQLITE_VERSION = "3.53.3";
 const TABLES = {
   stations: { source: "stations", keys: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region"], allowed: ["id", "nameKo", "nameEn", "nameSub", "normalizedName", "region", "latitude", "longitude", "dataQualityLevel", "dataSourceType", "lastVerifiedAt"], target: ["id", "name_ko", "name_en", "name_sub", "normalized_name", "region"] },
   station_aliases: { source: "stationAliases", keys: ["stationId", "alias", "normalizedAlias"], allowed: ["stationId", "alias", "normalizedAlias"], target: ["station_id", "alias", "normalized_alias"] },
@@ -19,6 +18,7 @@ const TABLES = {
 };
 
 export async function emitStationCatalogPack(input) {
+  if (process.versions.node !== NODE_VERSION || process.versions.sqlite !== SQLITE_VERSION) throw new Error(`runtime must be Node ${NODE_VERSION} with SQLite ${SQLITE_VERSION}`);
   const root = path.resolve(input.repositoryRoot ?? process.cwd());
   const sourceRelative = exact(raw(input.input ?? INPUT, "--input"), INPUT, "--input");
   const source = await exactInput(root, sourceRelative);
@@ -35,7 +35,6 @@ export async function emitStationCatalogPack(input) {
     const file = path.join(artifact, "payload/catalog.sqlite");
     await mkdir(path.dirname(file), { recursive: true });
     writeSqlite(file, rows);
-    await normalizeHeader(file);
     const stationSetSha256 = digest(rows.stations.map((row) => row.id).sort(bytes));
     const manifest = { manifestVersion: 1, artifactKind: "station-catalog-pack", catalogPackId, stationSetSha256, payloadSha256: await inventory(artifact) };
     validateArtifactComponentManifest(manifest, stationSetSha256);
@@ -111,7 +110,6 @@ function writeSqlite(file, rows) {
 }
 
 function insertRows(db, table, columns, rows) { const insert = db.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); for (const row of [...rows].sort((a, b) => compareTuple(a, b, columns))) insert.run(...columns.map((column) => row[column])); }
-async function normalizeHeader(file) { const value = await readFile(file); value.writeUInt32BE(SQLITE_VERSION_NUMBER, SQLITE_VERSION_NUMBER_OFFSET); await writeFile(file, value); }
 async function inventory(root) { const payload = path.join(root, "payload"); const names = await readdir(payload); if (canonicalJson(names.sort(bytes)) !== canonicalJson(["catalog.sqlite"])) throw new Error("payload paths mismatch"); const file = path.join(payload, "catalog.sqlite"); const stat = await lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size === 0) throw new Error("payload has unknown or invalid file"); const value = await readFile(file); return digest([{ path: "payload/catalog.sqlite", sizeBytes: value.length, sha256: digest(value) }]); }
 async function validateOutput(root) { const actual = []; async function collect(current) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await collect(target); else if (entry.isFile() && !entry.isSymbolicLink()) actual.push(path.relative(root, target).split(path.sep).join("/")); else throw new Error("artifact output must be regular files"); } } await collect(root); if (canonicalJson(actual.sort(bytes)) !== canonicalJson(["manifest.json", "payload/catalog.sqlite"])) throw new Error("unknown artifact output"); }
 function parse(bytes) { try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error("canonical fixture must be JSON"); } }

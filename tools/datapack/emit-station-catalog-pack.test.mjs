@@ -16,6 +16,14 @@ test("capital production canonical fixture에서 deterministic한 station catalo
   await cp("tools/datapack/release/capital-production-canonical-pack.json", path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), { recursive: true });
   const run = (output, values = {}) => emitStationCatalogPack({ repositoryRoot: root, output: path.join(temp, output), catalogPackId: "catalog-v1", ...values });
 
+  for (const name of ["node", "sqlite"]) {
+    const version = Object.getOwnPropertyDescriptor(process.versions, name);
+    Object.defineProperty(process.versions, name, { ...version, value: "0.0.0" });
+    try { await rejectsWithoutTemp(temp, () => run(`wrong-${name}-runtime`), /runtime must be Node 24\.19\.0 with SQLite 3\.53\.3/); }
+    finally { Object.defineProperty(process.versions, name, version); }
+    assert.equal(await exists(path.join(temp, `wrong-${name}-runtime`)), false);
+  }
+
   await run("one");
   await run("two");
   const paths = await files(path.join(temp, "one"));
@@ -31,7 +39,7 @@ test("capital production canonical fixture에서 deterministic한 station catalo
   const stationIds = [...new Set(capital.stations.map((station) => station.id))].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
   assert.equal(manifest.stationSetSha256, hash(Buffer.from(canonicalJson(stationIds))));
   const sqlite = await readFile(path.join(temp, "one/payload/catalog.sqlite"));
-  assert.equal(sqlite.readUInt32BE(96), 3053000);
+  assert.equal(sqlite.readUInt32BE(96), 3053003);
   const db = new DatabaseSync(path.join(temp, "one/payload/catalog.sqlite"), { readOnly: true });
   assert.equal(db.prepare("PRAGMA page_size").get().page_size, 4096);
   assert.equal(db.prepare("PRAGMA auto_vacuum").get().auto_vacuum, 0);
