@@ -2254,7 +2254,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         coverageContractPath: contractPath,
         repositoryRoot: dir,
         now: new Date("2026-07-15T02:00:00.000Z"),
-      }), /CANONICAL_PACK_IDENTITY_INVALID/);
+      }), /ITX source candidate schema is invalid/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2658,7 +2658,7 @@ test("ITX CLI는 누락·변조된 ITX corridor를 provider 호출 전에 거부
           argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--output", path.join(dir, `${scenario.name}.json`)],
           env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
           collectImpl: async () => { providerInvoked = true; assert.fail("provider collection must not run"); },
-        }), /STATION_CATALOG_PACK_INVALID/);
+        }), /canonical ITX corridor differs from artifact contract/);
         assert.equal(providerInvoked, false);
       });
     }
@@ -2670,6 +2670,7 @@ test("ITX CLI candidate는 provider phase-swap 뒤에도 preflight station catal
   const packA = path.join(dir, "catalog-a");
   const packB = path.join(dir, "catalog-b");
   const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
   const completeness = completenessForCandidate(sourceCandidate());
   try {
     await copyStationCatalogPack(packA);
@@ -2683,7 +2684,7 @@ test("ITX CLI candidate는 provider phase-swap 뒤에도 preflight station catal
       manifestSha256: createHash("sha256").update(await readFile(path.join(packA, "manifest.json"))).digest("hex"),
     };
     await runKorailItxCompletenessCli({
-      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", packA, "--output", output],
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", packA, "--completeness-output", completenessOutput, "--output", output],
       env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-15T02:00:00.000Z"),
       repositoryRoot: dir,
       collectImpl: async () => {
@@ -2704,12 +2705,13 @@ test("ITX CLI injected snapshot은 identity·roster·lookup nested membership �
   const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-frozen-snapshot-"));
   const pack = path.join(dir, "catalog");
   const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
   const completeness = completenessForCandidate(sourceCandidate());
   try {
     await copyStationCatalogPack(pack);
     await writeCoverageContract(dir, "{}");
     await runKorailItxCompletenessCli({
-      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--output", output],
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--completeness-output", completenessOutput, "--output", output],
       env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-15T02:00:00.000Z"),
       repositoryRoot: dir,
       collectImpl: async ({ stationCatalogSnapshot }) => {
@@ -2890,9 +2892,9 @@ test("ITX CLI는 completeness event 뒤 staged artifact 변조를 candidate 공�
 
 test("ITX CLI는 output parent replacement 뒤 stage와 link publication을 fail closed한다", async (context) => {
   for (const scenario of [
-    { event: "before-stage-created", withCompleteness: false },
-    { event: "before-completeness-link", withCompleteness: true },
-    { event: "before-candidate-link", withCompleteness: true },
+    { event: "before-stage-created" },
+    { event: "before-completeness-link" },
+    { event: "before-candidate-link" },
   ]) {
     await context.test(scenario.event, async () => {
       const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-parent-replaced-"));
@@ -2906,7 +2908,7 @@ test("ITX CLI는 output parent replacement 뒤 stage와 link publication을 fail
           argv: [
             "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719",
             "--station-catalog-pack", PACK_PATH,
-            ...(scenario.withCompleteness ? ["--completeness-output", completenessOutput] : []),
+            "--completeness-output", completenessOutput,
             "--output", output,
           ],
           env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
