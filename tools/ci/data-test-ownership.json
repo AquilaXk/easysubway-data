@@ -280,6 +280,8 @@
     "mobile": {
       "repository": "AquilaXk/easysubway-mobile",
       "commit": "d85742f14cbf97c526a6b94dd55bbf863e1d1346",
+      "checkoutPath": ".external/mobile",
+      "sourcePath": "apps/mobile",
       "path": "apps/mobile",
       "requiredFiles": [
         {

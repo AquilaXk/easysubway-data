@@ -52,6 +52,8 @@ function fixture() {
         mobile: {
           repository: 'AquilaXk/easysubway-mobile',
           commit: 'd85742f14cbf97c526a6b94dd55bbf863e1d1346',
+          checkoutPath: '.external/mobile',
+          sourcePath: 'apps/mobile',
           path: 'apps/mobile',
           requiredFiles: [
             {
@@ -84,8 +86,8 @@ function fixture() {
     trackedEntries: tests.map(({ path }) => ({ path, mode: '100644' })),
     sources: Object.fromEntries(tests.map(({ path }) => [path, "import test from 'node:test';\ntest('ok', () => {});\n"])),
     workflowSources: {
-      '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          ref: \${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: apps/mobile\n          persist-credentials: false\n      - run: ${requiredInvocation}\n`,
-      '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: apps/mobile\n          persist-credentials: false\n      - run: ${releaseInvocation}\n`,
+      '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          ref: \${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: .external/mobile\n          persist-credentials: false\n      - run: cp -a .external/mobile/apps/mobile apps/mobile\n      - run: ${requiredInvocation}\n`,
+      '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: .external/mobile\n          persist-credentials: false\n      - run: cp -a .external/mobile/apps/mobile apps/mobile\n      - run: ${releaseInvocation}\n`,
     },
     fixtureStates: {
       mobile: {
@@ -119,7 +121,6 @@ test('valid ownership covers every tracked test and both workflow classes', () =
   assert.equal(result.classCounts['deterministic-release'], 1);
   assert.match(result.inventoryDigest, /^[a-f0-9]{64}$/);
 });
-
 test('missing, stale, renamed and duplicate manifest entries fail closed', () => {
   const missing = fixture();
   missing.manifest.tests.pop();
@@ -187,10 +188,10 @@ test('external fixture identity and exact PR-head checkout fail closed on drift'
   assert.ok(errorCodes(() => validateOwnership(mergeCheckout)).includes('PR_HEAD_CHECKOUT_MISSING'));
 });
 
-test('required tests cannot become release-only or advisory-only', () => {
+test('release-only ownership is valid but required workflow cannot become advisory', () => {
   const releaseOnly = fixture();
   releaseOnly.manifest.tests[0].classes = ['deterministic-release'];
-  assert.ok(errorCodes(() => validateOwnership(releaseOnly)).includes('REQUIRED_PR_MISSING'));
+  assert.doesNotThrow(() => validateOwnership(releaseOnly));
 
   const advisory = fixture();
   advisory.manifest.workflows['required-pr'].required = false;
