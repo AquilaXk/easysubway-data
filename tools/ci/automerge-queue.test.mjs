@@ -206,11 +206,11 @@ test('REST 목록 조회는 페이지 상한 안에서 읽고 넘치면 판정�
   assert.match(objectShape.stdout, /^STOPPED 2/);
 });
 
-test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리뷰를 함께 요구한다', async () => {
+test('리뷰 게이트는 전 커밋의 활성 상태와 frozen discovery 긍정 리뷰를 함께 요구한다', async () => {
   const workflow = await readWorkflow();
 
   const reviewProgram = workflow.match(
-    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+    /# review-state-filter-begin\n[\s\S]*?if ! jq -e '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
@@ -227,7 +227,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ...overrides,
   });
   const runReviewFilter = (reviews) => {
-    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', reviewProgram], {
+    const result = spawnSync('jq', ['-e', reviewProgram], {
       input: JSON.stringify([reviews]),
       encoding: 'utf8',
     });
@@ -356,8 +356,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  // 긍정 리뷰는 여전히 current head를 요구한다.
-  assert.notEqual(
+  // finding fix/rebase 뒤에도 prior head의 supported discovery Review는 유효하다.
+  assert.equal(
     runReviewFilter([
       review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
         commit_id: 'previous-head',
@@ -365,7 +365,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  assert.notEqual(
+  assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
         commit_id: 'previous-head',
@@ -373,8 +373,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  // CodeRabbit도 현재 head 리뷰여야 하며, change request는 다른 승인이 있어도 막는다.
-  assert.notEqual(
+  // pinned CodeRabbit discovery도 prior head에서 인정한다. change request는 여전히 막는다.
+  assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', {
         ...codeRabbit,

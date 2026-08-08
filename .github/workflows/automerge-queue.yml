@@ -298,7 +298,7 @@ jobs:
             # review-state-filter-begin
             # 저장소 협력자 외에는 GitHub가 고정한 CodeRabbit Bot tuple만 신뢰한다.
             # 임의 NONE association이나 같은 이름의 User는 게이트를 통과하지 못한다.
-            if ! jq -e --arg head "${head}" '
+            if ! jq -e '
               def is_coderabbit:
                 .author_association == "NONE" and
                 .user.login == "coderabbitai[bot]" and
@@ -311,7 +311,6 @@ jobs:
                   .author_association == "COLLABORATOR" or
                   is_coderabbit
                 )] as $trusted |
-              ($trusted | map(select(.commit_id == $head))) as $current |
               ($trusted |
               sort_by(.submitted_at, .id) |
               reduce .[] as $review ({};
@@ -324,14 +323,14 @@ jobs:
                 end
               )) as $states |
               ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
-              any($current[];
+              any($trusted[];
                 .state == "APPROVED" or
                 (.state == "COMMENTED" and
                   (is_coderabbit or
                     ((.body // "" | startswith("**Actionable comments posted: ")) and
                     (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))))))
             ' <<<"${reviews}" >/dev/null; then
-              echo "PR #${pr}: no trusted review on the current head, or an active change request is open; skipping."
+              echo "PR #${pr}: no trusted frozen discovery review, or an active change request is open; skipping."
               continue
             fi
             # review-state-filter-end
