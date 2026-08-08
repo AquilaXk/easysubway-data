@@ -313,7 +313,7 @@ function applyStationMappingAuthority(snapshotDiff, currentMappings, previousMap
 }
 
 export async function buildItxSourceCandidate({ completeness, stationCatalogPackPath, now = new Date(), repositoryRoot = repoRoot }) {
-  const catalog = snapshotStationCatalog(stationCatalogPackPath);
+  const catalog = completenessCatalogSnapshots.get(completeness) ?? snapshotStationCatalog(stationCatalogPackPath);
   if (JSON.stringify(completeness?.stationCatalogPackIdentity) !== JSON.stringify(catalog.identity)) {
     throw new Error("STATION_CATALOG_PACK_IDENTITY_MISMATCH");
   }

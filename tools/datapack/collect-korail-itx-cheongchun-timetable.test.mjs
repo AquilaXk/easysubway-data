@@ -206,7 +206,12 @@ function mutateCatalogSqlite(sqlitePath, mutation) {
 
 function sourceCandidate(overrides = {}) {
   const dayCodes = ["8", "7", "9"];
-  const dateByDay = { "8": "2026-07-16", "7": "2026-07-18", "9": "2026-07-19" };
+  const selectedServiceDates = overrides.selectedServiceDates
+    ?? { "8": "20260716", "7": "20260718", "9": "20260719" };
+  const dateByDay = Object.fromEntries(Object.entries(selectedServiceDates).map(([dayCd, value]) => [
+    dayCd,
+    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`,
+  ]));
   const stationRosters = dayCodes.map((dayCd) => ({
     dayCd,
     stations: [
@@ -321,7 +326,7 @@ function sourceCandidate(overrides = {}) {
     promotionStatus: "BOOTSTRAP_REVIEW_REQUIRED",
     completenessEvidenceSha256: null,
     stationCatalogPackIdentity: structuredClone(PACK_IDENTITY),
-    selectedServiceDates: { "8": "20260716", "7": "20260718", "9": "20260719" },
+    selectedServiceDates,
     sourceLineage: dayCodes.map((dayCd) => ({
       dayCd,
       rosterEvidenceHash: "a".repeat(64),
@@ -348,6 +353,17 @@ function sourceCandidate(overrides = {}) {
     .digest("hex");
   candidate.evidenceHash = createHash("sha256").update(JSON.stringify(candidate)).digest("hex");
   return candidate;
+}
+
+function previousSourceCandidate(overrides = {}) {
+  return sourceCandidate({
+    artifactId: "itx-cheongchun-source-timetable-20260712010000000",
+    observedAt: "2026-07-12T01:00:00.000Z",
+    selectedServiceDates: { "8": "20260709", "7": "20260711", "9": "20260712" },
+    freshUntil: "2026-07-13T00:00:00+09:00",
+    promotionStatus: "SUPPORTED",
+    ...overrides,
+  });
 }
 
 function useEqualSequenceBranch(candidate) {
@@ -612,10 +628,8 @@ async function promoteUnchangedWithPin({
     const stationCatalogPackPath = path.join(dir, "station-catalog-pack");
     await mkdir(sourceDir, { recursive: true });
     await copyStationCatalogPack(stationCatalogPackPath);
-    const previous = sourceCandidate({
+    const previous = previousSourceCandidate({
       artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-      promotionStatus: "SUPPORTED",
-      freshUntil: "2026-07-19T00:00:00+09:00",
     });
     const { reference: previousReference } = await writeHistoricalAdmittedSourceBundle(sourceDir, previous);
     const previousSha = previousReference.sha256;
@@ -1490,9 +1504,8 @@ test("ITX unchanged promotion은 preserved completeness와 다른 warning·linea
       const sourceDir = path.join(dir, "tools/datapack/sources");
       try {
         await mkdir(sourceDir, { recursive: true });
-        const previous = sourceCandidate({
+        const previous = previousSourceCandidate({
           artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-          promotionStatus: "SUPPORTED",
         });
         const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
         const previousSha = previousReference.sha256;
@@ -1533,9 +1546,8 @@ test("ITX changed current candidate도 exact OWNER approval로 immutable artifac
   const sourceDir = path.join(dir, "tools/datapack/sources");
   try {
     await mkdir(sourceDir, { recursive: true });
-    const previous = sourceCandidate({
+    const previous = previousSourceCandidate({
       artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-      promotionStatus: "SUPPORTED",
     });
     const previousSequence = previous.stationSequences.find(({ dayCd, trainNumber }) => (
       dayCd === "8" && trainNumber === "2001"
@@ -2036,9 +2048,8 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
     try {
       const sourceDir = path.join(dir, "tools/datapack/sources");
       await mkdir(sourceDir, { recursive: true });
-      const previous = sourceCandidate({
+      const previous = previousSourceCandidate({
         artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-        promotionStatus: "SUPPORTED",
       });
       const previousBytes = sourceBytes(previous);
       const previousSha = createHash("sha256").update(previousBytes).digest("hex");
@@ -2104,9 +2115,8 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
       try {
         const sourceDir = path.join(dir, "tools/datapack/sources");
         await mkdir(sourceDir, { recursive: true });
-        const previous = sourceCandidate({
+        const previous = previousSourceCandidate({
           artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-          promotionStatus: "SUPPORTED",
         });
         const previousBytes = sourceBytes(previous);
         const previousSha = createHash("sha256").update(previousBytes).digest("hex");
@@ -2332,7 +2342,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
     }
   });
 
-  await context.test("same checkout arbitrary canonical pack identity", async () => {
+  await context.test("same checkout mixed canonical pack identity", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-pack-path-"));
     try {
       const candidate = sourceCandidate();
@@ -2355,20 +2365,21 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         coverageContractPath: contractPath,
         repositoryRoot: dir,
         now: new Date("2026-07-15T02:00:00.000Z"),
-      }), /ITX source candidate schema is invalid/);
+      }), /LEGACY_CURRENT_ADMISSION_FORBIDDEN/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  await context.test("stale canonical pack identity", async () => {
+  await context.test("stale station catalog pack identity", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-pack-"));
     try {
       const candidate = sourceCandidate();
+      candidate.stationCatalogPackIdentity.payloadSha256 = "f".repeat(64);
+      rehashCandidate(candidate);
       const candidatePath = path.join(dir, "candidate.json");
       await writeFile(candidatePath, sourceBytes(candidate));
       const contractPath = await writeCoverageContract(dir, '{"schemaVersion":2}\n');
-      await writeFile(path.join(dir, LEGACY_PACK_PATH), "changed-pack");
       await assert.rejects(promoteItxSourceCandidate({
         candidatePath,
         ...ownerApproval(candidate),
@@ -2376,7 +2387,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         coverageContractPath: contractPath,
         repositoryRoot: dir,
         now: new Date("2026-07-15T02:00:00.000Z"),
-      }), /CANONICAL_PACK_IDENTITY_INVALID/);
+      }), /STATION_CATALOG_PACK_IDENTITY_MISMATCH/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2441,9 +2452,8 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
     try {
       const sourceDir = path.join(dir, "tools/datapack/sources");
       await mkdir(sourceDir, { recursive: true });
-      const previous = sourceCandidate({
+      const previous = previousSourceCandidate({
         artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-        promotionStatus: "SUPPORTED",
       });
       const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
       const previousSha = previousReference.sha256;
@@ -2479,9 +2489,8 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
     try {
       const sourceDir = path.join(dir, "tools/datapack/sources");
       await mkdir(sourceDir, { recursive: true });
-      const previous = sourceCandidate({
+      const previous = previousSourceCandidate({
         artifactId: "itx-cheongchun-source-timetable-20260714010000000",
-        promotionStatus: "SUPPORTED",
       });
       const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
       const previousSha = previousReference.sha256;
@@ -2509,7 +2518,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
   await context.test("absolute ADMITTED artifact path", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-path-"));
     try {
-      const previous = sourceCandidate({ artifactId: "itx-cheongchun-source-timetable-20260714010000000" });
+      const previous = previousSourceCandidate({ artifactId: "itx-cheongchun-source-timetable-20260714010000000" });
       const previousPath = path.join(dir, "previous.json");
       const previousBytes = sourceBytes(previous);
       await writeFile(previousPath, previousBytes);
