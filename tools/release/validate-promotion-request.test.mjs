@@ -21,10 +21,37 @@ test("raw evidence와 서로 다른 candidate/promotion run identity를 검증�
   }
 });
 
+test("세 번의 data candidate raw parity evidence를 현재 candidate에 정확히 결속한다", () => {
+  const fixture = createFixture();
+  try {
+    assert.equal(run(fixture).status, 0);
+    for (const mutate of [
+      (value) => { value.candidates.reverse(); },
+      (value) => { value.candidates[1].workflowRunId = value.candidates[0].workflowRunId; },
+      (value) => { value.candidates[1].gitSha = "f".repeat(40); },
+      (value) => { value.selectedCandidateWorkflowRunId = "999"; },
+      (value) => { value.artifactInventorySha256 = "e".repeat(64); },
+      (value) => { value.issueRef = "AquilaXk/easysubway-data#54"; },
+    ]) {
+      const broken = createFixture();
+      try {
+        mutate(broken.parity);
+        replaceParity(broken, broken.parity);
+        assert.notEqual(run(broken).status, 0);
+      } finally {
+        broken.cleanup();
+      }
+    }
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("request key, evidence hash, approval run/reviewer mismatch를 거부한다", () => {
   for (const mutate of [
     (fixture) => { fixture.request.extra = true; writeRequest(fixture); },
     (fixture) => writeFileSync(fixture.compatibilityPath, "changed"),
+    (fixture) => writeFileSync(fixture.parityPath, "changed"),
     (fixture) => { fixture.workflowRunId = "789"; },
     (fixture) => { fixture.request.approval.reviewer = "other"; writeRequest(fixture); },
     (fixture) => writeFileSync(fixture.approvalPath, JSON.stringify([approvedReview(), approvedReview()])),
@@ -70,7 +97,9 @@ function createFixture() {
   const compatibility = compatibilityValue(component);
   const compatibilityBytes = Buffer.from(JSON.stringify(compatibility));
   const approvalBytes = Buffer.from(JSON.stringify([approvedReview()]));
-  const request = requestValue(component, compatibilityBytes, approvalBytes);
+  const parity = parityValue(component);
+  const parityBytes = Buffer.from(JSON.stringify(parity));
+  const request = requestValue(component, compatibilityBytes, approvalBytes, parityBytes);
   return {
     root,
     request,
@@ -81,6 +110,8 @@ function createFixture() {
     compatibility,
     compatibilityPath: file(root, "compatibility.json", compatibilityBytes),
     approvalPath: file(root, "approval.json", approvalBytes),
+    parity,
+    parityPath: file(root, "parity.json", parityBytes),
     workflowRunId: "456",
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
@@ -106,12 +137,20 @@ function replaceCompatibility(fixture, value) {
   writeRequest(fixture);
 }
 
-function requestValue(component, compatibilityBytes, approvalBytes) {
+function replaceParity(fixture, value) {
+  const bytes = Buffer.from(JSON.stringify(value));
+  writeFileSync(fixture.parityPath, bytes);
+  fixture.request.rebuildParityEvidenceSha256 = sha256(bytes);
+  writeRequest(fixture);
+}
+
+function requestValue(component, compatibilityBytes, approvalBytes, parityBytes) {
   return {
     schemaVersion: 1,
     artifactKind: "datapack-promotion-request",
     candidate: structuredClone(component),
     compatibilityEvidenceSha256: sha256(compatibilityBytes),
+    rebuildParityEvidenceSha256: sha256(parityBytes),
     requestedBy: "AquilaXk",
     approval: {
       workflowRunId: "456",
@@ -120,6 +159,22 @@ function requestValue(component, compatibilityBytes, approvalBytes) {
       approvalEvidenceSha256: sha256(approvalBytes),
     },
     contractVersion: "datapack-promotion-v1",
+    issueRef: "AquilaXk/easysubway#2705",
+  };
+}
+
+function parityValue(component) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "datapack-rebuild-parity-evidence",
+    selectedCandidateWorkflowRunId: component.workflowRunId,
+    candidates: [
+      structuredClone(component),
+      { ...component, workflowRunId: "234" },
+      { ...component, workflowRunId: "345" },
+    ],
+    artifactInventorySha256: component.artifactInventorySha256,
+    contractVersion: "datapack-rebuild-parity-v1",
     issueRef: "AquilaXk/easysubway#2705",
   };
 }
@@ -175,6 +230,7 @@ function run(fixture) {
     "--component", fixture.componentPath,
     "--inventory", fixture.inventoryPath,
     "--compatibility-evidence", fixture.compatibilityPath,
+    "--rebuild-parity-evidence", fixture.parityPath,
     "--approval-evidence", fixture.approvalPath,
     "--workflow-run-id", fixture.workflowRunId,
   ], { encoding: "utf8" });

@@ -11,7 +11,8 @@ const componentKeys = [
   "contractVersion", "issueRef",
 ];
 const requestKeys = [
-  "schemaVersion", "artifactKind", "candidate", "compatibilityEvidenceSha256", "requestedBy",
+  "schemaVersion", "artifactKind", "candidate", "compatibilityEvidenceSha256",
+  "rebuildParityEvidenceSha256", "requestedBy",
   "approval", "contractVersion", "issueRef",
 ];
 
@@ -49,7 +50,7 @@ export function validateComponent(value) {
     || !Number.isInteger(value.releaseSequence) || value.releaseSequence < 1
     || !sha64(value.manifestSha256) || !sha64(value.artifactInventorySha256)
     || value.contractVersion !== "datapack-contract-v3"
-    || !/^AquilaXk\/(?:easysubway|easysubway-data)#[1-9][0-9]*$/.test(value.issueRef)) {
+    || value.issueRef !== "AquilaXk/easysubway#2705") {
     throw new Error("component is invalid");
   }
   exactKeys(value.provenance, ["sourceSnapshotSetHash"], "component.provenance");
@@ -91,6 +92,36 @@ export function validateCompatibilityEvidence(value, component) {
   return value;
 }
 
+export function validateRebuildParityEvidence(value, component) {
+  exactKeys(value, [
+    "schemaVersion", "artifactKind", "selectedCandidateWorkflowRunId", "candidates",
+    "artifactInventorySha256", "contractVersion", "issueRef",
+  ], "rebuild parity evidence");
+  if (value.schemaVersion !== 1 || value.artifactKind !== "datapack-rebuild-parity-evidence"
+    || !positiveDecimal(value.selectedCandidateWorkflowRunId) || !Array.isArray(value.candidates)
+    || value.candidates.length !== 3 || !sha64(value.artifactInventorySha256)
+    || value.contractVersion !== "datapack-rebuild-parity-v1" || value.issueRef !== component.issueRef) {
+    throw new Error("rebuild parity evidence is invalid");
+  }
+
+  const identity = withoutWorkflowRunId(component);
+  let previousRunId = 0n;
+  let selected = false;
+  for (const candidate of value.candidates) {
+    validateComponent(candidate);
+    if (BigInt(candidate.workflowRunId) <= previousRunId
+      || !isDeepStrictEqual(withoutWorkflowRunId(candidate), identity)
+      || candidate.artifactInventorySha256 !== value.artifactInventorySha256) {
+      throw new Error("rebuild parity candidate is invalid");
+    }
+    previousRunId = BigInt(candidate.workflowRunId);
+    selected ||= candidate.workflowRunId === value.selectedCandidateWorkflowRunId
+      && isDeepStrictEqual(candidate, component);
+  }
+  if (!selected) throw new Error("rebuild parity selected candidate is invalid");
+  return value;
+}
+
 export function reviewerFromApproval(bytes) {
   let reviews;
   try {
@@ -116,16 +147,20 @@ export function validateRequest({
   inventoryBytes,
   compatibility,
   compatibilityBytes,
+  rebuildParity,
+  rebuildParityBytes,
   approvalBytes,
   workflowRunId,
 }) {
   validateComponent(component);
   validateInventory(inventory);
   validateCompatibilityEvidence(compatibility, component);
+  validateRebuildParityEvidence(rebuildParity, component);
   exactKeys(request, requestKeys, "request");
   if (request.schemaVersion !== 1 || request.artifactKind !== "datapack-promotion-request"
     || !isDeepStrictEqual(request.candidate, component)
     || request.compatibilityEvidenceSha256 !== hash(compatibilityBytes)
+    || request.rebuildParityEvidenceSha256 !== hash(rebuildParityBytes)
     || !text(request.requestedBy) || request.contractVersion !== "datapack-promotion-v1"
     || request.issueRef !== component.issueRef) {
     throw new Error("request is invalid");
@@ -182,10 +217,15 @@ function sha40(value) {
   return typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 }
 
+function withoutWorkflowRunId(component) {
+  const { workflowRunId, ...identity } = component;
+  return identity;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2), [
-    "request", "component", "inventory", "compatibility-evidence", "approval-evidence",
-    "workflow-run-id",
+    "request", "component", "inventory", "compatibility-evidence", "rebuild-parity-evidence",
+    "approval-evidence", "workflow-run-id",
   ]);
   const [request] = await regularJson(args.get("request"), "--request");
   const [component] = await regularJson(args.get("component"), "--component");
@@ -193,6 +233,10 @@ async function main() {
   const [compatibility, compatibilityBytes] = await regularJson(
     args.get("compatibility-evidence"),
     "--compatibility-evidence",
+  );
+  const [rebuildParity, rebuildParityBytes] = await regularJson(
+    args.get("rebuild-parity-evidence"),
+    "--rebuild-parity-evidence",
   );
   const approvalBytes = await regularBytes(args.get("approval-evidence"), "--approval-evidence");
   validateRequest({
@@ -202,6 +246,8 @@ async function main() {
     inventoryBytes,
     compatibility,
     compatibilityBytes,
+    rebuildParity,
+    rebuildParityBytes,
     approvalBytes,
     workflowRunId: args.get("workflow-run-id"),
   });
