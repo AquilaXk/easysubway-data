@@ -442,6 +442,9 @@ async function promoteItxSourceCandidateLocked({
   validateStationCatalogCorridorAuthority(candidate, catalog);
   const candidateSets = validateSourceSnapshotSets(candidate);
   const contract = validateCoverageContractAuthority(JSON.parse(await readFile(coverageContractPath, "utf8")));
+  const admission = contract?.officialEvidence?.korailCompletenessAdmission;
+  if (!isPlainObject(admission)) throw new Error("ITX_COVERAGE_CONTRACT_INVALID");
+  validateTopologyInputPackIdentity(admission.topologyInputPackIdentity);
   const previousSource = await loadAdmittedSourceReference(contract, repositoryRoot, catalog);
   const previous = previousSource?.sourceTimetableArtifact ?? null;
   const bootstrap = previousSource === null;
@@ -489,9 +492,6 @@ async function promoteItxSourceCandidateLocked({
     completenessRelativePath,
     repositoryRoot,
   );
-  const admission = contract?.officialEvidence?.korailCompletenessAdmission;
-  if (!isPlainObject(admission)) throw new Error("ITX_COVERAGE_CONTRACT_INVALID");
-  validateTopologyInputPackIdentity(admission.topologyInputPackIdentity);
   delete admission.canonicalPackIdentity;
   admission.stationCatalogPackIdentity = catalog.identity;
   await writeImmutableArtifact(artifactPath, candidateBytes, "ADMITTED_SOURCE_ARTIFACT");
