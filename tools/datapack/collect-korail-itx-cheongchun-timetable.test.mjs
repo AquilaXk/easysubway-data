@@ -636,7 +636,7 @@ async function promoteUnchangedWithPin({
     const contractExtras = { sourceTimetableArtifact: previousReference };
     if (includeFreshness) contractExtras.freshness = freshness;
     contractExtras.officialEvidence = pin === undefined
-      ? undefined
+      ? null
       : { korailCompletenessAdmission: { canonicalPackIdentity: pin } };
     const contractPath = await writeCoverageContract(
       dir,
@@ -1552,8 +1552,8 @@ test("ITX changed current candidate도 exact OWNER approval로 immutable artifac
     const previousSequence = previous.stationSequences.find(({ dayCd, trainNumber }) => (
       dayCd === "8" && trainNumber === "2001"
     ));
-    previousSequence.stops[0].arrivalAt = "2026-07-16T07:58:20+09:00";
-    previousSequence.stops[0].departureAt = "2026-07-16T07:58:20+09:00";
+    previousSequence.stops[0].arrivalAt = "2026-07-09T07:58:20+09:00";
+    previousSequence.stops[0].departureAt = "2026-07-09T07:58:20+09:00";
     previousSequence.stops[0].arrivalSeconds = 28_700;
     previousSequence.stops[0].departureSeconds = 28_700;
     const previousStopTime = previous.transitStopTimes.find(({ tripId, stationId }) => (
