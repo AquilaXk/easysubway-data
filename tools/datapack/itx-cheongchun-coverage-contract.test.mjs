@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 
-const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const contract = JSON.parse(await readFile(new URL("./itx-cheongchun-coverage-contract.json", import.meta.url), "utf8"));
 const targets = JSON.parse(await readFile(new URL("./nationwide-coverage-targets.json", import.meta.url), "utf8"));
@@ -175,7 +174,7 @@ test("ITX-청춘 admission contract는 날짜·OD matrix·양방향 completeness
   });
 });
 
-test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_AUTO exact bytes로 ADMITTED된다", async () => {
+test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그대로 보존한다", async () => {
   const reference = contract.sourceTimetableArtifact;
   assert.equal(reference.status, "ADMITTED");
   assert.equal(reference.admissionEligible, true);
@@ -257,7 +256,7 @@ test("ITX-청춘 production source artifact는 변경 없는 5-set의 UNCHANGED_
   );
 });
 
-test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 credential 없이 고정한다", () => {
+test("ITX-청춘 historical admission evidence는 세 service day 관측 결과를 credential 없이 고정한다", () => {
   assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission, {
     provider: "TAGO + 한국철도공사",
     officialSourceUrl: "https://www.data.go.kr/data/15125762/openapi.do",
@@ -324,11 +323,11 @@ test("ITX-청춘 live admission evidence는 세 service day 전수 결과를 cre
   });
 });
 
-test("ITX-청춘 admission pin은 historical source를 보존하고 release candidate pack과 일치한다", {
+test("release candidate pack은 current station-catalog evidence schema와 exact bytes를 보존한다", {
   skip: process.env.EASYSUBWAY_DATAPACK_RELEASE_MODE === "release-candidate"
     ? false
     : "release-candidate pack identity에서만 검증한다",
-}, async () => {
+}, async (context) => {
   const output = process.env.EASYSUBWAY_DATAPACK_OUTPUT;
   assert.ok(output, "release candidate datapack output이 필요하다");
   const manifest = JSON.parse(await readFile(path.join(output, "current.json"), "utf8"));
@@ -345,30 +344,42 @@ test("ITX-청춘 admission pin은 historical source를 보존하고 release cand
   const canonicalPackSqliteSha256 = createHash("sha256")
     .update(gunzipSync(canonicalPackBytes))
     .digest("hex");
-  assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
-    id: "capital",
-    sourceIssue: 2097,
-    sha256: "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
-    sqliteSha256: "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
-  });
-  assert.equal(topologyEvidence.sourceIssue, 2135);
-  assert.equal(topologyEvidence.pack.outputSha256, canonicalPackSha256);
-  assert.equal(topologyEvidence.pack.outputSqliteSha256, canonicalPackSqliteSha256);
-  assert.equal(
-    contract.officialEvidence.korailCompletenessAdmission.artifactId,
-    "itx-cheongchun-completeness-admission-20260714T083544292Z",
-  );
-  // input(#2097 admitted 기준본)과 output(현재 번들 pack)이 더 이상 "input +
-  // ITX만"이 아닐 수 있다 — #2068 등 무관한 이유로 output이 재승인(readmit)된
-  // 경우, tools/datapack/readmit-bundled-pack-identity.mjs가 남긴
-  // readmissions 체인이 무결(각 링크 연쇄·ITX 하위그래프 불변 증명·최신 항목이
-  // pack.output*과 일치)해야만 이 lineage를 신뢰할 수 있다. 재승인 없이
-  // output만 손댄 무단 변조는 이 --check 호출 자체가 실패로 잡는다.
-  await execFileAsync(process.execPath, [
-    "tools/datapack/readmit-bundled-pack-identity.mjs",
-    "--check",
-    "--pack", canonicalPackPath,
-  ], { cwd: root });
+  assert.equal(activePack.sha256, canonicalPackSha256);
+  assert.equal(activePack.sqliteSha256, canonicalPackSqliteSha256);
+
+  const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-release-schema-"));
+  context.after(() => rm(temporaryDir, { recursive: true, force: true }));
+  const sqlitePath = path.join(temporaryDir, "capital.sqlite");
+  await writeFile(sqlitePath, gunzipSync(canonicalPackBytes));
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
+      .all()
+      .map(({ name }) => name);
+    assert.equal(columns.some((name) => name.startsWith("canonical_pack_")), false);
+    assert.deepEqual(columns.filter((name) => name.startsWith("station_catalog_")), [
+      "station_catalog_artifact_kind",
+      "station_catalog_manifest_version",
+      "station_catalog_pack_id",
+      "station_catalog_station_set_sha256",
+      "station_catalog_payload_sha256",
+      "station_catalog_manifest_sha256",
+    ]);
+    const evidence = database.prepare(`
+      SELECT admission_status, admission_eligible,
+             station_catalog_artifact_kind, station_catalog_manifest_version
+      FROM route_service_artifact_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'
+    `).get();
+    assert.deepEqual({ ...evidence }, {
+      admission_status: "ADMITTED",
+      admission_eligible: 1,
+      station_catalog_artifact_kind: "station-catalog-pack",
+      station_catalog_manifest_version: 1,
+    });
+  } finally {
+    database.close();
+  }
 });
 
 test("ITX-청춘 evidence는 공식 URL·schema/hash·재검토 시점을 갖고 credential을 포함하지 않는다", () => {

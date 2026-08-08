@@ -1917,7 +1917,6 @@ test("데이터팩 생성기는 전체 identity chain이 없는 ITX topology evi
       sourceIssue: 2135,
     };
     fixture.packs[0].networkEdges.push(edge);
-    fixture.packs[0].routeServiceArtifactEvidence = [routeEvidence];
     await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
 
     const edgeProjection = [{
@@ -1971,7 +1970,7 @@ test("데이터팩 생성기는 전체 identity chain이 없는 ITX topology evi
         "--build-spec", buildSpecPath,
         "--output", outputDir,
       ], { cwd: root, env: productionEnv }),
-      /tracked ITX readmission chain is invalid/,
+      /ITX topology evidence\.readmissions is not allowed/,
     );
   } finally {
     await rm(workDir, { recursive: true, force: true });
@@ -17907,6 +17906,111 @@ test("official OD fare validator는 pack inventory에 없는 source를 거부한
   }
 });
 
+async function writeCurrentItxReleaseInputs(
+  workspace,
+  { mutateFixture, mutateTopologyEvidence, mutateCompleteness } = {},
+) {
+  const currentIdentity = {
+    artifactKind: "station-catalog-pack",
+    manifestVersion: 1,
+    catalogPackId: "capital",
+    stationSetSha256: "1".repeat(64),
+    payloadSha256: "2".repeat(64),
+    manifestSha256: "3".repeat(64),
+  };
+  const selectedServiceDates = { "7": "20260808", "8": "20260804", "9": "20260809" };
+  const observedAt = "2026-08-04T17:30:34.901Z";
+  const freshUntil = "2026-08-10T00:00:00+09:00";
+  const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
+  for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
+  mutateFixture?.(fixture);
+
+  const completeness = JSON.parse(await readFile(
+    "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886-completeness-evidence.json",
+    "utf8",
+  ));
+  completeness.observedAt = observedAt;
+  completeness.selectedServiceDates = selectedServiceDates;
+  completeness.stationCatalogPackIdentity = currentIdentity;
+  completeness.sourceTimetableArtifact.freshUntil = freshUntil;
+  mutateCompleteness?.(completeness);
+  const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
+  completeness.evidenceHash = sha256(Buffer.from(JSON.stringify(completenessWithoutEvidenceHash)));
+  const completenessPath = path.join(workspace, "itx-completeness.json");
+  const completenessBytes = Buffer.from(`${JSON.stringify(completeness)}\n`);
+  await writeFile(completenessPath, completenessBytes);
+
+  const source = JSON.parse(await readFile(
+    "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
+    "utf8",
+  ));
+  delete source.canonicalPackIdentity;
+  source.observedAt = observedAt;
+  source.freshUntil = freshUntil;
+  source.selectedServiceDates = selectedServiceDates;
+  source.stationCatalogPackIdentity = currentIdentity;
+  source.completenessEvidenceSha256 = sha256(completenessBytes);
+  const { evidenceHash: _sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
+  source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)));
+  const sourcePath = path.join(workspace, "itx-source.json");
+  const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
+  await writeFile(sourcePath, sourceBytes);
+
+  const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
+  const admission = contract.officialEvidence.korailCompletenessAdmission;
+  delete admission.canonicalPackIdentity;
+  admission.stationCatalogPackIdentity = currentIdentity;
+  Object.assign(contract.sourceTimetableArtifact, {
+    artifactPath: sourcePath,
+    sha256: sha256(sourceBytes),
+    completenessEvidencePath: completenessPath,
+    completenessEvidenceSha256: sha256(completenessBytes),
+    freshUntil,
+    promotion: {
+      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      previousArtifactSha256: null,
+      previousArtifactPath: null,
+      approvalUrl: "https://example.test/itx-current-admission",
+      approvedArtifactSha256: sha256(sourceBytes),
+    },
+  });
+  const contractPath = path.join(workspace, "itx-coverage-contract.json");
+  const contractBytes = Buffer.from(`${JSON.stringify(contract)}\n`);
+  await writeFile(contractPath, contractBytes);
+
+  const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
+  delete topologyEvidence.readmissions;
+  topologyEvidence.stationCatalogPackIdentity = currentIdentity;
+  topologyEvidence.sourceArtifact = {
+    id: source.artifactId,
+    sha256: sha256(sourceBytes),
+    completenessEvidenceSha256: sha256(completenessBytes),
+    freshUntil,
+    stationCatalogPackIdentity: currentIdentity,
+  };
+  mutateTopologyEvidence?.(topologyEvidence);
+  const topologyEvidencePath = path.join(workspace, "itx-topology-evidence.json");
+  const topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topologyEvidence)}\n`);
+  await writeFile(topologyEvidencePath, topologyEvidenceBytes);
+
+  const fixturePath = path.join(workspace, "fixture.json");
+  await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
+  const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  buildSpec.fixturePath = fixturePath;
+  buildSpec.itxTopologyEvidencePath = topologyEvidencePath;
+  buildSpec.itxTopologyEvidenceSha256 = sha256(topologyEvidenceBytes);
+  buildSpec.networkEdgeEvidence.itxCoverageContract = {
+    path: contractPath,
+    sha256: sha256(contractBytes),
+  };
+  const buildSpecPath = path.join(workspace, "build-spec.json");
+  await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+  return {
+    buildSpecPath,
+    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
+  };
+}
+
 test("official OD fare release candidate는 승인된 두 방향 quote와 provenance를 SQLite에 남긴다", async () => {
   const approvedEvidence = JSON.parse(await readFile(path.join(root, "tools/datapack/release/hash-evidence.json"), "utf8")).officialOdFareEvidence;
   const candidateFixture = JSON.parse(await readFile(path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json"), "utf8"));
@@ -17919,10 +18023,11 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
 
   const outputDir = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-candidate-"));
   try {
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(outputDir);
     await execFileAsync(
       process.execPath,
-      ["tools/datapack/build-datapack.mjs", "--build-spec", "tools/datapack/release/candidate-build-spec.json", "--output", outputDir],
-      { cwd: root, env: productionEnv },
+      ["tools/datapack/build-datapack.mjs", "--build-spec", buildSpecPath, "--output", outputDir],
+      { cwd: root, env },
     );
     const database = new DatabaseSync(path.join(outputDir, "catalog/capital-v1.sqlite"));
     let rows;
@@ -17962,20 +18067,15 @@ test("official OD fare release candidate는 승인된 두 방향 quote와 proven
 test("official OD fare release candidate는 승인 quote 순서에 의존하지 않는다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-order-"));
   try {
-    const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
-    fixture.packs[0].officialOdFareQuotes.reverse();
-    const fixturePath = path.join(workspace, "fixture.json");
-    await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-    const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-    buildSpec.fixturePath = fixturePath;
-    const buildSpecPath = path.join(workspace, "build-spec.json");
-    await writeFile(buildSpecPath, `${JSON.stringify(buildSpec, null, 2)}\n`);
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+      mutateFixture: (fixture) => fixture.packs[0].officialOdFareQuotes.reverse(),
+    });
 
     await execFileAsync(process.execPath, [
       "tools/datapack/build-datapack.mjs",
       "--build-spec", buildSpecPath,
       "--output", path.join(workspace, "output"),
-    ], { cwd: root, env: productionEnv });
+    ], { cwd: root, env });
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -17984,21 +18084,16 @@ test("official OD fare release candidate는 승인 quote 순서에 의존하지 
 test("production candidate는 admission에 결속되지 않은 ITX timetable row를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "production-unadmitted-itx-timetable-"));
   try {
-    const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
-    fixture.packs[0].transitTrips[0].serviceClass = "ITX_CHEONGCHUN";
-    const fixturePath = path.join(workspace, "fixture.json");
-    await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
-    const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-    buildSpec.fixturePath = fixturePath;
-    const buildSpecPath = path.join(workspace, "build-spec.json");
-    await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+      mutateFixture: (fixture) => { fixture.packs[0].transitTrips[0].serviceClass = "ITX_CHEONGCHUN"; },
+    });
 
     await assert.rejects(
       execFileAsync(process.execPath, [
         "tools/datapack/build-datapack.mjs",
         "--build-spec", buildSpecPath,
         "--output", path.join(workspace, "output"),
-      ], { cwd: root, env: productionEnv }),
+      ], { cwd: root, env }),
       /production ITX timetable rows require explicit admission/,
     );
   } finally {
@@ -18006,27 +18101,92 @@ test("production candidate는 admission에 결속되지 않은 ITX timetable row
   }
 });
 
-test("production candidate는 최초 admission과 다른 ITX readmission projection을 거부한다", async () => {
-  const workspace = await mkdtemp(path.join(tmpdir(), "production-rewritten-itx-projection-"));
+test("production candidate는 중복 ITX admission pair로 다른 pair를 대체하면 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "production-duplicate-itx-pair-"));
   try {
-    const evidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
-    for (const entry of evidence.readmissions) entry.itxSubgraph.edgesSha256 = "f".repeat(64);
-    const evidenceBytes = Buffer.from(`${JSON.stringify(evidence)}\n`);
-    const evidencePath = path.join(workspace, "evidence.json");
-    await writeFile(evidencePath, evidenceBytes);
-    const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-    buildSpec.itxTopologyEvidencePath = evidencePath;
-    buildSpec.itxTopologyEvidenceSha256 = sha256(evidenceBytes);
-    const buildSpecPath = path.join(workspace, "build-spec.json");
-    await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+      mutateFixture: (fixture) => {
+        const itxEdges = fixture.packs[0].networkEdges.filter(
+          ({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN",
+        );
+        const [admittedPair, replacedPair] = itxEdges;
+        assert.ok(replacedPair, "fixture must contain multiple admitted ITX directional pairs");
+        replacedPair.fromNodeId = admittedPair.fromNodeId;
+        replacedPair.toNodeId = admittedPair.toNodeId;
+      },
+    });
 
     await assert.rejects(
       execFileAsync(process.execPath, [
         "tools/datapack/build-datapack.mjs",
         "--build-spec", buildSpecPath,
         "--output", path.join(workspace, "output"),
-      ], { cwd: root, env: productionEnv }),
-      /tracked ITX readmission projection does not match original admission/,
+      ], { cwd: root, env }),
+      /ITX network edge fixture projection must contain each admitted directional pair exactly once/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("production candidate는 completeness station-catalog identity 불일치를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "production-itx-completeness-identity-"));
+  try {
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+      mutateCompleteness: (completeness) => {
+        completeness.stationCatalogPackIdentity.manifestSha256 = "9".repeat(64);
+      },
+    });
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec", buildSpecPath,
+        "--output", path.join(workspace, "output"),
+      ], { cwd: root, env }),
+      /topology, source, completeness, and contract station catalog identities must match exactly/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("production candidate는 topology evidence와 다른 최종 pack identity를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "production-itx-pack-identity-"));
+  try {
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+      mutateTopologyEvidence: (evidence) => {
+        evidence.pack.outputSha256 = "9".repeat(64);
+      },
+    });
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec", buildSpecPath,
+        "--output", path.join(workspace, "output"),
+      ], { cwd: root, env }),
+      /built ITX pack identity does not match current topology evidence output/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("production candidate는 legacy ITX readmission projection을 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "production-rewritten-itx-projection-"));
+  try {
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
+      mutateTopologyEvidence: (evidence) => {
+        evidence.readmissions = [{ itxSubgraph: { edgesSha256: "f".repeat(64) } }];
+      },
+    });
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        "tools/datapack/build-datapack.mjs",
+        "--build-spec", buildSpecPath,
+        "--output", path.join(workspace, "output"),
+      ], { cwd: root, env }),
+      /ITX topology evidence\.readmissions is not allowed/,
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -18036,15 +18196,15 @@ test("production candidate는 최초 admission과 다른 ITX readmission project
 test("official OD fare release candidate는 admission과 다른 quote set evidence를 거부한다", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "official-od-fare-release-mismatch-"));
   try {
-    const buildSpec = JSON.parse(await readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8"));
+    const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace);
+    const buildSpec = JSON.parse(await readFile(buildSpecPath, "utf8"));
     buildSpec.officialOdFareEvidence.quoteSetHash = "f".repeat(64);
-    const buildSpecPath = path.join(workspace, "candidate-build-spec.json");
     await writeFile(buildSpecPath, JSON.stringify(buildSpec));
     await assert.rejects(
       execFileAsync(
         process.execPath,
         ["tools/datapack/build-datapack.mjs", "--build-spec", buildSpecPath, "--output", path.join(workspace, "output")],
-        { cwd: root, env: productionEnv },
+        { cwd: root, env },
       ),
       /officialOdFareEvidence.quoteSetHash must match admission/,
     );

@@ -58,3 +58,14 @@ jobs:
           tools/datapack/collect-kric-source-candidate-evidence.test.mjs
           tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
           tools/datapack/probe-korail-facility-workbook.test.mjs
+
+      - name: Verify current ITX station catalog admission consumers
+        run: |
+          set -euo pipefail
+          node --test tools/datapack/itx-cheongchun-coverage-contract.test.mjs
+          node --test tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs
+          node --test tools/datapack/apply-timetable-refresh.test.mjs
+          node --test tools/datapack/build-server-timetable-snapshot.test.mjs
+          node --test tools/datapack/build-backend-timetable-seed.test.mjs
+          node --test --test-name-pattern='official OD fare release candidate|production candidate' tools/datapack/datapack-tools.test.mjs
+          node --test tools/datapack/itx-cheongchun-service-layer.test.mjs
