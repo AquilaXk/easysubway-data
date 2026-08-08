@@ -17918,7 +17918,7 @@ async function writeCurrentItxReleaseInputs(
     payloadSha256: "2".repeat(64),
     manifestSha256: "3".repeat(64),
   };
-  const selectedServiceDates = { "7": "20260808", "8": "20260804", "9": "20260809" };
+  const selectedServiceDates = { "7": "20260808", "8": "20260805", "9": "20260809" };
   const observedAt = "2026-08-04T17:30:34.901Z";
   const freshUntil = "2026-08-10T00:00:00+09:00";
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
