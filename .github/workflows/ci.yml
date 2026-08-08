@@ -123,85 +123,22 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-      - name: Verify standalone contracts
+      # Data #25 초기 Draft PR에서만 file별 current duration을 측정한다. 결과를 검토해
+      # manifest에 반영한 뒤 이 두 measurement step은 최종 workflow에서 제거한다.
+      - name: Measure current owned test durations
         run: >-
-          node --test
-          tools/ci/automerge-queue.test.mjs
-          tools/datapack/stage-contracts.test.mjs
-          tools/datapack/bundle-component-contract.test.mjs
-          tools/datapack/artifact-component-manifest.test.mjs
-          tools/datapack/server-route-bundle-build-contract.test.mjs
-          tools/datapack/lib/server-route-bundle-final.test.mjs
-          tools/datapack/sign-server-route-bundle.test.mjs
-          tools/datapack/build-server-route-bundle-final.test.mjs
-          tools/datapack/build-transfer-topology-admission.test.mjs
-          tools/datapack/plan-kric-exit-path-collection.test.mjs
-          tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs
-          tools/datapack/build-exit-path-admission.test.mjs
-          tools/datapack/collect-capital-route-topology.test.mjs
-          tools/datapack/collect-incheon-station-info.test.mjs
-          tools/datapack/activate-current-source-set.test.mjs
-          tools/datapack/build-datapack-current-admission.test.mjs
-          tools/datapack/build-server-route-bundle-consumer-handoff.test.mjs
-          tools/datapack/publish-object-storage.test.mjs
-          tools/datapack/publish-server-route-bundle.test.mjs
-          tools/datapack/artifact-component-table-layout.test.mjs
-          tools/datapack/emit-artifact-components.test.mjs
-          tools/datapack/emit-station-catalog-pack.test.mjs
-          tools/datapack/check-timetable-snapshot-freshness.test.mjs
-          tools/datapack/run-current-itx-collection.test.mjs
-          tools/datapack/build-data-component-manifest.test.mjs
-          tools/ci/require-workflow-artifact.test.mjs
-          tools/release/validate-promotion-request.test.mjs
-          tools/ci/datapack-release-workflow.test.mjs
-          tools/ci/public-sensitivity-owner-receipt-caller.test.mjs
-          tools/ci/mobile-fixture-staging-workflow.test.mjs
-          tools/ci/itx-current-collection-workflow.test.mjs
-          tools/datapack/lib/provider-call-integrity.test.mjs
-          tools/datapack/source-candidate-endpoint-contract.test.mjs
-          tools/datapack/collect-kric-source-candidate-evidence.test.mjs
-          tools/datapack/collect-seoul-accessibility-evidence.test.mjs
-          tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
-          tools/datapack/probe-korail-facility-workbook.test.mjs
-          tools/datapack/build-nationwide-coverage-tally.test.mjs
-          tools/datapack/contract-producer.test.mjs
-          tools/datapack/lib/datapack-manifest-schema.test.mjs
-          tools/datapack/catalog-raw-sql-tables.test.mjs
+          node tools/ci/data-test-discovery.mjs measure
+          --class required-pr
+          --output "${RUNNER_TEMP}/data-test-durations.json"
 
-      - name: Verify current ITX station catalog admission consumers
-        run: |
-          set -euo pipefail
-          node --test tools/datapack/itx-cheongchun-coverage-contract.test.mjs
-          node --test tools/datapack/apply-itx-topology-to-bundled-pack.test.mjs
-          node --test tools/datapack/apply-timetable-refresh.test.mjs
-          node --test tools/datapack/build-server-timetable-snapshot.test.mjs
-          node --test tools/datapack/build-backend-timetable-seed.test.mjs
-          node --test --test-name-pattern='ITX CLI promotion은 station catalog와 주입된 repository root를 전달한다|ITX CLI current refresh는 admitted source에 station catalog snapshot을 전달한다' tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
-          node --test --test-name-pattern='official OD fare release candidate|production candidate' tools/datapack/datapack-tools.test.mjs
-          node --test tools/datapack/itx-cheongchun-service-layer.test.mjs
+      - name: Upload current owned test duration evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: data-test-duration-evidence
+          path: ${{ runner.temp }}/data-test-durations.json
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Verify regional materializer fixture projection
-        run: |
-          set -euo pipefail
-          node --test tools/datapack/materialize-test-fixture.test.mjs
-          node --test --test-name-pattern='production 시설 status|현장·운영기관 확인 시설|근거 없는 시설 operationalStatus|UNKNOWN 운행상태 시설|production verified edge coverage|UNKNOWN accessibility edge|production pack의 최소 coverage|coverage evidence 누락|source inventory가 뒷받침하지 않는|provenance 전용 source|selected source가 claim한|production pack의 최소 coverage 미달|production coverage 기준|production schedule pass-through|cross-line EXPRESS|admission 전 schedule provenance|quota 미승인 schedule|station-line 단위 facility|동일 station-line-type|stationLineRows 없는|station-line source provenance|missing strict operational|missing approved movement|station-line source 우회|station-line operational evidence|UNDER_MAINTENANCE|NO_OFFICIAL_FEED|임의 strict route reason|route evidence가 아니면|status probe와 결합|field provenance|승인된 이동 경로 누락|STAIR pathway|수도권 pilot source coverage|관리자 검수 NORMAL' tools/datapack/datapack-tools.test.mjs
-          node --test --test-concurrency=2 \
-            tools/datapack/materialize-busan-accessibility.test.mjs \
-            tools/datapack/materialize-busan-route-map-positions.test.mjs \
-            tools/datapack/materialize-busan-route-topology.test.mjs \
-            tools/datapack/materialize-daegu-accessibility.test.mjs \
-            tools/datapack/materialize-daegu-route-map-positions.test.mjs \
-            tools/datapack/materialize-daegu-timetable.test.mjs \
-            tools/datapack/materialize-daejeon-accessibility.test.mjs \
-            tools/datapack/materialize-daejeon-route-map-positions.test.mjs \
-            tools/datapack/materialize-daejeon-route-topology.test.mjs \
-            tools/datapack/materialize-daejeon-timetable.test.mjs \
-            tools/datapack/materialize-gwangju-accessibility.test.mjs \
-            tools/datapack/materialize-gwangju-route-map-positions.test.mjs \
-            tools/datapack/materialize-gwangju-timetable.test.mjs \
-            tools/datapack/materialize-incheon-accessibility.test.mjs \
-            tools/datapack/materialize-incheon-station-info.test.mjs \
-            tools/datapack/materialize-incheon-timetable.test.mjs \
-            tools/datapack/materialize-seoul-route-map-positions.test.mjs \
-            tools/datapack/materialize-seoul9-phase1-route-map-positions.test.mjs \
-            tools/datapack/materialize-seoul9-route-map-positions.test.mjs
+      - name: Verify and run all owned required tests
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr
