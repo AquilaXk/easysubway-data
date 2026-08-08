@@ -17956,10 +17956,17 @@ async function writeCurrentItxReleaseInputs(
   const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
 
+  const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
   const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
   const admission = contract.officialEvidence.korailCompletenessAdmission;
   delete admission.canonicalPackIdentity;
   admission.stationCatalogPackIdentity = currentIdentity;
+  admission.topologyInputPackIdentity = {
+    id: topologyEvidence.pack.id,
+    sha256: topologyEvidence.pack.inputSha256,
+    sqliteSha256: topologyEvidence.pack.inputSqliteSha256,
+    byteSize: topologyEvidence.pack.inputByteSize,
+  };
   Object.assign(contract.sourceTimetableArtifact, {
     artifactPath: sourcePath,
     sha256: sha256(sourceBytes),
@@ -17978,7 +17985,6 @@ async function writeCurrentItxReleaseInputs(
   const contractBytes = Buffer.from(`${JSON.stringify(contract)}\n`);
   await writeFile(contractPath, contractBytes);
 
-  const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
   delete topologyEvidence.readmissions;
   topologyEvidence.stationCatalogPackIdentity = currentIdentity;
   topologyEvidence.sourceArtifact = {
