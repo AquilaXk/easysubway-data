@@ -172,10 +172,12 @@ function validateStationCatalogPackIdentity(evidence, stationCatalogPackIdentity
     "sourceIssue",
   ];
   if (
-    Object.keys(evidence).sort().join(",") !== evidenceKeys.slice().sort().join(",")
+    Object.keys(evidence).sort((left, right) => left.localeCompare(right)).join(",")
+      !== evidenceKeys.slice().sort((left, right) => left.localeCompare(right)).join(",")
     ||
     stationCatalogPackIdentity == null
-    || Object.keys(stationCatalogPackIdentity).sort().join(",") !== keys.slice().sort().join(",")
+    || Object.keys(stationCatalogPackIdentity).sort((left, right) => left.localeCompare(right)).join(",")
+      !== keys.slice().sort((left, right) => left.localeCompare(right)).join(",")
     || stationCatalogPackIdentity.artifactKind !== "station-catalog-pack"
     || stationCatalogPackIdentity.manifestVersion !== 1
     || typeof stationCatalogPackIdentity.catalogPackId !== "string"

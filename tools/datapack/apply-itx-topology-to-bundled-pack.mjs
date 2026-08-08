@@ -185,7 +185,9 @@ export function validateAdmittedSourceDocuments(
 
 function stationCatalogIdentity(value, label) {
   const keys = ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"];
-  if (value == null || Object.keys(value).sort().join(",") !== [...keys].sort().join(",")
+  if (value == null
+    || Object.keys(value).sort((left, right) => left.localeCompare(right)).join(",")
+      !== [...keys].sort((left, right) => left.localeCompare(right)).join(",")
     || value.artifactKind !== "station-catalog-pack"
     || value.manifestVersion !== 1
     || typeof value.catalogPackId !== "string" || value.catalogPackId.length === 0
@@ -213,7 +215,8 @@ function hasExactKeys(value, keys) {
   return value != null
     && typeof value === "object"
     && !Array.isArray(value)
-    && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+    && Object.keys(value).sort((left, right) => left.localeCompare(right)).join(",")
+      === [...keys].sort((left, right) => left.localeCompare(right)).join(",");
 }
 
 export async function admittedTopologySource(reference, source) {
