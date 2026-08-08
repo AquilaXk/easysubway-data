@@ -219,14 +219,14 @@ function hasExactKeys(value, keys) {
       === [...keys].sort((left, right) => left.localeCompare(right)).join(",");
 }
 
-export async function admittedTopologySource(reference, source, admittedInputs = ADMITTED_TOPOLOGY_INPUTS) {
+export async function admittedTopologySource(reference, source) {
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
     || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED") {
     throw new Error("ITX topology legacy admission is forbidden");
   }
   const identity = stationCatalogIdentity(source?.stationCatalogPackIdentity, "ITX topology station catalog identity");
-  const admittedInput = admittedInputs.get(reference?.sha256);
+  const admittedInput = ADMITTED_TOPOLOGY_INPUTS.get(reference?.sha256);
   if (admittedInput == null) {
     throw new Error("ITX topology current source identity is not admitted");
   }

@@ -87,11 +87,6 @@ async function admittedDocuments() {
   const sourceBytes = Buffer.from(JSON.stringify(source));
   contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
   const reference = contract.sourceTimetableArtifact;
-  const admittedInputs = new Map([[reference.sha256, {
-    gzipSha256: topologyInputPackIdentity.sha256,
-    sqliteSha256: topologyInputPackIdentity.sqliteSha256,
-    byteSize: topologyInputPackIdentity.byteSize,
-  }]]);
   return {
     contract,
     reference,
@@ -99,7 +94,6 @@ async function admittedDocuments() {
     completeness,
     sourceBytes,
     completenessBytes,
-    admittedInputs,
   };
 }
 
@@ -421,9 +415,8 @@ test("self-consistent topology input contract도 static admission과 다르면 �
 });
 
 test("admission document와 station/topology input identity는 exact binding을 요구한다", async (context) => {
-  const {
-    contract, reference, source, completeness, sourceBytes, completenessBytes, admittedInputs,
-  } = await admittedDocuments();
+  const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
+    await admittedDocuments();
   withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
     contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
   )));
@@ -434,7 +427,7 @@ test("admission document와 station/topology input identity는 exact binding을 
   ), /source identity is invalid/));
   const invalidStationSource = structuredClone(source);
   invalidStationSource.stationCatalogPackIdentity.extra = true;
-  await assert.rejects(admittedTopologySource(reference, invalidStationSource, admittedInputs),
+  await assert.rejects(admittedTopologySource(reference, invalidStationSource),
     /station catalog identity is invalid/);
 });
 
@@ -514,7 +507,7 @@ test("unsupported catalog version은 fixture를 변경하지 않고 거부한다
 });
 
 test("current source admission은 canonical/readmission/UNCHANGED_AUTO를 받지 않는다", async (context) => {
-  const { reference, source, admittedInputs } = await admittedDocuments();
+  const { reference, source } = await admittedDocuments();
   const cases = [
     ["canonical", (candidate) => { candidate.canonicalPackIdentity = {}; }],
     ["readmissions", (candidate) => { candidate.readmissions = []; }],
@@ -526,8 +519,9 @@ test("current source admission은 canonical/readmission/UNCHANGED_AUTO를 받지
     await context.test(name, async () => {
       const candidate = structuredClone(source);
       const candidateReference = structuredClone(reference);
+      candidateReference.sha256 = reference.promotion.previousArtifactSha256;
       mutate(candidate, candidateReference);
-      await assert.rejects(admittedTopologySource(candidateReference, candidate, admittedInputs),
+      await assert.rejects(admittedTopologySource(candidateReference, candidate),
         /legacy admission is forbidden/);
     });
   }
@@ -546,19 +540,15 @@ test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam�
 });
 
 test("current source static admission은 exact topology input tuple을 반환한다", async () => {
-  const { reference, source, admittedInputs } = await admittedDocuments();
-  const admitted = await admittedTopologySource(reference, source, admittedInputs);
+  const { reference, source } = await admittedDocuments();
+  reference.sha256 = reference.promotion.previousArtifactSha256;
+  const admitted = await admittedTopologySource(reference, source);
   assert.deepEqual({
     id: "capital",
     sha256: admitted.gzipSha256,
     sqliteSha256: admitted.sqliteSha256,
     byteSize: admitted.byteSize,
-  }, {
-    id: "capital",
-    sha256: admittedInputs.get(reference.sha256).gzipSha256,
-    sqliteSha256: admittedInputs.get(reference.sha256).sqliteSha256,
-    byteSize: admittedInputs.get(reference.sha256).byteSize,
-  });
+  }, admittedTopologyInputs.get(reference.sha256));
 });
 
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
