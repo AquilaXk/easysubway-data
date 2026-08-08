@@ -2549,6 +2549,10 @@ export async function runKorailItxCompletenessCli({
 } = {}) {
   const args = parseArgs(argv);
   if (args["promote-candidate"]) {
+    const stationCatalogPackPath = requiredString(
+      args["station-catalog-pack"],
+      "--station-catalog-pack",
+    );
     const coverageContractPath = validateCoverageContractPath(
       args["coverage-contract"],
       repositoryRoot,
@@ -2563,6 +2567,7 @@ export async function runKorailItxCompletenessCli({
       now,
       githubToken: env.GITHUB_TOKEN,
       repositoryRoot,
+      stationCatalogPackPath,
     });
     return { promotion, exitCode: 0 };
   }
@@ -2590,7 +2595,11 @@ export async function runKorailItxCompletenessCli({
       ?? path.join(repositoryRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
     repositoryRoot,
   );
-  const previousAdmittedArtifact = await loadPromotedSourceArtifact(contractPath, repositoryRoot);
+  const previousAdmittedArtifact = await loadPromotedSourceArtifact(
+    contractPath,
+    repositoryRoot,
+    stationCatalogSnapshot,
+  );
   const serviceDates = {
     "8": args["day8-date"],
     "7": args["day7-date"],
@@ -2654,7 +2663,7 @@ export async function runKorailItxCompletenessCli({
   };
 }
 
-async function loadPromotedSourceArtifact(contractPath, repositoryRoot = repoRoot) {
+async function loadPromotedSourceArtifact(contractPath, repositoryRoot = repoRoot, stationCatalogSnapshot) {
   let contract;
   try {
     contract = JSON.parse(await readFile(contractPath, "utf8"));
@@ -2662,7 +2671,11 @@ async function loadPromotedSourceArtifact(contractPath, repositoryRoot = repoRoo
     if (error?.code === "ENOENT") return null;
     throw error;
   }
-  return loadAdmittedSourceReference(validateCoverageContractAuthority(contract), repositoryRoot);
+  return loadAdmittedSourceReference(
+    validateCoverageContractAuthority(contract),
+    repositoryRoot,
+    stationCatalogSnapshot,
+  );
 }
 
 async function main() {
