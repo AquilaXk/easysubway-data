@@ -7,6 +7,18 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const yml = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
 
+test("release workflow는 owned deterministic-release subset만 실행한다", () => {
+  const step = yml.match(
+    /- name: Data Pack Release \/ Validate ITX-청춘 coverage contract[\s\S]*?\n\s+- name:/,
+  )?.[0];
+  assert.ok(step, "ITX coverage contract 검증 스텝을 찾지 못함");
+  assert.match(
+    step,
+    /node tools\/ci\/data-test-discovery\.mjs run --class deterministic-release/,
+  );
+  assert.doesNotMatch(step, /node\s+--test|\.test\.mjs/);
+});
+
 test("고정된 hub 계약은 mode 해석 뒤 pointer가 아닌 release에서만 stage한다", () => {
   assert.match(yml, /paths:[\s\S]*contracts\.lock\.json/);
   assert.doesNotMatch(yml, /paths:[\s\S]*release\/product-gates/);

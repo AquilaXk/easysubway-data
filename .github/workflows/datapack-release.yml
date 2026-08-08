@@ -834,7 +834,7 @@ jobs:
 
       - name: Data Pack Release / Validate ITX-청춘 coverage contract
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
-        run: node --test tools/datapack/itx-cheongchun-coverage-contract.test.mjs
+        run: node tools/ci/data-test-discovery.mjs run --class deterministic-release
 
       - name: Data Pack Release / Write release evidence bundle
         if: ${{ steps.release-mode.outputs.is-pointer-only != 'true' && steps.release-mode.outputs.mode != 'production-publish' }}
