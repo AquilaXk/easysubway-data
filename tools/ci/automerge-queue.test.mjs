@@ -76,6 +76,87 @@ test('코디네이터는 PAT 없이 GITHUB_TOKEN으로만 동작한다', async (
   assert.ok(workflow.includes('workflows: [CI]'));
 });
 
+test('automerge label 이벤트만 exact-head authorization marker를 발행한다', async () => {
+  const workflow = await readWorkflow();
+
+  for (const contract of [
+    "EVENT_NAME: ${{ github.event_name }}",
+    "EVENT_PR: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}",
+    "EVENT_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}",
+    "if: github.event_name != 'pull_request_target' || github.event.label.name == 'automerge'",
+    'pull_request_target:\n    types: [labeled]',
+  ]) {
+    assert.ok(workflow.includes(contract), `missing label authorization contract: ${contract}`);
+  }
+
+  const authorizationBlock = workflow.match(
+    /          if \[\[ "\$\{EVENT_NAME\}" == "pull_request_target" \]\]; then\n([\s\S]*?)\n          fi\n\n          # required context/,
+  )?.[0];
+  assert.ok(authorizationBlock, 'label authorization block must stay testable');
+  assert.equal(
+    (authorizationBlock.match(/gh api --method POST/g) ?? []).length,
+    1,
+    'label authorization must have exactly one marker emission path',
+  );
+
+  const runAuthorization = ({ eventName, pr, head }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'automerge-authorization-'));
+    const log = join(dir, 'gh.log');
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        [
+          'set -euo pipefail',
+          `GH_LOG=${JSON.stringify(log)}`,
+          ': > "$GH_LOG"',
+          'gh() { printf "%s\\n" "gh $*" >> "$GH_LOG"; }',
+          'repo=o/r',
+          `EVENT_NAME=${JSON.stringify(eventName)}`,
+          `EVENT_PR=${JSON.stringify(pr)}`,
+          `EVENT_HEAD=${JSON.stringify(head)}`,
+          dedent(authorizationBlock),
+        ].join('\n'),
+      ],
+      { encoding: 'utf8' },
+    );
+    return {
+      status: result.status,
+      calls: existsSync(log) ? readFileSync(log, 'utf8') : '',
+    };
+  };
+
+  const nonLabelEvent = runAuthorization({
+    eventName: 'workflow_run',
+    pr: '',
+    head: '',
+  });
+  assert.equal(nonLabelEvent.status, 0);
+  assert.equal((nonLabelEvent.calls.match(/gh api --method POST/g) ?? []).length, 0);
+
+  const valid = runAuthorization({
+    eventName: 'pull_request_target',
+    pr: '42',
+    head: 'a'.repeat(40),
+  });
+  assert.equal(valid.status, 0);
+  assert.equal((valid.calls.match(/gh api --method POST/g) ?? []).length, 1);
+  assert.match(
+    valid.calls,
+    /repos\/o\/r\/issues\/42\/comments -f body=<!-- Automerge frozen discovery authorization: a{40} -->/,
+  );
+
+  for (const invalid of [
+    { pr: 'not-a-number', head: 'a'.repeat(40) },
+    { pr: '42', head: 'A'.repeat(40) },
+    { pr: '42', head: 'a'.repeat(39) },
+  ]) {
+    const rejected = runAuthorization({ eventName: 'pull_request_target', ...invalid });
+    assert.notEqual(rejected.status, 0);
+    assert.equal((rejected.calls.match(/gh api --method POST/g) ?? []).length, 0);
+  }
+});
+
 test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail closed다', async () => {
   const workflow = await readWorkflow();
 
@@ -137,6 +218,7 @@ test('REST 목록 조회는 페이지 상한 안에서 읽고 넘치면 판정�
     'page_limit=3',
     'read_pages() {',
     'read_pages "repos/${repo}/pulls/${pr}/reviews"',
+    'read_pages "repos/${repo}/issues/${pr}/comments"',
     'read_pages "repos/${repo}/commits/${head}/check-runs"',
     'read_pages "repos/${repo}/commits/${head}/statuses"',
   ]) {
@@ -206,11 +288,11 @@ test('REST 목록 조회는 페이지 상한 안에서 읽고 넘치면 판정�
   assert.match(objectShape.stdout, /^STOPPED 2/);
 });
 
-test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리뷰를 함께 요구한다', async () => {
+test('리뷰 게이트는 전 커밋의 활성 상태와 exact-head authorization marker가 있는 frozen discovery를 함께 요구한다', async () => {
   const workflow = await readWorkflow();
 
   const reviewProgram = workflow.match(
-    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+    /# review-state-filter-begin\n[\s\S]*?if ! jq -e --arg head "\$\{head\}" --argjson comments "\$\{comments\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
@@ -226,8 +308,13 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     user: { login: 'reviewer' },
     ...overrides,
   });
-  const runReviewFilter = (reviews) => {
-    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', reviewProgram], {
+  const marker = (sha = 'head', overrides = {}) => ({
+    body: `<!-- Automerge frozen discovery authorization: ${sha} -->`,
+    user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+    ...overrides,
+  });
+  const runReviewFilter = (reviews, comments = [marker()]) => {
+    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', '--argjson', 'comments', JSON.stringify(comments), reviewProgram], {
       input: JSON.stringify([reviews]),
       encoding: 'utf8',
     });
@@ -240,28 +327,57 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     return result.status;
   };
 
+  const exactMarker = [marker()];
+
+  // current head를 정확히 승인한 base-workflow marker가 없으면 prior-head discovery는
+  // 임의 후속 push까지 승계될 수 있으므로 fail closed다.
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { commit_id: 'previous-head' }),
+    ], []),
+    0,
+  );
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { commit_id: 'previous-head' }),
+    ], [marker('different-head')]),
+    0,
+  );
+  for (const spoof of [
+    marker('head', { user: { login: 'other[bot]', id: 41898282, type: 'Bot' } }),
+    marker('head', { user: { login: 'github-actions[bot]', id: 1, type: 'Bot' } }),
+    marker('head', { user: { login: 'github-actions[bot]', id: 41898282, type: 'User' } }),
+  ]) {
+    assert.notEqual(
+      runReviewFilter([
+        review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { commit_id: 'previous-head' }),
+      ], [spoof]),
+      0,
+    );
+  }
+
   // 기본 판정.
   assert.equal(
     runReviewFilter([
       review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
       review(2, 'APPROVED', '2026-08-01T00:01:00Z'),
-    ]),
+    ], exactMarker),
     0,
   );
   assert.notEqual(
     runReviewFilter([
       review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
       review(2, 'COMMENTED', '2026-08-01T00:01:00Z'),
-    ]),
+    ], exactMarker),
     0,
   );
   assert.notEqual(
-    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z')]),
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z')], exactMarker),
     0,
   );
   // 폴백 리뷰는 규약 양식의 제목줄과 provenance marker를 모두 가져야 한다.
   assert.equal(
-    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)]),
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)], exactMarker),
     0,
   );
   // 신뢰되지 않는 author_association은 어떤 본문으로도 게이트를 통과하지 못한다.
@@ -270,7 +386,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
         author_association: 'NONE',
       }),
-    ]),
+    ], exactMarker),
     0,
   );
   // CodeRabbit의 immutable Bot 식별자만 NONE association 예외로 신뢰한다.
@@ -279,7 +395,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     user: { login: 'coderabbitai[bot]', id: 136622811, type: 'Bot' },
   };
   assert.equal(
-    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', codeRabbit)]),
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', codeRabbit)], exactMarker),
     0,
   );
   // login, immutable id, Bot type 중 하나라도 다르면 NONE 리뷰는 신뢰하지 않는다.
@@ -289,7 +405,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
         ...codeRabbit,
         user: { ...codeRabbit.user, type: 'User' },
       }),
-    ]),
+    ], exactMarker),
     0,
   );
   assert.notEqual(
@@ -356,8 +472,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  // 긍정 리뷰는 여전히 current head를 요구한다.
-  assert.notEqual(
+  // finding fix/rebase 뒤에도 prior head의 supported discovery Review는 유효하다.
+  assert.equal(
     runReviewFilter([
       review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
         commit_id: 'previous-head',
@@ -365,7 +481,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  assert.notEqual(
+  assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
         commit_id: 'previous-head',
@@ -373,8 +489,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  // CodeRabbit도 현재 head 리뷰여야 하며, change request는 다른 승인이 있어도 막는다.
-  assert.notEqual(
+  // pinned CodeRabbit discovery도 prior head에서 인정한다. change request는 여전히 막는다.
+  assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', {
         ...codeRabbit,
@@ -955,6 +1071,19 @@ const makeRunQueue =
       ),
     );
     writeFileSync(
+      join(dir, `comments-${pr.number}.json`),
+      JSON.stringify(
+        pr.authorized === false
+          ? []
+          : [
+              {
+                body: `<!-- Automerge frozen discovery authorization: ${head} -->`,
+                user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+              },
+            ],
+      ),
+    );
+    writeFileSync(
       join(dir, `threads-${pr.number}.json`),
       JSON.stringify({
         data: {
@@ -1016,6 +1145,7 @@ const makeRunQueue =
     '    "pr view "*"--json headRefOid"*) set -- $all; jq -r ".headRefOid" "$FIX/pr-$3.json" ;;',
     '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
+    '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; cat "$FIX/comments-$n.json" ;;',
     '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
     '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
@@ -1250,10 +1380,10 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   // 예약분은 producer 판정 스텝의 정상 경로 4회 * 100회 실행분이다. 이 저장소는 같은
   // 한도를 Data Pack Release가 함께 쓰므로 형제 저장소(300)보다 크다.
   assert.equal(reserve, 400, 'data pack chain reserve must stay pinned');
-  assert.equal(fixedCost, 15);
-  // 후보당 청구는 호출 5회가 아니라 read_pages의 page_limit=3까지 덮는 값이다
-  // (pr view 1 + reviewThreads 1 + REST 3종 * 3페이지). `--paginate`는 쓰지 않는다.
-  assert.equal(perCandidate, 11, 'per-candidate charge must match the page-capped reads');
+  assert.equal(fixedCost, 16);
+  // 후보당 청구는 호출 6회가 아니라 read_pages의 page_limit=3까지 덮는 값이다
+  // (pr view 1 + reviewThreads 1 + REST 4종 * 3페이지). `--paginate`는 쓰지 않는다.
+  assert.equal(perCandidate, 14, 'per-candidate charge must match the page-capped reads');
 
   // 응답 payload를 주고 워크플로의 jq 질의를 실제 jq로 적용해 `gh --jq`를 그대로 흉내낸다.
   const runBudget = (stub) =>
@@ -1282,10 +1412,10 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   for (const [remaining, expected] of [
     [5000, 3],
     [1000, 3],
-    [448, 3],
-    [447, 2],
-    [437, 2],
-    [426, 1],
+    [458, 3],
+    [457, 2],
+    [444, 2],
+    [430, 1],
   ]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block failed at remaining=${remaining}: ${result.stderr}`);
@@ -1304,12 +1434,12 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   }
 
   // 두 버킷 값이 다르면 작은 쪽이 창을 정한다.
-  assert.equal(runPayload(buckets(5000, 437)).stdout.trim(), 'window=2');
-  assert.equal(runPayload(buckets(437, 5000)).stdout.trim(), 'window=2');
+  assert.equal(runPayload(buckets(5000, 444)).stdout.trim(), 'window=2');
+  assert.equal(runPayload(buckets(444, 5000)).stdout.trim(), 'window=2');
 
   // 예약분에 닿으면 큐만 건너뛴다. 실행을 실패시키지 않는다 — producer 스텝은 이미 끝났고
   // 실패로 남기면 그 check가 다음 판정 입력을 오염시킨다.
-  for (const remaining of [425, 420, 400, 0]) {
+  for (const remaining of [429, 420, 400, 0]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block must not fail at remaining=${remaining}`);
     assert.match(result.stdout, /::warning::/, `low budget must be announced at remaining=${remaining}`);
