@@ -9,7 +9,7 @@ import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-tim
 function currentCollectionArgs(argv) {
   const args = parseArgs(argv);
   const expected = ["completeness-output", "freshness-output", "output", "station-catalog-pack"];
-  const actual = Object.keys(args).sort();
+  const actual = Object.keys(args).sort((left, right) => left.localeCompare(right));
   if (actual.length !== expected.length
     || actual.some((key, index) => key !== expected[index])
     || expected.some((key) => typeof args[key] !== "string" || args[key].length === 0)) {
@@ -88,12 +88,11 @@ export async function runCurrentItxCollectionCli({
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  runCurrentItxCollectionCli()
-    .then(({ exitCode }) => {
-      process.exitCode = exitCode;
-    })
-    .catch((error) => {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    });
+  try {
+    const { exitCode } = await runCurrentItxCollectionCli();
+    process.exitCode = exitCode;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
