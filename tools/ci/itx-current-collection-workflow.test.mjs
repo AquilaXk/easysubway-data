@@ -9,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const workflowPath = path.join(root, ".github/workflows/itx-current-collection.yml");
 const ciPath = path.join(root, ".github/workflows/ci.yml");
 const secretSyncPath = path.join(root, "tools/ci/sync-itx-current-collection-secret.mjs");
+const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "ITX current collection workflow를 찾지 못함");
@@ -69,8 +70,16 @@ test("실패에도 sanitized 증적만 보존하며 raw·secret·catalog·promot
 
 test("Data contracts가 ITX current workflow static contract를 실행한다", () => {
   const ci = readFileSync(ciPath, "utf8");
-  assert.match(ci, /tools\/ci\/itx-current-collection-workflow\.test\.mjs/);
-  assert.match(ci, /tools\/datapack\/run-current-itx-collection\.test\.mjs/);
+  assert.match(ci, /node tools\/ci\/data-test-discovery\.mjs run --class required-pr/);
+  const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+  for (const ownedPath of [
+    "tools/ci/itx-current-collection-workflow.test.mjs",
+    "tools/datapack/run-current-itx-collection.test.mjs",
+  ]) {
+    const entry = ownership.tests.find(({ path: testPath }) => testPath === ownedPath);
+    assert.ok(entry, `${ownedPath} ownership entry를 찾지 못함`);
+    assert.ok(entry.classes.includes("required-pr"));
+  }
 });
 
 function childResult({ code = 0, signal = null, stdout = "", stderr = "", error = null } = {}) {

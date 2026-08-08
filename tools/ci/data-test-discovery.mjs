@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -190,7 +190,9 @@ export function validateOwnership({
   trackedEntries,
   sources,
   workflowSources,
+  fixtureStates = {},
   requireDurations = true,
+  durationClass = null,
 }) {
   const issues = [];
   if (!manifest || manifest.version !== 1) {
@@ -201,6 +203,8 @@ export function validateOwnership({
   const owners = manifest?.owners && typeof manifest.owners === 'object' ? manifest.owners : {};
   const workflows =
     manifest?.workflows && typeof manifest.workflows === 'object' ? manifest.workflows : {};
+  const fixtures =
+    manifest?.fixtures && typeof manifest.fixtures === 'object' ? manifest.fixtures : {};
   const manifestTests = Array.isArray(manifest?.tests) ? manifest.tests : [];
   const tracked = Array.isArray(trackedEntries) ? trackedEntries : [];
 
@@ -272,7 +276,11 @@ export function validateOwnership({
         issue(issues, 'REQUIRED_PR_MISSING', path, 'all tracked tests must run in required-pr');
       }
     }
-    if (requireDurations && (!Number.isInteger(entry.durationMs) || entry.durationMs <= 0)) {
+    if (
+      requireDurations &&
+      (durationClass === null || entry.classes?.includes(durationClass)) &&
+      (!Number.isInteger(entry.durationMs) || entry.durationMs <= 0)
+    ) {
       issue(issues, 'INVALID_DURATION', path, String(entry.durationMs));
     }
     const source = sources?.[path];
@@ -294,6 +302,44 @@ export function validateOwnership({
     }
   }
 
+  for (const [fixtureName, fixture] of Object.entries(fixtures)) {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(fixture.repository ?? '')) {
+      issue(issues, 'INVALID_FIXTURE_REPOSITORY', fixtureName, String(fixture.repository));
+    }
+    if (!/^[a-f0-9]{40}$/.test(fixture.commit ?? '')) {
+      issue(issues, 'INVALID_FIXTURE_COMMIT', fixtureName, String(fixture.commit));
+    }
+    if (!isSafeRepositoryPath(fixture.path)) {
+      issue(issues, 'INVALID_FIXTURE_PATH', fixtureName, String(fixture.path));
+    }
+    if (!Array.isArray(fixture.requiredFiles) || fixture.requiredFiles.length === 0) {
+      issue(issues, 'FIXTURE_REQUIRED_FILES_MISSING', fixtureName, 'requiredFiles must be non-empty');
+    }
+    const state = fixtureStates[fixtureName];
+    if (!state) {
+      issue(issues, 'EXTERNAL_FIXTURE_MISSING', fixtureName, fixture.path);
+      continue;
+    }
+    if (state.headSha !== fixture.commit) {
+      issue(issues, 'FIXTURE_HEAD_MISMATCH', fixtureName, String(state.headSha));
+    }
+    for (const requiredFile of fixture.requiredFiles ?? []) {
+      if (!isSafeRepositoryPath(requiredFile.path) || !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '')) {
+        issue(issues, 'INVALID_FIXTURE_FILE', fixtureName, String(requiredFile.path));
+        continue;
+      }
+      const actualHash = state.files?.[requiredFile.path];
+      if (actualHash !== requiredFile.sha256) {
+        issue(
+          issues,
+          'FIXTURE_HASH_MISMATCH',
+          `${fixtureName}:${requiredFile.path}`,
+          String(actualHash),
+        );
+      }
+    }
+  }
+
   for (const [className, workflow] of Object.entries(workflows)) {
     const source = workflowSources?.[workflow.file];
     if (typeof source !== 'string') {
@@ -312,6 +358,34 @@ export function validateOwnership({
     }
     if (/continue-on-error:\s*true/.test(workflowStepContaining(source, workflow.invocation))) {
       issue(issues, 'WORKFLOW_WARNING_ONLY', workflow.file, 'owned-test invocation cannot continue on error');
+    }
+    for (const fixtureName of workflow.fixtures ?? []) {
+      const fixture = fixtures[fixtureName];
+      if (!fixture) {
+        issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE', workflow.file, fixtureName);
+        continue;
+      }
+      for (const contract of [
+        `repository: ${fixture.repository}`,
+        `ref: ${fixture.commit}`,
+        `path: ${fixture.path}`,
+        'persist-credentials: false',
+      ]) {
+        if (!source.includes(contract)) {
+          issue(issues, 'WORKFLOW_FIXTURE_CHECKOUT_MISSING', workflow.file, contract);
+        }
+      }
+    }
+    if (
+      className === 'required-pr' &&
+      !source.includes('ref: ${{ github.event.pull_request.head.sha || github.sha }}')
+    ) {
+      issue(
+        issues,
+        'PR_HEAD_CHECKOUT_MISSING',
+        workflow.file,
+        'required PR workflow must checkout the exact pull request head',
+      );
     }
   }
 
@@ -339,7 +413,7 @@ export function validateOwnership({
   };
 }
 
-function repositoryInputs(repoRoot, manifestPath, requireDurations) {
+function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const rawIndex = execFileSync('git', ['ls-files', '--stage', '-z'], {
     cwd: repoRoot,
@@ -362,17 +436,54 @@ function repositoryInputs(repoRoot, manifestPath, requireDurations) {
   for (const workflow of Object.values(manifest.workflows)) {
     workflowSources[workflow.file] = readFileSync(resolve(repoRoot, workflow.file), 'utf8');
   }
+  const fixtureStates = {};
+  for (const [fixtureName, fixture] of Object.entries(manifest.fixtures ?? {})) {
+    const fixtureRoot = resolve(repoRoot, fixture.path);
+    try {
+      const stat = lstatSync(fixtureRoot);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('fixture root is not a real directory');
+      const headSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: fixtureRoot,
+        encoding: 'utf8',
+      }).trim();
+      const files = {};
+      for (const requiredFile of fixture.requiredFiles ?? []) {
+        const filePath = resolve(fixtureRoot, requiredFile.path);
+        const fileStat = lstatSync(filePath);
+        if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+          throw new Error(`fixture file is not a regular file: ${requiredFile.path}`);
+        }
+        const realFilePath = realpathSync(filePath);
+        if (!realFilePath.startsWith(`${realpathSync(fixtureRoot)}/`)) {
+          throw new Error(`fixture file escapes root: ${requiredFile.path}`);
+        }
+        files[requiredFile.path] = sha256(readFileSync(filePath));
+      }
+      fixtureStates[fixtureName] = { headSha, files };
+    } catch (error) {
+      fixtureStates[fixtureName] = { error: error.message, files: {} };
+    }
+  }
   return {
     manifest,
     trackedEntries,
     sources,
     workflowSources,
+    fixtureStates,
     requireDurations,
+    durationClass,
   };
 }
 
-export function verifyRepository({ repoRoot, manifestPath, requireDurations = true }) {
-  return validateOwnership(repositoryInputs(repoRoot, manifestPath, requireDurations));
+export function verifyRepository({
+  repoRoot,
+  manifestPath,
+  requireDurations = true,
+  durationClass = null,
+}) {
+  return validateOwnership(
+    repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass),
+  );
 }
 
 function runNodeTest(repoRoot, paths, reporter = 'spec') {
@@ -411,17 +522,27 @@ async function runPool(items, workerCount, worker) {
   return results;
 }
 
-async function measureClass({ repoRoot, manifestPath, className, outputPath, maxWorkers }) {
+async function measureClass({
+  repoRoot,
+  manifestPath,
+  className,
+  outputPath,
+  maxWorkers,
+  expectedHead,
+}) {
   const verification = verifyRepository({ repoRoot, manifestPath, requireDurations: false });
   const selected = verification.tests.filter(({ classes }) => classes.includes(className));
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
+  const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+  if (!/^[a-f0-9]{40}$/.test(expectedHead ?? '') || headSha !== expectedHead) {
+    throw new Error(`measurement head mismatch: expected=${expectedHead} actual=${headSha}`);
+  }
   const startedAt = Date.now();
   const results = await runPool(selected, maxWorkers, async ({ path }) => {
     const result = await runNodeTest(repoRoot, [path], 'dot');
     return { path, ...result };
   });
   const failed = results.filter(({ ok }) => !ok);
-  const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
   const output = {
     version: 1,
     headSha,
@@ -439,11 +560,25 @@ async function measureClass({ repoRoot, manifestPath, className, outputPath, max
 }
 
 async function runOwnedClass({ repoRoot, manifestPath, className, maxWorkers }) {
-  const verification = verifyRepository({ repoRoot, manifestPath, requireDurations: true });
+  const verification = verifyRepository({
+    repoRoot,
+    manifestPath,
+    requireDurations: maxWorkers > 1,
+    durationClass: className,
+  });
   const selected = verification.tests.filter(({ classes }) => classes.includes(className));
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
   const shardCount = Math.min(maxWorkers, selected.length);
-  const shards = buildDurationShards(selected, shardCount);
+  const shards =
+    shardCount === 1
+      ? [
+          {
+            index: 1,
+            estimatedDurationMs: null,
+            tests: selected.map(({ path }) => path).sort(),
+          },
+        ]
+      : buildDurationShards(selected, shardCount);
   const results = await Promise.all(
     shards.map(async (shard) => ({
       ...shard,
@@ -484,7 +619,8 @@ async function main() {
   const manifestPath = resolve(repoRoot, 'tools/ci/data-test-ownership.json');
   const [command, ...args] = process.argv.slice(2);
   if (command === 'verify') {
-    const result = verifyRepository({ repoRoot, manifestPath });
+    const className = optionValue(args, '--class', 'required-pr');
+    const result = verifyRepository({ repoRoot, manifestPath, durationClass: className });
     process.stdout.write(`${JSON.stringify({ event: 'data-test-owned-verify', ...result })}\n`);
     return;
   }
@@ -497,7 +633,16 @@ async function main() {
   if (command === 'measure') {
     const outputPath = optionValue(args, '--output');
     if (!outputPath) throw new Error('measure requires --output');
-    await measureClass({ repoRoot, manifestPath, className, outputPath, maxWorkers });
+    const expectedHead = optionValue(args, '--expected-head');
+    if (!expectedHead) throw new Error('measure requires --expected-head');
+    await measureClass({
+      repoRoot,
+      manifestPath,
+      className,
+      outputPath,
+      maxWorkers,
+      expectedHead,
+    });
     return;
   }
   if (command === 'run') {
