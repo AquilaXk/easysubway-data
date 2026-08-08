@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -12,12 +13,7 @@ import { buildServerTimetableSnapshot } from "./build-server-timetable-snapshot.
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const baselinePath = path.join(
-  root,
-  "backend/src/main/resources/timetable/line4-subway-timetable-seed.sql.gz",
-);
 const contractPath = path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json");
-const canonicalPackPath = path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz");
 const topologyEvidencePath = path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json");
 const subwayRosterPath = path.join(root, "tools/datapack/sources/kric-line4-route-roster-20260706.json");
 const reviewedPackPath = path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json");
@@ -36,15 +32,96 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function testStationId(station) {
+  if (station.stinCd === "433") return "station-sadang";
+  if (station.stinCd === "448") return "station-sangnoksu";
+  return `station-line4-${station.stinCd}`;
+}
+
+function subwayBaselineSql() {
+  const statements = [
+    "INSERT INTO transit_feed_info (id, feed_end_date) VALUES (1, '20261231');",
+    "INSERT INTO service_calendars (service_id, start_date, end_date, timezone, monday, tuesday, wednesday, thursday, friday, saturday, sunday) VALUES ('weekday-kric', '20260101', '20261231', 'Asia/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE);",
+    "INSERT INTO service_calendars (service_id, start_date, end_date, timezone, monday, tuesday, wednesday, thursday, friday, saturday, sunday) VALUES ('holiday-kric', '20260101', '20261231', 'Asia/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE);",
+    "INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('route-seoul-4-down', 'Asia/Seoul', 'seoul-4', '4', '수도권 4호선', '하행');",
+    "INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('route-seoul-4-up', 'Asia/Seoul', 'seoul-4', '4', '수도권 4호선', '상행');",
+    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_day_start_seconds, trip_headsign, direction_id) VALUES ('route-seoul-4-down-4100-8', 'route-seoul-4-down', 'weekday-kric', 'LOCAL', 0, '사당', 'down');",
+    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_day_start_seconds, trip_headsign, direction_id) VALUES ('route-seoul-4-up-4227-8', 'route-seoul-4-up', 'weekday-kric', 'LOCAL', 0, '상록수', 'up');",
+    "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_day_start_seconds, trip_headsign, direction_id) VALUES ('route-seoul-4-up-S4123-8', 'route-seoul-4-up', 'weekday-kric', 'LOCAL', 0, '상록수', 'up');",
+  ];
+  for (const [tripId, start] of [
+    ["route-seoul-4-down-4100-8", 28800],
+    ["route-seoul-4-up-4227-8", 30000],
+    ["route-seoul-4-up-S4123-8", 31200],
+  ]) {
+    statements.push(
+      `INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('${tripId}', 1, 'station-seoul-4-448', 'seoul-4', 0, 0, ${start}, ${start});`,
+      `INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('${tripId}', 2, 'station-seoul-4-433', 'seoul-4', 0, 0, ${start + 600}, ${start + 600});`,
+    );
+  }
+  return `${statements.join("\n")}\n`;
+}
+
+let serverFixturePromise;
+async function selfContainedServerFixture(subwayRosterBytes) {
+  serverFixturePromise ??= (async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "server-snapshot-fixture-"));
+    const sqlitePath = path.join(directory, "capital.sqlite");
+    try {
+      const roster = JSON.parse(subwayRosterBytes);
+      const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
+      const database = new DatabaseSync(sqlitePath);
+      try {
+        database.exec(schema);
+        database.prepare("INSERT INTO operators (id, name_ko) VALUES ('operator-test', '테스트 운영기관')").run();
+        database.prepare("INSERT INTO lines (id, operator_id, name_ko) VALUES ('seoul-4', 'operator-test', '수도권 4호선')").run();
+        const insertStation = database.prepare(
+          "INSERT INTO stations (id, name_ko, normalized_name, region) VALUES (?, ?, ?, '수도권')",
+        );
+        const insertMembership = database.prepare(
+          "INSERT INTO station_lines (station_id, line_id, line_sequence) VALUES (?, 'seoul-4', ?)",
+        );
+        for (const station of roster.stations) {
+          const stationId = testStationId(station);
+          insertStation.run(stationId, station.stinNm, station.stinNm);
+          insertMembership.run(stationId, station.stinConsOrdr);
+        }
+        database.prepare(`
+          INSERT INTO official_od_fare_quotes (
+            origin_station_id, destination_station_id, source_id, snapshot_id,
+            mapping_ledger_hash, gnrl_card_fare, gnrl_cash_fare,
+            yung_card_fare, yung_cash_fare, child_card_fare, child_cash_fare
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          "station-sangnoksu", "station-sadang", "seoul-metro-official-od-fares",
+          "seoul-metro-official-od-fares-20260712", "4".repeat(64),
+          1600, 1700, 1000, 1100, 800, 900,
+        );
+      } finally {
+        database.close();
+      }
+      const sqliteBytes = await readFile(sqlitePath);
+      return {
+        baselineGzipBytes: gzipSync(Buffer.from(subwayBaselineSql()), { level: 9, mtime: 0 }),
+        canonicalPackGzipBytes: gzipSync(sqliteBytes, { level: 9, mtime: 0 }),
+      };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  })();
+  return serverFixturePromise;
+}
+
 async function inputs({ withTopologyEvidence = true } = {}) {
-  const baselineGzipBytes = await readFile(baselinePath);
+  const subwayRosterBytes = await readFile(subwayRosterPath);
+  const { baselineGzipBytes, canonicalPackGzipBytes } =
+    await selfContainedServerFixture(subwayRosterBytes);
   const contract = JSON.parse(await readFile(contractPath));
   const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath)));
   const completeness = JSON.parse(await readFile(path.join(
     root,
     contract.sourceTimetableArtifact.completenessEvidencePath,
   )));
-  const canonicalPackGzipBytes = await readFile(canonicalPackPath);
   delete contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
   contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity = stationCatalogPackIdentity;
   contract.sourceTimetableArtifact.promotion.mode = "CURRENT_CANDIDATE_OWNER_APPROVED";
@@ -71,10 +148,15 @@ async function inputs({ withTopologyEvidence = true } = {}) {
     freshUntil: source.freshUntil,
     stationCatalogPackIdentity,
   };
+  Object.assign(topologyEvidence.pack, {
+    outputSha256: sha256(canonicalPackGzipBytes),
+    outputSqliteSha256: sha256(gunzipSync(canonicalPackGzipBytes)),
+    byteSize: canonicalPackGzipBytes.length,
+    byteSizeDelta: canonicalPackGzipBytes.length - topologyEvidence.pack.inputByteSize,
+  });
   const topologyEvidenceBytes = withTopologyEvidence
     ? Buffer.from(`${JSON.stringify(topologyEvidence, null, 2)}\n`)
     : null;
-  const subwayRosterBytes = await readFile(subwayRosterPath);
   const reviewedPackBytes = await readFile(reviewedPackPath);
   const sourceSnapshotsBytes = await readFile(sourceSnapshotsPath);
   return {
@@ -97,6 +179,8 @@ async function writeCurrentCliInputs(directory) {
   const completenessPath = path.join(directory, "completeness.json");
   const contractFilePath = path.join(directory, "contract.json");
   const topologyEvidenceFilePath = path.join(directory, "topology-evidence.json");
+  const baselineFilePath = path.join(directory, "subway-baseline.sql.gz");
+  const topologyPackFilePath = path.join(directory, "capital.sqlite.gz");
   contract.sourceTimetableArtifact.artifactPath = sourcePath;
   contract.sourceTimetableArtifact.completenessEvidencePath = completenessPath;
   await Promise.all([
@@ -104,8 +188,10 @@ async function writeCurrentCliInputs(directory) {
     writeFile(completenessPath, value.completenessBytes),
     writeFile(contractFilePath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(topologyEvidenceFilePath, value.topologyEvidenceBytes),
+    writeFile(baselineFilePath, value.baselineGzipBytes),
+    writeFile(topologyPackFilePath, value.canonicalPackGzipBytes),
   ]);
-  return { contractFilePath, topologyEvidenceFilePath };
+  return { contractFilePath, topologyEvidenceFilePath, baselineFilePath, topologyPackFilePath };
 }
 
 test("snapshot builder의 모든 sort는 type-safe comparator를 명시한다", async () => {
@@ -521,10 +607,12 @@ test("CLI는 current station-catalog admission으로 snapshot/evidence를 생성
   const outputPath = path.join(directory, "snapshot.sql.gz");
   const evidencePath = path.join(directory, "evidence.json");
   const runtimeEvidencePath = path.join(directory, "runtime-evidence.json");
-  const { contractFilePath, topologyEvidenceFilePath } = await writeCurrentCliInputs(directory);
+  const { contractFilePath, topologyEvidenceFilePath, baselineFilePath, topologyPackFilePath } =
+    await writeCurrentCliInputs(directory);
   const args = [
     "tools/datapack/build-server-timetable-snapshot.mjs",
-    "--baseline", baselinePath,
+    "--baseline", baselineFilePath,
+    "--topology-pack", topologyPackFilePath,
     "--contract", contractFilePath,
     "--topology-evidence", topologyEvidenceFilePath,
     "--output", outputPath,
@@ -571,10 +659,13 @@ test("CLI는 current station-catalog admission으로 snapshot/evidence를 생성
 test("CLI --check는 current station-catalog input과 생성 snapshot/evidence의 최신성을 검증한다", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "server-timetable-snapshot-check-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const { contractFilePath, topologyEvidenceFilePath } = await writeCurrentCliInputs(directory);
+  const { contractFilePath, topologyEvidenceFilePath, baselineFilePath, topologyPackFilePath } =
+    await writeCurrentCliInputs(directory);
   const args = [
     "tools/datapack/build-server-timetable-snapshot.mjs",
+    "--baseline", baselineFilePath,
     "--contract", contractFilePath,
+    "--topology-pack", topologyPackFilePath,
     "--topology-evidence", topologyEvidenceFilePath,
     "--output", path.join(directory, "snapshot.sql.gz"),
     "--evidence", path.join(directory, "evidence.json"),
@@ -721,6 +812,8 @@ test("CLI는 source와 contract station-catalog identity 불일치를 fail close
   const staleSourcePath = path.join(directory, "source.json");
   const completenessPath = path.join(directory, "completeness.json");
   const topologyEvidenceFilePath = path.join(directory, "topology-evidence.json");
+  const baselineFilePath = path.join(directory, "subway-baseline.sql.gz");
+  const topologyPackFilePath = path.join(directory, "capital.sqlite.gz");
   contract.sourceTimetableArtifact.artifactPath = staleSourcePath;
   contract.sourceTimetableArtifact.completenessEvidencePath = completenessPath;
   await Promise.all([
@@ -728,12 +821,16 @@ test("CLI는 source와 contract station-catalog identity 불일치를 fail close
     writeFile(staleSourcePath, sourceBytes),
     writeFile(completenessPath, value.completenessBytes),
     writeFile(topologyEvidenceFilePath, value.topologyEvidenceBytes),
+    writeFile(baselineFilePath, value.baselineGzipBytes),
+    writeFile(topologyPackFilePath, value.canonicalPackGzipBytes),
   ]);
 
   await assert.rejects(
     execFileAsync(process.execPath, [
       "tools/datapack/build-server-timetable-snapshot.mjs",
+      "--baseline", baselineFilePath,
       "--contract", staleContractPath,
+      "--topology-pack", topologyPackFilePath,
       "--topology-evidence", topologyEvidenceFilePath,
       "--output", path.join(directory, "snapshot.sql.gz"),
       "--evidence", path.join(directory, "evidence.json"),
