@@ -547,7 +547,8 @@ function hasExactKeys(value, keys) {
   return value != null
     && typeof value === "object"
     && !Array.isArray(value)
-    && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+    && Object.keys(value).sort(codepointCompare).join(",")
+      === [...keys].sort(codepointCompare).join(",");
 }
 
 function validateCanonicalTopologyPack({
@@ -859,7 +860,8 @@ function validateAdmission({
     || Object.hasOwn(completeness, "readmissions")
     || Object.hasOwn(contract?.officialEvidence?.korailCompletenessAdmission ?? {}, "canonicalPackIdentity")
     || identity == null
-    || Object.keys(identity).sort().join(",") !== identityKeys.slice().sort().join(",")
+    || Object.keys(identity).sort(codepointCompare).join(",")
+      !== identityKeys.slice().sort(codepointCompare).join(",")
     || identity.artifactKind !== "station-catalog-pack"
     || identity.manifestVersion !== 1
     || typeof identity.catalogPackId !== "string" || identity.catalogPackId.length === 0

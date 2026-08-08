@@ -83,7 +83,8 @@ async function selfContainedServerFixture(subwayRosterBytes) {
         );
         for (const station of roster.stations) {
           const stationId = testStationId(station);
-          insertStation.run(stationId, station.stinNm, station.stinNm);
+          const stationName = station.stinNm === "능길" ? "신길온천" : station.stinNm;
+          insertStation.run(stationId, stationName, stationName);
           insertMembership.run(stationId, station.stinConsOrdr);
         }
         database.prepare(`
