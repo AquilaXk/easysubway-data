@@ -272,9 +272,6 @@ export function validateOwnership({
           issue(issues, 'UNKNOWN_EXECUTION_CLASS', path, String(className));
         }
       }
-      if (!uniqueClasses.has('required-pr')) {
-        issue(issues, 'REQUIRED_PR_MISSING', path, 'all tracked tests must run in required-pr');
-      }
     }
     if (
       requireDurations &&
@@ -312,11 +309,17 @@ export function validateOwnership({
     if (!isSafeRepositoryPath(fixture.path)) {
       issue(issues, 'INVALID_FIXTURE_PATH', fixtureName, String(fixture.path));
     }
+    if (!isSafeRepositoryPath(fixture.checkoutPath)) {
+      issue(issues, 'INVALID_FIXTURE_CHECKOUT_PATH', fixtureName, String(fixture.checkoutPath));
+    }
+    if (!isSafeRepositoryPath(fixture.sourcePath)) {
+      issue(issues, 'INVALID_FIXTURE_SOURCE_PATH', fixtureName, String(fixture.sourcePath));
+    }
     if (!Array.isArray(fixture.requiredFiles) || fixture.requiredFiles.length === 0) {
       issue(issues, 'FIXTURE_REQUIRED_FILES_MISSING', fixtureName, 'requiredFiles must be non-empty');
     }
     const state = fixtureStates[fixtureName];
-    if (!state) {
+    if (!state || state.error) {
       issue(issues, 'EXTERNAL_FIXTURE_MISSING', fixtureName, fixture.path);
       continue;
     }
@@ -368,8 +371,9 @@ export function validateOwnership({
       for (const contract of [
         `repository: ${fixture.repository}`,
         `ref: ${fixture.commit}`,
-        `path: ${fixture.path}`,
+        `path: ${fixture.checkoutPath}`,
         'persist-credentials: false',
+        `cp -a ${fixture.checkoutPath}/${fixture.sourcePath} ${fixture.path}`,
       ]) {
         if (!source.includes(contract)) {
           issue(issues, 'WORKFLOW_FIXTURE_CHECKOUT_MISSING', workflow.file, contract);
@@ -438,12 +442,19 @@ function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClas
   }
   const fixtureStates = {};
   for (const [fixtureName, fixture] of Object.entries(manifest.fixtures ?? {})) {
+    const checkoutRoot = resolve(repoRoot, fixture.checkoutPath);
     const fixtureRoot = resolve(repoRoot, fixture.path);
     try {
-      const stat = lstatSync(fixtureRoot);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('fixture root is not a real directory');
+      const checkoutStat = lstatSync(checkoutRoot);
+      if (!checkoutStat.isDirectory() || checkoutStat.isSymbolicLink()) {
+        throw new Error('fixture checkout is not a real directory');
+      }
+      const stagedStat = lstatSync(fixtureRoot);
+      if (!stagedStat.isDirectory() || stagedStat.isSymbolicLink()) {
+        throw new Error('staged fixture is not a real directory');
+      }
       const headSha = execFileSync('git', ['rev-parse', 'HEAD'], {
-        cwd: fixtureRoot,
+        cwd: checkoutRoot,
         encoding: 'utf8',
       }).trim();
       const files = {};

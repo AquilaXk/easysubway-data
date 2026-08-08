@@ -67,8 +67,16 @@ jobs:
         with:
           repository: AquilaXk/easysubway-mobile
           ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
-          path: apps/mobile
+          path: .external/mobile
           persist-credentials: false
+
+      - name: Data Pack Release / Stage pinned Mobile app fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e apps/mobile
+          mkdir -p apps
+          cp -a .external/mobile/apps/mobile apps/mobile
 
       - name: Data Pack Release / Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020

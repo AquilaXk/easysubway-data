@@ -29,14 +29,6 @@ jobs:
         with:
           repository: AquilaXk/easysubway-mobile
           ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
-          path: apps/mobile
-          persist-credentials: false
-
-      - name: Checkout pinned Mobile fixture
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: AquilaXk/easysubway-mobile
-          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
           path: .external/mobile
           persist-credentials: false
 
@@ -122,7 +114,6 @@ jobs:
           cp "${backup}" "${source}"
           cmp -- "${backup}" "${source}"
           rm "${backup}"
-
       - name: Lint workflows
         shell: bash
         run: |
