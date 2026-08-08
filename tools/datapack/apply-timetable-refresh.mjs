@@ -234,8 +234,19 @@ export async function applyTimetableRefresh({
       sourceArtifactId: after.sourceArtifactId,
     };
   } catch (error) {
-    if (patchApplied) await restoreMutationBoundary(repoRoot, mutationBoundary);
-    throw error;
+    const primaryError = error instanceof Error ? error : new Error(String(error));
+    if (patchApplied) {
+      try {
+        await restoreMutationBoundary(repoRoot, mutationBoundary);
+      } catch (restoreError) {
+        primaryError.message += `\n복원 실패: 작업 트리가 부분 적용 상태로 남았습니다. ${RECOVERY_HINT}`;
+        Object.defineProperty(primaryError, "cause", {
+          value: restoreError,
+          configurable: true,
+        });
+      }
+    }
+    throw primaryError;
   }
 }
 

@@ -197,6 +197,26 @@ test("재산출 실패는 patch와 snapshot 산출물을 적용 전 bytes로 복
   );
 });
 
+test("복원 자체가 실패해도 원래 재산출 오류를 주 원인으로 보존한다", async (t) => {
+  const dir = await makeFixture(t);
+  const patchPath = await buildPromotionPatch(dir);
+  const failingBuild = async () => {
+    await rm(dir, { recursive: true, force: true });
+    await writeFile(dir, "restore boundary blocker\n");
+    throw new Error("snapshot rebuild boom");
+  };
+
+  await assert.rejects(
+    applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: failingBuild }),
+    (error) => {
+      assert.match(error.message, /재산출|snapshot rebuild boom/);
+      assert.match(error.message, /복원 실패|부분 적용/);
+      assert.ok(error.cause instanceof Error);
+      return true;
+    },
+  );
+});
+
 test("검증 실패: 재산출 evidence의 freshUntil이 연장되지 않으면 fail closed", async (t) => {
   const dir = await makeFixture(t);
   const patchPath = await buildPromotionPatch(dir);
