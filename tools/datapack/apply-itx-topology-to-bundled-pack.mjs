@@ -40,9 +40,7 @@ function hasTrackedReadmissionToOutput(evidence, inputSha256) {
     && previous.sqliteSha256 === evidence?.pack?.outputSqliteSha256
     && previous.byteSize === evidence?.pack?.byteSize;
 }
-const PRODUCTION_CONTRACT_PATH = repositoryPath(
-  "tools/datapack/itx-cheongchun-coverage-contract.json",
-);
+
 const ADMITTED_CANONICAL_INPUTS = new Map([
   [
     "e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad",
@@ -110,21 +108,64 @@ function candidateBuildNow() {
 async function admittedSource(contractPath) {
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
+  validateAdmittedSourceReference(contract, reference);
+  const sourceBytes = await readFile(repositoryPath(reference.artifactPath));
+  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath));
+  const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
+    reference,
+    sourceBytes,
+    completenessBytes,
+  );
+  validateAdmittedSourceDocuments(
+    contract,
+    reference,
+    source,
+    completeness,
+    sha256(sourceBytes),
+    sha256(completenessBytes),
+  );
+  return { contract, reference, source, sourceBytes };
+}
+
+function validateAdmittedSourceReference(contract, reference) {
+  const artifactId = reference?.artifactId;
+  const sourcePath = `tools/datapack/sources/${artifactId}.json`;
+  const completenessPath = `tools/datapack/sources/${artifactId}-completeness-evidence.json`;
   if (contract?.schemaVersion !== 2
     || contract?.artifactKind !== "itx-cheongchun-coverage-contract"
     || contract?.serviceId !== "ITX_CHEONGCHUN"
     || reference?.schemaVersion !== 1
-    || reference?.status !== "ADMITTED" || reference?.admissionEligible !== true) {
+    || reference?.status !== "ADMITTED" || reference?.admissionEligible !== true
+    || !/^itx-cheongchun-source-timetable-\d+$/.test(artifactId ?? "")
+    || reference.artifactPath !== sourcePath
+    || reference.completenessEvidencePath !== completenessPath
+    || !/^[a-f0-9]{64}$/.test(reference.sha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(reference.completenessEvidenceSha256 ?? "")) {
     throw new Error("ITX topology requires #2135 ADMITTED source contract");
   }
-  const sourceBytes = await readFile(repositoryPath(reference.artifactPath));
-  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath));
+}
+
+export function parseAuthenticatedAdmittedSourceDocuments(reference, sourceBytes, completenessBytes) {
   if (sha256(sourceBytes) !== reference.sha256
     || sha256(completenessBytes) !== reference.completenessEvidenceSha256) {
     throw new Error("ITX topology source bytes do not match the coverage contract");
   }
-  const source = JSON.parse(sourceBytes);
-  const completeness = JSON.parse(completenessBytes);
+  return { source: JSON.parse(sourceBytes), completeness: JSON.parse(completenessBytes) };
+}
+
+export function validateAdmittedSourceDocuments(
+  contract,
+  reference,
+  source,
+  completeness,
+  sourceSha256,
+  completenessSha256,
+) {
+  validateAdmittedSourceReference(contract, reference);
+  if (sourceSha256 !== reference.sha256
+    || completenessSha256 !== reference.completenessEvidenceSha256) {
+    throw new Error("ITX topology source bytes do not match the coverage contract");
+  }
   const freshUntilMillis = Date.parse(reference.freshUntil);
   if (!Number.isFinite(freshUntilMillis) || freshUntilMillis <= candidateBuildNow().getTime()) {
     throw new Error("ITX topology source artifact is expired");
@@ -149,10 +190,9 @@ async function admittedSource(contractPath) {
     || completeness?.credentialRedacted !== true) {
     throw new Error("ITX topology source identity is invalid");
   }
-  return { contract, reference, source, sourceBytes };
 }
 
-function assertCanonicalInputIdentity(contract, source, gzipSha256, sqliteSha256) {
+export function assertCanonicalInputIdentity(contract, source, gzipSha256, sqliteSha256) {
   const sourceIdentity = source?.canonicalPackIdentity;
   const canonical = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
   if (sourceIdentity?.path !== "apps/mobile/assets/datapacks/capital.sqlite.gz"
@@ -162,6 +202,65 @@ function assertCanonicalInputIdentity(contract, source, gzipSha256, sqliteSha256
     || canonical?.sqliteSha256 !== sqliteSha256) {
     throw new Error("ITX topology canonical input pack identity mismatch");
   }
+}
+
+export function validateTopologyEvidence({
+  contract,
+  reference,
+  source,
+  topology,
+  evidence,
+  index,
+  inputGzipBytes,
+  admittedInput,
+}) {
+  const pack = index.packs?.find(({ id }) => id === "capital");
+  const inputSqliteBytes = gunzipSync(inputGzipBytes);
+  assertCanonicalInputIdentity(
+    contract,
+    source,
+    evidence?.pack?.inputSha256,
+    evidence?.pack?.inputSqliteSha256,
+  );
+  if (evidence?.schemaVersion !== 1
+    || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
+    || evidence?.sourceIssue !== 2135
+    || evidence?.serviceId !== "ITX_CHEONGCHUN"
+    || evidence?.sourceArtifact?.id !== reference.artifactId
+    || evidence?.sourceArtifact?.sha256 !== reference.sha256
+    || evidence?.sourceArtifact?.completenessEvidenceSha256 !== reference.completenessEvidenceSha256
+    || evidence?.sourceArtifact?.freshUntil !== reference.freshUntil
+    || evidence?.topology?.stationMembershipCount !== topology.stations.length
+    || evidence?.topology?.servedStationCount !== topology.servedStations.length
+    || evidence?.pack?.inputSha256 !== admittedInput.gzipSha256
+    || evidence?.pack?.inputSqliteSha256 !== admittedInput.sqliteSha256
+    || source?.canonicalPackIdentity?.sha256 !== admittedInput.gzipSha256
+    || contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity?.sha256
+      !== admittedInput.gzipSha256
+    || contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity?.sqliteSha256
+      !== admittedInput.sqliteSha256
+    || evidence?.topology?.sha256 !== topology.sha256
+    || evidence?.topology?.edgeCount !== topology.edges.length
+    || JSON.stringify(evidence?.topology?.directions) !== JSON.stringify(["up", "down"])
+    || evidence?.topology?.connectedComponentCount !== 1
+    || evidence?.topology?.isolatedServedStationCount !== 0
+    || evidence?.topology?.durationSecondsEmbedded !== false
+    || evidence?.topology?.fareEmbedded !== false
+    || evidence?.pack?.id !== "capital"
+    || evidence?.pack?.outputSha256 !== sha256(inputGzipBytes)
+    || evidence?.pack?.byteSize !== inputGzipBytes.length
+    || !Number.isInteger(evidence?.pack?.inputByteSize)
+    || evidence.pack.inputByteSize <= 0
+    || evidence.pack.inputByteSize !== admittedInput.byteSize
+    || evidence?.pack?.byteSizeDelta !== inputGzipBytes.length - evidence.pack.inputByteSize
+    || (evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
+      && !hasApprovedSerializationOnlyReadmission(evidence, source?.canonicalPackIdentity?.sha256))
+    || pack?.sha256 !== sha256(inputGzipBytes)
+    || pack?.sqliteSha256 !== evidence?.pack?.outputSqliteSha256
+    || pack?.byteSize !== inputGzipBytes.length) {
+    throw new Error("ITX topology evidence or bundled pack index is stale");
+  }
+  return { inputSqliteBytes };
 }
 
 export function isUnchangedRefresh(reference, source, previous) {
@@ -197,61 +296,15 @@ export function isUnchangedRefresh(reference, source, previous) {
   }
 }
 
-export async function admittedTopologySource(reference, source, evidence, contractPath) {
+export function admittedTopologySource(reference, source) {
   const admitted = ADMITTED_CANONICAL_INPUTS.get(reference?.sha256);
-  if (admitted != null) {
-    if (source?.canonicalPackIdentity?.sha256 !== admitted.gzipSha256) {
-      throw new Error("ITX topology admitted canonical input identity mismatch");
-    }
-    return { reference, source, inputByteSize: admitted.byteSize, historical: false };
+  if (admitted == null) {
+    throw new Error("ITX topology current source identity is not admitted");
   }
-  if (contractPath !== PRODUCTION_CONTRACT_PATH) {
-    return { reference, source, inputByteSize: null, historical: false };
-  }
-  const historicalSha256 = evidence?.sourceArtifact?.sha256;
-  const historicalId = evidence?.sourceArtifact?.id;
-  const historicalAdmission = ADMITTED_CANONICAL_INPUTS.get(historicalSha256);
-  const previousPath = reference?.promotion?.previousArtifactPath;
-  if (!/^tools\/datapack\/sources\/itx-cheongchun-source-timetable-\d+\.json$/.test(previousPath ?? "")
-    || !/^itx-cheongchun-source-timetable-\d+$/.test(historicalId ?? "")
-    || historicalAdmission == null) {
-    throw new Error("ITX topology production source identity is not admitted");
-  }
-  const previousBytes = await readFile(repositoryPath(previousPath));
-  const historicalBytes = await readFile(repositoryPath(
-    `tools/datapack/sources/${historicalId}.json`,
-  ));
-  const previous = JSON.parse(previousBytes);
-  const historical = JSON.parse(historicalBytes);
-  if (sha256(previousBytes) !== reference.promotion.previousArtifactSha256
-    || !isUnchangedRefresh(reference, source, previous)
-    || sha256(historicalBytes) !== historicalSha256
-    || historical?.schemaVersion !== 1
-    || historical?.artifactKind !== "itx-cheongchun-source-timetable"
-    || historical?.artifactId !== historicalId
-    || historical?.serviceId !== "ITX_CHEONGCHUN"
-    || historical?.completenessEvidenceSha256
-      !== evidence.sourceArtifact.completenessEvidenceSha256
-    || historical?.freshUntil !== evidence.sourceArtifact.freshUntil
-    || historical?.canonicalPackIdentity?.sha256 !== historicalAdmission.gzipSha256
-    || evidence?.pack?.inputSqliteSha256 !== historicalAdmission.sqliteSha256
-    || !hasTrackedReadmissionToOutput(evidence, source?.canonicalPackIdentity?.sha256)
-    || JSON.stringify(source.normalizedSnapshotSets)
-      !== JSON.stringify(historical.normalizedSnapshotSets)
-    || deriveTopology(source).sha256 !== deriveTopology(historical).sha256) {
+  if (source?.canonicalPackIdentity?.sha256 !== admitted.gzipSha256) {
     throw new Error("ITX topology admitted canonical input identity mismatch");
   }
-  return {
-    reference: {
-      artifactId: historical.artifactId,
-      sha256: historicalSha256,
-      completenessEvidenceSha256: historical.completenessEvidenceSha256,
-      freshUntil: historical.freshUntil,
-    },
-    source: historical,
-    inputByteSize: historicalAdmission.byteSize,
-    historical: true,
-  };
+  return { reference, source, ...admitted };
 }
 
 function routeServiceEvidence(contract, reference) {
@@ -270,7 +323,7 @@ function routeServiceEvidence(contract, reference) {
   };
 }
 
-function deriveTopology(source) {
+export function deriveTopology(source) {
   if (!Array.isArray(source?.stationSequences) || source.stationSequences.length === 0) {
     throw new Error("ITX topology stationSequences must be non-empty");
   }
@@ -427,7 +480,7 @@ function ensureVersion18(database) {
   database.exec(`PRAGMA user_version = ${CATALOG_VERSION}`);
 }
 
-function applyTopology(sqlitePath, topology, admissionEvidence) {
+export function applyTopology(sqlitePath, topology, admissionEvidence) {
   const database = new DatabaseSync(sqlitePath);
   try {
     database.exec("PRAGMA foreign_keys = ON");
@@ -500,7 +553,7 @@ function applyTopology(sqlitePath, topology, admissionEvidence) {
   }
 }
 
-function assertStoredTopology(sqlitePath, topology, admissionEvidence) {
+export function assertStoredTopology(sqlitePath, topology, admissionEvidence) {
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     const foreignKeys = database.prepare("PRAGMA foreign_key_check").all();
@@ -552,6 +605,13 @@ async function main() {
   const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
   let check = process.argv.includes("--check");
   const { contract, reference, source, sourceBytes } = await admittedSource(contractPath);
+  const topologySource = admittedTopologySource(reference, source);
+  assertCanonicalInputIdentity(
+    contract,
+    source,
+    topologySource.gzipSha256,
+    topologySource.sqliteSha256,
+  );
   const topology = deriveTopology(source);
   const admissionEvidence = routeServiceEvidence(contract, reference);
   const inputGzipBytes = await readFile(packPath);
@@ -566,65 +626,16 @@ async function main() {
   if (check) {
     const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
     const index = JSON.parse(await readFile(indexPath, "utf8"));
-    const pack = index.packs?.find(({ id }) => id === "capital");
-    const inputSqliteBytes = gunzipSync(inputGzipBytes);
-    const topologySource = await admittedTopologySource(reference, source, evidence, contractPath);
-    const storedAdmissionEvidence = topologySource.historical ? {
-      serviceClass: "ITX_CHEONGCHUN",
-      timetableArtifactId: evidence.sourceArtifact.id,
-      timetableArtifactSha256: evidence.sourceArtifact.sha256,
-      canonicalPackId: evidence.pack.id,
-      canonicalPackSha256: evidence.pack.inputSha256,
-      canonicalPackSqliteSha256: evidence.pack.inputSqliteSha256,
-      admissionStatus: "ADMITTED",
-      admissionEligible: 1,
-      freshUntil: evidence.sourceArtifact.freshUntil,
-      sourceIssue: 2135,
-    } : admissionEvidence;
-    const currentCanonical = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
-    assertCanonicalInputIdentity(
+    const { inputSqliteBytes } = validateTopologyEvidence({
       contract,
+      reference,
       source,
-      topologySource.historical ? currentCanonical?.sha256 : evidence?.pack?.inputSha256,
-      topologySource.historical ? currentCanonical?.sqliteSha256 : evidence?.pack?.inputSqliteSha256,
-    );
-    if (evidence?.schemaVersion !== 1
-      || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
-      || evidence?.sourceIssue !== 2135
-      || evidence?.serviceId !== "ITX_CHEONGCHUN"
-      || evidence?.sourceArtifact?.id !== topologySource.reference.artifactId
-      || evidence?.sourceArtifact?.sha256 !== topologySource.reference.sha256
-      || evidence?.sourceArtifact?.completenessEvidenceSha256
-        !== topologySource.reference.completenessEvidenceSha256
-      || evidence?.sourceArtifact?.freshUntil !== topologySource.reference.freshUntil
-      || evidence?.topology?.stationMembershipCount !== topology.stations.length
-      || evidence?.topology?.servedStationCount !== topology.servedStations.length
-      || evidence?.pack?.inputSha256 !== topologySource.source.canonicalPackIdentity?.sha256
-      || evidence?.topology?.sha256 !== topology.sha256
-      || evidence?.topology?.edgeCount !== topology.edges.length
-      || JSON.stringify(evidence?.topology?.directions) !== JSON.stringify(["up", "down"])
-      || evidence?.topology?.connectedComponentCount !== 1
-      || evidence?.topology?.isolatedServedStationCount !== 0
-      || evidence?.topology?.durationSecondsEmbedded !== false
-      || evidence?.topology?.fareEmbedded !== false
-      || evidence?.pack?.id !== "capital"
-      || evidence?.pack?.outputSha256 !== sha256(inputGzipBytes)
-      || evidence?.pack?.byteSize !== inputGzipBytes.length
-      || !Number.isInteger(evidence?.pack?.inputByteSize)
-      || evidence.pack.inputByteSize <= 0
-      || (topologySource.inputByteSize !== null
-        && evidence.pack.inputByteSize !== topologySource.inputByteSize)
-      || evidence?.pack?.byteSizeDelta !== inputGzipBytes.length - evidence.pack.inputByteSize
-      || (evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
-        && !hasApprovedSerializationOnlyReadmission(
-          evidence,
-          source?.canonicalPackIdentity?.sha256,
-        ))
-      || pack?.sha256 !== sha256(inputGzipBytes)
-      || pack?.sqliteSha256 !== evidence?.pack?.outputSqliteSha256
-      || pack?.byteSize !== inputGzipBytes.length) {
-      throw new Error("ITX topology evidence or bundled pack index is stale");
-    }
+      topology,
+      evidence,
+      index,
+      inputGzipBytes,
+      admittedInput: topologySource,
+    });
     const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-check-${randomUUID()}-`));
     try {
       const sqlitePath = path.join(directory, "capital.sqlite");
@@ -632,7 +643,7 @@ async function main() {
         throw new Error("ITX topology bundled SQLite identity is stale");
       }
       await writeFile(sqlitePath, inputSqliteBytes);
-      assertStoredTopology(sqlitePath, topology, storedAdmissionEvidence);
+      assertStoredTopology(sqlitePath, topology, admissionEvidence);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
