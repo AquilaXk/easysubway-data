@@ -219,14 +219,14 @@ function hasExactKeys(value, keys) {
       === [...keys].sort((left, right) => left.localeCompare(right)).join(",");
 }
 
-export async function admittedTopologySource(reference, source) {
-  const identity = stationCatalogIdentity(source?.stationCatalogPackIdentity, "ITX topology station catalog identity");
+export async function admittedTopologySource(reference, source, admittedInputs = ADMITTED_TOPOLOGY_INPUTS) {
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
     || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED") {
     throw new Error("ITX topology legacy admission is forbidden");
   }
-  const admittedInput = ADMITTED_TOPOLOGY_INPUTS.get(reference?.sha256);
+  const identity = stationCatalogIdentity(source?.stationCatalogPackIdentity, "ITX topology station catalog identity");
+  const admittedInput = admittedInputs.get(reference?.sha256);
   if (admittedInput == null) {
     throw new Error("ITX topology current source identity is not admitted");
   }
@@ -257,6 +257,10 @@ export function validateTopologyEvidence({
     evidence?.stationCatalogPackIdentity,
     "ITX topology evidence station catalog identity",
   );
+  const contractInput = topologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX topology input pack identity",
+  );
   if (!hasExactKeys(evidence, [
     "schemaVersion", "artifactKind", "serviceId", "sourceIssue",
     "stationCatalogPackIdentity", "sourceArtifact", "topology", "pack",
@@ -268,6 +272,9 @@ export function validateTopologyEvidence({
     || JSON.stringify(evidenceIdentity) !== JSON.stringify(sourceIdentity)
     || JSON.stringify(evidence?.sourceArtifact?.stationCatalogPackIdentity)
       !== JSON.stringify(sourceIdentity)
+    || contractInput.sha256 !== admittedInput.gzipSha256
+    || contractInput.sqliteSha256 !== admittedInput.sqliteSha256
+    || contractInput.byteSize !== admittedInput.byteSize
     || evidence?.schemaVersion !== 1
     || evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
     || evidence?.sourceIssue !== 2135

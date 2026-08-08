@@ -11,10 +11,8 @@ import { gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
   applyTopology,
-  assertCanonicalInputIdentity,
   assertStoredTopology,
   deriveTopology,
-  isUnchangedRefresh,
   parseAuthenticatedAdmittedSourceDocuments,
   validateAdmittedSourceDocuments,
   validateTopologyEvidence,
@@ -28,7 +26,31 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function admittedDocuments() {
+const stationCatalogPackIdentity = Object.freeze({
+  artifactKind: "station-catalog-pack",
+  manifestVersion: 1,
+  catalogPackId: "station-catalog-test",
+  stationSetSha256: "1".repeat(64),
+  payloadSha256: "2".repeat(64),
+  manifestSha256: "3".repeat(64),
+});
+
+const admittedTopologyInputs = new Map([
+  ["e3c4f942a02712904d44d642627eb909523d55189efce96296a0d2b96e3ea4ad", {
+    id: "capital",
+    sha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+    byteSize: 354980,
+  }],
+  ["e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e", {
+    id: "capital",
+    sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+    sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+    byteSize: 359319,
+  }],
+]);
+
+async function trackedLegacyDocuments() {
   const contract = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
   const reference = contract.sourceTimetableArtifact;
@@ -44,6 +66,43 @@ async function admittedDocuments() {
   };
 }
 
+async function admittedDocuments() {
+  const { contract, source, completeness } = await trackedLegacyDocuments();
+  const topologyInputPackIdentity = admittedTopologyInputs.get(
+    contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+  );
+  assert.ok(topologyInputPackIdentity, "fixture predecessor must have an exact static topology input admission");
+  delete contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+  contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity =
+    structuredClone(stationCatalogPackIdentity);
+  contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity =
+    structuredClone(topologyInputPackIdentity);
+  contract.sourceTimetableArtifact.promotion.mode = "CURRENT_CANDIDATE_OWNER_APPROVED";
+  delete source.canonicalPackIdentity;
+  source.stationCatalogPackIdentity = structuredClone(stationCatalogPackIdentity);
+  completeness.stationCatalogPackIdentity = structuredClone(stationCatalogPackIdentity);
+  const completenessBytes = Buffer.from(JSON.stringify(completeness));
+  contract.sourceTimetableArtifact.completenessEvidenceSha256 = sha256(completenessBytes);
+  source.completenessEvidenceSha256 = contract.sourceTimetableArtifact.completenessEvidenceSha256;
+  const sourceBytes = Buffer.from(JSON.stringify(source));
+  contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
+  const reference = contract.sourceTimetableArtifact;
+  const admittedInputs = new Map([[reference.sha256, {
+    gzipSha256: topologyInputPackIdentity.sha256,
+    sqliteSha256: topologyInputPackIdentity.sqliteSha256,
+    byteSize: topologyInputPackIdentity.byteSize,
+  }]]);
+  return {
+    contract,
+    reference,
+    source,
+    completeness,
+    sourceBytes,
+    completenessBytes,
+    admittedInputs,
+  };
+}
+
 function withBuildNow(callback) {
   const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = buildNow;
@@ -56,15 +115,18 @@ function withBuildNow(callback) {
 }
 
 function admissionEvidenceFrom(contract) {
-  const canonical = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+  const station = contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity;
   const reference = contract.sourceTimetableArtifact;
   return {
     serviceClass: "ITX_CHEONGCHUN",
     timetableArtifactId: reference.artifactId,
     timetableArtifactSha256: reference.sha256,
-    canonicalPackId: canonical.id,
-    canonicalPackSha256: canonical.sha256,
-    canonicalPackSqliteSha256: canonical.sqliteSha256,
+    stationCatalogArtifactKind: station.artifactKind,
+    stationCatalogManifestVersion: station.manifestVersion,
+    stationCatalogPackId: station.catalogPackId,
+    stationCatalogStationSetSha256: station.stationSetSha256,
+    stationCatalogPayloadSha256: station.payloadSha256,
+    stationCatalogManifestSha256: station.manifestSha256,
     admissionStatus: "ADMITTED",
     admissionEligible: 1,
     freshUntil: reference.freshUntil,
@@ -194,9 +256,12 @@ function selfConsistentEvidence(contract, source, topology, gzipBytes, sqliteByt
   const sqliteSha = sha256(sqliteBytes);
   const localContract = structuredClone(contract);
   const localSource = structuredClone(source);
-  localSource.canonicalPackIdentity.sha256 = gzipSha;
-  localContract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = gzipSha;
-  localContract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = sqliteSha;
+  localContract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity = {
+    id: "capital",
+    sha256: gzipSha,
+    sqliteSha256: sqliteSha,
+    byteSize: gzipBytes.length,
+  };
   return {
     contract: localContract,
     source: localSource,
@@ -205,11 +270,13 @@ function selfConsistentEvidence(contract, source, topology, gzipBytes, sqliteByt
       artifactKind: "itx-cheongchun-mobile-topology-evidence",
       sourceIssue: 2135,
       serviceId: "ITX_CHEONGCHUN",
+      stationCatalogPackIdentity: structuredClone(localSource.stationCatalogPackIdentity),
       sourceArtifact: {
         id: reference.artifactId,
         sha256: reference.sha256,
         completenessEvidenceSha256: reference.completenessEvidenceSha256,
         freshUntil: reference.freshUntil,
+        stationCatalogPackIdentity: structuredClone(localSource.stationCatalogPackIdentity),
       },
       topology: {
         stationMembershipCount: topology.stations.length,
@@ -247,17 +314,17 @@ function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize
     source: candidate.source, topology, evidence: candidate.evidence, index: candidate.index,
     inputGzipBytes: gzipBytes,
     admittedInput: {
-      gzipSha256: candidate.source.canonicalPackIdentity.sha256,
-      sqliteSha256: candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
+      gzipSha256: candidate.contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sha256,
+      sqliteSha256: candidate.contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sqliteSha256,
       byteSize: inputByteSize,
     },
   });
 }
 
-test("미등록 current source는 custom contract와 sentinel 산출물을 변경하지 않고 거부한다", async (context) => {
+test("custom contract는 legacy tracked source를 승인하지 않고 sentinel 산출물을 변경하지 않는다", async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-admission-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const { contract } = await admittedDocuments();
+  const { contract } = await trackedLegacyDocuments();
   const contractPath = path.join(directory, "contract.json");
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -271,7 +338,7 @@ test("미등록 current source는 custom contract와 sentinel 산출물을 변�
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--contract", contractPath,
     "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
   ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } }),
-  /current source identity is not admitted/);
+  /legacy admission is forbidden/);
   assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
 });
 
@@ -325,7 +392,7 @@ test("topology evidence seam은 self-consistent fixture를 통과하고 파생 c
     /evidence or bundled pack index is stale/);
 });
 
-test("self-consistent custom canonical SQLite/evidence도 static admission과 다르면 거부한다", async (context) => {
+test("self-consistent topology input contract도 static admission과 다르면 거부한다", async (context) => {
   const fixture = await createFixture(context);
   const sqliteBytes = await readFile(fixture.sqlitePath);
   const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
@@ -336,9 +403,12 @@ test("self-consistent custom canonical SQLite/evidence도 static admission과 �
     byteSize: 354980,
   };
   const mutatedSqliteSha = "0".repeat(64);
-  candidate.source.canonicalPackIdentity.sha256 = admittedInput.gzipSha256;
-  candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = admittedInput.gzipSha256;
-  candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = mutatedSqliteSha;
+  candidate.contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity = {
+    id: "capital",
+    sha256: admittedInput.gzipSha256,
+    sqliteSha256: mutatedSqliteSha,
+    byteSize: admittedInput.byteSize,
+  };
   candidate.evidence.pack.inputSha256 = admittedInput.gzipSha256;
   candidate.evidence.pack.inputSqliteSha256 = mutatedSqliteSha;
   candidate.evidence.pack.inputByteSize = admittedInput.byteSize;
@@ -350,8 +420,10 @@ test("self-consistent custom canonical SQLite/evidence도 static admission과 �
   }), /evidence or bundled pack index is stale/);
 });
 
-test("admission document와 canonical input identity는 exact binding을 요구한다", async (context) => {
-  const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await admittedDocuments();
+test("admission document와 station/topology input identity는 exact binding을 요구한다", async (context) => {
+  const {
+    contract, reference, source, completeness, sourceBytes, completenessBytes, admittedInputs,
+  } = await admittedDocuments();
   withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
     contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
   )));
@@ -360,15 +432,10 @@ test("admission document와 canonical input identity는 exact binding을 요구�
   withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
     contract, reference, source, invalidCompleteness, sha256(sourceBytes), sha256(completenessBytes),
   ), /source identity is invalid/));
-  const fixture = await createFixture(context);
-  const sqliteBytes = await readFile(fixture.sqlitePath);
-  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
-  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
-  candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "0".repeat(64);
-  assert.throws(() => assertCanonicalInputIdentity(
-    candidate.contract, candidate.source, sha256(gzipBytes), sha256(sqliteBytes),
-  ),
-    /canonical input pack identity mismatch/);
+  const invalidStationSource = structuredClone(source);
+  invalidStationSource.stationCatalogPackIdentity.extra = true;
+  await assert.rejects(admittedTopologySource(reference, invalidStationSource, admittedInputs),
+    /station catalog identity is invalid/);
 });
 
 test("v18 legacy evidence schema는 2135 admission schema로 migration한다", async (context) => {
@@ -378,6 +445,17 @@ test("v18 legacy evidence schema는 2135 admission schema로 migration한다", a
   try {
     assert.equal(database.prepare(`SELECT source_issue FROM route_service_artifact_evidence
       WHERE service_class = 'ITX_CHEONGCHUN'`).get().source_issue, 2135);
+    const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
+      .all().map(({ name }) => name);
+    assert.equal(columns.some((name) => name.startsWith("canonical_pack_")), false);
+    assert.deepEqual(columns.filter((name) => name.startsWith("station_catalog_")), [
+      "station_catalog_artifact_kind",
+      "station_catalog_manifest_version",
+      "station_catalog_pack_id",
+      "station_catalog_station_set_sha256",
+      "station_catalog_payload_sha256",
+      "station_catalog_manifest_sha256",
+    ]);
   } finally { database.close(); }
 });
 
@@ -435,9 +513,24 @@ test("unsupported catalog version은 fixture를 변경하지 않고 거부한다
   assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
-test("current source admission은 historical evidence, path, previous artifact를 받지 않는다", async () => {
-  const { reference, source } = await admittedDocuments();
-  assert.throws(() => admittedTopologySource(reference, source), /current source identity is not admitted/);
+test("current source admission은 canonical/readmission/UNCHANGED_AUTO를 받지 않는다", async (context) => {
+  const { reference, source, admittedInputs } = await admittedDocuments();
+  const cases = [
+    ["canonical", (candidate) => { candidate.canonicalPackIdentity = {}; }],
+    ["readmissions", (candidate) => { candidate.readmissions = []; }],
+    ["unchanged", (candidate, candidateReference) => {
+      candidateReference.promotion.mode = "UNCHANGED_AUTO";
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const candidate = structuredClone(source);
+      const candidateReference = structuredClone(reference);
+      mutate(candidate, candidateReference);
+      await assert.rejects(admittedTopologySource(candidateReference, candidate, admittedInputs),
+        /legacy admission is forbidden/);
+    });
+  }
 });
 
 test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam에서 거부한다", async (context) => {
@@ -452,11 +545,20 @@ test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam�
     /evidence or bundled pack index is stale/);
 });
 
-test("isUnchangedRefresh는 immediate previous source divergence를 거부한다", async () => {
-  const { reference, source } = await admittedDocuments();
-  const previous = JSON.parse(await readFile(path.join(root, reference.promotion.previousArtifactPath), "utf8"));
-  previous.normalizedSnapshotSets[0].sets.stationSet.push("station-diverged-from-current");
-  assert.equal(isUnchangedRefresh(reference, source, previous), false);
+test("current source static admission은 exact topology input tuple을 반환한다", async () => {
+  const { reference, source, admittedInputs } = await admittedDocuments();
+  const admitted = await admittedTopologySource(reference, source, admittedInputs);
+  assert.deepEqual({
+    id: "capital",
+    sha256: admitted.gzipSha256,
+    sqliteSha256: admitted.sqliteSha256,
+    byteSize: admitted.byteSize,
+  }, {
+    id: "capital",
+    sha256: admittedInputs.get(reference.sha256).gzipSha256,
+    sqliteSha256: admittedInputs.get(reference.sha256).sqliteSha256,
+    byteSize: admittedInputs.get(reference.sha256).byteSize,
+  });
 });
 
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
@@ -522,22 +624,21 @@ test("contract/source/completeness schema identity 변조를 각각 거부한다
   }
 });
 
-test("canonical gzip와 SQLite identity 변조를 각각 거부한다", async (context) => {
+test("topology input gzip와 SQLite identity 변조를 각각 거부한다", async (context) => {
   const fixture = await createFixture(context);
   const sqliteBytes = await readFile(fixture.sqlitePath);
   const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
   const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
   await context.test("gzip", () => {
-    candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = "0".repeat(64);
-    assert.throws(() => assertCanonicalInputIdentity(candidate.contract, candidate.source, sha256(gzipBytes), sha256(sqliteBytes)),
-      /canonical input pack identity mismatch/);
+    candidate.contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sha256 = "0".repeat(64);
+    assert.throws(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes),
+      /evidence or bundled pack index is stale/);
   });
   await context.test("sqlite", () => {
     const sqliteCandidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
-    sqliteCandidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "0".repeat(64);
-    assert.throws(() => assertCanonicalInputIdentity(
-      sqliteCandidate.contract, sqliteCandidate.source, sha256(gzipBytes), sha256(sqliteBytes),
-    ), /canonical input pack identity mismatch/);
+    sqliteCandidate.contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity.sqliteSha256 = "0".repeat(64);
+    assert.throws(validateEvidenceCandidate(sqliteCandidate, fixture.topology, gzipBytes),
+      /evidence or bundled pack index is stale/);
   });
 });
 
