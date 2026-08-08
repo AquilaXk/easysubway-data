@@ -513,6 +513,47 @@ async function writeAdmittedSourceBundle(sourceDir, candidate) {
   };
 }
 
+async function writeHistoricalAdmittedSourceBundle(sourceDir, candidate) {
+  const completeness = completenessForCandidate(candidate);
+  delete completeness.stationCatalogPackIdentity;
+  const { evidenceHash: _oldCompletenessHash, ...completenessWithoutHash } = completeness;
+  completeness.evidenceHash = createHash("sha256")
+    .update(JSON.stringify(completenessWithoutHash))
+    .digest("hex");
+  const completenessBytesValue = completenessBytes(completeness);
+  delete candidate.stationCatalogPackIdentity;
+  candidate.canonicalPackIdentity = {
+    path: LEGACY_PACK_PATH,
+    sha256: LEGACY_PACK_SHA256,
+  };
+  candidate.completenessEvidenceSha256 = createHash("sha256")
+    .update(completenessBytesValue)
+    .digest("hex");
+  rehashCandidate(candidate);
+  const sourceBytesValue = sourceBytes(candidate);
+  const artifactPath = `tools/datapack/sources/${candidate.artifactId}.json`;
+  const completenessEvidencePath = `tools/datapack/sources/${candidate.artifactId}-completeness-evidence.json`;
+  await Promise.all([
+    writeFile(path.join(sourceDir, `${candidate.artifactId}.json`), sourceBytesValue),
+    writeFile(path.join(sourceDir, `${candidate.artifactId}-completeness-evidence.json`), completenessBytesValue),
+  ]);
+  return {
+    reference: {
+      status: "ADMITTED",
+      admissionEligible: true,
+      artifactId: candidate.artifactId,
+      artifactPath,
+      sha256: createHash("sha256").update(sourceBytesValue).digest("hex"),
+      completenessEvidencePath,
+      completenessEvidenceSha256: createHash("sha256").update(completenessBytesValue).digest("hex"),
+      schemaVersion: 1,
+      freshUntil: candidate.freshUntil,
+      policyVersion: "itx-snapshot-anomaly-v1",
+      promotion: { mode: "UNCHANGED_AUTO" },
+    },
+  };
+}
+
 function ownerApproval(candidate) {
   const digest = createHash("sha256").update(sourceBytes(candidate)).digest("hex");
   return {
@@ -568,13 +609,15 @@ async function promoteUnchangedWithPin({
   const dir = await mkdtemp(path.join(tmpdir(), "itx-pin-correction-"));
   try {
     const sourceDir = path.join(dir, "tools/datapack/sources");
+    const stationCatalogPackPath = path.join(dir, "station-catalog-pack");
     await mkdir(sourceDir, { recursive: true });
+    await copyStationCatalogPack(stationCatalogPackPath);
     const previous = sourceCandidate({
       artifactId: "itx-cheongchun-source-timetable-20260714010000000",
       promotionStatus: "SUPPORTED",
       freshUntil: "2026-07-19T00:00:00+09:00",
     });
-    const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
+    const { reference: previousReference } = await writeHistoricalAdmittedSourceBundle(sourceDir, previous);
     const previousSha = previousReference.sha256;
     const contractExtras = { sourceTimetableArtifact: previousReference };
     if (includeFreshness) contractExtras.freshness = freshness;
@@ -608,6 +651,7 @@ async function promoteUnchangedWithPin({
       ...ownerApproval(candidate),
       sourceOutputDir: sourceDir,
       coverageContractPath: contractPath,
+      stationCatalogPackPath,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
     });
@@ -1597,43 +1641,45 @@ test("기존 UNCHANGED_AUTO fixture는 malformed contract freshness를 fail clos
   }
 });
 
-test("UNCHANGED_AUTO 승격은 조건 미충족 시 admission pin을 불변 유지한다", async (context) => {
-  await context.test("topology evidence OUTPUT identity 불일치", async () => {
+test("current 승격은 legacy topology evidence를 admission authority로 사용하지 않는다", async (context) => {
+  await context.test("legacy topology evidence OUTPUT identity 불일치", async () => {
     const { promoted, contract } = await promoteUnchangedWithPin({
       pin: stalePin(),
       topologyEvidence: shippedPackTopologyEvidence({ pack: { outputSqliteSha256: "9".repeat(64) } }),
     });
-    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
-    const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
-    assert.equal(pin.sha256, STALE_PIN_SHA256);
-    assert.equal(pin.sqliteSha256, STALE_PIN_SQLITE_SHA256);
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "CURRENT_CANDIDATE_OWNER_APPROVED");
+    const admission = contract.officialEvidence.korailCompletenessAdmission;
+    assert.equal(Object.hasOwn(admission, "canonicalPackIdentity"), false);
+    assert.deepEqual(admission.stationCatalogPackIdentity, PACK_IDENTITY);
   });
 
-  await context.test("topology evidence 파일 부재", async () => {
+  await context.test("legacy topology evidence 파일 부재", async () => {
     const { promoted, contract } = await promoteUnchangedWithPin({
       pin: stalePin(),
       topologyEvidence: null,
     });
-    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
-    const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
-    assert.equal(pin.sha256, STALE_PIN_SHA256);
-    assert.equal(pin.sqliteSha256, STALE_PIN_SQLITE_SHA256);
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "CURRENT_CANDIDATE_OWNER_APPROVED");
+    assert.deepEqual(
+      contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity,
+      PACK_IDENTITY,
+    );
   });
 
-  await context.test("officialEvidence pin 부재 시에도 promote는 성공한다", async () => {
-    const { promoted, contract } = await promoteUnchangedWithPin({
-      topologyEvidence: shippedPackTopologyEvidence(),
-    });
-    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
-    assert.equal(contract.officialEvidence, undefined);
+  await context.test("officialEvidence admission 경계 부재는 fail closed 한다", async () => {
+    await assert.rejects(
+      promoteUnchangedWithPin({ topologyEvidence: shippedPackTopologyEvidence() }),
+      /ITX_COVERAGE_CONTRACT_INVALID/,
+    );
   });
 });
 
-test("bootstrap 승격(UNCHANGED_AUTO 아님)은 admission pin을 교정하지 않는다", async () => {
+test("bootstrap 승격도 current station-catalog admission만 기록한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-pin-bootstrap-"));
   try {
     const sourceDir = path.join(dir, "tools/datapack/sources");
+    const stationCatalogPackPath = path.join(dir, "station-catalog-pack");
     await mkdir(sourceDir, { recursive: true });
+    await copyStationCatalogPack(stationCatalogPackPath);
     const candidate = sourceCandidate();
     const candidateBytes = sourceBytes(candidate);
     const candidatePath = path.join(dir, "candidate.json");
@@ -1651,14 +1697,15 @@ test("bootstrap 승격(UNCHANGED_AUTO 아님)은 admission pin을 교정하지 �
       ...ownerApproval(candidate),
       sourceOutputDir: sourceDir,
       coverageContractPath: contractPath,
+      stationCatalogPackPath,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
     });
-    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "BOOTSTRAP_OWNER_APPROVED");
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "CURRENT_CANDIDATE_OWNER_APPROVED");
     const contract = JSON.parse(await readFile(contractPath, "utf8"));
-    const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
-    assert.equal(pin.sha256, STALE_PIN_SHA256);
-    assert.equal(pin.sqliteSha256, STALE_PIN_SQLITE_SHA256);
+    const admission = contract.officialEvidence.korailCompletenessAdmission;
+    assert.equal(Object.hasOwn(admission, "canonicalPackIdentity"), false);
+    assert.deepEqual(admission.stationCatalogPackIdentity, PACK_IDENTITY);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -2616,7 +2663,7 @@ test("ITX CLI는 station catalog private temp 초기화 실패 뒤 task temp를 
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("legacy canonical corridor authority는 gzip 초기화 실패 뒤 task temp를 남기지 않는다", async () => {
+test("legacy canonical corridor candidate는 current admission 전에 거부되고 task temp를 남기지 않는다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-legacy-canonical-temp-cleanup-"));
   const prefix = "korail-itx-canonical-";
   try {
@@ -2642,7 +2689,7 @@ test("legacy canonical corridor authority는 gzip 초기화 실패 뒤 task temp
       coverageContractPath: path.join(dir, "tools/datapack/itx-cheongchun-coverage-contract.json"),
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
-    }), { code: "Z_DATA_ERROR" });
+    }), /LEGACY_CURRENT_ADMISSION_FORBIDDEN/);
     const after = (await readdir(tmpdir())).filter((name) => name.startsWith(prefix));
     assert.deepEqual(after.filter((name) => !before.has(name)), []);
   } finally { await rm(dir, { recursive: true, force: true }); }
