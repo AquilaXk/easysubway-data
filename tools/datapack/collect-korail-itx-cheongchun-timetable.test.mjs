@@ -558,8 +558,7 @@ function shippedPackTopologyEvidence(overrides = {}) {
   };
 }
 
-// UNCHANGED_AUTO 승격 흐름을 구성하고 promote한 뒤, 결과 contract를 반환한다.
-// topologyEvidence === null이면 topology evidence 파일을 생성하지 않는다.
+// 기존 UNCHANGED_AUTO fixture도 현재 candidate OWNER approval을 거쳐야 한다.
 async function promoteUnchangedWithPin({
   pin,
   topologyEvidence,
@@ -573,14 +572,15 @@ async function promoteUnchangedWithPin({
     const previous = sourceCandidate({
       artifactId: "itx-cheongchun-source-timetable-20260714010000000",
       promotionStatus: "SUPPORTED",
+      freshUntil: "2026-07-19T00:00:00+09:00",
     });
     const { reference: previousReference } = await writeAdmittedSourceBundle(sourceDir, previous);
     const previousSha = previousReference.sha256;
     const contractExtras = { sourceTimetableArtifact: previousReference };
     if (includeFreshness) contractExtras.freshness = freshness;
-    if (pin !== undefined) {
-      contractExtras.officialEvidence = { korailCompletenessAdmission: { canonicalPackIdentity: pin } };
-    }
+    contractExtras.officialEvidence = pin === undefined
+      ? undefined
+      : { korailCompletenessAdmission: { canonicalPackIdentity: pin } };
     const contractPath = await writeCoverageContract(
       dir,
       JSON.stringify(contractExtras),
@@ -605,6 +605,7 @@ async function promoteUnchangedWithPin({
     const promoted = await promoteItxSourceCandidate({
       candidatePath,
       completenessPath,
+      ...ownerApproval(candidate),
       sourceOutputDir: sourceDir,
       coverageContractPath: contractPath,
       repositoryRoot: dir,
@@ -632,6 +633,11 @@ async function writeCoverageContract(repositoryRoot, contents, { includeFreshnes
     canonicalLineId: "line-54a7b980b7c3",
     completenessAdmission: {
       snapshotAnomalyPolicy: { policyId: "itx-snapshot-anomaly-v1" },
+    },
+    officialEvidence: {
+      korailCompletenessAdmission: {
+        canonicalPackIdentity: stalePin(),
+      },
     },
     ...(includeFreshness ? { freshness: { nextReviewAt: "2026-07-20T00:00:00+09:00" } } : {}),
     ...JSON.parse(contents),
@@ -1339,7 +1345,7 @@ test("ITX promotion은 legacy, missing, mixed, mismatch station catalog identity
   }
 });
 
-test("ITX bootstrap promotion은 exact candidate SHA와 OWNER approval 뒤에만 immutable payload를 만든다", async () => {
+test("ITX current candidate promotion은 exact candidate SHA와 OWNER approval 뒤에만 immutable payload를 만든다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-"));
   const candidatePath = path.join(dir, "candidate.json");
   const sourceDir = path.join(dir, "tools/datapack/sources");
@@ -1368,7 +1374,7 @@ test("ITX bootstrap promotion은 exact candidate SHA와 OWNER approval 뒤에만
       coverageContractPath: contractPath,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
-    }), /SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID/);
+    }), /CURRENT_CANDIDATE_APPROVAL_INVALID/);
 
     const promoted = await promoteItxSourceCandidate({
       candidatePath,
@@ -1381,7 +1387,7 @@ test("ITX bootstrap promotion은 exact candidate SHA와 OWNER approval 뒤에만
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
         html_url: approvalUrl,
-        body: `/approve-itx-bootstrap artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
+        body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
     });
@@ -1389,7 +1395,18 @@ test("ITX bootstrap promotion은 exact candidate SHA와 OWNER approval 뒤에만
     assert.deepEqual(await readFile(promoted.artifactPath), Buffer.from(candidateBytes));
     const contract = JSON.parse(await readFile(contractPath, "utf8"));
     assert.equal(contract.sourceTimetableArtifact.status, "ADMITTED");
-    assert.equal(contract.sourceTimetableArtifact.promotion.mode, "BOOTSTRAP_OWNER_APPROVED");
+    assert.deepEqual(contract.sourceTimetableArtifact.promotion, {
+      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      previousArtifactSha256: null,
+      previousArtifactPath: null,
+      approvalUrl,
+      approvedArtifactSha256: digest,
+    });
+    assert.equal(Object.hasOwn(contract.officialEvidence.korailCompletenessAdmission, "canonicalPackIdentity"), false);
+    assert.deepEqual(
+      contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity,
+      candidate.stationCatalogPackIdentity,
+    );
     assert.equal(
       contract.sourceTimetableArtifact.artifactPath,
       `tools/datapack/sources/${candidate.artifactId}.json`,
@@ -1467,7 +1484,7 @@ test("ITX unchanged promotion은 preserved completeness와 다른 warning·linea
   }
 });
 
-test("ITX changed candidate는 change OWNER approval로 immutable artifact를 승격한다", async () => {
+test("ITX changed current candidate도 exact OWNER approval로 immutable artifact를 승격한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-change-promotion-"));
   const sourceDir = path.join(dir, "tools/datapack/sources");
   try {
@@ -1525,11 +1542,11 @@ test("ITX changed candidate는 change OWNER approval로 immutable artifact를 �
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
         html_url: approvalUrl,
-        body: `/approve-itx-change artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
+        body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
     });
-    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "CHANGE_OWNER_APPROVED");
+    assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "CURRENT_CANDIDATE_OWNER_APPROVED");
     assert.equal(promoted.sourceTimetableArtifact.promotion.previousArtifactSha256, previousSha);
     assert.equal(
       promoted.sourceTimetableArtifact.promotion.previousArtifactPath,
@@ -1541,25 +1558,18 @@ test("ITX changed candidate는 change OWNER approval로 immutable artifact를 �
   }
 });
 
-test("UNCHANGED_AUTO 승격은 조건이 모두 충족되면 admission pin을 출하 pack 실체로 교정한다", async () => {
+test("기존 UNCHANGED_AUTO fixture도 current approval 뒤 legacy admission pin을 station catalog identity로 교체한다", async () => {
   const { promoted, contract } = await promoteUnchangedWithPin({
     pin: stalePin(),
     topologyEvidence: shippedPackTopologyEvidence(),
   });
-  assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "UNCHANGED_AUTO");
-  const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
-  // pin의 3필드는 출하 pack 실체로 갱신되고, sourceIssue 등 잔여 필드는 보존된다.
-  assert.equal(pin.id, "capital");
-  assert.equal(pin.sha256, LEGACY_PACK_SHA256);
-  assert.equal(pin.sqliteSha256, PACK_SQLITE_SHA256);
-  assert.equal(pin.sourceIssue, 2097);
-  // 교정된 pin(sha256/sqliteSha256)은 build --without-topology-evidence 게이트가 요구하는
-  // 출하 pack 실측 identity와 정확히 일치한다.
-  assert.equal(pin.sha256, createHash("sha256").update(LEGACY_PACK_BYTES).digest("hex"));
-  assert.equal(pin.sqliteSha256, createHash("sha256").update(gunzipSync(LEGACY_PACK_BYTES)).digest("hex"));
+  assert.equal(promoted.sourceTimetableArtifact.promotion.mode, "CURRENT_CANDIDATE_OWNER_APPROVED");
+  const admission = contract.officialEvidence.korailCompletenessAdmission;
+  assert.equal(Object.hasOwn(admission, "canonicalPackIdentity"), false);
+  assert.deepEqual(admission.stationCatalogPackIdentity, PACK_IDENTITY);
 });
 
-test("UNCHANGED_AUTO 승격은 contract freshness를 candidate와 동기화한다", async () => {
+test("기존 UNCHANGED_AUTO fixture도 current approval 뒤 contract freshness를 candidate와 동기화한다", async () => {
   const { promoted, contract } = await promoteUnchangedWithPin({
     pin: stalePin(),
     topologyEvidence: shippedPackTopologyEvidence(),
@@ -1568,7 +1578,7 @@ test("UNCHANGED_AUTO 승격은 contract freshness를 candidate와 동기화한�
   assert.equal(contract.freshness.nextReviewAt, promoted.sourceTimetableArtifact.freshUntil);
 });
 
-test("UNCHANGED_AUTO 승격은 malformed contract freshness를 fail closed한다", async () => {
+test("기존 UNCHANGED_AUTO fixture는 malformed contract freshness를 fail closed한다", async () => {
   for (const options of [
     { includeFreshness: false },
     { freshness: null },
@@ -1678,7 +1688,7 @@ test("ITX promotion은 동일한 immutable artifact bytes가 남은 재시도를
       fetchImpl: async () => new Response(JSON.stringify({
         author_association: "OWNER",
         html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
-        body: `/approve-itx-bootstrap artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
+        body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
         created_at: "2026-07-15T01:30:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } }),
     });
@@ -2345,7 +2355,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         fetchImpl: async () => new Response(JSON.stringify({
           author_association: "OWNER",
           html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
-          body: `/approve-itx-bootstrap artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
+          body: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
           created_at: "2026-07-15T01:30:00.000Z",
         }), { status: 200, headers: { "content-type": "application/json" } }),
       }), /ITX source candidate schema is invalid/);
