@@ -68,14 +68,20 @@
       "jobId": "contracts",
       "checkName": "Data contracts",
       "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr",
-      "required": true
+      "required": true,
+      "fixtures": [
+        "mobile"
+      ]
     },
     "deterministic-release": {
       "file": ".github/workflows/datapack-release.yml",
       "jobId": "data-pack-release",
       "checkName": "Data Pack Release",
-      "invocation": "node tools/ci/data-test-discovery.mjs run --class deterministic-release",
-      "required": false
+      "invocation": "node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1",
+      "required": false,
+      "fixtures": [
+        "mobile"
+      ]
     }
   },
   "tests": [
@@ -187,7 +193,7 @@
     {"path":"tools/datapack/materialize-seoul-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/materialize-seoul9-phase1-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/materialize-seoul9-route-map-positions.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
-    {"path":"tools/datapack/nationwide-candidate-coverage-gate.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":null},
+    {"path":"tools/datapack/nationwide-candidate-coverage-gate.test.mjs","semanticOwner":"data7","classes":["deterministic-release"],"durationMs":null},
     {"path":"tools/datapack/nationwide-public-api-coverage-evidence.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/normalize-kric-timetable.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/normalize-transfer-distance-duration-rows.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":null},
@@ -202,7 +208,7 @@
     {"path":"tools/datapack/probe-seoul-open-data-api.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/publish-object-storage.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":null},
-    {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
+    {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["deterministic-release"],"durationMs":null},
     {"path":"tools/datapack/reconstruct-transit-trips.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":null},
@@ -219,8 +225,8 @@
     {"path":"tools/datapack/stage-contracts.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/validate-release-evidence-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/validate-source-snapshot-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":null},
-    {"path":"tools/datapack/validate-timetable-ride-consistency.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":null},
-    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":null},
+    {"path":"tools/datapack/validate-timetable-ride-consistency.test.mjs","semanticOwner":"data9","classes":["deterministic-release"],"durationMs":null},
+    {"path":"tools/datapack/verify-production-pack-artifact-identity.test.mjs","semanticOwner":"data7","classes":["deterministic-release"],"durationMs":null},
     {"path":"tools/datapack/verify-release-request-binding.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":null},
     {"path":"tools/release/validate-promotion-request.test.mjs","semanticOwner":"data54","classes":["required-pr"],"durationMs":null},
     {"path":"tools/route-map/add-daegu-buksam-catalog.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":null},
@@ -269,5 +275,26 @@
     {"path":"tools/route-map/station-surgery.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":null},
     {"path":"tools/route-map/verify-display-svg-provenance.test.mjs","semanticOwner":"data21","classes":["required-pr"],"durationMs":null},
     {"path":"tools/routes/build-route-graph-coverage-report.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":null}
-  ]
+  ],
+  "fixtures": {
+    "mobile": {
+      "repository": "AquilaXk/easysubway-mobile",
+      "commit": "d85742f14cbf97c526a6b94dd55bbf863e1d1346",
+      "path": "apps/mobile",
+      "requiredFiles": [
+        {
+          "path": "assets/datapacks/capital.sqlite.gz",
+          "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+        },
+        {
+          "path": "assets/datapacks/metro_map_pack/basemap/labels.json",
+          "sha256": "d9744505b0c954aa6a611bf7dac1a6f96ef3f5b13e4c665eeece7c44e6835833"
+        },
+        {
+          "path": "pubspec.yaml",
+          "sha256": "23826001737d93cb613711e7c4bb5692cbce6864e345110fbf0af37294595324"
+        }
+      ]
+    }
+  }
 }

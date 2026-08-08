@@ -16,10 +16,20 @@ jobs:
   contracts:
     name: Data contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
+          path: apps/mobile
           persist-credentials: false
 
       - name: Checkout pinned Mobile fixture
@@ -129,6 +139,7 @@ jobs:
         run: >-
           node tools/ci/data-test-discovery.mjs measure
           --class required-pr
+          --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
           --output "${RUNNER_TEMP}/data-test-durations.json"
 
       - name: Upload current owned test duration evidence

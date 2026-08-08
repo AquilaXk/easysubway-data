@@ -10,7 +10,7 @@ import {
 const requiredInvocation =
   'node tools/ci/data-test-discovery.mjs run --class required-pr';
 const releaseInvocation =
-  'node tools/ci/data-test-discovery.mjs run --class deterministic-release';
+  'node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1';
 
 function fixture() {
   const tests = [
@@ -48,6 +48,19 @@ function fixture() {
           title: '[Feat][Epic][Architecture][Data][P0] Map Pack·Station Catalog·Server Route Bundle 3-artifact 정본',
         },
       },
+      fixtures: {
+        mobile: {
+          repository: 'AquilaXk/easysubway-mobile',
+          commit: 'd85742f14cbf97c526a6b94dd55bbf863e1d1346',
+          path: 'apps/mobile',
+          requiredFiles: [
+            {
+              path: 'pubspec.yaml',
+              sha256: '23826001737d93cb613711e7c4bb5692cbce6864e345110fbf0af37294595324',
+            },
+          ],
+        },
+      },
       workflows: {
         'required-pr': {
           file: '.github/workflows/ci.yml',
@@ -55,6 +68,7 @@ function fixture() {
           checkName: 'Data contracts',
           invocation: requiredInvocation,
           required: true,
+          fixtures: ['mobile'],
         },
         'deterministic-release': {
           file: '.github/workflows/datapack-release.yml',
@@ -62,6 +76,7 @@ function fixture() {
           checkName: 'Data Pack Release',
           invocation: releaseInvocation,
           required: false,
+          fixtures: ['mobile'],
         },
       },
       tests,
@@ -69,8 +84,16 @@ function fixture() {
     trackedEntries: tests.map(({ path }) => ({ path, mode: '100644' })),
     sources: Object.fromEntries(tests.map(({ path }) => [path, "import test from 'node:test';\ntest('ok', () => {});\n"])),
     workflowSources: {
-      '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - run: ${requiredInvocation}\n`,
-      '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - run: ${releaseInvocation}\n`,
+      '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          ref: \${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: apps/mobile\n          persist-credentials: false\n      - run: ${requiredInvocation}\n`,
+      '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: apps/mobile\n          persist-credentials: false\n      - run: ${releaseInvocation}\n`,
+    },
+    fixtureStates: {
+      mobile: {
+        headSha: 'd85742f14cbf97c526a6b94dd55bbf863e1d1346',
+        files: {
+          'pubspec.yaml': '23826001737d93cb613711e7c4bb5692cbce6864e345110fbf0af37294595324',
+        },
+      },
     },
   };
 }
@@ -142,6 +165,26 @@ test('unknown owner, class, workflow and missing duration fail closed', () => {
   const duration = fixture();
   duration.manifest.tests[0].durationMs = null;
   assert.ok(errorCodes(() => validateOwnership(duration)).includes('INVALID_DURATION'));
+});
+
+test('external fixture identity and exact PR-head checkout fail closed on drift', () => {
+  const mutable = fixture();
+  mutable.manifest.fixtures.mobile.commit = 'main';
+  assert.ok(errorCodes(() => validateOwnership(mutable)).includes('INVALID_FIXTURE_COMMIT'));
+
+  const wrongHead = fixture();
+  wrongHead.fixtureStates.mobile.headSha = '0000000000000000000000000000000000000000';
+  assert.ok(errorCodes(() => validateOwnership(wrongHead)).includes('FIXTURE_HEAD_MISMATCH'));
+
+  const wrongHash = fixture();
+  wrongHash.fixtureStates.mobile.files['pubspec.yaml'] = '0'.repeat(64);
+  assert.ok(errorCodes(() => validateOwnership(wrongHash)).includes('FIXTURE_HASH_MISMATCH'));
+
+  const mergeCheckout = fixture();
+  mergeCheckout.workflowSources['.github/workflows/ci.yml'] = mergeCheckout.workflowSources[
+    '.github/workflows/ci.yml'
+  ].replace('ref: ${{ github.event.pull_request.head.sha || github.sha }}\n', '');
+  assert.ok(errorCodes(() => validateOwnership(mergeCheckout)).includes('PR_HEAD_CHECKOUT_MISSING'));
 });
 
 test('required tests cannot become release-only or advisory-only', () => {
