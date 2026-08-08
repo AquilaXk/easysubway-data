@@ -36,6 +36,12 @@ const PACK_SQLITE_SHA256 = PACK_SHA256;
 const LEGACY_PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
 const LEGACY_PACK_BYTES = gzipSync(PACK_BYTES);
 const LEGACY_PACK_SHA256 = createHash("sha256").update(LEGACY_PACK_BYTES).digest("hex");
+const TOPOLOGY_INPUT_PACK_IDENTITY = Object.freeze({
+  id: "capital",
+  sha256: LEGACY_PACK_SHA256,
+  sqliteSha256: PACK_SQLITE_SHA256,
+  byteSize: LEGACY_PACK_BYTES.length,
+});
 const PACK_MANIFEST = JSON.parse(await readFile(path.join(PACK_PATH, "manifest.json"), "utf8"));
 const PACK_IDENTITY = {
   artifactKind: "station-catalog-pack",
@@ -637,7 +643,10 @@ async function promoteUnchangedWithPin({
     if (includeFreshness) contractExtras.freshness = freshness;
     contractExtras.officialEvidence = pin === undefined
       ? null
-      : { korailCompletenessAdmission: { canonicalPackIdentity: pin } };
+      : { korailCompletenessAdmission: {
+        canonicalPackIdentity: pin,
+        topologyInputPackIdentity: structuredClone(TOPOLOGY_INPUT_PACK_IDENTITY),
+      } };
     const contractPath = await writeCoverageContract(
       dir,
       JSON.stringify(contractExtras),
@@ -695,6 +704,7 @@ async function writeCoverageContract(repositoryRoot, contents, { includeFreshnes
     officialEvidence: {
       korailCompletenessAdmission: {
         canonicalPackIdentity: stalePin(),
+        topologyInputPackIdentity: structuredClone(TOPOLOGY_INPUT_PACK_IDENTITY),
       },
     },
     ...(includeFreshness ? { freshness: { nextReviewAt: "2026-07-20T00:00:00+09:00" } } : {}),
@@ -1403,6 +1413,45 @@ test("ITX promotion은 legacy, missing, mixed, mismatch station catalog identity
   }
 });
 
+test("ITX promotion은 invalid topology input identity를 artifact mutation 전에 거부한다", async (context) => {
+  const cases = [
+    ["missing", (admission) => { delete admission.topologyInputPackIdentity; }],
+    ["extra", (admission) => { admission.topologyInputPackIdentity.extra = true; }],
+    ["digest", (admission) => { admission.topologyInputPackIdentity.sha256 = "INVALID"; }],
+    ["size", (admission) => { admission.topologyInputPackIdentity.byteSize = 0; }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), `itx-topology-input-${name}-`));
+      try {
+        const candidate = sourceCandidate();
+        const candidatePath = path.join(dir, "candidate.json");
+        await writeFile(candidatePath, sourceBytes(candidate));
+        const completenessPath = await writeCandidateCompleteness(candidatePath, candidate);
+        const contractPath = await writeCoverageContract(dir, '{"schemaVersion":2}\n');
+        const contract = JSON.parse(await readFile(contractPath));
+        mutate(contract.officialEvidence.korailCompletenessAdmission);
+        await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+        const beforeContract = await readFile(contractPath);
+        const sourceOutputDir = path.join(dir, "tools/datapack/sources");
+        await assert.rejects(promoteItxSourceCandidate({
+          candidatePath,
+          completenessPath,
+          ...ownerApproval(candidate),
+          sourceOutputDir,
+          coverageContractPath: contractPath,
+          repositoryRoot: dir,
+          now: new Date("2026-07-15T02:00:00.000Z"),
+        }), /TOPOLOGY_INPUT_PACK_IDENTITY_INVALID/);
+        assert.deepEqual(await readFile(contractPath), beforeContract);
+        await assert.rejects(readdir(sourceOutputDir), /ENOENT/);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 test("ITX current candidate promotion은 exact candidate SHA와 OWNER approval 뒤에만 immutable payload를 만든다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-"));
   const candidatePath = path.join(dir, "candidate.json");
@@ -1464,6 +1513,10 @@ test("ITX current candidate promotion은 exact candidate SHA와 OWNER approval �
     assert.deepEqual(
       contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity,
       candidate.stationCatalogPackIdentity,
+    );
+    assert.deepEqual(
+      contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity,
+      TOPOLOGY_INPUT_PACK_IDENTITY,
     );
     assert.equal(
       contract.sourceTimetableArtifact.artifactPath,
@@ -1702,7 +1755,10 @@ test("bootstrap 승격도 current station-catalog admission만 기록한다", as
       `${JSON.stringify(shippedPackTopologyEvidence(), null, 2)}\n`,
     );
     const contractPath = await writeCoverageContract(dir, JSON.stringify({
-      officialEvidence: { korailCompletenessAdmission: { canonicalPackIdentity: stalePin() } },
+      officialEvidence: { korailCompletenessAdmission: {
+        canonicalPackIdentity: stalePin(),
+        topologyInputPackIdentity: structuredClone(TOPOLOGY_INPUT_PACK_IDENTITY),
+      } },
     }));
     const promoted = await promoteItxSourceCandidate({
       candidatePath,

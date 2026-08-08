@@ -161,6 +161,31 @@ export function validateAdmittedSourceDocuments(
   if (!Number.isFinite(freshUntilMillis) || freshUntilMillis <= candidateBuildNow().getTime()) {
     throw new Error("ITX topology source artifact is expired");
   }
+  const admission = contract?.officialEvidence?.korailCompletenessAdmission;
+  if (Object.hasOwn(source ?? {}, "canonicalPackIdentity")
+    || Object.hasOwn(source ?? {}, "readmissions")
+    || Object.hasOwn(completeness ?? {}, "canonicalPackIdentity")
+    || Object.hasOwn(completeness ?? {}, "readmissions")
+    || Object.hasOwn(admission ?? {}, "canonicalPackIdentity")
+    || reference?.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED") {
+    throw new Error("ITX topology legacy admission is forbidden");
+  }
+  const contractIdentity = stationCatalogIdentity(
+    admission?.stationCatalogPackIdentity,
+    "ITX coverage station catalog identity",
+  );
+  const sourceIdentity = stationCatalogIdentity(
+    source?.stationCatalogPackIdentity,
+    "ITX topology station catalog identity",
+  );
+  const completenessIdentity = stationCatalogIdentity(
+    completeness?.stationCatalogPackIdentity,
+    "ITX completeness station catalog identity",
+  );
+  if (JSON.stringify(contractIdentity) !== JSON.stringify(sourceIdentity)
+    || JSON.stringify(contractIdentity) !== JSON.stringify(completenessIdentity)) {
+    throw new Error("ITX topology station catalog identity mismatch");
+  }
   if (source?.schemaVersion !== 1
     || source?.artifactKind !== "itx-cheongchun-source-timetable"
     || source?.artifactId !== reference.artifactId || source?.serviceId !== "ITX_CHEONGCHUN"

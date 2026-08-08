@@ -138,7 +138,6 @@ async function inputs({ withTopologyEvidence = true } = {}) {
   const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
   contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
   contract.sourceTimetableArtifact.completenessEvidenceSha256 = sha256(completenessBytes);
-  const contractBytes = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`);
   const topologyEvidence = JSON.parse(await readFile(topologyEvidencePath));
   delete topologyEvidence.readmissions;
   topologyEvidence.stationCatalogPackIdentity = stationCatalogPackIdentity;
@@ -155,6 +154,13 @@ async function inputs({ withTopologyEvidence = true } = {}) {
     byteSize: canonicalPackGzipBytes.length,
     byteSizeDelta: canonicalPackGzipBytes.length - topologyEvidence.pack.inputByteSize,
   });
+  contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity = {
+    id: topologyEvidence.pack.id,
+    sha256: topologyEvidence.pack.inputSha256,
+    sqliteSha256: topologyEvidence.pack.inputSqliteSha256,
+    byteSize: topologyEvidence.pack.inputByteSize,
+  };
+  const contractBytes = Buffer.from(`${JSON.stringify(contract, null, 2)}\n`);
   const topologyEvidenceBytes = withTopologyEvidence
     ? Buffer.from(`${JSON.stringify(topologyEvidence, null, 2)}\n`)
     : null;
@@ -753,6 +759,21 @@ test("current 경로는 contract station-catalog manifest identity만 어긋나�
       ...value, contractBytes: tamperedContractBytes, sourceBytes, buildNow,
     }),
     /station catalog identity mismatch/,
+  );
+});
+
+test("current 경로는 contract와 topology evidence input identity가 다르면 fail closed 한다", async () => {
+  const value = await inputs();
+  const evidence = JSON.parse(value.topologyEvidenceBytes);
+  evidence.pack.inputSha256 = "9".repeat(64);
+
+  assert.throws(
+    () => buildServerTimetableSnapshot({
+      ...value,
+      topologyEvidenceBytes: Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`),
+      buildNow,
+    }),
+    /canonical topology pack identity mismatch/,
   );
 });
 

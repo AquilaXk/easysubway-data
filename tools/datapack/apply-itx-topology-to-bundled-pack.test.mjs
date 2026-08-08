@@ -97,6 +97,20 @@ async function admittedDocuments() {
   };
 }
 
+function rebindAdmissionDocuments(documents) {
+  const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } =
+    documents.completeness;
+  documents.completeness.evidenceHash = sha256(JSON.stringify(completenessWithoutEvidenceHash));
+  documents.completenessBytes = Buffer.from(`${JSON.stringify(documents.completeness, null, 2)}\n`);
+  documents.reference.completenessEvidenceSha256 = sha256(documents.completenessBytes);
+  documents.source.completenessEvidenceSha256 = documents.reference.completenessEvidenceSha256;
+  const { evidenceHash: _sourceEvidenceHash, ...sourceWithoutEvidenceHash } = documents.source;
+  documents.source.evidenceHash = sha256(JSON.stringify(sourceWithoutEvidenceHash));
+  documents.sourceBytes = Buffer.from(`${JSON.stringify(documents.source, null, 2)}\n`);
+  documents.reference.sha256 = sha256(documents.sourceBytes);
+  return documents;
+}
+
 function withBuildNow(callback) {
   const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = buildNow;
@@ -429,6 +443,33 @@ test("admission document와 station/topology input identity는 exact binding을 
   invalidStationSource.stationCatalogPackIdentity.extra = true;
   await assert.rejects(admittedTopologySource(reference, invalidStationSource),
     /station catalog identity is invalid/);
+});
+
+test("authenticated completeness도 exact station identity와 no-legacy를 요구한다", async (context) => {
+  const cases = [
+    ["missing", (completeness) => { delete completeness.stationCatalogPackIdentity; }],
+    ["extra", (completeness) => { completeness.stationCatalogPackIdentity.extra = true; }],
+    ["mismatch", (completeness) => {
+      completeness.stationCatalogPackIdentity.payloadSha256 = "9".repeat(64);
+    }],
+    ["canonical", (completeness) => { completeness.canonicalPackIdentity = {}; }],
+    ["readmissions", (completeness) => { completeness.readmissions = []; }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const documents = await admittedDocuments();
+      mutate(documents.completeness);
+      rebindAdmissionDocuments(documents);
+      withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+        documents.contract,
+        documents.reference,
+        documents.source,
+        documents.completeness,
+        sha256(documents.sourceBytes),
+        sha256(documents.completenessBytes),
+      ), /legacy admission is forbidden|station catalog identity/));
+    });
+  }
 });
 
 test("v18 legacy evidence schema는 2135 admission schema로 migration한다", async (context) => {

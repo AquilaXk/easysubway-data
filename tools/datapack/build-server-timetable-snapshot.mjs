@@ -568,6 +568,8 @@ function validateCanonicalTopologyPack({
   }
   const outputSha256 = sha256(canonicalPackGzipBytes);
   const outputSqliteSha256 = sha256(canonicalPackSqliteBytes);
+  const topologyInputPackIdentity =
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity;
   if (Object.hasOwn(source, "canonicalPackIdentity")
     || Object.hasOwn(source, "readmissions")
     || !hasExactKeys(topologyEvidence, [
@@ -587,6 +589,12 @@ function validateCanonicalTopologyPack({
       "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
       "outputSqliteSha256", "byteSize", "byteSizeDelta",
     ])
+    || !hasExactKeys(topologyInputPackIdentity, ["id", "sha256", "sqliteSha256", "byteSize"])
+    || topologyInputPackIdentity.id !== "capital"
+    || !lowercaseSha(topologyInputPackIdentity.sha256)
+    || !lowercaseSha(topologyInputPackIdentity.sqliteSha256)
+    || !Number.isSafeInteger(topologyInputPackIdentity.byteSize)
+    || topologyInputPackIdentity.byteSize <= 0
     || topologyEvidence?.schemaVersion !== 1
     || topologyEvidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
     || topologyEvidence.serviceId !== "ITX_CHEONGCHUN"
@@ -601,6 +609,10 @@ function validateCanonicalTopologyPack({
     || JSON.stringify(topologyEvidence.sourceArtifact?.stationCatalogPackIdentity)
       !== JSON.stringify(stationCatalogPackIdentity)
     || topologyEvidence.pack?.id !== "capital"
+    || topologyEvidence.pack.id !== topologyInputPackIdentity.id
+    || topologyEvidence.pack.inputSha256 !== topologyInputPackIdentity.sha256
+    || topologyEvidence.pack.inputSqliteSha256 !== topologyInputPackIdentity.sqliteSha256
+    || topologyEvidence.pack.inputByteSize !== topologyInputPackIdentity.byteSize
     || !lowercaseSha(topologyEvidence.pack.inputSha256)
     || !lowercaseSha(topologyEvidence.pack.inputSqliteSha256)
     || !Number.isSafeInteger(topologyEvidence.pack.inputByteSize)

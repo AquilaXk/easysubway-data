@@ -491,6 +491,7 @@ async function promoteItxSourceCandidateLocked({
   );
   const admission = contract?.officialEvidence?.korailCompletenessAdmission;
   if (!isPlainObject(admission)) throw new Error("ITX_COVERAGE_CONTRACT_INVALID");
+  validateTopologyInputPackIdentity(admission.topologyInputPackIdentity);
   delete admission.canonicalPackIdentity;
   admission.stationCatalogPackIdentity = catalog.identity;
   await writeImmutableArtifact(artifactPath, candidateBytes, "ADMITTED_SOURCE_ARTIFACT");
@@ -530,6 +531,21 @@ async function promoteItxSourceCandidateLocked({
     completenessArtifactPath,
     sourceTimetableArtifact: contract.sourceTimetableArtifact,
   };
+}
+
+function validateTopologyInputPackIdentity(identity) {
+  const keys = ["id", "sha256", "sqliteSha256", "byteSize"];
+  if (!isPlainObject(identity)
+    || Object.keys(identity).sort(codepointCompare).join(",")
+      !== keys.slice().sort(codepointCompare).join(",")
+    || identity.id !== "capital"
+    || ![identity.sha256, identity.sqliteSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))
+    || !Number.isSafeInteger(identity.byteSize)
+    || identity.byteSize <= 0) {
+    throw new Error("TOPOLOGY_INPUT_PACK_IDENTITY_INVALID");
+  }
+  return identity;
 }
 
 async function loadCompletenessEvidence(completenessPath, candidate, repositoryRoot, now, stationCatalogIdentity) {
