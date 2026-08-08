@@ -196,6 +196,19 @@ function stationCatalogIdentity(value, label) {
   return value;
 }
 
+function topologyInputPackIdentity(value, label) {
+  const keys = ["id", "sha256", "sqliteSha256", "byteSize"];
+  if (!hasExactKeys(value, keys)
+    || value.id !== "capital"
+    || ![value.sha256, value.sqliteSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))
+    || !Number.isSafeInteger(value.byteSize)
+    || value.byteSize <= 0) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
 function hasExactKeys(value, keys) {
   return value != null
     && typeof value === "object"
@@ -605,6 +618,15 @@ async function main() {
   const topologySource = await admittedTopologySource(reference, source);
   const topology = deriveTopology(source);
   const admissionEvidence = routeServiceEvidence(contract, reference, source);
+  const admittedInputPack = topologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX topology input pack identity",
+  );
+  if (admittedInputPack.sha256 !== topologySource.gzipSha256
+    || admittedInputPack.sqliteSha256 !== topologySource.sqliteSha256
+    || admittedInputPack.byteSize !== topologySource.byteSize) {
+    throw new Error("ITX topology input pack identity does not match the admitted current source");
+  }
   const inputGzipBytes = await readFile(packPath);
   if (!check) {
     try {
@@ -644,10 +666,10 @@ async function main() {
   try {
     const sqlitePath = path.join(directory, "capital.sqlite");
     const inputSqliteBytes = gunzipSync(inputGzipBytes);
-    if (topologySource.gzipSha256 !== sha256(inputGzipBytes)
-      || topologySource.sqliteSha256 !== sha256(inputSqliteBytes)
-      || topologySource.byteSize !== inputGzipBytes.length) {
-      throw new Error("ITX topology input pack does not match the admitted current source");
+    if (admittedInputPack.sha256 !== sha256(inputGzipBytes)
+      || admittedInputPack.sqliteSha256 !== sha256(inputSqliteBytes)
+      || admittedInputPack.byteSize !== inputGzipBytes.length) {
+      throw new Error("ITX topology input pack does not match the coverage contract");
     }
     await writeFile(sqlitePath, inputSqliteBytes);
     applyTopology(sqlitePath, topology, admissionEvidence);
