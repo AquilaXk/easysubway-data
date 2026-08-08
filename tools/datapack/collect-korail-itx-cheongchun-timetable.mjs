@@ -2549,13 +2549,13 @@ export async function runKorailItxCompletenessCli({
 } = {}) {
   const args = parseArgs(argv);
   if (args["promote-candidate"]) {
-    const stationCatalogPackPath = requiredString(
-      args["station-catalog-pack"],
-      "--station-catalog-pack",
-    );
     const coverageContractPath = validateCoverageContractPath(
       args["coverage-contract"],
       repositoryRoot,
+    );
+    const stationCatalogPackPath = requiredString(
+      args["station-catalog-pack"],
+      "--station-catalog-pack",
     );
     const promotion = await promoteImpl({
       candidatePath: requiredString(args["promote-candidate"], "--promote-candidate"),
