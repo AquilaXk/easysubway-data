@@ -58,9 +58,11 @@
         "tools/datapack/collect-nationwide-public-api-coverage.mjs",
         "tools/datapack/collect-seoul-accessibility-evidence.mjs",
         "tools/datapack/collect-tago-itx-cheongchun-od.mjs",
+        "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
         "tools/datapack/probe-daejeon-coverage-api.mjs",
         "tools/datapack/probe-korail-train-operation-api.mjs",
         "tools/datapack/probe-seoul-fare-api.mjs",
+        "tools/datapack/run-current-itx-collection.mjs",
         "tools/datapack/validate-tago-schedule-sample.mjs"
       ]
     }
