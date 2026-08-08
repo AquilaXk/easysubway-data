@@ -48,7 +48,7 @@
     "sourceSchema": {
       "path": "tools/datapack/schema/catalog-schema.sql",
       "sqliteUserVersion": 18,
-      "sha256": "0a5ded95d48ffb203c58acbf15183972257c8717be97caf3f6db3560718ebb17"
+      "sha256": "026c32092a6c2917c7e77990738e7237a62123033c92106e9678c19f5fe6a7cc"
     },
     "payloadPaths": ["payload/topology.sqlite.zst", "payload/timetable.sqlite.zst", "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst"],
     "metadataPaths": ["manifest.json", "manifest.signing-input.json", "provenance.json", "compatibility.json"],

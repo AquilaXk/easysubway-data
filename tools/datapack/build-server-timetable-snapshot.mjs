@@ -16,12 +16,6 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ARTIFACT_KIND = "server-timetable-snapshot-evidence";
 const SCHEMA_IDENTITY = "backend-timetable-snapshot-v1";
-// ponytail: keep this immutable trust anchor local so the runtime builder never imports the mutating CLI.
-const ORIGINAL_ITX_ADMISSION_OUTPUT = {
-  sha256: "dfe8420b2f26d2ca2948575098e0a6a5e278c3b203f7cd9c1f1b588a07e74b02",
-  sqliteSha256: "c39f23cd6b8b20f88672d0456b72a4efbd3697b81035cfb49ded289e50f3a4aa",
-  byteSize: 359388,
-};
 const ITX_SERVICE_ID_BY_SOURCE = {
   "weekday-kric": "itx-cheongchun-weekday-kric",
   "saturday-kric": "itx-cheongchun-saturday-kric",
@@ -46,7 +40,6 @@ export function buildServerTimetableSnapshot({
   completenessBytes,
   canonicalPackGzipBytes,
   topologyEvidenceBytes,
-  readmissionEvidenceBytes,
   subwayRosterBytes,
   reviewedPackBytes,
   sourceSnapshotsBytes,
@@ -57,14 +50,12 @@ export function buildServerTimetableSnapshot({
   const contract = parseJson(contractBytes, "coverage contract");
   const source = parseJson(sourceBytes, "source artifact");
   const completeness = parseJson(completenessBytes, "completeness evidence");
-  const topologyEvidence = topologyEvidenceBytes == null
-    ? null
-    : parseJson(topologyEvidenceBytes, "topology evidence");
-  const readmissionEvidence = readmissionEvidenceBytes == null
-    ? null
-    : parseJson(readmissionEvidenceBytes, "readmission evidence");
+  if (topologyEvidenceBytes == null) {
+    throw new Error("topology evidence is required");
+  }
+  const topologyEvidence = parseJson(topologyEvidenceBytes, "topology evidence");
   const subwayRoster = parseJson(subwayRosterBytes, "subway roster");
-  const admittedCanonicalPackIdentity = validateAdmission({
+  const stationCatalogPackIdentity = validateAdmission({
     contract,
     source,
     sourceBytes,
@@ -72,19 +63,15 @@ export function buildServerTimetableSnapshot({
     completenessBytes,
     buildNow,
   });
-  // 순수 freshness 리프레시(topology 불변)는 apply-itx가 산출하는 topology evidence 없이
-  // 이미 admit된 pack identity를 재사용한다. topology가 실제로 바뀌는 리프레시는 기존 경로.
-  const { canonicalPackIdentity, canonicalPackLineage } = topologyEvidenceBytes == null
-    ? admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity, readmissionEvidence })
-    : validateCanonicalTopologyPack({
-      contract,
-      source,
-      sourceBytes,
-      topologyEvidence,
-      topologyEvidenceBytes,
-      canonicalPackGzipBytes,
-      admittedCanonicalPackIdentity,
-    });
+  const { canonicalPackIdentity, canonicalPackLineage } = validateCanonicalTopologyPack({
+    contract,
+    source,
+    sourceBytes,
+    topologyEvidence,
+    topologyEvidenceBytes,
+    canonicalPackGzipBytes,
+    stationCatalogPackIdentity,
+  });
   const baselineSql = normalizeSubwayStationIds(
     rawBaselineSql,
     canonicalPackGzipBytes,
@@ -105,9 +92,12 @@ export function buildServerTimetableSnapshot({
     serviceClass: "ITX_CHEONGCHUN",
     timetableArtifactId: source.artifactId,
     timetableArtifactSha256: sha256(sourceBytes),
-    canonicalPackId: canonicalPackIdentity.id,
-    canonicalPackSha256: canonicalPackIdentity.sha256,
-    canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
+    stationCatalogArtifactKind: stationCatalogPackIdentity.artifactKind,
+    stationCatalogManifestVersion: stationCatalogPackIdentity.manifestVersion,
+    stationCatalogPackId: stationCatalogPackIdentity.catalogPackId,
+    stationCatalogStationSetSha256: stationCatalogPackIdentity.stationSetSha256,
+    stationCatalogPayloadSha256: stationCatalogPackIdentity.payloadSha256,
+    stationCatalogManifestSha256: stationCatalogPackIdentity.manifestSha256,
     admissionStatus: "ADMITTED",
     admissionEligible: true,
     freshUntil: source.freshUntil,
@@ -126,7 +116,7 @@ export function buildServerTimetableSnapshot({
     endDate: latestServiceDate(source.selectedServiceDates),
     buildNow,
     timetableArtifactSha256: sha256(sourceBytes),
-    canonicalPackIdentity,
+    stationCatalogPackIdentity,
   });
   assertNoIdentityCollisions(baselineSql, itxSeed);
   const plannerIdentity = plannerIdentitySql(source, completeness);
@@ -173,6 +163,7 @@ export function buildServerTimetableSnapshot({
       sha256: sha256(sourceBytes),
       completenessEvidenceSha256: sha256(completenessBytes),
     },
+    stationCatalogPackIdentity,
     canonicalPackIdentity,
     canonicalPackLineage,
     accessibilitySource: accessibility.source,
@@ -552,118 +543,12 @@ function namespacedItxServiceId(sourceServiceId) {
   return serviceId;
 }
 
-function admittedCanonicalPack({ canonicalPackGzipBytes, admittedCanonicalPackIdentity, readmissionEvidence }) {
-  let canonicalPackSqliteBytes;
-  try {
-    canonicalPackSqliteBytes = gunzipSync(canonicalPackGzipBytes);
-  } catch {
-    throw new Error("canonical topology pack identity mismatch");
-  }
-  const outputSha256 = sha256(canonicalPackGzipBytes);
-  const outputSqliteSha256 = sha256(canonicalPackSqliteBytes);
-  // coverage contract가 이미 admit한 identity를 evidence에 그대로 기록하되, 실제 번들 pack
-  // 파일의 실측 해시와 어긋나면 스테일 pin 위에 조용히 쌓지 않도록 fail closed 한다.
-  const directlyAdmitted = admittedCanonicalPackIdentity.sha256 === outputSha256
-    && admittedCanonicalPackIdentity.sqliteSha256 === outputSqliteSha256;
-  if (!directlyAdmitted) validateReadmissionEvidence({
-    evidence: readmissionEvidence,
-    admittedCanonicalPackIdentity,
-    itxProjection: canonicalItxProjection(canonicalPackSqliteBytes),
-    outputSha256,
-    outputSqliteSha256,
-    byteSize: canonicalPackGzipBytes.length,
-  });
-  return {
-    canonicalPackIdentity: {
-      id: admittedCanonicalPackIdentity.id,
-      sha256: outputSha256,
-      sqliteSha256: outputSqliteSha256,
-    },
-    canonicalPackLineage: {
-      provenance: directlyAdmitted ? "coverage-contract-admission" : "tracked-readmission-chain",
-      admittedInputSha256: admittedCanonicalPackIdentity.sha256,
-      admittedInputSqliteSha256: admittedCanonicalPackIdentity.sqliteSha256,
-      ...(directlyAdmitted ? {} : { readmissionCount: readmissionEvidence.readmissions.length }),
-    },
-  };
-}
-
-function validateReadmissionEvidence({
-  evidence,
-  admittedCanonicalPackIdentity,
-  itxProjection,
-  outputSha256,
-  outputSqliteSha256,
-  byteSize,
-}) {
-  const readmissions = evidence?.readmissions;
-  let previous = ORIGINAL_ITX_ADMISSION_OUTPUT;
-  let includesAdmission = false;
-  if (evidence?.schemaVersion !== 1
-    || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
-    || evidence.serviceId !== "ITX_CHEONGCHUN"
-    || evidence.pack?.id !== "capital"
-    || evidence.pack.outputSha256 !== outputSha256
-    || evidence.pack.outputSqliteSha256 !== outputSqliteSha256
-    || evidence.pack.byteSize !== byteSize
-    || !Array.isArray(readmissions)
-    || readmissions.length === 0) {
-    throw new Error("canonical topology pack identity mismatch");
-  }
-  for (const entry of readmissions) {
-    includesAdmission ||= previous.sha256 === admittedCanonicalPackIdentity.sha256
-      && previous.sqliteSha256 === admittedCanonicalPackIdentity.sqliteSha256;
-    if (entry.previousPack?.sha256 !== previous.sha256
-      || entry.previousPack?.sqliteSha256 !== previous.sqliteSha256
-      || entry.previousPack?.byteSize !== previous.byteSize
-      || entry.itxSubgraph?.unchanged !== true
-      || entry.itxSubgraph?.edgeCount !== itxProjection.edgeCount
-      || entry.itxSubgraph?.edgesSha256 !== itxProjection.edgesSha256
-      || entry.itxSubgraph?.evidenceSha256 !== itxProjection.evidenceSha256) {
-      throw new Error("canonical topology pack identity mismatch");
-    }
-    previous = entry.newPack ?? {};
-  }
-  if (!includesAdmission
-    || previous.sha256 !== outputSha256
-    || previous.sqliteSha256 !== outputSqliteSha256
-    || previous.byteSize !== byteSize) {
-    throw new Error("canonical topology pack identity mismatch");
-  }
-}
-
-function canonicalItxProjection(sqliteBytes) {
-  const directory = mkdtempSync(path.join(tmpdir(), "server-snapshot-itx-"));
-  const sqlitePath = path.join(directory, "capital.sqlite");
-  let database;
-  try {
-    writeFileSync(sqlitePath, sqliteBytes);
-    database = new DatabaseSync(sqlitePath, { readOnly: true });
-    const edges = database.prepare(`
-      SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters,
-             edge_type, service_pattern, service_class
-      FROM network_edges
-      WHERE service_class = 'ITX_CHEONGCHUN'
-      ORDER BY id
-    `).all();
-    const evidence = database.prepare(`
-      SELECT service_class, timetable_artifact_id, timetable_artifact_sha256,
-             canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
-             admission_status, admission_eligible, fresh_until, source_issue
-      FROM route_service_artifact_evidence
-      WHERE service_class = 'ITX_CHEONGCHUN'
-    `).all();
-    return {
-      edgeCount: edges.length,
-      edgesSha256: sha256(Buffer.from(JSON.stringify(edges))),
-      evidenceSha256: sha256(Buffer.from(JSON.stringify(evidence))),
-    };
-  } catch (error) {
-    throw new Error("canonical topology pack identity mismatch", { cause: error });
-  } finally {
-    database?.close();
-    rmSync(directory, { recursive: true, force: true });
-  }
+function hasExactKeys(value, keys) {
+  return value != null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value).sort(codepointCompare).join(",")
+      === [...keys].sort(codepointCompare).join(",");
 }
 
 function validateCanonicalTopologyPack({
@@ -673,7 +558,7 @@ function validateCanonicalTopologyPack({
   topologyEvidence,
   topologyEvidenceBytes,
   canonicalPackGzipBytes,
-  admittedCanonicalPackIdentity,
+  stationCatalogPackIdentity,
 }) {
   let canonicalPackSqliteBytes;
   try {
@@ -683,7 +568,33 @@ function validateCanonicalTopologyPack({
   }
   const outputSha256 = sha256(canonicalPackGzipBytes);
   const outputSqliteSha256 = sha256(canonicalPackSqliteBytes);
-  if (source.canonicalPackIdentity?.path !== "apps/mobile/assets/datapacks/capital.sqlite.gz"
+  const topologyInputPackIdentity =
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity;
+  if (Object.hasOwn(source, "canonicalPackIdentity")
+    || Object.hasOwn(source, "readmissions")
+    || !hasExactKeys(topologyEvidence, [
+      "schemaVersion", "artifactKind", "serviceId", "sourceIssue",
+      "stationCatalogPackIdentity", "sourceArtifact", "topology", "pack",
+    ])
+    || !hasExactKeys(topologyEvidence?.sourceArtifact, [
+      "id", "sha256", "completenessEvidenceSha256", "freshUntil",
+      "stationCatalogPackIdentity",
+    ])
+    || !hasExactKeys(topologyEvidence?.topology, [
+      "stationMembershipCount", "servedStationCount", "edgeCount", "directions",
+      "connectedComponentCount", "isolatedServedStationCount", "sha256",
+      "durationSecondsEmbedded", "fareEmbedded",
+    ])
+    || !hasExactKeys(topologyEvidence?.pack, [
+      "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
+      "outputSqliteSha256", "byteSize", "byteSizeDelta",
+    ])
+    || !hasExactKeys(topologyInputPackIdentity, ["id", "sha256", "sqliteSha256", "byteSize"])
+    || topologyInputPackIdentity.id !== "capital"
+    || !lowercaseSha(topologyInputPackIdentity.sha256)
+    || !lowercaseSha(topologyInputPackIdentity.sqliteSha256)
+    || !Number.isSafeInteger(topologyInputPackIdentity.byteSize)
+    || topologyInputPackIdentity.byteSize <= 0
     || topologyEvidence?.schemaVersion !== 1
     || topologyEvidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
     || topologyEvidence.serviceId !== "ITX_CHEONGCHUN"
@@ -693,12 +604,24 @@ function validateCanonicalTopologyPack({
     || topologyEvidence.sourceArtifact?.completenessEvidenceSha256
       !== source.completenessEvidenceSha256
     || topologyEvidence.sourceArtifact?.freshUntil !== source.freshUntil
+    || JSON.stringify(topologyEvidence.stationCatalogPackIdentity)
+      !== JSON.stringify(stationCatalogPackIdentity)
+    || JSON.stringify(topologyEvidence.sourceArtifact?.stationCatalogPackIdentity)
+      !== JSON.stringify(stationCatalogPackIdentity)
     || topologyEvidence.pack?.id !== "capital"
-    || topologyEvidence.pack.inputSha256 !== admittedCanonicalPackIdentity.sha256
-    || topologyEvidence.pack.inputSqliteSha256 !== admittedCanonicalPackIdentity.sqliteSha256
+    || topologyEvidence.pack.id !== topologyInputPackIdentity.id
+    || topologyEvidence.pack.inputSha256 !== topologyInputPackIdentity.sha256
+    || topologyEvidence.pack.inputSqliteSha256 !== topologyInputPackIdentity.sqliteSha256
+    || topologyEvidence.pack.inputByteSize !== topologyInputPackIdentity.byteSize
+    || !lowercaseSha(topologyEvidence.pack.inputSha256)
+    || !lowercaseSha(topologyEvidence.pack.inputSqliteSha256)
+    || !Number.isSafeInteger(topologyEvidence.pack.inputByteSize)
+    || topologyEvidence.pack.inputByteSize <= 0
     || topologyEvidence.pack.outputSha256 !== outputSha256
     || topologyEvidence.pack.outputSqliteSha256 !== outputSqliteSha256
     || topologyEvidence.pack.byteSize !== canonicalPackGzipBytes.length
+    || topologyEvidence.pack.byteSizeDelta
+      !== canonicalPackGzipBytes.length - topologyEvidence.pack.inputByteSize
     || topologyEvidence.topology?.stationMembershipCount <= 0
     || topologyEvidence.topology?.connectedComponentCount !== 1
     || topologyEvidence.topology?.isolatedServedStationCount !== 0
@@ -715,8 +638,8 @@ function validateCanonicalTopologyPack({
     canonicalPackLineage: {
       topologyEvidenceSha256: sha256(topologyEvidenceBytes),
       topologySha256: topologyEvidence.topology.sha256,
-      admittedInputSha256: admittedCanonicalPackIdentity.sha256,
-      admittedInputSqliteSha256: admittedCanonicalPackIdentity.sqliteSha256,
+      topologyInputSha256: topologyEvidence.pack.inputSha256,
+      topologyInputSqliteSha256: topologyEvidence.pack.inputSqliteSha256,
     },
   };
 }
@@ -901,6 +824,7 @@ function validateAdmission({
     || !contract.allowedConsumerIssues?.includes("#2145")
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
+    || reference.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
     || reference.schemaVersion !== 1) {
     throw new Error("#2145 requires the canonical #2135 ADMITTED source contract");
   }
@@ -940,14 +864,26 @@ function validateAdmission({
     || !Array.isArray(source.sourceLineage) || source.sourceLineage.length !== 3) {
     throw new Error("source artifact must contain complete timetable and lineage rows");
   }
-  const canonical = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
-  if (canonical?.id !== "capital"
-    || !lowercaseSha(canonical.sha256)
-    || !lowercaseSha(canonical.sqliteSha256)
-    || source.canonicalPackIdentity?.sha256 !== canonical.sha256) {
-    throw new Error("canonical pack identity mismatch");
+  const identity = contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity;
+  const identityKeys = ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"];
+  if (Object.hasOwn(source, "canonicalPackIdentity")
+    || Object.hasOwn(source, "readmissions")
+    || Object.hasOwn(completeness, "canonicalPackIdentity")
+    || Object.hasOwn(completeness, "readmissions")
+    || Object.hasOwn(contract?.officialEvidence?.korailCompletenessAdmission ?? {}, "canonicalPackIdentity")
+    || identity == null
+    || Object.keys(identity).sort(codepointCompare).join(",")
+      !== identityKeys.slice().sort(codepointCompare).join(",")
+    || identity.artifactKind !== "station-catalog-pack"
+    || identity.manifestVersion !== 1
+    || typeof identity.catalogPackId !== "string" || identity.catalogPackId.length === 0
+    || ![identity.stationSetSha256, identity.payloadSha256, identity.manifestSha256]
+      .every(lowercaseSha)
+    || JSON.stringify(source.stationCatalogPackIdentity) !== JSON.stringify(identity)
+    || JSON.stringify(completeness.stationCatalogPackIdentity) !== JSON.stringify(identity)) {
+    throw new Error("station catalog identity mismatch");
   }
-  return { id: canonical.id, sha256: canonical.sha256, sqliteSha256: canonical.sqliteSha256 };
+  return identity;
 }
 
 function normalizeBaselineSql(baselineGzipBytes) {
@@ -1093,13 +1029,10 @@ async function main() {
     ?? "tools/datapack/server-timetable-snapshot-evidence.json");
   const runtimeEvidencePath = path.resolve(root, args["runtime-evidence"]
     ?? "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json");
-  const canonicalPackPath = path.resolve(root, args["canonical-pack"]
+  const topologyPackPath = path.resolve(root, args["topology-pack"]
     ?? "apps/mobile/assets/datapacks/capital.sqlite.gz");
   const topologyEvidencePath = path.resolve(root, args["topology-evidence"]
     ?? "tools/datapack/itx-cheongchun-topology-evidence.json");
-  // --without-topology-evidence: topology 불변 순수 freshness 리프레시. apply-itx 산출물
-  // (topology evidence) 없이 admit된 pack identity를 재사용한다.
-  const withoutTopologyEvidence = args["without-topology-evidence"] === true;
   const subwayRosterPath = path.resolve(root, args["subway-roster"]
     ?? "tools/datapack/sources/kric-line4-route-roster-20260706.json");
   const reviewedPackPath = path.resolve(root, args["reviewed-pack"]
@@ -1118,9 +1051,8 @@ async function main() {
       root,
       contract.sourceTimetableArtifact.completenessEvidencePath,
     )),
-    canonicalPackGzipBytes: await readFile(canonicalPackPath),
-    topologyEvidenceBytes: withoutTopologyEvidence ? null : trackedTopologyEvidenceBytes,
-    readmissionEvidenceBytes: trackedTopologyEvidenceBytes,
+    canonicalPackGzipBytes: await readFile(topologyPackPath),
+    topologyEvidenceBytes: trackedTopologyEvidenceBytes,
     subwayRosterBytes: await readFile(subwayRosterPath),
     reviewedPackBytes: await readFile(reviewedPackPath),
     sourceSnapshotsBytes: await readFile(sourceSnapshotsPath),
@@ -1167,10 +1099,6 @@ function parseArgs(argv) {
     const flag = argv[index];
     if (flag === "--check") {
       args.check = true;
-      continue;
-    }
-    if (flag === "--without-topology-evidence") {
-      args["without-topology-evidence"] = true;
       continue;
     }
     if (!flag.startsWith("--") || argv[index + 1] == null || argv[index + 1].startsWith("--")) {

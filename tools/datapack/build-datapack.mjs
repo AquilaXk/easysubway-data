@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { constants as zlibConstants, gunzipSync, gzipSync } from "node:zlib";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { constants as zlibConstants, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -29,22 +29,18 @@ import {
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { validateItxServiceDates } from "./collect-tago-itx-cheongchun-od.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
-import { isUnchangedRefresh } from "./apply-itx-topology-to-bundled-pack.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
-const validatedItxAdmissionPacks = new WeakSet();
-const validatedItxAdmissionOutputs = new WeakMap();
-const originalItxAdmissionOutput = Object.freeze({
-  sha256: "dfe8420b2f26d2ca2948575098e0a6a5e278c3b203f7cd9c1f1b588a07e74b02",
-  sqliteSha256: "c39f23cd6b8b20f88672d0456b72a4efbd3697b81035cfb49ded289e50f3a4aa",
-  byteSize: 359388,
-});
-const originalItxAdmissionProjection = Object.freeze({
-  edgeCount: 48,
-  edgesSha256: "e09f9ece35f261b0690753b9c88749d2e460c79e889bea045fb44a46bae78709",
-  evidenceSha256: "a4834c3638dd45500292f67bd39e5a8ff9660162e1ffa2a78359c5d645b74996",
-});
+const validatedItxStationCatalogEvidence = new WeakMap();
+const stationCatalogPackIdentityKeys = Object.freeze([
+  "artifactKind",
+  "manifestVersion",
+  "catalogPackId",
+  "stationSetSha256",
+  "payloadSha256",
+  "manifestSha256",
+]);
 const productionMinimumTableRowNames = [
   "stations",
   "station_lines",
@@ -78,10 +74,9 @@ async function main() {
   );
 
   validateFixture(fixture);
-  await mkdir(outputDir, { recursive: true });
-
   const manifestPacks = [];
   const provenancePacks = [];
+  const stagedPackFiles = [];
   for (const pack of fixture.packs) {
     const artifactKind = pack.artifactKind ?? "fixture";
     const packUrl = pack.url ?? `catalog/${pack.id}-v${pack.version}.sqlite.gz`;
@@ -91,37 +86,25 @@ async function main() {
     validatePackUrl(packUrl, "pack.url");
     validatePackUrlMatchesStagedPath(packUrl, pack, "pack.url");
     const outputPackPath = outputPathForPack(outputDir, packUrl, pack);
-    const sqlitePath = outputPackPath.replace(/\.gz$/, "");
-    const compressedPath = outputPackPath;
-
-    await mkdir(path.dirname(sqlitePath), { recursive: true });
-    await rm(sqlitePath, { force: true });
-    await rm(compressedPath, { force: true });
-
-    buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions);
-
-    const sqliteBytes = await readFile(sqlitePath);
-    // ponytail: offset 96 is informational and otherwise records the platform SQLite patch version.
-    sqliteBytes.writeUInt32BE(canonicalSqliteHeaderVersion, 96);
-    await writeFile(sqlitePath, sqliteBytes);
+    const outputSqlitePath = outputPackPath.replace(/\.gz$/, "");
+    const stagingDir = await mkdtemp(path.join(tmpdir(), "easysubway-datapack-pack-"));
+    const stagedSqlitePath = path.join(stagingDir, "pack.sqlite");
+    let sqliteBytes;
+    try {
+      buildSqlitePack(stagedSqlitePath, schema, pack, officialOdFareAdmissions);
+      sqliteBytes = await readFile(stagedSqlitePath);
+      // ponytail: offset 96 is informational and otherwise records the platform SQLite patch version.
+      sqliteBytes.writeUInt32BE(canonicalSqliteHeaderVersion, 96);
+    } finally {
+      await rm(stagingDir, { recursive: true, force: true });
+    }
     // ponytail: Z_RLE is stable across supported zlib versions; byte 9 removes the platform OS marker.
     const compressedBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0, strategy: zlibConstants.Z_RLE });
     compressedBytes[9] = 255;
-    await writeFile(compressedPath, compressedBytes);
     const compressedSha256 = sha256(compressedBytes);
     const sqliteSha256 = sha256(sqliteBytes);
     const sizeBytes = compressedBytes.length;
-    const admittedOutput = validatedItxAdmissionOutputs.get(pack);
-    if (admittedOutput && !samePackIdentity(admittedOutput, {
-      sha256: compressedSha256,
-      sqliteSha256,
-      byteSize: sizeBytes,
-    })) {
-      throw new Error(`built ITX pack identity does not match tracked readmission output: ${JSON.stringify({
-        expected: admittedOutput,
-        actual: { sha256: compressedSha256, sqliteSha256, byteSize: sizeBytes },
-      })}`);
-    }
+    stagedPackFiles.push({ outputPackPath, outputSqlitePath, sqliteBytes, compressedBytes });
     const representativeRouteRegressions = canonicalRepresentativeRouteRegressions(
       pack.representativeRouteRegressions,
     );
@@ -167,6 +150,15 @@ async function main() {
       artifactKind,
       sqliteSha256,
     }));
+  }
+
+  await mkdir(outputDir, { recursive: true });
+  for (const staged of stagedPackFiles) {
+    await mkdir(path.dirname(staged.outputPackPath), { recursive: true });
+    await rm(staged.outputPackPath, { force: true });
+    await rm(staged.outputSqlitePath, { force: true });
+    await writeFile(staged.outputSqlitePath, staged.sqliteBytes);
+    await writeFile(staged.outputPackPath, staged.compressedBytes);
   }
 
   const manifestExpiresAt = optionalUtcDateString(fixture.manifest.expiresAt, "manifest.expiresAt")
@@ -282,8 +274,15 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
 
 async function materializeTestOnlyItxAdmission(fixture, admission, admissionBytes) {
   const freshUntil = validateTestOnlyItxAdmission(admission);
-  const canonicalIdentity = await validateTestOnlyItxCanonicalIdentity(admission);
-  const pack = testOnlyItxTargetPack(fixture, canonicalIdentity);
+  if (Object.hasOwn(admission, "canonicalPackIdentity")) {
+    throw new Error("test-only ITX legacy canonical pack identity is forbidden");
+  }
+  const stationIdentity = requiredStationCatalogPackIdentity(
+    admission.stationCatalogPackIdentity,
+    "testOnlyItxAdmission.stationCatalogPackIdentity",
+  );
+  validateTestOnlyItxTimetableIdentity(admission);
+  const pack = testOnlyItxTargetPack(fixture);
   const lineId = requiredString(admission.canonicalLineId, "testOnlyItxAdmission.canonicalLineId");
   const admittedStationIds = validateTestOnlyItxStations(pack, admission, lineId);
   const timetableHash = sha256(admissionBytes);
@@ -299,22 +298,24 @@ async function materializeTestOnlyItxAdmission(fixture, admission, admissionByte
   pack.transitTrips = [...(pack.transitTrips ?? []), ...trips];
   pack.transitStopTimes = [...(pack.transitStopTimes ?? []), ...stopTimes];
   pack.networkEdges = [...(pack.networkEdges ?? []), ...edges];
-  pack.routeServiceArtifactEvidence = [{
+  validatedItxStationCatalogEvidence.set(pack, {
     serviceClass: "ITX_CHEONGCHUN",
     timetableArtifactId: requiredString(
       admission.timetableArtifactIdentity?.id,
       "testOnlyItxAdmission.timetableArtifactIdentity.id",
     ),
     timetableArtifactSha256: timetableHash,
-    canonicalPackId: canonicalIdentity.id,
-    canonicalPackSha256: canonicalIdentity.sha256,
-    canonicalPackSqliteSha256: canonicalIdentity.sqliteSha256,
+    stationCatalogArtifactKind: stationIdentity.artifactKind,
+    stationCatalogManifestVersion: stationIdentity.manifestVersion,
+    stationCatalogPackId: stationIdentity.catalogPackId,
+    stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
+    stationCatalogPayloadSha256: stationIdentity.payloadSha256,
+    stationCatalogManifestSha256: stationIdentity.manifestSha256,
     admissionStatus: "ADMITTED",
     admissionEligible: true,
     freshUntil,
     sourceIssue: 2116,
-  }];
-  validatedItxAdmissionPacks.add(pack);
+  });
 }
 
 function validateTestOnlyItxAdmission(admission) {
@@ -343,30 +344,19 @@ function validateTestOnlyItxAdmission(admission) {
   return freshUntil;
 }
 
-async function validateTestOnlyItxCanonicalIdentity(admission) {
-  const canonicalIdentity = admission.canonicalPackIdentity;
-  const canonicalGzipBytes = await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"),
-  );
-  if (
-    canonicalIdentity?.id !== "capital"
-    || canonicalIdentity.sha256 !== sha256(canonicalGzipBytes)
-    || canonicalIdentity.sqliteSha256 !== sha256(gunzipSync(canonicalGzipBytes))
-  ) {
-    throw new Error("test-only ITX admission canonical pack identity is stale");
+function testOnlyItxTargetPack(fixture) {
+  const activePackId = requiredString(fixture?.manifest?.activePack?.id, "fixture.manifest.activePack.id");
+  const pack = fixture.packs?.find(({ id }) => id === activePackId);
+  if (!pack || (pack.artifactKind ?? "fixture") !== "fixture") {
+    throw new Error("test-only ITX admission can materialize only into the active fixture pack");
   }
+  return pack;
+}
+
+function validateTestOnlyItxTimetableIdentity(admission) {
   if (admission.timetableArtifactIdentity?.sha256Source !== "FIXTURE_FILE_BYTES") {
     throw new Error("test-only ITX timetable identity must hash fixture file bytes");
   }
-  return canonicalIdentity;
-}
-
-function testOnlyItxTargetPack(fixture, canonicalIdentity) {
-  const pack = fixture.packs?.find(({ id }) => id === canonicalIdentity.id);
-  if (!pack || (pack.artifactKind ?? "fixture") !== "fixture") {
-    throw new Error("test-only ITX admission can materialize only into a fixture pack");
-  }
-  return pack;
 }
 
 function validateTestOnlyItxStations(pack, admission, lineId) {
@@ -682,6 +672,11 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     materializeCapitalTopologySource(pack, topology, capitalAdmissions);
     applyCapitalNetworkEdgeEvidence(pack, topology, capitalTopology.pinned.snapshotId, capitalAdmissions);
     applyItxNetworkEdgeEvidence(pack, itxAdmission);
+    // The candidate fixture's persisted legacy row is never an admission input. After the
+    // current source/topology identity is fully validated, replace it in-memory with the
+    // verified station-catalog row that the SQLite transaction materializes below.
+    pack.routeServiceArtifactEvidence = [];
+    validatedItxStationCatalogEvidence.set(pack, itxAdmission.routeServiceArtifactEvidence);
     normalizeUnverifiedNetworkEdgeStates(pack);
   }
   const accessibilityFreshUntil = productionAccessibilityFreshUntil(
@@ -1029,7 +1024,7 @@ function assertExactCapitalTopologyProjection(pack, admittedLineIds, expectedEdg
   }
 }
 
-async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
+async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
   const reference = contract?.sourceTimetableArtifact;
   if (contract?.schemaVersion !== 2
     || contract.artifactKind !== "itx-cheongchun-coverage-contract"
@@ -1039,8 +1034,8 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     || reference?.schemaVersion !== 1
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
-    || reference.promotion?.mode !== "UNCHANGED_AUTO"
-    || topologyEvidence?.sourceArtifact?.sha256 !== reference.promotion.previousArtifactSha256) {
+    || reference.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== reference.sha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
   if (contract.coverageStates?.schedule_timetable !== "MISSING"
@@ -1056,18 +1051,12 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     reference.completenessEvidencePath,
     "networkEdgeEvidence.itxCoverageContract.sourceTimetableArtifact.completenessEvidencePath",
   ));
-  const previousBytes = await readFile(await resolveBuildInputPath(
-    reference.promotion.previousArtifactPath,
-    "networkEdgeEvidence.itxCoverageContract.sourceTimetableArtifact.promotion.previousArtifactPath",
-  ));
   if (sha256(sourceBytes) !== reference.sha256
-    || sha256(completenessBytes) !== reference.completenessEvidenceSha256
-    || sha256(previousBytes) !== reference.promotion.previousArtifactSha256) {
+    || sha256(completenessBytes) !== reference.completenessEvidenceSha256) {
     throw new Error("ITX network edge admission bytes mismatch");
   }
   const source = JSON.parse(sourceBytes);
   const completeness = JSON.parse(completenessBytes);
-  const previous = JSON.parse(previousBytes);
   const { evidenceHash: sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
   const { evidenceHash: completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
   if (source?.schemaVersion !== 1
@@ -1098,7 +1087,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     throw new Error("ITX network edge admission evidence mismatch");
   }
   try {
-    validateSourceCandidateSchema(source, "legacy");
+    validateSourceCandidateSchema(source);
     const observedAt = new Date(source.observedAt);
     if (observedAt.getTime() > candidateBuildNow().getTime()) throw new Error("future-dated ITX observation");
     validateItxServiceDates(source.selectedServiceDates, { now: observedAt });
@@ -1106,8 +1095,49 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
   } catch (error) {
     throw new Error("ITX network edge admission evidence mismatch", { cause: error });
   }
-  if (!isUnchangedRefresh(reference, source, previous)) {
-    throw new Error("ITX network edge unchanged admission is invalid");
+  const sourceStationCatalogPackIdentity = requiredStationCatalogPackIdentity(
+    source.stationCatalogPackIdentity,
+    "ITX network edge source.stationCatalogPackIdentity",
+  );
+  const contractStationCatalogPackIdentity = requiredStationCatalogPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
+    "ITX coverage contract stationCatalogPackIdentity",
+  );
+  const contractTopologyInputPackIdentity = requiredTopologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX coverage contract topologyInputPackIdentity",
+  );
+  const topologyEvidenceInputPackIdentity = requiredTopologyInputPackIdentity({
+    id: topologyAdmission.evidence.pack.id,
+    sha256: topologyAdmission.evidence.pack.inputSha256,
+    sqliteSha256: topologyAdmission.evidence.pack.inputSqliteSha256,
+    byteSize: topologyAdmission.evidence.pack.inputByteSize,
+  }, "ITX topology evidence input pack identity");
+  if (!sameTopologyInputPackIdentity(
+    contractTopologyInputPackIdentity,
+    topologyEvidenceInputPackIdentity,
+  )) {
+    throw new Error("ITX topology input pack identity does not match coverage contract admission");
+  }
+  if (Object.hasOwn(completeness, "canonicalPackIdentity")
+    || Object.hasOwn(completeness, "readmissions")) {
+    throw new Error("ITX completeness legacy admission identity is forbidden");
+  }
+  const completenessStationCatalogPackIdentity = requiredStationCatalogPackIdentity(
+    completeness.stationCatalogPackIdentity,
+    "ITX completeness stationCatalogPackIdentity",
+  );
+  if (!sameStationCatalogPackIdentity(
+    topologyAdmission.stationCatalogPackIdentity,
+    sourceStationCatalogPackIdentity,
+  ) || !sameStationCatalogPackIdentity(
+    contractStationCatalogPackIdentity,
+    sourceStationCatalogPackIdentity,
+  ) || !sameStationCatalogPackIdentity(
+    completenessStationCatalogPackIdentity,
+    sourceStationCatalogPackIdentity,
+  )) {
+    throw new Error("ITX topology, source, completeness, and contract station catalog identities must match exactly");
   }
   const observedAt = requiredUtcDateString(source.observedAt, "ITX network edge source observedAt");
   const freshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
@@ -1122,6 +1152,16 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     }
   }
   if (pairHashes.size === 0) throw new Error("ITX network edge admission has no directional pairs");
+  const topology = topologyAdmission.evidence.topology;
+  if (topology.edgeCount !== pairHashes.size
+    || JSON.stringify(topology.directions) !== JSON.stringify(["up", "down"])
+    || topology.connectedComponentCount !== 1
+    || topology.isolatedServedStationCount !== 0
+    || topology.durationSecondsEmbedded !== false
+    || topology.fareEmbedded !== false
+    || !/^[a-f0-9]{64}$/.test(topology.sha256 ?? "")) {
+    throw new Error("ITX topology evidence projection does not match admitted directional pairs");
+  }
   return {
     sourceId: source.artifactKind,
     sourceSnapshotId: source.artifactId,
@@ -1129,12 +1169,28 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     verifiedAt: observedAt,
     freshUntil,
     pairHashes,
+    routeServiceArtifactEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      timetableArtifactId: source.artifactId,
+      timetableArtifactSha256: sha256(sourceBytes),
+      stationCatalogArtifactKind: sourceStationCatalogPackIdentity.artifactKind,
+      stationCatalogManifestVersion: sourceStationCatalogPackIdentity.manifestVersion,
+      stationCatalogPackId: sourceStationCatalogPackIdentity.catalogPackId,
+      stationCatalogStationSetSha256: sourceStationCatalogPackIdentity.stationSetSha256,
+      stationCatalogPayloadSha256: sourceStationCatalogPackIdentity.payloadSha256,
+      stationCatalogManifestSha256: sourceStationCatalogPackIdentity.manifestSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: true,
+      freshUntil,
+      sourceIssue: 2135,
+    },
   };
 }
 
 function applyItxNetworkEdgeEvidence(pack, admission) {
   const edges = (pack.networkEdges ?? []).filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
   if (edges.length !== admission.pairHashes.size) throw new Error("ITX network edge fixture projection is partial");
+  const projectedPairIds = new Set();
   const lineIds = [...new Set(edges.flatMap(({ fromNodeId, toNodeId }) =>
     [fromNodeId, toNodeId].map((nodeId) => String(nodeId).split(":")[1])))].sort(compareStrings);
   const source = {
@@ -1164,7 +1220,12 @@ function applyItxNetworkEdgeEvidence(pack, admission) {
   for (const edge of edges) {
     const fromStationId = requiredString(edge.fromNodeId, "ITX network edge fromNodeId").split(":")[0];
     const toStationId = requiredString(edge.toNodeId, "ITX network edge toNodeId").split(":")[0];
-    const providerRecordHash = admission.pairHashes.get(`${fromStationId}\0${toStationId}`);
+    const pairId = `${fromStationId}\0${toStationId}`;
+    if (projectedPairIds.has(pairId)) {
+      throw new Error("ITX network edge fixture projection must contain each admitted directional pair exactly once");
+    }
+    projectedPairIds.add(pairId);
+    const providerRecordHash = admission.pairHashes.get(pairId);
     if (providerRecordHash == null) throw new Error(`ITX network edge fixture projection mismatch: ${edge.id}`);
     Object.assign(edge, {
       sourceId: admission.sourceId,
@@ -1203,12 +1264,54 @@ async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
     throw new Error("buildSpec.itxTopologyEvidenceSha256 must match tracked evidence bytes");
   }
   const evidence = JSON.parse(evidenceBytes);
+  assertExactKeys(evidence, [
+    "schemaVersion",
+    "artifactKind",
+    "serviceId",
+    "sourceIssue",
+    "stationCatalogPackIdentity",
+    "sourceArtifact",
+    "topology",
+    "pack",
+  ], "ITX topology evidence");
   if (evidence?.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
     || evidence.serviceId !== "ITX_CHEONGCHUN"
     || evidence.sourceIssue !== 2135) {
     throw new Error("buildSpec ITX topology evidence must be the #2135 admission artifact");
   }
-  const { output, projection: admission } = validateTrackedItxReadmissionChain(evidence);
+  const stationCatalogPackIdentity = requiredStationCatalogPackIdentity(
+    evidence.stationCatalogPackIdentity,
+    "ITX topology evidence.stationCatalogPackIdentity",
+  );
+  const sourceArtifact = evidence.sourceArtifact;
+  if (!sourceArtifact || typeof sourceArtifact !== "object" || Array.isArray(sourceArtifact)) {
+    throw new Error("ITX topology evidence must contain its source artifact");
+  }
+  assertExactKeys(sourceArtifact, [
+    "id",
+    "sha256",
+    "completenessEvidenceSha256",
+    "freshUntil",
+    "stationCatalogPackIdentity",
+  ], "ITX topology evidence.sourceArtifact");
+  assertExactKeys(evidence.topology, [
+    "stationMembershipCount", "servedStationCount", "edgeCount", "directions",
+    "connectedComponentCount", "isolatedServedStationCount", "sha256",
+    "durationSecondsEmbedded", "fareEmbedded",
+  ], "ITX topology evidence.topology");
+  assertExactKeys(evidence.pack, [
+    "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
+    "outputSqliteSha256", "byteSize", "byteSizeDelta",
+  ], "ITX topology evidence.pack");
+  if (!sameStationCatalogPackIdentity(
+    stationCatalogPackIdentity,
+    requiredStationCatalogPackIdentity(
+      sourceArtifact.stationCatalogPackIdentity,
+      "ITX topology evidence.sourceArtifact.stationCatalogPackIdentity",
+    ),
+  )) {
+    throw new Error("ITX topology evidence station catalog identity mismatch");
+  }
   for (const pack of packs) {
     const edges = (pack.networkEdges ?? [])
       .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
@@ -1223,86 +1326,60 @@ async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
         service_class: row.serviceClass,
       }))
       .sort((left, right) => codepointCompare(left.id, right.id));
-    const routeEvidence = (pack.routeServiceArtifactEvidence ?? [])
-      .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
-      .map((row) => ({
-        service_class: row.serviceClass,
-        timetable_artifact_id: row.timetableArtifactId,
-        timetable_artifact_sha256: row.timetableArtifactSha256,
-        canonical_pack_id: row.canonicalPackId,
-        canonical_pack_sha256: row.canonicalPackSha256,
-        canonical_pack_sqlite_sha256: row.canonicalPackSqliteSha256,
-        admission_status: row.admissionStatus,
-        admission_eligible: row.admissionEligible ? 1 : 0,
-        fresh_until: row.freshUntil,
-        source_issue: row.sourceIssue,
-      }));
-    if (edges.length !== admission.edgeCount
-      || sha256(Buffer.from(JSON.stringify(edges))) !== admission.edgesSha256) {
-      throw new Error("ITX_CHEONGCHUN edge projection does not match tracked topology evidence");
-    }
-    if (sha256(Buffer.from(JSON.stringify(routeEvidence))) !== admission.evidenceSha256) {
-      throw new Error("ITX_CHEONGCHUN route evidence projection does not match tracked topology evidence");
-    }
-    validatedItxAdmissionOutputs.set(pack, output);
-    validatedItxAdmissionPacks.add(pack);
+    if (edges.length === 0) throw new Error("ITX topology evidence has no ITX_CHEONGCHUN edges");
   }
-  return evidence;
+  const pack = evidence.pack;
+  if (pack.id !== "capital"
+    || !/^[a-f0-9]{64}$/.test(pack.inputSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(pack.inputSqliteSha256 ?? "")
+    || !Number.isSafeInteger(pack.inputByteSize) || pack.inputByteSize <= 0
+    || !/^[a-f0-9]{64}$/.test(pack.outputSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(pack.outputSqliteSha256 ?? "")
+    || !Number.isSafeInteger(pack.byteSize) || pack.byteSize <= 0
+    || !Number.isSafeInteger(pack.byteSizeDelta)
+    || pack.byteSizeDelta !== pack.byteSize - pack.inputByteSize) {
+    throw new Error("ITX topology evidence pack identity is invalid");
+  }
+  return {
+    evidence,
+    stationCatalogPackIdentity,
+  };
 }
 
-function validateTrackedItxReadmissionChain(evidence) {
-  if (!Array.isArray(evidence.readmissions) || evidence.readmissions.length === 0) {
-    throw new Error("tracked ITX readmission chain is invalid");
-  }
-  let previous = originalItxAdmissionOutput;
-  let projection;
-  for (const entry of evidence.readmissions) {
-    const candidateProjection = entry.itxSubgraph;
-    if (!samePackIdentity(entry.previousPack, previous)
-      || candidateProjection?.unchanged !== true
-      || !Number.isSafeInteger(candidateProjection.edgeCount)
-      || candidateProjection.edgeCount <= 0
-      || !/^[a-f0-9]{64}$/.test(candidateProjection.edgesSha256 ?? "")
-      || !/^[a-f0-9]{64}$/.test(candidateProjection.evidenceSha256 ?? "")
-      || (projection && (candidateProjection.edgeCount !== projection.edgeCount
-        || candidateProjection.edgesSha256 !== projection.edgesSha256
-        || candidateProjection.evidenceSha256 !== projection.evidenceSha256))) {
-      throw new Error("tracked ITX readmission chain is invalid");
-    }
-    if (projection == null
-      && (candidateProjection.edgeCount !== originalItxAdmissionProjection.edgeCount
-        || candidateProjection.edgesSha256 !== originalItxAdmissionProjection.edgesSha256
-        || candidateProjection.evidenceSha256 !== originalItxAdmissionProjection.evidenceSha256)) {
-      throw new Error("tracked ITX readmission projection does not match original admission");
-    }
-    projection ??= candidateProjection;
-    previous = requiredPackIdentity(entry.newPack);
-  }
-  const output = requiredPackIdentity({
-    sha256: evidence.pack?.outputSha256,
-    sqliteSha256: evidence.pack?.outputSqliteSha256,
-    byteSize: evidence.pack?.byteSize,
-  });
-  if (evidence.pack?.id !== "capital" || !samePackIdentity(previous, output)) {
-    throw new Error("tracked ITX readmission chain is invalid");
-  }
-  return { output, projection };
+function requiredTopologyInputPackIdentity(identity, label) {
+  assertExactKeys(identity, ["id", "sha256", "sqliteSha256", "byteSize"], label);
+  return {
+    id: requiredString(identity.id, `${label}.id`),
+    sha256: sha256HexString(identity.sha256, `${label}.sha256`),
+    sqliteSha256: sha256HexString(identity.sqliteSha256, `${label}.sqliteSha256`),
+    byteSize: requiredPositiveSafeInteger(identity.byteSize, `${label}.byteSize`),
+  };
 }
 
-function requiredPackIdentity(identity) {
-  if (!/^[a-f0-9]{64}$/.test(identity?.sha256 ?? "")
-    || !/^[a-f0-9]{64}$/.test(identity?.sqliteSha256 ?? "")
-    || !Number.isSafeInteger(identity?.byteSize)
-    || identity.byteSize <= 0) {
-    throw new Error("tracked ITX readmission chain is invalid");
-  }
-  return identity;
+function sameTopologyInputPackIdentity(left, right) {
+  return left.id === right.id
+    && left.sha256 === right.sha256
+    && left.sqliteSha256 === right.sqliteSha256
+    && left.byteSize === right.byteSize;
 }
 
-function samePackIdentity(left, right) {
-  return left?.sha256 === right.sha256
-    && left?.sqliteSha256 === right.sqliteSha256
-    && left?.byteSize === right.byteSize;
+function requiredStationCatalogPackIdentity(identity, label) {
+  assertExactKeys(identity, stationCatalogPackIdentityKeys, label);
+  if (identity.artifactKind !== "station-catalog-pack" || identity.manifestVersion !== 1) {
+    throw new Error(`${label} must identify a station-catalog-pack manifest v1`);
+  }
+  return {
+    artifactKind: identity.artifactKind,
+    manifestVersion: identity.manifestVersion,
+    catalogPackId: requiredString(identity.catalogPackId, `${label}.catalogPackId`),
+    stationSetSha256: sha256HexString(identity.stationSetSha256, `${label}.stationSetSha256`),
+    payloadSha256: sha256HexString(identity.payloadSha256, `${label}.payloadSha256`),
+    manifestSha256: sha256HexString(identity.manifestSha256, `${label}.manifestSha256`),
+  };
+}
+
+function sameStationCatalogPackIdentity(left, right) {
+  return stationCatalogPackIdentityKeys.every((key) => left?.[key] === right?.[key]);
 }
 
 function validateOfficialOdFareEvidence(evidence, fixture, admissions, admissionBytes) {
@@ -2311,35 +2388,45 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
         pack.transitFeedInfo ?? [],
         (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
       );
-      insertRows(
-        database,
-        "route_service_artifact_evidence",
-        [
-          "service_class",
-          "timetable_artifact_id",
-          "timetable_artifact_sha256",
-          "canonical_pack_id",
-          "canonical_pack_sha256",
-          "canonical_pack_sqlite_sha256",
-          "admission_status",
-          "admission_eligible",
-          "fresh_until",
-          "source_issue",
-        ],
-        pack.routeServiceArtifactEvidence ?? [],
-        (row) => [
-          requiredString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"),
-          requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"),
-          requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.timetableArtifactSha256"),
-          requiredString(row.canonicalPackId, "routeServiceArtifactEvidence.canonicalPackId"),
-          requiredString(row.canonicalPackSha256, "routeServiceArtifactEvidence.canonicalPackSha256"),
-          requiredString(row.canonicalPackSqliteSha256, "routeServiceArtifactEvidence.canonicalPackSqliteSha256"),
-          requiredString(row.admissionStatus, "routeServiceArtifactEvidence.admissionStatus"),
-          boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.admissionEligible"),
-          row.freshUntil ?? null,
-          requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.sourceIssue"),
-        ],
-      );
+      const routeServiceArtifactEvidence = validatedItxStationCatalogEvidence.get(pack);
+      if (routeServiceArtifactEvidence != null) {
+        database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+        insertRows(
+          database,
+          "route_service_artifact_evidence",
+          [
+            "service_class",
+            "timetable_artifact_id",
+            "timetable_artifact_sha256",
+            "station_catalog_artifact_kind",
+            "station_catalog_manifest_version",
+            "station_catalog_pack_id",
+            "station_catalog_station_set_sha256",
+            "station_catalog_payload_sha256",
+            "station_catalog_manifest_sha256",
+            "admission_status",
+            "admission_eligible",
+            "fresh_until",
+            "source_issue",
+          ],
+          [routeServiceArtifactEvidence],
+          (row) => [
+            requiredString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"),
+            requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"),
+            requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.timetableArtifactSha256"),
+            requiredString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogArtifactKind"),
+            requiredInteger(row.stationCatalogManifestVersion, "routeServiceArtifactEvidence.stationCatalogManifestVersion"),
+            requiredString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogPackId"),
+            requiredString(row.stationCatalogStationSetSha256, "routeServiceArtifactEvidence.stationCatalogStationSetSha256"),
+            requiredString(row.stationCatalogPayloadSha256, "routeServiceArtifactEvidence.stationCatalogPayloadSha256"),
+            requiredString(row.stationCatalogManifestSha256, "routeServiceArtifactEvidence.stationCatalogManifestSha256"),
+            requiredString(row.admissionStatus, "routeServiceArtifactEvidence.admissionStatus"),
+            boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.admissionEligible"),
+            row.freshUntil ?? null,
+            requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.sourceIssue"),
+          ],
+        );
+      }
       insertRows(
         database,
         "realtime_provider_line_mappings",
@@ -3107,24 +3194,15 @@ function validateFixture(fixture) {
 }
 
 function validateRouteServiceAdmission(pack) {
-  const evidenceRows = (pack.routeServiceArtifactEvidence ?? [])
-    .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
-  if (evidenceRows.length > 1) {
-    throw new Error("pack must contain exactly one ITX_CHEONGCHUN evidence row");
+  if ((pack.routeServiceArtifactEvidence ?? []).length !== 0) {
+    throw new Error("routeServiceArtifactEvidence input is legacy; build recreates it from the verified current station catalog identity");
   }
-  const evidence = evidenceRows[0];
   const itxRowCount = [
     ...(pack.transitTrips ?? []),
     ...(pack.networkEdges ?? []),
   ].filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length;
-  if (evidence?.admissionStatus === "ADMITTED" && itxRowCount === 0) {
-    throw new Error("ADMITTED evidence requires ITX_CHEONGCHUN rows");
-  }
-  if (itxRowCount > 0 && (evidence?.admissionStatus !== "ADMITTED" || evidence?.admissionEligible !== true)) {
-    throw new Error("ITX_CHEONGCHUN rows require ADMITTED evidence");
-  }
-  if (itxRowCount > 0 && !validatedItxAdmissionPacks.has(pack)) {
-    throw new Error("ITX_CHEONGCHUN rows require a validated admission artifact materializer");
+  if (itxRowCount > 0 && !validatedItxStationCatalogEvidence.has(pack)) {
+    throw new Error("ITX_CHEONGCHUN rows require a verified current station catalog identity");
   }
 }
 
@@ -3509,6 +3587,13 @@ function officialOdFareQuoteValues(row, admission) {
 function requiredNonNegativeSafeInteger(value, label) {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function requiredPositiveSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
   }
   return value;
 }

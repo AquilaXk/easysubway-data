@@ -112,7 +112,7 @@ test("server components repeat exact references and retain only their assigned t
   assert.deepEqual(contract.serverRouteBundle.sourceSchema, {
     path: "tools/datapack/schema/catalog-schema.sql",
     sqliteUserVersion: 18,
-    sha256: "0a5ded95d48ffb203c58acbf15183972257c8717be97caf3f6db3560718ebb17",
+    sha256: "026c32092a6c2917c7e77990738e7237a62123033c92106e9678c19f5fe6a7cc",
   });
   const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
   assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);

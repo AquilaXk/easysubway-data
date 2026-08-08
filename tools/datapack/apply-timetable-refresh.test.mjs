@@ -11,6 +11,7 @@ import { applyTimetableRefresh } from "./apply-timetable-refresh.mjs";
 const execFileAsync = promisify(execFile);
 
 const CONTRACT_PATH = "tools/datapack/itx-cheongchun-coverage-contract.json";
+const TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
 const EVIDENCE_PATH = "tools/datapack/server-timetable-snapshot-evidence.json";
 const RUNTIME_EVIDENCE_PATH = "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json";
 const SEED_PATH = "backend/src/main/resources/timetable/line4-timetable-seed.sql.gz";
@@ -47,6 +48,14 @@ function evidenceFor(sourceId, freshUntil) {
   }, null, 2)}\n`;
 }
 
+function topologyEvidenceFor(sourceId, freshUntil) {
+  return `${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    sourceArtifact: { id: sourceId, freshUntil },
+  }, null, 2)}\n`;
+}
+
 // 초기 tracked 상태: source-A가 승격돼 있고 evidence의 freshUntil이 FRESH_A인 클린 트리.
 async function makeFixture(t) {
   const dir = await mkdtemp(path.join(tmpdir(), "apply-timetable-refresh-"));
@@ -64,6 +73,7 @@ async function makeFixture(t) {
   await writeFile(path.join(dir, `tools/datapack/sources/${SOURCE_A}.json`), `${JSON.stringify({ artifactId: SOURCE_A })}\n`);
   await writeFile(path.join(dir, `tools/datapack/sources/${SOURCE_A}-completeness.json`), `${JSON.stringify({ id: SOURCE_A })}\n`);
   await writeFile(path.join(dir, CONTRACT_PATH), contractFor(SOURCE_A, FRESH_A));
+  await writeFile(path.join(dir, TOPOLOGY_EVIDENCE_PATH), topologyEvidenceFor(SOURCE_A, FRESH_A));
   await writeFile(path.join(dir, SEED_PATH), "seed-gz-placeholder-A\n");
   await writeFile(path.join(dir, EVIDENCE_PATH), evidenceFor(SOURCE_A, FRESH_A));
   await writeFile(path.join(dir, RUNTIME_EVIDENCE_PATH), evidenceFor(SOURCE_A, FRESH_A));
@@ -77,13 +87,15 @@ async function buildPromotionPatch(dir) {
   await writeFile(path.join(dir, `tools/datapack/sources/${SOURCE_B}.json`), `${JSON.stringify({ artifactId: SOURCE_B })}\n`);
   await writeFile(path.join(dir, `tools/datapack/sources/${SOURCE_B}-completeness.json`), `${JSON.stringify({ id: SOURCE_B })}\n`);
   await writeFile(path.join(dir, CONTRACT_PATH), contractFor(SOURCE_B, FRESH_B));
-  await git(dir, ["add", "-N", "tools/datapack/sources", CONTRACT_PATH]);
-  const { stdout } = await git(dir, ["diff", "--", "tools/datapack/sources", CONTRACT_PATH]);
+  await writeFile(path.join(dir, TOPOLOGY_EVIDENCE_PATH), topologyEvidenceFor(SOURCE_B, FRESH_B));
+  await git(dir, ["add", "-N", "tools/datapack/sources", CONTRACT_PATH, TOPOLOGY_EVIDENCE_PATH]);
+  const { stdout } = await git(dir, ["diff", "--", "tools/datapack/sources", CONTRACT_PATH, TOPOLOGY_EVIDENCE_PATH]);
   // 클린 트리로 복원한다.
   await git(dir, ["reset", "-q"]);
   await rm(path.join(dir, `tools/datapack/sources/${SOURCE_B}.json`));
   await rm(path.join(dir, `tools/datapack/sources/${SOURCE_B}-completeness.json`));
   await git(dir, ["checkout", "--", CONTRACT_PATH]);
+  await git(dir, ["checkout", "--", TOPOLOGY_EVIDENCE_PATH]);
   const patchPath = path.join(dir, "promotion.patch");
   await writeFile(patchPath, stdout);
   return patchPath;
@@ -121,6 +133,7 @@ test("정상 경로: 클린 트리에서 patch 적용→재산출→검증까지
   assert.equal(summary.freshUntilAfter, FRESH_B);
   assert.equal(summary.sourceArtifactId, SOURCE_B);
   assert.ok(summary.changedFiles.includes(CONTRACT_PATH));
+  assert.ok(summary.changedFiles.includes(TOPOLOGY_EVIDENCE_PATH));
   assert.ok(summary.changedFiles.some((file) => file.includes(SOURCE_B)));
   // tracked 산출물이 실제로 갱신됐다.
   const evidence = JSON.parse(await readFile(path.join(dir, EVIDENCE_PATH), "utf8"));
@@ -160,7 +173,7 @@ test("patch 불일치: git apply --check 실패 시 재산출 없이 fail closed
   assert.equal(build.calls.count, 0);
 });
 
-test("재산출 실패 전파: patch 적용 후 빌드가 실패하면 상태와 복구 안내를 담아 fail closed", async (t) => {
+test("재산출 실패는 patch와 snapshot 산출물을 적용 전 bytes로 복원한다", async (t) => {
   const dir = await makeFixture(t);
   const patchPath = await buildPromotionPatch(dir);
   const failingBuild = async () => {
@@ -171,13 +184,37 @@ test("재산출 실패 전파: patch 적용 후 빌드가 실패하면 상태와
     applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: failingBuild }),
     (error) => {
       assert.match(error.message, /재산출|snapshot rebuild boom/);
-      assert.match(error.message, /git (checkout|stash|reset|restore)/i);
+      assert.match(error.message, /복원/);
       return true;
     },
   );
-  // patch는 이미 적용된 상태로 남는다(자동 롤백하지 않음).
   const contract = JSON.parse(await readFile(path.join(dir, CONTRACT_PATH), "utf8"));
-  assert.equal(contract.sourceTimetableArtifact.artifactId, SOURCE_B);
+  assert.equal(contract.sourceTimetableArtifact.artifactId, SOURCE_A);
+  await assert.rejects(readFile(path.join(dir, `tools/datapack/sources/${SOURCE_B}.json`)), { code: "ENOENT" });
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(dir, TOPOLOGY_EVIDENCE_PATH), "utf8")),
+    JSON.parse(topologyEvidenceFor(SOURCE_A, FRESH_A)),
+  );
+});
+
+test("복원 자체가 실패해도 원래 재산출 오류를 주 원인으로 보존한다", async (t) => {
+  const dir = await makeFixture(t);
+  const patchPath = await buildPromotionPatch(dir);
+  const failingBuild = async () => {
+    await rm(dir, { recursive: true, force: true });
+    await writeFile(dir, "restore boundary blocker\n");
+    throw new Error("snapshot rebuild boom");
+  };
+
+  await assert.rejects(
+    applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: failingBuild }),
+    (error) => {
+      assert.match(error.message, /재산출|snapshot rebuild boom/);
+      assert.match(error.message, /복원 실패|부분 적용/);
+      assert.ok(error.cause instanceof Error);
+      return true;
+    },
+  );
 });
 
 test("검증 실패: 재산출 evidence의 freshUntil이 연장되지 않으면 fail closed", async (t) => {
@@ -190,6 +227,10 @@ test("검증 실패: 재산출 evidence의 freshUntil이 연장되지 않으면 
     applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: build.run }),
     /freshUntil|연장/,
   );
+  assert.equal(
+    JSON.parse(await readFile(path.join(dir, CONTRACT_PATH), "utf8")).sourceTimetableArtifact.artifactId,
+    SOURCE_A,
+  );
 });
 
 test("검증 실패: evidence sourceArtifact가 patch의 신규 source와 불일치하면 fail closed", async (t) => {
@@ -200,6 +241,10 @@ test("검증 실패: evidence sourceArtifact가 patch의 신규 source와 불일
   await assert.rejects(
     applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: build.run }),
     /source|sourceArtifact/,
+  );
+  assert.equal(
+    JSON.parse(await readFile(path.join(dir, CONTRACT_PATH), "utf8")).sourceTimetableArtifact.artifactId,
+    SOURCE_A,
   );
 });
 
@@ -224,6 +269,26 @@ test("guard-scope: patch가 가드 경로 밖 파일을 건드리면 적용 전�
     },
   );
   assert.equal(build.calls.count, 0, "재산출은 호출되지 않아야 한다");
+});
+
+test("current admission patch가 topology evidence를 함께 갱신하지 않으면 적용 전에 fail closed", async (t) => {
+  const dir = await makeFixture(t);
+  const build = makeBuildStub(dir);
+  await writeFile(path.join(dir, `tools/datapack/sources/${SOURCE_B}.json`), `${JSON.stringify({ artifactId: SOURCE_B })}\n`);
+  await writeFile(path.join(dir, CONTRACT_PATH), contractFor(SOURCE_B, FRESH_B));
+  await git(dir, ["add", "-N", "tools/datapack/sources", CONTRACT_PATH]);
+  const { stdout } = await git(dir, ["diff", "--", "tools/datapack/sources", CONTRACT_PATH]);
+  await git(dir, ["reset", "-q"]);
+  await rm(path.join(dir, `tools/datapack/sources/${SOURCE_B}.json`));
+  await git(dir, ["checkout", "--", CONTRACT_PATH]);
+  const patchPath = path.join(dir, "missing-topology-evidence.patch");
+  await writeFile(patchPath, stdout);
+
+  await assert.rejects(
+    applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: build.run }),
+    /source·coverage contract·topology evidence/,
+  );
+  assert.equal(build.calls.count, 0);
 });
 
 test("evidence 사본 불일치: 재산출 후 runtime 사본이 tools 사본과 다르면 fail closed", async (t) => {

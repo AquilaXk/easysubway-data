@@ -20,7 +20,6 @@
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SECONDS_LIMIT_EXCLUSIVE = 108000; // V29 CHECK: arrival/departure BETWEEN 0 AND 107999
@@ -57,7 +56,7 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
     trips,
     options.buildNow ?? new Date(),
     options.timetableArtifactSha256,
-    options.canonicalPackIdentity,
+    options.stationCatalogPackIdentity,
   );
 
   const calendars = deriveCalendars(trips, dayMap, startDate, endDate)
@@ -119,25 +118,15 @@ function validateRouteServiceEvidence(
   trips,
   buildNow,
   timetableArtifactSha256,
-  canonicalPackIdentity,
+  stationCatalogPackIdentity,
 ) {
   if (!Array.isArray(rows) || rows.length > 1) {
     throw new Error("routeServiceArtifactEvidence must contain at most one row");
   }
   const hasItxTrips = trips.some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
   if (!hasItxTrips) {
-    const evidence = rows[0];
-    if (evidence && (
-      evidence.serviceClass !== "ITX_CHEONGCHUN"
-      || evidence.admissionStatus !== "MISSING"
-      || !isFalseyFlag(evidence.admissionEligible)
-    )) {
-      throw new Error("ADMITTED evidence requires ITX_CHEONGCHUN trips");
-    }
-    if (evidence) {
-      validateCanonicalPackIdentity(evidence, canonicalPackIdentity);
-    }
-    return rows;
+    if (rows.length > 0) throw new Error("route service evidence requires ITX_CHEONGCHUN trips");
+    return [];
   }
   const evidence = rows[0];
   if (
@@ -161,20 +150,48 @@ function validateRouteServiceEvidence(
   ) {
     throw new Error("ITX_CHEONGCHUN timetable artifact SHA-256 identity mismatch");
   }
-  validateCanonicalPackIdentity(evidence, canonicalPackIdentity);
+  validateStationCatalogPackIdentity(evidence, stationCatalogPackIdentity);
   return rows;
 }
 
-function validateCanonicalPackIdentity(evidence, canonicalPackIdentity) {
+function validateStationCatalogPackIdentity(evidence, stationCatalogPackIdentity) {
+  const keys = ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"];
+  const evidenceKeys = [
+    "serviceClass",
+    "timetableArtifactId",
+    "timetableArtifactSha256",
+    "stationCatalogArtifactKind",
+    "stationCatalogManifestVersion",
+    "stationCatalogPackId",
+    "stationCatalogStationSetSha256",
+    "stationCatalogPayloadSha256",
+    "stationCatalogManifestSha256",
+    "admissionStatus",
+    "admissionEligible",
+    "freshUntil",
+    "sourceIssue",
+  ];
   if (
-    typeof canonicalPackIdentity?.id !== "string"
-    || !/^[a-f0-9]{64}$/.test(canonicalPackIdentity?.sha256 ?? "")
-    || !/^[a-f0-9]{64}$/.test(canonicalPackIdentity?.sqliteSha256 ?? "")
-    || evidence.canonicalPackId !== canonicalPackIdentity.id
-    || evidence.canonicalPackSha256 !== canonicalPackIdentity.sha256
-    || evidence.canonicalPackSqliteSha256 !== canonicalPackIdentity.sqliteSha256
+    Object.keys(evidence).sort((left, right) => left.localeCompare(right)).join(",")
+      !== evidenceKeys.slice().sort((left, right) => left.localeCompare(right)).join(",")
+    ||
+    stationCatalogPackIdentity == null
+    || Object.keys(stationCatalogPackIdentity).sort((left, right) => left.localeCompare(right)).join(",")
+      !== keys.slice().sort((left, right) => left.localeCompare(right)).join(",")
+    || stationCatalogPackIdentity.artifactKind !== "station-catalog-pack"
+    || stationCatalogPackIdentity.manifestVersion !== 1
+    || typeof stationCatalogPackIdentity.catalogPackId !== "string"
+    || stationCatalogPackIdentity.catalogPackId.length === 0
+    || ![stationCatalogPackIdentity.stationSetSha256, stationCatalogPackIdentity.payloadSha256, stationCatalogPackIdentity.manifestSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))
+    || evidence.stationCatalogArtifactKind !== stationCatalogPackIdentity.artifactKind
+    || evidence.stationCatalogManifestVersion !== stationCatalogPackIdentity.manifestVersion
+    || evidence.stationCatalogPackId !== stationCatalogPackIdentity.catalogPackId
+    || evidence.stationCatalogStationSetSha256 !== stationCatalogPackIdentity.stationSetSha256
+    || evidence.stationCatalogPayloadSha256 !== stationCatalogPackIdentity.payloadSha256
+    || evidence.stationCatalogManifestSha256 !== stationCatalogPackIdentity.manifestSha256
   ) {
-    throw new Error("ITX_CHEONGCHUN canonical pack identity mismatch");
+    throw new Error("ITX_CHEONGCHUN station catalog identity mismatch");
   }
 }
 
@@ -331,8 +348,9 @@ function tripInsert(t) {
 function routeServiceEvidenceInsert(row) {
   const hashes = [
     [row.timetableArtifactSha256, "timetableArtifactSha256"],
-    [row.canonicalPackSha256, "canonicalPackSha256"],
-    [row.canonicalPackSqliteSha256, "canonicalPackSqliteSha256"],
+    [row.stationCatalogStationSetSha256, "stationCatalogStationSetSha256"],
+    [row.stationCatalogPayloadSha256, "stationCatalogPayloadSha256"],
+    [row.stationCatalogManifestSha256, "stationCatalogManifestSha256"],
   ];
   for (const [value, label] of hashes) {
     if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
@@ -343,11 +361,12 @@ function routeServiceEvidenceInsert(row) {
     throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2116 or 2135");
   }
   return (
-    "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
+    "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
     `${quote(requireString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"))}, ` +
     `${quote(requireString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"))}, ` +
-    `${quote(row.timetableArtifactSha256)}, ${quote(requireString(row.canonicalPackId, "routeServiceArtifactEvidence.canonicalPackId"))}, ` +
-    `${quote(row.canonicalPackSha256)}, ${quote(row.canonicalPackSqliteSha256)}, ${quote(row.admissionStatus)}, ` +
+    `${quote(row.timetableArtifactSha256)}, ${quote(requireString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogArtifactKind"))}, ` +
+    `${row.stationCatalogManifestVersion}, ${quote(requireString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogPackId"))}, ` +
+    `${quote(row.stationCatalogStationSetSha256)}, ${quote(row.stationCatalogPayloadSha256)}, ${quote(row.stationCatalogManifestSha256)}, ${quote(row.admissionStatus)}, ` +
     `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue});`
   );
 }
@@ -418,31 +437,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const artifactBytes = await readFile(args.input);
   const artifact = JSON.parse(artifactBytes.toString("utf8"));
-  let canonicalPackIdentity;
+  const stationCatalogPackIdentity = artifact.stationCatalogPackIdentity;
   if (args["route-service-evidence"]) {
     if ((artifact.routeServiceArtifactEvidence ?? []).length > 0) {
       throw new Error("route service evidence must be separate from timetable artifact bytes");
-    }
-    if (!args["canonical-pack"]) {
-      throw new Error("--canonical-pack is required with --route-service-evidence");
-    }
-    const canonicalPackBytes = await readFile(args["canonical-pack"]);
-    let canonicalSqliteBytes;
-    try {
-      canonicalSqliteBytes = gunzipSync(canonicalPackBytes);
-    } catch {
-      throw new Error("--canonical-pack must be a gzip-compressed SQLite artifact");
-    }
-    canonicalPackIdentity = {
-      id: requireString(artifact.canonicalPackIdentity?.id, "canonicalPackIdentity.id"),
-      sha256: createHash("sha256").update(canonicalPackBytes).digest("hex"),
-      sqliteSha256: createHash("sha256").update(canonicalSqliteBytes).digest("hex"),
-    };
-    if (
-      artifact.canonicalPackIdentity?.sha256 !== canonicalPackIdentity.sha256
-      || artifact.canonicalPackIdentity?.sqliteSha256 !== canonicalPackIdentity.sqliteSha256
-    ) {
-      throw new Error("timetable artifact canonical pack identity mismatch");
     }
     const sidecar = JSON.parse(await readFile(args["route-service-evidence"], "utf8"));
     artifact.routeServiceArtifactEvidence = Array.isArray(sidecar) ? sidecar : [sidecar];
@@ -453,7 +451,7 @@ async function main() {
     endDate: args["end-date"],
     feedEndDate: args["feed-end-date"],
     timetableArtifactSha256: createHash("sha256").update(artifactBytes).digest("hex"),
-    canonicalPackIdentity,
+    stationCatalogPackIdentity,
     serviceCalendarDayMap: Array.isArray(artifact.serviceCalendars)
       ? Object.fromEntries(artifact.serviceCalendars.map((calendar) => [calendar.serviceId, {
         monday: calendar.monday,

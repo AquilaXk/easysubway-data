@@ -19,7 +19,6 @@ const API_ORIGIN = "https://apis.data.go.kr";
 const DETAIL_URL = "https://www.data.go.kr/data/15125762/openapi.do";
 const LINE_ID = "line-54a7b980b7c3";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
-const CANONICAL_PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
 const TOPOLOGY_EVIDENCE_PATH = "tools/datapack/itx-cheongchun-topology-evidence.json";
 const STATION_CATALOG_NODE_VERSION = "24.19.0";
 const STATION_CATALOG_SQLITE_VERSION = "3.53.3";
@@ -231,6 +230,7 @@ export async function collectKorailItxCheongchunCompleteness({
       freshUntil: freshUntil(selectedServiceDates),
     },
     materialization: { status: complete ? "SUPPORTED" : "MISSING" },
+    stationCatalogPackIdentity: catalog.identity,
     credentialRedacted: true,
   };
   artifact.evidenceHash = sha256(JSON.stringify(artifact));
@@ -314,17 +314,12 @@ function applyStationMappingAuthority(snapshotDiff, currentMappings, previousMap
 
 export async function buildItxSourceCandidate({ completeness, stationCatalogPackPath, now = new Date(), repositoryRoot = repoRoot }) {
   const catalog = completenessCatalogSnapshots.get(completeness) ?? snapshotStationCatalog(stationCatalogPackPath);
+  if (JSON.stringify(completeness?.stationCatalogPackIdentity) !== JSON.stringify(catalog.identity)) {
+    throw new Error("STATION_CATALOG_PACK_IDENTITY_MISMATCH");
+  }
   const candidate = buildItxSourceCandidatePayload({ completeness, now });
   candidate.stationCatalogPackIdentity = catalog.identity;
   validateSourceCandidateSchema(candidate);
-  candidate.evidenceHash = sha256(JSON.stringify(candidate));
-  return candidate;
-}
-
-async function buildLegacyItxSourceCandidate({ completeness, canonicalPackIdentity, now = new Date(), repositoryRoot = repoRoot }) {
-  const candidate = buildItxSourceCandidatePayload({ completeness, now });
-  candidate.canonicalPackIdentity = canonicalPackIdentity ?? await readCanonicalPackIdentity(CANONICAL_PACK_PATH, repositoryRoot);
-  validateSourceCandidateSchema(candidate, "legacy");
   candidate.evidenceHash = sha256(JSON.stringify(candidate));
   return candidate;
 }
@@ -392,8 +387,11 @@ function buildItxSourceCandidatePayload({ completeness, now }) {
 export async function promoteItxSourceCandidate(options = {}) {
   let preflightCandidate;
   try { preflightCandidate = JSON.parse(await readFile(options.candidatePath)); } catch { /* locked path reports malformed input */ }
-  if (isPlainObject(preflightCandidate) && Object.hasOwn(preflightCandidate, "stationCatalogPackIdentity")) {
-    throw new Error("STATION_CATALOG_PACK_PROMOTION_UNSUPPORTED");
+  if (isPlainObject(preflightCandidate) && (
+    Object.hasOwn(preflightCandidate, "canonicalPackIdentity")
+    || !Object.hasOwn(preflightCandidate, "stationCatalogPackIdentity")
+  )) {
+    throw new Error("LEGACY_CURRENT_ADMISSION_FORBIDDEN");
   }
   const repositoryRoot = options.repositoryRoot ?? repoRoot;
   const coverageContractPath = validateCoverageContractPath(options.coverageContractPath, repositoryRoot);
@@ -420,6 +418,7 @@ async function promoteItxSourceCandidateLocked({
   approvalUrl,
   sourceOutputDir,
   coverageContractPath,
+  stationCatalogPackPath,
   now = new Date(),
   fetchImpl = fetch,
   githubToken,
@@ -428,7 +427,7 @@ async function promoteItxSourceCandidateLocked({
   const candidateBytes = await readFile(candidatePath);
   const candidateSha256 = sha256(candidateBytes);
   const candidate = JSON.parse(candidateBytes);
-  validateSourceCandidateSchema(candidate, "legacy");
+  validateSourceCandidateSchema(candidate);
   const { evidenceHash, ...candidateWithoutEvidenceHash } = candidate;
   if (evidenceHash !== sha256(JSON.stringify(candidateWithoutEvidenceHash))
     || candidateBytes.toString("utf8") !== `${JSON.stringify(candidate, null, 2)}\n`) {
@@ -436,13 +435,25 @@ async function promoteItxSourceCandidateLocked({
   }
   validateSourceFreshness(candidate, candidate.selectedServiceDates, now);
   validateItxServiceDates(candidate.selectedServiceDates, { now });
-  await validateCanonicalPackIdentity(candidate.canonicalPackIdentity, repositoryRoot);
-  validateCanonicalCorridorAuthority(candidate, repositoryRoot);
+  const catalog = snapshotStationCatalog(stationCatalogPackPath);
+  if (JSON.stringify(candidate.stationCatalogPackIdentity) !== JSON.stringify(catalog.identity)) {
+    throw new Error("STATION_CATALOG_PACK_IDENTITY_MISMATCH");
+  }
+  validateStationCatalogCorridorAuthority(candidate, catalog);
   const candidateSets = validateSourceSnapshotSets(candidate);
   const contract = validateCoverageContractAuthority(JSON.parse(await readFile(coverageContractPath, "utf8")));
-  const previousSource = await loadAdmittedSourceReference(contract, repositoryRoot);
+  const admission = contract?.officialEvidence?.korailCompletenessAdmission;
+  if (!isPlainObject(admission)) throw new Error("ITX_COVERAGE_CONTRACT_INVALID");
+  validateTopologyInputPackIdentity(admission.topologyInputPackIdentity);
+  const previousSource = await loadAdmittedSourceReference(contract, repositoryRoot, catalog);
   const previous = previousSource?.sourceTimetableArtifact ?? null;
   const bootstrap = previousSource === null;
+  if (previous !== null && (
+    candidate.artifactId === previousSource.artifactId
+    || Date.parse(candidate.freshUntil) <= Date.parse(previousSource.freshUntil)
+  )) {
+    throw new Error("CURRENT_CANDIDATE_FRESHNESS_INVALID");
+  }
   const expectedSnapshotDiff = applyStationMappingAuthority(compareSnapshotSets(
     candidateSets,
     bootstrap ? null : validateSourceSnapshotSets(previousSource),
@@ -459,21 +470,19 @@ async function promoteItxSourceCandidateLocked({
     candidate,
     repositoryRoot,
     now,
+    catalog.identity,
   );
-  const approvalRequired = bootstrap || changed;
-  if (approvalRequired) {
+  {
     if (approvedSha256 !== candidateSha256 || !/^[a-f0-9]{64}$/.test(approvedSha256 ?? "")) {
-      throw new Error(changed ? "SNAPSHOT_CHANGE_APPROVAL_INVALID" : "SNAPSHOT_BOOTSTRAP_APPROVAL_INVALID");
+      throw new Error("CURRENT_CANDIDATE_APPROVAL_INVALID");
     }
     await verifyOwnerApproval({
       approvalUrl,
-      expectedBody: `/${changed ? "approve-itx-change" : "approve-itx-bootstrap"} artifactId=${candidate.artifactId} sha256=${candidateSha256} policy=itx-snapshot-anomaly-v1`,
+      expectedBody: `/approve-itx-current artifactId=${candidate.artifactId} sha256=${candidateSha256} policy=itx-snapshot-anomaly-v1`,
       observedAt: candidate.observedAt,
       fetchImpl,
       githubToken,
     });
-  } else if (approvedSha256 || approvalUrl) {
-    throw new Error("unchanged promotion must not include approval arguments");
   }
   const artifactRelativePath = `tools/datapack/sources/${candidate.artifactId}.json`;
   const completenessRelativePath = `tools/datapack/sources/${candidate.artifactId}-completeness-evidence.json`;
@@ -483,6 +492,8 @@ async function promoteItxSourceCandidateLocked({
     completenessRelativePath,
     repositoryRoot,
   );
+  delete admission.canonicalPackIdentity;
+  admission.stationCatalogPackIdentity = catalog.identity;
   await writeImmutableArtifact(artifactPath, candidateBytes, "ADMITTED_SOURCE_ARTIFACT");
   await writeImmutableArtifact(completenessArtifactPath, completenessBytes, "ADMITTED_COMPLETENESS_EVIDENCE");
   contract.sourceTimetableArtifact = {
@@ -497,20 +508,14 @@ async function promoteItxSourceCandidateLocked({
     freshUntil: candidate.freshUntil,
     policyVersion: "itx-snapshot-anomaly-v1",
     promotion: {
-      mode: bootstrap ? "BOOTSTRAP_OWNER_APPROVED" : changed ? "CHANGE_OWNER_APPROVED" : "UNCHANGED_AUTO",
+      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
       previousArtifactSha256: previous?.sha256 ?? null,
       previousArtifactPath: previous?.artifactPath ?? null,
-      approvalUrl: approvalRequired ? approvalUrl : null,
-      approvedArtifactSha256: approvalRequired ? candidateSha256 : null,
+      approvalUrl,
+      approvedArtifactSha256: candidateSha256,
     },
   };
   contract.freshness.nextReviewAt = candidate.freshUntil;
-  await maybeCorrectAdmissionPin({
-    contract,
-    candidate,
-    promotionMode: contract.sourceTimetableArtifact.promotion.mode,
-    repositoryRoot,
-  });
   const contractTempPath = `${coverageContractPath}.${randomUUID()}.tmp`;
   try {
     await writeFile(contractTempPath, `${JSON.stringify(contract, null, 2)}\n`, { flag: "wx", mode: 0o644 });
@@ -528,7 +533,22 @@ async function promoteItxSourceCandidateLocked({
   };
 }
 
-async function loadCompletenessEvidence(completenessPath, candidate, repositoryRoot, now) {
+function validateTopologyInputPackIdentity(identity) {
+  const keys = ["id", "sha256", "sqliteSha256", "byteSize"];
+  if (!isPlainObject(identity)
+    || Object.keys(identity).sort(codepointCompare).join(",")
+      !== keys.slice().sort(codepointCompare).join(",")
+    || identity.id !== "capital"
+    || ![identity.sha256, identity.sqliteSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))
+    || !Number.isSafeInteger(identity.byteSize)
+    || identity.byteSize <= 0) {
+    throw new Error("TOPOLOGY_INPUT_PACK_IDENTITY_INVALID");
+  }
+  return identity;
+}
+
+async function loadCompletenessEvidence(completenessPath, candidate, repositoryRoot, now, stationCatalogIdentity) {
   requiredString(completenessPath, "completenessPath");
   let stat;
   try {
@@ -555,29 +575,14 @@ async function loadCompletenessEvidence(completenessPath, candidate, repositoryR
     || completeness.validationMode !== "ADMISSION"
     || completeness.validationStatus !== "SUPPORTED"
     || completeness.materialization?.status !== "SUPPORTED"
+    || JSON.stringify(completeness?.stationCatalogPackIdentity) !== JSON.stringify(stationCatalogIdentity)
+    || JSON.stringify(candidate?.stationCatalogPackIdentity) !== JSON.stringify(stationCatalogIdentity)
     || completeness.credentialRedacted !== true) {
     throw new Error("SOURCE_COMPLETENESS_EVIDENCE_MISMATCH");
   }
-  let expectedCandidate;
-  try {
-    expectedCandidate = await buildLegacyItxSourceCandidate({
-      completeness,
-      canonicalPackIdentity: candidate.canonicalPackIdentity,
-      now,
-      repositoryRoot,
-    });
-  } catch (error) {
-    throw new Error("SOURCE_COMPLETENESS_EVIDENCE_MISMATCH", { cause: error });
-  }
-  // The bundled pack may advance after admission. Its immutable identity remains protected by
-  // the admitted source bytes/reference hash, while this comparison replays the completeness payload.
+  const expectedAdmissionPayload = buildItxSourceCandidatePayload({ completeness, now });
   const {
-    canonicalPackIdentity: _expectedPackIdentity,
-    evidenceHash: _expectedEvidenceHash,
-    ...expectedAdmissionPayload
-  } = expectedCandidate;
-  const {
-    canonicalPackIdentity: _admittedPackIdentity,
+    stationCatalogPackIdentity: _admittedPackIdentity,
     evidenceHash: _admittedEvidenceHash,
     ...admittedPayload
   } = candidate;
@@ -612,7 +617,15 @@ export function validateSourceFreshness(source, selectedServiceDates, now = null
   if (now && now.getTime() >= Date.parse(value)) throw new Error("SOURCE_SNAPSHOT_EXPIRED");
 }
 
-export function validateSourceCandidateSchema(candidate, identityMode = "new") {
+export function validateSourceCandidateSchema(candidate) {
+  validateSourceCandidateSchemaInternal(candidate, false);
+}
+
+function validateHistoricalSourceAuditSchema(candidate) {
+  validateSourceCandidateSchemaInternal(candidate, true);
+}
+
+function validateSourceCandidateSchemaInternal(candidate, historicalAudit) {
   const dayCodes = ["8", "7", "9"];
   const selectedDayCodes = Object.keys(candidate?.selectedServiceDates ?? {}).sort(naturalCompare);
   const lineage = candidate?.sourceLineage;
@@ -622,7 +635,7 @@ export function validateSourceCandidateSchema(candidate, identityMode = "new") {
   } catch {
     serviceDatesValid = false;
   }
-  if (!hasClosedCandidateShape(candidate, identityMode)
+  if (!hasClosedCandidateShape(candidate, historicalAudit)
     || !sourceWarningsMatchTrainSets(candidate)
     || candidate?.artifactKind !== "itx-cheongchun-source-timetable" || candidate.schemaVersion !== 1
     || !/^itx-cheongchun-source-timetable-\d{17}$/.test(candidate.artifactId ?? "")
@@ -646,12 +659,13 @@ export function validateSourceCandidateSchema(candidate, identityMode = "new") {
   }
 }
 
-function hasClosedCandidateShape(candidate, identityMode = "new") {
+function hasClosedCandidateShape(candidate, historicalAudit = false) {
   const allowed = (value, keys) => isPlainObject(value)
     && Object.keys(value).every((key) => keys.includes(key));
   const topLevel = [
     "schemaVersion", "artifactKind", "artifactId", "serviceId", "observedAt", "freshUntil",
-    "policyVersion", "validationStatus", "promotionStatus", "completenessEvidenceSha256", identityMode === "legacy" ? "canonicalPackIdentity" : "stationCatalogPackIdentity",
+    "policyVersion", "validationStatus", "promotionStatus", "completenessEvidenceSha256",
+    historicalAudit ? "canonicalPackIdentity" : "stationCatalogPackIdentity",
     "selectedServiceDates", "sourceLineage", "stationRosters", "stationSequences", "transitTrips",
     "transitStopTimes", "warnings", "normalizedSnapshotSets", "snapshotDiff", "credentialRedacted",
     "evidenceHash",
@@ -671,9 +685,9 @@ function hasClosedCandidateShape(candidate, identityMode = "new") {
   const stopTimeKeys = ["tripId", "stopSequence", "stationId", "lineId", "arrivalSeconds", "departureSeconds"];
   const summaryKeys = ["count", "added", "removed", "sha256"];
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
-  const identityValid = identityMode === "legacy"
+  const identityValid = historicalAudit
     ? allowed(candidate?.canonicalPackIdentity, ["path", "sha256"])
-      && candidate.canonicalPackIdentity.path === CANONICAL_PACK_PATH
+      && candidate.canonicalPackIdentity.path === "apps/mobile/assets/datapacks/capital.sqlite.gz"
       && /^[a-f0-9]{64}$/.test(candidate.canonicalPackIdentity.sha256 ?? "")
     : allowed(candidate?.stationCatalogPackIdentity, ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"])
       && candidate.stationCatalogPackIdentity.artifactKind === "station-catalog-pack"
@@ -743,20 +757,6 @@ function sourceWarningsMatchTrainSets(candidate) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-async function readCanonicalPackIdentity(canonicalPackPath, repositoryRoot) {
-  const absolutePath = path.resolve(repositoryRoot, canonicalPackPath);
-  if (absolutePath !== path.resolve(repositoryRoot, CANONICAL_PACK_PATH)) {
-    throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
-  }
-  const relativePath = path.relative(path.resolve(repositoryRoot), absolutePath).split(path.sep).join("/");
-  if (relativePath.startsWith("../") || relativePath === ".." || path.isAbsolute(relativePath)) {
-    throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
-  }
-  const identity = { path: relativePath, sha256: sha256(await readFile(absolutePath)) };
-  await validateCanonicalPackIdentity(identity, repositoryRoot);
-  return identity;
 }
 
 function snapshotStationCatalog(stationCatalogPackPath) {
@@ -848,87 +848,6 @@ function freezePlain(value) {
   return value;
 }
 
-async function validateCanonicalPackIdentity(identity, repositoryRoot) {
-  const relativePath = identity?.path;
-  if (relativePath !== CANONICAL_PACK_PATH || path.isAbsolute(relativePath)
-    || path.posix.normalize(relativePath) !== relativePath || relativePath.startsWith("../")
-    || !/^[a-f0-9]{64}$/.test(identity?.sha256 ?? "")) {
-    throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
-  }
-  const canonicalPackPath = path.join(repositoryRoot, ...relativePath.split("/"));
-  try {
-    const [realRoot, realParent] = await Promise.all([realpath(repositoryRoot), realpath(path.dirname(canonicalPackPath))]);
-    const stat = await lstat(canonicalPackPath);
-    if (!realParent.startsWith(`${realRoot}${path.sep}`) || stat.isSymbolicLink() || !stat.isFile()
-      || sha256(await readFile(canonicalPackPath)) !== identity.sha256) {
-      throw new Error("CANONICAL_PACK_IDENTITY_INVALID");
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message === "CANONICAL_PACK_IDENTITY_INVALID") throw error;
-    throw new Error("CANONICAL_PACK_IDENTITY_INVALID", { cause: error });
-  }
-}
-
-// UNCHANGED_AUTO 승격에 한해, #2341에서 오너가 수동으로 하던 "admission pin을 현행 출하 pack
-// 실체로 교정"을 검증 조건이 갖춰졌을 때만 자동화한다. 게이트 비교 로직(build의 validateAdmission
-// 등)은 불변이며, 여기서는 조건이 모두 실측될 때에만 pin을 출하 pack identity로 일관 갱신한다.
-// 조건 미충족이면 pin을 건드리지 않아 기존 수동 교정 경로(fail closed)가 그대로 유지된다.
-async function maybeCorrectAdmissionPin({ contract, candidate, promotionMode, repositoryRoot }) {
-  // (a) UNCHANGED_AUTO 승격일 때에만 자동 교정한다.
-  if (promotionMode !== "UNCHANGED_AUTO") return;
-  const pin = contract?.officialEvidence?.korailCompletenessAdmission?.canonicalPackIdentity;
-  if (!isPlainObject(pin) || typeof pin.id !== "string"
-    || !/^[a-f0-9]{64}$/.test(pin.sha256 ?? "") || !/^[a-f0-9]{64}$/.test(pin.sqliteSha256 ?? "")) {
-    return;
-  }
-  const shipped = await readShippedPackIdentity(repositoryRoot);
-  if (shipped == null) return;
-  // (b) 재수집이 정확히 현행 출하 pack을 대상으로 이뤄졌는가(candidate identity == 출하 pack).
-  if (candidate?.canonicalPackIdentity?.sha256 !== shipped.gzipSha256) return;
-  // (c) 그 출하 pack의 topology가 apply-itx에서 이미 검증됐는가
-  //     (topology evidence의 pack OUTPUT identity == 출하 pack identity).
-  const evidence = await readTopologyEvidence(repositoryRoot);
-  if (!isPlainObject(evidence)
-    || evidence.artifactKind !== "itx-cheongchun-mobile-topology-evidence"
-    || evidence.pack?.id !== pin.id
-    || evidence.pack?.outputSha256 !== shipped.gzipSha256
-    || evidence.pack?.outputSqliteSha256 !== shipped.sqliteSha256
-    || evidence.pack?.byteSize !== shipped.byteSize) {
-    return;
-  }
-  // 세 조건이 모두 충족되면 pin의 3필드를 출하 pack 실체로 일관 갱신한다(sourceIssue 등 잔여 필드는 보존).
-  pin.id = evidence.pack.id;
-  pin.sha256 = shipped.gzipSha256;
-  pin.sqliteSha256 = shipped.sqliteSha256;
-}
-
-async function readShippedPackIdentity(repositoryRoot) {
-  try {
-    const canonicalPackPath = path.join(repositoryRoot, ...CANONICAL_PACK_PATH.split("/"));
-    const stat = await lstat(canonicalPackPath);
-    if (stat.isSymbolicLink() || !stat.isFile()) return null;
-    const gzipBytes = await readFile(canonicalPackPath);
-    return {
-      gzipSha256: sha256(gzipBytes),
-      sqliteSha256: sha256(gunzipSync(gzipBytes)),
-      byteSize: gzipBytes.length,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function readTopologyEvidence(repositoryRoot) {
-  try {
-    const evidencePath = path.join(repositoryRoot, ...TOPOLOGY_EVIDENCE_PATH.split("/"));
-    const stat = await lstat(evidencePath);
-    if (stat.isSymbolicLink() || !stat.isFile()) return null;
-    return JSON.parse(await readFile(evidencePath, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
 function validateMaterializedProjection(source, dayCd, errorCode) {
   const invalid = () => { throw new Error(errorCode); };
   if (!["8", "7", "9"].includes(dayCd) || !Array.isArray(source?.stationSequences)
@@ -966,9 +885,9 @@ function validateMaterializedProjection(source, dayCd, errorCode) {
   return { sequences, trips, stopTimes: source.transitStopTimes };
 }
 
-function validateCanonicalCorridorAuthority(source, repositoryRoot) {
-  const canonical = readLegacyCanonicalLine(path.join(repositoryRoot, CANONICAL_PACK_PATH));
-  try {
+function validateStationCatalogCorridorAuthority(source, catalog) {
+  const canonical = catalog?.canonical;
+  {
     const invalid = () => { throw new Error("CANONICAL_CORRIDOR_AUTHORITY_INVALID"); };
     const stationsById = new Map(canonical.rosterStations.map((station) => (
       [station.canonicalStationId, station]
@@ -1027,8 +946,6 @@ function validateCanonicalCorridorAuthority(source, repositoryRoot) {
     })) {
       invalid();
     }
-  } finally {
-    canonical.close();
   }
 }
 
@@ -1159,7 +1076,39 @@ function validateCoverageContractAuthority(contract) {
   return contract;
 }
 
-async function loadAdmittedSourceReference(contract, repositoryRoot) {
+async function validateHistoricalCompletenessAudit(reference, source, repositoryRoot) {
+  const expectedEvidencePath = `tools/datapack/sources/${source.artifactId}-completeness-evidence.json`;
+  if (reference.completenessEvidencePath !== expectedEvidencePath
+    || reference.completenessEvidenceSha256 !== source.completenessEvidenceSha256
+    || path.isAbsolute(reference.completenessEvidencePath)
+    || path.posix.normalize(reference.completenessEvidencePath) !== reference.completenessEvidencePath) {
+    throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
+  }
+  const bytes = await readFile(path.join(repositoryRoot, ...reference.completenessEvidencePath.split("/")));
+  if (sha256(bytes) !== reference.completenessEvidenceSha256) {
+    throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
+  }
+  const evidence = JSON.parse(bytes);
+  const { evidenceHash, ...withoutEvidenceHash } = evidence;
+  if (Object.hasOwn(evidence, "canonicalPackIdentity")
+    || Object.hasOwn(evidence, "stationCatalogPackIdentity")
+    || evidence?.schemaVersion !== 2
+    || evidence.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
+    || evidence.serviceId !== "ITX_CHEONGCHUN"
+    || evidence.validationMode !== "ADMISSION"
+    || evidence.validationStatus !== "SUPPORTED"
+    || evidence.materialization?.status !== "SUPPORTED"
+    || evidence.sourceTimetableArtifact?.status !== "SUPPORTED"
+    || evidence.sourceTimetableArtifact?.artifactId !== source.artifactId
+    || evidence.sourceTimetableArtifact?.freshUntil !== source.freshUntil
+    || JSON.stringify(evidence.selectedServiceDates) !== JSON.stringify(source.selectedServiceDates)
+    || evidenceHash !== sha256(JSON.stringify(withoutEvidenceHash))
+    || bytes.toString("utf8") !== `${JSON.stringify(evidence, null, 2)}\n`) {
+    throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
+  }
+}
+
+async function loadAdmittedSourceReference(contract, repositoryRoot, catalog) {
   const reference = contract?.sourceTimetableArtifact;
   if (reference?.status !== "ADMITTED") return null;
   const expectedPath = `tools/datapack/sources/${reference.artifactId}.json`;
@@ -1190,6 +1139,13 @@ async function loadAdmittedSourceReference(contract, repositoryRoot) {
   const bytes = await readFile(artifactPath);
   if (sha256(bytes) !== reference.sha256) throw new Error("previous ADMITTED source hash mismatch");
   const source = JSON.parse(bytes);
+  const historicalAudit = Object.hasOwn(source, "canonicalPackIdentity")
+    && !Object.hasOwn(source, "stationCatalogPackIdentity");
+  if ((!historicalAudit && (Object.hasOwn(source, "canonicalPackIdentity")
+      || !Object.hasOwn(source, "stationCatalogPackIdentity")))
+    || (historicalAudit && reference.promotion?.mode !== "UNCHANGED_AUTO")) {
+    throw new Error("LEGACY_CURRENT_ADMISSION_FORBIDDEN");
+  }
   const { evidenceHash, ...withoutEvidenceHash } = source;
   if (source.artifactKind !== "itx-cheongchun-source-timetable" || source.schemaVersion !== 1
     || source.artifactId !== reference.artifactId || source.freshUntil !== reference.freshUntil
@@ -1197,24 +1153,35 @@ async function loadAdmittedSourceReference(contract, repositoryRoot) {
     || bytes.toString("utf8") !== `${JSON.stringify(source, null, 2)}\n`) {
     throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
   }
-  validateSourceCandidateSchema(source, "legacy");
+  if (historicalAudit) validateHistoricalSourceAuditSchema(source);
+  else validateSourceCandidateSchema(source);
   validateSourceFreshness(source, source.selectedServiceDates);
-  validateCanonicalCorridorAuthority(source, repositoryRoot);
+  if (!historicalAudit) {
+    if (JSON.stringify(source.stationCatalogPackIdentity) !== JSON.stringify(catalog?.identity)) {
+      throw new Error("STATION_CATALOG_PACK_IDENTITY_MISMATCH");
+    }
+    validateStationCatalogCorridorAuthority(source, catalog);
+  }
   validateSourceSnapshotSets(source);
   if (source.completenessEvidenceSha256 !== undefined) {
-    const expectedEvidencePath = `tools/datapack/sources/${source.artifactId}-completeness-evidence.json`;
-    if (reference.completenessEvidencePath !== expectedEvidencePath
-      || reference.completenessEvidenceSha256 !== source.completenessEvidenceSha256
-      || path.isAbsolute(reference.completenessEvidencePath)
-      || path.posix.normalize(reference.completenessEvidencePath) !== reference.completenessEvidencePath) {
-      throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
+    if (historicalAudit) {
+      await validateHistoricalCompletenessAudit(reference, source, repositoryRoot);
+    } else {
+      const expectedEvidencePath = `tools/datapack/sources/${source.artifactId}-completeness-evidence.json`;
+      if (reference.completenessEvidencePath !== expectedEvidencePath
+        || reference.completenessEvidenceSha256 !== source.completenessEvidenceSha256
+        || path.isAbsolute(reference.completenessEvidencePath)
+        || path.posix.normalize(reference.completenessEvidencePath) !== reference.completenessEvidencePath) {
+        throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
+      }
+      await loadCompletenessEvidence(
+        path.join(repositoryRoot, ...reference.completenessEvidencePath.split("/")),
+        source,
+        repositoryRoot,
+        null,
+        catalog.identity,
+      );
     }
-    await loadCompletenessEvidence(
-      path.join(repositoryRoot, ...reference.completenessEvidencePath.split("/")),
-      source,
-      repositoryRoot,
-      null,
-    );
   } else if (reference.completenessEvidencePath !== undefined
     || reference.completenessEvidenceSha256 !== undefined) {
     throw new Error("ADMITTED_SOURCE_REFERENCE_INVALID");
@@ -2602,6 +2569,10 @@ export async function runKorailItxCompletenessCli({
       args["coverage-contract"],
       repositoryRoot,
     );
+    const stationCatalogPackPath = requiredString(
+      args["station-catalog-pack"],
+      "--station-catalog-pack",
+    );
     const promotion = await promoteImpl({
       candidatePath: requiredString(args["promote-candidate"], "--promote-candidate"),
       completenessPath: requiredString(args["completeness-evidence"], "--completeness-evidence"),
@@ -2612,6 +2583,7 @@ export async function runKorailItxCompletenessCli({
       now,
       githubToken: env.GITHUB_TOKEN,
       repositoryRoot,
+      stationCatalogPackPath,
     });
     return { promotion, exitCode: 0 };
   }
@@ -2639,7 +2611,11 @@ export async function runKorailItxCompletenessCli({
       ?? path.join(repositoryRoot, "tools/datapack/itx-cheongchun-coverage-contract.json"),
     repositoryRoot,
   );
-  const previousAdmittedArtifact = await loadPromotedSourceArtifact(contractPath, repositoryRoot);
+  const previousAdmittedArtifact = await loadPromotedSourceArtifact(
+    contractPath,
+    repositoryRoot,
+    stationCatalogSnapshot,
+  );
   const serviceDates = {
     "8": args["day8-date"],
     "7": args["day7-date"],
@@ -2703,7 +2679,7 @@ export async function runKorailItxCompletenessCli({
   };
 }
 
-async function loadPromotedSourceArtifact(contractPath, repositoryRoot = repoRoot) {
+async function loadPromotedSourceArtifact(contractPath, repositoryRoot = repoRoot, stationCatalogSnapshot) {
   let contract;
   try {
     contract = JSON.parse(await readFile(contractPath, "utf8"));
@@ -2711,7 +2687,11 @@ async function loadPromotedSourceArtifact(contractPath, repositoryRoot = repoRoo
     if (error?.code === "ENOENT") return null;
     throw error;
   }
-  return loadAdmittedSourceReference(validateCoverageContractAuthority(contract), repositoryRoot);
+  return loadAdmittedSourceReference(
+    validateCoverageContractAuthority(contract),
+    repositoryRoot,
+    stationCatalogSnapshot,
+  );
 }
 
 async function main() {

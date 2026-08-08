@@ -48,6 +48,33 @@ const OPTIONS = {
   buildNow: new Date("2026-07-14T00:00:00.000Z"),
 };
 
+const STATION_CATALOG_IDENTITY = Object.freeze({
+  artifactKind: "station-catalog-pack",
+  manifestVersion: 1,
+  catalogPackId: "itx-test-catalog-v1",
+  stationSetSha256: "a".repeat(64),
+  payloadSha256: "b".repeat(64),
+  manifestSha256: "c".repeat(64),
+});
+
+function stationCatalogEvidence({ timetableArtifactId, timetableArtifactSha256, freshUntil, admissionEligible = true, sourceIssue = 2116 } = {}) {
+  return {
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId,
+    timetableArtifactSha256,
+    stationCatalogArtifactKind: STATION_CATALOG_IDENTITY.artifactKind,
+    stationCatalogManifestVersion: STATION_CATALOG_IDENTITY.manifestVersion,
+    stationCatalogPackId: STATION_CATALOG_IDENTITY.catalogPackId,
+    stationCatalogStationSetSha256: STATION_CATALOG_IDENTITY.stationSetSha256,
+    stationCatalogPayloadSha256: STATION_CATALOG_IDENTITY.payloadSha256,
+    stationCatalogManifestSha256: STATION_CATALOG_IDENTITY.manifestSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible,
+    freshUntil,
+    sourceIssue,
+  };
+}
+
 test("service_calendar는 토요일을 휴일 다이어로 매핑한다 (holiday-kric=토·일, weekday-kric=월~금)", () => {
   const seed = buildBackendTimetableSeed(ARTIFACT, OPTIONS);
   const byId = Object.fromEntries(seed.calendars.map((c) => [c.serviceId, c]));
@@ -177,181 +204,56 @@ test("재구성한 EXPRESS의 양 끝 승하차 제한은 허용하고 interior 
   );
 });
 
-test("ITX seed는 test-only timetable·canonical pack identity evidence를 같은 SQL에 고정한다", async () => {
-  const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
-  const artifact = JSON.parse(artifactBytes);
-  artifact.routeServiceArtifactEvidence = [{
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: artifact.timetableArtifactIdentity.id,
-    timetableArtifactSha256: createHash("sha256").update(artifactBytes).digest("hex"),
-    canonicalPackId: artifact.canonicalPackIdentity.id,
-    canonicalPackSha256: artifact.canonicalPackIdentity.sha256,
-    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: true,
-    freshUntil: artifact.freshness.freshUntil,
-    sourceIssue: 2116,
-  }];
-  const { sql } = buildBackendTimetableSeed(artifact, {
-    ...OPTIONS,
-    lineId: artifact.canonicalLineId,
-    timetableArtifactSha256: createHash("sha256").update(artifactBytes).digest("hex"),
-    canonicalPackIdentity: artifact.canonicalPackIdentity,
-    serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [
-      calendar.serviceId,
-      calendar,
-    ])),
-  });
-
-  assert.match(sql, /INSERT INTO route_service_artifact_evidence/);
-  assert.match(sql, new RegExp(artifact.routeServiceArtifactEvidence[0].timetableArtifactSha256));
-  assert.match(sql, new RegExp(artifact.canonicalPackIdentity.sha256));
-  assert.match(sql, new RegExp(artifact.canonicalPackIdentity.sqliteSha256));
-  assert.match(sql, /'EXPRESS', 'ITX_CHEONGCHUN', '2001', 0/);
-  assert.match(sql, /'ITX-청춘'/);
-  assert.match(sql, /'청량리 → 춘천'/);
-  assert.throws(
-    () => buildBackendTimetableSeed({ ...artifact, transitRoutes: [] }, {
-      ...OPTIONS,
-      lineId: artifact.canonicalLineId,
-      timetableArtifactSha256: createHash("sha256").update(artifactBytes).digest("hex"),
-      canonicalPackIdentity: artifact.canonicalPackIdentity,
-      serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [
-        calendar.serviceId,
-        calendar,
-      ])),
-    }),
-    /routeId is missing from transitRoutes/,
-  );
-});
-
-test("ITX seed는 admissionEligible 정수 1도 ADMITTED evidence로 허용한다", async () => {
+test("ITX seed는 exact station-catalog identity를 route evidence SQL에 전파한다", async () => {
   const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = JSON.parse(artifactBytes);
   const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
-  artifact.routeServiceArtifactEvidence = [{
-    serviceClass: "ITX_CHEONGCHUN",
+  artifact.routeServiceArtifactEvidence = [stationCatalogEvidence({
     timetableArtifactId: artifact.timetableArtifactIdentity.id,
     timetableArtifactSha256,
-    canonicalPackId: artifact.canonicalPackIdentity.id,
-    canonicalPackSha256: artifact.canonicalPackIdentity.sha256,
-    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: 1,
     freshUntil: artifact.freshness.freshUntil,
-    sourceIssue: 2116,
-  }];
+  })];
   const { sql } = buildBackendTimetableSeed(artifact, {
     ...OPTIONS,
     lineId: artifact.canonicalLineId,
     timetableArtifactSha256,
-    canonicalPackIdentity: artifact.canonicalPackIdentity,
-    serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [
-      calendar.serviceId,
-      calendar,
-    ])),
+    stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
+    serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [calendar.serviceId, calendar])),
   });
-  assert.match(sql, /INSERT INTO route_service_artifact_evidence/);
-  assert.match(sql, /, TRUE, /);
+  assert.match(sql, /station_catalog_artifact_kind/);
+  for (const value of Object.values(STATION_CATALOG_IDENTITY)) assert.match(sql, new RegExp(String(value)));
+  assert.doesNotMatch(sql, /canonical_pack_/);
 });
 
-test("ITX seed evidence hash가 입력 timetable artifact bytes identity와 다르면 거부한다", async () => {
+test("ITX seed는 station-catalog identity missing·legacy·각 필드 mixed mutation을 fail closed한다", async () => {
   const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = JSON.parse(artifactBytes);
-  artifact.routeServiceArtifactEvidence = [{
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: artifact.timetableArtifactIdentity.id,
-    timetableArtifactSha256: createHash("sha256").update(artifactBytes).digest("hex"),
-    canonicalPackId: artifact.canonicalPackIdentity.id,
-    canonicalPackSha256: artifact.canonicalPackIdentity.sha256,
-    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: true,
-    freshUntil: artifact.freshness.freshUntil,
-    sourceIssue: 2116,
-  }];
-
-  assert.throws(
-    () => buildBackendTimetableSeed(artifact, {
-      ...OPTIONS,
-      lineId: artifact.canonicalLineId,
-      timetableArtifactSha256: "0".repeat(64),
-      serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [
-        calendar.serviceId,
-        calendar,
-      ])),
-    }),
-    /timetable artifact SHA-256 identity mismatch/,
-  );
+  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+  artifact.routeServiceArtifactEvidence = [stationCatalogEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: artifact.freshness.freshUntil })];
+  const options = { ...OPTIONS, lineId: artifact.canonicalLineId, timetableArtifactSha256, stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
+  assert.throws(() => buildBackendTimetableSeed(artifact, { ...options, stationCatalogPackIdentity: undefined }), /station catalog identity mismatch/);
+  assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceArtifactEvidence: [{ ...artifact.routeServiceArtifactEvidence[0], canonicalPackId: "capital" }] }, options), /station catalog identity mismatch/);
+  for (const key of ["stationCatalogArtifactKind", "stationCatalogManifestVersion", "stationCatalogPackId", "stationCatalogStationSetSha256", "stationCatalogPayloadSha256", "stationCatalogManifestSha256"]) {
+    assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceArtifactEvidence: [{ ...artifact.routeServiceArtifactEvidence[0], [key]: key === "stationCatalogManifestVersion" ? 2 : "0".repeat(64) }] }, options), /station catalog identity mismatch/);
+  }
 });
 
-test("CLI는 timetable 원본과 분리된 evidence sidecar를 실제 input bytes hash에 결합한다", async (context) => {
+test("CLI sidecar는 --canonical-pack 없이 artifact station-catalog identity에만 결합한다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-seed-sidecar-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
-  const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
-  const artifact = JSON.parse(artifactBytes);
+  const fixtureBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+  const artifact = { ...JSON.parse(fixtureBytes), stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
+  const artifactBytes = Buffer.from(`${JSON.stringify(artifact)}\n`);
+  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
   const inputPath = path.join(temporaryDir, "timetable.json");
   const evidencePath = path.join(temporaryDir, "evidence.json");
   const outputPath = path.join(temporaryDir, "seed.sql");
-  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
-  await writeFile(inputPath, artifactBytes);
-  await writeFile(evidencePath, `${JSON.stringify({
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: artifact.timetableArtifactIdentity.id,
-    timetableArtifactSha256,
-    canonicalPackId: artifact.canonicalPackIdentity.id,
-    canonicalPackSha256: artifact.canonicalPackIdentity.sha256,
-    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: true,
-    freshUntil: "2999-01-01T00:00:00.000Z",
-    sourceIssue: 2116,
-  })}\n`);
-
-  await execFileAsync(process.execPath, [
-    "tools/datapack/build-backend-timetable-seed.mjs",
-    "--input", inputPath,
-    "--route-service-evidence", evidencePath,
-    "--canonical-pack", "apps/mobile/assets/datapacks/capital.sqlite.gz",
-    "--line-id", artifact.canonicalLineId,
-    "--start-date", "20300101",
-    "--end-date", "20300131",
-    "--feed-end-date", "20300131",
-    "--output", outputPath,
-  ], { cwd: root });
-
-  const sql = await readFile(outputPath, "utf8");
-  assert.match(sql, new RegExp(timetableArtifactSha256));
-  assert.match(sql, /'ITX_CHEONGCHUN'/);
-  assert.match(sql, /'20300101', '20300131', 'Asia\/Seoul'/);
-  assert.match(sql, /transit_feed_info \(id, feed_end_date\) VALUES \(1, '20300131'\)/);
-
-  await writeFile(evidencePath, `${JSON.stringify({
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: artifact.timetableArtifactIdentity.id,
-    timetableArtifactSha256,
-    canonicalPackId: artifact.canonicalPackIdentity.id,
-    canonicalPackSha256: "0".repeat(64),
-    canonicalPackSqliteSha256: artifact.canonicalPackIdentity.sqliteSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: true,
-    freshUntil: "2999-01-01T00:00:00.000Z",
-    sourceIssue: 2116,
-  })}\n`);
-  await assert.rejects(
-    execFileAsync(process.execPath, [
-      "tools/datapack/build-backend-timetable-seed.mjs",
-      "--input", inputPath,
-      "--route-service-evidence", evidencePath,
-      "--canonical-pack", "apps/mobile/assets/datapacks/capital.sqlite.gz",
-      "--line-id", artifact.canonicalLineId,
-      "--start-date", "20300101",
-      "--end-date", "20300131",
-      "--feed-end-date", "20300131",
-      "--output", outputPath,
-    ], { cwd: root }),
-    /canonical pack identity mismatch/,
-  );
+  await Promise.all([writeFile(inputPath, artifactBytes), writeFile(evidencePath, `${JSON.stringify(stationCatalogEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: "2999-01-01T00:00:00.000Z" }))}\n`)]);
+  const args = ["tools/datapack/build-backend-timetable-seed.mjs", "--input", inputPath, "--route-service-evidence", evidencePath, "--line-id", artifact.canonicalLineId, "--start-date", "20300101", "--end-date", "20300131", "--feed-end-date", "20300131", "--output", outputPath];
+  await execFileAsync(process.execPath, args, { cwd: root });
+  assert.match(await readFile(outputPath, "utf8"), new RegExp(STATION_CATALOG_IDENTITY.manifestSha256));
+  await writeFile(evidencePath, `${JSON.stringify({ ...stationCatalogEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: "2999-01-01T00:00:00.000Z" }), stationCatalogPayloadSha256: "0".repeat(64) })}\n`);
+  await assert.rejects(execFileAsync(process.execPath, args, { cwd: root }), /station catalog identity mismatch/);
 });
 
 test("stale ITX evidence는 seed 생성 단계에서 거부한다", () => {
@@ -394,7 +296,7 @@ test("ITX trip 0건인 seed에는 ADMITTED evidence를 기록하지 않는다", 
       ...OPTIONS,
       timetableArtifactSha256: "a".repeat(64),
     }),
-    /ADMITTED evidence requires ITX_CHEONGCHUN trips/,
+    /route service evidence requires ITX_CHEONGCHUN trips/,
   );
 });
 

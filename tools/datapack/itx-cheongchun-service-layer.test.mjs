@@ -12,6 +12,14 @@ import { gunzipSync } from "node:zlib";
 const schema = await readFile(new URL("./schema/catalog-schema.sql", import.meta.url), "utf8");
 const root = path.resolve(import.meta.dirname, "../..");
 const execFileAsync = promisify(execFile);
+const stationCatalogPackIdentity = Object.freeze({
+  artifactKind: "station-catalog-pack",
+  manifestVersion: 1,
+  catalogPackId: "station-catalog-test-only",
+  stationSetSha256: "1".repeat(64),
+  payloadSha256: "2".repeat(64),
+  manifestSha256: "3".repeat(64),
+});
 const missingItxEvidence = () => ({
   serviceClass: "ITX_CHEONGCHUN",
   timetableArtifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
@@ -25,7 +33,7 @@ const missingItxEvidence = () => ({
   sourceIssue: 2116,
 });
 
-test("production source pack은 #2116 MISSING identity를 기록하고 ITX data row를 포함하지 않는다", async () => {
+test("historical reviewed pack은 legacy MISSING audit bytes만 보존하고 current ITX row를 포함하지 않는다", async () => {
   const production = JSON.parse(await readFile(
     new URL("./release/capital-production-reviewed-pack.json", import.meta.url),
     "utf8",
@@ -72,9 +80,12 @@ test("catalog schema는 service class와 admission evidence identity를 보존�
       "service_class",
       "timetable_artifact_id",
       "timetable_artifact_sha256",
-      "canonical_pack_id",
-      "canonical_pack_sha256",
-      "canonical_pack_sqlite_sha256",
+      "station_catalog_artifact_kind",
+      "station_catalog_manifest_version",
+      "station_catalog_pack_id",
+      "station_catalog_station_set_sha256",
+      "station_catalog_payload_sha256",
+      "station_catalog_manifest_sha256",
       "admission_status",
       "admission_eligible",
       "fresh_until",
@@ -83,16 +94,17 @@ test("catalog schema는 service class와 admission evidence identity를 보존�
     assert.throws(() => database.prepare(`
       INSERT INTO route_service_artifact_evidence (
         service_class, timetable_artifact_id, timetable_artifact_sha256,
-        canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+        station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id,
+        station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256,
         admission_status, admission_eligible, fresh_until, source_issue
-      ) VALUES ('ITX_CHEONGCHUN', 'test', ?, 'capital', ?, ?, 'ADMITTED', 1, NULL, 2116)
-    `).run("a".repeat(64), "b".repeat(64), "c".repeat(64)));
+      ) VALUES ('ITX_CHEONGCHUN', 'test', ?, 'station-catalog-pack', 1, 'test', ?, ?, ?, 'ADMITTED', 1, NULL, 2116)
+    `).run("a".repeat(64), "b".repeat(64), "c".repeat(64), "d".repeat(64)));
   } finally {
     database.close();
   }
 });
 
-test("ADMITTED evidence는 ITX row 없이 단독 게시할 수 없다", async (context) => {
+test("self-declared legacy ADMITTED evidence는 current materializer에 진입할 수 없다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-admitted-without-rows-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const fixture = JSON.parse(await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url), "utf8"));
@@ -111,11 +123,11 @@ test("ADMITTED evidence는 ITX row 없이 단독 게시할 수 없다", async (c
       "--fixture", fixturePath,
       "--output", path.join(temporaryDir, "output"),
     ], { cwd: root }),
-    /ADMITTED evidence requires ITX_CHEONGCHUN rows/,
+    /routeServiceArtifactEvidence input is legacy/,
   );
 });
 
-test("ITX service evidence는 pack마다 정확히 한 행이어야 한다", async (context) => {
+test("중복 legacy ITX service evidence도 current materializer에 진입할 수 없다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-duplicate-evidence-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const fixture = JSON.parse(await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url), "utf8"));
@@ -129,15 +141,15 @@ test("ITX service evidence는 pack마다 정확히 한 행이어야 한다", asy
       "--fixture", fixturePath,
       "--output", path.join(temporaryDir, "output"),
     ], { cwd: root }),
-    /exactly one ITX_CHEONGCHUN evidence row/,
+    /routeServiceArtifactEvidence input is legacy/,
   );
 });
 
-test("MISSING admission은 identity row만 적재하고 production ITX row를 0건으로 유지한다", async (context) => {
+test("current admission이 없는 pack은 ITX row와 route evidence를 모두 0건으로 유지한다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-missing-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const fixture = JSON.parse(await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url), "utf8"));
-  fixture.packs[0].routeServiceArtifactEvidence = [missingItxEvidence()];
+  fixture.packs[0].routeServiceArtifactEvidence = [];
   const fixturePath = path.join(temporaryDir, "fixture.json");
   const outputDir = path.join(temporaryDir, "output");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
@@ -156,28 +168,17 @@ test("MISSING admission은 identity row만 적재하고 production ITX row를 0�
   try {
     assert.equal(database.prepare("SELECT count(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'").get().count, 0);
     assert.equal(database.prepare("SELECT count(*) AS count FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN'").get().count, 0);
-    assert.deepEqual({ ...database.prepare("SELECT * FROM route_service_artifact_evidence").get() }, {
-      service_class: "ITX_CHEONGCHUN",
-      timetable_artifact_id: "itx-cheongchun-completeness-admission-20260714T083544292Z",
-      timetable_artifact_sha256: "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
-      canonical_pack_id: "capital",
-      canonical_pack_sha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-      canonical_pack_sqlite_sha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
-      admission_status: "MISSING",
-      admission_eligible: 0,
-      fresh_until: "2026-07-20T00:00:00.000Z",
-      source_issue: 2116,
-    });
+    assert.equal(database.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count, 0);
   } finally {
     database.close();
   }
 });
 
-test("MISSING admission pack에 ITX data row가 섞이면 build를 거부한다", async (context) => {
+test("검증된 current station-catalog admission 없이 ITX data row가 섞이면 build를 거부한다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-missing-row-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const fixture = JSON.parse(await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url), "utf8"));
-  fixture.packs[0].routeServiceArtifactEvidence = [missingItxEvidence()];
+  fixture.packs[0].routeServiceArtifactEvidence = [];
   fixture.packs[0].transitTrips[0].serviceClass = "ITX_CHEONGCHUN";
   const fixturePath = path.join(temporaryDir, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
@@ -190,7 +191,7 @@ test("MISSING admission pack에 ITX data row가 섞이면 build를 거부한다"
       "--output",
       path.join(temporaryDir, "output"),
     ], { cwd: root }),
-    /ITX_CHEONGCHUN rows require ADMITTED evidence/,
+    /ITX_CHEONGCHUN rows require a verified current station catalog identity/,
   );
 });
 
@@ -215,7 +216,31 @@ test("self-declared ADMITTED evidence가 있는 직접 ITX row도 검증된 arti
       "--output",
       path.join(temporaryDir, "output"),
     ], { cwd: root }),
-    /validated admission artifact materializer/,
+    /routeServiceArtifactEvidence input is legacy/,
+  );
+});
+
+test("test-only admission도 legacy canonical pack identity를 거부한다", async (context) => {
+  const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-legacy-test-only-"));
+  context.after(() => rm(temporaryDir, { recursive: true, force: true }));
+  const fixturePath = path.join(temporaryDir, "fixture.json");
+  const admissionPath = path.join(temporaryDir, "admission.json");
+  await writeFile(fixturePath, await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url)));
+  await writeFile(admissionPath, await readFile(
+    new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url),
+  ));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture", fixturePath,
+      "--test-only-itx-admission", admissionPath,
+      "--output", path.join(temporaryDir, "output"),
+    ], {
+      cwd: root,
+      env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-14T00:00:00.000Z" },
+    }),
+    /test-only ITX legacy canonical pack identity is forbidden/,
   );
 });
 
@@ -257,13 +282,21 @@ test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materializ
     { ...routeMapTemplate, stationId: "station-dd14cfb89cbc", lineId: "line-54a7b980b7c3", region: "수도권", x: 200, y: 200 },
   );
   const fixturePath = path.join(temporaryDir, "fixture.json");
+  const admissionPath = path.join(temporaryDir, "admission.json");
   const outputDir = path.join(temporaryDir, "output");
+  const admission = JSON.parse(await readFile(
+    new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url),
+    "utf8",
+  ));
+  delete admission.canonicalPackIdentity;
+  admission.stationCatalogPackIdentity = stationCatalogPackIdentity;
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
+  await writeFile(admissionPath, `${JSON.stringify(admission, null, 2)}\n`);
 
   await execFileAsync(process.execPath, [
     "tools/datapack/build-datapack.mjs",
     "--fixture", fixturePath,
-    "--test-only-itx-admission", "tools/datapack/fixtures/test-only-itx-cheongchun-admitted.json",
+    "--test-only-itx-admission", admissionPath,
     "--output", outputDir,
   ], {
     cwd: root,
@@ -285,28 +318,17 @@ test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materializ
       duration_seconds: 4140,
     });
     const evidence = database.prepare("SELECT * FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").get();
-    const admissionBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
+    const admissionBytes = await readFile(admissionPath);
     assert.equal(evidence.admission_status, "ADMITTED");
     assert.equal(evidence.admission_eligible, 1);
     assert.equal(evidence.timetable_artifact_sha256, createHash("sha256").update(admissionBytes).digest("hex"));
-    // #2068: 번들 pack이 재생성되면(노선도 재설계) 이 pin도 함께 바뀐다 —
-    // 상수 하드코딩 대신 test-only fixture가 pin한 값과 대조해, fixture 갱신만
-    // 하면 되도록 한다.
-    //
-    // 주의(탐지 범위): 아래 두 값은 build-datapack.mjs가 같은 fixture에서 복사해
-    // 양쪽에 써 넣으므로, 이 assert는 "복사 경로가 살아 있다"만 본다(두 값이 함께
-    // 틀리면 통과한다). **라이브 번들 pack 바이트와의 실대조는 두 곳에 있다** —
-    // ① build-datapack.mjs의 validateTestOnlyItxCanonicalIdentity(fixture pin ↔
-    // 라이브 pack sha256/sqliteSha256, 불일치 시 빌드 fail-closed), ② 이 저장소의
-    // itx-cheongchun-coverage-contract.test.mjs "deterministic ADMITTED fixture는
-    // test-only이며 production evidence에 연결되지 않는다"(fixture pin ↔ 라이브 pack
-    // 재계산 해시 deepEqual). pin 자체의 정합은 그 두 축이 지킨다.
-    const admission = JSON.parse(admissionBytes);
-    assert.equal(evidence.canonical_pack_sha256, admission.canonicalPackIdentity.sha256);
-    assert.equal(
-      evidence.canonical_pack_sqlite_sha256,
-      admission.canonicalPackIdentity.sqliteSha256,
-    );
+    assert.equal(evidence.station_catalog_artifact_kind, stationCatalogPackIdentity.artifactKind);
+    assert.equal(evidence.station_catalog_manifest_version, stationCatalogPackIdentity.manifestVersion);
+    assert.equal(evidence.station_catalog_pack_id, stationCatalogPackIdentity.catalogPackId);
+    assert.equal(evidence.station_catalog_station_set_sha256, stationCatalogPackIdentity.stationSetSha256);
+    assert.equal(evidence.station_catalog_payload_sha256, stationCatalogPackIdentity.payloadSha256);
+    assert.equal(evidence.station_catalog_manifest_sha256, stationCatalogPackIdentity.manifestSha256);
+    assert.equal(Object.hasOwn(evidence, "canonical_pack_id"), false);
   } finally {
     database.close();
   }

@@ -215,23 +215,27 @@ CREATE TABLE route_service_artifact_evidence (
   service_class TEXT NOT NULL PRIMARY KEY,
   timetable_artifact_id TEXT NOT NULL,
   timetable_artifact_sha256 TEXT NOT NULL,
-  canonical_pack_id TEXT NOT NULL,
-  canonical_pack_sha256 TEXT NOT NULL,
-  canonical_pack_sqlite_sha256 TEXT NOT NULL,
+  station_catalog_artifact_kind TEXT NOT NULL,
+  station_catalog_manifest_version INTEGER NOT NULL,
+  station_catalog_pack_id TEXT NOT NULL,
+  station_catalog_station_set_sha256 TEXT NOT NULL,
+  station_catalog_payload_sha256 TEXT NOT NULL,
+  station_catalog_manifest_sha256 TEXT NOT NULL,
   admission_status TEXT NOT NULL,
   admission_eligible INTEGER NOT NULL,
   fresh_until TEXT,
   source_issue INTEGER NOT NULL,
   CHECK (service_class = 'ITX_CHEONGCHUN'),
   CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
-  CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*'),
-  CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*'),
-  CHECK (admission_status IN ('MISSING', 'ADMITTED')),
-  CHECK (admission_eligible IN (0, 1)),
-  CHECK (
-    (admission_status = 'ADMITTED' AND admission_eligible = 1 AND fresh_until IS NOT NULL)
-    OR (admission_status = 'MISSING' AND admission_eligible = 0)
-  ),
+  CHECK (station_catalog_artifact_kind = 'station-catalog-pack'),
+  CHECK (station_catalog_manifest_version = 1),
+  CHECK (length(station_catalog_pack_id) > 0),
+  CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (admission_status = 'ADMITTED'),
+  CHECK (admission_eligible = 1),
+  CHECK (fresh_until IS NOT NULL),
   CHECK (source_issue IN (2116, 2135))
 );
 
