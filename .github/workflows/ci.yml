@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
@@ -35,7 +35,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: "24"
+          node-version: "24.19.0"
 
       - name: Verify standalone contracts
         run: >-
@@ -47,6 +47,7 @@ jobs:
           tools/datapack/server-route-bundle-build-contract.test.mjs
           tools/datapack/artifact-component-table-layout.test.mjs
           tools/datapack/emit-artifact-components.test.mjs
+          tools/datapack/emit-station-catalog-pack.test.mjs
           tools/datapack/check-timetable-snapshot-freshness.test.mjs
           tools/datapack/build-data-component-manifest.test.mjs
           tools/ci/require-workflow-artifact.test.mjs
@@ -55,3 +56,5 @@ jobs:
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
           tools/datapack/collect-kric-source-candidate-evidence.test.mjs
+          tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
+          tools/datapack/probe-korail-facility-workbook.test.mjs

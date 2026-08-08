@@ -197,11 +197,6 @@ function validateStopTimes(stopTimes, tripsById) {
     if (![0, 1].includes(pickupType) || ![0, 1].includes(dropOffType)) {
       throw new Error(`transit_stop_times pickup_type/drop_off_type must be 0 or 1: ${tripId}:${stopSequence}`);
     }
-    if (trip.servicePattern === "EXPRESS" && pickupType !== dropOffType) {
-      throw new Error(
-        `EXPRESS pass-through rows must set pickup_type=1 and drop_off_type=1 together: ${tripId}:${stopSequence}`,
-      );
-    }
     if (arrival < 0 || arrival >= SECONDS_LIMIT_EXCLUSIVE || departure < 0 || departure >= SECONDS_LIMIT_EXCLUSIVE) {
       throw new Error(`transit_stop_times seconds out of range [0,${SECONDS_LIMIT_EXCLUSIVE}): ${tripId}:${stopSequence}`);
     }
@@ -217,7 +212,7 @@ function validateStopTimes(stopTimes, tripsById) {
     }
     seenKeys.add(key);
     const rows = byTrip.get(tripId) ?? [];
-    rows.push({ stopSequence, arrival, departure });
+    rows.push({ stopSequence, arrival, departure, pickupType, dropOffType });
     byTrip.set(tripId, rows);
   }
   // intra-trip 시각 단조성: stopSequence 순서로 departure[N] <= arrival[N+1] (음/영 소요시간 방지, RAPTOR 전제).
@@ -225,6 +220,17 @@ function validateStopTimes(stopTimes, tripsById) {
     rows.sort((left, right) => left.stopSequence - right.stopSequence);
     if (rows.some((row, index) => row.stopSequence !== index + 1)) {
       throw new Error(`transit_stop_times stop_sequence must be contiguous from 1: ${tripId}`);
+    }
+    if (tripsById.get(tripId).servicePattern === "EXPRESS") {
+      for (const [index, row] of rows.entries()) {
+        const allowedTerminalRestriction = (index === 0 && row.pickupType === 0 && row.dropOffType === 1)
+          || (index === rows.length - 1 && row.pickupType === 1 && row.dropOffType === 0);
+        if (row.pickupType !== row.dropOffType && !allowedTerminalRestriction) {
+          throw new Error(
+            `EXPRESS pass-through rows must set pickup_type=1 and drop_off_type=1 together: ${tripId}:${row.stopSequence}`,
+          );
+        }
+      }
     }
     for (let index = 1; index < rows.length; index += 1) {
       if (rows[index - 1].departure > rows[index].arrival) {

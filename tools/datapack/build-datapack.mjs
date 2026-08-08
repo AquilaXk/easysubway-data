@@ -22,7 +22,7 @@ import {
   officialOdFareQuoteSetHash,
 } from "./lib/official-od-fare-evidence.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
-import { normalizeStationName } from "./collect-capital-route-topology.mjs";
+import { FRESHNESS_MILLIS, normalizeStationName } from "./collect-capital-route-topology.mjs";
 import {
   validateSourceCandidateSchema,
   validateSourceFreshness,
@@ -515,7 +515,7 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
 function candidateNetworkEdgeEvidence(evidence) {
   assertExactKeys(
     evidence,
-    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "itxCoverageContract"],
+    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyCandidate", "capitalTopologyReverification", "itxCoverageContract"],
     "buildSpec.networkEdgeEvidence",
   );
   const sourceInventory = pinnedBuildInput(evidence.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory");
@@ -528,10 +528,22 @@ function candidateNetworkEdgeEvidence(evidence) {
     evidence.itxCoverageContract,
     "buildSpec.networkEdgeEvidence.itxCoverageContract",
   );
+  const capitalTopologyReverification = pinnedBuildInput(
+    evidence.capitalTopologyReverification,
+    "buildSpec.networkEdgeEvidence.capitalTopologyReverification",
+  );
+  const capitalTopologyCandidate = pinnedBuildInput(
+    evidence.capitalTopologyCandidate,
+    "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
+    ["path", "sha256", "snapshotId"],
+  );
   return {
     sourceInventorySha256: sourceInventory.sha256,
     capitalTopologySnapshotId: capitalTopology.snapshotId,
     capitalTopologySha256: capitalTopology.sha256,
+    capitalTopologyCandidateSnapshotId: capitalTopologyCandidate.snapshotId,
+    capitalTopologyCandidateSha256: capitalTopologyCandidate.sha256,
+    capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
     capitalTopologyAdmission: candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
     itxCoverageContractSha256: itxCoverageContract.sha256,
   };
@@ -541,7 +553,7 @@ function candidateCapitalTopologyAdmission(admission) {
   if (admission == null) throw new Error("production build requires capital topology edge admission");
   assertExactKeys(
     admission,
-    ["schemaVersion", "artifactKind", "issue", "status", "snapshotId", "contentSha256", "reviewedAt", "freshUntil"],
+    ["schemaVersion", "artifactKind", "issue", "status", "snapshotId", "contentSha256", "reviewedAt", "reverifiedAt", "freshUntil"],
     "buildSpec.networkEdgeEvidence.capitalTopologyAdmission",
   );
   const normalized = {
@@ -552,6 +564,7 @@ function candidateCapitalTopologyAdmission(admission) {
     snapshotId: requiredString(admission.snapshotId, "capital topology edge admission snapshotId"),
     contentSha256: sha256HexString(admission.contentSha256, "capital topology edge admission contentSha256"),
     reviewedAt: requiredUtcDateString(admission.reviewedAt, "capital topology edge admission reviewedAt"),
+    reverifiedAt: requiredUtcDateString(admission.reverifiedAt, "capital topology edge admission reverifiedAt"),
     freshUntil: requiredUtcDateString(admission.freshUntil, "capital topology edge admission freshUntil"),
   };
   if (normalized.schemaVersion !== 1
@@ -561,7 +574,10 @@ function candidateCapitalTopologyAdmission(admission) {
     throw new Error("capital topology edge admission identity is invalid");
   }
   const now = candidateBuildNow().getTime();
-  if (Date.parse(normalized.reviewedAt) > now) throw new Error("capital topology edge admission is future-dated");
+  if (Date.parse(normalized.reviewedAt) > Date.parse(normalized.reverifiedAt)) {
+    throw new Error("capital topology edge admission review order is invalid");
+  }
+  if (Date.parse(normalized.reverifiedAt) > now) throw new Error("capital topology edge admission is future-dated");
   if (Date.parse(normalized.freshUntil) <= now) throw new Error("capital topology edge admission is stale");
   return normalized;
 }
@@ -597,7 +613,7 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
   }
   assertExactKeys(
     evidence,
-    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "itxCoverageContract"],
+    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyCandidate", "capitalTopologyReverification", "itxCoverageContract"],
     "buildSpec.networkEdgeEvidence",
   );
   const sourceInventory = await readPinnedBuildJson(
@@ -613,11 +629,21 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     "buildSpec.networkEdgeEvidence.capitalTopology",
     ["path", "sha256", "snapshotId"],
   );
+  const capitalTopologyReverification = await readPinnedBuildJson(
+    evidence.capitalTopologyReverification,
+    "buildSpec.networkEdgeEvidence.capitalTopologyReverification",
+  );
+  const capitalTopologyCandidate = await readPinnedBuildJson(
+    evidence.capitalTopologyCandidate,
+    "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
+    ["path", "sha256", "snapshotId"],
+  );
   const itxContract = await readPinnedBuildJson(
     evidence.itxCoverageContract,
     "buildSpec.networkEdgeEvidence.itxCoverageContract",
   );
   const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
+  const candidateTopology = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
   if (JSON.stringify([...(topology.fieldsProvided ?? [])].sort(compareStrings))
     !== JSON.stringify(["branch_name", "distance_meters", "line", "network_edges", "station_name"])) {
     throw new Error("capital topology fieldsProvided is invalid");
@@ -627,6 +653,13 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     || topologyAdmission.contentSha256 !== topology.contentSha256) {
     throw new Error("capital topology edge admission does not match pinned snapshot");
   }
+  validateCapitalTopologyReverification(
+    capitalTopologyReverification.value,
+    topology,
+    candidateTopology,
+    topologyAdmission,
+    capitalTopologyCandidate.pinned.snapshotId,
+  );
   const capitalAdmissions = admittedCapitalLineEvidence(
     sourceInventory.value,
     topology,
@@ -662,6 +695,97 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     ...[...capitalAdmissions.values()].map(({ freshUntil }) => Date.parse(freshUntil)),
     Date.parse(accessibilityFreshUntil),
   )).toISOString();
+}
+
+function validateCapitalTopologyReverification(evidence, topology, candidateTopology, admission, candidateSnapshotId) {
+  assertExactKeys(
+    evidence,
+    ["schemaVersion", "artifactKind", "sourceIssue", "admissionIssue", "baseline", "candidate", "comparison"],
+    "capital topology reverification evidence",
+  );
+  assertExactKeys(evidence.baseline, ["snapshotId", "contentSha256", "normalizedLineSetSha256"], "capital topology reverification baseline");
+  assertExactKeys(
+    evidence.candidate,
+    ["capturedAt", "freshUntil", "contentSha256", "normalizedLineSetSha256", "lineCount", "totalEdgeCount", "lines"],
+    "capital topology reverification candidate",
+  );
+  assertExactKeys(
+    evidence.comparison,
+    ["changedLineCount", "addedEdgeCount", "removedEdgeCount", "modifiedEdgeCount"],
+    "capital topology reverification comparison",
+  );
+  if (evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "capital-topology-reverification-evidence"
+    || evidence.sourceIssue !== 60
+    || evidence.admissionIssue !== 2649
+    || evidence.baseline.snapshotId !== admission.snapshotId
+    || evidence.baseline.contentSha256 !== admission.contentSha256
+    || evidence.candidate.freshUntil !== admission.freshUntil
+    || Object.values(evidence.comparison).some((count) => count !== 0)) {
+    throw new Error("capital topology reverification identity is invalid");
+  }
+  if (!Array.isArray(evidence.candidate.lines)
+    || evidence.candidate.lines.length !== topology.lines.length
+    || evidence.candidate.lineCount !== topology.lineCount
+    || evidence.candidate.totalEdgeCount !== topology.totalEdgeCount) {
+    throw new Error("capital topology reverification coverage mismatch");
+  }
+  sha256HexString(evidence.baseline.normalizedLineSetSha256, "capital topology reverification baseline normalizedLineSetSha256");
+  sha256HexString(evidence.candidate.contentSha256, "capital topology reverification candidate contentSha256");
+  sha256HexString(evidence.candidate.normalizedLineSetSha256, "capital topology reverification candidate normalizedLineSetSha256");
+  const evidenceCandidateLines = evidence.candidate.lines.map((line) => {
+    const label = "capital topology reverification candidate line";
+    assertExactKeys(line, ["lineId", "datasetId", "rawSha256", "contentSha256"], label);
+    return {
+      lineId: requiredString(line.lineId, `${label}.lineId`),
+      contentSha256: sha256HexString(line.contentSha256, `${label}.contentSha256`),
+      rawSha256: sha256HexString(line.rawSha256, `${label}.rawSha256`),
+      datasetId: requiredString(line.datasetId, `${label}.datasetId`),
+    };
+  });
+  const candidateLines = candidateTopology.lines.map(({
+    lineId, datasetId, rawSha256, contentSha256,
+  }) => ({ lineId, contentSha256, rawSha256, datasetId }));
+  const candidateNormalized = sha256(Buffer.from(JSON.stringify(candidateLines
+    .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
+    .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
+  const topologyNormalized = sha256(Buffer.from(JSON.stringify(topology.lines
+    .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
+    .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
+  if (candidateNormalized !== evidence.candidate.normalizedLineSetSha256
+    || topologyNormalized !== evidence.baseline.normalizedLineSetSha256
+    || candidateNormalized !== topologyNormalized) {
+    throw new Error("capital topology reverification normalized content mismatch");
+  }
+  if (candidateSnapshotId !== "capital-route-topology-20260804"
+    || candidateTopology.official !== true
+    || candidateTopology.fixture !== false
+    || candidateTopology.credentialRequired !== false
+    || candidateTopology.credentialRedacted !== true
+    || candidateTopology.license?.redistributionAllowed !== true
+    || candidateTopology.contentSha256 !== evidence.candidate.contentSha256
+    || candidateTopology.capturedAt !== evidence.candidate.capturedAt
+    || candidateTopology.lines.some(({ capturedAt }) => capturedAt !== candidateTopology.capturedAt)
+    || candidateTopology.freshUntil !== evidence.candidate.freshUntil
+    || candidateTopology.lineCount !== evidence.candidate.lineCount
+    || candidateTopology.totalEdgeCount !== evidence.candidate.totalEdgeCount
+    || JSON.stringify(candidateTopology.topologyGaps) !== JSON.stringify(topology.topologyGaps)
+    || JSON.stringify(candidateLines) !== JSON.stringify(evidenceCandidateLines)) {
+    throw new Error("capital topology reverification candidate snapshot mismatch");
+  }
+  const capturedAt = Date.parse(requiredUtcDateString(
+    evidence.candidate.capturedAt,
+    "capital topology reverification candidate capturedAt",
+  ));
+  const freshUntil = Date.parse(requiredUtcDateString(
+    evidence.candidate.freshUntil,
+    "capital topology reverification candidate freshUntil",
+  ));
+  if (freshUntil - capturedAt !== FRESHNESS_MILLIS
+    || capturedAt > Date.parse(admission.reverifiedAt)
+    || freshUntil <= Date.parse(admission.reverifiedAt)) {
+    throw new Error("capital topology reverification freshness is invalid");
+  }
 }
 
 function isReviewedAccessibilityEdge(edge, pack) {
@@ -974,7 +1098,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyEvidence) {
     throw new Error("ITX network edge admission evidence mismatch");
   }
   try {
-    validateSourceCandidateSchema(source);
+    validateSourceCandidateSchema(source, "legacy");
     const observedAt = new Date(source.observedAt);
     if (observedAt.getTime() > candidateBuildNow().getTime()) throw new Error("future-dated ITX observation");
     validateItxServiceDates(source.selectedServiceDates, { now: observedAt });

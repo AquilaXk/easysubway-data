@@ -1,26 +1,28 @@
 // KRIC trainUseInfo/subwayTimetable 응답 → 재구성 코어의 provider-중립 중간 행 계약으로 변환하는
 // 얇은 normalizer(가드레일 1). 라이브 스파이크로 확정한 스키마 기준:
-//   { railOprIsttCd, trnNo, dayCd, dayNm, stinCd, lnCd, arvTm, dptTm }
+//   { railOprIsttCd, trnNo, dayCd, dayNm, stinCd, lnCd, arvTm, dptTm, exptCd }
 //   - arvTm/dptTm은 HHMMSS(6자리) 또는 null(시발역 arvTm·종착역 dptTm).
-//   - 한쪽이 null이면 있는 쪽으로 대체(도착=출발), 둘 다 null이면 무의미 행이라 버린다.
+//   - 한쪽이 null이면 시발/종착 역할과 함께 그대로 보존한다. 둘 다 null이면 거부한다.
 //   - stinCd/lnCd/railOprIsttCd는 canonical stationId/lineId로 매핑(context 제공).
 //   - dayCd(8/7/9)는 그대로 전달 — serviceId 매핑은 적재 시 context.serviceIdByDayCd가 담당.
 
-const DEFAULT_SERVICE_PATTERN = "LOCAL";
 const SERVICE_DAY_CUTOFF_SECONDS = 3 * 3600;
 const DAY_SECONDS = 24 * 3600;
 
 export function normalizeKricSubwayTimetable(kricRows, context) {
+  if (!Array.isArray(kricRows) || kricRows.length === 0) {
+    throw new TypeError("normalize-kric: kricRows must be a non-empty array");
+  }
   const stationIdByProviderStation = asLookup(context?.stationIdByProviderStation, "stationIdByProviderStation");
   const lineIdByProviderLine = asLookup(context?.lineIdByProviderLine, "lineIdByProviderLine");
-  const fallbackServicePattern = context?.servicePattern ?? DEFAULT_SERVICE_PATTERN;
+  const servicePatternByExptCd = asServicePatternLookup(context?.servicePatternByExptCd);
 
   const rows = [];
-  for (const kric of kricRows ?? []) {
+  for (const kric of kricRows) {
     const arrivalSeconds = parseKricTime(kric.arvTm);
     const departureSeconds = parseKricTime(kric.dptTm);
     if (arrivalSeconds === null && departureSeconds === null) {
-      continue; // 시각 정보가 전혀 없는 행은 버린다(재구성 입력으로 무의미).
+      throw new Error("normalize-kric: both arrivalSeconds and departureSeconds are missing");
     }
     const providerStationKey = `${kric.railOprIsttCd}|${kric.lnCd}|${kric.stinCd}`;
     const stationId = requireMapping(stationIdByProviderStation, providerStationKey, "canonical station");
@@ -30,18 +32,31 @@ export function normalizeKricSubwayTimetable(kricRows, context) {
       lineId,
       trnNo: requireText(kric.trnNo, "trnNo"),
       dayCd: requireText(kric.dayCd, "dayCd"),
-      arrivalSeconds: arrivalSeconds ?? departureSeconds,
-      departureSeconds: departureSeconds ?? arrivalSeconds,
-      // subwayTimetableExp의 exptCd(급행 표시)를 row별로 반영. null/빈값이면 일반(fallback).
-      servicePattern: isExpressCode(kric.exptCd) ? "EXPRESS" : fallbackServicePattern,
+      arrivalSeconds,
+      departureSeconds,
+      stopRole: stopRole(arrivalSeconds, departureSeconds),
+      servicePattern: resolveServicePattern(servicePatternByExptCd, kric.exptCd),
     });
   }
   return rows;
 }
 
-function isExpressCode(exptCd) {
-  // KRIC subwayTimetableExp의 exptCd: 일반 열차는 null, 급행류는 코드값(예: "1"). 비어있지 않으면 급행으로 본다.
-  return exptCd != null && exptCd !== "" && exptCd !== "0";
+function stopRole(arrivalSeconds, departureSeconds) {
+  if (arrivalSeconds === null) return "ORIGIN";
+  if (departureSeconds === null) return "TERMINAL";
+  return "THROUGH";
+}
+
+function resolveServicePattern(lookup, exptCd) {
+  if (typeof exptCd !== "string" || exptCd.trim() === "") {
+    throw new TypeError("normalize-kric: exptCd must be a non-empty string");
+  }
+  const value = lookup[exptCd];
+  if (value == null) throw new Error(`normalize-kric: unknown exptCd: ${exptCd}`);
+  if (value !== "LOCAL" && value !== "EXPRESS") {
+    throw new TypeError(`normalize-kric: invalid servicePattern mapping for ${exptCd}`);
+  }
+  return value;
 }
 
 function parseKricTime(value) {
@@ -92,4 +107,23 @@ function asLookup(value, label) {
     return value;
   }
   throw new Error(`normalize-kric: context.${label} is required`);
+}
+
+function asServicePatternLookup(value) {
+  if (Array.isArray(value)) throw new Error("normalize-kric: context.servicePatternByExptCd is required");
+  const entries = value instanceof Map
+    ? [...value.entries()]
+    : Object.entries(asLookup(value, "servicePatternByExptCd"));
+  if (entries.length === 0) {
+    throw new Error("normalize-kric: context.servicePatternByExptCd is required");
+  }
+  for (const [exptCd, servicePattern] of entries) {
+    if (typeof exptCd !== "string" || exptCd.trim() === "") {
+      throw new TypeError("normalize-kric: invalid servicePattern mapping key");
+    }
+    if (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS") {
+      throw new TypeError(`normalize-kric: invalid servicePattern mapping for ${exptCd}`);
+    }
+  }
+  return Object.fromEntries(entries);
 }

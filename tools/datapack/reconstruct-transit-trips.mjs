@@ -2,7 +2,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 // Provider-중립 trip 재구성 코어.
 //
 // 입력은 특정 provider(KRIC/TAGO) 응답이 아니라 정규화된 "중간 행" 계약이다:
-//   { stationId, lineId, trnNo, dayCd, arrivalSeconds, departureSeconds, servicePattern? }
+//   { stationId, lineId, trnNo, dayCd, arrivalSeconds, departureSeconds, stopRole, servicePattern }
 // provider 응답 → 중간 행 normalizer는 라이브 스키마가 확정된 뒤 별도 얇은 층으로 붙인다
 // (최악의 경우 코레일 구간이 TAGO 하이브리드가 되어도 이 코어와 검증은 그대로 재사용된다).
 //
@@ -14,15 +14,16 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 // trnNo가 없어 이 검증을 단독 충족하지 못한다(TAGO blocker·missingEvidence는 그대로 참). 즉
 // TAGO 검증기의 blocker를 이 코어의 존재만으로 지워도 된다는 뜻이 아니다.
 
-const DEFAULT_SERVICE_PATTERN = "LOCAL";
-
 export function reconstructTransitTrips(rows, context) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("reconstruct: rows must be a non-empty array");
+  }
   const lineSequenceByStationLine = asLookup(context?.lineSequenceByStationLine, "lineSequenceByStationLine");
   const routeIdByLineDirection = asLookup(context?.routeIdByLineDirection, "routeIdByLineDirection");
   const serviceIdByDayCd = asLookup(context?.serviceIdByDayCd, "serviceIdByDayCd");
 
   const groups = new Map();
-  for (const row of rows ?? []) {
+  for (const row of rows) {
     requireRow(row);
     // lineId를 키에 포함 — 노선 간 동일 trnNo+dayCd 충돌로 다른 노선 정차가 한 trip으로 병합되는 것을 막는다.
     const key = `${row.lineId}|${row.trnNo}|${row.dayCd}`;
@@ -41,8 +42,7 @@ export function reconstructTransitTrips(rows, context) {
       .map((row) => ({ ...row, lineSequence: resolveLineSequence(lineSequenceByStationLine, row) }))
       .sort(
         (left, right) =>
-          left.departureSeconds - right.departureSeconds ||
-          left.arrivalSeconds - right.arrivalSeconds ||
+          stopOrderSeconds(left) - stopOrderSeconds(right) ||
           left.lineSequence - right.lineSequence,
       );
 
@@ -51,6 +51,7 @@ export function reconstructTransitTrips(rows, context) {
     }
 
     const directionId = validateLineWideOrderAndDirection(ordered, key);
+    validateTerminalPositions(ordered, key);
     const lineId = ordered[0].lineId;
     const { trnNo, dayCd } = groupRows[0];
     const routeId = requireMapping(routeIdByLineDirection, `${lineId}|${directionId}`, "route");
@@ -68,18 +69,37 @@ export function reconstructTransitTrips(rows, context) {
       trainNo: trnNo,
     });
     ordered.forEach((row, index) => {
+      const arrivalSeconds = row.arrivalSeconds ?? row.departureSeconds;
+      const departureSeconds = row.departureSeconds ?? row.arrivalSeconds;
       transitStopTimes.push({
         tripId,
         stopSequence: index + 1,
         stationId: row.stationId,
         lineId: row.lineId,
-        arrivalSeconds: row.arrivalSeconds,
-        departureSeconds: row.departureSeconds,
+        arrivalSeconds,
+        departureSeconds,
+        pickupType: row.stopRole === "TERMINAL" ? 1 : 0,
+        dropOffType: row.stopRole === "ORIGIN" ? 1 : 0,
       });
     });
   }
 
   return { transitTrips, transitStopTimes };
+}
+
+function stopOrderSeconds(row) {
+  return row.departureSeconds ?? row.arrivalSeconds;
+}
+
+function validateTerminalPositions(ordered, key) {
+  for (const [index, row] of ordered.entries()) {
+    if (row.stopRole === "ORIGIN" && index !== 0) {
+      throw new Error(`reconstruct: ORIGIN stop must be first: ${key}`);
+    }
+    if (row.stopRole === "TERMINAL" && index !== ordered.length - 1) {
+      throw new Error(`reconstruct: TERMINAL stop must be last: ${key}`);
+    }
+  }
 }
 
 // 시각순으로 정렬된 정차들이 lineSequence 기준 방향당 단조인지 강제하고 방향을 도출한다.
@@ -102,15 +122,15 @@ function validateLineWideOrderAndDirection(ordered, key) {
 }
 
 // 한 trip(그룹)의 servicePattern은 입력 순서가 아니라 그룹 값으로 결정한다. 값이 섞여 있으면
-// 데이터 오류이므로 거부하고, 없으면 LOCAL로 본다(결정적).
+// 데이터 오류이므로 거부한다.
 function resolveGroupServicePattern(groupRows, key) {
-  const distinct = [...new Set(groupRows.map((row) => row.servicePattern).filter((value) => value != null && value !== ""))];
+  const distinct = [...new Set(groupRows.map((row) => row.servicePattern))];
   if (distinct.length > 1) {
     throw new Error(
       `reconstruct: inconsistent servicePattern within trip ${key}: ${[...distinct].sort((left, right) => codepointCompare(left, right)).join(", ")}`,
     );
   }
-  return distinct[0] ?? DEFAULT_SERVICE_PATTERN;
+  return distinct[0];
 }
 
 function resolveLineSequence(lookup, row) {
@@ -135,12 +155,27 @@ function requireRow(row) {
       throw new Error(`reconstruct: row missing field ${field}`);
     }
   }
-  for (const field of ["arrivalSeconds", "departureSeconds"]) {
-    if (!Number.isInteger(row[field]) || row[field] < 0) {
-      throw new Error(`reconstruct: row ${field} must be a non-negative integer`);
-    }
+  if (row?.servicePattern !== "LOCAL" && row?.servicePattern !== "EXPRESS") {
+    throw new Error("reconstruct: servicePattern must be LOCAL or EXPRESS");
   }
-  if (row.arrivalSeconds > row.departureSeconds) {
+  if (!["ORIGIN", "THROUGH", "TERMINAL"].includes(row?.stopRole)) {
+    throw new Error("reconstruct: stopRole must be ORIGIN, THROUGH, or TERMINAL");
+  }
+  const hasArrival = Number.isInteger(row.arrivalSeconds) && row.arrivalSeconds >= 0;
+  const hasDeparture = Number.isInteger(row.departureSeconds) && row.departureSeconds >= 0;
+  if ((!hasArrival && row.arrivalSeconds !== null) || (!hasDeparture && row.departureSeconds !== null)) {
+    throw new Error("reconstruct: row time must be a non-negative integer or null");
+  }
+  if (row.stopRole === "THROUGH" && (!hasArrival || !hasDeparture)) {
+    throw new Error("reconstruct: THROUGH stop must have both times");
+  }
+  if (row.stopRole === "ORIGIN" && (hasArrival || !hasDeparture)) {
+    throw new Error("reconstruct: ORIGIN stop must have departure only");
+  }
+  if (row.stopRole === "TERMINAL" && (!hasArrival || hasDeparture)) {
+    throw new Error("reconstruct: TERMINAL stop must have arrival only");
+  }
+  if (hasArrival && hasDeparture && row.arrivalSeconds > row.departureSeconds) {
     throw new Error(`reconstruct: arrivalSeconds must be <= departureSeconds: ${row.trnNo}|${row.stationId}`);
   }
 }

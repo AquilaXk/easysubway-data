@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { readdirSync } from "node:fs";
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   buildItxSourceCandidate,
@@ -17,13 +19,36 @@ import {
   runKorailItxCompletenessCli,
   validateKorailItxPlans,
 } from "./collect-korail-itx-cheongchun-timetable.mjs";
+import { emitStationCatalogPack } from "./emit-station-catalog-pack.mjs";
+import { canonicalJson } from "./lib/manifest-validation.mjs";
 
-const PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
-const PACK_BYTES = await readFile(PACK_PATH);
+const PACK_ROOT = await mkdtemp(path.join(tmpdir(), "itx-station-catalog-pack-"));
+const PACK_PATH = path.join(PACK_ROOT, "station-catalog-pack");
+await emitStationCatalogPack({
+  repositoryRoot: path.resolve(import.meta.dirname, "../.."),
+  output: PACK_PATH,
+  catalogPackId: "itx-test-catalog-v1",
+});
+test.after(() => rm(PACK_ROOT, { recursive: true, force: true }));
+const PACK_BYTES = await readFile(path.join(PACK_PATH, "payload/catalog.sqlite"));
 const PACK_SHA256 = createHash("sha256").update(PACK_BYTES).digest("hex");
-const PACK_SQLITE_SHA256 = createHash("sha256").update(gunzipSync(PACK_BYTES)).digest("hex");
+const PACK_SQLITE_SHA256 = PACK_SHA256;
+const LEGACY_PACK_PATH = "apps/mobile/assets/datapacks/capital.sqlite.gz";
+const LEGACY_PACK_BYTES = gzipSync(PACK_BYTES);
+const LEGACY_PACK_SHA256 = createHash("sha256").update(LEGACY_PACK_BYTES).digest("hex");
+const PACK_MANIFEST = JSON.parse(await readFile(path.join(PACK_PATH, "manifest.json"), "utf8"));
+const PACK_IDENTITY = {
+  artifactKind: "station-catalog-pack",
+  manifestVersion: 1,
+  catalogPackId: PACK_MANIFEST.catalogPackId,
+  stationSetSha256: PACK_MANIFEST.stationSetSha256,
+  payloadSha256: PACK_MANIFEST.payloadSha256,
+  manifestSha256: createHash("sha256").update(await readFile(path.join(PACK_PATH, "manifest.json"))).digest("hex"),
+};
 const YONGSAN_STATION_ID = "station-8aa315864466";
 const CHUNCHEON_STATION_ID = "station-dd14cfb89cbc";
+const MANGU_STATION_ID = "station-0ef4e01fa401";
+const GWANGWOONDAE_STATION_ID = "station-b42d22b753ca";
 const CAPITAL_APPROACH_LINE_ID = "line-6e39be0cb6e2";
 const GYEONGCHUN_LINE_ID = "line-54a7b980b7c3";
 const LIVE_EVIDENCE = JSON.parse(await readFile(
@@ -34,6 +59,23 @@ const LIVE_TAGO_EVIDENCE = JSON.parse(await readFile(
   new URL("./sources/tago-itx-cheongchun-od-20260714.json", import.meta.url),
   "utf8",
 ));
+const SOURCE_CANDIDATES = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+
+test("Korail ITX source candidate는 station catalog materialization runner contract를 고정한다", () => {
+  const candidate = SOURCE_CANDIDATES.candidates.find(({ id }) => id === "korail-traveler-train-run-info");
+  assert.deepEqual(candidate?.evidence?.materializationRunner, {
+    command: "node tools/datapack/collect-korail-itx-cheongchun-timetable.mjs",
+    requiredEnv: ["DATA_GO_KR_SERVICE_KEY"],
+    requiredArguments: [
+      "--day8-date",
+      "--day7-date",
+      "--day9-date",
+      "--station-catalog-pack",
+      "--completeness-output",
+      "--output",
+    ],
+  });
+});
 
 function planRow(trainNumber, departure, arrival, departureAt, arrivalAt) {
   return {
@@ -128,6 +170,34 @@ function trainNumberEvidence() {
     ],
     evidenceHash: "a".repeat(64),
   };
+}
+
+async function copyStationCatalogPack(destination) {
+  await mkdir(path.join(destination, "payload"), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(destination, "manifest.json"), await readFile(path.join(PACK_PATH, "manifest.json"))),
+    writeFile(path.join(destination, "payload/catalog.sqlite"), await readFile(path.join(PACK_PATH, "payload/catalog.sqlite"))),
+  ]);
+}
+
+async function refreshStationCatalogManifest(pack) {
+  const manifestPath = path.join(pack, "manifest.json");
+  const payload = await readFile(path.join(pack, "payload/catalog.sqlite"));
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.payloadSha256 = createHash("sha256").update(Buffer.from(canonicalJson([
+    { path: "payload/catalog.sqlite", sizeBytes: payload.length, sha256: createHash("sha256").update(payload).digest("hex") },
+  ]))).digest("hex");
+  await writeFile(manifestPath, canonicalJson(manifest));
+}
+
+function mutateCatalogSqlite(sqlitePath, mutation) {
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    db.exec("PRAGMA foreign_keys = OFF");
+    mutation(db);
+  } finally {
+    db.close();
+  }
 }
 
 function sourceCandidate(overrides = {}) {
@@ -246,7 +316,7 @@ function sourceCandidate(overrides = {}) {
     validationStatus: "SUPPORTED",
     promotionStatus: "BOOTSTRAP_REVIEW_REQUIRED",
     completenessEvidenceSha256: null,
-    canonicalPackIdentity: { path: PACK_PATH, sha256: PACK_SHA256 },
+    canonicalPackIdentity: { path: LEGACY_PACK_PATH, sha256: LEGACY_PACK_SHA256 },
     selectedServiceDates: { "8": "20260716", "7": "20260718", "9": "20260719" },
     sourceLineage: dayCodes.map((dayCd) => ({
       dayCd,
@@ -274,6 +344,58 @@ function sourceCandidate(overrides = {}) {
     .digest("hex");
   candidate.evidenceHash = createHash("sha256").update(JSON.stringify(candidate)).digest("hex");
   return candidate;
+}
+
+function useEqualSequenceBranch(candidate) {
+  const forward = [
+    { stationId: MANGU_STATION_ID, nameKo: "망우", corridorSequence: 8, lineId: GYEONGCHUN_LINE_ID },
+    { stationId: GWANGWOONDAE_STATION_ID, nameKo: "광운대", corridorSequence: 8, lineId: GYEONGCHUN_LINE_ID },
+  ];
+  const reverse = [...forward].reverse();
+  const up = forward;
+  for (const roster of candidate.stationRosters) {
+    roster.stations = forward.map((station, index) => ({
+      providerStationId: `provider-${String.fromCharCode(97 + index)}`,
+      providerStationName: station.nameKo,
+      canonicalStationId: station.stationId,
+      nameKo: station.nameKo,
+      corridorSequence: station.corridorSequence,
+      lineId: station.lineId,
+    }));
+  }
+  for (const sequence of candidate.stationSequences) {
+    const stops = sequence.directionId === "up" ? up : reverse;
+    sequence.originStationName = stops[0].nameKo;
+    sequence.destinationStationName = stops[1].nameKo;
+    sequence.terminalVariant = `${stops[0].nameKo}→${stops[1].nameKo}`;
+    sequence.stops = sequence.stops.map((stop, index) => ({ ...stop, ...stops[index] }));
+  }
+  for (const trip of candidate.transitTrips) {
+    trip.tripHeadsign = trip.directionId === "up" ? up[1].nameKo : reverse[1].nameKo;
+  }
+  for (const stopTime of candidate.transitStopTimes) {
+    const stops = stopTime.tripId.includes("-up-") ? up : reverse;
+    Object.assign(stopTime, {
+      stationId: stops[stopTime.stopSequence - 1].stationId,
+      lineId: stops[stopTime.stopSequence - 1].lineId,
+    });
+  }
+  candidate.normalizedSnapshotSets = ["8", "7", "9"].map((dayCd) => ({
+    dayCd,
+    sets: {
+      stationSet: forward.map(({ stationId }) => stationId).sort(),
+      odSet: [[dayCd, "provider-a", "provider-b"], [dayCd, "provider-b", "provider-a"]],
+      trainSet: ["2001", "2002"],
+      stopSequenceSet: [[dayCd, "2001", "up", up.map(({ stationId }) => stationId)], [dayCd, "2002", "down", reverse.map(({ stationId }) => stationId)]],
+      timetableTupleSet: candidate.stationSequences
+        .filter((sequence) => sequence.dayCd === dayCd)
+        .sort((left, right) => left.trainNumber.localeCompare(right.trainNumber, "ko", { numeric: true }))
+        .flatMap((sequence) => sequence.stops.map(({ stationId, arrivalSeconds, departureSeconds }) => [
+          dayCd, sequence.trainNumber, stationId, arrivalSeconds, departureSeconds,
+        ])),
+    },
+  }));
+  bindCandidateCompleteness(candidate);
 }
 
 function rehashCandidate(candidate) {
@@ -422,9 +544,9 @@ function shippedPackTopologyEvidence(overrides = {}) {
     topology: { sha256: "d".repeat(64) },
     pack: {
       id: "capital",
-      outputSha256: PACK_SHA256,
+      outputSha256: LEGACY_PACK_SHA256,
       outputSqliteSha256: PACK_SQLITE_SHA256,
-      byteSize: PACK_BYTES.length,
+      byteSize: LEGACY_PACK_BYTES.length,
       ...(overrides.pack ?? {}),
     },
     ...overrides.top,
@@ -490,9 +612,9 @@ async function promoteUnchangedWithPin({
 }
 
 async function writeCoverageContract(repositoryRoot, contents, { includeFreshness = true } = {}) {
-  const packPath = path.join(repositoryRoot, PACK_PATH);
-  await mkdir(path.dirname(packPath), { recursive: true });
-  await writeFile(packPath, PACK_BYTES);
+  const legacyPackPath = path.join(repositoryRoot, LEGACY_PACK_PATH);
+  await mkdir(path.dirname(legacyPackPath), { recursive: true });
+  await writeFile(legacyPackPath, LEGACY_PACK_BYTES);
   const contractPath = path.join(
     repositoryRoot,
     "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -543,7 +665,7 @@ test("ITX completeness는 dayCd 8/7/9를 독립 수집해 하나의 admission ar
   const artifact = await collectKorailItxCheongchunCompleteness({
     serviceKey: "secret",
     serviceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     now: new Date("2026-07-14T00:00:00.000Z"),
     collectRosterImpl: async ({ serviceDate, kricServiceDayCode, canonicalStations, requestBudget }) => {
       corridorInputs.push(canonicalStations);
@@ -576,6 +698,10 @@ test("ITX completeness는 dayCd 8/7/9를 독립 수집해 하나의 admission ar
   assert.deepEqual(corridorInputs[0].slice(3).map(({ corridorSequence }) => corridorSequence), [
     4, 5, 6, 7, 8, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
   ]);
+  assert.deepEqual(corridorInputs[0], [
+    ["station-8aa315864466", "용산", 1, CAPITAL_APPROACH_LINE_ID], ["station-c0679b9a6cf8", "옥수", 2, CAPITAL_APPROACH_LINE_ID], ["station-e5cf592cf355", "왕십리", 3, CAPITAL_APPROACH_LINE_ID],
+    ["station-b819702fa7d9", "청량리", 4, GYEONGCHUN_LINE_ID], ["station-28e5946b8e67", "회기", 5, GYEONGCHUN_LINE_ID], ["station-edf782c1647a", "중랑", 6, GYEONGCHUN_LINE_ID], ["station-83bcb1eae340", "상봉", 7, GYEONGCHUN_LINE_ID], ["station-0ef4e01fa401", "망우", 8, GYEONGCHUN_LINE_ID], ["station-b42d22b753ca", "광운대", 8, GYEONGCHUN_LINE_ID], ["station-b49a8c5ce5e5", "신내", 9, GYEONGCHUN_LINE_ID], ["station-7bc666ad036c", "갈매", 10, GYEONGCHUN_LINE_ID], ["station-6f6328bd8ba0", "별내", 11, GYEONGCHUN_LINE_ID], ["station-b52ac4dfe64e", "퇴계원", 12, GYEONGCHUN_LINE_ID], ["station-2ccf5647f7f7", "사릉", 13, GYEONGCHUN_LINE_ID], ["station-10c3ee5f17ae", "금곡", 14, GYEONGCHUN_LINE_ID], ["station-f3d9c93ba7d6", "평내호평", 15, GYEONGCHUN_LINE_ID], ["station-7dd96f599b01", "천마산", 16, GYEONGCHUN_LINE_ID], ["station-661ff65ea040", "마석", 17, GYEONGCHUN_LINE_ID], ["station-c7f9f6a29fc1", "대성리", 18, GYEONGCHUN_LINE_ID], ["station-6c1f50a5aa3b", "청평", 19, GYEONGCHUN_LINE_ID], ["station-d768f1b7c64e", "상천", 20, GYEONGCHUN_LINE_ID], ["station-4f6045ff9103", "가평", 21, GYEONGCHUN_LINE_ID], ["station-236845fc4e8b", "굴봉산", 22, GYEONGCHUN_LINE_ID], ["station-add5012df314", "백양리", 23, GYEONGCHUN_LINE_ID], ["station-30ba86472e55", "강촌", 24, GYEONGCHUN_LINE_ID], ["station-67e47e3e2da2", "김유정", 25, GYEONGCHUN_LINE_ID], ["station-d5e344125b52", "남춘천", 26, GYEONGCHUN_LINE_ID], ["station-dd14cfb89cbc", "춘천", 27, GYEONGCHUN_LINE_ID],
+  ].map(([canonicalStationId, nameKo, corridorSequence, lineId]) => ({ canonicalStationId, nameKo, corridorSequence, lineId })));
   assert.deepEqual(artifact.selectedServiceDates, { "8": "20260715", "7": "20260718", "9": "20260719" });
   assert.equal(artifact.validationStatus, "SUPPORTED");
   assert.equal(artifact.admissionStatus, "BOOTSTRAP_REVIEW_REQUIRED");
@@ -660,7 +786,7 @@ test("ITX completeness는 이전 ADMITTED snapshot의 열차 소실을 SNAPSHOT_
     legacyYongsanDaejeonTripCount: 0,
   });
   const baseline = await collectKorailItxCheongchunCompleteness({
-    serviceKey: "key", serviceDates, packPath: PACK_PATH,
+    serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
     now: new Date("2026-07-14T00:00:00.000Z"),
     collectRosterImpl: async ({ serviceDate, kricServiceDayCode }) => ({
       ...trainNumberEvidence(), serviceDate, kricServiceDayCode,
@@ -668,7 +794,7 @@ test("ITX completeness는 이전 ADMITTED snapshot의 열차 소실을 SNAPSHOT_
     collectTimetableImpl,
   });
   const blocked = await collectKorailItxCheongchunCompleteness({
-    serviceKey: "key", serviceDates, packPath: PACK_PATH,
+    serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
     now: new Date("2026-07-14T01:00:00.000Z"),
     previousAdmittedArtifact: { ...baseline, admissionStatus: "ADMITTED", admissionEligible: true },
     collectRosterImpl: async ({ serviceDate, kricServiceDayCode }) => ({
@@ -696,7 +822,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("한 날짜 MISSING", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async ({ kricServiceDayCode }) => ({
         materialization: { status: kricServiceDayCode === "7" ? "MISSING_STATION_TIMES" : "SUPPORTED" },
@@ -715,7 +841,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     const artifact = await collectKorailItxCheongchunCompleteness({
       serviceKey: "key",
       serviceDates: { "8": "20260713", "7": "20260711", "9": "20260712" },
-      packPath: PACK_PATH,
+      stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), replay: true, collectRosterImpl: roster,
       collectTimetableImpl: async () => ({
         materialization: { status: "SUPPORTED" },
@@ -730,7 +856,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
   await context.test("provider 오류", async () => {
     const attemptedDates = [];
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async ({ serviceDate }) => {
         attemptedDates.push(serviceDate);
@@ -749,7 +875,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("OD 일부 실패", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async ({ serviceDate, kricServiceDayCode }) => ({
         ...trainNumberEvidence(), serviceDate, kricServiceDayCode,
@@ -791,7 +917,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
       },
     };
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async ({ serviceDate, kricServiceDayCode }) => {
         const error = new Error("TAGO_OD_TIME_CONFLICT: 2001");
@@ -811,7 +937,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("quota exhaustion은 OD materialization 단계로 기록", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async () => { throw new Error("TAGO_QUOTA_BUDGET_EXHAUSTED"); },
       collectTimetableImpl: async () => assert.fail("must not run"),
@@ -822,7 +948,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("불완전한 OD count는 OD materialization 단계로 기록", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async ({ serviceDate, kricServiceDayCode }) => ({
         ...trainNumberEvidence(),
@@ -840,7 +966,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("KORAIL plan duplicate context", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => { throw new Error("KORAIL_PLAN_DUPLICATE: 2041"); },
     });
@@ -853,7 +979,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("KORAIL plan mismatch summary", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => { throw new Error("KORAIL_PLAN_MISMATCH: 2041"); },
     });
@@ -864,7 +990,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("station mapping 오류", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async () => { throw new Error("TAGO station mapping is missing or ambiguous: 갈매"); },
       collectTimetableImpl: async () => assert.fail("must not run"),
@@ -875,7 +1001,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("필수 station mapping 오류는 누락 역 이름을 보존", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async () => {
         throw new Error("TAGO required station mapping is incomplete: 옥수,왕십리");
@@ -888,7 +1014,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("TAGO schema 오류 context", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async () => {
         throw new Error("TAGO GetVhcleKndList schema mismatch: totalCount bodyFields=items,numOfRows,pageNo");
@@ -904,7 +1030,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("TAGO invalid JSON schema 오류 context", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async () => {
         throw new Error("TAGO GetVhcleKndList schema mismatch: invalid JSON");
@@ -920,7 +1046,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("canonical passenger-stop mapping 오류", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => {
         throw new Error("Korail ITX passenger stop canonical mapping missing: 2001/UNKNOWN");
@@ -931,7 +1057,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("timetable 오류에도 완료된 OD evidence를 보존", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => {
         throw new Error(
@@ -955,7 +1081,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("공식 run info 0건", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => { throw new Error("Korail ITX run info returned zero rows"); },
     });
@@ -965,7 +1091,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
 
   await context.test("legacy 대전 위반 count 보존", async () => {
     const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, packPath: PACK_PATH,
+      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => {
         const error = new Error("Korail ITX legacy Daejeon data must be zero");
@@ -986,15 +1112,17 @@ test("ITX CLI는 runtime 실패를 MISSING artifact로 저장하고 non-zero를 
   const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-test-"));
   const output = path.join(dir, "evidence.json");
   try {
+    await writeCoverageContract(dir, "{}");
     const result = await runKorailItxCompletenessCli({
       argv: [
         "--day8-date", "20260715",
         "--day7-date", "20260718",
         "--day9-date", "20260719",
-        "--canonical-pack", PACK_PATH,
+        "--station-catalog-pack", PACK_PATH,
         "--output", output,
       ],
       env: { DATA_GO_KR_SERVICE_KEY: "secret" },
+      repositoryRoot: dir,
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectImpl: async () => { throw new Error("provider HTTP 503 secret"); },
     });
@@ -1017,14 +1145,16 @@ test("ITX CLI는 성공 completeness evidence와 candidate를 별도 canonical b
   const completenessOutput = path.join(dir, "completeness.json");
   const expected = completenessForCandidate(sourceCandidate());
   try {
+    await writeCoverageContract(dir, "{}");
     const result = await runKorailItxCompletenessCli({
       argv: [
         "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719",
-        "--canonical-pack", PACK_PATH,
+        "--station-catalog-pack", PACK_PATH,
         "--completeness-output", completenessOutput,
         "--output", output,
       ],
       env: { DATA_GO_KR_SERVICE_KEY: "secret" },
+      repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
       collectImpl: async () => structuredClone(expected),
     });
@@ -1049,7 +1179,7 @@ test("ITX CLI는 candidate와 completeness evidence에 같은 output path를 허
     await assert.rejects(runKorailItxCompletenessCli({
       argv: [
         "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719",
-        "--canonical-pack", PACK_PATH,
+        "--station-catalog-pack", PACK_PATH,
         "--completeness-output", output,
         "--output", output,
       ],
@@ -1069,7 +1199,7 @@ test("ITX CLI는 --previous-admitted 임의 baseline을 거부한다", async () 
     await assert.rejects(runKorailItxCompletenessCli({
       argv: [
         "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
-        "--canonical-pack", PACK_PATH, "--previous-admitted", path.join(dir, "candidate.json"), "--output", output,
+        "--station-catalog-pack", PACK_PATH, "--previous-admitted", path.join(dir, "candidate.json"), "--output", output,
       ],
       env: { DATA_GO_KR_SERVICE_KEY: "secret" },
       now: new Date("2026-07-14T00:00:00.000Z"),
@@ -1088,7 +1218,7 @@ test("ITX CLI는 invalid coverage contract를 baseline authority로 사용하지
     await assert.rejects(runKorailItxCompletenessCli({
       argv: [
         "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
-        "--canonical-pack", path.join(dir, PACK_PATH), "--output", output,
+        "--station-catalog-pack", PACK_PATH, "--output", output,
       ],
       env: { DATA_GO_KR_SERVICE_KEY: "secret" },
       repositoryRoot: dir,
@@ -1100,7 +1230,7 @@ test("ITX CLI는 invalid coverage contract를 baseline authority로 사용하지
   }
 });
 
-test("ITX candidate builder의 실제 payload에서 생성한 5-set은 promotion 재검증을 통과한다", async () => {
+test("ITX candidate builder는 station catalog identity만 생성하고 promotion 전에 거부된다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "itx-built-candidate-"));
   const template = sourceCandidate();
   const serviceDays = ["8", "7", "9"].map((dayCd) => ({
@@ -1125,59 +1255,41 @@ test("ITX candidate builder의 실제 payload에서 생성한 5-set은 promotion
   const { evidenceHash: _, ...completenessWithoutEvidenceHash } = completeness;
   completeness.evidenceHash = createHash("sha256").update(JSON.stringify(completenessWithoutEvidenceHash)).digest("hex");
   try {
-    const contractPath = await writeCoverageContract(dir, '{"schemaVersion":2}\n');
-    const alternatePackPath = path.join(dir, PACK_PATH);
     const invalidCompleteness = structuredClone(completeness);
     invalidCompleteness.serviceDays[0].timetable.transitTrips[0].serviceId = "holiday-kric";
     await assert.rejects(buildItxSourceCandidate({
       completeness: invalidCompleteness,
-      packPath: alternatePackPath,
+      stationCatalogPackPath: PACK_PATH,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
     }), /TAGO_OD_STOP_SEQUENCE_INVALID/);
 
     const candidate = await buildItxSourceCandidate({
       completeness,
-      packPath: alternatePackPath,
+      stationCatalogPackPath: PACK_PATH,
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
     });
-    assert.equal(candidate.canonicalPackIdentity.path, PACK_PATH);
-    const originalCwd = process.cwd();
-    process.chdir(dir);
-    try {
-      const repositoryCandidate = await buildItxSourceCandidate({
-        completeness,
-        packPath: PACK_PATH,
-        repositoryRoot: path.resolve(import.meta.dirname, "../.."),
-        now: new Date("2026-07-15T02:00:00.000Z"),
-      });
-      assert.equal(repositoryCandidate.canonicalPackIdentity.path, PACK_PATH);
-      assert.equal(repositoryCandidate.canonicalPackIdentity.sha256, PACK_SHA256);
-    } finally {
-      process.chdir(originalCwd);
-    }
+    assert.deepEqual(candidate.stationCatalogPackIdentity, PACK_IDENTITY);
+    assert.equal(Object.hasOwn(candidate, "canonicalPackIdentity"), false);
     const candidatePath = path.join(dir, "candidate.json");
     const bytes = sourceBytes(candidate);
     const digest = createHash("sha256").update(bytes).digest("hex");
     await writeFile(candidatePath, bytes);
     await writeFile(`${candidatePath}.completeness.json`, completenessBytes(completeness));
-    const promoted = await promoteItxSourceCandidate({
+    let providerInvoked = false;
+    await assert.rejects(promoteItxSourceCandidate({
       candidatePath,
       approvedSha256: digest,
       approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
       sourceOutputDir: path.join(dir, "tools/datapack/sources"),
-      coverageContractPath: contractPath,
+      coverageContractPath: path.join(dir, "tools/datapack/itx-cheongchun-coverage-contract.json"),
       repositoryRoot: dir,
       now: new Date("2026-07-15T02:00:00.000Z"),
-      fetchImpl: async () => new Response(JSON.stringify({
-        author_association: "OWNER",
-        html_url: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-123",
-        body: `/approve-itx-bootstrap artifactId=${candidate.artifactId} sha256=${digest} policy=itx-snapshot-anomaly-v1`,
-        created_at: "2026-07-15T01:30:00.000Z",
-      }), { status: 200, headers: { "content-type": "application/json" } }),
-    });
-    assert.equal(promoted.sourceTimetableArtifact.status, "ADMITTED");
+      fetchImpl: async () => { providerInvoked = true; assert.fail("promotion must stop before provider invocation"); },
+    }), /STATION_CATALOG_PACK_PROMOTION_UNSUPPORTED/);
+    assert.equal(providerInvoked, false);
+    await assert.rejects(readFile(path.join(dir, "tools/datapack/itx-cheongchun-coverage-contract.json")), /ENOENT/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -1394,13 +1506,13 @@ test("UNCHANGED_AUTO 승격은 조건이 모두 충족되면 admission pin을 �
   const pin = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
   // pin의 3필드는 출하 pack 실체로 갱신되고, sourceIssue 등 잔여 필드는 보존된다.
   assert.equal(pin.id, "capital");
-  assert.equal(pin.sha256, PACK_SHA256);
+  assert.equal(pin.sha256, LEGACY_PACK_SHA256);
   assert.equal(pin.sqliteSha256, PACK_SQLITE_SHA256);
   assert.equal(pin.sourceIssue, 2097);
   // 교정된 pin(sha256/sqliteSha256)은 build --without-topology-evidence 게이트가 요구하는
   // 출하 pack 실측 identity와 정확히 일치한다.
-  assert.equal(pin.sha256, createHash("sha256").update(PACK_BYTES).digest("hex"));
-  assert.equal(pin.sqliteSha256, createHash("sha256").update(gunzipSync(PACK_BYTES)).digest("hex"));
+  assert.equal(pin.sha256, createHash("sha256").update(LEGACY_PACK_BYTES).digest("hex"));
+  assert.equal(pin.sqliteSha256, createHash("sha256").update(gunzipSync(LEGACY_PACK_BYTES)).digest("hex"));
 });
 
 test("UNCHANGED_AUTO 승격은 contract freshness를 candidate와 동기화한다", async () => {
@@ -1590,6 +1702,27 @@ test("ITX promotion은 동일 artifact ID에 다른 bytes가 있으면 immutable
 });
 
 test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 재검증한다", async (context) => {
+  await context.test("망우·광운대의 동일 corridorSequence branch를 canonical candidate로 허용", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-equal-corridor-sequence-"));
+    try {
+      const candidate = sourceCandidate();
+      useEqualSequenceBranch(candidate);
+      const candidatePath = path.join(dir, "candidate.json");
+      await writeFile(candidatePath, sourceBytes(candidate));
+      await writeCandidateCompleteness(candidatePath, candidate);
+      const contractPath = await writeCoverageContract(dir, "{}\n");
+      const result = await promoteItxSourceCandidate({
+        candidatePath,
+        ...ownerApproval(candidate),
+        sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+        coverageContractPath: contractPath,
+        repositoryRoot: dir,
+        now: new Date("2026-07-15T02:00:00.000Z"),
+      });
+      assert.equal(result.sourceTimetableArtifact.status, "ADMITTED");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
   await context.test("invalid offset timestamp", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "itx-promotion-freshness-"));
     try {
@@ -2121,7 +2254,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         coverageContractPath: contractPath,
         repositoryRoot: dir,
         now: new Date("2026-07-15T02:00:00.000Z"),
-      }), /CANONICAL_PACK_IDENTITY_INVALID/);
+      }), /ITX source candidate schema is invalid/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2134,7 +2267,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
       const candidatePath = path.join(dir, "candidate.json");
       await writeFile(candidatePath, sourceBytes(candidate));
       const contractPath = await writeCoverageContract(dir, '{"schemaVersion":2}\n');
-      await writeFile(path.join(dir, PACK_PATH), "changed-pack");
+      await writeFile(path.join(dir, LEGACY_PACK_PATH), "changed-pack");
       await assert.rejects(promoteItxSourceCandidate({
         candidatePath,
         ...ownerApproval(candidate),
@@ -2313,12 +2446,14 @@ test("ITX CLI는 invalid input을 artifact 생성 전에 거부한다", async (c
     "--day8-date", "20260715",
     "--day7-date", "20260718",
     "--day9-date", "20260719",
-    "--canonical-pack", PACK_PATH,
+    "--station-catalog-pack", PACK_PATH,
   ];
   try {
+    await writeCoverageContract(dir, "{}");
     for (const scenario of [
       { name: "잘못된 날짜", argv: base.with(1, "20260718"), env: { DATA_GO_KR_SERVICE_KEY: "key" }, pattern: /dayCd 8/ },
-      { name: "pack 누락", argv: base.slice(0, -2), env: { DATA_GO_KR_SERVICE_KEY: "key" }, pattern: /--canonical-pack/ },
+      { name: "pack 누락", argv: base.slice(0, -2), env: { DATA_GO_KR_SERVICE_KEY: "key" }, pattern: /--station-catalog-pack/ },
+      { name: "legacy pack flag", argv: base.with(6, "--canonical-pack"), env: { DATA_GO_KR_SERVICE_KEY: "key" }, pattern: /--canonical-pack is not supported/ },
       { name: "credential 누락", argv: base, env: {}, pattern: /DATA_GO_KR_SERVICE_KEY/ },
     ]) {
       await context.test(scenario.name, async () => {
@@ -2326,6 +2461,7 @@ test("ITX CLI는 invalid input을 artifact 생성 전에 거부한다", async (c
         await assert.rejects(runKorailItxCompletenessCli({
           argv: [...scenario.argv, "--output", output],
           env: scenario.env,
+          repositoryRoot: dir,
           now: new Date("2026-07-14T00:00:00.000Z"),
           collectImpl: async () => assert.fail("must not run"),
         }), scenario.pattern);
@@ -2335,6 +2471,546 @@ test("ITX CLI는 invalid input을 artifact 생성 전에 거부한다", async (c
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("ITX CLI는 provider 호출 전에 station catalog artifact directory를 검증한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-"));
+  const output = path.join(dir, "candidate.json");
+  let invoked = false;
+  try {
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
+        "--station-catalog-pack", dir, "--output", output,
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" },
+      now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    }), /STATION_CATALOG_PACK_INVALID/);
+    assert.equal(invoked, false);
+    await assert.rejects(readFile(output), /ENOENT/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX CLI는 station catalog runtime mismatch를 artifact 오류로 감싸지 않는다", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(process.versions, "sqlite");
+  assert.ok(descriptor?.configurable);
+  let invoked = false;
+  let result;
+  try {
+    Object.defineProperty(process.versions, "sqlite", { ...descriptor, value: "0.0.0" });
+    result = runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
+        "--station-catalog-pack", PACK_PATH, "--output", path.join(tmpdir(), "itx-runtime-mismatch.json"),
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" },
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    });
+  } finally {
+    Object.defineProperty(process.versions, "sqlite", descriptor);
+  }
+  await assert.rejects(result, /STATION_CATALOG_RUNTIME_UNSUPPORTED/);
+  assert.equal(invoked, false);
+});
+
+test("ITX CLI는 malformed station catalog manifest를 provider 호출 전에 거부한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-malformed-"));
+  const pack = path.join(dir, "station-catalog-pack");
+  const output = path.join(dir, "candidate.json");
+  let invoked = false;
+  try {
+    await mkdir(path.join(pack, "payload"), { recursive: true });
+    await Promise.all([
+      writeFile(path.join(pack, "manifest.json"), "{malformed"),
+      writeFile(path.join(pack, "payload/catalog.sqlite"), PACK_BYTES),
+    ]);
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
+        "--station-catalog-pack", pack, "--output", output,
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" },
+      now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    }), /STATION_CATALOG_PACK_INVALID/);
+    assert.equal(invoked, false);
+    await assert.rejects(readFile(output), /ENOENT/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ITX CLI는 station catalog private temp 초기화 실패 뒤 task temp를 남기지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-temp-cleanup-"));
+  const pack = path.join(dir, "catalog");
+  const prefix = "korail-itx-station-catalog-";
+  try {
+    await copyStationCatalogPack(pack);
+    await writeFile(path.join(pack, "payload/catalog.sqlite"), "not sqlite");
+    await refreshStationCatalogManifest(pack);
+    const before = new Set((await readdir(tmpdir())).filter((name) => name.startsWith(prefix)));
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--output", path.join(dir, "candidate.json")],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => assert.fail("provider collection must not run"),
+    }), /STATION_CATALOG_PACK_INVALID/);
+    const after = (await readdir(tmpdir())).filter((name) => name.startsWith(prefix));
+    assert.deepEqual(after.filter((name) => !before.has(name)), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("legacy canonical corridor authority는 gzip 초기화 실패 뒤 task temp를 남기지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-legacy-canonical-temp-cleanup-"));
+  const prefix = "korail-itx-canonical-";
+  try {
+    await writeCoverageContract(dir, "{}");
+    const brokenPackBytes = Buffer.from("not a gzip stream");
+    await writeFile(path.join(dir, LEGACY_PACK_PATH), brokenPackBytes);
+    const candidate = sourceCandidate({
+      canonicalPackIdentity: { path: LEGACY_PACK_PATH, sha256: createHash("sha256").update(brokenPackBytes).digest("hex") },
+    });
+    const completeness = bindCandidateCompleteness(candidate);
+    const candidatePath = path.join(dir, "candidate.json");
+    const completenessPath = path.join(dir, "completeness.json");
+    await Promise.all([
+      writeFile(candidatePath, sourceBytes(candidate)),
+      writeFile(completenessPath, completenessBytes(completeness)),
+    ]);
+    const before = new Set((await readdir(tmpdir())).filter((name) => name.startsWith(prefix)));
+    await assert.rejects(promoteItxSourceCandidate({
+      candidatePath,
+      completenessPath,
+      ...ownerApproval(candidate),
+      sourceOutputDir: path.join(dir, "tools/datapack/sources"),
+      coverageContractPath: path.join(dir, "tools/datapack/itx-cheongchun-coverage-contract.json"),
+      repositoryRoot: dir,
+      now: new Date("2026-07-15T02:00:00.000Z"),
+    }), { code: "Z_DATA_ERROR" });
+    const after = (await readdir(tmpdir())).filter((name) => name.startsWith(prefix));
+    assert.deepEqual(after.filter((name) => !before.has(name)), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 producer DDL과 다른 CHECK/FK 선언을 provider 호출 전에 거부한다", async (context) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-schema-"));
+  try {
+    for (const scenario of [
+      {
+        name: "station search extended CHECK",
+        mutate(db) {
+          db.exec(`CREATE TABLE station_search_index_next (
+            station_id TEXT NOT NULL REFERENCES stations(id), token TEXT NOT NULL,
+            normalized_token TEXT NOT NULL, source_kind TEXT NOT NULL CHECK(source_kind IN ('STATION_NAME', 'STATION_ALIAS') OR source_kind = 'LEGACY'),
+            PRIMARY KEY(station_id, source_kind, normalized_token, token)
+          ); INSERT INTO station_search_index_next SELECT * FROM station_search_index;
+          DROP TABLE station_search_index; ALTER TABLE station_search_index_next RENAME TO station_search_index;`);
+        },
+      },
+      {
+        name: "station_aliases deferred FK",
+        mutate(db) {
+          db.exec(`CREATE TABLE station_aliases_next (
+            station_id TEXT NOT NULL, alias TEXT NOT NULL, normalized_alias TEXT NOT NULL,
+            FOREIGN KEY(station_id) REFERENCES stations(id) DEFERRABLE INITIALLY DEFERRED
+          ); INSERT INTO station_aliases_next SELECT * FROM station_aliases;
+          DROP TABLE station_aliases; ALTER TABLE station_aliases_next RENAME TO station_aliases;`);
+        },
+      },
+    ]) {
+      await context.test(scenario.name, async () => {
+        const pack = path.join(dir, scenario.name);
+        const output = path.join(dir, `${scenario.name}.json`);
+        await copyStationCatalogPack(pack);
+        mutateCatalogSqlite(path.join(pack, "payload/catalog.sqlite"), scenario.mutate);
+        await refreshStationCatalogManifest(pack);
+        let providerInvoked = false;
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--output", output],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+          collectImpl: async () => { providerInvoked = true; assert.fail("provider collection must not run"); },
+        }), /STATION_CATALOG_PACK_INVALID/);
+        assert.equal(providerInvoked, false);
+      });
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 누락·변조된 ITX corridor를 provider 호출 전에 거부한다", async (context) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-approach-"));
+  try {
+    for (const scenario of [
+      { name: "용산 membership 누락", sql: "DELETE FROM station_lines WHERE station_id = 'station-8aa315864466' AND line_id = 'line-6e39be0cb6e2'" },
+      { name: "왕십리 raw sequence 변조", sql: "UPDATE station_lines SET line_sequence = 35 WHERE station_id = 'station-e5cf592cf355' AND line_id = 'line-6e39be0cb6e2'" },
+      { name: "춘천 name 변조", sql: "UPDATE stations SET name_ko = '춘천역' WHERE id = 'station-dd14cfb89cbc'" },
+      { name: "춘천 line 변조", sql: "UPDATE station_lines SET line_id = 'line-6e39be0cb6e2' WHERE station_id = 'station-dd14cfb89cbc' AND line_id = 'line-54a7b980b7c3'" },
+      { name: "춘천 raw sequence 변조", sql: "UPDATE station_lines SET line_sequence = 25 WHERE station_id = 'station-dd14cfb89cbc' AND line_id = 'line-54a7b980b7c3'" },
+    ]) {
+      await context.test(scenario.name, async () => {
+        const pack = path.join(dir, scenario.name);
+        await copyStationCatalogPack(pack);
+        mutateCatalogSqlite(path.join(pack, "payload/catalog.sqlite"), (db) => db.exec(scenario.sql));
+        await refreshStationCatalogManifest(pack);
+        let providerInvoked = false;
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--output", path.join(dir, `${scenario.name}.json`)],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+          collectImpl: async () => { providerInvoked = true; assert.fail("provider collection must not run"); },
+        }), /canonical ITX corridor differs from artifact contract/);
+        assert.equal(providerInvoked, false);
+      });
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI candidate는 provider phase-swap 뒤에도 preflight station catalog A만 바인딩한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-phase-swap-"));
+  const packA = path.join(dir, "catalog-a");
+  const packB = path.join(dir, "catalog-b");
+  const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
+  const completeness = completenessForCandidate(sourceCandidate());
+  try {
+    await copyStationCatalogPack(packA);
+    await copyStationCatalogPack(packB);
+    await writeCoverageContract(dir, "{}");
+    const manifestB = JSON.parse(await readFile(path.join(packB, "manifest.json"), "utf8"));
+    manifestB.catalogPackId = "itx-test-catalog-b";
+    await writeFile(path.join(packB, "manifest.json"), canonicalJson(manifestB));
+    const expectedIdentity = {
+      ...PACK_IDENTITY,
+      manifestSha256: createHash("sha256").update(await readFile(path.join(packA, "manifest.json"))).digest("hex"),
+    };
+    await runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", packA, "--completeness-output", completenessOutput, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-15T02:00:00.000Z"),
+      repositoryRoot: dir,
+      collectImpl: async () => {
+        await Promise.all([
+          writeFile(path.join(packA, "manifest.json"), await readFile(path.join(packB, "manifest.json"))),
+          writeFile(path.join(packA, "payload/catalog.sqlite"), await readFile(path.join(packB, "payload/catalog.sqlite"))),
+        ]);
+        return structuredClone(completeness);
+      },
+    });
+    const candidate = JSON.parse(await readFile(output, "utf8"));
+    assert.deepEqual(candidate.stationCatalogPackIdentity, expectedIdentity);
+    assert.equal(candidate.stationCatalogPackIdentity.catalogPackId, "itx-test-catalog-v1");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI injected snapshot은 identity·roster·lookup nested membership 변조 뒤에도 canonical candidate를 유지한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-station-catalog-frozen-snapshot-"));
+  const pack = path.join(dir, "catalog");
+  const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
+  const completeness = completenessForCandidate(sourceCandidate());
+  try {
+    await copyStationCatalogPack(pack);
+    await writeCoverageContract(dir, "{}");
+    await runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--completeness-output", completenessOutput, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-15T02:00:00.000Z"),
+      repositoryRoot: dir,
+      collectImpl: async ({ stationCatalogSnapshot }) => {
+        const lookup = stationCatalogSnapshot.canonical.stationLookups.find(({ name }) => name === "용산");
+        assert.throws(() => { stationCatalogSnapshot.identity.catalogPackId = "changed"; }, TypeError);
+        assert.throws(() => { stationCatalogSnapshot.canonical.rosterStations[0].nameKo = "changed"; }, TypeError);
+        assert.throws(() => { lookup.stations[0].lineMemberships[0].lineId = "changed"; }, TypeError);
+        return structuredClone(completeness);
+      },
+    });
+    const candidate = JSON.parse(await readFile(output, "utf8"));
+    assert.deepEqual(candidate.stationCatalogPackIdentity, PACK_IDENTITY);
+    assert.deepEqual(candidate.stationRosters[0].stations[0], sourceCandidate().stationRosters[0].stations[0]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 provider 호출 전에 output parent·기존 target·station catalog alias를 거부한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-preflight-"));
+  let invoked = false;
+  try {
+    const existing = path.join(dir, "existing.json");
+    await writeFile(existing, "existing");
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--output", existing],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    }), /OUTPUT_PATH_INVALID/);
+    assert.equal(invoked, false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 provider 호출 전에 station catalog 내부와 manifest/payload alias output을 거부한다", async (context) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-catalog-alias-"));
+  const pack = path.join(dir, "catalog");
+  try {
+    await copyStationCatalogPack(pack);
+    for (const scenario of [
+      { name: "catalog child", output: path.join(pack, "candidate.json") },
+      { name: "preexisting manifest hardlink target", output: path.join(dir, "manifest-alias.json"), source: path.join(pack, "manifest.json") },
+      { name: "preexisting payload hardlink target", output: path.join(dir, "payload-alias.json"), source: path.join(pack, "payload/catalog.sqlite") },
+    ]) {
+      await context.test(scenario.name, async () => {
+        if (scenario.source) await link(scenario.source, scenario.output);
+        let invoked = false;
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", pack, "--output", scenario.output],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+          collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+        }), /OUTPUT_PATH_INVALID/);
+        assert.equal(invoked, false);
+      });
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 값 없는 completeness output flag를 OUTPUT_PATH_INVALID로 거부한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-completeness-output-type-"));
+  let invoked = false;
+  try {
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719",
+        "--station-catalog-pack", PACK_PATH, "--completeness-output", "--output", path.join(dir, "candidate.json"),
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+    }), /OUTPUT_PATH_INVALID/);
+    assert.equal(invoked, false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 provider 호출 전에 서로 다른 parent와 기존 completeness target을 거부한다", async (context) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-parent-"));
+  const other = await mkdtemp(path.join(tmpdir(), "itx-cli-output-other-parent-"));
+  try {
+    const candidate = path.join(dir, "candidate.json");
+    const completeness = path.join(dir, "completeness.json");
+    await writeFile(completeness, "preexisting completeness");
+    for (const scenario of [
+      { name: "different parents", output: candidate, completenessOutput: path.join(other, "completeness.json") },
+      { name: "existing completeness", output: candidate, completenessOutput: completeness },
+    ]) {
+      await context.test(scenario.name, async () => {
+        let invoked = false;
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--completeness-output", scenario.completenessOutput, "--output", scenario.output],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, now: new Date("2026-07-14T00:00:00.000Z"),
+          collectImpl: async () => { invoked = true; assert.fail("provider collection must not run"); },
+        }), /OUTPUT_PATH_INVALID/);
+        assert.equal(invoked, false);
+      });
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    await rm(other, { recursive: true, force: true });
+  }
+});
+
+test("ITX CLI는 provider 뒤 candidate target 충돌 시 owned completeness와 stage만 정리한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-conflict-"));
+  const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
+  const expected = completenessForCandidate(sourceCandidate());
+  try {
+    await writeCoverageContract(dir, "{}");
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--completeness-output", completenessOutput, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+      collectImpl: async () => {
+        await writeFile(output, "racer candidate");
+        return structuredClone(expected);
+      },
+    }));
+    assert.deepEqual(await readFile(output, "utf8"), "racer candidate");
+    await assert.rejects(readFile(completenessOutput), /ENOENT/);
+    assert.deepEqual((await readdir(dir)).filter((name) => name.startsWith(".itx-cheongchun-")), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 replacement completeness를 owned cleanup으로 삭제하지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-owned-cleanup-"));
+  const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
+  const expected = completenessForCandidate(sourceCandidate());
+  try {
+    await writeCoverageContract(dir, "{}");
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--completeness-output", completenessOutput, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+      collectImpl: async () => structuredClone(expected),
+      onPublicationEvent: async ({ event, stage }) => {
+        if (event === "completeness-published") {
+          await rm(completenessOutput);
+          await writeFile(completenessOutput, "replacement completeness");
+        }
+      },
+    }), /OUTPUT_PUBLICATION_STAGE_REPLACED/);
+    assert.deepEqual(await readFile(completenessOutput, "utf8"), "replacement completeness");
+    await assert.rejects(readFile(output), /ENOENT/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI는 completeness event 뒤 staged artifact 변조를 candidate 공개 없이 거부한다", async (context) => {
+  const expected = completenessForCandidate(sourceCandidate());
+  for (const scenario of [
+    { name: "published completeness in-place mutation", mutate: async ({ completenessOutput }) => writeFile(completenessOutput, "tampered completeness") },
+    { name: "staged candidate in-place mutation", mutate: async ({ stage }) => writeFile(path.join(stage, "candidate.json"), "tampered candidate") },
+    {
+      name: "staged completeness replacement with original published inode mutation",
+      mutate: async ({ stage, completenessOutput }) => {
+        const original = await readFile(completenessOutput);
+        await rm(path.join(stage, "completeness.json"));
+        await writeFile(path.join(stage, "completeness.json"), original);
+        await writeFile(completenessOutput, "tampered completeness");
+      },
+    },
+  ]) {
+    await context.test(scenario.name, async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-byte-mutation-"));
+      const output = path.join(dir, "candidate.json");
+      const completenessOutput = path.join(dir, "completeness.json");
+      try {
+        await writeCoverageContract(dir, "{}");
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--completeness-output", completenessOutput, "--output", output],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+          collectImpl: async () => structuredClone(expected),
+          onPublicationEvent: async ({ event, stage }) => {
+            if (event === "completeness-published") await scenario.mutate({ stage, completenessOutput });
+          },
+        }), /OUTPUT_PUBLICATION_STAGE_REPLACED/);
+        await assert.rejects(readFile(output), /ENOENT/);
+        await assert.rejects(readFile(completenessOutput), /ENOENT/);
+      } finally { await rm(dir, { recursive: true, force: true }); }
+    });
+  }
+});
+
+test("ITX CLI는 output parent replacement 뒤 stage와 link publication을 fail closed한다", async (context) => {
+  for (const scenario of [
+    { event: "before-stage-created" },
+    { event: "before-completeness-link" },
+    { event: "before-candidate-link" },
+  ]) {
+    await context.test(scenario.event, async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-parent-replaced-"));
+      const owned = `${dir}-owned`;
+      const output = path.join(dir, "candidate.json");
+      const completenessOutput = path.join(dir, "completeness.json");
+      const expected = completenessForCandidate(sourceCandidate());
+      try {
+        await writeCoverageContract(dir, "{}");
+        await assert.rejects(runKorailItxCompletenessCli({
+          argv: [
+            "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719",
+            "--station-catalog-pack", PACK_PATH,
+            "--completeness-output", completenessOutput,
+            "--output", output,
+          ],
+          env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+          collectImpl: async () => structuredClone(expected),
+          onPublicationEvent: async ({ event }) => {
+            if (event !== scenario.event) return;
+            await rename(dir, owned);
+            await mkdir(dir);
+          },
+        }), /OUTPUT_PUBLICATION_PARENT_REPLACED/);
+        await assert.rejects(readFile(output), /ENOENT/);
+        await assert.rejects(readFile(completenessOutput), /ENOENT/);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+        await rm(owned, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("ITX CLI는 replacement task stage를 재귀 삭제하지 않는다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-stage-replacement-"));
+  const output = path.join(dir, "missing.json");
+  let stage;
+  try {
+    await writeCoverageContract(dir, "{}");
+    await assert.rejects(runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { throw new Error("provider unavailable"); },
+      onPublicationEvent: async ({ event, stage: createdStage }) => {
+        if (event !== "stage-created") return;
+        stage = createdStage;
+        await rename(stage, `${stage}-owned`);
+        await mkdir(stage);
+        await writeFile(path.join(stage, "keep.txt"), "replacement stage");
+      },
+    }));
+    assert.deepEqual(await readFile(path.join(stage, "keep.txt"), "utf8"), "replacement stage");
+    assert.ok((await lstat(`${stage}-owned`)).isDirectory());
+    await assert.rejects(readFile(output), /ENOENT/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI success publication은 completeness event 뒤 successful return에 candidate를 공개한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-order-"));
+  const output = path.join(dir, "candidate.json");
+  const completenessOutput = path.join(dir, "completeness.json");
+  const expected = completenessForCandidate(sourceCandidate());
+  let candidateAbsentAtCompleteness = false;
+  try {
+    await writeCoverageContract(dir, "{}");
+    await runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--completeness-output", completenessOutput, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+      collectImpl: async () => structuredClone(expected),
+      onPublicationEvent: async ({ event }) => {
+        if (event === "completeness-published") {
+          await assert.rejects(readFile(output), /ENOENT/);
+          candidateAbsentAtCompleteness = true;
+        }
+      },
+    });
+    assert.equal(candidateAbsentAtCompleteness, true);
+    assert.deepEqual(await readFile(completenessOutput), Buffer.from(completenessBytes(expected)));
+    assert.deepEqual(await readFile(output), Buffer.from(sourceBytes(await buildItxSourceCandidate({ completeness: expected, stationCatalogPackPath: PACK_PATH, now: new Date("2026-07-15T02:00:00.000Z"), repositoryRoot: dir }))));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI runtime MISSING은 output만 stage publication으로 남긴다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-missing-"));
+  const output = path.join(dir, "missing.json");
+  try {
+    await writeCoverageContract(dir, "{}");
+    const result = await runKorailItxCompletenessCli({
+      argv: ["--day8-date", "20260715", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-14T00:00:00.000Z"),
+      collectImpl: async () => { throw new Error("provider unavailable"); },
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(JSON.parse(await readFile(output, "utf8")).validationStatus, "MISSING");
+    await assert.rejects(readFile(`${output}.completeness.json`), /ENOENT/);
+    assert.deepEqual((await readdir(dir)).filter((name) => name.startsWith(".itx-cheongchun-")), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("ITX CLI replay는 candidate 없이 declared output만 stage publication으로 남긴다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-output-replay-"));
+  const output = path.join(dir, "replay.json");
+  const expected = completenessForCandidate(sourceCandidate());
+  try {
+    await writeCoverageContract(dir, "{}");
+    const result = await runKorailItxCompletenessCli({
+      argv: ["--replay", "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+      collectImpl: async () => structuredClone(expected),
+    });
+    assert.equal(result.candidate, null);
+    assert.deepEqual(await readFile(output), Buffer.from(completenessBytes(expected)));
+    await assert.rejects(readFile(`${output}.completeness.json`), /ENOENT/);
+    assert.deepEqual((await readdir(dir)).filter((name) => name.startsWith(".itx-cheongchun-")), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test("ITX CLI promotion은 주입된 repository root를 전달한다", async () => {
@@ -2381,7 +3057,7 @@ test("Korail ITX-청춘 collector는 공식 station rows를 canonical EXPRESS tr
     serviceKey: "never-print-this-key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: trainNumberEvidence(),
     now: new Date("2026-07-14T06:00:00.000Z"),
     fetchImpl: async (url) => {
@@ -2433,7 +3109,7 @@ test("Korail station row의 시각이 비면 sequence evidence만 보존하고 t
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: trainNumberEvidence(),
     fetchImpl: async (url) => {
       if (url.pathname.endsWith("codes2")) {
@@ -2475,7 +3151,7 @@ test("Korail station row의 필수 시각이 부분적으로 있으면 전체 �
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: trainNumberEvidence(),
     fetchImpl: async (url) => {
       if (url.pathname.endsWith("codes2")) {
@@ -2509,7 +3185,7 @@ test("Korail collector는 legacy 대전 row를 canonical mapping 전에 count와
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: trainNumberEvidence(),
     fetchImpl: async (url) => {
       if (url.pathname.endsWith("codes2")) {
@@ -2578,7 +3254,7 @@ test("Korail ITX materialization은 경춘선 밖 역을 포함한 용산~춘천
     infoRows: fullTrip,
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumbers: ["02001"],
     routeCode: "GJ",
     passengerStopCodes: new Map([["11", "여객승하차"]]),
@@ -2602,6 +3278,55 @@ test("Korail ITX materialization은 경춘선 밖 역을 포함한 용산~춘천
   ]);
 });
 
+test("station catalog ITX corridor는 row object key order와 무관하게 exact contract를 읽는다", () => {
+  const originalPrepare = DatabaseSync.prototype.prepare;
+  DatabaseSync.prototype.prepare = function prepare(sql) {
+    const statement = originalPrepare.call(this, sql);
+    if (!String(sql).includes("stations.id AS canonicalStationId")
+      && !String(sql).includes("WHERE stations.region = '수도권'")) return statement;
+    return {
+      all(...args) {
+        return statement.all(...args).map((row) => Object.fromEntries(Object.entries(row).reverse()));
+      },
+    };
+  };
+  try {
+    const { plans, info } = fixtureRows();
+    const materialized = materializeKorailItxRows({
+      plans,
+      infoRows: info,
+      runDate: "20260713",
+      kricServiceDayCode: "8",
+      stationCatalogPackPath: PACK_PATH,
+      trainNumbers: trainNumberEvidence().trainNumbers,
+      routeCode: "GJ",
+      passengerStopCodes: new Map([["11", "여객승하차"]]),
+    });
+    assert.equal(materialized.transitTrips.length, 2);
+  } finally {
+    DatabaseSync.prototype.prepare = originalPrepare;
+  }
+});
+
+test("Korail ITX materialization은 malformed injected snapshot 뒤 자체 catalog reader temp를 정리한다", () => {
+  const prefix = "korail-itx-station-catalog-";
+  const before = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith(prefix)));
+  const { plans, info } = fixtureRows();
+  materializeKorailItxRows({
+    plans,
+    infoRows: info,
+    runDate: "20260713",
+    kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
+    stationCatalogSnapshot: {},
+    trainNumbers: trainNumberEvidence().trainNumbers,
+    routeCode: "GJ",
+    passengerStopCodes: new Map([["11", "여객승하차"]]),
+  });
+  const after = readdirSync(tmpdir()).filter((name) => name.startsWith(prefix));
+  assert.deepEqual(after.filter((name) => !before.has(name)), []);
+});
+
 test("Korail collector는 한 방향 roster를 timetable로 admission하지 않는다", async () => {
   const { plans, info } = fixtureRows();
   const roster = trainNumberEvidence();
@@ -2609,7 +3334,7 @@ test("Korail collector는 한 방향 roster를 timetable로 admission하지 않�
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: {
       ...roster,
       trainNumbers: ["02001"],
@@ -2633,7 +3358,7 @@ test("Korail materialization은 현재 시종착 변형을 plan endpoint 그대�
     infoRows: info.filter(({ trn_no, stn_nm }) => trn_no === "02001" && stn_nm !== "춘천"),
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumbers: ["02001"],
     routeCode: "GJ",
     passengerStopCodes: new Map([["11", "여객승하차"]]),
@@ -2654,7 +3379,7 @@ test("Korail ITX materialization은 누락·중복·역순·시각 역전을 거
     infoRows: info,
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumbers: trainNumberEvidence().trainNumbers,
     routeCode: "GJ",
     passengerStopCodes: new Map([["11", "여객승하차"]]),
@@ -2795,7 +3520,7 @@ test("Korail ITX collector는 provider/schema/pagination 오류를 fail closed�
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: trainNumberEvidence(),
   };
 
@@ -2906,7 +3631,7 @@ test("Korail/TAGO timetable join은 service date가 다르면 거부한다", asy
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
-    packPath: PACK_PATH,
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: mismatchedEvidence,
     fetchImpl: async (url) => {
       if (url.pathname.endsWith("codes2")) {
@@ -2947,6 +3672,7 @@ test("fresh KORAIL admission은 travelerTrainRunPlan2만 호출하고 future inf
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: {
       ...trainNumberEvidence(),
       schemaVersion: 2,
@@ -2980,6 +3706,7 @@ test("KORAIL plan row 0건은 admission을 뒤집지 않고 warning evidence로 
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
     trainNumberEvidence: {
       ...trainNumberEvidence(),
       schemaVersion: 2,

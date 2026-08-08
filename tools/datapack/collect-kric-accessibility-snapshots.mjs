@@ -9,14 +9,45 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
-export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([
+export const KRIC_APPROVED_ACCESSIBILITY_OPERATIONS = Object.freeze([
   {
-    sourceId: "kric-station-convenience-standard",
-    endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
-    responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
-    tupleIdentityFields: [],
+    sourceId: "kric-station-elevator",
+    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-station-escalator",
+    endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+    responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-wheelchair-lift-location",
+    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
+    responseFields: ["bndWgt", "dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "len", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "wd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-station-elevator-movement",
+    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
+    responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  },
+  {
+    sourceId: "kric-wheelchair-lift-movement",
+    endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
+    responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
   },
 ]);
+
+export const KRIC_ACCESSIBILITY_OPERATIONS = Object.freeze([{
+  sourceId: "kric-station-convenience-standard",
+  endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+  responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
+  tupleIdentityFields: [],
+}]);
 
 // Provider roster의 개명·오기만 exact tuple로 결속한다. 이름 유사도 fallback은 두지 않는다.
 export const KRIC_STATION_TUPLE_MAPPINGS = Object.freeze([
@@ -146,8 +177,80 @@ export async function collectKricAccessibilitySnapshots({
   return snapshots;
 }
 
+export async function collectKricAccessibilityProviderTupleEvidence({
+  tuples,
+  operations = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
+  serviceKey,
+  fetchImpl = fetch,
+  now = new Date(),
+  requestTimeoutMs = 30_000,
+  requestIntervalMs = 0,
+  delayImpl = delay,
+} = {}) {
+  if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
+  if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
+    throw new Error("KRIC request interval is invalid");
+  }
+  const providerTuples = validateProviderTuples(tuples);
+  if (!Array.isArray(operations) || operations.length === 0) throw new Error("KRIC operations are required");
+  const seenOperations = new Set();
+  const capturedAt = now.toISOString();
+  let requestCount = 0;
+  const paceRequest = async () => {
+    if (requestCount > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
+    requestCount += 1;
+  };
+  const collectedOperations = [];
+  for (const operation of operations) {
+    validateOperation(operation);
+    if (seenOperations.has(operation.sourceId)) throw new Error(`duplicate KRIC operation: ${operation.sourceId}`);
+    seenOperations.add(operation.sourceId);
+    const queries = [];
+    for (const tuple of providerTuples) {
+      const response = await requestRows({
+        operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
+      });
+      if (response.rows.length === 0) {
+        throw new Error(`KRIC provider tuple probe empty response: ${operation.sourceId}/${providerTuple(tuple)}`);
+      }
+      queries.push({
+        providerTuple: providerTuple(tuple),
+        stationName: tuple.stationName,
+        rowCount: response.rows.length,
+        rawResponseSha256: response.rawResponseSha256,
+        providerRecordHash: hash(response.rows),
+        rows: response.rows,
+      });
+    }
+    collectedOperations.push({ sourceId: operation.sourceId, queries });
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-facility-provider-tuple-probe",
+    capturedAt,
+    credentialRedacted: true,
+    publishAllowed: false,
+    productionAdmissionAllowed: false,
+    operationCount: collectedOperations.length,
+    queryCount: collectedOperations.reduce((sum, operation) => sum + operation.queries.length, 0),
+    rowCount: collectedOperations.reduce((sum, operation) => (
+      sum + operation.queries.reduce((querySum, query) => querySum + query.rowCount, 0)
+    ), 0),
+    contentSha256: hash(collectedOperations.map((operation) => ({
+      sourceId: operation.sourceId,
+      queries: operation.queries.map(({ rawResponseSha256: _, ...query }) => query),
+    }))),
+    rawSha256: hash(collectedOperations.map(({ sourceId, queries }) => ({
+      sourceId,
+      queries: queries.map(({ providerTuple: tuple, rawResponseSha256 }) => ({ providerTuple: tuple, rawResponseSha256 })),
+    }))),
+    operations: collectedOperations,
+  };
+}
+
 export function validateKricAccessibilitySnapshotIdentity(snapshot) {
-  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
+  const operation = KRIC_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId)
+    ?? KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId }) => sourceId === snapshot?.sourceId);
   if (!operation || snapshot?.schemaVersion !== 1 || snapshot?.artifactKind !== "kric-accessibility-snapshot"
     || snapshot.providerResultCode !== "00" || snapshot.schemaStatus !== "PASS"
     || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST" || snapshot.credentialRedacted !== true || !Array.isArray(snapshot.queries)
@@ -175,7 +278,8 @@ export function validateKricAccessibilitySnapshotIdentity(snapshot) {
       || query.providerRecordHash !== hash(query.rows)
       || query.rows.some((row) => !row || typeof row !== "object"
         || Object.keys(row).length !== operation.responseFields.length
-        || Object.keys(row).some((field) => !operation.responseFields.includes(field)))) {
+        || Object.keys(row).some((field) => !operation.responseFields.includes(field))
+        || operation.tupleIdentityFields.some((field) => row[field] !== query[field]))) {
       throw new Error("KRIC accessibility snapshot identity is invalid");
     }
     const tupleKey = [query.stationId, query.lineId, query.railOprIsttCd, query.lnCd, query.stinCd].join("\0");
@@ -384,6 +488,22 @@ function validateRoster(roster) {
   }).sort((left, right) => compare(tupleKey(left), tupleKey(right)));
 }
 
+function validateProviderTuples(tuples) {
+  if (!Array.isArray(tuples) || tuples.length === 0) throw new Error("KRIC provider tuples are required");
+  const seen = new Set();
+  return tuples.map((tuple) => {
+    for (const field of ["railOprIsttCd", "lnCd", "stinCd", "stationName"]) {
+      if (typeof tuple?.[field] !== "string" || tuple[field] === "") {
+        throw new Error(`KRIC provider tuple ${field} is required`);
+      }
+    }
+    const key = providerTuple(tuple);
+    if (seen.has(key)) throw new Error(`duplicate KRIC provider tuple: ${key}`);
+    seen.add(key);
+    return { ...tuple };
+  }).sort((left, right) => compare(providerTuple(left), providerTuple(right)));
+}
+
 function validateOperation(operation) {
   const endpoint = new URL(operation.endpoint);
   if (endpoint.origin !== "https://openapi.kric.go.kr" || !endpoint.pathname.startsWith("/openapi/")) {
@@ -453,6 +573,10 @@ function tupleKey(tuple) {
 
 function providerTupleKey(tuple) {
   return `${tuple.lineId}\0${tuple.railOprIsttCd}\0${tuple.lnCd}\0${tuple.stinCd}`;
+}
+
+function providerTuple(tuple) {
+  return `${tuple.railOprIsttCd}/${tuple.lnCd}/${tuple.stinCd}`;
 }
 
 function hash(value) {

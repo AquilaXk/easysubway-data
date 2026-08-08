@@ -10,6 +10,8 @@ import { gzipSync } from "node:zlib";
 import {
   buildKricAccessibilityRoster,
   collectKricAccessibilitySnapshots,
+  KRIC_ACCESSIBILITY_OPERATIONS,
+  KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
   loadCanonicalStationLinesFromBundledIndex,
   validateKricAccessibilitySnapshotIdentity,
   validateKricAccessibilityProviderGapEvidence,
@@ -24,6 +26,130 @@ const roster = [
   { stationId: "station-b", lineId: "line-2", railOprIsttCd: "S1", lnCd: "2", stinCd: "202" },
   { stationId: "station-a", lineId: "line-1", railOprIsttCd: "S1", lnCd: "1", stinCd: "101" },
 ];
+
+test("production 기본 KRIC 접근성 수집은 historical standard operation을 유지한다", async () => {
+  const standardOperation = {
+    sourceId: "kric-station-convenience-standard",
+    endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
+    responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
+    tupleIdentityFields: [],
+  };
+  const snapshots = await collectKricAccessibilitySnapshots({
+    roster: [{
+      ...roster[0],
+      canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "line-2" }],
+    }],
+    serviceKey: "super-secret",
+    fetchImpl: async (url) => {
+      assert.equal(url.pathname, new URL(standardOperation.endpoint).pathname);
+      return response(200, [Object.fromEntries(standardOperation.responseFields.map((field) => [field, "대합실"]))]);
+    },
+  });
+
+  assert.deepEqual(KRIC_ACCESSIBILITY_OPERATIONS, [standardOperation]);
+  assert.equal(snapshots[0].sourceId, standardOperation.sourceId);
+  assert.deepEqual(validateKricAccessibilitySnapshotIdentity(snapshots[0]), snapshots[0]);
+  assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
+});
+
+test("승인된 KRIC 접근성 profile은 표준 편의정보 없이 exact 다섯 operation을 한 tuple에 한 번씩 수집한다", async () => {
+  const expectedOperations = [
+    {
+      sourceId: "kric-station-elevator",
+      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationElevator",
+      responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "rglnPsno", "rglnWgt", "runStinFlorFr", "runStinFlorTo", "stinCd"],
+    },
+    {
+      sourceId: "kric-station-escalator",
+      endpoint: "https://openapi.kric.go.kr/openapi/convenientInfo/stationEscalator",
+      responseFields: ["dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "updnDvNm"],
+    },
+    {
+      sourceId: "kric-wheelchair-lift-location",
+      endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftLocation",
+      responseFields: ["bndWgt", "dtlLoc", "exitNo", "grndDvNmFr", "grndDvNmTo", "len", "lnCd", "railOprIsttCd", "runStinFlorFr", "runStinFlorTo", "stinCd", "wd"],
+    },
+    {
+      sourceId: "kric-station-elevator-movement",
+      endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationElevatorMovement",
+      responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
+    },
+    {
+      sourceId: "kric-wheelchair-lift-movement",
+      endpoint: "https://openapi.kric.go.kr/openapi/vulnerableUserInfo/stationWheelchairLiftMovement",
+      responseFields: ["lnCd", "mvContDtl", "mvDst", "mvPathDvCd", "mvPathDvNm", "mvPathMgNo", "mvTpOrdr", "railOprIsttCd", "stinCd"],
+    },
+  ];
+  const tuple = roster[0];
+  const seen = [];
+  const snapshots = await collectKricAccessibilitySnapshots({
+    roster: [tuple],
+    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
+    serviceKey: "super-secret",
+    now: new Date("2026-08-04T00:00:00.000Z"),
+    fetchImpl: async (url) => {
+      seen.push(`${url.pathname}/${url.searchParams.get("railOprIsttCd")}/${url.searchParams.get("lnCd")}/${url.searchParams.get("stinCd")}`);
+      const expected = expectedOperations.find(({ endpoint }) => new URL(endpoint).pathname === url.pathname);
+      return response(200, [Object.fromEntries(expected.responseFields.map((field) => [field, tuple[field] ?? field]))]);
+    },
+  });
+
+  assert.deepEqual(KRIC_APPROVED_ACCESSIBILITY_OPERATIONS, expectedOperations.map((operation) => ({
+    ...operation,
+    tupleIdentityFields: ["railOprIsttCd", "lnCd", "stinCd"],
+  })));
+  assert.deepEqual(snapshots.map(({ sourceId, capturedAt }) => ({ sourceId, capturedAt })), expectedOperations.map(({ sourceId }) => ({
+    sourceId,
+    capturedAt: "2026-08-04T00:00:00.000Z",
+  })));
+  assert.deepEqual(seen, expectedOperations.map(({ endpoint }) => `${new URL(endpoint).pathname}/S1/2/202`));
+  assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
+});
+
+test("승인 profile snapshot은 row tuple이 query와 다르면 내부 hash가 일치해도 거부한다", async () => {
+  const tuple = {
+    ...roster[0],
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "line-2" }],
+  };
+  const [snapshot] = await collectKricAccessibilitySnapshots({
+    roster: [tuple],
+    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.slice(0, 1),
+    serviceKey: "super-secret",
+    fetchImpl: async () => response(200, [Object.fromEntries(
+      KRIC_APPROVED_ACCESSIBILITY_OPERATIONS[0].responseFields.map((field) => [field, tuple[field] ?? field]),
+    )]),
+  });
+  const tampered = structuredClone(snapshot);
+  tampered.queries[0].rows[0].stinCd = "999";
+  tampered.queries[0].providerRecordHash = hashForTest(tampered.queries[0].rows);
+  tampered.contentSha256 = hashForTest(tampered.queries.map(({ rawResponseSha256: _, ...query }) => query));
+
+  assert.throws(
+    () => validateKricAccessibilitySnapshotIdentity(tampered),
+    /KRIC accessibility snapshot identity is invalid/,
+  );
+});
+
+test("기본 다섯 operation 중간 실패는 부분 snapshot 없이 즉시 거부한다", async () => {
+  const tuple = roster[0];
+  const seen = [];
+  await assert.rejects(() => collectKricAccessibilitySnapshots({
+    roster: [tuple],
+    operations: KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
+    serviceKey: "super-secret",
+    fetchImpl: async (url) => {
+      const sourceId = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ endpoint }) => new URL(endpoint).pathname === url.pathname).sourceId;
+      seen.push(sourceId);
+      if (sourceId === "kric-station-escalator") throw new Error("timeout");
+      const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId: id }) => id === sourceId);
+      return response(200, [Object.fromEntries(operationForRequest.responseFields.map((field) => [field, tuple[field] ?? field]))]);
+    },
+  }), /KRIC accessibility request failed: kric-station-escalator\/S1\/2\/202/);
+  assert.deepEqual(seen, [
+    "kric-station-elevator",
+    "kric-station-escalator",
+  ]);
+});
 
 test("canonical fixture와 official route roster를 station-line tuple로 결속한다", () => {
   const activeLineScopes = [{ lineId: "line-1", regionId: "capital", operatorId: "operator-1" }];
@@ -223,34 +349,23 @@ test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero
   assert.doesNotMatch(JSON.stringify(snapshots), /super-secret|serviceKey/);
 });
 
-test("표준 편의정보 row는 request tuple envelope로 provenance를 보존한다", async () => {
-  const standardOperation = {
-    sourceId: "kric-station-convenience-standard",
-    endpoint: "https://openapi.kric.go.kr/openapi/handicapped/stationCnvFacl",
-    responseFields: ["dtlLoc", "grndDvCd", "gubun", "imgPath", "mlFmlDvCd", "stinFlor", "trfcWeakDvCd"],
-    tupleIdentityFields: [],
-  };
-  const standardRoster = [{
+test("기본 elevator row는 request tuple envelope로 provenance를 보존한다", async () => {
+  const elevatorRoster = [{
     ...roster[0],
     canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-b", lineId: "line-2" }],
   }];
   const snapshots = await collectKricAccessibilitySnapshots({
-    roster: standardRoster,
-    operations: [standardOperation],
+    roster: elevatorRoster,
+    operations: [operation],
     serviceKey: "key",
-    fetchImpl: async () => response(200, [{
-      dtlLoc: "대합실",
-      grndDvCd: "U",
-      gubun: "엘리베이터",
-      imgPath: "",
-      mlFmlDvCd: "",
-      stinFlor: "B1",
-      trfcWeakDvCd: "01",
-    }]),
+    fetchImpl: async () => response(200, [Object.fromEntries(operation.responseFields.map((field) => [
+      field,
+      elevatorRoster[0][field] ?? "대합실",
+    ]))]),
   });
 
   assert.equal(snapshots[0].queries[0].status, "PRESENT");
-  assert.deepEqual(snapshots[0].queries[0].canonicalMappings, standardRoster[0].canonicalMappings);
+  assert.deepEqual(snapshots[0].queries[0].canonicalMappings, elevatorRoster[0].canonicalMappings);
   assert.throws(
     () => validateKricAccessibilitySnapshotIdentity({ ...snapshots[0], schemaVersion: 2 }),
     /KRIC accessibility snapshot identity is invalid/,
@@ -461,4 +576,8 @@ function response(status, body, resultCode = "00") {
       ? { header: { resultCode, resultMsg: "redacted" }, body }
       : { resultCode, resultMsg: "redacted" },
   };
+}
+
+function hashForTest(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }

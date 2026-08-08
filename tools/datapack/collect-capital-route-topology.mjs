@@ -62,6 +62,7 @@ export { decodeOfficialCsv, normalizeStationName };
 export const SOURCE_ID = "capital-route-topology";
 export const ARTIFACT_KIND = "capital-route-topology-snapshot";
 export const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
+export const MOLIT_FULL_ROUTE_DETAIL_URL = "https://www.data.go.kr/data/15122916/fileData.do";
 
 /** Capital map lineIds that topology apply may replace (SUBWAY LOCAL RIDE). */
 export const CAPITAL_MAP_LINE_IDS = Object.freeze([
@@ -318,7 +319,7 @@ export const LINE_SOURCES = Object.freeze([
     lineId: "line-5500c1600f71",
     datasetId: "15122916",
     detailUrl: "https://www.data.go.kr/data/15122916/fileData.do",
-    downloadUrl: "https://www.data.go.kr/data/15122916/fileData.do",
+    downloadUrl: MOLIT_FULL_ROUTE_DETAIL_URL,
     localCsv: "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
     kind: "molit-sequence",
     molitRouteName: "김포골드라인",
@@ -328,7 +329,7 @@ export const LINE_SOURCES = Object.freeze([
     lineId: "line-aefa08ccc0a9",
     datasetId: "15122916",
     detailUrl: "https://www.data.go.kr/data/15122916/fileData.do",
-    downloadUrl: "https://www.data.go.kr/data/15122916/fileData.do",
+    downloadUrl: MOLIT_FULL_ROUTE_DETAIL_URL,
     localCsv: "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
     kind: "molit-sequence",
     molitRouteName: "신림선",
@@ -361,6 +362,120 @@ const STANDARD_HEADERS = Object.freeze([
 
 function edgeKey(fromName, toName) {
   return [fromName, toName].sort(codepointCompare).join("\u0000");
+}
+
+export function compareCapitalRouteTopologies(baseline, candidate) {
+  if (!Array.isArray(baseline?.lines) || !Array.isArray(candidate?.lines)) {
+    throw new Error("capital topology snapshots require lines arrays");
+  }
+  const baselineNormalizedLineSetSha256 = normalizedLineSetSha256(baseline, "baseline");
+  const candidateNormalizedLineSetSha256 = normalizedLineSetSha256(candidate, "candidate");
+  const baselineLines = new Map(baseline.lines.map((line) => [line.lineId, line]));
+  const candidateLines = new Map(candidate.lines.map((line) => [line.lineId, line]));
+  const changes = [];
+  for (const lineId of [...new Set([...baselineLines.keys(), ...candidateLines.keys()])]
+    .sort(codepointCompare)) {
+    const before = baselineLines.get(lineId);
+    const after = candidateLines.get(lineId);
+    const beforeEdges = new Map((before?.edges ?? [])
+      .map((edge) => [`${edge.fromStationName}\u0000${edge.toStationName}`, edge]));
+    const afterEdges = new Map((after?.edges ?? [])
+      .map((edge) => [`${edge.fromStationName}\u0000${edge.toStationName}`, edge]));
+    const added = [];
+    const removed = [];
+    const modified = [];
+    for (const [key, edge] of afterEdges) {
+      if (!beforeEdges.has(key)) added.push(edge);
+      else if (JSON.stringify(beforeEdges.get(key)) !== JSON.stringify(edge)) {
+        modified.push({ before: beforeEdges.get(key), after: edge });
+      }
+    }
+    for (const [key, edge] of beforeEdges) if (!afterEdges.has(key)) removed.push(edge);
+    if (added.length !== 0 || removed.length !== 0 || modified.length !== 0) {
+      changes.push({ lineId, added, removed, modified });
+    }
+  }
+  return {
+    baselineContentSha256: baseline.contentSha256,
+    candidateContentSha256: candidate.contentSha256,
+    baselineNormalizedLineSetSha256,
+    candidateNormalizedLineSetSha256,
+    changes,
+  };
+}
+
+function normalizedLineSetSha256(snapshot, label) {
+  return sha256(JSON.stringify(snapshot.lines
+    .map((line) => ({
+      lineId: line.lineId,
+      contentSha256: verifiedLineContentSha256(line, label),
+    }))
+    .sort((left, right) => codepointCompare(left.lineId, right.lineId))));
+}
+
+function verifiedLineContentSha256(line, label) {
+  const actual = sha256(JSON.stringify({ scope: line.scope, edges: line.edges }));
+  if (line.contentSha256 !== actual) {
+    throw new Error(`capital topology ${label} line ${line.lineId} contentSha256 mismatch`);
+  }
+  return actual;
+}
+
+function topologyContentPayload(lines, topologyGaps) {
+  return {
+    lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
+      lineId,
+      edgeCount,
+      stationCount,
+      contentSha256,
+      rawSha256,
+      datasetId,
+    })),
+    topologyGaps,
+  };
+}
+
+export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {
+  const comparison = compareCapitalRouteTopologies(baseline, candidate);
+  if (comparison.changes.length !== 0
+    || comparison.baselineNormalizedLineSetSha256 !== comparison.candidateNormalizedLineSetSha256
+    || JSON.stringify(baseline.topologyGaps ?? []) !== JSON.stringify(candidate.topologyGaps ?? [])) {
+    throw new Error("capital topology normalized content changed; re-admission required");
+  }
+  const candidateContentSha256 = sha256(JSON.stringify(
+    topologyContentPayload(candidate.lines, candidate.topologyGaps),
+  ));
+  if (candidate.contentSha256 !== candidateContentSha256) {
+    throw new Error("capital topology candidate contentSha256 mismatch");
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "capital-topology-reverification-evidence",
+    sourceIssue: 60,
+    admissionIssue: 2649,
+    baseline: {
+      snapshotId: "capital-route-topology-20260724",
+      contentSha256: baseline.contentSha256,
+      normalizedLineSetSha256: comparison.baselineNormalizedLineSetSha256,
+    },
+    candidate: {
+      capturedAt: candidate.capturedAt,
+      freshUntil: candidate.freshUntil,
+      contentSha256: candidate.contentSha256,
+      normalizedLineSetSha256: comparison.candidateNormalizedLineSetSha256,
+      lineCount: candidate.lineCount,
+      totalEdgeCount: candidate.totalEdgeCount,
+      lines: candidate.lines.map(({
+        lineId, datasetId, rawSha256, contentSha256,
+      }) => ({ lineId, datasetId, rawSha256, contentSha256 })),
+    },
+    comparison: {
+      changedLineCount: 0,
+      addedEdgeCount: 0,
+      removedEdgeCount: 0,
+      modifiedEdgeCount: 0,
+    },
+  };
 }
 
 function parseOptionalKilometers(value) {
@@ -479,7 +594,9 @@ function findRow(rows, name) {
  * Generic CSV → undirected edges for one capital line.
  */
 export function parseGenericCapitalDistanceCsv(csvBytes, source) {
-  const rows = parseDistanceCsv(csvBytes);
+  const rows = parseDistanceCsv(csvBytes)
+    .filter(({ branchName }) => source.branchNameFilter == null
+      || branchName === source.branchNameFilter);
   if (rows.length < 2) throw new Error(`${source.slug}: too few rows`);
   const undirected = new Map();
   const branchSequences = [];
@@ -705,6 +822,34 @@ const MOLIT_FULL_ROUTE_HEADER = Object.freeze([
   "역명",
 ]);
 
+export async function collectMolitFullRouteCsv({ fetchImpl = fetch } = {}) {
+  const page = await fetchImpl(MOLIT_FULL_ROUTE_DETAIL_URL, {
+    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
+  });
+  if (!page.ok) throw new Error(`MOLIT full-route detail HTTP ${page.status}`);
+  const html = await page.text();
+  const direct = html.match(/\/cmm\/cmm\/fileDownload\.do\?[^"'<>\s]+/u)?.[0]
+    ?.replaceAll("&amp;", "&");
+  const args = html.match(/(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?/u);
+  const pathname = direct ?? (args
+    ? `/cmm/cmm/fileDownload.do?atchFileId=${encodeURIComponent(args[1])}&fileDetailSn=${args[2]}&insertDataPrcus=N`
+    : null);
+  if (pathname == null) throw new Error("MOLIT full-route public download link not found");
+  const downloadUrl = new URL(pathname, MOLIT_FULL_ROUTE_DETAIL_URL);
+  if (downloadUrl.origin !== "https://www.data.go.kr"
+    || downloadUrl.pathname !== "/cmm/cmm/fileDownload.do") {
+    throw new Error("MOLIT full-route public download link is invalid");
+  }
+  const response = await fetchImpl(downloadUrl, {
+    headers: {
+      "User-Agent": "easysubway-datapack-collector/1.0",
+      Referer: MOLIT_FULL_ROUTE_DETAIL_URL,
+    },
+  });
+  if (!response.ok) throw new Error(`MOLIT full-route CSV HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
 /**
  * MOLIT 도시철도 전체노선 CSV → 동일 노선명 순번 연속 bidirectional edges (거리 0).
  */
@@ -753,12 +898,13 @@ export function parseMolitSequenceCsv(csvBytes, source) {
  * 서해선: 코레일 역간거리(원종 포함) + MOLIT 순번≥10(소사~원시) + 운영기관 경계 스플라이스.
  */
 export function parseSeohaeMerged(korailBytes, molitBytes, source) {
+  const routeName = source.molitRouteName ?? "서해선";
   const korailParsed = parseGenericCapitalDistanceCsv(korailBytes, {
     ...source,
     slug: `${source.slug}-korail`,
     splices: [],
+    branchNameFilter: routeName,
   });
-  const routeName = source.molitRouteName ?? "서해선";
   const minSequence = Number.isInteger(source.molitMinSequence) ? source.molitMinSequence : 10;
   const molitRows = parseMolitFullRouteRows(molitBytes)
     .filter((row) => row.routeName === routeName && row.sequence >= minSequence)
@@ -1080,32 +1226,35 @@ export async function collectCapitalRouteTopology({
 } = {}) {
   const captured = validDate(now, "now");
   const lines = [];
+  let molitBytes = null;
+  const getMolitBytes = async () => {
+    molitBytes ??= await collectMolitFullRouteCsv({ fetchImpl });
+    return molitBytes;
+  };
   for (const source of sources) {
     const bytes = useLocalFiles
       ? await readFile(path.resolve(root, source.localCsv))
-      : await downloadBytes(fetchImpl, source);
+      : source.kind === "molit-sequence"
+        ? await getMolitBytes()
+        : await downloadBytes(fetchImpl, source);
     let secondaryBytes = null;
     if (source.kind === "seohae-merged") {
       if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
         throw new Error(`${source.slug}: localMolitCsv required`);
       }
-      secondaryBytes = await readFile(path.resolve(root, source.localMolitCsv));
+      secondaryBytes = useLocalFiles
+        ? await readFile(path.resolve(root, source.localMolitCsv))
+        : await getMolitBytes();
     }
-    lines.push(parseLineSource(source, bytes, { capturedAt: captured, secondaryBytes }));
+    try {
+      lines.push(parseLineSource(source, bytes, { capturedAt: captured, secondaryBytes }));
+    } catch (error) {
+      throw new Error(`${source.slug}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   lines.sort((left, right) => codepointCompare(left.lineId, right.lineId));
   const topologyGaps = [...TOPOLOGY_GAPS];
-  const payload = {
-    lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
-      lineId,
-      edgeCount,
-      stationCount,
-      contentSha256,
-      rawSha256,
-      datasetId,
-    })),
-    topologyGaps,
-  };
+  const payload = topologyContentPayload(lines, topologyGaps);
   return {
     schemaVersion: 1,
     artifactKind: ARTIFACT_KIND,
@@ -1184,12 +1333,37 @@ function option(name, fallback = null) {
 
 async function main() {
   const root = path.resolve(import.meta.dirname, "../..");
+  const compareBaseline = option("--compare-baseline");
+  const compareCandidate = option("--compare-candidate");
+  if (compareBaseline || compareCandidate) {
+    if (!compareBaseline || !compareCandidate) {
+      throw new Error("--compare-baseline and --compare-candidate are both required");
+    }
+    const baseline = JSON.parse(await readFile(compareBaseline, "utf8"));
+    const candidate = JSON.parse(await readFile(compareCandidate, "utf8"));
+    const evidenceOutput = option("--evidence-output");
+    if (evidenceOutput) {
+      const bytes = Buffer.from(`${JSON.stringify(
+        buildCapitalTopologyReverificationEvidence(baseline, candidate), null, 2,
+      )}\n`);
+      await writeFile(evidenceOutput, bytes, { flag: "wx" });
+      process.stdout.write(
+        `capital topology reverification evidence ready: capturedAt=${candidate.capturedAt} `
+        + `freshUntil=${candidate.freshUntil} sha256=${sha256(bytes)} path=${evidenceOutput}\n`,
+      );
+      return;
+    }
+    const comparison = compareCapitalRouteTopologies(baseline, candidate);
+    process.stdout.write(`${JSON.stringify(comparison, null, 2)}\n`);
+    return;
+  }
   const output = option(
     "--output",
     path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
   );
-  const capturedAt = option("--captured-at", "2026-07-24T08:20:00.000Z");
   const download = process.argv.includes("--download");
+  const capturedAt = option("--captured-at")
+    ?? (download ? new Date().toISOString() : "2026-07-24T08:20:00.000Z");
   const snapshot = await collectCapitalRouteTopology({
     root,
     now: new Date(capturedAt),
@@ -1198,7 +1372,9 @@ async function main() {
   await writeFile(output, `${JSON.stringify(snapshot)}\n`);
   process.stdout.write(
     `capital route topology snapshot ready: lines=${snapshot.lineCount} `
-    + `edges=${snapshot.totalEdgeCount} gaps=${snapshot.topologyGaps.length} path=${output}\n`,
+    + `edges=${snapshot.totalEdgeCount} gaps=${snapshot.topologyGaps.length} `
+    + `capturedAt=${snapshot.capturedAt} freshUntil=${snapshot.freshUntil} `
+    + `sha256=${snapshot.contentSha256} path=${output}\n`,
   );
   for (const line of snapshot.lines) {
     process.stdout.write(`  ${line.lineId} edges=${line.edgeCount} stations=${line.stationCount}\n`);
