@@ -108,10 +108,14 @@ function candidateBuildNow() {
 async function admittedSource(contractPath) {
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const reference = contract?.sourceTimetableArtifact;
-  const sourceBytes = await readFile(repositoryPath(reference?.artifactPath ?? ""));
-  const completenessBytes = await readFile(repositoryPath(reference?.completenessEvidencePath ?? ""));
-  const source = JSON.parse(sourceBytes);
-  const completeness = JSON.parse(completenessBytes);
+  validateAdmittedSourceReference(contract, reference);
+  const sourceBytes = await readFile(repositoryPath(reference.artifactPath));
+  const completenessBytes = await readFile(repositoryPath(reference.completenessEvidencePath));
+  const { source, completeness } = parseAuthenticatedAdmittedSourceDocuments(
+    reference,
+    sourceBytes,
+    completenessBytes,
+  );
   validateAdmittedSourceDocuments(
     contract,
     reference,
@@ -123,6 +127,32 @@ async function admittedSource(contractPath) {
   return { contract, reference, source, sourceBytes };
 }
 
+function validateAdmittedSourceReference(contract, reference) {
+  const artifactId = reference?.artifactId;
+  const sourcePath = `tools/datapack/sources/${artifactId}.json`;
+  const completenessPath = `tools/datapack/sources/${artifactId}-completeness-evidence.json`;
+  if (contract?.schemaVersion !== 2
+    || contract?.artifactKind !== "itx-cheongchun-coverage-contract"
+    || contract?.serviceId !== "ITX_CHEONGCHUN"
+    || reference?.schemaVersion !== 1
+    || reference?.status !== "ADMITTED" || reference?.admissionEligible !== true
+    || !/^itx-cheongchun-source-timetable-\d+$/.test(artifactId ?? "")
+    || reference.artifactPath !== sourcePath
+    || reference.completenessEvidencePath !== completenessPath
+    || !/^[a-f0-9]{64}$/.test(reference.sha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(reference.completenessEvidenceSha256 ?? "")) {
+    throw new Error("ITX topology requires #2135 ADMITTED source contract");
+  }
+}
+
+export function parseAuthenticatedAdmittedSourceDocuments(reference, sourceBytes, completenessBytes) {
+  if (sha256(sourceBytes) !== reference.sha256
+    || sha256(completenessBytes) !== reference.completenessEvidenceSha256) {
+    throw new Error("ITX topology source bytes do not match the coverage contract");
+  }
+  return { source: JSON.parse(sourceBytes), completeness: JSON.parse(completenessBytes) };
+}
+
 export function validateAdmittedSourceDocuments(
   contract,
   reference,
@@ -131,13 +161,7 @@ export function validateAdmittedSourceDocuments(
   sourceSha256,
   completenessSha256,
 ) {
-  if (contract?.schemaVersion !== 2
-    || contract?.artifactKind !== "itx-cheongchun-coverage-contract"
-    || contract?.serviceId !== "ITX_CHEONGCHUN"
-    || reference?.schemaVersion !== 1
-    || reference?.status !== "ADMITTED" || reference?.admissionEligible !== true) {
-    throw new Error("ITX topology requires #2135 ADMITTED source contract");
-  }
+  validateAdmittedSourceReference(contract, reference);
   if (sourceSha256 !== reference.sha256
     || completenessSha256 !== reference.completenessEvidenceSha256) {
     throw new Error("ITX topology source bytes do not match the coverage contract");

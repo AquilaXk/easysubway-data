@@ -15,6 +15,7 @@ import {
   assertStoredTopology,
   deriveTopology,
   isUnchangedRefresh,
+  parseAuthenticatedAdmittedSourceDocuments,
   validateAdmittedSourceDocuments,
   validateTopologyEvidence,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
@@ -256,19 +257,11 @@ function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize
 test("미등록 current source는 custom contract와 sentinel 산출물을 변경하지 않고 거부한다", async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-admission-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const { contract, sourceBytes, completenessBytes } = await admittedDocuments();
+  const { contract } = await admittedDocuments();
   const contractPath = path.join(directory, "contract.json");
-  const sourcePath = path.join(directory, "source.json");
-  const completenessPath = path.join(directory, "completeness.json");
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
   const evidencePath = path.join(directory, "evidence.json");
-  await writeFile(sourcePath, sourceBytes);
-  await writeFile(completenessPath, completenessBytes);
-  contract.sourceTimetableArtifact.artifactPath = sourcePath;
-  contract.sourceTimetableArtifact.completenessEvidencePath = completenessPath;
-  contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
-  contract.sourceTimetableArtifact.completenessEvidenceSha256 = sha256(completenessBytes);
   await writeFile(contractPath, JSON.stringify(contract));
   await writeFile(packPath, "sentinel-pack");
   await writeFile(indexPath, "sentinel-index");
@@ -280,6 +273,34 @@ test("미등록 current source는 custom contract와 sentinel 산출물을 변�
   ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } }),
   /current source identity is not admitted/);
   assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
+});
+
+test("admission은 mismatched pinned hash의 invalid JSON을 parse 전에 거부한다", () => {
+  const parserToken = "parser-token-must-not-appear";
+  let error;
+  try {
+    parseAuthenticatedAdmittedSourceDocuments(
+      { sha256: "0".repeat(64), completenessEvidenceSha256: "1".repeat(64) },
+      Buffer.from(`{${parserToken}`),
+      Buffer.from(`{${parserToken}`),
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof Error);
+  assert.match(error.message, /source bytes do not match the coverage contract/);
+  assert.doesNotMatch(error.message, new RegExp(parserToken));
+});
+
+test("admission은 traversal 또는 redirect source path를 dereference 전에 거부한다", async () => {
+  const documents = await admittedDocuments();
+  const reference = structuredClone(documents.reference);
+  reference.artifactPath = "../outside-source.json";
+  reference.completenessEvidencePath = "tools/datapack/sources/redirected-evidence.json";
+  withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract, reference, documents.source, documents.completeness,
+    sha256(documents.sourceBytes), sha256(documents.completenessBytes),
+  ), /ADMITTED source contract/));
 });
 
 test("topology direct seam은 shape, FK, admission evidence를 materialize하고 deterministic하다", async (context) => {
