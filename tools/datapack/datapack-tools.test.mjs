@@ -10240,11 +10240,10 @@ test("전국 coverage gap report는 emergency override pack의 provenance를 검
       ],
       { cwd: root },
     ),
-    /nationwide coverage gaps remain: 270 missing requirements/,
+    /coverage manifest emergencyOverride is forbidden/,
   );
 
-  const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["active", "override"]);
+  await assert.rejects(readFile(reportPath, "utf8"), /ENOENT/);
 });
 
 test("전국 coverage gap report는 emergency override 실패 시 fallback active pack provenance도 검증한다", async () => {
@@ -10293,6 +10292,9 @@ test("전국 coverage gap report는 emergency override 실패 시 fallback activ
   await writeFile(manifestPath, manifestJson);
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
 
+  const existingReport = "existing coverage report\n";
+  await writeFile(reportPath, existingReport);
+
   await assert.rejects(
     execFileAsync(
       process.execPath,
@@ -10306,11 +10308,10 @@ test("전국 coverage gap report는 emergency override 실패 시 fallback activ
       ],
       { cwd: root },
     ),
-    /nationwide coverage gaps remain: 270 missing requirements/,
+    /coverage manifest emergencyOverride is forbidden/,
   );
 
-  const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["active", "override"]);
+  assert.equal(await readFile(reportPath, "utf8"), existingReport);
 });
 
 test("전국 coverage gap report는 activePack 생략 시 기본 capital pack을 검증한다", async () => {
@@ -10357,22 +10358,23 @@ test("전국 coverage gap report는 activePack 생략 시 기본 capital pack을
   await writeFile(manifestPath, manifestJson);
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
 
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/report-coverage-gaps.mjs",
-      "--targets", "tools/datapack/nationwide-coverage-targets.json",
-      "--inventory", inventoryPath,
-      "--manifest", manifestPath,
-      "--provenance", provenancePath,
-      "--output", reportPath,
-    ],
-    { cwd: root },
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /coverage manifest activePack is required/,
   );
 
-  const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.equal(report.summary.coverageComplete, true);
-  assert.deepEqual(report.candidate.packs.map(({ id }) => id), ["capital"]);
+  await assert.rejects(readFile(reportPath, "utf8"), /ENOENT/);
 });
 
 test("전국 coverage gap report는 safe integer를 넘는 기본 capital pack 버전을 정확히 비교한다", async () => {
@@ -10415,22 +10417,26 @@ test("전국 coverage gap report는 safe integer를 넘는 기본 capital pack �
   await writeFile(manifestPath, manifestJson);
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
 
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/report-coverage-gaps.mjs",
-      "--targets", "tools/datapack/nationwide-coverage-targets.json",
-      "--inventory", inventoryPath,
-      "--manifest", manifestPath,
-      "--provenance", provenancePath,
-      "--output", reportPath,
-    ],
-    { cwd: root },
+  const existingReport = "existing coverage report\n";
+  await writeFile(reportPath, existingReport);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/report-coverage-gaps.mjs",
+        "--targets", "tools/datapack/nationwide-coverage-targets.json",
+        "--inventory", inventoryPath,
+        "--manifest", manifestPath,
+        "--provenance", provenancePath,
+        "--output", reportPath,
+      ],
+      { cwd: root },
+    ),
+    /coverage manifest activePack is required/,
   );
 
-  const report = JSON.parse(await readFile(reportPath, "utf8"));
-  assert.equal(report.summary.coverageComplete, true);
-  assert.deepEqual(report.candidate.packs.map(({ version }) => version), [newVersion]);
+  assert.equal(await readFile(reportPath, "utf8"), existingReport);
 });
 
 test("v1 pilot release gate는 line-scoped inventory와 provenance를 포함 노선으로 평가한다", async () => {
