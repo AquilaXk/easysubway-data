@@ -220,6 +220,30 @@ test("self-declared ADMITTED evidence가 있는 직접 ITX row도 검증된 arti
   );
 });
 
+test("test-only admission도 legacy canonical pack identity를 거부한다", async (context) => {
+  const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-legacy-test-only-"));
+  context.after(() => rm(temporaryDir, { recursive: true, force: true }));
+  const fixturePath = path.join(temporaryDir, "fixture.json");
+  const admissionPath = path.join(temporaryDir, "admission.json");
+  await writeFile(fixturePath, await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url)));
+  await writeFile(admissionPath, await readFile(
+    new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url),
+  ));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--fixture", fixturePath,
+      "--test-only-itx-admission", admissionPath,
+      "--output", path.join(temporaryDir, "output"),
+    ], {
+      cwd: root,
+      env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-14T00:00:00.000Z" },
+    }),
+    /test-only ITX legacy canonical pack identity is forbidden/,
+  );
+});
+
 test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materialize한다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-admitted-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
@@ -264,6 +288,7 @@ test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materializ
     new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url),
     "utf8",
   ));
+  delete admission.canonicalPackIdentity;
   admission.stationCatalogPackIdentity = stationCatalogPackIdentity;
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   await writeFile(admissionPath, `${JSON.stringify(admission, null, 2)}\n`);

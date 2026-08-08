@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { constants as zlibConstants, gunzipSync, gzipSync } from "node:zlib";
+import { constants as zlibConstants, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -274,8 +274,15 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
 
 async function materializeTestOnlyItxAdmission(fixture, admission, admissionBytes) {
   const freshUntil = validateTestOnlyItxAdmission(admission);
-  const canonicalIdentity = await validateTestOnlyItxCanonicalIdentity(admission);
-  const pack = testOnlyItxTargetPack(fixture, canonicalIdentity);
+  if (Object.hasOwn(admission, "canonicalPackIdentity")) {
+    throw new Error("test-only ITX legacy canonical pack identity is forbidden");
+  }
+  const stationIdentity = requiredStationCatalogPackIdentity(
+    admission.stationCatalogPackIdentity,
+    "testOnlyItxAdmission.stationCatalogPackIdentity",
+  );
+  validateTestOnlyItxTimetableIdentity(admission);
+  const pack = testOnlyItxTargetPack(fixture);
   const lineId = requiredString(admission.canonicalLineId, "testOnlyItxAdmission.canonicalLineId");
   const admittedStationIds = validateTestOnlyItxStations(pack, admission, lineId);
   const timetableHash = sha256(admissionBytes);
@@ -291,10 +298,6 @@ async function materializeTestOnlyItxAdmission(fixture, admission, admissionByte
   pack.transitTrips = [...(pack.transitTrips ?? []), ...trips];
   pack.transitStopTimes = [...(pack.transitStopTimes ?? []), ...stopTimes];
   pack.networkEdges = [...(pack.networkEdges ?? []), ...edges];
-  const stationIdentity = requiredStationCatalogPackIdentity(
-    admission.stationCatalogPackIdentity,
-    "testOnlyItxAdmission.stationCatalogPackIdentity",
-  );
   validatedItxStationCatalogEvidence.set(pack, {
     serviceClass: "ITX_CHEONGCHUN",
     timetableArtifactId: requiredString(
@@ -341,30 +344,19 @@ function validateTestOnlyItxAdmission(admission) {
   return freshUntil;
 }
 
-async function validateTestOnlyItxCanonicalIdentity(admission) {
-  const canonicalIdentity = admission.canonicalPackIdentity;
-  const canonicalGzipBytes = await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"),
-  );
-  if (
-    canonicalIdentity?.id !== "capital"
-    || canonicalIdentity.sha256 !== sha256(canonicalGzipBytes)
-    || canonicalIdentity.sqliteSha256 !== sha256(gunzipSync(canonicalGzipBytes))
-  ) {
-    throw new Error("test-only ITX admission canonical pack identity is stale");
+function testOnlyItxTargetPack(fixture) {
+  const activePackId = requiredString(fixture?.manifest?.activePack?.id, "fixture.manifest.activePack.id");
+  const pack = fixture.packs?.find(({ id }) => id === activePackId);
+  if (!pack || (pack.artifactKind ?? "fixture") !== "fixture") {
+    throw new Error("test-only ITX admission can materialize only into the active fixture pack");
   }
+  return pack;
+}
+
+function validateTestOnlyItxTimetableIdentity(admission) {
   if (admission.timetableArtifactIdentity?.sha256Source !== "FIXTURE_FILE_BYTES") {
     throw new Error("test-only ITX timetable identity must hash fixture file bytes");
   }
-  return canonicalIdentity;
-}
-
-function testOnlyItxTargetPack(fixture, canonicalIdentity) {
-  const pack = fixture.packs?.find(({ id }) => id === canonicalIdentity.id);
-  if (!pack || (pack.artifactKind ?? "fixture") !== "fixture") {
-    throw new Error("test-only ITX admission can materialize only into a fixture pack");
-  }
-  return pack;
 }
 
 function validateTestOnlyItxStations(pack, admission, lineId) {
