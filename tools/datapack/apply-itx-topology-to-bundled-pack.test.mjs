@@ -1,747 +1,582 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
+  applyTopology,
+  assertCanonicalInputIdentity,
+  assertStoredTopology,
+  deriveTopology,
   isUnchangedRefresh,
+  parseAuthenticatedAdmittedSourceDocuments,
+  validateAdmittedSourceDocuments,
+  validateTopologyEvidence,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const freshBuildEnv = {
-  ...process.env,
-  EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-16T00:00:00.000Z",
-};
+const buildNow = "2026-07-16T00:00:00.000Z";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function rejectedMutatedSource(context, mutate, expected) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-reject-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const packPath = path.join(directory, "capital.sqlite.gz");
-  const indexPath = path.join(directory, "index.json");
-  const evidencePath = path.join(directory, "evidence.json");
-  const contractPath = path.join(directory, "contract.json");
-  const sourcePath = path.join(directory, "source.json");
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
+async function admittedDocuments() {
   const contract = JSON.parse(await readFile(
     path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  const packBytes = await readFile(packPath);
-  source.canonicalPackIdentity.sha256 = sha256(packBytes);
-  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = sha256(packBytes);
-  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = sha256(gunzipSync(packBytes));
-  mutate(source);
-  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
-  await writeFile(sourcePath, sourceBytes);
-  contract.sourceTimetableArtifact.artifactPath = sourcePath;
-  contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
-  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-
-  return assert.rejects(execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-  ], { cwd: root, env: freshBuildEnv }), expected);
+  const reference = contract.sourceTimetableArtifact;
+  const sourceBytes = await readFile(path.join(root, reference.artifactPath));
+  const completenessBytes = await readFile(path.join(root, reference.completenessEvidencePath));
+  return {
+    contract,
+    reference,
+    source: JSON.parse(sourceBytes),
+    completeness: JSON.parse(completenessBytes),
+    sourceBytes,
+    completenessBytes,
+  };
 }
 
-async function rejectedMutatedAdmissionDocuments(context, mutate, expected) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-admission-reject-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const packPath = path.join(directory, "capital.sqlite.gz");
-  const indexPath = path.join(directory, "index.json");
-  const evidencePath = path.join(directory, "evidence.json");
-  const contractPath = path.join(directory, "contract.json");
-  const sourcePath = path.join(directory, "source.json");
-  const completenessPath = path.join(directory, "completeness.json");
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  const completeness = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.completenessEvidencePath), "utf8"));
-  const packBytes = await readFile(packPath);
-  Object.assign(source.canonicalPackIdentity, {
-    sha256: sha256(packBytes),
-  });
-  Object.assign(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
-    sha256: sha256(packBytes),
-    sqliteSha256: sha256(gunzipSync(packBytes)),
-  });
-  mutate({ contract, source, completeness });
-  const completenessBytes = Buffer.from(`${JSON.stringify(completeness, null, 2)}\n`);
-  await writeFile(completenessPath, completenessBytes);
-  source.completenessEvidenceSha256 = sha256(completenessBytes);
-  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
-  await writeFile(sourcePath, sourceBytes);
-  Object.assign(contract.sourceTimetableArtifact, {
-    artifactPath: sourcePath,
-    sha256: sha256(sourceBytes),
-    completenessEvidencePath: completenessPath,
-    completenessEvidenceSha256: sha256(completenessBytes),
-  });
-  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-
-  return assert.rejects(execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-  ], { cwd: root, env: freshBuildEnv }), expected);
+function withBuildNow(callback) {
+  const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = buildNow;
+  try {
+    return callback();
+  } finally {
+    if (previous == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previous;
+  }
 }
 
-async function rejectedTamperedEvidence(context, mutate) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-stale-evidence-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const packPath = path.join(directory, "capital.sqlite.gz");
-  const indexPath = path.join(directory, "index.json");
-  const evidencePath = path.join(directory, "evidence.json");
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
-  const evidence = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
-  mutate(evidence);
-  await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-  await assert.rejects(execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--evidence", evidencePath,
-    "--check",
-  ], { cwd: root, env: freshBuildEnv }), /evidence or bundled pack index is stale/);
+function admissionEvidenceFrom(contract) {
+  const canonical = contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
+  const reference = contract.sourceTimetableArtifact;
+  return {
+    serviceClass: "ITX_CHEONGCHUN",
+    timetableArtifactId: reference.artifactId,
+    timetableArtifactSha256: reference.sha256,
+    canonicalPackId: canonical.id,
+    canonicalPackSha256: canonical.sha256,
+    canonicalPackSqliteSha256: canonical.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible: 1,
+    freshUntil: reference.freshUntil,
+    sourceIssue: 2135,
+  };
 }
 
-test("#2135 ADMITTED source를 Mobile topology-only edge와 evidence로 materialize한다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-pack-"));
+async function createFixture(context, { version = 18, legacyEvidence = false } = {}) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-fixture-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const packPath = path.join(directory, "capital.sqlite.gz");
-  const indexPath = path.join(directory, "index.json");
-  const evidencePath = path.join(directory, "evidence.json");
-  const secondPackPath = path.join(directory, "capital-second.sqlite.gz");
-  const secondIndexPath = path.join(directory, "index-second.json");
-  const secondEvidencePath = path.join(directory, "evidence-second.json");
-  const contractPath = path.join(directory, "contract.json");
-  const sourcePath = path.join(directory, "source.json");
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"), packPath);
-  await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  const packBytes = await readFile(packPath);
-  source.canonicalPackIdentity.sha256 = sha256(packBytes);
-  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = sha256(packBytes);
-  contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = sha256(gunzipSync(packBytes));
-  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
-  await writeFile(sourcePath, sourceBytes);
-  contract.sourceTimetableArtifact.artifactPath = sourcePath;
-  contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
-  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-  await copyFile(packPath, secondPackPath);
-  await copyFile(indexPath, secondIndexPath);
-
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-  ], { cwd: root, env: freshBuildEnv });
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", secondPackPath,
-    "--index", secondIndexPath,
-    "--contract", contractPath,
-    "--evidence", secondEvidencePath,
-  ], { cwd: root, env: freshBuildEnv });
-  assert.deepEqual(
-    await Promise.all([readFile(secondPackPath), readFile(secondIndexPath), readFile(secondEvidencePath)]),
-    await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]),
-  );
-
   const sqlitePath = path.join(directory, "capital.sqlite");
-  await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
+  const schema = await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8");
+  const { contract, source } = await admittedDocuments();
+  const topology = deriveTopology(source);
   const database = new DatabaseSync(sqlitePath);
   try {
-    const edges = database.prepare(`
-      SELECT id, from_node_id, to_node_id, duration_seconds, service_pattern, service_class
-      FROM network_edges
-      WHERE service_class = 'ITX_CHEONGCHUN'
-    `).all();
-    assert.equal(edges.length, 48);
-    assert.equal(new Set(edges.map(({ id }) => id)).size, 48);
-    assert.equal(new Set(edges.map(({ from_node_id, to_node_id }) =>
-      `${from_node_id}->${to_node_id}`)).size, 48);
-    assert.ok(edges.every((edge) => edge.duration_seconds === 0));
-    assert.ok(edges.every((edge) => edge.service_pattern === "EXPRESS"));
-    assert.equal(database.prepare(`
-      SELECT COUNT(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'
-    `).get().count, 0);
-    assert.deepEqual({ ...database.prepare(`
-      SELECT service_class AS serviceClass, timetable_artifact_id AS timetableArtifactId,
-             timetable_artifact_sha256 AS timetableArtifactSha256,
-             canonical_pack_id AS canonicalPackId, canonical_pack_sha256 AS canonicalPackSha256,
-             canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
-             admission_status AS admissionStatus, admission_eligible AS admissionEligible,
-             fresh_until AS freshUntil, source_issue AS sourceIssue
-      FROM route_service_artifact_evidence
-      WHERE service_class = 'ITX_CHEONGCHUN'
-    `).get() }, {
-      serviceClass: "ITX_CHEONGCHUN",
-      timetableArtifactId: contract.sourceTimetableArtifact.artifactId,
-      timetableArtifactSha256: contract.sourceTimetableArtifact.sha256,
-      canonicalPackId: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.id,
-      canonicalPackSha256: contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256,
-      canonicalPackSqliteSha256:
-        contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
-      admissionStatus: "ADMITTED",
-      admissionEligible: 1,
-      freshUntil: contract.sourceTimetableArtifact.freshUntil,
-      sourceIssue: 2135,
-    });
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
+    database.exec(schema);
+    database.exec("PRAGMA foreign_keys = ON");
+    const operators = new Set(topology.stations.map(({ lineId }) => `operator-${lineId}`));
+    const insertOperator = database.prepare("INSERT INTO operators (id, name_ko) VALUES (?, ?)");
+    for (const operator of operators) insertOperator.run(operator, operator);
+    const insertLine = database.prepare("INSERT INTO lines (id, operator_id, name_ko) VALUES (?, ?, ?)");
+    for (const lineId of new Set(topology.stations.map(({ lineId }) => lineId))) {
+      insertLine.run(lineId, `operator-${lineId}`, lineId);
+    }
+    const insertStation = database.prepare(`
+      INSERT INTO stations (id, name_ko, normalized_name) VALUES (?, ?, ?)
+    `);
+    const insertMembership = database.prepare(`
+      INSERT INTO station_lines (station_id, line_id, line_sequence) VALUES (?, ?, ?)
+    `);
+    const insertPosition = database.prepare(`
+      INSERT INTO route_map_positions (
+        station_id, line_id, region, x, y, source_id, source_name, source_url, license, license_status
+      ) VALUES (?, ?, 'fixture', 0, 0, 'fixture', 'fixture', 'https://example.invalid', 'fixture', 'APPROVED')
+    `);
+    const stationIds = new Set();
+    for (const [index, station] of topology.stations.entries()) {
+      if (!stationIds.has(station.stationId)) {
+        insertStation.run(station.stationId, station.stationId, station.stationId);
+        stationIds.add(station.stationId);
+      }
+      insertMembership.run(station.stationId, station.lineId, index);
+      insertPosition.run(station.stationId, station.lineId);
+    }
+    database.exec(`
+      INSERT INTO service_calendars (
+        service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date
+      ) VALUES ('fixture-service', 1, 1, 1, 1, 1, 1, 1, '20260101', '20261231');
+      INSERT INTO transit_routes (id, line_id) VALUES ('fixture-route', '${topology.stations[0].lineId}');
+      INSERT INTO transit_trips (id, route_id, service_id) VALUES ('fixture-trip', 'fixture-route', 'fixture-service');
+      INSERT INTO fare_zones (id, name_ko, region) VALUES ('fixture-zone', 'fixture', 'fixture');
+      INSERT INTO fare_rules (id, zone_id, base_card_fare, base_cash_fare, base_distance_meters)
+      VALUES ('fixture-fare', 'fixture-zone', 0, 0, 0);
+    `);
+    if (legacyEvidence) {
+      database.exec(`
+        DROP TABLE route_service_artifact_evidence;
+        CREATE TABLE route_service_artifact_evidence (
+          service_class TEXT NOT NULL PRIMARY KEY,
+          timetable_artifact_id TEXT NOT NULL,
+          timetable_artifact_sha256 TEXT NOT NULL,
+          canonical_pack_id TEXT NOT NULL,
+          canonical_pack_sha256 TEXT NOT NULL,
+          canonical_pack_sqlite_sha256 TEXT NOT NULL,
+          admission_status TEXT NOT NULL,
+          admission_eligible INTEGER NOT NULL,
+          fresh_until TEXT,
+          source_issue INTEGER NOT NULL CHECK (source_issue = 2116)
+        );
+      `);
+    }
+    if (version === 16) {
+      database.exec("PRAGMA foreign_keys = OFF");
+      database.exec("DROP TABLE route_service_artifact_evidence");
+      for (const table of ["network_edges", "transit_trips"]) {
+        const columns = database.prepare(`PRAGMA table_info(${table})`).all()
+          .map(({ name }) => name)
+          .filter((name) => name !== "service_class")
+          .join(", ");
+        const legacySchema = database.prepare(
+          "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?",
+        ).get(table).sql
+          .replace(`CREATE TABLE ${table}`, `CREATE TABLE ${table}_v16`)
+          .replace("  service_class TEXT NOT NULL DEFAULT 'SUBWAY',\n", "")
+          .replace("  CHECK (service_class IN ('SUBWAY', 'ITX_CHEONGCHUN')),\n", "")
+          .replace("  CHECK (service_class IN ('SUBWAY', 'ITX_CHEONGCHUN'))\n", "")
+          .replace(",\n)", "\n)");
+        database.exec(`
+          ${legacySchema};
+          INSERT INTO ${table}_v16 (${columns}) SELECT ${columns} FROM ${table};
+          DROP TABLE ${table};
+          ALTER TABLE ${table}_v16 RENAME TO ${table};
+        `);
+      }
+      database.exec(`
+        CREATE INDEX idx_transit_trips_route_service_pattern
+          ON transit_trips(route_id, service_id, service_pattern);
+        CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
+      `);
+      database.exec("PRAGMA foreign_keys = ON");
+      assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+    }
+    database.exec(`PRAGMA user_version = ${version}`);
   } finally {
     database.close();
   }
+  return { sqlitePath, contract, source, topology };
+}
 
-  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
-  assert.equal(evidence.sourceIssue, 2135);
-  assert.equal(evidence.serviceId, "ITX_CHEONGCHUN");
-  assert.equal(evidence.topology.stationMembershipCount, 18);
-  assert.equal(evidence.topology.servedStationCount, 14);
-  assert.equal(evidence.topology.edgeCount, 48);
-  assert.equal(evidence.topology.durationSecondsEmbedded, false);
-  assert.equal(evidence.topology.fareEmbedded, false);
-  assert.match(evidence.topology.sha256, /^[a-f0-9]{64}$/);
+function canonicalRows(sqlitePath) {
+  const database = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    return database.prepare(`
+      SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters, edge_type,
+             service_pattern, service_class
+      FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN' ORDER BY id
+    `).all().map((row) => ({ ...row }));
+  } finally {
+    database.close();
+  }
+}
 
-  const beforeCheck = await Promise.all([
-    readFile(packPath), readFile(indexPath), readFile(evidencePath),
-  ]);
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-    "--check",
-  ], { cwd: root, env: freshBuildEnv });
-  const afterCheck = await Promise.all([
-    readFile(packPath), readFile(indexPath), readFile(evidencePath),
-  ]);
-  assert.deepEqual(afterCheck, beforeCheck);
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-  ], { cwd: root, env: freshBuildEnv });
-  assert.deepEqual(await Promise.all([
-    readFile(packPath), readFile(indexPath), readFile(evidencePath),
-  ]), beforeCheck);
-});
+function selfConsistentEvidence(contract, source, topology, gzipBytes, sqliteBytes) {
+  const reference = contract.sourceTimetableArtifact;
+  const gzipSha = sha256(gzipBytes);
+  const sqliteSha = sha256(sqliteBytes);
+  const localContract = structuredClone(contract);
+  const localSource = structuredClone(source);
+  localSource.canonicalPackIdentity.sha256 = gzipSha;
+  localContract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = gzipSha;
+  localContract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = sqliteSha;
+  return {
+    contract: localContract,
+    source: localSource,
+    evidence: {
+      schemaVersion: 1,
+      artifactKind: "itx-cheongchun-mobile-topology-evidence",
+      sourceIssue: 2135,
+      serviceId: "ITX_CHEONGCHUN",
+      sourceArtifact: {
+        id: reference.artifactId,
+        sha256: reference.sha256,
+        completenessEvidenceSha256: reference.completenessEvidenceSha256,
+        freshUntil: reference.freshUntil,
+      },
+      topology: {
+        stationMembershipCount: topology.stations.length,
+        servedStationCount: topology.servedStations.length,
+        edgeCount: topology.edges.length,
+        directions: ["up", "down"],
+        connectedComponentCount: 1,
+        isolatedServedStationCount: 0,
+        sha256: topology.sha256,
+        durationSecondsEmbedded: false,
+        fareEmbedded: false,
+      },
+      pack: {
+        id: "capital", inputSha256: gzipSha, inputSqliteSha256: sqliteSha,
+        inputByteSize: gzipBytes.length, outputSha256: gzipSha, outputSqliteSha256: sqliteSha,
+        byteSize: gzipBytes.length, byteSizeDelta: 0,
+      },
+    },
+    index: { packs: [{ id: "capital", sha256: gzipSha, sqliteSha256: sqliteSha, byteSize: gzipBytes.length }] },
+  };
+}
 
-test("tracked production ITX topology evidence와 bundled pack은 --check를 통과한다", async () => {
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--check",
-  ], { cwd: root, env: freshBuildEnv });
-});
+async function assertRejectedMutatedTopology(context, mutate, expected) {
+  const fixture = await createFixture(context);
+  const source = structuredClone(fixture.source);
+  mutate(source);
+  assert.throws(() => applyTopology(
+    fixture.sqlitePath, deriveTopology(source), admissionEvidenceFrom(fixture.contract),
+  ), expected);
+}
 
-test("64 KiB 초과 gzip은 승인된 serialization-only readmission이 없으면 거부한다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-serialization-readmission-"));
+function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize = gzipBytes.length) {
+  return () => validateTopologyEvidence({
+    contract: candidate.contract, reference: candidate.contract.sourceTimetableArtifact,
+    source: candidate.source, topology, evidence: candidate.evidence, index: candidate.index,
+    inputGzipBytes: gzipBytes,
+    admittedInput: {
+      gzipSha256: candidate.source.canonicalPackIdentity.sha256,
+      sqliteSha256: candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256,
+      byteSize: inputByteSize,
+    },
+  });
+}
+
+test("미등록 current source는 custom contract와 sentinel 산출물을 변경하지 않고 거부한다", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-admission-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  const evidencePath = path.join(directory, "evidence.json");
-  const evidence = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
-  for (const readmission of evidence.readmissions) delete readmission.serializationOnly;
-  await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-
-  await assert.rejects(execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--evidence", evidencePath,
-    "--check",
-  ], { cwd: root, env: freshBuildEnv }), /ITX topology evidence or bundled pack index is stale/);
-});
-
-test("UNCHANGED_AUTO historical fallback은 immediate previous source 변경을 거부한다", async () => {
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const source = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  const previous = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.promotion.previousArtifactPath), "utf8"));
-  previous.normalizedSnapshotSets[0].sets.stationSet.push("station-diverged-from-current");
-
-  assert.equal(isUnchangedRefresh(contract.sourceTimetableArtifact, source, previous), false);
-});
-
-test("historical fallback은 admitted SQLite identity 변조를 거부한다", async () => {
-  const contractPath = path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json");
-  const contract = JSON.parse(await readFile(contractPath, "utf8"));
-  const source = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  const evidence = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
-  evidence.pack.inputSqliteSha256 = "0".repeat(64);
-
-  await assert.rejects(
-    admittedTopologySource(contract.sourceTimetableArtifact, source, evidence, contractPath),
-    /admitted canonical input identity mismatch/,
-  );
-});
-
-test("historical fallback은 끊긴 readmission tail을 거부한다", async () => {
-  const contractPath = path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json");
-  const contract = JSON.parse(await readFile(contractPath, "utf8"));
-  const source = JSON.parse(await readFile(
-    path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  const evidence = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
-  evidence.readmissions.at(-1).previousPack.sha256 = "0".repeat(64);
-
-  await assert.rejects(
-    admittedTopologySource(contract.sourceTimetableArtifact, source, evidence, contractPath),
-    /admitted canonical input identity mismatch/,
-  );
-});
-
-test("--check는 hash가 갱신된 bundled pack의 foreign key 손상도 거부한다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-corrupt-pack-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
+  const { contract } = await admittedDocuments();
+  const contractPath = path.join(directory, "contract.json");
   const packPath = path.join(directory, "capital.sqlite.gz");
-  const sqlitePath = path.join(directory, "capital.sqlite");
   const indexPath = path.join(directory, "index.json");
   const evidencePath = path.join(directory, "evidence.json");
-  const contractPath = path.join(directory, "contract.json");
-  const packBytes = await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"));
-  await writeFile(sqlitePath, gunzipSync(packBytes));
-  const database = new DatabaseSync(sqlitePath);
-  database.exec(`
-    PRAGMA foreign_keys = OFF;
-    UPDATE transit_stop_times
-    SET station_id = 'station-missing-itx-check'
-    WHERE rowid = (SELECT MIN(rowid) FROM transit_stop_times);
-  `);
-  database.close();
-
-  const sqliteBytes = await readFile(sqlitePath);
-  const corruptedPackBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
-  await writeFile(packPath, corruptedPackBytes);
-  const index = JSON.parse(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
-  Object.assign(index.packs.find(({ id }) => id === "capital"), {
-    sha256: sha256(corruptedPackBytes),
-    sqliteSha256: sha256(sqliteBytes),
-    byteSize: corruptedPackBytes.length,
-  });
-  await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-  const evidence = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json"), "utf8"));
-  const historicalSourcePath = `tools/datapack/sources/${evidence.sourceArtifact.id}.json`;
-  const historicalSource = JSON.parse(await readFile(path.join(root, historicalSourcePath), "utf8"));
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  Object.assign(contract.sourceTimetableArtifact, {
-    artifactId: evidence.sourceArtifact.id,
-    artifactPath: historicalSourcePath,
-    sha256: evidence.sourceArtifact.sha256,
-    completenessEvidencePath: historicalSourcePath.replace(/\.json$/, "-completeness-evidence.json"),
-    completenessEvidenceSha256: evidence.sourceArtifact.completenessEvidenceSha256,
-    freshUntil: evidence.sourceArtifact.freshUntil,
-  });
-  Object.assign(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
-    id: evidence.pack.id,
-    sha256: historicalSource.canonicalPackIdentity.sha256,
-    sqliteSha256: evidence.pack.inputSqliteSha256,
-  });
-  Object.assign(evidence.pack, {
-    outputSha256: sha256(corruptedPackBytes),
-    outputSqliteSha256: sha256(sqliteBytes),
-    byteSize: corruptedPackBytes.length,
-    byteSizeDelta: corruptedPackBytes.length - evidence.pack.inputByteSize,
-  });
-  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-  await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
-
+  await writeFile(contractPath, JSON.stringify(contract));
+  await writeFile(packPath, "sentinel-pack");
+  await writeFile(indexPath, "sentinel-index");
+  await writeFile(evidencePath, "sentinel-evidence");
+  const before = await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]);
   await assert.rejects(execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-    "--check",
-  ], { cwd: root, env: freshBuildEnv }), /foreign_key_check failed/);
+    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--contract", contractPath,
+    "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
+  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } }),
+  /current source identity is not admitted/);
+  assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
 });
 
-test("ITX topology check는 self-consistent input size evidence 변조를 거부한다", async (context) => {
-  await rejectedTamperedEvidence(context, (evidence) => {
-    evidence.pack.inputByteSize = evidence.pack.byteSize;
-    evidence.pack.byteSizeDelta = 0;
-  });
+test("admission은 mismatched pinned hash의 invalid JSON을 parse 전에 거부한다", () => {
+  const parserToken = "parser-token-must-not-appear";
+  let error;
+  try {
+    parseAuthenticatedAdmittedSourceDocuments(
+      { sha256: "0".repeat(64), completenessEvidenceSha256: "1".repeat(64) },
+      Buffer.from(`{${parserToken}`),
+      Buffer.from(`{${parserToken}`),
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof Error);
+  assert.match(error.message, /source bytes do not match the coverage contract/);
+  assert.doesNotMatch(error.message, new RegExp(parserToken));
 });
 
-test("ITX topology는 freshUntil 경계부터 ADMITTED source를 거부한다", async () => {
-  const command = [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--check",
+test("admission은 traversal 또는 redirect source path를 dereference 전에 거부한다", async () => {
+  const documents = await admittedDocuments();
+  const reference = structuredClone(documents.reference);
+  reference.artifactPath = "../outside-source.json";
+  reference.completenessEvidencePath = "tools/datapack/sources/redirected-evidence.json";
+  withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract, reference, documents.source, documents.completeness,
+    sha256(documents.sourceBytes), sha256(documents.completenessBytes),
+  ), /ADMITTED source contract/));
+});
+
+test("topology direct seam은 shape, FK, admission evidence를 materialize하고 deterministic하다", async (context) => {
+  const first = await createFixture(context);
+  const second = await createFixture(context);
+  const evidence = admissionEvidenceFrom(first.contract);
+  applyTopology(first.sqlitePath, first.topology, evidence);
+  applyTopology(second.sqlitePath, second.topology, evidence);
+  assertStoredTopology(first.sqlitePath, first.topology, evidence);
+  assert.deepEqual(canonicalRows(first.sqlitePath), canonicalRows(second.sqlitePath));
+  assert.equal(canonicalRows(first.sqlitePath).length, 48);
+});
+
+test("topology evidence seam은 self-consistent fixture를 통과하고 파생 count 변조를 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+  assert.doesNotThrow(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes));
+  candidate.evidence.topology.edgeCount += 1;
+  assert.throws(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes),
+    /evidence or bundled pack index is stale/);
+});
+
+test("self-consistent custom canonical SQLite/evidence도 static admission과 다르면 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+  const admittedInput = {
+    gzipSha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+    sqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+    byteSize: 354980,
+  };
+  const mutatedSqliteSha = "0".repeat(64);
+  candidate.source.canonicalPackIdentity.sha256 = admittedInput.gzipSha256;
+  candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = admittedInput.gzipSha256;
+  candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = mutatedSqliteSha;
+  candidate.evidence.pack.inputSha256 = admittedInput.gzipSha256;
+  candidate.evidence.pack.inputSqliteSha256 = mutatedSqliteSha;
+  candidate.evidence.pack.inputByteSize = admittedInput.byteSize;
+  candidate.evidence.pack.byteSizeDelta = gzipBytes.length - admittedInput.byteSize;
+  assert.throws(() => validateTopologyEvidence({
+    contract: candidate.contract, reference: candidate.contract.sourceTimetableArtifact,
+    source: candidate.source, topology: fixture.topology, evidence: candidate.evidence,
+    index: candidate.index, inputGzipBytes: gzipBytes, admittedInput,
+  }), /evidence or bundled pack index is stale/);
+});
+
+test("admission document와 canonical input identity는 exact binding을 요구한다", async (context) => {
+  const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await admittedDocuments();
+  withBuildNow(() => assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+    contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+  )));
+  const invalidCompleteness = structuredClone(completeness);
+  invalidCompleteness.validationStatus = "UNSUPPORTED";
+  withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+    contract, reference, source, invalidCompleteness, sha256(sourceBytes), sha256(completenessBytes),
+  ), /source identity is invalid/));
+  const fixture = await createFixture(context);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+  candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "0".repeat(64);
+  assert.throws(() => assertCanonicalInputIdentity(
+    candidate.contract, candidate.source, sha256(gzipBytes), sha256(sqliteBytes),
+  ),
+    /canonical input pack identity mismatch/);
+});
+
+test("v18 legacy evidence schema는 2135 admission schema로 migration한다", async (context) => {
+  const fixture = await createFixture(context, { legacyEvidence: true });
+  applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract));
+  const database = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
+  try {
+    assert.equal(database.prepare(`SELECT source_issue FROM route_service_artifact_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'`).get().source_issue, 2135);
+  } finally { database.close(); }
+});
+
+test("actual v16 conversion은 8개 preserved table과 index를 보존하고 idempotent하다", async (context) => {
+  const fixture = await createFixture(context, { version: 16 });
+  const database = new DatabaseSync(fixture.sqlitePath);
+  const preservedTables = [
+    "official_od_fare_quotes", "service_calendar_dates", "service_calendars", "transit_feed_info",
+    "transit_frequencies", "transit_routes", "transit_stop_times", "transit_trips",
   ];
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const boundary = Date.parse(contract.sourceTimetableArtifact.freshUntil);
-  await execFileAsync(process.execPath, command, {
-    cwd: root,
-    env: {
-      ...process.env,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(boundary - 1).toISOString(),
-    },
-  });
-  await assert.rejects(execFileAsync(process.execPath, command, {
-    cwd: root,
-    env: {
-      ...process.env,
-      EASYSUBWAY_DATAPACK_BUILD_NOW: new Date(boundary).toISOString(),
-    },
-  }), /ITX topology source artifact is expired/);
+  const before = preservedTables.map((table) =>
+    [table, database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]);
+  assert.deepEqual(database.prepare(`
+    SELECT name FROM sqlite_schema WHERE type = 'index' AND name IN (
+      'idx_network_edges_from_node', 'idx_transit_trips_route_service_pattern'
+    ) ORDER BY name
+  `).all().map(({ name }) => name), [
+    "idx_network_edges_from_node", "idx_transit_trips_route_service_pattern",
+  ]);
+  database.close();
+  const evidence = admissionEvidenceFrom(fixture.contract);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  const output = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
+  try {
+    assert.equal(output.prepare("PRAGMA user_version").get().user_version, 18);
+    for (const [table, rows] of before) {
+      const actual = output.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map((row) => {
+        if (table !== "transit_trips") return row;
+        const { service_class: _serviceClass, ...legacyRow } = row;
+        return legacyRow;
+      });
+      assert.deepEqual(JSON.parse(JSON.stringify(actual)), JSON.parse(JSON.stringify(rows)));
+    }
+    assert.deepEqual(output.prepare(`
+      SELECT name FROM sqlite_schema WHERE type = 'index' AND name IN (
+        'idx_network_edges_from_node', 'idx_transit_trips_route_service_pattern'
+      ) ORDER BY name
+    `).all().map(({ name }) => name), [
+      "idx_network_edges_from_node", "idx_transit_trips_route_service_pattern",
+    ]);
+  } finally { output.close(); }
+  assertStoredTopology(fixture.sqlitePath, fixture.topology, evidence);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+  assert.doesNotThrow(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes));
 });
 
-test("ITX topology는 admission document schema identity 변조를 거부한다", async (context) => {
+test("unsupported catalog version은 fixture를 변경하지 않고 거부한다", async (context) => {
+  const fixture = await createFixture(context, { version: 19 });
+  const before = sha256(await readFile(fixture.sqlitePath));
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+    /does not support catalog user_version/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
+});
+
+test("current source admission은 historical evidence, path, previous artifact를 받지 않는다", async () => {
+  const { reference, source } = await admittedDocuments();
+  assert.throws(() => admittedTopologySource(reference, source), /current source identity is not admitted/);
+});
+
+test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam에서 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const payload = randomBytes(100_000);
+  const gzipBytes = gzipSync(payload, { level: 9, mtime: 0 });
+  assert.ok(gzipBytes.length > 64 * 1024);
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, payload);
+  candidate.evidence.pack.inputByteSize = 1;
+  candidate.evidence.pack.byteSizeDelta = gzipBytes.length - 1;
+  assert.throws(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes, 1),
+    /evidence or bundled pack index is stale/);
+});
+
+test("isUnchangedRefresh는 immediate previous source divergence를 거부한다", async () => {
+  const { reference, source } = await admittedDocuments();
+  const previous = JSON.parse(await readFile(path.join(root, reference.promotion.previousArtifactPath), "utf8"));
+  previous.normalizedSnapshotSets[0].sets.stationSet.push("station-diverged-from-current");
+  assert.equal(isUnchangedRefresh(reference, source, previous), false);
+});
+
+test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const evidence = admissionEvidenceFrom(fixture.contract);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  const database = new DatabaseSync(fixture.sqlitePath);
+  try {
+    database.exec("PRAGMA foreign_keys = OFF");
+    database.exec(`INSERT INTO transit_stop_times (
+      trip_id, stop_sequence, station_id, line_id, arrival_seconds, departure_seconds
+    ) VALUES ('fixture-trip', 1, 'missing-station', '${fixture.topology.stations[0].lineId}', 0, 0)`);
+  } finally { database.close(); }
+  assert.throws(() => assertStoredTopology(fixture.sqlitePath, fixture.topology, evidence),
+    /foreign_key_check failed/);
+});
+
+test("self-consistent inputByteSize mutation은 evidence seam에서 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+  candidate.evidence.pack.inputByteSize = gzipBytes.length - 1;
+  candidate.evidence.pack.byteSizeDelta = 1;
+  assert.throws(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes),
+    /evidence or bundled pack index is stale/);
+});
+
+test("freshUntil boundary부터 admitted source를 거부한다", async () => {
+  const { contract, reference, source, completeness, sourceBytes, completenessBytes } = await admittedDocuments();
+  const boundary = Date.parse(reference.freshUntil);
+  const previous = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  try {
+    process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = new Date(boundary - 1).toISOString();
+    assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+      contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+    ));
+    process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = new Date(boundary).toISOString();
+    assert.throws(() => validateAdmittedSourceDocuments(
+      contract, reference, source, completeness, sha256(sourceBytes), sha256(completenessBytes),
+    ), /source artifact is expired/);
+  } finally {
+    if (previous == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previous;
+  }
+});
+
+test("contract/source/completeness schema identity 변조를 각각 거부한다", async (context) => {
   const cases = [
-    ["contract", ({ contract }) => { contract.schemaVersion = 999; }],
-    ["source", ({ source }) => { source.schemaVersion = 999; }],
-    ["completeness", ({ completeness }) => { completeness.schemaVersion = 999; }],
+    ["contract", (documents) => { documents.contract.schemaVersion = 999; }, /ADMITTED source contract/],
+    ["source", (documents) => { documents.source.schemaVersion = 999; }, /source identity is invalid/],
+    ["completeness", (documents) => { documents.completeness.schemaVersion = 999; }, /source identity is invalid/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    await context.test(name, async () => {
+      const documents = await admittedDocuments();
+      mutate(documents);
+      withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+        documents.contract, documents.reference, documents.source, documents.completeness,
+        sha256(documents.sourceBytes), sha256(documents.completenessBytes),
+      ), expected));
+    });
+  }
+});
+
+test("canonical gzip와 SQLite identity 변조를 각각 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+  await context.test("gzip", () => {
+    candidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = "0".repeat(64);
+    assert.throws(() => assertCanonicalInputIdentity(candidate.contract, candidate.source, sha256(gzipBytes), sha256(sqliteBytes)),
+      /canonical input pack identity mismatch/);
+  });
+  await context.test("sqlite", () => {
+    const sqliteCandidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+    sqliteCandidate.contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "0".repeat(64);
+    assert.throws(() => assertCanonicalInputIdentity(
+      sqliteCandidate.contract, sqliteCandidate.source, sha256(gzipBytes), sha256(sqliteBytes),
+    ), /canonical input pack identity mismatch/);
+  });
+});
+
+test("versions 15와 19는 mutation 없이 거부한다", async (context) => {
+  for (const version of [15, 19]) {
+    await context.test(String(version), async (childContext) => {
+      const fixture = await createFixture(childContext, { version });
+      const before = sha256(await readFile(fixture.sqlitePath));
+      assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+        /does not support catalog user_version/);
+      assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
+    });
+  }
+});
+
+test("evidence topology count, size budget, schema identity mutation을 각각 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const sqliteBytes = await readFile(fixture.sqlitePath);
+  const gzipBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
+  const cases = [
+    ["topology-count", (evidence) => { evidence.topology.stationMembershipCount += 1; }],
+    ["size-budget", (evidence) => { evidence.pack.inputByteSize = 0; evidence.pack.byteSizeDelta = gzipBytes.length; }],
+    ["schema-identity", (evidence) => { evidence.schemaVersion = 999; }],
   ];
   for (const [name, mutate] of cases) {
-    await context.test(name, async (childContext) => {
-      await rejectedMutatedAdmissionDocuments(
-        childContext,
-        mutate,
-        /ADMITTED source contract|source identity is invalid/,
-      );
+    await context.test(name, () => {
+      const candidate = selfConsistentEvidence(fixture.contract, fixture.source, fixture.topology, gzipBytes, sqliteBytes);
+      mutate(candidate.evidence);
+      assert.throws(validateEvidenceCandidate(candidate, fixture.topology, gzipBytes),
+        /evidence or bundled pack index is stale/);
     });
   }
 });
 
-test("ITX topology는 contract canonical gzip identity 변조를 거부한다", async (context) => {
-  await rejectedMutatedAdmissionDocuments(context, ({ contract }) => {
-    contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sha256 = "0".repeat(64);
-  }, /canonical input pack identity mismatch/);
-});
-
-test("ITX topology는 contract canonical SQLite identity 변조를 거부한다", async (context) => {
-  await rejectedMutatedAdmissionDocuments(context, ({ contract }) => {
-    contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity.sqliteSha256 = "0".repeat(64);
-  }, /canonical input pack identity mismatch/);
-});
-
-test("기존 source_issue=2116 제약의 v18 pack을 2135 admission schema로 migration한다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-v18-evidence-migration-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const packPath = path.join(directory, "capital.sqlite.gz");
-  const sqlitePath = path.join(directory, "capital.sqlite");
-  const indexPath = path.join(directory, "index.json");
-  const evidencePath = path.join(directory, "evidence.json");
-  const contractPath = path.join(directory, "contract.json");
-  const sourcePath = path.join(directory, "source.json");
-  await writeFile(sqlitePath, gunzipSync(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))));
-  const database = new DatabaseSync(sqlitePath);
-  database.exec(`
-    DROP TABLE route_service_artifact_evidence;
-    CREATE TABLE route_service_artifact_evidence (
-      service_class TEXT NOT NULL PRIMARY KEY,
-      timetable_artifact_id TEXT NOT NULL,
-      timetable_artifact_sha256 TEXT NOT NULL,
-      canonical_pack_id TEXT NOT NULL,
-      canonical_pack_sha256 TEXT NOT NULL,
-      canonical_pack_sqlite_sha256 TEXT NOT NULL,
-      admission_status TEXT NOT NULL,
-      admission_eligible INTEGER NOT NULL,
-      fresh_until TEXT,
-      source_issue INTEGER NOT NULL,
-      CHECK (source_issue = 2116)
-    );
-    PRAGMA user_version = 18;
-  `);
-  database.close();
-  const inputSqliteBytes = await readFile(sqlitePath);
-  const inputPackBytes = gzipSync(inputSqliteBytes, { level: 9, mtime: 0 });
-  await writeFile(packPath, inputPackBytes);
-  const index = JSON.parse(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
-  Object.assign(index.packs.find(({ id }) => id === "capital"), {
-    sha256: sha256(inputPackBytes),
-    sqliteSha256: sha256(inputSqliteBytes),
-    byteSize: inputPackBytes.length,
-  });
-  await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  Object.assign(source.canonicalPackIdentity, { sha256: sha256(inputPackBytes) });
-  Object.assign(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
-    sha256: sha256(inputPackBytes),
-    sqliteSha256: sha256(inputSqliteBytes),
-  });
-  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
-  await writeFile(sourcePath, sourceBytes);
-  Object.assign(contract.sourceTimetableArtifact, {
-    artifactPath: sourcePath,
-    sha256: sha256(sourceBytes),
-  });
-  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-  ], { cwd: root, env: freshBuildEnv });
-
-  await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
-  const migrated = new DatabaseSync(sqlitePath, { readOnly: true });
-  try {
-    assert.equal(migrated.prepare(`
-      SELECT source_issue FROM route_service_artifact_evidence
-      WHERE service_class = 'ITX_CHEONGCHUN'
-    `).get().source_issue, 2135);
-    assert.match(migrated.prepare(`
-      SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'route_service_artifact_evidence'
-    `).get().sql, /source_issue IN \(2116, 2135\)/);
-  } finally {
-    migrated.close();
-  }
-});
-
-test("v16 bundled pack 변환은 ITX topology 외 timetable·calendar·fare row를 바꾸지 않는다", async (context) => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-v16-"));
-  context.after(() => rm(directory, { recursive: true, force: true }));
-  const packPath = path.join(directory, "capital.sqlite.gz");
-  const sqlitePath = path.join(directory, "capital.sqlite");
-  const indexPath = path.join(directory, "index.json");
-  const evidencePath = path.join(directory, "evidence.json");
-  const contractPath = path.join(directory, "contract.json");
-  const sourcePath = path.join(directory, "source.json");
-  await writeFile(sqlitePath, gunzipSync(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))));
-  const inputDatabase = new DatabaseSync(sqlitePath);
-  const preservedTables = [
-    "official_od_fare_quotes",
-    "service_calendar_dates",
-    "service_calendars",
-    "transit_feed_info",
-    "transit_frequencies",
-    "transit_routes",
-    "transit_stop_times",
-    "transit_trips",
-  ];
-  inputDatabase.exec("PRAGMA foreign_keys = OFF");
-  inputDatabase.exec("DELETE FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN'");
-  inputDatabase.exec("DROP TABLE route_service_artifact_evidence");
-  for (const table of ["network_edges", "transit_trips"]) {
-    const columns = inputDatabase.prepare(`PRAGMA table_info(${table})`).all()
-      .map(({ name }) => name)
-      .filter((name) => name !== "service_class")
-      .join(", ");
-    const schema = inputDatabase.prepare(
-      "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?",
-    ).get(table).sql
-      .replace(`CREATE TABLE ${table}`, `CREATE TABLE ${table}_v16`)
-      .replace("  service_class TEXT NOT NULL DEFAULT 'SUBWAY',\n", "")
-      .replace("  CHECK (service_class IN ('SUBWAY', 'ITX_CHEONGCHUN')),\n", "")
-      .replace("  CHECK (service_class IN ('SUBWAY', 'ITX_CHEONGCHUN'))\n", "")
-      .replace(",\n)", "\n)");
-    inputDatabase.exec(`
-      ${schema};
-      INSERT INTO ${table}_v16 (${columns}) SELECT ${columns} FROM ${table};
-      DROP TABLE ${table};
-      ALTER TABLE ${table}_v16 RENAME TO ${table};
-    `);
-  }
-  inputDatabase.exec(`
-    CREATE INDEX idx_transit_trips_route_service_pattern
-      ON transit_trips(route_id, service_id, service_pattern);
-    CREATE INDEX idx_network_edges_from_node ON network_edges(from_node_id);
-  `);
-  assert.deepEqual(inputDatabase.prepare(`
-    SELECT name FROM sqlite_schema
-    WHERE type = 'index' AND name IN (
-      'idx_network_edges_from_node',
-      'idx_transit_trips_route_service_pattern'
-    )
-    ORDER BY name
-  `).all().map(({ name }) => name), [
-    "idx_network_edges_from_node",
-    "idx_transit_trips_route_service_pattern",
-  ]);
-  inputDatabase.exec("PRAGMA foreign_keys = ON");
-  assert.deepEqual(inputDatabase.prepare("PRAGMA foreign_key_check").all(), []);
-  inputDatabase.exec("PRAGMA user_version = 16");
-  const beforeRows = Object.fromEntries(preservedTables.map((table) => [
-    table,
-    JSON.parse(JSON.stringify(inputDatabase.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all())),
-  ]));
-  inputDatabase.close();
-  const inputSqliteBytes = await readFile(sqlitePath);
-  const inputPackBytes = gzipSync(inputSqliteBytes, { level: 9, mtime: 0 });
-  await writeFile(packPath, inputPackBytes);
-
-  const index = JSON.parse(await readFile(
-    path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
-  Object.assign(index.packs.find(({ id }) => id === "capital"), {
-    sha256: sha256(inputPackBytes),
-    sqliteSha256: sha256(inputSqliteBytes),
-    byteSize: inputPackBytes.length,
-  });
-  await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-  const contract = JSON.parse(await readFile(
-    path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-  const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-  Object.assign(source.canonicalPackIdentity, {
-    sha256: sha256(inputPackBytes),
-    sqliteSha256: sha256(inputSqliteBytes),
-  });
-  Object.assign(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
-    sha256: sha256(inputPackBytes),
-    sqliteSha256: sha256(inputSqliteBytes),
-  });
-  const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
-  await writeFile(sourcePath, sourceBytes);
-  Object.assign(contract.sourceTimetableArtifact, {
-    artifactPath: sourcePath,
-    sha256: sha256(sourceBytes),
-  });
-  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-
-  await execFileAsync(process.execPath, [
-    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-    "--pack", packPath,
-    "--index", indexPath,
-    "--contract", contractPath,
-    "--evidence", evidencePath,
-  ], { cwd: root, env: freshBuildEnv });
-
-  await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
-  const outputDatabase = new DatabaseSync(sqlitePath, { readOnly: true });
-  try {
-    assert.equal(outputDatabase.prepare("PRAGMA user_version").get().user_version, 18);
-    assert.equal(outputDatabase.prepare(`
-      SELECT COUNT(*) AS count FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN'
-    `).get().count, 48);
-    for (const table of preservedTables) {
-      const afterRows = outputDatabase.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()
-        .map((row) => {
-          if (table !== "transit_trips") return row;
-          const { service_class: _serviceClass, ...unchanged } = row;
-          return unchanged;
-        });
-      assert.deepEqual(
-        JSON.parse(JSON.stringify(afterRows)),
-        beforeRows[table],
-        `${table} rows must stay unchanged`,
-      );
-    }
-  } finally {
-    outputDatabase.close();
-  }
-});
-
-test("ITX topology materializer는 지원 범위 밖 catalog version을 변경 없이 거부한다", async (context) => {
-  for (const version of [15, 19]) {
-    const directory = await mkdtemp(path.join(os.tmpdir(), `itx-topology-v${version}-`));
-    context.after(() => rm(directory, { recursive: true, force: true }));
-    const packPath = path.join(directory, "capital.sqlite.gz");
-    const sqlitePath = path.join(directory, "capital.sqlite");
-    const indexPath = path.join(directory, "index.json");
-    const evidencePath = path.join(directory, "evidence.json");
-    const contractPath = path.join(directory, "contract.json");
-    const sourcePath = path.join(directory, "source.json");
-    await writeFile(sqlitePath, gunzipSync(await readFile(
-      path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))));
-    const database = new DatabaseSync(sqlitePath);
-    database.exec(`PRAGMA user_version = ${version}`);
-    database.close();
-    const sqliteBytes = await readFile(sqlitePath);
-    const packBytes = gzipSync(sqliteBytes, { level: 9, mtime: 0 });
-    await writeFile(packPath, packBytes);
-    const index = JSON.parse(await readFile(
-      path.join(root, "apps/mobile/assets/datapacks/index.json"), "utf8"));
-    Object.assign(index.packs.find(({ id }) => id === "capital"), {
-      sha256: sha256(packBytes),
-      sqliteSha256: sha256(sqliteBytes),
-      byteSize: packBytes.length,
-    });
-    await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
-    const contract = JSON.parse(await readFile(
-      path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8"));
-    const source = JSON.parse(await readFile(
-      path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
-    Object.assign(source.canonicalPackIdentity, {
-      sha256: sha256(packBytes),
-      sqliteSha256: sha256(sqliteBytes),
-    });
-    Object.assign(contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity, {
-      sha256: sha256(packBytes),
-      sqliteSha256: sha256(sqliteBytes),
-    });
-    const sourceBytes = Buffer.from(`${JSON.stringify(source, null, 2)}\n`);
-    await writeFile(sourcePath, sourceBytes);
-    Object.assign(contract.sourceTimetableArtifact, {
-      artifactPath: sourcePath,
-      sha256: sha256(sourceBytes),
-    });
-    await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
-
-    await assert.rejects(execFileAsync(process.execPath, [
-      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs",
-      "--pack", packPath,
-      "--index", indexPath,
-      "--contract", contractPath,
-      "--evidence", evidencePath,
-    ], { cwd: root, env: freshBuildEnv }), /does not support catalog user_version/);
-    assert.equal(sha256(await readFile(packPath)), sha256(packBytes));
-  }
-});
-
-test("--check는 topology evidence의 파생 count 변조를 거부한다", async (context) => {
-  await rejectedTamperedEvidence(context, (evidence) => {
-    evidence.topology.stationMembershipCount += 1;
-  });
-});
-
-test("--check는 일관되게 조작된 size budget evidence도 거부한다", async (context) => {
-  await rejectedTamperedEvidence(context, (evidence) => {
-    evidence.pack.inputByteSize = 0;
-    evidence.pack.byteSizeDelta = evidence.pack.byteSize;
-  });
-});
-
-test("--check는 topology evidence schema identity 변조를 거부한다", async (context) => {
-  await rejectedTamperedEvidence(context, (evidence) => {
-    evidence.schemaVersion = 999;
-    evidence.artifactKind = "unrelated-artifact";
-  });
-});
-
-test("ITX topology는 canonical station/line endpoint가 bundled route map에 있어야 한다", async (context) => {
-  await rejectedMutatedSource(context, (source) => {
+test("canonical station membership missing을 거부한다", async (context) => {
+  await assertRejectedMutatedTopology(context, (source) => {
     const station = source.stationRosters[0].stations[0];
     const originalId = station.canonicalStationId;
-    station.canonicalStationId = "station-missing-itx-endpoint";
+    station.canonicalStationId = "missing-fixture-station";
     for (const stop of source.stationSequences.flatMap(({ stops }) => stops)) {
       if (stop.stationId === originalId) stop.stationId = station.canonicalStationId;
     }
@@ -751,46 +586,40 @@ test("ITX topology는 canonical station/line endpoint가 bundled route map에 �
   }, /canonical station membership is missing/);
 });
 
-test("ITX topology는 source와 completeness evidence의 exact 결합을 요구한다", async (context) => {
-  await rejectedMutatedSource(context, (source) => {
-    source.completenessEvidenceSha256 = "0".repeat(64);
-  }, /source identity is invalid/);
+test("source와 completeness evidence exact binding을 요구한다", async () => {
+  const documents = await admittedDocuments();
+  const reference = structuredClone(documents.reference);
+  const source = structuredClone(documents.source);
+  source.completenessEvidenceSha256 = "0".repeat(64);
+  const sourceBytes = Buffer.from(JSON.stringify(source));
+  reference.sha256 = sha256(sourceBytes);
+  withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
+    documents.contract, reference, source, documents.completeness,
+    sha256(sourceBytes), sha256(documents.completenessBytes),
+  ), /source identity is invalid/));
 });
 
-test("ITX topology는 down sequence가 up과 같은 방향이면 거부한다", async (context) => {
-  await rejectedMutatedSource(context, (source) => {
-    for (const sequence of source.stationSequences.filter(({ directionId }) => directionId === "down")) {
-      sequence.stops.reverse();
-    }
-  }, /direction is invalid/);
-});
-
-test("ITX topology는 U/D 양방향 station sequence가 모두 있어야 한다", async (context) => {
-  await rejectedMutatedSource(context, (source) => {
-    source.stationSequences = source.stationSequences.filter(({ directionId }) => directionId === "up");
-  }, /requires U\/D station sequences/);
-});
-
-test("ITX topology는 admitted service stop 전체를 보존해야 한다", async (context) => {
-  await rejectedMutatedSource(context, (source) => {
-    source.stationSequences = [
-      source.stationSequences.find(({ directionId }) => directionId === "up"),
-      source.stationSequences.find(({ directionId }) => directionId === "down"),
-    ];
-  }, /cover the admitted service stop set/);
-});
-
-test("ITX topology는 service stop을 두 개의 고립 component로 나누지 않는다", async (context) => {
-  await rejectedMutatedSource(context, (source) => {
-    const stops = [...new Map(source.stationSequences
-      .flatMap(({ stops: sequenceStops }) => sequenceStops)
-      .map((stop) => [`${stop.stationId}:${stop.lineId}`, stop])).values()]
-      .sort((left, right) => left.corridorSequence - right.corridorSequence);
-    const middle = Math.ceil(stops.length / 2);
-    const groups = [stops.slice(0, middle), stops.slice(middle)];
-    source.stationSequences = groups.flatMap((group, index) => [
-      { trainNumber: `up-${index}`, directionId: "up", stops: group },
-      { trainNumber: `down-${index}`, directionId: "down", stops: [...group].reverse() },
-    ]);
-  }, /service stop graph must be connected/);
+test("reversed down direction, missing U/D, incomplete stops, disconnected components를 거부한다", async (context) => {
+  const cases = [
+    ["reversed-down", (source) => {
+      for (const sequence of source.stationSequences.filter(({ directionId }) => directionId === "down")) sequence.stops.reverse();
+    }, /direction is invalid/],
+    ["missing-ud", (source) => { source.stationSequences = source.stationSequences.filter(({ directionId }) => directionId === "up"); }, /requires U\/D station sequences/],
+    ["incomplete-stops", (source) => {
+      source.stationSequences = [source.stationSequences.find(({ directionId }) => directionId === "up"), source.stationSequences.find(({ directionId }) => directionId === "down")];
+    }, /cover the admitted service stop set/],
+    ["disconnected", (source) => {
+      const stops = [...new Map(source.stationSequences.flatMap(({ stops: entries }) => entries)
+        .map((stop) => [`${stop.stationId}:${stop.lineId}`, stop])).values()]
+        .sort((left, right) => left.corridorSequence - right.corridorSequence);
+      const middle = Math.ceil(stops.length / 2);
+      source.stationSequences = [stops.slice(0, middle), stops.slice(middle)].flatMap((group, index) => [
+        { trainNumber: `up-${index}`, directionId: "up", stops: group },
+        { trainNumber: `down-${index}`, directionId: "down", stops: [...group].reverse() },
+      ]);
+    }, /service stop graph must be connected/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    await context.test(name, async (childContext) => assertRejectedMutatedTopology(childContext, mutate, expected));
+  }
 });

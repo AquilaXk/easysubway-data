@@ -6,7 +6,6 @@ import { compareStrings } from "./lib/ledger-admission-cli.mjs";
 
 // 게시 범위(capital pilot)의 domain/field 계약 정본. --release-scope 평가는 이 targets로 in-scope gap을 판정한다.
 const DEFAULT_RELEASE_SCOPE_TARGETS = "tools/datapack/capital-pilot-coverage-targets.json";
-const DEFAULT_ACTIVE_PACK_ID = "capital";
 const PUBLIC_API_ORIGINS = new Set([
   "https://api.odcloud.kr",
   "https://apis.data.go.kr",
@@ -1080,6 +1079,12 @@ function coverageManifestIndex(manifest, manifestSha256) {
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
     throw new Error("coverage manifest must be an object");
   }
+  if (Object.hasOwn(manifest, "emergencyOverride")) {
+    throw new Error("coverage manifest emergencyOverride is forbidden");
+  }
+  if (manifest.activePack === undefined) {
+    throw new Error("coverage manifest activePack is required");
+  }
   if (!Array.isArray(manifest.packs) || manifest.packs.length === 0) {
     throw new Error("coverage manifest packs must be a non-empty array");
   }
@@ -1094,44 +1099,14 @@ function coverageManifestIndex(manifest, manifestSha256) {
     packsByIdentity.set(identity, pack);
   }
 
-  const activePackIdentity = manifest.activePack === undefined
-    ? null
-    : packIdentity(manifest.activePack, "coverage manifest activePack");
-  if (activePackIdentity && !packsByIdentity.has(activePackIdentity)) {
+  const activePackIdentity = packIdentity(manifest.activePack, "coverage manifest activePack");
+  if (!packsByIdentity.has(activePackIdentity)) {
     throw new Error(`coverage manifest active pack is missing: ${activePackIdentity}`);
   }
-  const overridePackIdentity = manifest.emergencyOverride === undefined
-    ? null
-    : packIdentity(manifest.emergencyOverride, "coverage manifest emergencyOverride");
-  if (overridePackIdentity && !packsByIdentity.has(overridePackIdentity)) {
-    throw new Error(`coverage manifest emergency override pack is missing: ${overridePackIdentity}`);
-  }
-  const fallbackRootIdentity = activePackIdentity
-    ?? packIdentity(defaultActivePack(manifest.packs), "coverage manifest default active pack");
-  // 앱은 emergency override를 먼저 열지만 파일 누락·손상 시 current active pack으로 fallback한다.
-  // 두 팩의 provenance를 합산하지 않고 각각 같은 coverage 계약을 만족해야 안전한 런타임 선택이 된다.
-  const requiredRootIdentities = [...new Set([
-    ...(overridePackIdentity ? [overridePackIdentity] : []),
-    fallbackRootIdentity,
-  ])];
   const requiredPacks = new Map(
-    requiredRootIdentities.map((identity) => [identity, packsByIdentity.get(identity)]),
+    [[activePackIdentity, packsByIdentity.get(activePackIdentity)]],
   );
   return { sha256: manifestSha256, requiredPacks };
-}
-
-function defaultActivePack(packs) {
-  const candidates = packs.filter((pack) => pack.id === DEFAULT_ACTIVE_PACK_ID);
-  if (candidates.length === 0) {
-    throw new Error(`coverage manifest default active pack is missing: ${DEFAULT_ACTIVE_PACK_ID}`);
-  }
-  return candidates.reduce((selected, pack) =>
-    versionNumber(pack.version) > versionNumber(selected.version) ? pack : selected,
-  );
-}
-
-function versionNumber(version) {
-  return /^\d+$/.test(version) ? BigInt(version) : 0n;
 }
 
 function packIdentity(pack, label) {

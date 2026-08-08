@@ -1123,7 +1123,7 @@ jobs:
 
       - name: Data Pack Release / Upload candidate promotion artifact
         if: ${{ steps.release-mode.outputs.mode == 'release-candidate' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-candidate-${{ github.run_id }}
           path: ${{ env.EASYSUBWAY_DATAPACK_STAGE }}
@@ -1253,7 +1253,7 @@ jobs:
 
       - name: Data Pack Release / Upload remote validation artifact
         if: ${{ always() && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-remote-validation-${{ github.run_id }}
           path: ${{ env.EASYSUBWAY_DATAPACK_REMOTE_VALIDATION }}
@@ -1335,7 +1335,7 @@ jobs:
 
       - name: Data Pack Release / Upload verified release request binding
         if: ${{ steps.release-request-binding.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-published-release-request-binding-${{ github.sha }}
           path: ${{ runner.temp }}/easysubway-datapack-stage/catalog/release-request-binding.json
@@ -1367,7 +1367,7 @@ jobs:
 
       - name: Data Pack Release / Upload callback delivery evidence
         if: ${{ always() && (steps.production-publish.outputs.manifestSha256 != '' || steps.no-change-release.outputs.manifestSha256 != '') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-callback-delivery-${{ github.run_id }}
           path: ${{ env.EASYSUBWAY_DATAPACK_CALLBACK_DELIVERY }}
@@ -1409,7 +1409,7 @@ jobs:
 
       - name: Data Pack Release / Upload rollback rescue evidence
         if: ${{ always() && steps.release-mode.outputs.mode == 'rollback' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-rollback-rescue-${{ github.run_id }}
           path: |
@@ -1513,7 +1513,7 @@ jobs:
 
       - name: Data Pack Release / Upload release decision artifact
         if: ${{ always() && steps.release-decision.outputs.outcome != '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapack-release-decision-${{ github.run_id }}
           path: |
@@ -1524,7 +1524,7 @@ jobs:
 
       - name: Data Pack Release / Upload staged data packs
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: easysubway-datapacks-${{ github.sha }}
           path: ${{ runner.temp }}/easysubway-datapack-stage
