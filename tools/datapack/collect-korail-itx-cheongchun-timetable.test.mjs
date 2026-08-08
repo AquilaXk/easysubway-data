@@ -3123,13 +3123,15 @@ test("ITX CLI replay는 candidate 없이 declared output만 stage publication으
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("ITX CLI promotion은 주입된 repository root를 전달한다", async () => {
+test("ITX CLI promotion은 station catalog와 주입된 repository root를 전달한다", async () => {
   const repositoryRoot = "/tmp/itx-alternate-checkout";
+  const stationCatalogPackPath = "/tmp/itx-station-catalog-pack";
   let received;
   const result = await runKorailItxCompletenessCli({
     argv: [
       "--promote-candidate", "/tmp/candidate.json",
       "--completeness-evidence", "/tmp/candidate.completeness.json",
+      "--station-catalog-pack", stationCatalogPackPath,
       "--source-output-dir", "/tmp/itx-alternate-checkout/tools/datapack/sources",
       "--coverage-contract", "/tmp/itx-alternate-checkout/tools/datapack/itx-cheongchun-coverage-contract.json",
     ],
@@ -3142,7 +3144,65 @@ test("ITX CLI promotion은 주입된 repository root를 전달한다", async () 
   });
 
   assert.equal(received.repositoryRoot, repositoryRoot);
+  assert.equal(received.stationCatalogPackPath, stationCatalogPackPath);
   assert.equal(result.promotion.sourceTimetableArtifact.status, "ADMITTED");
+});
+
+test("ITX CLI current refresh는 admitted source에 station catalog snapshot을 전달한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-current-baseline-"));
+  const sourceDir = path.join(dir, "tools/datapack/sources");
+  const output = path.join(dir, "missing.json");
+  let previousAdmittedArtifact;
+  try {
+    await mkdir(sourceDir, { recursive: true });
+    const previous = sourceCandidate({
+      artifactId: "itx-cheongchun-source-timetable-20260714010000000",
+      observedAt: "2026-07-14T01:00:00.000Z",
+      selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
+      freshUntil: "2026-07-20T00:00:00+09:00",
+      promotionStatus: "SUPPORTED",
+    });
+    const { reference } = await writeAdmittedSourceBundle(sourceDir, previous);
+    reference.promotion = {
+      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      previousArtifactSha256: null,
+      previousArtifactPath: null,
+      approvalUrl: "https://example.test/itx-current-admission",
+      approvedArtifactSha256: reference.sha256,
+    };
+    const contractPath = await writeCoverageContract(dir, JSON.stringify({
+      sourceTimetableArtifact: reference,
+      officialEvidence: {
+        korailCompletenessAdmission: {
+          stationCatalogPackIdentity: structuredClone(PACK_IDENTITY),
+        },
+      },
+    }));
+
+    const result = await runKorailItxCompletenessCli({
+      argv: [
+        "--day8-date", "20260715",
+        "--day7-date", "20260718",
+        "--day9-date", "20260719",
+        "--station-catalog-pack", PACK_PATH,
+        "--coverage-contract", contractPath,
+        "--output", output,
+      ],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" },
+      repositoryRoot: dir,
+      now: new Date("2026-07-14T02:00:00.000Z"),
+      collectImpl: async (options) => {
+        previousAdmittedArtifact = options.previousAdmittedArtifact;
+        throw new Error("provider unavailable");
+      },
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(previousAdmittedArtifact.stationCatalogPackIdentity, PACK_IDENTITY);
+    assert.equal(previousAdmittedArtifact.artifactId, previous.artifactId);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("ITX CLI는 canonical coverage contract 복사본으로 admission authority를 우회하지 못한다", async () => {
