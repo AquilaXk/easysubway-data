@@ -33,7 +33,6 @@ import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology
 const root = path.resolve(import.meta.dirname, "../..");
 const canonicalSqliteHeaderVersion = 3_053_000;
 const validatedItxStationCatalogEvidence = new WeakMap();
-const validatedItxTopologyPackOutputs = new WeakMap();
 const stationCatalogPackIdentityKeys = Object.freeze([
   "artifactKind",
   "manifestVersion",
@@ -105,13 +104,6 @@ async function main() {
     const compressedSha256 = sha256(compressedBytes);
     const sqliteSha256 = sha256(sqliteBytes);
     const sizeBytes = compressedBytes.length;
-    const expectedItxTopologyOutput = validatedItxTopologyPackOutputs.get(pack);
-    if (expectedItxTopologyOutput != null
-      && (expectedItxTopologyOutput.sha256 !== compressedSha256
-        || expectedItxTopologyOutput.sqliteSha256 !== sqliteSha256
-        || expectedItxTopologyOutput.byteSize !== sizeBytes)) {
-      throw new Error("built ITX pack identity does not match current topology evidence output");
-    }
     stagedPackFiles.push({ outputPackPath, outputSqlitePath, sqliteBytes, compressedBytes });
     const representativeRouteRegressions = canonicalRepresentativeRouteRegressions(
       pack.representativeRouteRegressions,
@@ -693,7 +685,6 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     // verified station-catalog row that the SQLite transaction materializes below.
     pack.routeServiceArtifactEvidence = [];
     validatedItxStationCatalogEvidence.set(pack, itxAdmission.routeServiceArtifactEvidence);
-    validatedItxTopologyPackOutputs.set(pack, itxTopologyEvidence.packOutputIdentity);
     normalizeUnverifiedNetworkEdgeStates(pack);
   }
   const accessibilityFreshUntil = productionAccessibilityFreshUntil(
@@ -1120,6 +1111,22 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
     contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
     "ITX coverage contract stationCatalogPackIdentity",
   );
+  const contractTopologyInputPackIdentity = requiredTopologyInputPackIdentity(
+    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
+    "ITX coverage contract topologyInputPackIdentity",
+  );
+  const topologyEvidenceInputPackIdentity = requiredTopologyInputPackIdentity({
+    id: topologyAdmission.evidence.pack.id,
+    sha256: topologyAdmission.evidence.pack.inputSha256,
+    sqliteSha256: topologyAdmission.evidence.pack.inputSqliteSha256,
+    byteSize: topologyAdmission.evidence.pack.inputByteSize,
+  }, "ITX topology evidence input pack identity");
+  if (!sameTopologyInputPackIdentity(
+    contractTopologyInputPackIdentity,
+    topologyEvidenceInputPackIdentity,
+  )) {
+    throw new Error("ITX topology input pack identity does not match coverage contract admission");
+  }
   if (Object.hasOwn(completeness, "canonicalPackIdentity")
     || Object.hasOwn(completeness, "readmissions")) {
     throw new Error("ITX completeness legacy admission identity is forbidden");
@@ -1344,12 +1351,24 @@ async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
   return {
     evidence,
     stationCatalogPackIdentity,
-    packOutputIdentity: {
-      sha256: pack.outputSha256,
-      sqliteSha256: pack.outputSqliteSha256,
-      byteSize: pack.byteSize,
-    },
   };
+}
+
+function requiredTopologyInputPackIdentity(identity, label) {
+  assertExactKeys(identity, ["id", "sha256", "sqliteSha256", "byteSize"], label);
+  return {
+    id: requiredString(identity.id, `${label}.id`),
+    sha256: sha256HexString(identity.sha256, `${label}.sha256`),
+    sqliteSha256: sha256HexString(identity.sqliteSha256, `${label}.sqliteSha256`),
+    byteSize: requiredPositiveSafeInteger(identity.byteSize, `${label}.byteSize`),
+  };
+}
+
+function sameTopologyInputPackIdentity(left, right) {
+  return left.id === right.id
+    && left.sha256 === right.sha256
+    && left.sqliteSha256 === right.sqliteSha256
+    && left.byteSize === right.byteSize;
 }
 
 function requiredStationCatalogPackIdentity(identity, label) {
@@ -3576,6 +3595,13 @@ function officialOdFareQuoteValues(row, admission) {
 function requiredNonNegativeSafeInteger(value, label) {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function requiredPositiveSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
   }
   return value;
 }

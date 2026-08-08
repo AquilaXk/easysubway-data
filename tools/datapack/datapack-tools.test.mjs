@@ -17931,7 +17931,7 @@ async function writeCurrentItxReleaseInputs(
   ));
   completeness.observedAt = observedAt;
   completeness.selectedServiceDates = selectedServiceDates;
-  completeness.stationCatalogPackIdentity = currentIdentity;
+  completeness.stationCatalogPackIdentity = structuredClone(currentIdentity);
   completeness.sourceTimetableArtifact.freshUntil = freshUntil;
   mutateCompleteness?.(completeness);
   const { evidenceHash: _completenessEvidenceHash, ...completenessWithoutEvidenceHash } = completeness;
@@ -17948,7 +17948,7 @@ async function writeCurrentItxReleaseInputs(
   source.observedAt = observedAt;
   source.freshUntil = freshUntil;
   source.selectedServiceDates = selectedServiceDates;
-  source.stationCatalogPackIdentity = currentIdentity;
+  source.stationCatalogPackIdentity = structuredClone(currentIdentity);
   source.completenessEvidenceSha256 = sha256(completenessBytes);
   const { evidenceHash: _sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
   source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)));
@@ -17960,7 +17960,7 @@ async function writeCurrentItxReleaseInputs(
   const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
   const admission = contract.officialEvidence.korailCompletenessAdmission;
   delete admission.canonicalPackIdentity;
-  admission.stationCatalogPackIdentity = currentIdentity;
+  admission.stationCatalogPackIdentity = structuredClone(currentIdentity);
   admission.topologyInputPackIdentity = {
     id: topologyEvidence.pack.id,
     sha256: topologyEvidence.pack.inputSha256,
@@ -17986,13 +17986,13 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(contractPath, contractBytes);
 
   delete topologyEvidence.readmissions;
-  topologyEvidence.stationCatalogPackIdentity = currentIdentity;
+  topologyEvidence.stationCatalogPackIdentity = structuredClone(currentIdentity);
   topologyEvidence.sourceArtifact = {
     id: source.artifactId,
     sha256: sha256(sourceBytes),
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil,
-    stationCatalogPackIdentity: currentIdentity,
+    stationCatalogPackIdentity: structuredClone(currentIdentity),
   };
   mutateTopologyEvidence?.(topologyEvidence);
   const topologyEvidencePath = path.join(workspace, "itx-topology-evidence.json");
@@ -18156,12 +18156,12 @@ test("production candidate는 completeness station-catalog identity 불일치를
   }
 });
 
-test("production candidate는 topology evidence와 다른 최종 pack identity를 거부한다", async () => {
-  const workspace = await mkdtemp(path.join(tmpdir(), "production-itx-pack-identity-"));
+test("production candidate는 contract와 다른 topology input pack identity를 거부한다", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "production-itx-input-pack-identity-"));
   try {
     const { buildSpecPath, env } = await writeCurrentItxReleaseInputs(workspace, {
       mutateTopologyEvidence: (evidence) => {
-        evidence.pack.outputSha256 = "9".repeat(64);
+        evidence.pack.inputSha256 = "9".repeat(64);
       },
     });
     await assert.rejects(
@@ -18170,7 +18170,7 @@ test("production candidate는 topology evidence와 다른 최종 pack identity�
         "--build-spec", buildSpecPath,
         "--output", path.join(workspace, "output"),
       ], { cwd: root, env }),
-      /built ITX pack identity does not match current topology evidence output/,
+      /ITX topology input pack identity does not match coverage contract admission/,
     );
   } finally {
     await rm(workspace, { recursive: true, force: true });
