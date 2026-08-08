@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           node tools/datapack/emit-station-catalog-pack.mjs \
             --output "${{ runner.temp }}/itx-current-collection/station-catalog-pack" \
-            --catalog-pack-id "itx-current-${{ github.run_id }}"
+            --catalog-pack-id "itx-current-station-catalog-v1"
 
       - name: ITX current collection / Collect ITX current timetable
         env:

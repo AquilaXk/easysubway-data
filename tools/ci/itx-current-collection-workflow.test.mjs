@@ -39,6 +39,8 @@ test("tracked catalog·single-clock wrapper가 temp에서 정확한 current 수�
   const catalog = step(yml, "ITX current collection / Emit station catalog pack");
   assert.match(catalog, /emit-station-catalog-pack\.mjs/);
   assert.match(catalog, /\$\{\{ runner\.temp \}\}/);
+  assert.match(catalog, /--catalog-pack-id "itx-current-station-catalog-v1"/);
+  assert.doesNotMatch(catalog, /catalog-pack-id[^\n]*\$\{\{\s*github\.run_id\s*\}\}/);
 
   const collect = step(yml, "ITX current collection / Collect ITX current timetable");
   assert.match(collect, /DATA_GO_KR_SERVICE_KEY:\s*\$\{\{ secrets\.DATA_GO_KR_SERVICE_KEY \}\}/);
