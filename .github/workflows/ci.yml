@@ -49,10 +49,12 @@ jobs:
           tools/datapack/emit-artifact-components.test.mjs
           tools/datapack/emit-station-catalog-pack.test.mjs
           tools/datapack/check-timetable-snapshot-freshness.test.mjs
+          tools/datapack/run-current-itx-collection.test.mjs
           tools/datapack/build-data-component-manifest.test.mjs
           tools/ci/require-workflow-artifact.test.mjs
           tools/release/validate-promotion-request.test.mjs
           tools/ci/datapack-release-workflow.test.mjs
+          tools/ci/itx-current-collection-workflow.test.mjs
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
           tools/datapack/collect-kric-source-candidate-evidence.test.mjs
