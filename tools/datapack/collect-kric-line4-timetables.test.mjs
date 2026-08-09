@@ -10,6 +10,7 @@ import {
   buildOperationTrainDiagnosticArtifact,
   buildTimetableNoDataObservation,
   buildTrainDiagnosticArtifact,
+  classifyKricRowsForReconstruction,
   classifyKricTimetablePayload,
   buildRawCollectionInventory,
   buildRawResponseRecord,
@@ -374,6 +375,33 @@ test("기본 operation 비교 진단은 K4422 provider station/time과 complete 
       timestamps: { collectedAt: "2026-08-09T12:00:00.000Z", capturedAt: "2026-08-09" },
     }),
     /does not match tracked request/,
+  );
+});
+
+test("EXPRESS 중간 null-arrival은 시각 추정 없이 non-stop으로 분리한다", () => {
+  const origin = { stationId: "station-456", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: null, departureSeconds: 24_120, stopRole: "ORIGIN", servicePattern: "EXPRESS" };
+  const through = { stationId: "station-455", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: 24_270, departureSeconds: 24_300, stopRole: "THROUGH", servicePattern: "EXPRESS" };
+  const nonStop = { stationId: "station-454", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: null, departureSeconds: 24_420, stopRole: "ORIGIN", servicePattern: "EXPRESS" };
+  const terminal = { stationId: "station-409", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: 30_630, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "EXPRESS" };
+
+  const classified = classifyKricRowsForReconstruction([terminal, nonStop, through, origin]);
+  assert.deepEqual(classified.rows, [origin, through, terminal]);
+  assert.deepEqual(classified.excludedNonStopRows, [{
+    stationId: "station-454",
+    lineId: "seoul-4",
+    trnNo: "K4422",
+    dayCd: "8",
+    passageSeconds: 24_420,
+    servicePattern: "EXPRESS",
+    reason: "EXPRESS_NO_ARRIVAL",
+  }]);
+  assert.throws(
+    () => classifyKricRowsForReconstruction([
+      { ...origin, trnNo: "K4500", servicePattern: "LOCAL" },
+      { ...nonStop, trnNo: "K4500", servicePattern: "LOCAL" },
+      { ...terminal, trnNo: "K4500", servicePattern: "LOCAL" },
+    ]),
+    /LOCAL intermediate row has missing arrival/,
   );
 });
 

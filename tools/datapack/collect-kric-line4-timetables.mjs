@@ -624,6 +624,78 @@ export function assertCompleteKricCollection(failedRequestCount, requestCount, p
   }
 }
 
+export function classifyKricRowsForReconstruction(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("KRIC reconstruction rows must be a non-empty array");
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    for (const field of ["stationId", "lineId", "trnNo", "dayCd"]) {
+      if (typeof row?.[field] !== "string" || row[field].length === 0) {
+        throw new TypeError(`KRIC reconstruction row ${field} is invalid`);
+      }
+    }
+    const key = `${row.lineId}|${row.trnNo}|${row.dayCd}`;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  const classifiedRows = [];
+  const excludedNonStopRows = [];
+  for (const key of [...groups.keys()].sort(codepointCompare)) {
+    const ordered = groups.get(key).toSorted((left, right) => {
+      const leftSeconds = left.departureSeconds ?? left.arrivalSeconds;
+      const rightSeconds = right.departureSeconds ?? right.arrivalSeconds;
+      if (!Number.isInteger(leftSeconds) || !Number.isInteger(rightSeconds)) {
+        throw new TypeError(`KRIC reconstruction row time is invalid: ${key}`);
+      }
+      return leftSeconds - rightSeconds || codepointCompare(left.stationId, right.stationId);
+    });
+    const stationIds = new Set();
+    let previousSeconds = null;
+    ordered.forEach((row, index) => {
+      const orderSeconds = row.departureSeconds ?? row.arrivalSeconds;
+      if (stationIds.has(row.stationId)) {
+        throw new Error(`KRIC reconstruction group has duplicate station: ${key}`);
+      }
+      stationIds.add(row.stationId);
+      if (previousSeconds !== null && orderSeconds === previousSeconds) {
+        throw new Error(`KRIC reconstruction group has duplicate service time: ${key}`);
+      }
+      previousSeconds = orderSeconds;
+
+      if (row.arrivalSeconds === null) {
+        if (index === 0) {
+          if (row.stopRole !== "ORIGIN" || !Number.isInteger(row.departureSeconds)) {
+            throw new Error(`KRIC reconstruction first row origin is invalid: ${key}`);
+          }
+          classifiedRows.push(row);
+          return;
+        }
+        if (row.servicePattern !== "EXPRESS" || !Number.isInteger(row.departureSeconds)) {
+          throw new Error(`KRIC ${row.servicePattern ?? "UNKNOWN"} intermediate row has missing arrival: ${key}`);
+        }
+        excludedNonStopRows.push({
+          stationId: row.stationId,
+          lineId: row.lineId,
+          trnNo: row.trnNo,
+          dayCd: row.dayCd,
+          passageSeconds: row.departureSeconds,
+          servicePattern: row.servicePattern,
+          reason: "EXPRESS_NO_ARRIVAL",
+        });
+        return;
+      }
+      if (row.departureSeconds === null && index !== ordered.length - 1) {
+        throw new Error(`KRIC intermediate row has missing departure: ${key}`);
+      }
+      classifiedRows.push(row);
+    });
+  }
+  return { rows: classifiedRows, excludedNonStopRows };
+}
+
 export function redactKricCredential(text, key) {
   let redacted = String(text);
   for (const value of [key, key ? encodeURIComponent(key) : ""]) {
@@ -847,14 +919,15 @@ async function main() {
     return;
   }
   assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence);
+  const classified = classifyKricRowsForReconstruction(intermediate);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
     throw new Error("ITX OD evidence serviceId is invalid");
   }
   const reconstructionRows = trainNumberEvidence
-    ? filterRowsByTrainNumbers(intermediate, trainNumberEvidence.trainNumbers)
+    ? filterRowsByTrainNumbers(classified.rows, trainNumberEvidence.trainNumbers)
       .filter(({ dayCd }) => evidenceDayCds.has(dayCd))
-    : intermediate;
+    : classified.rows;
   if (trainNumberEvidence && reconstructionRows.length === 0) {
     const available = [...new Set(intermediate.map(({ trnNo }) => trnNo))]
       .sort((left, right) => left.localeCompare(right, "ko", { numeric: true }))
@@ -881,6 +954,8 @@ async function main() {
     failedRequestCount: failed,
     expectedNoDataRequestCount: perRequest.filter(({ classification }) => classification === noDataEvidence.classification.state).length,
     intermediateRowCount: intermediate.length,
+    excludedNonStopRowCount: classified.excludedNonStopRows.length,
+    excludedNonStopRows: classified.excludedNonStopRows,
     reconstructionRowCount: reconstructionRows.length,
     ...(trainNumberEvidence ? {
       trainNumberFilter: {
@@ -900,7 +975,14 @@ async function main() {
   if (args.output) {
     await writeFile(args.output, `${JSON.stringify(artifact, null, 2)}\n`);
   }
-  const { transitTrips: _t, transitStopTimes: _s, perRequest: _p, rawResponseInventory: _r, ...summary } = artifact;
+  const {
+    transitTrips: _t,
+    transitStopTimes: _s,
+    excludedNonStopRows: _e,
+    perRequest: _p,
+    rawResponseInventory: _r,
+    ...summary
+  } = artifact;
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 }
 
