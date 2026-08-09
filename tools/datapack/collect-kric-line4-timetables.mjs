@@ -465,6 +465,35 @@ export function buildTrainDiagnosticArtifact({ lineId, trainNumber, plan, rawRes
   };
 }
 
+export function summarizeTrainDiagnosticArtifact(artifact) {
+  if (artifact?.artifactKind !== "kric-line4-timetable-train-diagnostic"
+    || artifact.sourceId !== "kric-subway-timetable"
+    || typeof artifact.lineId !== "string" || artifact.lineId.length === 0
+    || typeof artifact.trainNumber !== "string" || artifact.trainNumber.length === 0
+    || typeof artifact.collectedAt !== "string" || Number.isNaN(Date.parse(artifact.collectedAt))
+    || !Array.isArray(artifact.rows) || artifact.rows.length === 0
+    || artifact.rowCount !== artifact.rows.length
+    || artifact.rawResponseInventory?.responseCount !== artifact.requestCount) {
+    throw new Error("KRIC train diagnostic artifact identity is invalid");
+  }
+  return {
+    artifactKind: "kric-line4-timetable-train-diagnostic-summary",
+    sourceId: artifact.sourceId,
+    lineId: artifact.lineId,
+    trainNumber: artifact.trainNumber,
+    collectedAt: artifact.collectedAt,
+    rowCount: artifact.rows.length,
+    rows: artifact.rows.map((row, rowIndex) => ({
+      rowIndex,
+      stationId: row.stationId,
+      arrivalSeconds: row.arrivalSeconds,
+      departureSeconds: row.departureSeconds,
+      stopRole: row.stopRole,
+      servicePattern: row.servicePattern,
+    })),
+  };
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -535,6 +564,11 @@ function normalizeStationName(value) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args["inspect-train-diagnostic"]) {
+    const artifact = JSON.parse(await readFile(args["inspect-train-diagnostic"], "utf8"));
+    process.stdout.write(`${JSON.stringify(summarizeTrainDiagnosticArtifact(artifact), null, 2)}\n`);
+    return;
+  }
   const roster = JSON.parse(await readFile(args.roster, "utf8"));
   const lineId = args["line-id"] ?? "seoul-4";
   const fixture = args["canonical-fixture"]

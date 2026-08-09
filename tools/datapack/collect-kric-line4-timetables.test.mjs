@@ -16,6 +16,7 @@ import {
   filterRowsByTrainNumbers,
   redactKricCredential,
   selectServicePatternProbeRequest,
+  summarizeTrainDiagnosticArtifact,
   validateServicePatternEvidence,
   validateTimetableNoDataEvidence,
   validateItxOdJoin,
@@ -287,6 +288,22 @@ test("train diagnostic artifact는 complete request raw identity와 exact train 
   assert.equal(artifact.requestCount, 2);
   assert.deepEqual(artifact.rows.map(({ stationId }) => stationId), ["station-a", "station-b"]);
   assert.equal(artifact.rawResponseInventory.responseCount, 2);
+  assert.deepEqual(summarizeTrainDiagnosticArtifact(artifact), {
+    artifactKind: "kric-line4-timetable-train-diagnostic-summary",
+    sourceId: "kric-subway-timetable",
+    lineId: "seoul-4",
+    trainNumber: "4422",
+    collectedAt: "2026-08-09T11:00:00.000Z",
+    rowCount: 2,
+    rows: artifact.rows.map((row, rowIndex) => ({
+      rowIndex,
+      stationId: row.stationId,
+      arrivalSeconds: row.arrivalSeconds,
+      departureSeconds: row.departureSeconds,
+      stopRole: row.stopRole,
+      servicePattern: row.servicePattern,
+    })),
+  });
   assert.throws(
     () => buildTrainDiagnosticArtifact({
       lineId: "seoul-4", trainNumber: "K9999", plan: { requests }, rawResponses, rows,
