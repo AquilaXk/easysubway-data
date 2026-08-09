@@ -11,6 +11,10 @@ import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import {
+  assertRouteServiceEvidenceUnchanged,
+  routeServiceEvidenceSnapshot,
+} from "./lib/route-service-evidence-preservation.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const BUNDLED_CATALOG_USER_VERSION = 19;
@@ -125,7 +129,7 @@ function applyHints(sqlitePath, hints) {
     ensureSchema(database);
     if (JSON.stringify(storedHints(database)) === JSON.stringify(canonical)) {
       assertIntegrity(database);
-      assertRouteServiceEvidenceUnchanged(database, routeEvidence);
+      assertRouteServiceEvidenceUnchanged(database, routeEvidence, "bundled route service evidence changed during car door hint postprocessing");
       return;
     }
     const insert = database.prepare(`
@@ -148,24 +152,9 @@ function applyHints(sqlitePath, hints) {
       throw error;
     }
     assertIntegrity(database);
-    assertRouteServiceEvidenceUnchanged(database, routeEvidence);
+    assertRouteServiceEvidenceUnchanged(database, routeEvidence, "bundled route service evidence changed during car door hint postprocessing");
   } finally {
     database.close();
-  }
-}
-
-function routeServiceEvidenceSnapshot(database) {
-  const tables = ["route_service_artifact_evidence", "route_service_station_catalog_evidence"];
-  for (const table of tables) {
-    const exists = database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table);
-    if (exists == null) throw new Error(`bundled route service evidence table is missing: ${table}`);
-  }
-  return JSON.stringify(tables.map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY service_class`).all()));
-}
-
-function assertRouteServiceEvidenceUnchanged(database, expected) {
-  if (routeServiceEvidenceSnapshot(database) !== expected) {
-    throw new Error("bundled route service evidence changed during car door hint postprocessing");
   }
 }
 
