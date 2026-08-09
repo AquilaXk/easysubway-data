@@ -7,6 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { promisify } from "node:util";
+import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
 import {
   parseMolitDaejeonStationMappings,
@@ -60,7 +61,7 @@ async function inputs() {
     gwangjuSnapshotBytes,
     daejeonSnapshotBytes,
   ] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/busan-transportation-timetable-20260720.json"),
     readFile(path.join(root, "tools/datapack/sources/busan-transportation-route-map-positions-20260720.json")),

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 import test from "node:test";
 
 import {
@@ -21,7 +22,7 @@ const evidenceNow = new Date("2026-07-19T18:14:03.004Z");
 
 async function inputs() {
   const [baseFixture, snapshot, inventory, stationMapCsv] = await Promise.all([
-    readJson("tools/datapack/release/capital-production-reviewed-pack.json"),
+    readJson("tools/datapack/release/capital-production-reviewed-pack.json").then(projectRegionalMaterializeFixture),
     readJson("tools/datapack/sources/busan-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),
