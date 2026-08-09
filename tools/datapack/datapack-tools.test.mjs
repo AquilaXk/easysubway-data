@@ -9783,8 +9783,10 @@ test("전국 coverage gap report는 현재 source inventory의 누락 coverage�
 test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 report를 생성한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-coverage-gap-report-${Date.now()}`);
   const reportPath = path.join(outputDir, "coverage-gap-report.json");
+  const inventoryPath = path.join(outputDir, "source-inventory.json");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
+  await writeFile(inventoryPath, await readFile(path.join(root, "tools/datapack/source-inventory.json")));
 
   await execFileAsync(
     process.execPath,
@@ -9793,7 +9795,7 @@ test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 rep
       "--targets",
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
-      path.join(outputDir, "test-only-source-inventory.json"),
+      inventoryPath,
       "--output",
       reportPath,
       "--allow-gaps",
@@ -11502,6 +11504,7 @@ test("공식 source ingest adapter는 provenance 전용 source를 production row
     "kric-station-elevator",
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
+    "kric-station-convenience-standard",
   ]) {
     const outputDir = path.join(tmpdir(), `easysubway-source-ingest-provenance-only-${sourceId}-${Date.now()}`);
     const input = JSON.parse(await readFile(
