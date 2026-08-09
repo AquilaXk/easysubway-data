@@ -465,6 +465,82 @@ export function buildTrainDiagnosticArtifact({ lineId, trainNumber, plan, rawRes
   };
 }
 
+export function buildOperationTrainDiagnosticArtifact({
+  operation,
+  lineId,
+  trainNumber,
+  plan,
+  rawResponses,
+  providerRows,
+  timestamps,
+}) {
+  if (operation !== "subwayTimetable"
+    || plan?.operation !== operation
+    || JSON.stringify(plan?.dayCds) !== JSON.stringify(["8"])
+    || !Array.isArray(plan?.requests)
+    || plan.requests.length === 0
+    || plan.requests.some((request) => request?.operation !== operation)) {
+    throw new Error("KRIC operation train diagnostic requires subwayTimetable dayCd=8 plan");
+  }
+  const normalizedTrainNumber = normalizeTrainNumber(trainNumber);
+  const trackedRequestKeys = new Set(plan.requests.map((request) => {
+    const { railOprIsttCd, dayCd, lnCd, stinCd } = request.params ?? {};
+    const expected = `${operation}|${railOprIsttCd}|${stinCd}|${dayCd}`;
+    if (request.requestKey !== expected) {
+      throw new Error("KRIC operation train diagnostic tracked request identity is invalid");
+    }
+    return `${railOprIsttCd}|${lnCd}|${stinCd}|${dayCd}`;
+  }));
+  const matchingRows = [];
+  for (const row of providerRows ?? []) {
+    if (!hasExactKeys(row, [
+      "arvTm",
+      "dayCd",
+      "dayNm",
+      "dptTm",
+      "lnCd",
+      "railOprIsttCd",
+      "stinCd",
+      "trnNo",
+    ])) {
+      throw new Error("KRIC operation train diagnostic provider row schema is invalid");
+    }
+    for (const field of ["railOprIsttCd", "trnNo", "dayCd", "dayNm", "stinCd", "lnCd"]) {
+      if (typeof row[field] !== "string" || row[field].length === 0) {
+        throw new Error(`KRIC operation train diagnostic provider row ${field} is invalid`);
+      }
+    }
+    for (const field of ["arvTm", "dptTm"]) {
+      if (row[field] !== null && typeof row[field] !== "string") {
+        throw new Error(`KRIC operation train diagnostic provider row ${field} is invalid`);
+      }
+    }
+    const requestIdentity = `${row.railOprIsttCd}|${row.lnCd}|${row.stinCd}|${row.dayCd}`;
+    if (!trackedRequestKeys.has(requestIdentity)) {
+      throw new Error("KRIC operation train diagnostic provider row does not match tracked request");
+    }
+    if (normalizeTrainNumber(row.trnNo) === normalizedTrainNumber) {
+      matchingRows.push(row);
+    }
+  }
+  if (matchingRows.length === 0) {
+    throw new Error(`KRIC operation train diagnostic has no rows: ${normalizedTrainNumber}`);
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-line4-timetable-operation-train-diagnostic",
+    sourceId: "kric-subway-timetable",
+    operation,
+    lineId,
+    trainNumber: normalizedTrainNumber,
+    ...timestamps,
+    requestCount: plan.requests.length,
+    rowCount: matchingRows.length,
+    rawResponseInventory: buildRawCollectionInventory(plan, rawResponses),
+    rows: matchingRows,
+  };
+}
+
 export function summarizeTrainDiagnosticArtifact(artifact) {
   if (artifact?.artifactKind !== "kric-line4-timetable-train-diagnostic"
     || artifact.sourceId !== "kric-subway-timetable"
@@ -617,6 +693,44 @@ async function main() {
     const observation = buildServicePatternObservation(request, rawResponse, rows);
     await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
     process.stdout.write(`${JSON.stringify(observation, null, 2)}\n`);
+    return;
+  }
+  if (args["operation-diagnostic-train-number"]) {
+    if (args.operation !== "subwayTimetable" || args["day-cds"] !== "8" || !args.output) {
+      throw new Error("operation train diagnostic requires --operation subwayTimetable --day-cds 8 --output");
+    }
+    const rawResponses = [];
+    const providerRows = [];
+    const perRequest = [];
+    let failed = 0;
+    for (const request of plan.requests) {
+      try {
+        const rawResponse = await fetchWithRetry(kricRequestUrl(request, key));
+        const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
+        if (rows.length === 0) {
+          throw new Error("KRIC operation train diagnostic response rows must be non-empty");
+        }
+        rawResponses.push(buildRawResponseRecord(request, rawResponse));
+        providerRows.push(...rows);
+        perRequest.push({ requestKey: request.requestKey, resultCode: "00", rows: rows.length });
+      } catch (error) {
+        failed += 1;
+        perRequest.push({ requestKey: request.requestKey, error: redactKricCredential(String(error.message), key) });
+      }
+    }
+    assertCompleteKricCollection(failed, plan.requestCount, perRequest);
+    const artifact = buildOperationTrainDiagnosticArtifact({
+      operation: plan.operation,
+      lineId,
+      trainNumber: args["operation-diagnostic-train-number"],
+      plan,
+      rawResponses,
+      providerRows,
+      timestamps: buildCollectionTimestamps(),
+    });
+    await writeFile(args.output, `${JSON.stringify(artifact, null, 2)}\n`);
+    const { rawResponseInventory: _raw, rows: _rows, ...summary } = artifact;
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     return;
   }
   if (fixture && args["canonical-pack"]) {

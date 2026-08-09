@@ -7,6 +7,7 @@ import {
   assertCompleteSaturdayNoData,
   buildCollectionContext,
   buildCollectionTimestamps,
+  buildOperationTrainDiagnosticArtifact,
   buildTimetableNoDataObservation,
   buildTrainDiagnosticArtifact,
   classifyKricTimetablePayload,
@@ -310,6 +311,57 @@ test("train diagnostic artifact는 complete request raw identity와 exact train 
       timestamps: { collectedAt: "2026-08-09T11:00:00.000Z", capturedAt: "2026-08-09" },
     }),
     /no rows/,
+  );
+});
+
+test("기본 operation 비교 진단은 K4422 provider station/time과 complete raw identity만 보존한다", () => {
+  const requests = [
+    {
+      operation: "subwayTimetable",
+      requestKey: "subwayTimetable|S1|445|8",
+      params: { railOprIsttCd: "S1", dayCd: "8", lnCd: "4", stinCd: "445" },
+    },
+    {
+      operation: "subwayTimetable",
+      requestKey: "subwayTimetable|S1|446|8",
+      params: { railOprIsttCd: "S1", dayCd: "8", lnCd: "4", stinCd: "446" },
+    },
+  ];
+  const rawResponses = requests.map((request) => buildRawResponseRecord(
+    request,
+    JSON.stringify({ header: { resultCode: "00" }, body: [] }),
+  ));
+  const providerRows = [
+    { railOprIsttCd: "S1", trnNo: "K4422", dayCd: "8", dayNm: "평일", stinCd: "445", lnCd: "4", arvTm: null, dptTm: "070700" },
+    { railOprIsttCd: "S1", trnNo: "K4500", dayCd: "8", dayNm: "평일", stinCd: "445", lnCd: "4", arvTm: "071000", dptTm: "071030" },
+    { railOprIsttCd: "S1", trnNo: "K4422", dayCd: "8", dayNm: "평일", stinCd: "446", lnCd: "4", arvTm: "070400", dptTm: "070430" },
+  ];
+  const artifact = buildOperationTrainDiagnosticArtifact({
+    operation: "subwayTimetable",
+    lineId: "seoul-4",
+    trainNumber: "K4422",
+    plan: { operation: "subwayTimetable", dayCds: ["8"], requests },
+    rawResponses,
+    providerRows,
+    timestamps: { collectedAt: "2026-08-09T12:00:00.000Z", capturedAt: "2026-08-09" },
+  });
+
+  assert.equal(artifact.artifactKind, "kric-line4-timetable-operation-train-diagnostic");
+  assert.equal(artifact.operation, "subwayTimetable");
+  assert.equal(artifact.trainNumber, "4422");
+  assert.equal(artifact.rawResponseInventory.responseCount, 2);
+  assert.deepEqual(artifact.rows, [providerRows[0], providerRows[2]]);
+  assert.throws(
+    () => buildOperationTrainDiagnosticArtifact({
+      operation: "subwayTimetable",
+      lineId: "seoul-4",
+      trainNumber: "K4422",
+      plan: { operation: "subwayTimetable", dayCds: ["8"], requests },
+      rawResponses,
+      providerRows: [{ ...providerRows[0], stinCd: "999" }],
+      timestamps: { collectedAt: "2026-08-09T12:00:00.000Z", capturedAt: "2026-08-09" },
+    }),
+    /does not match tracked request/,
   );
 });
 
