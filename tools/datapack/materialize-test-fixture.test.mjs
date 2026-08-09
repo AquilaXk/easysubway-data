@@ -6,74 +6,45 @@ import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mj
 function fixture() {
   return {
     packs: [{
-      minimumTableRows: {
-        network_edges: 2,
-        service_calendars: 2,
-        service_calendar_dates: 2,
-        transit_routes: 2,
-        transit_trips: 2,
-        transit_stop_times: 2,
-      },
+      id: "capital",
+      version: "1",
       routeServiceArtifactEvidence: [{ serviceClass: "ITX_CHEONGCHUN" }],
-      transitRoutes: [
-        { id: "route-itx", serviceClass: "ITX_CHEONGCHUN" },
-        { id: "route-local", serviceClass: "URBAN_RAIL" },
-      ],
-      transitTrips: [
-        { id: "trip-itx", routeId: "route-itx", serviceId: "itx-calendar" },
-        { id: "trip-local", routeId: "route-local", serviceId: "local-calendar" },
-      ],
-      transitStopTimes: [
-        { tripId: "trip-itx" },
-        { tripId: "trip-local" },
-      ],
-      networkEdges: [
-        { id: "edge-itx", serviceClass: "ITX_CHEONGCHUN" },
-        { id: "edge-local", serviceClass: "URBAN_RAIL" },
-      ],
-      serviceCalendars: [
-        { serviceId: "itx-calendar" },
-        { serviceId: "local-calendar" },
-      ],
-      serviceCalendarDates: [
-        { serviceId: "itx-calendar" },
-        { serviceId: "local-calendar" },
-      ],
+      minimumTableRows: {
+        network_edges: 1,
+        transit_routes: 1,
+        transit_trips: 1,
+        transit_stop_times: 1,
+      },
+      transitRoutes: [{ id: "route-local", serviceClass: "URBAN_RAIL" }],
+      transitTrips: [{ id: "trip-local", routeId: "route-local", serviceId: "local-calendar" }],
+      transitStopTimes: [{ tripId: "trip-local" }],
+      networkEdges: [{ id: "edge-local", serviceClass: "URBAN_RAIL" }],
+      serviceCalendars: [{ serviceId: "local-calendar" }],
+      serviceCalendarDates: [{ serviceId: "local-calendar" }],
     }],
   };
 }
 
-test("regional projection deep-clones and removes legacy ITX-linked rows", () => {
+test("regional projection clones only capital@1 and removes its sole legacy evidence", () => {
   const input = fixture();
   const originalBytes = JSON.stringify(input);
   const projected = projectRegionalMaterializeFixture(input);
-  const pack = projected.packs[0];
+  const { routeServiceArtifactEvidence, ...projectedPack } = projected.packs[0];
+  const { routeServiceArtifactEvidence: legacyEvidence, ...inputPack } = input.packs[0];
 
   assert.equal(JSON.stringify(input), originalBytes);
   assert.notEqual(projected, input);
-  assert.deepEqual(pack.routeServiceArtifactEvidence, []);
-  assert.deepEqual(pack.transitRoutes.map(({ id }) => id), ["route-local"]);
-  assert.deepEqual(pack.transitTrips.map(({ id }) => id), ["trip-local"]);
-  assert.deepEqual(pack.transitStopTimes.map(({ tripId }) => tripId), ["trip-local"]);
-  assert.deepEqual(pack.networkEdges.map(({ id }) => id), ["edge-local"]);
-  assert.deepEqual(pack.serviceCalendars.map(({ serviceId }) => serviceId), ["local-calendar"]);
-  assert.deepEqual(pack.serviceCalendarDates.map(({ serviceId }) => serviceId), ["local-calendar"]);
-  assert.deepEqual(pack.minimumTableRows, {
-    network_edges: 1,
-    service_calendars: 1,
-    service_calendar_dates: 1,
-    transit_routes: 1,
-    transit_trips: 1,
-    transit_stop_times: 1,
-  });
+  assert.equal(routeServiceArtifactEvidence, undefined);
+  assert.deepEqual(projectedPack, inputPack);
+  assert.deepEqual(legacyEvidence, [{ serviceClass: "ITX_CHEONGCHUN" }]);
 });
 
-test("regional projection fails closed for an unrecognized ITX reference", () => {
+test("regional projection fails closed when a current table or relationship references ITX", () => {
   const input = fixture();
-  input.packs[0].transitRoutes.push({ id: "route-unknown", serviceClass: "ITX_CHEONGCHUN_V2" });
+  input.packs[0].transitTrips.push({ id: "trip-itx", routeId: "ITX_route", serviceId: "local-calendar" });
 
   assert.throws(
     () => projectRegionalMaterializeFixture(input),
-    /unrecognized ITX_CHEONGCHUN reference/,
+    /contains an unexpected ITX reference/,
   );
 });
