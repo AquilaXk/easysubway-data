@@ -321,6 +321,22 @@ test("generator 또는 분모 실패는 tracked ledger를 변경하지 않는다
       await rm(workspace, { recursive: true, force: true });
     }
   });
+
+  await context.test("temp write 후 rename이 실패해도 residue를 남기지 않는다", async () => {
+    const workspace = await stageWorkspace();
+    const blockedOutput = path.join(workspace, "protected-ledger");
+    const sentinel = path.join(blockedOutput, "keep.txt");
+    await mkdir(blockedOutput);
+    await writeFile(sentinel, "keep\n");
+    try {
+      await assert.rejects(regenerateLedger(workspace, { output: blockedOutput }));
+      assert.equal(await readFile(sentinel, "utf8"), "keep\n");
+      assert.deepEqual(await readdir(blockedOutput), ["keep.txt"]);
+      await assertNoLedgerTempResidue(blockedOutput);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
 });
 
 test("dual-operator 미매칭은 MISSING 하위 구분으로 가시화된다", () => {
