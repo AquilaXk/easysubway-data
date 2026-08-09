@@ -18,7 +18,7 @@ export async function collectDaejeonRouteTopology({
   fetchImpl = fetch,
   now = new Date(),
 } = {}) {
-  const key = normalizeDataGoKrServiceKey(serviceKey);
+  normalizeDataGoKrServiceKey(serviceKey);
   const rows = [];
   for (let index = 0; index < DAEJEON_LINE1_STATION_NUMBERS.length - 1; index += 1) {
     const left = DAEJEON_LINE1_STATION_NUMBERS[index];
@@ -26,7 +26,7 @@ export async function collectDaejeonRouteTopology({
     for (const [fromStationNumber, toStationNumber] of [[left, right], [right, left]]) {
       const evidence = await probeDaejeonCoverageApi({
         sourceId: SOURCE_ID,
-        serviceKey: key,
+        serviceKey,
         query: { strstnno: fromStationNumber, endstnno: toStationNumber },
         captureRows: true,
         fetchImpl,
