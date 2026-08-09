@@ -16,6 +16,12 @@ import {
 const execFileAsync = promisify(execFile);
 const collectorPath = fileURLToPath(new URL("./collect-seoul-accessibility-evidence.mjs", import.meta.url));
 
+test("Seoul accessibility collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectSeoulAccessibility({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 test("collector rejects non-HTTPS endpoints", async () => {
   await assert.rejects(
     collectSeoulAccessibility({ endpoint: "http://apis.data.go.kr", serviceKey: "secret" }),

@@ -8,6 +8,12 @@ import {
 
 const INFO_FIELDS = KORAIL_TRAIN_OPERATION_APIS["korail-traveler-train-run-info"].expectedFields;
 
+test("Korail operation probe는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(probeKorailTrainOperationApi({ sourceId: "korail-traveler-train-run-info", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 function infoRow() {
   return Object.fromEntries(INFO_FIELDS.map((field) => [field, field === "run_ymd" ? "20260713" : "value"]));
 }

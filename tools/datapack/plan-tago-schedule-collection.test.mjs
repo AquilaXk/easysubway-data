@@ -16,6 +16,12 @@ import {
 const execFileAsync = promisify(execFile);
 const tagoScheduleToolPath = path.resolve(import.meta.dirname, "validate-tago-schedule-sample.mjs");
 
+test("TAGO schedule collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectTagoSchedules({ stationLineRows: [] }, { serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 test("TAGO 시간표 수집 plan은 daily limit과 checkpoint resume을 적용한다", () => {
   const plan = buildTagoScheduleCollectionPlan(
     {

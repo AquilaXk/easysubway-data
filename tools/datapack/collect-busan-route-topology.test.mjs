@@ -16,6 +16,12 @@ const XML_ITEMS = `
   <item><startSn>미남</startSn><startSc>401</startSc><endSn>동래</endSn><endSc>402</endSc><dist>8</dist><time>85</time><stoppingTime>20</stoppingTime><exchange></exchange></item>`;
 const XML = successXml(XML_ITEMS);
 
+test("부산 topology collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectBusanRouteTopology({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 const SCOPE_HTML = `
 <div class="s101 s-1"><a onclick="one_point('101', '1', '신평', event )"></a></div>
 <div class="l101-102 l102-101 w-1"></div>

@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, rename, symlink, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { runCurrentItxCollectionCli } from "./run-current-itx-collection.mjs";
+
+test("current ITX wrapper는 malformed credential로 holiday delegate를 호출하지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "current-itx-invalid-key-"));
+  let calls = 0;
+  try {
+    const args = ["--output", path.join(directory, "output.json"), "--completeness-output", path.join(directory, "completeness.json"), "--station-catalog-pack", path.join(directory, "pack"), "--freshness-output", path.join(directory, "freshness.json")];
+    await assert.rejects(runCurrentItxCollectionCli({ argv: args, env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" }, fetchHolidayCalendar: async () => { calls += 1; return new Set(); } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+    assert.equal(calls, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("KST 자정 양쪽에서도 주입된 단일 now를 날짜 계산과 collector에 그대로 전달한다", async () => {
   for (const now of [new Date("2026-07-19T14:59:59.999Z"), new Date("2026-07-19T15:00:00.000Z")]) {

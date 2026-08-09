@@ -7,6 +7,12 @@ import test from "node:test";
 import * as fareProbe from "./probe-seoul-fare-api.mjs";
 
 const FARE_KEY = "DATA_GO_KR_SERVICE_KEY_VALUE";
+
+test("Seoul fare probe는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(fareProbe.probeOfficialOdFares({ fareServiceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
 const requiredFareFields = [
   "childCardFare",
   "childCashFare",

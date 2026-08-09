@@ -22,6 +22,12 @@ import {
 import { emitStationCatalogPack } from "./emit-station-catalog-pack.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
+test("Korail ITX plan은 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectKorailItxCheongchunPlan({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 const PACK_ROOT = await mkdtemp(path.join(tmpdir(), "itx-station-catalog-pack-"));
 const PACK_PATH = path.join(PACK_ROOT, "station-catalog-pack");
 await emitStationCatalogPack({
