@@ -165,6 +165,20 @@ test("evidence 시간은 canonical UTC와 capturedAt <= observedAt < freshUntil 
   }
 });
 
+test("동일 epoch의 fractional-second 표기는 canonical payload와 digest를 바꾸지 않는다", () => {
+  const fractional = materializeStationLineAccessibility(input([
+    evidence({ capturedAt: "2026-08-08T00:00:00.000Z", freshUntil: "2026-08-10T00:00:00.000Z" }),
+  ]));
+  const wholeSecond = materializeStationLineAccessibility(input([
+    evidence({ capturedAt: "2026-08-08T00:00:00Z", freshUntil: "2026-08-10T00:00:00Z" }),
+  ]));
+
+  assert.equal(canonicalStationLineAccessibilityJson(fractional), canonicalStationLineAccessibilityJson(wholeSecond));
+  assert.equal(fractional.materializationDigest, wholeSecond.materializationDigest);
+  assert.equal(wholeSecond.rows.find((row) => row.domain === "FACILITY").capturedAt, "2026-08-08T00:00:00.000Z");
+  assert.equal(wholeSecond.rows.find((row) => row.domain === "FACILITY").freshUntil, "2026-08-10T00:00:00.000Z");
+});
+
 test("canonical ordering과 digest는 입력 순서와 반복에 무관하게 byte-identical이다", () => {
   const rows = [
     evidence({ stationId: "station-b", lineId: "line-2", domain: "TRANSFER", state: "UNKNOWN", evidenceKind: "UNSUPPORTED", evidenceReason: "unsupported source" }),
