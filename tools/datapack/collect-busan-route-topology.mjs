@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 
@@ -43,7 +44,7 @@ export async function collectBusanRouteTopology({
   sleepImpl = sleep,
 } = {}) {
   const capturedAt = validDate(now, "now");
-  const key = decodedServiceKey(requiredValue(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = stationScopes == null ? null : validateStationScopes(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   if (typeof sleepImpl !== "function") throw new TypeError("sleepImpl must be a function");
@@ -556,15 +557,6 @@ function lineIdForStationCode(stationCode) {
   if (code >= 301 && code <= 317) return LINE_IDS[3];
   if (code >= 401 && code <= 414) return LINE_IDS[4];
   return null;
-}
-
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 function validDate(value, label) {

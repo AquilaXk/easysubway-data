@@ -1,10 +1,24 @@
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, rename, symlink, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { runCurrentItxCollectionCli } from "./run-current-itx-collection.mjs";
+
+const VALID_ENV = Object.freeze({ DATA_GO_KR_SERVICE_KEY: "test-key" });
+
+test("current ITX wrapper는 malformed credential로 holiday delegate를 호출하지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "current-itx-invalid-key-"));
+  let calls = 0;
+  try {
+    const args = ["--output", path.join(directory, "output.json"), "--completeness-output", path.join(directory, "completeness.json"), "--station-catalog-pack", path.join(directory, "pack"), "--freshness-output", path.join(directory, "freshness.json")];
+    await assert.rejects(runCurrentItxCollectionCli({ argv: args, env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" }, fetchHolidayCalendar: async () => { calls += 1; return new Set(); } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+    assert.equal(calls, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("KST 자정 양쪽에서도 주입된 단일 now를 날짜 계산과 collector에 그대로 전달한다", async () => {
   for (const now of [new Date("2026-07-19T14:59:59.999Z"), new Date("2026-07-19T15:00:00.000Z")]) {
@@ -26,6 +40,7 @@ test("KST 자정 양쪽에서도 주입된 단일 now를 날짜 계산과 collec
         "--station-catalog-pack", stationCatalogPack,
         "--freshness-output", freshnessOutput,
       ],
+      env: VALID_ENV,
       now,
       fetchPublicHolidays: async ({ now: receivedNow }) => {
         assert.strictEqual(receivedNow, now);
@@ -88,6 +103,7 @@ test("current collection wrapper는 평일 공휴일과 대체공휴일을 day9�
       "--station-catalog-pack", path.join(dir, "station-catalog-pack"),
       "--freshness-output", path.join(dir, "freshness.json"),
     ],
+    env: VALID_ENV,
     now: new Date("2026-08-16T15:00:00.000Z"),
     fetchPublicHolidays: async () => new Set(["20260817"]),
     collectImpl: async ({ argv }) => {
@@ -127,7 +143,7 @@ test("current collection wrapper는 output root·부재·station child 경계를
     "--freshness-output", overrides.freshnessOutput ?? freshnessOutput,
   ];
   const rejects = (argv, message) => assert.rejects(
-    runCurrentItxCollectionCli({ argv }),
+    runCurrentItxCollectionCli({ argv, env: VALID_ENV }),
     new RegExp(message),
   );
 
@@ -153,13 +169,14 @@ test("current collection wrapper는 symlink 또는 교체된 output parent에 fr
   ];
   await rename(parent, `${parent}-original`);
   await symlink(outside, parent);
-  await assert.rejects(runCurrentItxCollectionCli({ argv: args }), /output parent must be an existing non-symlink directory/);
+  await assert.rejects(runCurrentItxCollectionCli({ argv: args, env: VALID_ENV }), /output parent must be an existing non-symlink directory/);
   await assert.rejects(lstat(path.join(outside, "freshness.json")));
 
   await unlink(parent);
   await mkdir(parent);
   await assert.rejects(runCurrentItxCollectionCli({
     argv: args,
+    env: VALID_ENV,
     fetchPublicHolidays: async () => new Set(),
     beforeFreshnessWrite: async () => {
       await rename(parent, `${parent}-replaced`);
@@ -178,6 +195,7 @@ test("KASI 실패에서는 collector와 freshness·output·completeness 생성�
   let collectorCalls = 0;
   await assert.rejects(runCurrentItxCollectionCli({
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
+    env: VALID_ENV,
     fetchPublicHolidays: async () => { throw new Error("KASI public holiday request failed: HTTP_403"); },
     collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
   }), /KASI public holiday request failed: HTTP_403/);
@@ -195,6 +213,7 @@ test("공휴일 토요일만 있는 7일 창은 day7 evidence 없이 collector �
   let collectorCalls = 0;
   await assert.rejects(runCurrentItxCollectionCli({
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
+    env: VALID_ENV,
     now: new Date("2026-08-15T15:00:00.000Z"),
     fetchPublicHolidays: async () => new Set(["20260822"]),
     collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { DatabaseSync } from "node:sqlite";
 
 import { repoRoot } from "../route-map/pack-io.mjs";
@@ -67,6 +68,7 @@ export async function collectKorailItxCheongchunCompleteness({
   collectTimetableImpl = null,
   stationCatalogSnapshot = null,
 } = {}) {
+  serviceKey = normalizeDataGoKrServiceKey(serviceKey);
   const selectedServiceDates = validateItxServiceDates(serviceDates, { now, replay });
   const collectTimetable = collectTimetableImpl ?? (replay
     ? collectKorailItxCheongchunTimetable
@@ -1287,7 +1289,7 @@ export async function collectKorailItxCheongchunPlan({
   now = new Date(),
   stationCatalogSnapshot = null,
 } = {}) {
-  const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!/^\d{8}$/.test(runDate ?? "")) throw new Error("runDate must be YYYYMMDD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
   requiredString(stationCatalogPackPath, "stationCatalogPackPath");
@@ -1383,7 +1385,7 @@ export async function collectKorailItxCheongchunTimetable({
   now = new Date(),
   stationCatalogSnapshot = null,
 } = {}) {
-  const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!/^\d{8}$/.test(runDate ?? "")) throw new Error("runDate must be YYYYMMDD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
   requiredString(stationCatalogPackPath, "stationCatalogPackPath");
@@ -2427,11 +2429,6 @@ function korailDirectionCode(value, trainNumber) {
   return value;
 }
 
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try { return decodeURIComponent(value); } catch { return value; }
-}
-
 function normalize(value) { return String(value ?? "").toLocaleLowerCase("ko-KR").replace(/[^\p{L}\p{N}]+/gu, ""); }
 function normalizeTrainNumber(value) {
   const match = /^(?:ITX-)?(\d+)$/.exec(String(value ?? ""));
@@ -2587,6 +2584,7 @@ export async function runKorailItxCompletenessCli({
     });
     return { promotion, exitCode: 0 };
   }
+  const serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
   const output = requiredString(args.output, "--output");
   if (!path.isAbsolute(output)) throw new Error("--output must be absolute");
   const completenessOutputArg = args["completeness-output"];
@@ -2603,7 +2601,6 @@ export async function runKorailItxCompletenessCli({
   const publication = await prepareOutputPublication({
     output, completenessOutput: completenessOutputArg ?? null, stationCatalogPackPath,
   });
-  const serviceKey = requiredString(env.DATA_GO_KR_SERVICE_KEY, "DATA_GO_KR_SERVICE_KEY");
   const replay = args.replay === true;
   if (Object.hasOwn(args, "previous-admitted")) throw new Error("--previous-admitted is not supported");
   const contractPath = validateCoverageContractPath(

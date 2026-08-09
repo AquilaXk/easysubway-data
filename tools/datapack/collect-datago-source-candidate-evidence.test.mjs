@@ -24,6 +24,17 @@ const candidate = {
   },
 };
 
+test("Data.go.kr evidence collector는 유효한 candidate·runner 입력에서도 malformed credential을 delegate 전에 거부한다", async () => {
+  let calls = 0;
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-invalid-key-"));
+  try {
+    await assert.rejects(collectDatagoSourceCandidateEvidence({ candidateId: candidate.id, candidatesDocument: { candidates: [candidate] }, runnerTemp, serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
+  assert.equal(calls, 0);
+});
+
 const xmlCandidate = {
   ...candidate,
   evidence: {
@@ -233,7 +244,7 @@ test("Data.go.kr evidence collector는 raw를 제거하고 sanitized sample/repo
 });
 
 test("Data.go.kr evidence collector는 실패 단계와 무관하게 raw와 uploadable output을 제거하고 key를 숨긴다", async (t) => {
-  const serviceKey = "test/key+with space";
+  const serviceKey = "test/key+with-symbol";
   const encodedServiceKey = encodeURIComponent(serviceKey);
   const cases = [
     {
@@ -288,7 +299,7 @@ test("Data.go.kr evidence collector는 실패 단계와 무관하게 raw와 uplo
 
 test("Data.go.kr evidence collector는 URLSearchParams form key와 string-start parameter 및 C1 control을 숨긴다", async () => {
   const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-form-redaction-"));
-  const serviceKey = "test/key+with space~";
+  const serviceKey = "test/key+with-symbol~";
   const formEncodedKey = new URLSearchParams({ serviceKey }).toString().slice("serviceKey=".length);
   try {
     await assert.rejects(

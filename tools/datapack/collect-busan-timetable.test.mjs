@@ -9,6 +9,12 @@ const topology = JSON.parse(await readFile(
   "utf8",
 ));
 
+test("부산 timetable collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectBusanTimetable({ serviceKey: "invalid%ZZ", stationScopes: topology.scope, fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 function response({ stationName, stationCode, line, items }) {
   const body = items.map((item) => `<item>${item}</item>`).join("");
   return new Response(`<?xml version="1.0" encoding="UTF-8"?><response>
