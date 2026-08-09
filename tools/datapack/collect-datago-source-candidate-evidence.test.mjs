@@ -26,7 +26,12 @@ const candidate = {
 
 test("Data.go.kr evidence collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(collectDatagoSourceCandidateEvidence({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-invalid-key-"));
+  try {
+    await assert.rejects(collectDatagoSourceCandidateEvidence({ candidateId: candidate.id, candidatesDocument: { candidates: [candidate] }, runnerTemp, serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  } finally {
+    await rm(runnerTemp, { recursive: true, force: true });
+  }
   assert.equal(calls, 0);
 });
 

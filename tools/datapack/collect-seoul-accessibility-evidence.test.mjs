@@ -18,7 +18,7 @@ const collectorPath = fileURLToPath(new URL("./collect-seoul-accessibility-evide
 
 test("Seoul accessibility collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(collectSeoulAccessibility({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(collectSeoulAccessibility({ endpoint: "https://apis.data.go.kr/example", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 

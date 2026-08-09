@@ -24,7 +24,13 @@ import { canonicalJson } from "./lib/manifest-validation.mjs";
 
 test("Korail ITX plan은 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(collectKorailItxCheongchunPlan({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(collectKorailItxCheongchunPlan({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("Korail ITX timetable은 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectKorailItxCheongchunTimetable({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 

@@ -11,7 +11,7 @@ const topology = JSON.parse(await readFile(
 
 test("부산 timetable collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(collectBusanTimetable({ serviceKey: "invalid%ZZ", stationScopes: topology, fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(collectBusanTimetable({ serviceKey: "invalid%ZZ", stationScopes: topology.scope, fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 

@@ -15,7 +15,13 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 test("TAGO ITX roster collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(collectTagoItxCheongchunRoster({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(collectTagoItxCheongchunRoster({ serviceKey: "invalid%ZZ", serviceDate: "20260715", kricServiceDayCode: "8", canonicalStations: canonicalRosterStations(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("TAGO ITX OD collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectTagoItxCheongchunOd({ serviceKey: "invalid%ZZ", departureDate: "2026-07-14", kricServiceDayCode: "8", now: new Date("2026-07-13T00:00:00.000Z"), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 

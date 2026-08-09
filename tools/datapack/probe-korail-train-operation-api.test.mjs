@@ -10,7 +10,7 @@ const INFO_FIELDS = KORAIL_TRAIN_OPERATION_APIS["korail-traveler-train-run-info"
 
 test("Korail operation probe는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(probeKorailTrainOperationApi({ sourceId: "korail-traveler-train-run-info", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(probeKorailTrainOperationApi({ sourceId: "korail-traveler-train-run-info", runDate: "20260713", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 

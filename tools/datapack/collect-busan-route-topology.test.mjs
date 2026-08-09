@@ -18,7 +18,7 @@ const XML = successXml(XML_ITEMS);
 
 test("부산 topology collector는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(collectBusanRouteTopology({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(collect({ serviceKey: "invalid%ZZ", stationCode: "101", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 
