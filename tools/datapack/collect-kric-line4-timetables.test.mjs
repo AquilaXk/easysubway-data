@@ -19,6 +19,7 @@ import {
   filterRowsByTrainNumbers,
   fetchWithRetry,
   redactKricCredential,
+  selectKricPilotReconstructionRows,
   selectServicePatternProbeRequest,
   summarizeOperationTrainDiagnosticArtifact,
   summarizeTrainDiagnosticArtifact,
@@ -404,6 +405,37 @@ test("EXPRESS 중간 null-arrival은 시각 추정 없이 non-stop으로 분리�
       { ...terminal, trnNo: "K4500", servicePattern: "LOCAL" },
     ]),
     /LOCAL intermediate row has missing arrival/,
+  );
+});
+
+test("paired pilot reconstruction은 두 endpoint를 모두 가진 group만 선택한다", () => {
+  const pilot = [
+    { stationId: "station-seoul-4-433", lineId: "seoul-4", trnNo: "4719", dayCd: "8", arrivalSeconds: null, departureSeconds: 100, stopRole: "ORIGIN", servicePattern: "LOCAL" },
+    { stationId: "station-seoul-4-448", lineId: "seoul-4", trnNo: "4719", dayCd: "8", arrivalSeconds: 200, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+  ];
+  const outside = [
+    { stationId: "station-seoul-4-433", lineId: "seoul-4", trnNo: "S4219", dayCd: "8", arrivalSeconds: 300, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+    { stationId: "station-seoul-4-434", lineId: "seoul-4", trnNo: "S4219", dayCd: "8", arrivalSeconds: 400, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+  ];
+
+  const selected = selectKricPilotReconstructionRows([...outside, ...pilot]);
+  assert.deepEqual(selected.rows, pilot);
+  assert.deepEqual(selected.excludedGroups, [{
+    lineId: "seoul-4",
+    trnNo: "S4219",
+    dayCd: "8",
+    rowCount: 2,
+    stationIds: ["station-seoul-4-433", "station-seoul-4-434"],
+    reason: "OUTSIDE_PILOT_CORRIDOR",
+  }]);
+
+  assert.throws(
+    () => classifyKricRowsForReconstruction([
+      pilot[0],
+      { ...outside[0], trnNo: "4719", stationId: "station-seoul-4-440", stopRole: "TERMINAL" },
+      pilot[1],
+    ]),
+    /intermediate row has missing departure/,
   );
 });
 

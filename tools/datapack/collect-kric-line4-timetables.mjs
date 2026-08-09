@@ -703,6 +703,53 @@ export function assertCompleteKricCollection(failedRequestCount, requestCount, p
   }
 }
 
+export function selectKricPilotReconstructionRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("KRIC pilot reconstruction rows must be a non-empty array");
+  }
+  const requiredStationIds = new Set([
+    "station-seoul-4-433",
+    "station-seoul-4-448",
+  ]);
+  const groups = new Map();
+  for (const row of rows) {
+    for (const field of ["stationId", "lineId", "trnNo", "dayCd"]) {
+      if (typeof row?.[field] !== "string" || row[field].length === 0) {
+        throw new TypeError(`KRIC pilot reconstruction row ${field} is invalid`);
+      }
+    }
+    const key = `${row.lineId}|${row.trnNo}|${row.dayCd}`;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  const selectedRows = [];
+  const excludedGroups = [];
+  for (const key of [...groups.keys()].sort(codepointCompare)) {
+    const group = groups.get(key);
+    const stationIds = [...new Set(group.map(({ stationId }) => stationId))]
+      .sort(codepointCompare);
+    if ([...requiredStationIds].every((stationId) => stationIds.includes(stationId))) {
+      selectedRows.push(...group);
+      continue;
+    }
+    const { lineId, trnNo, dayCd } = group[0];
+    excludedGroups.push({
+      lineId,
+      trnNo,
+      dayCd,
+      rowCount: group.length,
+      stationIds,
+      reason: "OUTSIDE_PILOT_CORRIDOR",
+    });
+  }
+  if (selectedRows.length === 0) {
+    throw new Error("KRIC collection has no paired pilot reconstruction rows");
+  }
+  return { rows: selectedRows, excludedGroups };
+}
+
 export function classifyKricRowsForReconstruction(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new TypeError("KRIC reconstruction rows must be a non-empty array");
@@ -1014,7 +1061,8 @@ async function main() {
     return;
   }
   assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence);
-  const classified = classifyKricRowsForReconstruction(intermediate);
+  const selected = selectKricPilotReconstructionRows(intermediate);
+  const classified = classifyKricRowsForReconstruction(selected.rows);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
     throw new Error("ITX OD evidence serviceId is invalid");
@@ -1049,6 +1097,8 @@ async function main() {
     failedRequestCount: failed,
     expectedNoDataRequestCount: perRequest.filter(({ classification }) => classification === noDataEvidence.classification.state).length,
     intermediateRowCount: intermediate.length,
+    excludedOutsidePilotGroupCount: selected.excludedGroups.length,
+    excludedOutsidePilotGroups: selected.excludedGroups,
     excludedNonStopRowCount: classified.excludedNonStopRows.length,
     excludedNonStopRows: classified.excludedNonStopRows,
     reconstructionRowCount: reconstructionRows.length,
@@ -1074,6 +1124,7 @@ async function main() {
     transitTrips: _t,
     transitStopTimes: _s,
     excludedNonStopRows: _e,
+    excludedOutsidePilotGroups: _o,
     perRequest: _p,
     rawResponseInventory: _r,
     ...summary
