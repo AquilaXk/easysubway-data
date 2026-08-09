@@ -4,8 +4,11 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   assertCompleteKricCollection,
+  assertCompleteSaturdayNoData,
   buildCollectionContext,
   buildCollectionTimestamps,
+  buildTimetableNoDataObservation,
+  classifyKricTimetablePayload,
   buildRawCollectionInventory,
   buildRawResponseRecord,
   buildServicePatternObservation,
@@ -13,6 +16,7 @@ import {
   redactKricCredential,
   selectServicePatternProbeRequest,
   validateServicePatternEvidence,
+  validateTimetableNoDataEvidence,
   validateItxOdJoin,
   validateKricTimetablePayload,
 } from "./collect-kric-line4-timetables.mjs";
@@ -30,6 +34,10 @@ const ROSTER = {
 const SERVICE_PATTERN_MAPPING = { LOCAL: "LOCAL", EXPRESS: "EXPRESS" };
 const SERVICE_PATTERN_EVIDENCE_PATH = new URL(
   "./kric-subway-timetable-service-pattern-evidence.json",
+  import.meta.url,
+);
+const NO_DATA_EVIDENCE_PATH = new URL(
+  "./kric-subway-timetable-no-data-evidence.json",
   import.meta.url,
 );
 
@@ -153,6 +161,102 @@ test("collection time은 성공 완료 뒤 한 UTC instant에서 파생한다", 
     capturedAt: "2026-08-09",
   });
   assert.throws(() => buildCollectionTimestamps(new Date(Number.NaN)), /collection clock/);
+});
+
+test("dayCd=7 no-data probe는 exact provider code/message/body shape만 기록한다", () => {
+  const request = {
+    operation: "subwayTimetableExp",
+    requestKey: "subwayTimetableExp|S1|433|7",
+    params: { railOprIsttCd: "S1", dayCd: "7", lnCd: "4", stinCd: "433" },
+  };
+  const rawResponse = JSON.stringify({
+    header: { resultCode: "03", resultMsg: "데이터가 없습니다." },
+  });
+  assert.deepEqual(buildTimetableNoDataObservation(
+    request,
+    rawResponse,
+    JSON.parse(rawResponse),
+  ), {
+    schemaVersion: 1,
+    artifactKind: "kric-subway-timetable-no-data-observation",
+    sourceId: "kric-subway-timetable",
+    operation: "subwayTimetableExp",
+    request: {
+      requestKey: "subwayTimetableExp|S1|433|7",
+      railOprIsttCd: "S1",
+      dayCd: "7",
+      lnCd: "4",
+      stinCd: "433",
+    },
+    response: {
+      rawSha256: createHash("sha256").update(rawResponse).digest("hex"),
+      resultCode: "03",
+      resultMsg: "데이터가 없습니다.",
+      bodyRowCount: 0,
+    },
+  });
+  assert.throws(
+    () => buildTimetableNoDataObservation(
+      { ...request, params: { ...request.params, dayCd: "8" } },
+      rawResponse,
+      JSON.parse(rawResponse),
+    ),
+    /dayCd=7/,
+  );
+  assert.throws(
+    () => buildTimetableNoDataObservation(request, rawResponse, {
+      header: { resultCode: "03", resultMsg: "데이터가 없습니다." },
+      body: [{ trnNo: "4719" }],
+    }),
+    /body must be empty/,
+  );
+});
+
+test("Saturday no-data evidence는 exact 51-request gap만 닫힌 분류로 허용한다", async () => {
+  const evidence = JSON.parse(await readFile(NO_DATA_EVIDENCE_PATH, "utf8"));
+  const validated = validateTimetableNoDataEvidence(evidence);
+  const saturdayRequest = {
+    operation: "subwayTimetableExp",
+    requestKey: "subwayTimetableExp|S1|433|7",
+    params: { railOprIsttCd: "S1", dayCd: "7", lnCd: "4", stinCd: "433" },
+  };
+  const noDataPayload = { header: { resultCode: "03", resultMsg: "데이터가 없습니다." } };
+  assert.deepEqual(classifyKricTimetablePayload(noDataPayload, saturdayRequest, validated), {
+    classification: "EXPECTED_NO_DATA_SATURDAY",
+    rows: [],
+  });
+  assert.throws(
+    () => classifyKricTimetablePayload(noDataPayload, {
+      ...saturdayRequest,
+      requestKey: "subwayTimetableExp|S1|433|8",
+      params: { ...saturdayRequest.params, dayCd: "8" },
+    }, validated),
+    /provider resultCode 03/,
+  );
+  assert.throws(
+    () => validateTimetableNoDataEvidence({
+      ...evidence,
+      probe: { ...evidence.probe, rawSha256: "0".repeat(64) },
+    }),
+    /no-data evidence identity/,
+  );
+
+  const requests = Array.from({ length: 51 }, (_, index) => ({
+    requestKey: `subwayTimetableExp|S1|${433 + index}|7`,
+    params: { dayCd: "7" },
+  }));
+  const perRequest = requests.map(({ requestKey }) => ({
+    requestKey,
+    classification: "EXPECTED_NO_DATA_SATURDAY",
+    resultCode: "03",
+    rows: 0,
+    normalized: 0,
+  }));
+  assert.doesNotThrow(() => assertCompleteSaturdayNoData({ requests }, perRequest, validated));
+  assert.throws(
+    () => assertCompleteSaturdayNoData({ requests }, perRequest.slice(1), validated),
+    /complete-set/,
+  );
 });
 
 test("buildCollectionContext는 로스터로 재구성 코어 context를 만든다", () => {

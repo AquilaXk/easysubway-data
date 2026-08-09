@@ -224,6 +224,53 @@ export function selectServicePatternProbeRequest(plan, requestKey) {
   return matches[0];
 }
 
+export function buildTimetableNoDataObservation(request, rawResponse, payload) {
+  if (request?.operation !== "subwayTimetableExp" || request?.params?.dayCd !== "7") {
+    throw new Error("timetable no-data probe requires subwayTimetableExp dayCd=7");
+  }
+  const params = request.params;
+  const expectedRequestKey = [
+    request.operation,
+    params.railOprIsttCd,
+    params.stinCd,
+    params.dayCd,
+  ].join("|");
+  if (request.requestKey !== expectedRequestKey) {
+    throw new Error("timetable no-data probe requestKey does not match request params");
+  }
+  if (typeof rawResponse !== "string" || rawResponse.length === 0) {
+    throw new Error("timetable no-data probe raw response is required");
+  }
+  const resultCode = payload?.header?.resultCode;
+  const resultMsg = payload?.header?.resultMsg;
+  if (resultCode !== "03" || typeof resultMsg !== "string" || resultMsg.trim() === "") {
+    throw new Error("timetable no-data probe requires provider resultCode 03 and message");
+  }
+  const body = payload?.body;
+  if (body != null && (!Array.isArray(body) || body.length !== 0)) {
+    throw new Error("timetable no-data probe body must be empty");
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-subway-timetable-no-data-observation",
+    sourceId: "kric-subway-timetable",
+    operation: request.operation,
+    request: {
+      requestKey: request.requestKey,
+      railOprIsttCd: params.railOprIsttCd,
+      dayCd: params.dayCd,
+      lnCd: params.lnCd,
+      stinCd: params.stinCd,
+    },
+    response: {
+      rawSha256: createHash("sha256").update(rawResponse).digest("hex"),
+      resultCode,
+      resultMsg,
+      bodyRowCount: Array.isArray(body) ? body.length : 0,
+    },
+  };
+}
+
 export function validateServicePatternEvidence(evidence) {
   const expectedTopKeys = [
     "artifactKind",
@@ -266,6 +313,75 @@ export function validateServicePatternEvidence(evidence) {
     throw new Error("service-pattern evidence closed mapping is invalid");
   }
   return new Map(evidence.mapping.map(({ exptCd, servicePattern }) => [exptCd, servicePattern]));
+}
+
+export function validateTimetableNoDataEvidence(evidence) {
+  if (!hasExactKeys(evidence, [
+    "artifactKind",
+    "classification",
+    "officialDocumentationUrl",
+    "operation",
+    "probe",
+    "schemaVersion",
+    "sourceId",
+    "sourceIssue",
+  ])
+    || evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "kric-subway-timetable-no-data-evidence"
+    || evidence.sourceIssue !== 28
+    || evidence.sourceId !== "kric-subway-timetable"
+    || evidence.officialDocumentationUrl !== "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp"
+    || evidence.operation !== "subwayTimetableExp"
+    || JSON.stringify(evidence.probe) !== JSON.stringify({
+      requestKey: "subwayTimetableExp|S1|433|7",
+      rawSha256: "826aedce696396835866fce27ff5f4770ef2a24e9aab1247556a7952972cde14",
+      resultCode: "03",
+      resultMsg: "데이터가 없습니다.",
+      bodyRowCount: 0,
+    })
+    || JSON.stringify(evidence.classification) !== JSON.stringify({
+      state: "EXPECTED_NO_DATA_SATURDAY",
+      expectedDayCd: "7",
+      expectedRequestCount: 51,
+      calendarServiceId: "holiday-kric",
+      productionCoverageClaim: false,
+    })) {
+    throw new Error("timetable no-data evidence identity is invalid");
+  }
+  return evidence;
+}
+
+export function classifyKricTimetablePayload(payload, request, noDataEvidence) {
+  const code = payload?.header?.resultCode;
+  if (code === "00") {
+    if (!Array.isArray(payload.body) || payload.body.length === 0) {
+      throw new Error("KRIC timetable success body must be a non-empty array");
+    }
+    return { classification: "ROWS", rows: payload.body };
+  }
+  if (code === "03"
+    && request?.params?.dayCd === noDataEvidence?.classification?.expectedDayCd
+    && payload?.header?.resultMsg === noDataEvidence?.probe?.resultMsg
+    && (payload.body == null || (Array.isArray(payload.body) && payload.body.length === 0))) {
+    return { classification: noDataEvidence.classification.state, rows: [] };
+  }
+  const safeCode = /^[A-Za-z0-9._-]{1,32}$/.test(String(code ?? "")) ? code : "UNKNOWN";
+  throw new Error(`KRIC timetable provider resultCode ${safeCode}`);
+}
+
+export function assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence) {
+  const expected = (plan?.requests ?? [])
+    .filter((request) => request?.params?.dayCd === noDataEvidence?.classification?.expectedDayCd)
+    .map(({ requestKey }) => requestKey);
+  const observed = (perRequest ?? [])
+    .filter(({ classification }) => classification === noDataEvidence?.classification?.state)
+    .map(({ requestKey, resultCode, rows, normalized }) => ({ requestKey, resultCode, rows, normalized }));
+  if (expected.length !== noDataEvidence?.classification?.expectedRequestCount
+    || observed.length !== expected.length
+    || observed.some((entry, index) => entry.requestKey !== expected[index]
+      || entry.resultCode !== "03" || entry.rows !== 0 || entry.normalized !== 0)) {
+    throw new Error("KRIC timetable Saturday no-data complete-set is invalid");
+  }
 }
 
 export function buildRawResponseRecord(request, rawResponse) {
@@ -414,6 +530,24 @@ async function main() {
     includeExpress: args.express !== "false",
     operation: args.operation,
   });
+  if (args["service-pattern-probe-request-key"] && args["no-data-probe-request-key"]) {
+    throw new Error("use only one evidence probe request key");
+  }
+  if (args["no-data-probe-request-key"]) {
+    if (!args.output) {
+      throw new Error("no-data probe --output is required");
+    }
+    const request = selectServicePatternProbeRequest(plan, args["no-data-probe-request-key"]);
+    const rawResponse = await fetchWithRetry(kricRequestUrl(request, key));
+    const observation = buildTimetableNoDataObservation(
+      request,
+      rawResponse,
+      JSON.parse(rawResponse),
+    );
+    await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(observation, null, 2)}\n`);
+    return;
+  }
   if (args["service-pattern-probe-request-key"]) {
     if (!args.output) {
       throw new Error("service-pattern probe --output is required");
@@ -435,8 +569,14 @@ async function main() {
   if (!args["service-pattern-evidence"]) {
     throw new Error("--service-pattern-evidence is required");
   }
+  if (!args["no-data-evidence"]) {
+    throw new Error("--no-data-evidence is required");
+  }
   const servicePatternByExptCd = validateServicePatternEvidence(
     JSON.parse(await readFile(args["service-pattern-evidence"], "utf8")),
+  );
+  const noDataEvidence = validateTimetableNoDataEvidence(
+    JSON.parse(await readFile(args["no-data-evidence"], "utf8")),
   );
   const context = args["canonical-pack"]
     ? buildCollectionContextFromPack(roster, lineId, args["canonical-pack"], servicePatternByExptCd)
@@ -451,12 +591,17 @@ async function main() {
     try {
       const rawResponse = await fetchWithRetry(url);
       const payload = JSON.parse(rawResponse);
-      const rows = validateKricTimetablePayload(payload);
+      const { classification, rows } = classifyKricTimetablePayload(payload, request, noDataEvidence);
+      if (classification === noDataEvidence.classification.state) {
+        rawResponses.push(buildRawResponseRecord(request, rawResponse));
+        perRequest.push({ requestKey: request.requestKey, classification, resultCode: "03", rows: 0, normalized: 0 });
+        continue;
+      }
       // servicePattern은 evidence-backed closed exptCd mapping이 있어야만 normalizer가 해석한다.
       const normalized = normalizeKricSubwayTimetable(rows, context);
       intermediate.push(...normalized);
       rawResponses.push(buildRawResponseRecord(request, rawResponse));
-      perRequest.push({ requestKey: request.requestKey, resultCode: "00", rows: rows.length, normalized: normalized.length });
+      perRequest.push({ requestKey: request.requestKey, classification, resultCode: "00", rows: rows.length, normalized: normalized.length });
     } catch (error) {
       failed += 1;
       perRequest.push({ requestKey: request.requestKey, error: redactKricCredential(String(error.message), key) });
@@ -464,6 +609,7 @@ async function main() {
   }
 
   assertCompleteKricCollection(failed, plan.requestCount, perRequest);
+  assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
     throw new Error("ITX OD evidence serviceId is invalid");
@@ -496,6 +642,7 @@ async function main() {
     ...timestamps,
     requestCount: plan.requestCount,
     failedRequestCount: failed,
+    expectedNoDataRequestCount: perRequest.filter(({ classification }) => classification === noDataEvidence.classification.state).length,
     intermediateRowCount: intermediate.length,
     reconstructionRowCount: reconstructionRows.length,
     ...(trainNumberEvidence ? {
