@@ -11627,10 +11627,10 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
         },
       },
       {
-        id: "kric-station-convenience-standard",
+        id: "seoul-metro-accessibility",
         coverageScope: {
           regionIds: ["capital"],
-          operatorIds: ["seoul-metro", "korail"],
+          operatorIds: ["seoul-metro"],
           sourceDomains: ["accessibility_facilities"],
         },
       },
@@ -11641,7 +11641,7 @@ test("공식 source ingest adapter는 production coverage 기준을 manifest 최
       regionId: "capital",
       operatorId: "seoul-metro",
       sourceDomain: "accessibility_facilities",
-      sourceIds: ["kric-station-convenience-standard"],
+      sourceIds: ["seoul-metro-accessibility"],
     },
     {
       regionId: "capital",
@@ -12566,8 +12566,8 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
     id: "facility-sadang-elevator-kric-2",
     name: "사당 엘리베이터 설치 정보 2",
     providerFacilityRef: "facility-sadang-elevator-kric-2",
-    providerRecordHash: sha256("provider:facility-sadang-elevator-kric-2:kric-station-convenience-standard"),
-    evidenceHash: sha256("evidence:facility-sadang-elevator-kric-2:kric-station-convenience-standard:2026-06-22T00:00:00.000Z"),
+    providerRecordHash: sha256("provider:facility-sadang-elevator-kric-2:seoul-metro-accessibility"),
+    evidenceHash: sha256("evidence:facility-sadang-elevator-kric-2:seoul-metro-accessibility:2026-06-22T00:00:00.000Z"),
   });
 
   const generated = await importOfficialSourceInput(outputDir, input);
@@ -12594,7 +12594,7 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
         stationId: "station-sadang",
         lineId: "seoul-4",
         facilityType: "ELEVATOR",
-        sourceId: "kric-station-convenience-standard",
+        sourceId: "seoul-metro-accessibility",
         strictRouteEligible: false,
         strictRouteEligibleReason: "OPERATION_STATUS_UNKNOWN",
       },
@@ -12732,8 +12732,8 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line ope
   edge.accessibilityStatus = "AVAILABLE";
   edge.stairAccessState = "STEP_FREE";
   edge.verificationStatus = "VERIFIED";
-  edge.sourceId = "kric-station-convenience-standard";
-  edge.sourceSnapshotId = "kric-station-convenience-standard-20260728T184503338Z";
+  edge.sourceId = "seoul-metro-accessibility";
+  edge.sourceSnapshotId = "seoul-metro-accessibility-20260728";
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await execFileAsync(
     process.execPath,
@@ -13313,7 +13313,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       ],
       { cwd: root },
     ),
-    /selected production source has no row provenance: kric-station-convenience-standard/,
+    /selected production source has no row provenance: seoul-metro-accessibility/,
   );
 
   const missingWheelchairLiftEvidenceInputPath = path.join(
@@ -15367,7 +15367,7 @@ function productionSourceIngestInput() {
   input.sourceIds = [
     "molit-urban-rail-full-route",
     "seoulmetro-station-line-info",
-    "kric-station-convenience-standard",
+    "seoul-metro-accessibility",
   ];
   input.supportedV1Scope = {
     scopeId: "capital_pilot_android_v1",
@@ -15422,42 +15422,42 @@ function productionSourceIngestInput() {
   delete input.routeRegressionScope;
   input.facilityRows = [
     [
-      "kric-station-convenience-standard",
+      "seoul-metro-accessibility",
       "facility-sangnoksu-elevator-kric-1",
       "ELEVATOR",
       "상록수 엘리베이터 설치 정보",
       "MOLIT-SEOUL-4-448",
     ],
     [
-      "kric-station-convenience-standard",
+      "seoul-metro-accessibility",
       "facility-sangnoksu-escalator-kric-1",
       "ESCALATOR",
       "상록수 에스컬레이터 설치 정보",
       "MOLIT-SEOUL-4-448",
     ],
     [
-      "kric-station-convenience-standard",
+      "seoul-metro-accessibility",
       "facility-sangnoksu-wheelchair-lift-kric-1",
       "WHEELCHAIR_LIFT",
       "상록수 휠체어리프트 설치 정보",
       "MOLIT-SEOUL-4-448",
     ],
     [
-      "kric-station-convenience-standard",
+      "seoul-metro-accessibility",
       "facility-sadang-elevator-kric-1",
       "ELEVATOR",
       "사당 엘리베이터 설치 정보",
       "MOLIT-SEOUL-4-433",
     ],
     [
-      "kric-station-convenience-standard",
+      "seoul-metro-accessibility",
       "facility-sadang-escalator-kric-1",
       "ESCALATOR",
       "사당 에스컬레이터 설치 정보",
       "MOLIT-SEOUL-4-433",
     ],
     [
-      "kric-station-convenience-standard",
+      "seoul-metro-accessibility",
       "facility-sadang-wheelchair-lift-kric-1",
       "WHEELCHAIR_LIFT",
       "사당 휠체어리프트 설치 정보",
@@ -15479,7 +15479,7 @@ function productionSourceIngestInput() {
     installationStatus: "INSTALLED",
     providerFacilityRef: id,
     provenanceKind: "OFFICIAL_SOURCE",
-    description: "KRIC 위치 source 기준 설치 정보이며 실시간 운행 상태가 아닙니다.",
+    description: "서울교통공사 접근성 source 기준 시설 운행 상태입니다.",
     verifiedAt: "2026-06-22T00:00:00.000Z",
     retrievedAt: "2026-06-22T00:00:00.000Z",
     sourceSnapshotId: `${sourceId}-snapshot-20260622`,
@@ -15532,8 +15532,8 @@ function productionSourceIngestInput() {
       regionId: "capital",
       operatorId: "seoul-metro",
       sourceDomain: "accessibility_facilities",
-      sourceIds: ["kric-station-convenience-standard"],
-      evidence: "국가철도공단 접근성 시설 위치 source inventory coverageScope",
+      sourceIds: ["seoul-metro-accessibility"],
+      evidence: "서울교통공사 접근성 시설 source inventory coverageScope",
     },
   ];
   return input;
@@ -15562,9 +15562,22 @@ async function importOfficialSourceInput(outputDir, input, inventoryPath = "tool
 }
 
 async function capitalPilotProductionSourceInput() {
-  return JSON.parse(
+  const input = JSON.parse(
     await readFile(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "utf8"),
   );
+  return replaceHistoricalFacilityBaseline(input);
+}
+
+function replaceHistoricalFacilityBaseline(value) {
+  if (Array.isArray(value)) return value.map(replaceHistoricalFacilityBaseline);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, replaceHistoricalFacilityBaseline(child)]));
+  }
+  if (value === "kric-station-convenience-standard") return "seoul-metro-accessibility";
+  if (typeof value === "string" && value.startsWith("kric-station-convenience-standard-")) {
+    return "seoul-metro-accessibility-20260728";
+  }
+  return value;
 }
 
 function useAccessibilitySourceForAvailableEdge(input, edgeId) {
@@ -15572,8 +15585,8 @@ function useAccessibilitySourceForAvailableEdge(input, edgeId) {
   edge.accessibilityStatus = "AVAILABLE";
   edge.stairAccessState = "STEP_FREE";
   edge.verificationStatus = "VERIFIED";
-  edge.sourceId = "kric-station-convenience-standard";
-  edge.sourceSnapshotId = "kric-station-convenience-standard-20260728T184503338Z";
+  edge.sourceId = "seoul-metro-accessibility";
+  edge.sourceSnapshotId = "seoul-metro-accessibility-20260728";
 }
 
 function addSeoul2ProductionScope(input) {
@@ -16056,10 +16069,10 @@ function makeProductionSourceFixtureStrictCoverageValid(fixture) {
   const pack = fixture.packs[0];
   for (const edge of pack.networkEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType))) {
     edge.accessibilityStatus = "AVAILABLE";
-    edge.sourceId = "kric-station-convenience-standard";
-    edge.sourceSnapshotId = "kric-station-convenience-standard-snapshot-20260728";
-    edge.providerRecordHash = sha256(`provider:${edge.id}:kric-station-convenience-standard`);
-    edge.evidenceHash = sha256(`evidence:${edge.id}:kric-station-convenience-standard:2026-07-28T00:00:00.000Z`);
+    edge.sourceId = "seoul-metro-accessibility";
+    edge.sourceSnapshotId = "seoul-metro-accessibility-20260728";
+    edge.providerRecordHash = sha256(`provider:${edge.id}:seoul-metro-accessibility`);
+    edge.evidenceHash = sha256(`evidence:${edge.id}:seoul-metro-accessibility:2026-07-28T00:00:00.000Z`);
     edge.lastVerifiedAt = "2026-07-28T00:00:00.000Z";
   }
   for (const evidence of pack.stationFacilityEvidence) {
@@ -16069,8 +16082,8 @@ function makeProductionSourceFixtureStrictCoverageValid(fixture) {
     evidence.strictRouteEligibleReason = "FACILITY_OPERATION_VERIFIED";
   }
   addApprovedMovementPathwayEvidence(pack, {
-    sourceId: "kric-station-convenience-standard",
-    sourceSnapshotId: "kric-station-convenience-standard-snapshot-20260728",
+    sourceId: "seoul-metro-accessibility",
+    sourceSnapshotId: "seoul-metro-accessibility-20260728",
     verifiedAt: "2026-07-28T00:00:00.000Z",
   });
 }
