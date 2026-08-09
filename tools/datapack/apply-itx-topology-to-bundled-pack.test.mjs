@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -380,15 +380,59 @@ function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize
   });
 }
 
+async function verifyImmutableMobileRepository(repository, runGit) {
+  const stat = await lstat(repository).catch(() => undefined);
+  if (!stat?.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error("immutable Mobile checkout must be a real directory");
+  }
+  const inside = await runGit(repository, ["rev-parse", "--is-inside-work-tree"]);
+  const revision = await runGit(repository, ["rev-parse", "--verify", `${mobileRevision}^{commit}`]);
+  if (inside.trim() !== "true" || revision.trim() !== mobileRevision) {
+    throw new Error("immutable Mobile checkout does not contain the expected d857 commit");
+  }
+  return repository;
+}
+
+export async function resolveImmutableMobileRepository({
+  repositoryRoot = root,
+  runGit = async (repository, args) => (await execFileAsync("git", ["-C", repository, ...args])).stdout,
+} = {}) {
+  const ciCheckout = path.join(repositoryRoot, ".external", "mobile");
+  if (await lstat(ciCheckout).then(() => true).catch(() => false)) {
+    return verifyImmutableMobileRepository(ciCheckout, runGit);
+  }
+  return verifyImmutableMobileRepository(path.resolve(repositoryRoot, "../easysubway-mobile"), runGit);
+}
+
 async function immutableCurrentV18Bytes(relativePath) {
-  const mobileRoot = path.resolve(root, "../easysubway-mobile");
+  const mobileRoot = await resolveImmutableMobileRepository();
   const { stdout } = await execFileAsync("git", [
     "-C", mobileRoot, "show", `${mobileRevision}:apps/mobile/assets/datapacks/${relativePath}`,
   ], { encoding: "buffer", maxBuffer: 4 * 1024 * 1024 });
   return stdout;
 }
 
-test("immutable current v18 output은 explicit migration으로만 v19 two-domain evidence로 이행한다", async (context) => {
+test("immutable v18 output resolver는 CI checkout을 sibling보다 우선한다", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-mobile-resolver-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const ciCheckout = path.join(directory, ".external", "mobile");
+  await mkdir(ciCheckout, { recursive: true });
+  const calls = [];
+  const resolved = await resolveImmutableMobileRepository({
+    repositoryRoot: directory,
+    runGit: async (repository, args) => {
+      calls.push([repository, args]);
+      return args.includes("--is-inside-work-tree") ? "true\n" : `${mobileRevision}\n`;
+    },
+  });
+  assert.equal(resolved, ciCheckout);
+  assert.deepEqual(calls, [
+    [ciCheckout, ["rev-parse", "--is-inside-work-tree"]],
+    [ciCheckout, ["rev-parse", "--verify", `${mobileRevision}^{commit}`]],
+  ]);
+});
+
+test("immutable v18 output은 explicit migration으로만 v19 two-domain evidence로 이행한다", async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-v18-output-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const packPath = path.join(directory, "capital.sqlite.gz");
