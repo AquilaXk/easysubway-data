@@ -8,6 +8,7 @@ import {
   buildCollectionContext,
   buildCollectionTimestamps,
   buildTimetableNoDataObservation,
+  buildTrainDiagnosticArtifact,
   classifyKricTimetablePayload,
   buildRawCollectionInventory,
   buildRawResponseRecord,
@@ -256,6 +257,42 @@ test("Saturday no-data evidence는 exact 51-request gap만 닫힌 분류로 허�
   assert.throws(
     () => assertCompleteSaturdayNoData({ requests }, perRequest.slice(1), validated),
     /complete-set/,
+  );
+});
+
+test("train diagnostic artifact는 complete request raw identity와 exact train rows만 보존한다", () => {
+  const requests = [
+    { requestKey: "subwayTimetableExp|S1|433|8" },
+    { requestKey: "subwayTimetableExp|S1|434|8" },
+  ];
+  const rawResponses = requests.map((request, index) => buildRawResponseRecord(
+    request,
+    JSON.stringify({ header: { resultCode: "00" }, body: [{ trnNo: index === 0 ? "K4422" : "K4500" }] }),
+  ));
+  const rows = [
+    { stationId: "station-a", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: null, departureSeconds: 20_000, stopRole: "ORIGIN", servicePattern: "LOCAL" },
+    { stationId: "station-b", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: 20_100, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+    { stationId: "station-c", lineId: "seoul-4", trnNo: "K4500", dayCd: "8", arrivalSeconds: 21_000, departureSeconds: 21_010, stopRole: "THROUGH", servicePattern: "LOCAL" },
+  ];
+  const artifact = buildTrainDiagnosticArtifact({
+    lineId: "seoul-4",
+    trainNumber: "K4422",
+    plan: { requests },
+    rawResponses,
+    rows,
+    timestamps: { collectedAt: "2026-08-09T11:00:00.000Z", capturedAt: "2026-08-09" },
+  });
+  assert.equal(artifact.artifactKind, "kric-line4-timetable-train-diagnostic");
+  assert.equal(artifact.trainNumber, "4422");
+  assert.equal(artifact.requestCount, 2);
+  assert.deepEqual(artifact.rows.map(({ stationId }) => stationId), ["station-a", "station-b"]);
+  assert.equal(artifact.rawResponseInventory.responseCount, 2);
+  assert.throws(
+    () => buildTrainDiagnosticArtifact({
+      lineId: "seoul-4", trainNumber: "K9999", plan: { requests }, rawResponses, rows,
+      timestamps: { collectedAt: "2026-08-09T11:00:00.000Z", capturedAt: "2026-08-09" },
+    }),
+    /no rows/,
   );
 });
 

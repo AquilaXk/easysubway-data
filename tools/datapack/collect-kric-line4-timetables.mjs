@@ -443,6 +443,28 @@ export function buildCollectionTimestamps(now = new Date()) {
   return { collectedAt, capturedAt: collectedAt.slice(0, 10) };
 }
 
+export function buildTrainDiagnosticArtifact({ lineId, trainNumber, plan, rawResponses, rows, timestamps }) {
+  const normalizedTrainNumber = normalizeTrainNumber(trainNumber);
+  const matchingRows = (rows ?? []).filter(
+    (row) => normalizeTrainNumber(row.trnNo) === normalizedTrainNumber,
+  );
+  if (matchingRows.length === 0) {
+    throw new Error(`KRIC timetable train diagnostic has no rows: ${normalizedTrainNumber}`);
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-line4-timetable-train-diagnostic",
+    sourceId: "kric-subway-timetable",
+    lineId,
+    trainNumber: normalizedTrainNumber,
+    ...timestamps,
+    requestCount: plan.requests.length,
+    rowCount: matchingRows.length,
+    rawResponseInventory: buildRawCollectionInventory(plan, rawResponses),
+    rows: matchingRows,
+  };
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -572,6 +594,9 @@ async function main() {
   if (!args["no-data-evidence"]) {
     throw new Error("--no-data-evidence is required");
   }
+  if (args["train-diagnostic-number"] && !args.output) {
+    throw new Error("train diagnostic --output is required");
+  }
   const servicePatternByExptCd = validateServicePatternEvidence(
     JSON.parse(await readFile(args["service-pattern-evidence"], "utf8")),
   );
@@ -609,6 +634,20 @@ async function main() {
   }
 
   assertCompleteKricCollection(failed, plan.requestCount, perRequest);
+  if (args["train-diagnostic-number"]) {
+    const diagnostic = buildTrainDiagnosticArtifact({
+      lineId,
+      trainNumber: args["train-diagnostic-number"],
+      plan,
+      rawResponses,
+      rows: intermediate,
+      timestamps: buildCollectionTimestamps(),
+    });
+    await writeFile(args.output, `${JSON.stringify(diagnostic, null, 2)}\n`);
+    const { rawResponseInventory: _raw, rows: _rows, ...summary } = diagnostic;
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
   assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
