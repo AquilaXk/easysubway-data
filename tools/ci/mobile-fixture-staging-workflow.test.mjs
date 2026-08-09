@@ -101,6 +101,25 @@ test("CI는 exact staged v18에서만 station catalog를 emit하고 explicit mig
   assert.match(node, /node-version:\s*"24\.19\.0"/);
 });
 
+test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤 즉시 원복한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const backup = ci.match(/- name: Backup tracked topology evidence[\s\S]*?\n\s+- name:/)?.[0];
+  const restore = ci.match(/- name: Restore tracked topology evidence[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(backup && restore, "topology evidence backup/restore step을 찾지 못함");
+  assert.match(backup, /tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
+  assert.match(backup, /\.external\/itx-cheongchun-topology-evidence\.json/);
+  assert.match(restore, /\.external\/itx-cheongchun-topology-evidence\.json/);
+  assert.match(restore, /tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
+  assert.ok(
+    ci.indexOf("Backup tracked topology evidence") < ci.indexOf("Migrate pinned Mobile v18 pack to v19")
+      && ci.indexOf("Migrate pinned Mobile v18 pack to v19") < ci.indexOf("Verify Data issue 108 bundled-pack regression")
+      && ci.indexOf("Verify Data issue 108 bundled-pack regression") < ci.indexOf("Restore tracked topology evidence")
+      && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Lint workflows")
+      && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Verify standalone contracts"),
+    "evidence backup/restore는 migration regression과 later contract 사이에 있어야 함",
+  );
+});
+
 test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {
   const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
   assert.doesNotMatch(release, /apps\/mobile|Checkout pinned Mobile fixture|Stage pinned Mobile fixture/);

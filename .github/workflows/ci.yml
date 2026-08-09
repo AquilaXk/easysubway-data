@@ -64,6 +64,20 @@ jobs:
         with:
           node-version: "24.19.0"
 
+      - name: Backup tracked topology evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="tools/datapack/itx-cheongchun-topology-evidence.json"
+          backup=".external/itx-cheongchun-topology-evidence.json"
+          [[ -f "${source}" && ! -L "${source}" ]]
+          [[ -d .external && ! -L .external ]]
+          test ! -e "${backup}"
+          test ! -L "${backup}"
+          cp "${source}" "${backup}"
+          [[ -f "${backup}" && ! -L "${backup}" ]]
+          cmp -- "${source}" "${backup}"
+
       - name: Emit pinned Mobile station catalog artifact
         shell: bash
         run: |
@@ -86,6 +100,18 @@ jobs:
           set -euo pipefail
           node --test tools/datapack/readmit-bundled-pack-identity.test.mjs
           node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs
+
+      - name: Restore tracked topology evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="tools/datapack/itx-cheongchun-topology-evidence.json"
+          backup=".external/itx-cheongchun-topology-evidence.json"
+          [[ -f "${source}" && ! -L "${source}" ]]
+          [[ -f "${backup}" && ! -L "${backup}" ]]
+          cp "${backup}" "${source}"
+          cmp -- "${backup}" "${source}"
+          rm "${backup}"
 
       - name: Lint workflows
         shell: bash
