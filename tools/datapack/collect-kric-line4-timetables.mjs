@@ -5,7 +5,8 @@
 //
 // 실행: KRIC_SERVICE_KEY=... node collect-kric-line4-timetables.mjs \
 //         --roster tools/datapack/sources/kric-line4-route-roster-20260706.json \
-//         --line-id seoul-4 --output <out.json> [--day-cds 8,7,9] [--no-express]
+//         --line-id seoul-4 --service-pattern-evidence <evidence.json> \
+//         --output <out.json> [--day-cds 8,7,9] [--no-express]
 //
 // serviceKey는 URL 로그·산출물에 남기지 않는다(#1397 공통 규칙).
 import { isMainModule } from "../lib/is-main-module.mjs";
@@ -223,6 +224,50 @@ export function selectServicePatternProbeRequest(plan, requestKey) {
   return matches[0];
 }
 
+export function validateServicePatternEvidence(evidence) {
+  const expectedTopKeys = [
+    "artifactKind",
+    "mapping",
+    "officialDocumentationUrl",
+    "operation",
+    "probe",
+    "providerResultCode",
+    "schemaVersion",
+    "sourceId",
+    "sourceIssue",
+  ];
+  if (!hasExactKeys(evidence, expectedTopKeys)
+    || evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "kric-subway-timetable-service-pattern-evidence"
+    || evidence.sourceIssue !== 28
+    || evidence.sourceId !== "kric-subway-timetable"
+    || evidence.officialDocumentationUrl !== "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp"
+    || evidence.operation !== "subwayTimetableExp"
+    || evidence.providerResultCode !== "00") {
+    throw new Error("service-pattern evidence identity is invalid");
+  }
+
+  const probe = evidence.probe;
+  if (!hasExactKeys(probe, ["observedExptCd", "rawSha256", "requestKey", "rowCount"])
+    || probe.requestKey !== "subwayTimetableExp|S1|433|8"
+    || probe.rawSha256 !== "7a930f324ceb68dfc99f8543da5b442489355b743987235c031aafdedbd202fc"
+    || probe.rowCount !== 473
+    || JSON.stringify(probe.observedExptCd) !== JSON.stringify([
+      { value: null, count: 466 },
+      { value: "1", count: 7 },
+    ])) {
+    throw new Error("service-pattern evidence probe identity is invalid");
+  }
+
+  if (JSON.stringify(evidence.mapping) !== JSON.stringify([
+    { exptCd: null, servicePattern: "LOCAL" },
+    { exptCd: "1", servicePattern: "EXPRESS" },
+  ])) {
+    throw new Error("service-pattern evidence closed mapping is invalid");
+  }
+  return new Map(evidence.mapping.map(({ exptCd, servicePattern }) => [exptCd, servicePattern]));
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -249,13 +294,22 @@ function requireServicePatternMapping(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("servicePatternByExptCd is required");
   }
-  for (const [code, servicePattern] of Object.entries(value)) {
-    if (code.trim() === "" || (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS")) {
+  const entries = value instanceof Map ? [...value.entries()] : Object.entries(value);
+  for (const [code, servicePattern] of entries) {
+    if ((code !== null && (typeof code !== "string" || code.trim() === ""))
+      || (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS")) {
       throw new Error("servicePatternByExptCd values must be LOCAL or EXPRESS");
     }
   }
-  if (Object.keys(value).length === 0) throw new Error("servicePatternByExptCd is required");
+  if (entries.length === 0) throw new Error("servicePatternByExptCd is required");
   return value;
+}
+
+function hasExactKeys(value, expectedKeys) {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expectedKeys].sort());
 }
 
 function canonicalStationIndex(fixture, lineId) {
@@ -319,9 +373,15 @@ async function main() {
   if (fixture && args["canonical-pack"]) {
     throw new Error("use only one of --canonical-fixture or --canonical-pack");
   }
+  if (!args["service-pattern-evidence"]) {
+    throw new Error("--service-pattern-evidence is required");
+  }
+  const servicePatternByExptCd = validateServicePatternEvidence(
+    JSON.parse(await readFile(args["service-pattern-evidence"], "utf8")),
+  );
   const context = args["canonical-pack"]
-    ? buildCollectionContextFromPack(roster, lineId, args["canonical-pack"])
-    : buildCollectionContext(roster, lineId, fixture);
+    ? buildCollectionContextFromPack(roster, lineId, args["canonical-pack"], servicePatternByExptCd)
+    : buildCollectionContext(roster, lineId, fixture, servicePatternByExptCd);
 
   const intermediate = [];
   const perRequest = [];

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
   assertCompleteKricCollection,
@@ -8,6 +9,7 @@ import {
   filterRowsByTrainNumbers,
   redactKricCredential,
   selectServicePatternProbeRequest,
+  validateServicePatternEvidence,
   validateItxOdJoin,
   validateKricTimetablePayload,
 } from "./collect-kric-line4-timetables.mjs";
@@ -23,6 +25,10 @@ const ROSTER = {
   ],
 };
 const SERVICE_PATTERN_MAPPING = { LOCAL: "LOCAL", EXPRESS: "EXPRESS" };
+const SERVICE_PATTERN_EVIDENCE_PATH = new URL(
+  "./kric-subway-timetable-service-pattern-evidence.json",
+  import.meta.url,
+);
 
 test("service-pattern evidence probe는 exact KRIC 응답의 exptCd domain만 결정적으로 기록한다", () => {
   const rawResponse = JSON.stringify({
@@ -84,6 +90,27 @@ test("service-pattern evidence probe는 exact KRIC 응답의 exptCd domain만 �
   assert.throws(
     () => selectServicePatternProbeRequest({ requests: [request] }, "subwayTimetableExp|S1|999|8"),
     /must match exactly one tracked request/,
+  );
+});
+
+test("tracked service-pattern evidence는 exact probe identity와 closed mapping을 결속한다", async () => {
+  const evidence = JSON.parse(await readFile(SERVICE_PATTERN_EVIDENCE_PATH, "utf8"));
+  const mapping = validateServicePatternEvidence(evidence);
+  assert.deepEqual([...mapping.entries()], [[null, "LOCAL"], ["1", "EXPRESS"]]);
+
+  assert.throws(
+    () => validateServicePatternEvidence({
+      ...evidence,
+      probe: { ...evidence.probe, rawSha256: "0".repeat(64) },
+    }),
+    /probe identity/,
+  );
+  assert.throws(
+    () => validateServicePatternEvidence({
+      ...evidence,
+      mapping: [...evidence.mapping, { exptCd: "0", servicePattern: "LOCAL" }],
+    }),
+    /closed mapping/,
   );
 });
 

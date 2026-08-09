@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "kric-subway-timetable-service-pattern-evidence",
+  "sourceIssue": 28,
+  "sourceId": "kric-subway-timetable",
+  "officialDocumentationUrl": "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp",
+  "operation": "subwayTimetableExp",
+  "providerResultCode": "00",
+  "probe": {
+    "requestKey": "subwayTimetableExp|S1|433|8",
+    "rawSha256": "7a930f324ceb68dfc99f8543da5b442489355b743987235c031aafdedbd202fc",
+    "rowCount": 473,
+    "observedExptCd": [
+      {
+        "value": null,
+        "count": 466
+      },
+      {
+        "value": "1",
+        "count": 7
+      }
+    ]
+  },
+  "mapping": [
+    {
+      "exptCd": null,
+      "servicePattern": "LOCAL"
+    },
+    {
+      "exptCd": "1",
+      "servicePattern": "EXPRESS"
+    }
+  ]
+}

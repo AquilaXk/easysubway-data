@@ -48,11 +48,11 @@ function stopRole(arrivalSeconds, departureSeconds) {
 }
 
 function resolveServicePattern(lookup, exptCd) {
-  if (typeof exptCd !== "string" || exptCd.trim() === "") {
-    throw new TypeError("normalize-kric: exptCd must be a non-empty string");
+  if (exptCd !== null && (typeof exptCd !== "string" || exptCd.trim() === "")) {
+    throw new TypeError("normalize-kric: exptCd must be null or a non-empty string");
   }
-  const value = lookup[exptCd];
-  if (value == null) throw new Error(`normalize-kric: unknown exptCd: ${exptCd}`);
+  if (!lookup.has(exptCd)) throw new Error(`normalize-kric: unknown exptCd: ${exptCd}`);
+  const value = lookup.get(exptCd);
   if (value !== "LOCAL" && value !== "EXPRESS") {
     throw new TypeError(`normalize-kric: invalid servicePattern mapping for ${exptCd}`);
   }
@@ -118,12 +118,12 @@ function asServicePatternLookup(value) {
     throw new Error("normalize-kric: context.servicePatternByExptCd is required");
   }
   for (const [exptCd, servicePattern] of entries) {
-    if (typeof exptCd !== "string" || exptCd.trim() === "") {
+    if (exptCd !== null && (typeof exptCd !== "string" || exptCd.trim() === "")) {
       throw new TypeError("normalize-kric: invalid servicePattern mapping key");
     }
     if (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS") {
       throw new TypeError(`normalize-kric: invalid servicePattern mapping for ${exptCd}`);
     }
   }
-  return Object.fromEntries(entries);
+  return new Map(entries);
 }
