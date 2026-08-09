@@ -319,6 +319,14 @@ export function buildRawCollectionInventory(plan, responses) {
   };
 }
 
+export function buildCollectionTimestamps(now = new Date()) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new Error("collection clock must be a valid Date");
+  }
+  const collectedAt = now.toISOString();
+  return { collectedAt, capturedAt: collectedAt.slice(0, 10) };
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -479,12 +487,13 @@ async function main() {
   if (trainNumberEvidence) validateItxOdJoin(reconstructionRows, trainNumberEvidence);
   const { transitTrips, transitStopTimes } = reconstructTransitTrips(reconstructionRows, context);
   const rawResponseInventory = buildRawCollectionInventory(plan, rawResponses);
+  const timestamps = buildCollectionTimestamps();
   const artifact = {
     artifactKind: "kric-line4-timetable-collection",
     sourceId: "kric-subway-route-info",
     lineId,
     operation: plan.operation,
-    capturedAt: new Date().toISOString().slice(0, 10),
+    ...timestamps,
     requestCount: plan.requestCount,
     failedRequestCount: failed,
     intermediateRowCount: intermediate.length,

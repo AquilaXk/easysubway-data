@@ -5,6 +5,7 @@ import { test } from "node:test";
 import {
   assertCompleteKricCollection,
   buildCollectionContext,
+  buildCollectionTimestamps,
   buildRawCollectionInventory,
   buildRawResponseRecord,
   buildServicePatternObservation,
@@ -144,6 +145,14 @@ test("raw response inventory는 tracked request 순서와 exact provider bytes�
     ]),
     /raw response identity/,
   );
+});
+
+test("collection time은 성공 완료 뒤 한 UTC instant에서 파생한다", () => {
+  assert.deepEqual(buildCollectionTimestamps(new Date("2026-08-09T10:45:12.345Z")), {
+    collectedAt: "2026-08-09T10:45:12.345Z",
+    capturedAt: "2026-08-09",
+  });
+  assert.throws(() => buildCollectionTimestamps(new Date(Number.NaN)), /collection clock/);
 });
 
 test("buildCollectionContext는 로스터로 재구성 코어 context를 만든다", () => {
