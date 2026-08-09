@@ -12,8 +12,11 @@ const START_DATE = "20260101";
 const END_DATE = "20261231";
 const EXPECTED_REQUEST_COUNT = 153;
 const EXPECTED_INTERMEDIATE_ROW_COUNT = 33062;
-const EXPECTED_TRANSIT_TRIP_COUNT = 895;
-const EXPECTED_TRANSIT_STOP_TIME_COUNT = 33062;
+const EXPECTED_OUTSIDE_PILOT_GROUP_COUNT = 429;
+const EXPECTED_EXCLUDED_NON_STOP_ROW_COUNT = 42;
+const EXPECTED_RECONSTRUCTION_ROW_COUNT = 22004;
+const EXPECTED_TRANSIT_TRIP_COUNT = 466;
+const EXPECTED_TRANSIT_STOP_TIME_COUNT = 22004;
 const EXPECTED_PILOT_TRANSIT_TRIP_COUNT = 466;
 const EXPECTED_PILOT_TRANSIT_STOP_TIME_COUNT = 932;
 const STATION_MAP = {
@@ -218,9 +221,14 @@ function validateArtifact(artifact) {
     throw new Error(`KRIC pilot artifact sourceId mismatch: ${artifact.sourceId}`);
   }
   requireEqual(artifact.lineId, LINE_ID, "lineId");
+  requireEqual(artifact.operation, "subwayTimetableExp", "operation");
   requireEqual(artifact.requestCount, EXPECTED_REQUEST_COUNT, "requestCount");
   requireEqual(artifact.failedRequestCount, 0, "failedRequestCount");
+  requireEqual(artifact.expectedNoDataRequestCount, 51, "expectedNoDataRequestCount");
   requireEqual(artifact.intermediateRowCount, EXPECTED_INTERMEDIATE_ROW_COUNT, "intermediateRowCount");
+  requireEqual(artifact.excludedOutsidePilotGroupCount, EXPECTED_OUTSIDE_PILOT_GROUP_COUNT, "excludedOutsidePilotGroupCount");
+  requireEqual(artifact.excludedNonStopRowCount, EXPECTED_EXCLUDED_NON_STOP_ROW_COUNT, "excludedNonStopRowCount");
+  requireEqual(artifact.reconstructionRowCount, EXPECTED_RECONSTRUCTION_ROW_COUNT, "reconstructionRowCount");
   requireEqual(artifact.transitTripCount, EXPECTED_TRANSIT_TRIP_COUNT, "transitTripCount");
   requireEqual(artifact.transitStopTimeCount, EXPECTED_TRANSIT_STOP_TIME_COUNT, "transitStopTimeCount");
   if (!Array.isArray(artifact.transitTrips) || !Array.isArray(artifact.transitStopTimes)) {
@@ -228,6 +236,47 @@ function validateArtifact(artifact) {
   }
   requireEqual(artifact.transitTrips.length, EXPECTED_TRANSIT_TRIP_COUNT, "transitTrips.length");
   requireEqual(artifact.transitStopTimes.length, EXPECTED_TRANSIT_STOP_TIME_COUNT, "transitStopTimes.length");
+  if (typeof artifact.collectedAt !== "string" || Number.isNaN(Date.parse(artifact.collectedAt))
+    || artifact.capturedAt !== artifact.collectedAt.slice(0, 10)) {
+    throw new TypeError("KRIC pilot artifact collection time is invalid");
+  }
+  validateRawResponseInventory(artifact.rawResponseInventory);
+  if (!Array.isArray(artifact.excludedOutsidePilotGroups)
+    || artifact.excludedOutsidePilotGroups.length !== EXPECTED_OUTSIDE_PILOT_GROUP_COUNT
+    || !Array.isArray(artifact.excludedNonStopRows)
+    || artifact.excludedNonStopRows.length !== EXPECTED_EXCLUDED_NON_STOP_ROW_COUNT) {
+    throw new TypeError("KRIC pilot artifact missing transit rows");
+  }
+}
+
+function validateRawResponseInventory(inventory) {
+  if (inventory?.responseCount !== EXPECTED_REQUEST_COUNT
+    || !Array.isArray(inventory.responses)
+    || inventory.responses.length !== EXPECTED_REQUEST_COUNT
+    || !/^[a-f0-9]{64}$/.test(inventory.inventorySha256 ?? "")) {
+    throw new TypeError("KRIC pilot artifact raw response inventory is invalid");
+  }
+  const seen = new Set();
+  for (const response of inventory.responses) {
+    if (!response || typeof response !== "object" || Array.isArray(response)
+      || typeof response.requestKey !== "string" || response.requestKey.length === 0
+      || seen.has(response.requestKey)
+      || typeof response.bodyBase64 !== "string" || response.bodyBase64.length === 0
+      || !Number.isInteger(response.byteSize) || response.byteSize < 1
+      || !/^[a-f0-9]{64}$/.test(response.rawSha256 ?? "")) {
+      throw new TypeError("KRIC pilot artifact raw response identity is invalid");
+    }
+    seen.add(response.requestKey);
+    const bytes = Buffer.from(response.bodyBase64, "base64");
+    if (bytes.toString("base64") !== response.bodyBase64
+      || bytes.length !== response.byteSize
+      || sha256(bytes) !== response.rawSha256) {
+      throw new TypeError("KRIC pilot artifact raw response identity is invalid");
+    }
+  }
+  if (sha256(JSON.stringify(inventory.responses)) !== inventory.inventorySha256) {
+    throw new TypeError("KRIC pilot artifact raw response inventory is invalid");
+  }
 }
 
 function requireEqual(actual, expected, field) {
