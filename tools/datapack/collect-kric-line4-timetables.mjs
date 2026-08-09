@@ -9,6 +9,7 @@
 //
 // serviceKey는 URL 로그·산출물에 남기지 않는다(#1397 공통 규칙).
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { buildKricLine4CollectionPlan } from "./plan-kric-line4-collection.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
@@ -149,6 +150,79 @@ export function validateKricTimetablePayload(payload) {
   return payload.body;
 }
 
+export function buildServicePatternObservation(request, rawResponse, rows) {
+  if (request?.operation !== "subwayTimetableExp") {
+    throw new Error("service-pattern probe requires subwayTimetableExp");
+  }
+  const params = request.params ?? {};
+  for (const field of ["railOprIsttCd", "dayCd", "lnCd", "stinCd"]) {
+    if (typeof params[field] !== "string" || params[field].length === 0) {
+      throw new Error(`service-pattern probe request.${field} is required`);
+    }
+  }
+  const expectedRequestKey = [
+    request.operation,
+    params.railOprIsttCd,
+    params.stinCd,
+    params.dayCd,
+  ].join("|");
+  if (request.requestKey !== expectedRequestKey) {
+    throw new Error("service-pattern probe requestKey does not match request params");
+  }
+  if (typeof rawResponse !== "string" || rawResponse.length === 0) {
+    throw new Error("service-pattern probe raw response is required");
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("service-pattern probe response rows must be non-empty");
+  }
+
+  const counts = new Map();
+  for (const row of rows) {
+    if (!Object.hasOwn(row ?? {}, "exptCd")) {
+      throw new Error("service-pattern probe response row exptCd is required");
+    }
+    if (row.exptCd !== null && typeof row.exptCd !== "string") {
+      throw new Error("service-pattern probe response row exptCd must be a string or null");
+    }
+    const key = JSON.stringify(row.exptCd);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const observedExptCd = [...counts]
+    .map(([key, count]) => ({ value: JSON.parse(key), count }))
+    .sort((left, right) => {
+      if (left.value === null) return right.value === null ? 0 : -1;
+      if (right.value === null) return 1;
+      return left.value < right.value ? -1 : left.value > right.value ? 1 : 0;
+    });
+
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-subway-timetable-service-pattern-observation",
+    sourceId: "kric-subway-timetable",
+    operation: request.operation,
+    request: {
+      requestKey: request.requestKey,
+      railOprIsttCd: params.railOprIsttCd,
+      dayCd: params.dayCd,
+      lnCd: params.lnCd,
+      stinCd: params.stinCd,
+    },
+    response: {
+      rawSha256: createHash("sha256").update(rawResponse).digest("hex"),
+      rowCount: rows.length,
+      observedExptCd,
+    },
+  };
+}
+
+export function selectServicePatternProbeRequest(plan, requestKey) {
+  const matches = (plan?.requests ?? []).filter((request) => request.requestKey === requestKey);
+  if (matches.length !== 1) {
+    throw new Error("service-pattern probe request key must match exactly one tracked request");
+  }
+  return matches[0];
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -227,6 +301,21 @@ async function main() {
     includeExpress: args.express !== "false",
     operation: args.operation,
   });
+  if (args["service-pattern-probe-request-key"]) {
+    if (!args.output) {
+      throw new Error("service-pattern probe --output is required");
+    }
+    const request = selectServicePatternProbeRequest(
+      plan,
+      args["service-pattern-probe-request-key"],
+    );
+    const rawResponse = await fetchWithRetry(kricRequestUrl(request, key));
+    const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
+    const observation = buildServicePatternObservation(request, rawResponse, rows);
+    await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(observation, null, 2)}\n`);
+    return;
+  }
   if (fixture && args["canonical-pack"]) {
     throw new Error("use only one of --canonical-fixture or --canonical-pack");
   }
@@ -238,7 +327,7 @@ async function main() {
   const perRequest = [];
   let failed = 0;
   for (const request of plan.requests) {
-    const url = `${request.endpoint}?serviceKey=${encodeURIComponent(key)}&format=json&railOprIsttCd=${request.params.railOprIsttCd}&dayCd=${request.params.dayCd}&lnCd=${request.params.lnCd}&stinCd=${request.params.stinCd}`;
+    const url = kricRequestUrl(request, key);
     try {
       const payload = JSON.parse(await fetchWithRetry(url));
       const rows = validateKricTimetablePayload(payload);
@@ -304,6 +393,10 @@ async function main() {
   }
   const { transitTrips: _t, transitStopTimes: _s, perRequest: _p, ...summary } = artifact;
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+}
+
+function kricRequestUrl(request, key) {
+  return `${request.endpoint}?serviceKey=${encodeURIComponent(key)}&format=json&railOprIsttCd=${request.params.railOprIsttCd}&dayCd=${request.params.dayCd}&lnCd=${request.params.lnCd}&stinCd=${request.params.stinCd}`;
 }
 
 function parseArgs(argv) {

@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import {
   assertCompleteKricCollection,
   buildCollectionContext,
+  buildServicePatternObservation,
   filterRowsByTrainNumbers,
   redactKricCredential,
+  selectServicePatternProbeRequest,
   validateItxOdJoin,
   validateKricTimetablePayload,
 } from "./collect-kric-line4-timetables.mjs";
@@ -20,6 +23,69 @@ const ROSTER = {
   ],
 };
 const SERVICE_PATTERN_MAPPING = { LOCAL: "LOCAL", EXPRESS: "EXPRESS" };
+
+test("service-pattern evidence probe는 exact KRIC 응답의 exptCd domain만 결정적으로 기록한다", () => {
+  const rawResponse = JSON.stringify({
+    header: { resultCode: "00" },
+    body: [
+      { trnNo: "4719", exptCd: null },
+      { trnNo: "4720", exptCd: "1" },
+      { trnNo: "4721", exptCd: null },
+    ],
+  });
+  const request = {
+    operation: "subwayTimetableExp",
+    requestKey: "subwayTimetableExp|S1|433|8",
+    params: { railOprIsttCd: "S1", dayCd: "8", lnCd: "4", stinCd: "433" },
+  };
+  const rows = JSON.parse(rawResponse).body;
+
+  assert.deepEqual(buildServicePatternObservation(request, rawResponse, rows), {
+    schemaVersion: 1,
+    artifactKind: "kric-subway-timetable-service-pattern-observation",
+    sourceId: "kric-subway-timetable",
+    operation: "subwayTimetableExp",
+    request: {
+      requestKey: "subwayTimetableExp|S1|433|8",
+      railOprIsttCd: "S1",
+      dayCd: "8",
+      lnCd: "4",
+      stinCd: "433",
+    },
+    response: {
+      rawSha256: createHash("sha256").update(rawResponse).digest("hex"),
+      rowCount: 3,
+      observedExptCd: [
+        { value: null, count: 2 },
+        { value: "1", count: 1 },
+      ],
+    },
+  });
+  assert.throws(
+    () => buildServicePatternObservation(request, rawResponse, []),
+    /probe response rows must be non-empty/,
+  );
+  assert.throws(
+    () => buildServicePatternObservation(request, rawResponse, [{ trnNo: "4719" }]),
+    /probe response row exptCd is required/,
+  );
+  assert.throws(
+    () => buildServicePatternObservation(
+      { ...request, operation: "subwayTimetable" },
+      rawResponse,
+      rows,
+    ),
+    /probe requires subwayTimetableExp/,
+  );
+  assert.deepEqual(
+    selectServicePatternProbeRequest({ requests: [request] }, request.requestKey),
+    request,
+  );
+  assert.throws(
+    () => selectServicePatternProbeRequest({ requests: [request] }, "subwayTimetableExp|S1|999|8"),
+    /must match exactly one tracked request/,
+  );
+});
 
 test("buildCollectionContext는 로스터로 재구성 코어 context를 만든다", () => {
   const ctx = buildCollectionContext(ROSTER, "seoul-4", null, SERVICE_PATTERN_MAPPING);
