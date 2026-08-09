@@ -8,6 +8,7 @@ import {
   buildCollectionContext,
   buildCollectionTimestamps,
   buildOperationTrainDiagnosticArtifact,
+  buildReconstructionAnomalyDiagnosticArtifact,
   buildTimetableNoDataObservation,
   buildTrainDiagnosticArtifact,
   classifyKricRowsForReconstruction,
@@ -404,6 +405,36 @@ test("EXPRESS 중간 null-arrival은 시각 추정 없이 non-stop으로 분리�
     ]),
     /LOCAL intermediate row has missing arrival/,
   );
+});
+
+test("reconstruction anomaly diagnostic은 approved EXPRESS와 blocking LOCAL 누락을 분리한다", () => {
+  const request = { requestKey: "subwayTimetableExp|S1|433|8" };
+  const rawResponses = [buildRawResponseRecord(
+    request,
+    JSON.stringify({ header: { resultCode: "00" }, body: [{ trnNo: "K4422" }] }),
+  )];
+  const rows = [
+    { stationId: "station-k-origin", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: null, departureSeconds: 100, stopRole: "ORIGIN", servicePattern: "EXPRESS" },
+    { stationId: "station-k-pass", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: null, departureSeconds: 200, stopRole: "ORIGIN", servicePattern: "EXPRESS" },
+    { stationId: "station-k-terminal", lineId: "seoul-4", trnNo: "K4422", dayCd: "8", arrivalSeconds: 300, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "EXPRESS" },
+    { stationId: "station-s-origin", lineId: "seoul-4", trnNo: "S4219", dayCd: "8", arrivalSeconds: null, departureSeconds: 400, stopRole: "ORIGIN", servicePattern: "LOCAL" },
+    { stationId: "station-s-sadang", lineId: "seoul-4", trnNo: "S4219", dayCd: "8", arrivalSeconds: 500, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+    { stationId: "station-s-terminal", lineId: "seoul-4", trnNo: "S4219", dayCd: "8", arrivalSeconds: 600, departureSeconds: null, stopRole: "TERMINAL", servicePattern: "LOCAL" },
+  ];
+  const artifact = buildReconstructionAnomalyDiagnosticArtifact({
+    lineId: "seoul-4",
+    plan: { requests: [request] },
+    rawResponses,
+    rows,
+    timestamps: { collectedAt: "2026-08-09T12:00:00.000Z", capturedAt: "2026-08-09" },
+  });
+
+  assert.equal(artifact.approvedExpressNonStopCount, 1);
+  assert.equal(artifact.blockingAnomalyCount, 1);
+  assert.deepEqual(artifact.anomalies.map(({ classification, stationId, missingField }) => ({ classification, stationId, missingField })), [
+    { classification: "APPROVED_EXPRESS_NON_STOP", stationId: "station-k-pass", missingField: "arvTm" },
+    { classification: "BLOCKING_LOCAL_MISSING_DEPARTURE", stationId: "station-s-sadang", missingField: "dptTm" },
+  ]);
 });
 
 test("buildCollectionContext는 로스터로 재구성 코어 context를 만든다", () => {

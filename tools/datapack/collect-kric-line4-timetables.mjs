@@ -542,6 +542,85 @@ export function buildOperationTrainDiagnosticArtifact({
   };
 }
 
+export function buildReconstructionAnomalyDiagnosticArtifact({
+  lineId,
+  plan,
+  rawResponses,
+  rows,
+  timestamps,
+}) {
+  if (typeof lineId !== "string" || lineId.length === 0
+    || !Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("KRIC reconstruction anomaly diagnostic inputs are invalid");
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row?.lineId}|${row?.trnNo}|${row?.dayCd}`;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  const anomalies = [];
+  for (const key of [...groups.keys()].sort(codepointCompare)) {
+    const ordered = groups.get(key).toSorted((left, right) => {
+      const leftSeconds = left.departureSeconds ?? left.arrivalSeconds;
+      const rightSeconds = right.departureSeconds ?? right.arrivalSeconds;
+      if (!Number.isInteger(leftSeconds) || !Number.isInteger(rightSeconds)) {
+        throw new TypeError(`KRIC reconstruction anomaly row time is invalid: ${key}`);
+      }
+      return leftSeconds - rightSeconds || codepointCompare(left.stationId, right.stationId);
+    });
+    ordered.forEach((row, rowIndex) => {
+      const common = {
+        stationId: row.stationId,
+        lineId: row.lineId,
+        trnNo: row.trnNo,
+        dayCd: row.dayCd,
+        rowIndex,
+        rowCount: ordered.length,
+        arrivalSeconds: row.arrivalSeconds,
+        departureSeconds: row.departureSeconds,
+        servicePattern: row.servicePattern,
+      };
+      if (row.arrivalSeconds === null && rowIndex > 0) {
+        anomalies.push({
+          ...common,
+          missingField: "arvTm",
+          classification: row.servicePattern === "EXPRESS"
+            ? "APPROVED_EXPRESS_NON_STOP"
+            : "BLOCKING_LOCAL_MISSING_ARRIVAL",
+        });
+      }
+      if (row.departureSeconds === null && rowIndex < ordered.length - 1) {
+        anomalies.push({
+          ...common,
+          missingField: "dptTm",
+          classification: row.servicePattern === "LOCAL"
+            ? "BLOCKING_LOCAL_MISSING_DEPARTURE"
+            : "BLOCKING_EXPRESS_MISSING_DEPARTURE",
+        });
+      }
+    });
+  }
+  const approvedExpressNonStopCount = anomalies.filter(
+    ({ classification }) => classification === "APPROVED_EXPRESS_NON_STOP",
+  ).length;
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-line4-timetable-reconstruction-anomaly-diagnostic",
+    sourceId: "kric-subway-timetable",
+    lineId,
+    ...timestamps,
+    requestCount: plan?.requests?.length,
+    rowCount: rows.length,
+    anomalyCount: anomalies.length,
+    approvedExpressNonStopCount,
+    blockingAnomalyCount: anomalies.length - approvedExpressNonStopCount,
+    rawResponseInventory: buildRawCollectionInventory(plan, rawResponses),
+    anomalies,
+  };
+}
+
 export function summarizeTrainDiagnosticArtifact(artifact) {
   if (artifact?.artifactKind !== "kric-line4-timetable-train-diagnostic"
     || artifact.sourceId !== "kric-subway-timetable"
@@ -904,6 +983,22 @@ async function main() {
   }
 
   assertCompleteKricCollection(failed, plan.requestCount, perRequest);
+  if (args["reconstruction-anomaly-diagnostic"]) {
+    if (args["reconstruction-anomaly-diagnostic"] !== "true" || !args.output) {
+      throw new Error("reconstruction anomaly diagnostic requires value true and --output");
+    }
+    const diagnostic = buildReconstructionAnomalyDiagnosticArtifact({
+      lineId,
+      plan,
+      rawResponses,
+      rows: intermediate,
+      timestamps: buildCollectionTimestamps(),
+    });
+    await writeFile(args.output, `${JSON.stringify(diagnostic, null, 2)}\n`);
+    const { rawResponseInventory: _raw, ...summary } = diagnostic;
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
   if (args["train-diagnostic-number"]) {
     const diagnostic = buildTrainDiagnosticArtifact({
       lineId,
