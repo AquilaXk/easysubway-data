@@ -107,12 +107,12 @@ test("map and catalog projections keep only their owned table and field sets", (
   assert.deepEqual(contract.artifacts.stationCatalogPack.generatedTables, ["station_search_index"]);
 });
 
-test("server components repeat exact references and retain only their assigned tables", () => {
+test("route service evidence tables는 server timetable component의 exact references와 ownership을 유지한다", () => {
   const components = contract.serverRouteBundle.components;
   assert.deepEqual(contract.serverRouteBundle.sourceSchema, {
     path: "tools/datapack/schema/catalog-schema.sql",
-    sqliteUserVersion: 18,
-    sha256: "026c32092a6c2917c7e77990738e7237a62123033c92106e9678c19f5fe6a7cc",
+    sqliteUserVersion: 19,
+    sha256: "11ab2b5cf41bd5410f632bad2d25d354f79cb66164e3b32e269714188f03857b",
   });
   const sourceSchemaBytes = readFileSync(contract.serverRouteBundle.sourceSchema.path);
   assert.equal(createHash("sha256").update(sourceSchemaBytes).digest("hex"), contract.serverRouteBundle.sourceSchema.sha256);
@@ -146,7 +146,7 @@ test("server components repeat exact references and retain only their assigned t
     "network_edges", "out_of_station_transfer_links", "transfer_rules", "realtime_provider_line_mappings", "realtime_provider_station_mappings",
   ]);
   assert.deepEqual(components.timetable.ownedTables, [
-    "service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence",
+    "service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence", "route_service_station_catalog_evidence",
   ]);
   assert.deepEqual(components.accessibility.ownedTables, [
     "station_exits", "facilities", "facility_status_snapshots", "station_facility_evidence", "station_accessibility_summaries", "internal_route_nodes", "internal_route_edges", "station_pathway_nodes", "station_pathway_edges", "station_car_door_hints",

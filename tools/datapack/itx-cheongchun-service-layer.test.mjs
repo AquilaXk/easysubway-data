@@ -60,7 +60,7 @@ test("catalog schema는 service class와 admission evidence identity를 보존�
   try {
     database.exec(schema);
 
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 19);
     for (const table of ["transit_trips", "network_edges"]) {
       const serviceClass = database
         .prepare(`PRAGMA table_info(${table})`)
@@ -80,6 +80,17 @@ test("catalog schema는 service class와 admission evidence identity를 보존�
       "service_class",
       "timetable_artifact_id",
       "timetable_artifact_sha256",
+      "canonical_pack_id",
+      "canonical_pack_sha256",
+      "canonical_pack_sqlite_sha256",
+      "admission_status",
+      "admission_eligible",
+      "fresh_until",
+      "source_issue",
+    ]);
+    assert.deepEqual(database.prepare("PRAGMA table_info(route_service_station_catalog_evidence)")
+      .all().map(({ name }) => name), [
+      "service_class",
       "station_catalog_artifact_kind",
       "station_catalog_manifest_version",
       "station_catalog_pack_id",
@@ -94,11 +105,10 @@ test("catalog schema는 service class와 admission evidence identity를 보존�
     assert.throws(() => database.prepare(`
       INSERT INTO route_service_artifact_evidence (
         service_class, timetable_artifact_id, timetable_artifact_sha256,
-        station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id,
-        station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256,
+        canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
         admission_status, admission_eligible, fresh_until, source_issue
-      ) VALUES ('ITX_CHEONGCHUN', 'test', ?, 'station-catalog-pack', 1, 'test', ?, ?, ?, 'ADMITTED', 1, NULL, 2116)
-    `).run("a".repeat(64), "b".repeat(64), "c".repeat(64), "d".repeat(64)));
+      ) VALUES ('ITX_CHEONGCHUN', 'test', ?, 'capital', ?, ?, 'ADMITTED', 1, NULL, 2116)
+    `).run("a".repeat(64), "b".repeat(64), "c".repeat(64)));
   } finally {
     database.close();
   }
@@ -244,7 +254,7 @@ test("test-only admission도 legacy canonical pack identity를 거부한다", as
   );
 });
 
-test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materialize한다", async (context) => {
+test("test-only ADMITTED timetable은 independent Hub #2135 canonical tuple 없이 v19 writer를 거부한다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-admitted-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const fixture = JSON.parse(await readFile(new URL("./fixtures/catalog-fixture.json", import.meta.url), "utf8"));
@@ -293,7 +303,7 @@ test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materializ
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   await writeFile(admissionPath, `${JSON.stringify(admission, null, 2)}\n`);
 
-  await execFileAsync(process.execPath, [
+  await assert.rejects(execFileAsync(process.execPath, [
     "tools/datapack/build-datapack.mjs",
     "--fixture", fixturePath,
     "--test-only-itx-admission", admissionPath,
@@ -301,35 +311,6 @@ test("test-only ADMITTED timetable은 ITX trip·stop·EXPRESS edge를 materializ
   ], {
     cwd: root,
     env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-07-14T00:00:00.000Z" },
-  });
-
-  const sqlitePath = path.join(temporaryDir, "capital.sqlite");
-  await writeFile(sqlitePath, gunzipSync(await readFile(path.join(outputDir, "catalog/capital-v1.sqlite.gz"))));
-  const database = new DatabaseSync(sqlitePath, { readOnly: true });
-  try {
-    assert.equal(database.prepare("SELECT count(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN' AND service_pattern = 'EXPRESS'").get().count, 1);
-    assert.equal(database.prepare("SELECT count(*) AS count FROM transit_stop_times WHERE trip_id = 'test-only-itx-cheongchun-2001'").get().count, 2);
-    assert.deepEqual({ ...database.prepare("SELECT from_node_id, to_node_id, edge_type, service_pattern, service_class, duration_seconds FROM network_edges WHERE service_class = 'ITX_CHEONGCHUN'").get() }, {
-      from_node_id: "station-b819702fa7d9:line-54a7b980b7c3:EXPRESS",
-      to_node_id: "station-dd14cfb89cbc:line-54a7b980b7c3:EXPRESS",
-      edge_type: "RIDE",
-      service_pattern: "EXPRESS",
-      service_class: "ITX_CHEONGCHUN",
-      duration_seconds: 4140,
-    });
-    const evidence = database.prepare("SELECT * FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").get();
-    const admissionBytes = await readFile(admissionPath);
-    assert.equal(evidence.admission_status, "ADMITTED");
-    assert.equal(evidence.admission_eligible, 1);
-    assert.equal(evidence.timetable_artifact_sha256, createHash("sha256").update(admissionBytes).digest("hex"));
-    assert.equal(evidence.station_catalog_artifact_kind, stationCatalogPackIdentity.artifactKind);
-    assert.equal(evidence.station_catalog_manifest_version, stationCatalogPackIdentity.manifestVersion);
-    assert.equal(evidence.station_catalog_pack_id, stationCatalogPackIdentity.catalogPackId);
-    assert.equal(evidence.station_catalog_station_set_sha256, stationCatalogPackIdentity.stationSetSha256);
-    assert.equal(evidence.station_catalog_payload_sha256, stationCatalogPackIdentity.payloadSha256);
-    assert.equal(evidence.station_catalog_manifest_sha256, stationCatalogPackIdentity.manifestSha256);
-    assert.equal(Object.hasOwn(evidence, "canonical_pack_id"), false);
-  } finally {
-    database.close();
-  }
+  }), /cannot create v19 route service evidence without an independently verified #2135 canonical tuple/);
+  await assert.rejects(readFile(path.join(outputDir, "catalog/capital-v1.sqlite.gz")), { code: "ENOENT" });
 });

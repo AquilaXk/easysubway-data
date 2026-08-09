@@ -53,9 +53,11 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
   validateStopTimes(stopTimes, tripsById);
   const evidence = validateRouteServiceEvidence(
     artifact?.routeServiceArtifactEvidence ?? [],
+    artifact?.routeServiceStationCatalogEvidence ?? [],
     trips,
     options.buildNow ?? new Date(),
     options.timetableArtifactSha256,
+    options.canonicalPackIdentity,
     options.stationCatalogPackIdentity,
   );
 
@@ -65,7 +67,8 @@ export function buildBackendTimetableSeed(artifact, options = {}) {
 
   const statements = [
     ...(options.includeFeedInfo === false ? [] : [feedInfoInsert(feedEndDate)]),
-    ...evidence.map(routeServiceEvidenceInsert),
+    ...evidence.artifactRows.map(routeServiceArtifactEvidenceInsert),
+    ...evidence.stationCatalogRows.map(routeServiceStationCatalogEvidenceInsert),
     ...calendars.map(calendarInsert),
     ...routes.map(routeInsert),
     ...trips.map(tripInsert),
@@ -114,52 +117,86 @@ function validateTrips(trips) {
 }
 
 function validateRouteServiceEvidence(
-  rows,
+  artifactRows,
+  stationCatalogRows,
   trips,
   buildNow,
   timetableArtifactSha256,
+  canonicalPackIdentity,
   stationCatalogPackIdentity,
 ) {
-  if (!Array.isArray(rows) || rows.length > 1) {
-    throw new Error("routeServiceArtifactEvidence must contain at most one row");
+  if (!Array.isArray(artifactRows) || !Array.isArray(stationCatalogRows)
+    || artifactRows.length > 1 || stationCatalogRows.length > 1) {
+    throw new Error("route service evidence must contain at most one row per domain");
   }
   const hasItxTrips = trips.some(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN");
   if (!hasItxTrips) {
-    if (rows.length > 0) throw new Error("route service evidence requires ITX_CHEONGCHUN trips");
-    return [];
+    if (artifactRows.length > 0 || stationCatalogRows.length > 0) throw new Error("route service evidence requires ITX_CHEONGCHUN trips");
+    return { artifactRows: [], stationCatalogRows: [] };
   }
-  const evidence = rows[0];
+  if (artifactRows.length !== 1 || stationCatalogRows.length !== 1) {
+    throw new Error("ITX_CHEONGCHUN seed requires one route service evidence row per domain");
+  }
+  const artifactEvidence = artifactRows[0];
+  const stationCatalogEvidence = stationCatalogRows[0];
   if (
-    evidence?.serviceClass !== "ITX_CHEONGCHUN"
-    || evidence.admissionStatus !== "ADMITTED"
-    || !isTruthyFlag(evidence.admissionEligible)
+    artifactEvidence?.serviceClass !== "ITX_CHEONGCHUN"
+    || artifactEvidence.admissionStatus !== "ADMITTED"
+    || !isTruthyFlag(artifactEvidence.admissionEligible)
+    || artifactEvidence.sourceIssue !== 2135
+    || stationCatalogEvidence?.serviceClass !== "ITX_CHEONGCHUN"
+    || stationCatalogEvidence.admissionStatus !== "ADMITTED"
+    || !isTruthyFlag(stationCatalogEvidence.admissionEligible)
+    || stationCatalogEvidence.sourceIssue !== 2649
   ) {
-    throw new Error("ITX_CHEONGCHUN seed requires ADMITTED route service evidence");
+    throw new Error("ITX_CHEONGCHUN seed requires ADMITTED two-domain route service evidence");
   }
-  if (typeof evidence.freshUntil !== "string" || !OFFSET_ISO_8601.test(evidence.freshUntil)) {
-    throw new Error("ITX_CHEONGCHUN freshUntil must be offset ISO-8601");
+  if (typeof artifactEvidence.freshUntil !== "string" || !OFFSET_ISO_8601.test(artifactEvidence.freshUntil)
+    || artifactEvidence.freshUntil !== stationCatalogEvidence.freshUntil) {
+    throw new Error("ITX_CHEONGCHUN two-domain freshUntil must exact-match as offset ISO-8601");
   }
-  const freshUntil = new Date(evidence.freshUntil);
+  const freshUntil = new Date(artifactEvidence.freshUntil);
   if (Number.isNaN(freshUntil.getTime()) || freshUntil <= buildNow) {
     throw new Error("ITX_CHEONGCHUN route service evidence must be fresh");
   }
   if (
     typeof timetableArtifactSha256 !== "string"
     || !/^[a-f0-9]{64}$/.test(timetableArtifactSha256)
-    || evidence.timetableArtifactSha256 !== timetableArtifactSha256
+    || artifactEvidence.timetableArtifactSha256 !== timetableArtifactSha256
   ) {
     throw new Error("ITX_CHEONGCHUN timetable artifact SHA-256 identity mismatch");
   }
-  validateStationCatalogPackIdentity(evidence, stationCatalogPackIdentity);
-  return rows;
+  validateCanonicalPackIdentity(artifactEvidence, canonicalPackIdentity);
+  validateStationCatalogPackIdentity(stationCatalogEvidence, stationCatalogPackIdentity);
+  return { artifactRows, stationCatalogRows };
+}
+
+function validateCanonicalPackIdentity(evidence, canonicalPackIdentity) {
+  const keys = ["id", "sha256", "sqliteSha256"];
+  const evidenceKeys = [
+    "serviceClass", "timetableArtifactId", "timetableArtifactSha256", "canonicalPackId",
+    "canonicalPackSha256", "canonicalPackSqliteSha256", "admissionStatus", "admissionEligible",
+    "freshUntil", "sourceIssue",
+  ];
+  if (Object.keys(evidence).sort((left, right) => left.localeCompare(right)).join(",")
+      !== evidenceKeys.slice().sort((left, right) => left.localeCompare(right)).join(",")
+    || canonicalPackIdentity == null
+    || Object.keys(canonicalPackIdentity).sort((left, right) => left.localeCompare(right)).join(",")
+      !== keys.slice().sort((left, right) => left.localeCompare(right)).join(",")
+    || typeof canonicalPackIdentity.id !== "string" || canonicalPackIdentity.id.length === 0
+    || ![canonicalPackIdentity.sha256, canonicalPackIdentity.sqliteSha256]
+      .every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))
+    || evidence.canonicalPackId !== canonicalPackIdentity.id
+    || evidence.canonicalPackSha256 !== canonicalPackIdentity.sha256
+    || evidence.canonicalPackSqliteSha256 !== canonicalPackIdentity.sqliteSha256) {
+    throw new Error("ITX_CHEONGCHUN canonical pack identity mismatch");
+  }
 }
 
 function validateStationCatalogPackIdentity(evidence, stationCatalogPackIdentity) {
   const keys = ["artifactKind", "manifestVersion", "catalogPackId", "stationSetSha256", "payloadSha256", "manifestSha256"];
   const evidenceKeys = [
     "serviceClass",
-    "timetableArtifactId",
-    "timetableArtifactSha256",
     "stationCatalogArtifactKind",
     "stationCatalogManifestVersion",
     "stationCatalogPackId",
@@ -345,27 +382,47 @@ function tripInsert(t) {
   );
 }
 
-function routeServiceEvidenceInsert(row) {
+function routeServiceArtifactEvidenceInsert(row) {
   const hashes = [
     [row.timetableArtifactSha256, "timetableArtifactSha256"],
-    [row.stationCatalogStationSetSha256, "stationCatalogStationSetSha256"],
-    [row.stationCatalogPayloadSha256, "stationCatalogPayloadSha256"],
-    [row.stationCatalogManifestSha256, "stationCatalogManifestSha256"],
+    [row.canonicalPackSha256, "canonicalPackSha256"],
+    [row.canonicalPackSqliteSha256, "canonicalPackSqliteSha256"],
   ];
   for (const [value, label] of hashes) {
     if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
       throw new Error(`routeServiceArtifactEvidence.${label} must be a lowercase sha256`);
     }
   }
-  if (![2116, 2135].includes(row.sourceIssue)) {
-    throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2116 or 2135");
+  if (row.sourceIssue !== 2135) {
+    throw new Error("routeServiceArtifactEvidence.sourceIssue must be 2135");
   }
   return (
-    "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
+    "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
     `${quote(requireString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"))}, ` +
     `${quote(requireString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"))}, ` +
-    `${quote(row.timetableArtifactSha256)}, ${quote(requireString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogArtifactKind"))}, ` +
-    `${row.stationCatalogManifestVersion}, ${quote(requireString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogPackId"))}, ` +
+    `${quote(row.timetableArtifactSha256)}, ${quote(requireString(row.canonicalPackId, "routeServiceArtifactEvidence.canonicalPackId"))}, ` +
+    `${quote(row.canonicalPackSha256)}, ${quote(row.canonicalPackSqliteSha256)}, ${quote(row.admissionStatus)}, ` +
+    `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue});`
+  );
+}
+
+function routeServiceStationCatalogEvidenceInsert(row) {
+  const hashes = [
+    [row.stationCatalogStationSetSha256, "stationCatalogStationSetSha256"],
+    [row.stationCatalogPayloadSha256, "stationCatalogPayloadSha256"],
+    [row.stationCatalogManifestSha256, "stationCatalogManifestSha256"],
+  ];
+  for (const [value, label] of hashes) {
+    if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+      throw new Error(`routeServiceStationCatalogEvidence.${label} must be a lowercase sha256`);
+    }
+  }
+  if (row.sourceIssue !== 2649) throw new Error("routeServiceStationCatalogEvidence.sourceIssue must be 2649");
+  return (
+    "INSERT INTO route_service_station_catalog_evidence (service_class, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES (" +
+    `${quote(requireString(row.serviceClass, "routeServiceStationCatalogEvidence.serviceClass"))}, ` +
+    `${quote(requireString(row.stationCatalogArtifactKind, "routeServiceStationCatalogEvidence.stationCatalogArtifactKind"))}, ` +
+    `${row.stationCatalogManifestVersion}, ${quote(requireString(row.stationCatalogPackId, "routeServiceStationCatalogEvidence.stationCatalogPackId"))}, ` +
     `${quote(row.stationCatalogStationSetSha256)}, ${quote(row.stationCatalogPayloadSha256)}, ${quote(row.stationCatalogManifestSha256)}, ${quote(row.admissionStatus)}, ` +
     `${bool(row.admissionEligible)}, ${row.freshUntil == null ? "NULL" : quote(row.freshUntil)}, ${row.sourceIssue});`
   );
@@ -439,11 +496,7 @@ async function main() {
   const artifact = JSON.parse(artifactBytes.toString("utf8"));
   const stationCatalogPackIdentity = artifact.stationCatalogPackIdentity;
   if (args["route-service-evidence"]) {
-    if ((artifact.routeServiceArtifactEvidence ?? []).length > 0) {
-      throw new Error("route service evidence must be separate from timetable artifact bytes");
-    }
-    const sidecar = JSON.parse(await readFile(args["route-service-evidence"], "utf8"));
-    artifact.routeServiceArtifactEvidence = Array.isArray(sidecar) ? sidecar : [sidecar];
+    throw new Error("standalone --route-service-evidence legacy single sidecar is forbidden; v19 requires the production two-domain caller");
   }
   const seed = buildBackendTimetableSeed(artifact, {
     lineId: args["line-id"],

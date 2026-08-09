@@ -124,25 +124,38 @@ function withBuildNow(callback) {
 
 function admissionEvidenceFrom(contract) {
   const station = contract.officialEvidence.korailCompletenessAdmission.stationCatalogPackIdentity;
+  const canonical = contract.officialEvidence.korailCompletenessAdmission.topologyInputPackIdentity;
   const reference = contract.sourceTimetableArtifact;
   return {
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: reference.artifactId,
-    timetableArtifactSha256: reference.sha256,
-    stationCatalogArtifactKind: station.artifactKind,
-    stationCatalogManifestVersion: station.manifestVersion,
-    stationCatalogPackId: station.catalogPackId,
-    stationCatalogStationSetSha256: station.stationSetSha256,
-    stationCatalogPayloadSha256: station.payloadSha256,
-    stationCatalogManifestSha256: station.manifestSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: 1,
-    freshUntil: reference.freshUntil,
-    sourceIssue: 2135,
+    artifactEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      timetableArtifactId: reference.artifactId,
+      timetableArtifactSha256: reference.sha256,
+      canonicalPackId: canonical.id,
+      canonicalPackSha256: canonical.sha256,
+      canonicalPackSqliteSha256: canonical.sqliteSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: 1,
+      freshUntil: reference.freshUntil,
+      sourceIssue: 2135,
+    },
+    stationCatalogEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      stationCatalogArtifactKind: station.artifactKind,
+      stationCatalogManifestVersion: station.manifestVersion,
+      stationCatalogPackId: station.catalogPackId,
+      stationCatalogStationSetSha256: station.stationSetSha256,
+      stationCatalogPayloadSha256: station.payloadSha256,
+      stationCatalogManifestSha256: station.manifestSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: 1,
+      freshUntil: reference.freshUntil,
+      sourceIssue: 2649,
+    },
   };
 }
 
-async function createFixture(context, { version = 18, legacyEvidence = false } = {}) {
+async function createFixture(context, { version = 19, legacyEvidence = false } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-topology-fixture-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const sqlitePath = path.join(directory, "capital.sqlite");
@@ -193,23 +206,40 @@ async function createFixture(context, { version = 18, legacyEvidence = false } =
     if (legacyEvidence) {
       database.exec(`
         DROP TABLE route_service_artifact_evidence;
+        DROP TABLE route_service_station_catalog_evidence;
         CREATE TABLE route_service_artifact_evidence (
           service_class TEXT NOT NULL PRIMARY KEY,
           timetable_artifact_id TEXT NOT NULL,
           timetable_artifact_sha256 TEXT NOT NULL,
-          canonical_pack_id TEXT NOT NULL,
-          canonical_pack_sha256 TEXT NOT NULL,
-          canonical_pack_sqlite_sha256 TEXT NOT NULL,
+          station_catalog_artifact_kind TEXT NOT NULL,
+          station_catalog_manifest_version INTEGER NOT NULL,
+          station_catalog_pack_id TEXT NOT NULL,
+          station_catalog_station_set_sha256 TEXT NOT NULL,
+          station_catalog_payload_sha256 TEXT NOT NULL,
+          station_catalog_manifest_sha256 TEXT NOT NULL,
           admission_status TEXT NOT NULL,
           admission_eligible INTEGER NOT NULL,
           fresh_until TEXT,
-          source_issue INTEGER NOT NULL CHECK (source_issue = 2116)
+          source_issue INTEGER NOT NULL,
+          CHECK (service_class = 'ITX_CHEONGCHUN'),
+          CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
+          CHECK (station_catalog_artifact_kind = 'station-catalog-pack'),
+          CHECK (station_catalog_manifest_version = 1),
+          CHECK (length(station_catalog_pack_id) > 0),
+          CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*'),
+          CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*'),
+          CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*'),
+          CHECK (admission_status = 'ADMITTED'),
+          CHECK (admission_eligible = 1),
+          CHECK (fresh_until IS NOT NULL),
+          CHECK (source_issue IN (2116, 2135))
         );
       `);
     }
     if (version === 16) {
       database.exec("PRAGMA foreign_keys = OFF");
       database.exec("DROP TABLE route_service_artifact_evidence");
+      database.exec("DROP TABLE route_service_station_catalog_evidence");
       for (const table of ["network_edges", "transit_trips"]) {
         const columns = database.prepare(`PRAGMA table_info(${table})`).all()
           .map(({ name }) => name)
@@ -237,6 +267,24 @@ async function createFixture(context, { version = 18, legacyEvidence = false } =
       `);
       database.exec("PRAGMA foreign_keys = ON");
       assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+    }
+    if (version === 19 && !legacyEvidence) {
+      const evidence = admissionEvidenceFrom(contract);
+      database.prepare(`INSERT INTO route_service_artifact_evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        evidence.artifactEvidence.serviceClass, evidence.artifactEvidence.timetableArtifactId,
+        evidence.artifactEvidence.timetableArtifactSha256, evidence.artifactEvidence.canonicalPackId,
+        evidence.artifactEvidence.canonicalPackSha256, evidence.artifactEvidence.canonicalPackSqliteSha256,
+        evidence.artifactEvidence.admissionStatus, evidence.artifactEvidence.admissionEligible,
+        evidence.artifactEvidence.freshUntil, evidence.artifactEvidence.sourceIssue,
+      );
+      database.prepare(`INSERT INTO route_service_station_catalog_evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        evidence.stationCatalogEvidence.serviceClass, evidence.stationCatalogEvidence.stationCatalogArtifactKind,
+        evidence.stationCatalogEvidence.stationCatalogManifestVersion, evidence.stationCatalogEvidence.stationCatalogPackId,
+        evidence.stationCatalogEvidence.stationCatalogStationSetSha256, evidence.stationCatalogEvidence.stationCatalogPayloadSha256,
+        evidence.stationCatalogEvidence.stationCatalogManifestSha256, evidence.stationCatalogEvidence.admissionStatus,
+        evidence.stationCatalogEvidence.admissionEligible, evidence.stationCatalogEvidence.freshUntil,
+        evidence.stationCatalogEvidence.sourceIssue,
+      );
     }
     database.exec(`PRAGMA user_version = ${version}`);
   } finally {
@@ -472,8 +520,8 @@ test("authenticated completeness도 exact station identity와 no-legacy를 요�
   }
 });
 
-test("v18 legacy evidence schema는 2135 admission schema로 migration한다", async (context) => {
-  const fixture = await createFixture(context, { legacyEvidence: true });
+test("v18 legacy evidence schema는 v19 two-domain admission schema로 migration한다", async (context) => {
+  const fixture = await createFixture(context, { version: 18, legacyEvidence: true });
   applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract));
   const database = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
   try {
@@ -481,16 +529,96 @@ test("v18 legacy evidence schema는 2135 admission schema로 migration한다", a
       WHERE service_class = 'ITX_CHEONGCHUN'`).get().source_issue, 2135);
     const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
       .all().map(({ name }) => name);
-    assert.equal(columns.some((name) => name.startsWith("canonical_pack_")), false);
-    assert.deepEqual(columns.filter((name) => name.startsWith("station_catalog_")), [
-      "station_catalog_artifact_kind",
-      "station_catalog_manifest_version",
-      "station_catalog_pack_id",
-      "station_catalog_station_set_sha256",
-      "station_catalog_payload_sha256",
-      "station_catalog_manifest_sha256",
+    assert.deepEqual(columns.filter((name) => name.startsWith("canonical_pack_")), [
+      "canonical_pack_id", "canonical_pack_sha256", "canonical_pack_sqlite_sha256",
+    ]);
+    assert.equal(database.prepare(`SELECT source_issue FROM route_service_station_catalog_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'`).get().source_issue, 2649);
+  } finally { database.close(); }
+});
+
+test("route service evidence domain split은 v18 mixed row를 v19의 두 독립 table로 원자적으로 교체한다", async (context) => {
+  const fixture = await createFixture(context, { version: 18, legacyEvidence: true });
+  applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract));
+  const database = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
+  try {
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.deepEqual(database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
+      .all().map(({ name }) => name), [
+      "service_class", "timetable_artifact_id", "timetable_artifact_sha256",
+      "canonical_pack_id", "canonical_pack_sha256", "canonical_pack_sqlite_sha256",
+      "admission_status", "admission_eligible", "fresh_until", "source_issue",
+    ]);
+    assert.deepEqual(database.prepare("PRAGMA table_info(route_service_station_catalog_evidence)")
+      .all().map(({ name }) => name), [
+      "service_class", "station_catalog_artifact_kind", "station_catalog_manifest_version",
+      "station_catalog_pack_id", "station_catalog_station_set_sha256",
+      "station_catalog_payload_sha256", "station_catalog_manifest_sha256",
+      "admission_status", "admission_eligible", "fresh_until", "source_issue",
     ]);
   } finally { database.close(); }
+});
+
+test("route service evidence domain split은 ready v19의 stale row도 두 domain exact tuple로 교체한다", async (context) => {
+  const fixture = await createFixture(context);
+  const evidence = admissionEvidenceFrom(fixture.contract);
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  const database = new DatabaseSync(fixture.sqlitePath);
+  try {
+    database.prepare(`UPDATE route_service_artifact_evidence
+      SET canonical_pack_sha256 = ? WHERE service_class = 'ITX_CHEONGCHUN'`).run("f".repeat(64));
+  } finally { database.close(); }
+  applyTopology(fixture.sqlitePath, fixture.topology, evidence);
+  const output = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
+  try {
+    assert.equal(output.prepare(`SELECT canonical_pack_sha256 AS canonicalPackSha256
+      FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'`).get().canonicalPackSha256,
+    evidence.artifactEvidence.canonicalPackSha256);
+    assert.equal(output.prepare("PRAGMA user_version").get().user_version, 19);
+  } finally { output.close(); }
+});
+
+test("route service evidence domain split은 one-domain missing 또는 freshness mismatch input에서 database mutation 없이 실패한다", async (context) => {
+  const fixture = await createFixture(context);
+  const before = sha256(await readFile(fixture.sqlitePath));
+  const evidence = admissionEvidenceFrom(fixture.contract);
+  const missingStation = structuredClone(evidence);
+  delete missingStation.stationCatalogEvidence;
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, missingStation),
+    /independent current route service evidence/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
+  const mismatchedFreshness = structuredClone(evidence);
+  mismatchedFreshness.stationCatalogEvidence.freshUntil = "2099-01-02T00:00:00.000Z";
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, mismatchedFreshness),
+    /independent current route service evidence/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
+});
+
+test("route service evidence domain split은 malformed v19 station table을 mutation 없이 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const database = new DatabaseSync(fixture.sqlitePath);
+  try {
+    const weakened = database.prepare(`SELECT sql FROM sqlite_schema
+      WHERE type = 'table' AND name = 'route_service_station_catalog_evidence'`).get().sql
+      .replace(" AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*'", "");
+    database.exec("DROP TABLE route_service_station_catalog_evidence");
+    database.exec(weakened);
+  } finally { database.close(); }
+  const before = sha256(await readFile(fixture.sqlitePath));
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+    /v19 route service evidence schema is malformed or partial/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
+});
+
+test("route service evidence domain split은 v19 one-domain count mismatch를 mutation 없이 거부한다", async (context) => {
+  const fixture = await createFixture(context);
+  const database = new DatabaseSync(fixture.sqlitePath);
+  database.exec("DELETE FROM route_service_station_catalog_evidence");
+  database.close();
+  const before = sha256(await readFile(fixture.sqlitePath));
+  assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
+    /requires exactly one row in each domain/);
+  assert.equal(sha256(await readFile(fixture.sqlitePath)), before);
 });
 
 test("actual v16 conversion은 8개 preserved table과 index를 보존하고 idempotent하다", async (context) => {
@@ -515,7 +643,7 @@ test("actual v16 conversion은 8개 preserved table과 index를 보존하고 ide
   applyTopology(fixture.sqlitePath, fixture.topology, evidence);
   const output = new DatabaseSync(fixture.sqlitePath, { readOnly: true });
   try {
-    assert.equal(output.prepare("PRAGMA user_version").get().user_version, 18);
+    assert.equal(output.prepare("PRAGMA user_version").get().user_version, 19);
     for (const [table, rows] of before) {
       const actual = output.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map((row) => {
         if (table !== "transit_trips") return row;
@@ -540,7 +668,7 @@ test("actual v16 conversion은 8개 preserved table과 index를 보존하고 ide
 });
 
 test("unsupported catalog version은 fixture를 변경하지 않고 거부한다", async (context) => {
-  const fixture = await createFixture(context, { version: 19 });
+  const fixture = await createFixture(context, { version: 20 });
   const before = sha256(await readFile(fixture.sqlitePath));
   assert.throws(() => applyTopology(fixture.sqlitePath, fixture.topology, admissionEvidenceFrom(fixture.contract)),
     /does not support catalog user_version/);
@@ -673,8 +801,8 @@ test("topology input gzip와 SQLite identity 변조를 각각 거부한다", asy
   });
 });
 
-test("versions 15와 19는 mutation 없이 거부한다", async (context) => {
-  for (const version of [15, 19]) {
+test("versions 15와 20은 mutation 없이 거부한다", async (context) => {
+  for (const version of [15, 20]) {
     await context.test(String(version), async (childContext) => {
       const fixture = await createFixture(childContext, { version });
       const before = sha256(await readFile(fixture.sqlitePath));

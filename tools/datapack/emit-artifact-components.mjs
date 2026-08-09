@@ -13,7 +13,7 @@ import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-fres
 const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id"]);
 const COMPONENTS = {
   topology: ["network_edges", "out_of_station_transfer_links", "transfer_rules", "realtime_provider_line_mappings", "realtime_provider_station_mappings"],
-  timetable: ["service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence"],
+  timetable: ["service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence", "route_service_station_catalog_evidence"],
   accessibility: ["station_exits", "facilities", "facility_status_snapshots", "station_facility_evidence", "station_accessibility_summaries", "internal_route_nodes", "internal_route_edges", "station_pathway_nodes", "station_pathway_edges", "station_car_door_hints"],
   fare: ["fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes"],
 };
@@ -83,7 +83,7 @@ function readIds(input) {
 
 function validateFixedContracts(layout, build, sourceSchema, sourceSchemaBytes) {
   if (layout?.schemaVersion !== 1 || layout?.artifactKind !== "artifact-component-table-layout") throw new Error("table layout contract mismatch");
-  if (!sourceSchema || sourceSchema.path !== "tools/datapack/schema/catalog-schema.sql" || sourceSchema.sqliteUserVersion !== 18 || sha(sourceSchemaBytes) !== sourceSchema.sha256) throw new Error("source schema contract mismatch");
+  if (!sourceSchema || sourceSchema.path !== "tools/datapack/schema/catalog-schema.sql" || sourceSchema.sqliteUserVersion !== 19 || sha(sourceSchemaBytes) !== sourceSchema.sha256) throw new Error("source schema contract mismatch");
   if (build?.artifactKind !== "server-route-bundle-build-contract" || build?.compressionProfile?.api !== "node:zlib.zstdCompressSync" || build.compressionProfile.requiredNodeMajor !== 24 || build.compressionProfile.compressionLevel !== 10 || build.compressionProfile.checksumFlag !== 1 || build.compressionProfile.dictionary !== null || build?.capitalMapInput?.sourcePath !== "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg") throw new Error("build contract mismatch");
   if (Number(process.versions.node.split(".")[0]) !== 24 || !raw(process.versions.node, "process.versions.node") || !raw(process.versions.zstd, "process.versions.zstd")) throw new Error("Node 24 Zstd runtime is required");
 }
@@ -235,7 +235,7 @@ function validateBundleReferences(db, layout) {
 function validateNetworkEdges(db) { const stations = new Set(db.prepare("SELECT id FROM stations").all().map((row) => row.id)); const pairs = new Set(db.prepare("SELECT station_id,line_id FROM station_lines").all().map((row) => `${row.station_id}\u0000${row.line_id}`)); for (const row of db.prepare("SELECT from_node_id,to_node_id,edge_type FROM network_edges").all()) { const from = endpoint(row.from_node_id, stations, pairs); const to = endpoint(row.to_node_id, stations, pairs); const valid = row.edge_type === "ENTRY" ? from.kind === "station" && to.kind === "line" && from.station === to.station : row.edge_type === "EXIT" ? from.kind === "line" && to.kind === "station" && from.station === to.station : from.kind === "line" && to.kind === "line"; if (!valid) throw new Error("network edge endpoint mismatch"); } }
 function endpoint(value, stations, pairs) { if (typeof value !== "string" || !value || /:/.test(value) && value.split(":").some((part) => !part)) throw new Error("invalid network endpoint"); const parts = value.split(":"); if (parts.length === 1) { if (!stations.has(value)) throw new Error("network station endpoint missing"); return { kind: "station", station: value }; } if (!pairs.has(`${parts[0]}\u0000${parts[1]}`)) throw new Error("network station-line endpoint missing"); return { kind: "line", station: parts[0] }; }
 function sqliteProfile(db) { db.exec("PRAGMA page_size=4096; PRAGMA auto_vacuum=NONE; PRAGMA encoding='UTF-8'; PRAGMA foreign_keys=OFF;"); }
-function finishSqlite(db) { db.exec("PRAGMA user_version=18; VACUUM;"); }
+function finishSqlite(db) { db.exec("PRAGMA user_version=19; VACUUM;"); }
 async function normalizeHeader(file) { const value = await readFile(file); value.writeUInt32BE(3053000, 96); await writeFile(file, value); }
 function project(source, target, table, columns, order) { const insert = target.prepare(`INSERT INTO ${quote(table)} VALUES(${columns.map(() => "?").join(",")})`); const sql = `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)} ORDER BY ${order.map((column) => `${quote(column)} COLLATE BINARY`).join(",")}`; target.exec("BEGIN"); try { for (const row of source.prepare(sql).all()) insert.run(...columns.map((column) => row[column])); target.exec("COMMIT"); } catch (error) { target.exec("ROLLBACK"); throw error; } }
 function stationSetDigest(db) { return sha(Buffer.from(canonicalJson([...new Set(db.prepare("SELECT id FROM stations ORDER BY id COLLATE BINARY").all().map((row) => row.id))].sort(bytes)))); }
