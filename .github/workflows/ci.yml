@@ -61,6 +61,7 @@ jobs:
           tools/datapack/collect-seoul-accessibility-evidence.test.mjs
           tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs
           tools/datapack/probe-korail-facility-workbook.test.mjs
+          tools/datapack/build-nationwide-coverage-tally.test.mjs
           tools/datapack/contract-producer.test.mjs
           tools/datapack/lib/datapack-manifest-schema.test.mjs
 
