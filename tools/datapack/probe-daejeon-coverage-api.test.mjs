@@ -10,7 +10,7 @@ import {
 
 test("Daejeon probe는 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
-  await assert.rejects(probeDaejeonCoverageApi({ sourceId: "daejeon-metro-od-fare", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  await assert.rejects(probeDaejeonCoverageApi({ sourceId: "daejeon-station-distance-fare", serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
 });
 
