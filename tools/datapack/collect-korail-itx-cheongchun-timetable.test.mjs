@@ -22,6 +22,14 @@ import {
 import { emitStationCatalogPack } from "./emit-station-catalog-pack.mjs";
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 
+const PACK_ROOT = await mkdtemp(path.join(tmpdir(), "itx-station-catalog-pack-"));
+const PACK_PATH = path.join(PACK_ROOT, "station-catalog-pack");
+await emitStationCatalogPack({
+  repositoryRoot: path.resolve(import.meta.dirname, "../.."),
+  output: PACK_PATH,
+  catalogPackId: "itx-test-catalog-v1",
+});
+
 test("Korail ITX plan은 malformed credential로 provider를 호출하지 않는다", async () => {
   let calls = 0;
   await assert.rejects(collectKorailItxCheongchunPlan({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
@@ -32,14 +40,6 @@ test("Korail ITX timetable은 malformed credential로 provider를 호출하지 �
   let calls = 0;
   await assert.rejects(collectKorailItxCheongchunTimetable({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
-});
-
-const PACK_ROOT = await mkdtemp(path.join(tmpdir(), "itx-station-catalog-pack-"));
-const PACK_PATH = path.join(PACK_ROOT, "station-catalog-pack");
-await emitStationCatalogPack({
-  repositoryRoot: path.resolve(import.meta.dirname, "../.."),
-  output: PACK_PATH,
-  catalogPackId: "itx-test-catalog-v1",
 });
 test.after(() => rm(PACK_ROOT, { recursive: true, force: true }));
 const PACK_BYTES = await readFile(path.join(PACK_PATH, "payload/catalog.sqlite"));
