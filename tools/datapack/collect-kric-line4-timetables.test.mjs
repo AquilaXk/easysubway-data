@@ -5,6 +5,8 @@ import { test } from "node:test";
 import {
   assertCompleteKricCollection,
   buildCollectionContext,
+  buildRawCollectionInventory,
+  buildRawResponseRecord,
   buildServicePatternObservation,
   filterRowsByTrainNumbers,
   redactKricCredential,
@@ -111,6 +113,36 @@ test("tracked service-pattern evidence는 exact probe identity와 closed mapping
       mapping: [...evidence.mapping, { exptCd: "0", servicePattern: "LOCAL" }],
     }),
     /closed mapping/,
+  );
+});
+
+test("raw response inventory는 tracked request 순서와 exact provider bytes만 결속한다", () => {
+  const requests = [
+    { requestKey: "subwayTimetableExp|S1|433|8", endpoint: "https://provider.invalid/first" },
+    { requestKey: "subwayTimetableExp|KR|448|8", endpoint: "https://provider.invalid/second" },
+  ];
+  const rawBodies = [
+    '{"header":{"resultCode":"00"},"body":[{"exptCd":null}]}',
+    '{"header":{"resultCode":"00"},"body":[{"exptCd":"1"}]}',
+  ];
+  const records = requests.map((request, index) => buildRawResponseRecord(request, rawBodies[index]));
+  const inventory = buildRawCollectionInventory({ requests }, records);
+  assert.equal(inventory.responseCount, 2);
+  assert.match(inventory.inventorySha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(inventory.responses, records);
+  assert.equal(Buffer.from(records[0].bodyBase64, "base64").toString("utf8"), rawBodies[0]);
+  assert.doesNotMatch(JSON.stringify(inventory), /provider\.invalid|serviceKey/);
+
+  assert.throws(
+    () => buildRawCollectionInventory({ requests }, records.toReversed()),
+    /request order/,
+  );
+  assert.throws(
+    () => buildRawCollectionInventory({ requests }, [
+      { ...records[0], rawSha256: "0".repeat(64) },
+      records[1],
+    ]),
+    /raw response identity/,
   );
 });
 

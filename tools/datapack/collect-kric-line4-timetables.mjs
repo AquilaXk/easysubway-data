@@ -268,6 +268,57 @@ export function validateServicePatternEvidence(evidence) {
   return new Map(evidence.mapping.map(({ exptCd, servicePattern }) => [exptCd, servicePattern]));
 }
 
+export function buildRawResponseRecord(request, rawResponse) {
+  if (typeof request?.requestKey !== "string" || request.requestKey.length === 0) {
+    throw new Error("raw response requestKey is required");
+  }
+  if (typeof rawResponse !== "string" || rawResponse.length === 0) {
+    throw new Error("raw provider response bytes are required");
+  }
+  const bytes = Buffer.from(rawResponse, "utf8");
+  return {
+    requestKey: request.requestKey,
+    rawSha256: createHash("sha256").update(bytes).digest("hex"),
+    byteSize: bytes.length,
+    bodyBase64: bytes.toString("base64"),
+  };
+}
+
+export function buildRawCollectionInventory(plan, responses) {
+  const requests = plan?.requests;
+  if (!Array.isArray(requests) || requests.length === 0
+    || !Array.isArray(responses) || responses.length !== requests.length) {
+    throw new Error("raw response inventory must cover every tracked request");
+  }
+  const seen = new Set();
+  responses.forEach((response, index) => {
+    if (!hasExactKeys(response, ["bodyBase64", "byteSize", "rawSha256", "requestKey"])
+      || response.requestKey !== requests[index]?.requestKey) {
+      throw new Error("raw response inventory request order is invalid");
+    }
+    if (seen.has(response.requestKey)) {
+      throw new Error("raw response inventory request keys must be unique");
+    }
+    seen.add(response.requestKey);
+    if (typeof response.bodyBase64 !== "string" || response.bodyBase64.length === 0
+      || !Number.isInteger(response.byteSize) || response.byteSize < 1
+      || !/^[a-f0-9]{64}$/.test(response.rawSha256)) {
+      throw new Error("raw response identity is invalid");
+    }
+    const bytes = Buffer.from(response.bodyBase64, "base64");
+    if (bytes.toString("base64") !== response.bodyBase64
+      || bytes.length !== response.byteSize
+      || createHash("sha256").update(bytes).digest("hex") !== response.rawSha256) {
+      throw new Error("raw response identity is invalid");
+    }
+  });
+  return {
+    responseCount: responses.length,
+    inventorySha256: createHash("sha256").update(JSON.stringify(responses)).digest("hex"),
+    responses,
+  };
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -385,15 +436,18 @@ async function main() {
 
   const intermediate = [];
   const perRequest = [];
+  const rawResponses = [];
   let failed = 0;
   for (const request of plan.requests) {
     const url = kricRequestUrl(request, key);
     try {
-      const payload = JSON.parse(await fetchWithRetry(url));
+      const rawResponse = await fetchWithRetry(url);
+      const payload = JSON.parse(rawResponse);
       const rows = validateKricTimetablePayload(payload);
       // servicePattern은 evidence-backed closed exptCd mapping이 있어야만 normalizer가 해석한다.
       const normalized = normalizeKricSubwayTimetable(rows, context);
       intermediate.push(...normalized);
+      rawResponses.push(buildRawResponseRecord(request, rawResponse));
       perRequest.push({ requestKey: request.requestKey, resultCode: "00", rows: rows.length, normalized: normalized.length });
     } catch (error) {
       failed += 1;
@@ -424,6 +478,7 @@ async function main() {
   }
   if (trainNumberEvidence) validateItxOdJoin(reconstructionRows, trainNumberEvidence);
   const { transitTrips, transitStopTimes } = reconstructTransitTrips(reconstructionRows, context);
+  const rawResponseInventory = buildRawCollectionInventory(plan, rawResponses);
   const artifact = {
     artifactKind: "kric-line4-timetable-collection",
     sourceId: "kric-subway-route-info",
@@ -444,6 +499,7 @@ async function main() {
     } : {}),
     transitTripCount: transitTrips.length,
     transitStopTimeCount: transitStopTimes.length,
+    rawResponseInventory,
     perRequest,
     transitTrips,
     transitStopTimes,
@@ -451,7 +507,7 @@ async function main() {
   if (args.output) {
     await writeFile(args.output, `${JSON.stringify(artifact, null, 2)}\n`);
   }
-  const { transitTrips: _t, transitStopTimes: _s, perRequest: _p, ...summary } = artifact;
+  const { transitTrips: _t, transitStopTimes: _s, perRequest: _p, rawResponseInventory: _r, ...summary } = artifact;
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 }
 
