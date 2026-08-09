@@ -1,9 +1,9 @@
-const ITX_REFERENCE = "ITX_";
+const ITX_TOKEN = /(?:^|[^A-Z0-9])ITX(?:[_-]|$)/;
 
 function rejectItxReference(value, path = "fixture") {
   if (typeof value === "string") {
     const token = value.toUpperCase();
-    if (token.startsWith(ITX_REFERENCE) || token.startsWith("ITX-")) {
+    if (ITX_TOKEN.test(token)) {
       throw new Error(`${path} contains an unexpected ITX reference`);
     }
     return;
@@ -38,8 +38,12 @@ export function projectRegionalMaterializeFixture(input) {
   }
 
   const [legacyEvidence] = pack.routeServiceArtifactEvidence;
-  if (legacyEvidence?.serviceClass !== "ITX_CHEONGCHUN") {
-    throw new Error("capital@1 legacy routeServiceArtifactEvidence must be ITX_CHEONGCHUN");
+  if (
+    !legacyEvidence ||
+    Object.keys(legacyEvidence).length !== 1 ||
+    legacyEvidence.serviceClass !== "ITX_CHEONGCHUN"
+  ) {
+    throw new Error("capital@1 legacy routeServiceArtifactEvidence must match the exact known contract");
   }
   delete pack.routeServiceArtifactEvidence;
   rejectItxReference(pack, "capital@1");

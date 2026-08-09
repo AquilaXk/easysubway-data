@@ -58,3 +58,23 @@ test("regional projection rejects lowercase ITX identifiers", () => {
     /contains an unexpected ITX reference/,
   );
 });
+
+test("regional projection rejects embedded ITX tokens and mutated legacy evidence", () => {
+  const embeddedItx = fixture();
+  embeddedItx.packs[0].transitRoutes[0].id = "KORAIL_ITX_CHEONGCHUN";
+  assert.throws(
+    () => projectRegionalMaterializeFixture(embeddedItx),
+    /contains an unexpected ITX reference/,
+  );
+
+  const arbitrarySubstring = fixture();
+  arbitrarySubstring.packs[0].transitRoutes[0].id = "station-itxpress-local";
+  assert.doesNotThrow(() => projectRegionalMaterializeFixture(arbitrarySubstring));
+
+  const mutatedEvidence = fixture();
+  mutatedEvidence.packs[0].routeServiceArtifactEvidence[0].snapshotId = "unexpected";
+  assert.throws(
+    () => projectRegionalMaterializeFixture(mutatedEvidence),
+    /must match the exact known contract/,
+  );
+});
