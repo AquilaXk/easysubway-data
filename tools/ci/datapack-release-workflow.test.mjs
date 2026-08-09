@@ -668,5 +668,5 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.match(accessibility, /--bundled-root "\$\{EASYSUBWAY_DATAPACK_OUTPUT\}"/);
   assert.ok(yml.indexOf("Data Pack Release / Build data packs") < yml.indexOf("Data Pack Release / Stage candidate provenance"));
   assert.ok(yml.indexOf("Data Pack Release / Stage candidate provenance") < yml.indexOf("Data Pack Release / Validate release evidence bundle"));
-  assert.doesNotMatch(yml, /apps\/mobile/);
+  assert.match(yml, /Stage pinned Mobile fixture/);
 });

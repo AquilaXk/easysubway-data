@@ -62,6 +62,43 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Data Pack Release / Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
+          path: .external/mobile
+          persist-credentials: false
+
+      - name: Data Pack Release / Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d85742f14cbf97c526a6b94dd55bbf863e1d1346"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          mv "${source}" apps/mobile
+
       - name: Data Pack Release / Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
