@@ -3,12 +3,25 @@ import test from "node:test";
 
 import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
 
+const legacyEvidence = {
+  serviceClass: "ITX_CHEONGCHUN",
+  timetableArtifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
+  timetableArtifactSha256: "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
+  canonicalPackId: "capital",
+  canonicalPackSha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
+  canonicalPackSqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
+  admissionStatus: "MISSING",
+  admissionEligible: false,
+  freshUntil: "2026-07-20T00:00:00.000Z",
+  sourceIssue: 2116,
+};
+
 function fixture() {
   return {
     packs: [{
       id: "capital",
       version: "1",
-      routeServiceArtifactEvidence: [{ serviceClass: "ITX_CHEONGCHUN" }],
+      routeServiceArtifactEvidence: [legacyEvidence],
       minimumTableRows: {
         network_edges: 1,
         transit_routes: 1,
@@ -30,13 +43,13 @@ test("regional projection clones only capital@1 and removes its sole legacy evid
   const originalBytes = JSON.stringify(input);
   const projected = projectRegionalMaterializeFixture(input);
   const { routeServiceArtifactEvidence, ...projectedPack } = projected.packs[0];
-  const { routeServiceArtifactEvidence: legacyEvidence, ...inputPack } = input.packs[0];
+  const { routeServiceArtifactEvidence: inputLegacyEvidence, ...inputPack } = input.packs[0];
 
   assert.equal(JSON.stringify(input), originalBytes);
   assert.notEqual(projected, input);
   assert.equal(routeServiceArtifactEvidence, undefined);
   assert.deepEqual(projectedPack, inputPack);
-  assert.deepEqual(legacyEvidence, [{ serviceClass: "ITX_CHEONGCHUN" }]);
+  assert.deepEqual(inputLegacyEvidence, [legacyEvidence]);
 });
 
 test("regional projection fails closed when a current table or relationship references ITX", () => {
