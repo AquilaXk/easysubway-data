@@ -24,7 +24,7 @@ const candidate = {
   },
 };
 
-test("Data.go.kr evidence collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+test("Data.go.kr evidence collector는 유효한 candidate·runner 입력에서도 malformed credential을 delegate 전에 거부한다", async () => {
   let calls = 0;
   const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-invalid-key-"));
   try {

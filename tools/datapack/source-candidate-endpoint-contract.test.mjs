@@ -345,3 +345,61 @@ test("DATA_GO_KR_SERVICE_KEY runner는 공통 deterministic credential-validatio
   assert.equal(new Set(dataGoKr.runners).size, dataGoKr.runners.length, "runners must be unique");
   assert.deepEqual(dataGoKr.runners, [...dataGoKr.runners].sort(), "runners must be path-sorted");
 });
+
+test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate보다 먼저 preflight하고 matching focused test가 calls=0을 증명한다", async () => {
+  const orderingContracts = [
+    {
+      runner: "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+      test: "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
+      functionName: "collectDatagoSourceCandidateEvidence",
+      before: ["readFile(CANDIDATES_PATH", "resolveDatagoCandidateRequest(", "collectSourceCandidateEvidence("],
+    },
+    {
+      runner: "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+      test: "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+      functionName: "collectSeoulAccessibility",
+      before: ["new URL(endpoint)", "fetchImpl("],
+    },
+    {
+      runner: "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+      test: "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
+      functionName: "fetchKasiPublicHolidayCalendar",
+      before: ["new URL(ENDPOINT)", "fetchImpl("],
+    },
+    {
+      runner: "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+      test: "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
+      functionName: "collectNationwidePublicApiCoverage",
+      before: ["validatePlan(searchPlan)", "new Map()", "runQuery("],
+    },
+  ];
+  assert.deepEqual(
+    orderingContracts.map(({ runner }) => runner),
+    [
+      "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+      "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+      "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+      "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+    ],
+  );
+
+  for (const contract of orderingContracts) {
+    const [runnerSource, testSource] = await Promise.all([
+      readFile(path.join(DATAPACK_DIRECTORY, path.basename(contract.runner)), "utf8"),
+      readFile(path.join(DATAPACK_DIRECTORY, path.basename(contract.test)), "utf8"),
+    ]);
+    const functionStart = runnerSource.indexOf(`export async function ${contract.functionName}`);
+    assert.ok(functionStart >= 0, `${contract.runner} must export ${contract.functionName}`);
+    const functionEnd = runnerSource.indexOf("\n}\n", functionStart);
+    const body = runnerSource.slice(functionStart, functionEnd);
+    const normalizerIndex = body.indexOf("normalizeDataGoKrServiceKey(");
+    assert.ok(normalizerIndex >= 0, `${contract.runner} must preflight DATA_GO_KR_SERVICE_KEY`);
+    for (const operation of contract.before) {
+      const operationIndex = body.indexOf(operation);
+      assert.ok(operationIndex >= 0, `${contract.runner} must contain ${operation}`);
+      assert.ok(normalizerIndex < operationIndex, `${contract.runner} must preflight before ${operation}`);
+    }
+    assert.match(testSource, /invalid%ZZ/, `${contract.test} must exercise malformed percent encoding`);
+    assert.match(testSource, /assert\.equal\(calls, 0\)/, `${contract.test} must prove provider calls stay at zero`);
+  }
+});

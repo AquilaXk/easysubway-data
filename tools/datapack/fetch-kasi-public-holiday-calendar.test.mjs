@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
 
-test("KASI calendar는 malformed credential로 provider를 호출하지 않는다", async () => {
+test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
   let calls = 0;
   await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "invalid%ZZ", year: 2026, months: [7], fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
   assert.equal(calls, 0);
