@@ -9,6 +9,10 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
+  PINNED_MOBILE_REVISION as mobileRevision,
+  resolveImmutableMobileRepository,
+} from "./lib/immutable-mobile-test-fixture.mjs";
+import {
   admittedTopologySource,
   applyTopology,
   assertStoredTopology,
@@ -21,7 +25,6 @@ import {
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const buildNow = "2026-07-16T00:00:00.000Z";
-const mobileRevision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
 const currentV18GzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 const currentV18SqliteSha256 = "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5";
 
@@ -380,30 +383,6 @@ function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize
   });
 }
 
-async function verifyImmutableMobileRepository(repository, runGit) {
-  const stat = await lstat(repository).catch(() => undefined);
-  if (!stat?.isDirectory() || stat.isSymbolicLink()) {
-    throw new Error("immutable Mobile checkout must be a real directory");
-  }
-  const inside = await runGit(repository, ["rev-parse", "--is-inside-work-tree"]);
-  const revision = await runGit(repository, ["rev-parse", "--verify", `${mobileRevision}^{commit}`]);
-  if (inside.trim() !== "true" || revision.trim() !== mobileRevision) {
-    throw new Error("immutable Mobile checkout does not contain the expected d857 commit");
-  }
-  return repository;
-}
-
-export async function resolveImmutableMobileRepository({
-  repositoryRoot = root,
-  runGit = async (repository, args) => (await execFileAsync("git", ["-C", repository, ...args])).stdout,
-} = {}) {
-  const ciCheckout = path.join(repositoryRoot, ".external", "mobile");
-  if (await lstat(ciCheckout).then(() => true).catch(() => false)) {
-    return verifyImmutableMobileRepository(ciCheckout, runGit);
-  }
-  return verifyImmutableMobileRepository(path.resolve(repositoryRoot, "../easysubway-mobile"), runGit);
-}
-
 async function immutableCurrentV18Bytes(relativePath) {
   const mobileRoot = await resolveImmutableMobileRepository();
   const { stdout } = await execFileAsync("git", [
@@ -452,7 +431,7 @@ test("immutable v18 output은 explicit migration으로만 v19 two-domain evidenc
   for (const surface of ["2", "3"]) {
     await context.test(`surface ${surface} rename failure restores every original output`, async () => {
       const failure = path.join(directory, `failure-${surface}`);
-      await (await import("node:fs/promises")).mkdir(failure);
+      await mkdir(failure);
       const paths = {
         pack: path.join(failure, "capital.sqlite.gz"), index: path.join(failure, "index.json"),
         evidence: path.join(failure, "evidence.json"), catalog: path.join(failure, "station-catalog-pack"),
@@ -540,6 +519,41 @@ test("immutable v18 output은 explicit migration으로만 v19 two-domain evidenc
       "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
     ], { cwd: root }), /migrated v19 evidence or index is stale/);
   });
+  await context.test("explicit check binds the stored station catalog evidence to the pinned projection", async () => {
+    const check = path.join(directory, "check-station-catalog-binding");
+    await mkdir(check);
+    const sqlitePath = path.join(check, "capital.sqlite");
+    await writeFile(sqlitePath, gunzipSync(packBytes));
+    const database = new DatabaseSync(sqlitePath);
+    try {
+      database.prepare(`UPDATE route_service_station_catalog_evidence SET station_catalog_pack_id = ?
+        WHERE service_class = 'ITX_CHEONGCHUN'`).run("forged-station-catalog");
+    } finally { database.close(); }
+    const candidateSqlite = await readFile(sqlitePath);
+    const candidatePackBytes = gzipSync(candidateSqlite, { level: 9, mtime: 0 });
+    const candidateEvidence = structuredClone(evidence);
+    candidateEvidence.routeServiceEvidence.stationCatalogEvidence.stationCatalogPackId =
+      "forged-station-catalog";
+    candidateEvidence.pack.outputSha256 = sha256(candidatePackBytes);
+    candidateEvidence.pack.outputSqliteSha256 = sha256(candidateSqlite);
+    candidateEvidence.pack.byteSize = candidatePackBytes.length;
+    candidateEvidence.pack.byteSizeDelta = candidatePackBytes.length - candidateEvidence.pack.inputByteSize;
+    const candidateIndex = structuredClone(index);
+    Object.assign(candidateIndex.packs.find(({ id }) => id === "capital"), {
+      sha256: sha256(candidatePackBytes), sqliteSha256: sha256(candidateSqlite), byteSize: candidatePackBytes.length,
+    });
+    const candidatePack = path.join(check, "capital.sqlite.gz");
+    const candidateIndexPath = path.join(check, "index.json");
+    const candidateEvidencePath = path.join(check, "evidence.json");
+    await Promise.all([
+      writeFile(candidatePack, candidatePackBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
+      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
+    ]);
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
+      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
+    ], { cwd: root }), /migrated v19 evidence or index is stale/);
+  });
   await context.test("explicit check rejects a non-capital pack identity", async () => {
     const check = path.join(directory, "check-pack-id");
     await mkdir(check);
@@ -594,7 +608,7 @@ test("immutable v18 output은 explicit migration으로만 v19 two-domain evidenc
   ]) {
     await context.test(`explicit check rejects ${name} semantic tamper`, async () => {
       const check = path.join(directory, `check-${name.replaceAll(" ", "-")}`);
-      await (await import("node:fs/promises")).mkdir(check);
+      await mkdir(check);
       const candidateEvidence = JSON.parse(evidenceBytes);
       const candidateIndex = JSON.parse(indexBytes);
       mutateEvidence?.(candidateEvidence); mutateIndex?.(candidateIndex);

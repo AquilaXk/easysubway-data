@@ -29,7 +29,8 @@ function fixtureStep(workflow) {
     assert.match(stage, /git -C \.external\/mobile rev-parse HEAD/);
     assert.match(stage, new RegExp(mobileRevision));
     assert.ok(
-      yml.indexOf("Stage pinned Mobile fixture") > yml.indexOf("Checkout repository"),
+      yml.indexOf("Checkout repository") < yml.indexOf("Checkout pinned Mobile fixture")
+        && yml.indexOf("Checkout pinned Mobile fixture") < yml.indexOf("Stage pinned Mobile fixture"),
       `${workflow}: fixture checkout은 Data checkout 뒤여야 함`,
     );
   });
@@ -45,12 +46,14 @@ function fixtureStep(workflow) {
     assert.match(stage, /-L "\$\{capital_gzip\}"/);
     assert.match(stage, new RegExp(capitalGzipSha256));
     assert.match(stage, /test ! -e apps\/mobile/);
+    assert.match(stage, /test ! -L apps\/mobile/);
+    assert.match(stage, /\[\[ "\$\{actual_sha256\}" == "\$\{expected_sha256\}" \]\]/);
     assert.match(stage, /if \[\[ -e apps \|\| -L apps \]\]; then/);
     assert.match(stage, /\[\[ -d apps && ! -L apps \]\]/);
     assert.match(stage, /else\s+mkdir apps\s+fi/);
     assert.match(stage, /mv "\$\{source\}" apps\/mobile/);
     assert.ok(
-      stage.indexOf(capitalGzipSha256) < stage.indexOf("mv "),
+      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("mv "),
       `${workflow}: digest 검증은 destination stage보다 앞서야 함`,
     );
     assert.ok(

@@ -1,17 +1,19 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
+import {
+  PINNED_MOBILE_REVISION as revision,
+  resolveImmutableMobileRepository,
+} from "./lib/immutable-mobile-test-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const mobile = path.resolve(root, "../easysubway-mobile");
-const revision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
 const gzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 const catalogPackId = "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1";
 
@@ -23,8 +25,9 @@ test("exact d857 bundled pack station projection은 deterministic catalog artifa
   const pack = path.join(temp, "capital.sqlite.gz");
   const outputA = path.join(temp, "a");
   const outputB = path.join(temp, "b");
+  const mobile = await resolveImmutableMobileRepository();
   const { stdout } = await execFileAsync("git", ["-C", mobile, "show", `${revision}:apps/mobile/assets/datapacks/capital.sqlite.gz`], { encoding: "buffer", maxBuffer: 4 * 1024 * 1024 });
-  await (await import("node:fs/promises")).writeFile(pack, stdout);
+  await writeFile(pack, stdout);
   assert.equal(sha(stdout), gzipSha256);
   for (const output of [outputA, outputB]) await execFileAsync(process.execPath, [
     "tools/datapack/emit-station-catalog-from-bundled-pack.mjs", "--input", pack,

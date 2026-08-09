@@ -13,6 +13,8 @@ const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
 const EXPECTED_EDGE_COUNT = 48;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
+const CURRENT_V18_STATION_CATALOG_PACK_ID =
+  "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1";
 const CURRENT_V18_MIGRATION_INPUT = Object.freeze({
   id: "capital",
   sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
@@ -565,7 +567,6 @@ async function writeMigrationOutputs(outputs) {
     await Promise.all(staged.map(async ({ file, backup, original }) => {
       const backupExists = await lstat(backup).then(() => true).catch(() => false);
       if (backupExists) {
-        await rm(file, { force: true });
         await rename(backup, file);
       } else if (committed > 0) {
         await writeFile(file, original);
@@ -573,9 +574,7 @@ async function writeMigrationOutputs(outputs) {
     }));
     throw error;
   } finally {
-    await Promise.all(staged.flatMap(({ temporary, backup }) => [
-      rm(temporary, { force: true }), rm(backup, { force: true }),
-    ]));
+    await Promise.all(staged.map(({ temporary }) => rm(temporary, { force: true })));
   }
 }
 
@@ -595,7 +594,7 @@ async function verifiedCurrentV18StationCatalog(packPath, artifactPath) {
   const manifest = JSON.parse(actual[0].value);
   if (!hasExactKeys(manifest, ["manifestVersion", "artifactKind", "catalogPackId", "stationSetSha256", "payloadSha256"])
     || manifest.manifestVersion !== 1 || manifest.artifactKind !== "station-catalog-pack"
-    || manifest.catalogPackId !== "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1"
+    || manifest.catalogPackId !== CURRENT_V18_STATION_CATALOG_PACK_ID
     || ![manifest.stationSetSha256, manifest.payloadSha256].every((value) => /^[a-f0-9]{64}$/.test(value ?? ""))) {
     throw new Error("ITX topology station catalog manifest is not exact");
   }
@@ -864,7 +863,7 @@ function routeServiceEvidenceLayout(database) {
     "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)", "CHECK (fresh_until IS NOT NULL)",
     "CHECK (source_issue IN (2116, 2135))",
   ]);
-  const legacyV18Artifact = !stationExists && tableHasExactLayout(database,
+  const legacyV18Artifact = !artifactCurrent && !stationExists && tableHasExactLayout(database,
     "route_service_artifact_evidence", ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT, [
       "CHECK (service_class = 'ITX_CHEONGCHUN')",
       "CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*')",
@@ -1171,6 +1170,8 @@ async function checkMigratedCurrentV18({ packPath, indexPath, evidencePath }) {
     || evidence.routeServiceEvidence?.artifactEvidence?.timetableArtifactId !== evidence.sourceArtifact.id
     || evidence.routeServiceEvidence?.artifactEvidence?.timetableArtifactSha256 !== evidence.sourceArtifact.sha256
     || evidence.routeServiceEvidence?.artifactEvidence?.freshUntil !== evidence.sourceArtifact.freshUntil
+    || evidence.routeServiceEvidence?.stationCatalogEvidence?.stationCatalogPackId
+      !== CURRENT_V18_STATION_CATALOG_PACK_ID
     || evidence.topology?.stationMembershipCount !== topology.stations.length
     || evidence.topology?.servedStationCount !== topology.servedStations.length
     || evidence.topology?.edgeCount !== topology.edges.length
