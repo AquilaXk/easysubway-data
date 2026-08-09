@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 import { probeDaejeonCoverageApi } from "./probe-daejeon-coverage-api.mjs";
 
@@ -17,7 +18,7 @@ export async function collectDaejeonRouteTopology({
   fetchImpl = fetch,
   now = new Date(),
 } = {}) {
-  const key = requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY");
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   const rows = [];
   for (let index = 0; index < DAEJEON_LINE1_STATION_NUMBERS.length - 1; index += 1) {
     const left = DAEJEON_LINE1_STATION_NUMBERS[index];

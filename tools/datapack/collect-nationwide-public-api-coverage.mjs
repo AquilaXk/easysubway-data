@@ -22,6 +22,7 @@ import { pathToFileURL } from "node:url";
 
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const PUBLIC_API_ORIGINS = new Set([
   "https://api.odcloud.kr",
@@ -466,10 +467,10 @@ function candidateAppliesToScope(coverageScope, targetScope) {
 }
 
 async function runQuery(query, credentials, fetchImpl, requestCache) {
-  const credential = decodedCredential(
-    requiredString(credentials[query.credentialEnv], query.credentialEnv),
-    query.credentialEnv,
-  );
+  const rawCredential = requiredString(credentials[query.credentialEnv], query.credentialEnv);
+  const credential = query.credentialEnv === "DATA_GO_KR_SERVICE_KEY"
+    ? normalizeDataGoKrServiceKey(rawCredential)
+    : rawCredential;
   const url = new URL(query.endpoint);
   if (query.method !== "POST") {
     for (const [name, value] of Object.entries(query.query)) url.searchParams.set(name, String(value));
@@ -632,15 +633,6 @@ function decodeXml(value) {
     .replaceAll("&apos;", "'")
     .replaceAll("&amp;", "&")
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
-}
-
-function decodedCredential(value, credentialEnv) {
-  if (credentialEnv !== "DATA_GO_KR_SERVICE_KEY" || !/%[0-9a-f]{2}/i.test(value)) return value;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 function parseXml(raw) {

@@ -6,6 +6,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const BASE = "https://apis.data.go.kr/1613000/TrainInfo";
 const DETAIL_URL = "https://www.data.go.kr/data/15098552/openapi.do";
@@ -292,7 +293,7 @@ export async function collectTagoItxCheongchunRoster({
   requestBudget = { limit: TAGO_DAILY_REQUEST_LIMIT, remaining: TAGO_DAILY_REQUEST_LIMIT },
   waitImpl = wait,
 } = {}) {
-  const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!["7", "8", "9"].includes(kricServiceDayCode)) throw new Error("kricServiceDayCode must be 7, 8, or 9");
   validateServiceDay(serviceDate, kricServiceDayCode);
   if (!Array.isArray(canonicalStations) || canonicalStations.length < 2) throw new Error("canonicalStations must contain at least 2 stations");
@@ -480,7 +481,7 @@ export async function collectTagoItxCheongchunOd({
   fetchImpl = fetch,
   now = new Date(),
 } = {}) {
-  const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate ?? "")) throw new Error("departureDate must be YYYY-MM-DD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) {
     throw new Error("kricServiceDayCode must be 7, 8, or 9");
@@ -780,11 +781,6 @@ function tagoOdFailure(error) {
     }
   }
   return { reasonCode: "PROVIDER_OR_SCHEMA_FAILURE", failureContext: "operation=GetStrtpntAlocFndTrainInfo" };
-}
-
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 function reconstructionFailureSummary(error, itineraries) {

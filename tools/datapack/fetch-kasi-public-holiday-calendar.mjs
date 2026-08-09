@@ -1,3 +1,5 @@
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
 
 export async function fetchKasiPublicHolidayCalendar({
@@ -17,7 +19,7 @@ export async function fetchKasiPublicHolidayCalendar({
   const holidays = new Set();
   for (const month of requestedMonths) {
     const url = new URL(ENDPOINT);
-    url.searchParams.set("ServiceKey", decodedServiceKey(serviceKey));
+    url.searchParams.set("ServiceKey", normalizeDataGoKrServiceKey(serviceKey));
     url.searchParams.set("pageNo", "1");
     url.searchParams.set("numOfRows", "100");
     url.searchParams.set("solYear", String(year));
@@ -87,9 +89,5 @@ function nonnegativeInteger(value) {
 }
 
 function decodeXml(value) { return value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"); }
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try { return decodeURIComponent(value); } catch { return value; }
-}
 function safeStatus(value) { return Number.isInteger(value) && value >= 100 && value <= 599 ? value : "UNKNOWN"; }
 function safeToken(value) { return /^[A-Za-z0-9._-]{1,32}$/.test(value ?? "") ? value : "UNKNOWN"; }

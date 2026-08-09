@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const REQUIRED_FIELDS = [
   "subwayRouteId",
@@ -268,7 +269,7 @@ function buildTagoScheduleCollectionSummary(collection) {
 }
 
 async function collectTagoSchedules(input, options = {}) {
-  const serviceKey = requiredString(options.serviceKey, "serviceKey");
+  const serviceKey = normalizeDataGoKrServiceKey(options.serviceKey);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") {
     throw new TypeError("fetch is required for TAGO schedule collection");
@@ -329,7 +330,7 @@ async function collectTagoSchedules(input, options = {}) {
 }
 
 async function collectTagoStationDiscovery(input, options = {}) {
-  const serviceKey = requiredString(options.serviceKey, "serviceKey");
+  const serviceKey = normalizeDataGoKrServiceKey(options.serviceKey);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") {
     throw new TypeError("fetch is required for TAGO station discovery");

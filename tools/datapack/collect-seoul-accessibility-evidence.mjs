@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const SOURCES = {
   accessibility: {
@@ -207,6 +208,7 @@ export async function collectSeoulAccessibility({
   if (endpointUrl.protocol !== "https:") {
     throw new Error("HTTPS endpoint is required");
   }
+  const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   const collected = [];
   const rawPages = [];
   const rowIdentities = new Set();
@@ -215,7 +217,7 @@ export async function collectSeoulAccessibility({
   let totalCount;
   while (totalCount === undefined || receivedCount < totalCount) {
     const url = new URL(endpointUrl);
-    url.searchParams.set("serviceKey", serviceKey);
+    url.searchParams.set("serviceKey", normalizedServiceKey);
     url.searchParams.set("pageNo", String(pageNo));
     url.searchParams.set("numOfRows", "1000");
     url.searchParams.set("dataType", "JSON");

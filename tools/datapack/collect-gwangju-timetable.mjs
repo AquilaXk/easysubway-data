@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const SOURCE_ID = "gwangju-transportation-timetable";
 const ENDPOINT = "https://apis.data.go.kr/B551232/grtcTimetable/timetable";
@@ -21,7 +22,7 @@ export async function collectGwangjuTimetable({
   concurrency = 4,
 } = {}) {
   const capturedAt = validDate(now, "now");
-  const key = decodedServiceKey(requiredText(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   const first = await collectPage({ pageNo: 1, key, fetchImpl, sleepImpl });
   const pageCount = Math.ceil(first.totalCount / first.numOfRows);
@@ -213,11 +214,6 @@ function decodeEntities(value) {
   return value.replace(/&(amp|lt|gt|quot|apos);/g, (_, entity) => ({
     amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
   })[entity]);
-}
-
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 function validDate(value, label) {
