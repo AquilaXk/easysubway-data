@@ -16,9 +16,31 @@ import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
-const execFileAsync = promisify(execFile);
+const execFileAsyncRaw = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "seoul-metro-accessibility";
+const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
+
+const execFileAsync = async (file, args, options) => {
+  if (file !== process.execPath || args[0] !== "tools/datapack/import-official-sources.mjs") {
+    return execFileAsyncRaw(file, args, options);
+  }
+  const inventoryIndex = args.indexOf("--inventory");
+  const inputIndex = args.indexOf("--input");
+  const outputIndex = args.indexOf("--output");
+  if (inventoryIndex < 0 || inputIndex < 0 || outputIndex < 0) return execFileAsyncRaw(file, args, options);
+  const input = JSON.parse(await readFile(args[inputIndex + 1], "utf8"));
+  if (!input.sourceIds?.includes(TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) {
+    return execFileAsyncRaw(file, args, options);
+  }
+  const resolvedInventoryPath = await testOnlyInventoryPath(
+    path.dirname(args[outputIndex + 1]),
+    input,
+    args[inventoryIndex + 1],
+  );
+  const resolvedArgs = [...args];
+  resolvedArgs[inventoryIndex + 1] = resolvedInventoryPath;
+  return execFileAsyncRaw(file, resolvedArgs, options);
+};
 
 test("official snapshot admission validates exact non-production raw binding", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-official-snapshot-admission-"));
@@ -9771,7 +9793,7 @@ test("전국 coverage gap report는 allow-gaps 모드에서 감사 가능한 rep
       "--targets",
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      path.join(outputDir, "test-only-source-inventory.json"),
       "--output",
       reportPath,
       "--allow-gaps",
@@ -13313,7 +13335,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       ],
       { cwd: root },
     ),
-    /production facility evidence missing: station-sadang:seoul-4:ELEVATOR/,
+    /selected production source has no row provenance: test-only-capital-accessibility-fixture/,
   );
 
   const missingWheelchairLiftEvidenceInputPath = path.join(
@@ -13444,7 +13466,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       "--targets",
       "tools/datapack/capital-pilot-coverage-targets.json",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      path.join(outputDir, "test-only-source-inventory.json"),
       "--manifest",
       path.join(packOutputDir, "current.json"),
       "--provenance",
@@ -13582,7 +13604,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       "--targets",
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      path.join(outputDir, "test-only-source-inventory.json"),
       "--manifest",
       path.join(packOutputDir, "current.json"),
       "--provenance",
@@ -15545,12 +15567,13 @@ async function importOfficialSourceInput(outputDir, input, inventoryPath = "tool
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const resolvedInventoryPath = await testOnlyInventoryPath(outputDir, input, inventoryPath);
   await execFileAsync(
     process.execPath,
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      inventoryPath,
+      resolvedInventoryPath,
       "--input",
       inputPath,
       "--output",
@@ -15559,6 +15582,38 @@ async function importOfficialSourceInput(outputDir, input, inventoryPath = "tool
     { cwd: root },
   );
   return JSON.parse(await readFile(outputPath, "utf8"));
+}
+
+async function testOnlyInventoryPath(outputDir, input, inventoryPath) {
+  if (!input.sourceIds?.includes(TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) return inventoryPath;
+  const inventory = JSON.parse(await readFile(
+    path.isAbsolute(inventoryPath) ? inventoryPath : path.join(root, inventoryPath),
+    "utf8",
+  ));
+  const baseline = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility");
+  assert.ok(baseline, "test-only accessibility fixture requires inventory schema baseline");
+  if (!inventory.sources.some(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) inventory.sources.push({
+    ...baseline,
+    id: TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
+    displayName: "테스트 전용 수도권 접근성 fixture",
+    owner: "테스트",
+    provider: "테스트",
+    providerDepartment: "테스트",
+    sourceSystem: "test-fixture",
+    datasetUrl: "https://example.invalid/test-only-capital-accessibility-fixture",
+    datasetKind: "fixture-only",
+    updateFrequency: "test-only",
+    observedDataUpdatedAt: "2026-07-28",
+    retrievedAt: "2026-07-28",
+    license: {
+      ...baseline.license,
+      attribution: "테스트 전용 fixture",
+      evidenceUrl: "https://example.invalid/test-only-capital-accessibility-fixture/license",
+    },
+  });
+  const testInventoryPath = path.join(outputDir, "test-only-source-inventory.json");
+  await writeFile(testInventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+  return testInventoryPath;
 }
 
 async function capitalPilotProductionSourceInput({ testOnly = false } = {}) {
@@ -15594,7 +15649,7 @@ function useAccessibilitySourceForAvailableEdge(input, edgeId) {
     ? TEST_PRODUCTION_ACCESSIBILITY_SOURCE
     : "kric-station-convenience-standard";
   edge.sourceSnapshotId = edge.sourceId === TEST_PRODUCTION_ACCESSIBILITY_SOURCE
-    ? "seoul-metro-accessibility-20260728"
+    ? "test-only-capital-accessibility-fixture-20260728"
     : "kric-station-convenience-standard-20260728T184503338Z";
 }
 
@@ -16089,16 +16144,16 @@ function makeProductionSourceFixtureStrictCoverageValid(fixture) {
   for (const edge of pack.networkEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType))) {
     edge.accessibilityStatus = "AVAILABLE";
     edge.sourceId = TEST_PRODUCTION_ACCESSIBILITY_SOURCE;
-    edge.sourceSnapshotId = "seoul-metro-accessibility-20260728";
-    edge.providerRecordHash = sha256(`provider:${edge.id}:seoul-metro-accessibility`);
-    edge.evidenceHash = sha256(`evidence:${edge.id}:seoul-metro-accessibility:2026-07-28T00:00:00.000Z`);
+    edge.sourceSnapshotId = "test-only-capital-accessibility-fixture-20260728";
+    edge.providerRecordHash = sha256(`provider:${edge.id}:test-only-capital-accessibility-fixture`);
+    edge.evidenceHash = sha256(`evidence:${edge.id}:test-only-capital-accessibility-fixture:2026-07-28T00:00:00.000Z`);
     edge.lastVerifiedAt = "2026-07-28T00:00:00.000Z";
   }
   for (const evidence of pack.stationFacilityEvidence) {
     evidence.sourceId = testAccessibilitySource.id;
-    evidence.sourceSnapshotId = "seoul-metro-accessibility-20260728";
-    evidence.providerRecordHash = sha256(`provider:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:seoul-metro-accessibility`);
-    evidence.evidenceHash = sha256(`evidence:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:seoul-metro-accessibility:2026-07-28T00:00:00.000Z`);
+    evidence.sourceSnapshotId = "test-only-capital-accessibility-fixture-20260728";
+    evidence.providerRecordHash = sha256(`provider:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:test-only-capital-accessibility-fixture`);
+    evidence.evidenceHash = sha256(`evidence:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:test-only-capital-accessibility-fixture:2026-07-28T00:00:00.000Z`);
     evidence.operationalStatus = "AVAILABLE";
     evidence.statusMeaning = "OPERATOR_CONFIRMED";
     evidence.strictRouteEligible = true;
@@ -16106,7 +16161,7 @@ function makeProductionSourceFixtureStrictCoverageValid(fixture) {
   }
   addApprovedMovementPathwayEvidence(pack, {
     sourceId: TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
-    sourceSnapshotId: "seoul-metro-accessibility-20260728",
+    sourceSnapshotId: "test-only-capital-accessibility-fixture-20260728",
     verifiedAt: "2026-07-28T00:00:00.000Z",
   });
 }

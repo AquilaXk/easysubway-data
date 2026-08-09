@@ -2,7 +2,8 @@ const ITX_REFERENCE = "ITX_";
 
 function rejectItxReference(value, path = "fixture") {
   if (typeof value === "string") {
-    if (value.startsWith(ITX_REFERENCE)) {
+    const token = value.toUpperCase();
+    if (token.startsWith(ITX_REFERENCE) || token.startsWith("ITX-")) {
       throw new Error(`${path} contains an unexpected ITX reference`);
     }
     return;

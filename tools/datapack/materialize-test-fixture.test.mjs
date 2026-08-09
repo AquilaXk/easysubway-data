@@ -48,3 +48,13 @@ test("regional projection fails closed when a current table or relationship refe
     /contains an unexpected ITX reference/,
   );
 });
+
+test("regional projection rejects lowercase ITX identifiers", () => {
+  const input = fixture();
+  input.packs[0].networkEdges.push({ id: "itx-edge", serviceClass: "URBAN_RAIL" });
+
+  assert.throws(
+    () => projectRegionalMaterializeFixture(input),
+    /contains an unexpected ITX reference/,
+  );
+});
