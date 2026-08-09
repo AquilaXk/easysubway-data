@@ -570,6 +570,51 @@ export function summarizeTrainDiagnosticArtifact(artifact) {
   };
 }
 
+export function summarizeOperationTrainDiagnosticArtifact(artifact) {
+  if (artifact?.artifactKind !== "kric-line4-timetable-operation-train-diagnostic"
+    || artifact.sourceId !== "kric-subway-timetable"
+    || artifact.operation !== "subwayTimetable"
+    || typeof artifact.lineId !== "string" || artifact.lineId.length === 0
+    || typeof artifact.trainNumber !== "string" || artifact.trainNumber.length === 0
+    || typeof artifact.collectedAt !== "string" || Number.isNaN(Date.parse(artifact.collectedAt))
+    || !Number.isInteger(artifact.requestCount) || artifact.requestCount < 1
+    || artifact.rawResponseInventory?.responseCount !== artifact.requestCount
+    || !Array.isArray(artifact.rows) || artifact.rows.length === 0
+    || artifact.rowCount !== artifact.rows.length
+    || artifact.rows.some((row) => !hasExactKeys(row, [
+      "arvTm",
+      "dayCd",
+      "dayNm",
+      "dptTm",
+      "lnCd",
+      "railOprIsttCd",
+      "stinCd",
+      "trnNo",
+    ]))) {
+    throw new Error("KRIC operation train diagnostic artifact identity is invalid");
+  }
+  return {
+    artifactKind: "kric-line4-timetable-operation-train-diagnostic-summary",
+    sourceId: artifact.sourceId,
+    operation: artifact.operation,
+    lineId: artifact.lineId,
+    trainNumber: artifact.trainNumber,
+    collectedAt: artifact.collectedAt,
+    requestCount: artifact.requestCount,
+    rowCount: artifact.rows.length,
+    rows: artifact.rows.map((row) => ({
+      railOprIsttCd: row.railOprIsttCd,
+      trnNo: row.trnNo,
+      dayCd: row.dayCd,
+      dayNm: row.dayNm,
+      stinCd: row.stinCd,
+      lnCd: row.lnCd,
+      arvTm: row.arvTm,
+      dptTm: row.dptTm,
+    })),
+  };
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -642,7 +687,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args["inspect-train-diagnostic"]) {
     const artifact = JSON.parse(await readFile(args["inspect-train-diagnostic"], "utf8"));
-    process.stdout.write(`${JSON.stringify(summarizeTrainDiagnosticArtifact(artifact), null, 2)}\n`);
+    const summary = artifact?.artifactKind === "kric-line4-timetable-operation-train-diagnostic"
+      ? summarizeOperationTrainDiagnosticArtifact(artifact)
+      : summarizeTrainDiagnosticArtifact(artifact);
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     return;
   }
   const roster = JSON.parse(await readFile(args.roster, "utf8"));

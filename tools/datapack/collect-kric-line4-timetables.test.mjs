@@ -17,6 +17,7 @@ import {
   filterRowsByTrainNumbers,
   redactKricCredential,
   selectServicePatternProbeRequest,
+  summarizeOperationTrainDiagnosticArtifact,
   summarizeTrainDiagnosticArtifact,
   validateServicePatternEvidence,
   validateTimetableNoDataEvidence,
@@ -351,6 +352,17 @@ test("기본 operation 비교 진단은 K4422 provider station/time과 complete 
   assert.equal(artifact.trainNumber, "4422");
   assert.equal(artifact.rawResponseInventory.responseCount, 2);
   assert.deepEqual(artifact.rows, [providerRows[0], providerRows[2]]);
+  assert.deepEqual(summarizeOperationTrainDiagnosticArtifact(artifact), {
+    artifactKind: "kric-line4-timetable-operation-train-diagnostic-summary",
+    sourceId: "kric-subway-timetable",
+    operation: "subwayTimetable",
+    lineId: "seoul-4",
+    trainNumber: "4422",
+    collectedAt: "2026-08-09T12:00:00.000Z",
+    requestCount: 2,
+    rowCount: 2,
+    rows: [providerRows[0], providerRows[2]],
+  });
   assert.throws(
     () => buildOperationTrainDiagnosticArtifact({
       operation: "subwayTimetable",
