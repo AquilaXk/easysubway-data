@@ -52,6 +52,25 @@ const URL_FIELDS = Object.freeze([
   ["operation.sampleUrl", (candidate) => candidate.operation?.sampleUrl],
 ]);
 
+const DATA_GO_FOCUSED_TESTS = Object.freeze({
+  "tools/datapack/collect-busan-accessibility.mjs": "tools/datapack/collect-busan-accessibility.test.mjs",
+  "tools/datapack/collect-busan-route-topology.mjs": "tools/datapack/collect-busan-route-topology.test.mjs",
+  "tools/datapack/collect-busan-timetable.mjs": "tools/datapack/collect-busan-timetable.test.mjs",
+  "tools/datapack/collect-daejeon-route-topology.mjs": "tools/datapack/collect-daejeon-route-topology.test.mjs",
+  "tools/datapack/collect-datago-source-candidate-evidence.mjs": "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
+  "tools/datapack/collect-gwangju-timetable.mjs": "tools/datapack/collect-gwangju-timetable.test.mjs",
+  "tools/datapack/collect-korail-itx-cheongchun-timetable.mjs": "tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs",
+  "tools/datapack/collect-nationwide-public-api-coverage.mjs": "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
+  "tools/datapack/collect-seoul-accessibility-evidence.mjs": "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+  "tools/datapack/collect-tago-itx-cheongchun-od.mjs": "tools/datapack/collect-tago-itx-cheongchun-od.test.mjs",
+  "tools/datapack/fetch-kasi-public-holiday-calendar.mjs": "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
+  "tools/datapack/probe-daejeon-coverage-api.mjs": "tools/datapack/probe-daejeon-coverage-api.test.mjs",
+  "tools/datapack/probe-korail-train-operation-api.mjs": "tools/datapack/probe-korail-train-operation-api.test.mjs",
+  "tools/datapack/probe-seoul-fare-api.mjs": "tools/datapack/probe-seoul-fare-api.test.mjs",
+  "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
+  "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
+});
+
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
 
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
@@ -305,7 +324,7 @@ test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카
   assert.deepEqual(unobserved, [], "credentialSignalResultCodes must come from recorded AUTHORIZATION_REQUIRED observations");
 });
 
-test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validation 계약 누락을 숨기지 않는다", async () => {
+test("DATA_GO_KR_SERVICE_KEY runner는 공통 deterministic credential-validation 계약을 구현한다", async () => {
   const coverage = document.credentialBearingProviderCoverage;
   assert.ok(Array.isArray(coverage), "credentialBearingProviderCoverage must be an array");
   assert.equal(coverage.length, 1, "DATA_GO_KR_SERVICE_KEY coverage must have one provider entry");
@@ -314,7 +333,6 @@ test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validatio
   assert.deepEqual(Object.keys(dataGoKr).sort(), [
     "credentialEnv",
     "implementationStatus",
-    "missingContracts",
     "providerId",
     "reason",
     "requiredClassification",
@@ -323,11 +341,10 @@ test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validatio
   assert.equal(dataGoKr.providerId, "data-go-kr");
   assert.equal(dataGoKr.credentialEnv, "DATA_GO_KR_SERVICE_KEY");
   assert.equal(dataGoKr.requiredClassification, "DETERMINISTIC_CREDENTIAL_VALIDATION_ONLY");
-  assert.equal(dataGoKr.implementationStatus, "MISSING");
-  assert.deepEqual(dataGoKr.missingContracts, ["shared-deterministic-credential-validation"]);
+  assert.equal(dataGoKr.implementationStatus, "IMPLEMENTED");
   assert.equal(
     dataGoKr.reason,
-    "current runners only load or decode DATA_GO_KR_SERVICE_KEY and do not share deterministic validation evidence",
+    "all current runners validate DATA_GO_KR_SERVICE_KEY through the shared deterministic boundary before provider calls",
   );
 
   const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
@@ -336,11 +353,93 @@ test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validatio
     if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
     const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
     const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
-    if (source.includes("DATA_GO_KR_SERVICE_KEY")) expectedRunners.push(runner);
+    if (!source.includes("DATA_GO_KR_SERVICE_KEY")) continue;
+    assert.match(source, /import\s*\{[^}]*\bnormalizeDataGoKrServiceKey\b[^}]*\}\s*from\s*["']\.\/lib\/provider-call-integrity\.mjs["']/s, `${runner} must import the shared normalizer`);
+    assert.match(source, /(?<!function\s)normalizeDataGoKrServiceKey\s*\(/, `${runner} must call the shared normalizer`);
+    expectedRunners.push(runner);
   }
   expectedRunners.sort();
 
   assert.deepEqual(dataGoKr.runners, expectedRunners);
   assert.equal(new Set(dataGoKr.runners).size, dataGoKr.runners.length, "runners must be unique");
   assert.deepEqual(dataGoKr.runners, [...dataGoKr.runners].sort(), "runners must be path-sorted");
+});
+
+test("모든 DATA_GO runner는 정확히 대응하는 focused test에서 malformed credential의 provider 호출 0회를 증명한다", async () => {
+  const [dataGoKr] = document.credentialBearingProviderCoverage;
+  const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
+  const discoveredRunners = [];
+  for (const file of files) {
+    if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
+    const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
+    const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
+    if (source.includes("DATA_GO_KR_SERVICE_KEY")) discoveredRunners.push(runner);
+  }
+  discoveredRunners.sort();
+
+  assert.deepEqual(Object.keys(DATA_GO_FOCUSED_TESTS).sort(), discoveredRunners);
+  assert.deepEqual(Object.keys(DATA_GO_FOCUSED_TESTS).sort(), dataGoKr.runners);
+  for (const [runner, focusedTest] of Object.entries(DATA_GO_FOCUSED_TESTS)) {
+    const testSource = await readFile(path.join(DATAPACK_DIRECTORY, path.basename(focusedTest)), "utf8");
+    assert.match(testSource, /invalid%ZZ/, `${focusedTest} must cover malformed DATA_GO_KR_SERVICE_KEY for ${runner}`);
+    assert.match(testSource, /assert\.equal\(calls, 0\)/, `${focusedTest} must prove provider/delegate calls stay at zero for ${runner}`);
+  }
+});
+
+test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate보다 먼저 preflight하고 matching focused test가 calls=0을 증명한다", async () => {
+  const orderingContracts = [
+    {
+      runner: "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+      test: "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
+      functionName: "collectDatagoSourceCandidateEvidence",
+      before: ["readFile(CANDIDATES_PATH", "resolveDatagoCandidateRequest(", "collectSourceCandidateEvidence("],
+    },
+    {
+      runner: "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+      test: "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+      functionName: "collectSeoulAccessibility",
+      before: ["new URL(endpoint)", "fetchImpl("],
+    },
+    {
+      runner: "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+      test: "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
+      functionName: "fetchKasiPublicHolidayCalendar",
+      before: ["new URL(ENDPOINT)", "fetchImpl("],
+    },
+    {
+      runner: "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+      test: "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
+      functionName: "collectNationwidePublicApiCoverage",
+      before: ["validatePlan(searchPlan)", "new Map()", "runQuery("],
+    },
+  ];
+  assert.deepEqual(
+    orderingContracts.map(({ runner }) => runner),
+    [
+      "tools/datapack/collect-datago-source-candidate-evidence.mjs",
+      "tools/datapack/collect-seoul-accessibility-evidence.mjs",
+      "tools/datapack/fetch-kasi-public-holiday-calendar.mjs",
+      "tools/datapack/collect-nationwide-public-api-coverage.mjs",
+    ],
+  );
+
+  for (const contract of orderingContracts) {
+    const [runnerSource, testSource] = await Promise.all([
+      readFile(path.join(DATAPACK_DIRECTORY, path.basename(contract.runner)), "utf8"),
+      readFile(path.join(DATAPACK_DIRECTORY, path.basename(contract.test)), "utf8"),
+    ]);
+    const functionStart = runnerSource.indexOf(`export async function ${contract.functionName}`);
+    assert.ok(functionStart >= 0, `${contract.runner} must export ${contract.functionName}`);
+    const functionEnd = runnerSource.indexOf("\n}\n", functionStart);
+    const body = runnerSource.slice(functionStart, functionEnd);
+    const normalizerIndex = body.indexOf("normalizeDataGoKrServiceKey(");
+    assert.ok(normalizerIndex >= 0, `${contract.runner} must preflight DATA_GO_KR_SERVICE_KEY`);
+    for (const operation of contract.before) {
+      const operationIndex = body.indexOf(operation);
+      assert.ok(operationIndex >= 0, `${contract.runner} must contain ${operation}`);
+      assert.ok(normalizerIndex < operationIndex, `${contract.runner} must preflight before ${operation}`);
+    }
+    assert.match(testSource, /invalid%ZZ/, `${contract.test} must exercise malformed percent encoding`);
+    assert.match(testSource, /assert\.equal\(calls, 0\)/, `${contract.test} must prove provider calls stay at zero`);
+  }
 });

@@ -3,6 +3,12 @@ import test from "node:test";
 
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
 
+test("KASI calendar는 유효한 year·months에서 malformed credential을 request URL·provider 호출 전에 거부한다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "invalid%ZZ", year: 2026, months: [7], fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 const holidayXml = (items, totalCount = items.length) => `<?xml version="1.0" encoding="UTF-8"?>
 <response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday }) => `<item><locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
 

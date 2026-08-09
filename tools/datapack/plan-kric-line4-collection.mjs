@@ -10,6 +10,7 @@ const DAY_CODES = ["8", "7", "9"]; // 평일/토/휴일
 // (급행 표시). 따라서 이 endpoint 하나만 수집하면 일반·급행이 한 번에 잡히고 중복이 없다.
 const COLLECTION_OPERATION = "subwayTimetableExp";
 const OPERATION_SERVICE = Object.freeze({
+  subwayTimetable: "trainUseInfo",
   subwayTimetableExp: "trainUseInfo",
   stationTimetable: "convenientInfo",
 });

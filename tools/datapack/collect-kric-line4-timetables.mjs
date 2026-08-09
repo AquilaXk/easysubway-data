@@ -5,15 +5,18 @@
 //
 // 실행: KRIC_SERVICE_KEY=... node collect-kric-line4-timetables.mjs \
 //         --roster tools/datapack/sources/kric-line4-route-roster-20260706.json \
-//         --line-id seoul-4 --output <out.json> [--day-cds 8,7,9] [--no-express]
+//         --line-id seoul-4 --service-pattern-evidence <evidence.json> \
+//         --output <out.json> [--day-cds 8,7,9] [--no-express]
 //
 // serviceKey는 URL 로그·산출물에 남기지 않는다(#1397 공통 규칙).
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { buildKricLine4CollectionPlan } from "./plan-kric-line4-collection.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { cleanupPackDir, openPack } from "../route-map/pack-io.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SERVICE_ID_BY_DAY_CD = { "8": "weekday-kric", "7": "saturday-kric", "9": "holiday-kric" };
 
@@ -32,6 +35,14 @@ export function buildCollectionContext(roster, lineId, fixture = null, servicePa
     lineIdByProviderLine[`${station.railOprIsttCd}|${roster.lnCd}`] = lineId;
     lineSequenceByStationLine[`${stationId}|${lineId}`] = canonicalStation?.lineSequence ?? station.stinConsOrdr;
   }
+  const pilotEndpointStationIds = lineId === "seoul-4"
+    ? ["433", "448"].map((stationCode) => {
+      const matches = roster.stations.filter(({ stinCd }) => stinCd === stationCode);
+      if (matches.length !== 1) throw new Error(`KRIC pilot endpoint station is not unique: ${stationCode}`);
+      const station = matches[0];
+      return stationIdByProviderStation[`${station.railOprIsttCd}|${roster.lnCd}|${station.stinCd}`];
+    })
+    : [];
   return {
     stationIdByProviderStation,
     lineIdByProviderLine,
@@ -39,6 +50,7 @@ export function buildCollectionContext(roster, lineId, fixture = null, servicePa
     routeIdByLineDirection: { [`${lineId}|up`]: `route-${lineId}-up`, [`${lineId}|down`]: `route-${lineId}-down` },
     serviceIdByDayCd: SERVICE_ID_BY_DAY_CD,
     servicePatternByExptCd: requireServicePatternMapping(servicePatternByExptCd),
+    pilotEndpointStationIds,
   };
 }
 
@@ -149,6 +161,549 @@ export function validateKricTimetablePayload(payload) {
   return payload.body;
 }
 
+export function buildServicePatternObservation(request, rawResponse, rows) {
+  if (request?.operation !== "subwayTimetableExp") {
+    throw new Error("service-pattern probe requires subwayTimetableExp");
+  }
+  const params = request.params ?? {};
+  for (const field of ["railOprIsttCd", "dayCd", "lnCd", "stinCd"]) {
+    if (typeof params[field] !== "string" || params[field].length === 0) {
+      throw new Error(`service-pattern probe request.${field} is required`);
+    }
+  }
+  const expectedRequestKey = [
+    request.operation,
+    params.railOprIsttCd,
+    params.stinCd,
+    params.dayCd,
+  ].join("|");
+  if (request.requestKey !== expectedRequestKey) {
+    throw new Error("service-pattern probe requestKey does not match request params");
+  }
+  if (typeof rawResponse !== "string" || rawResponse.length === 0) {
+    throw new Error("service-pattern probe raw response is required");
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("service-pattern probe response rows must be non-empty");
+  }
+
+  const counts = new Map();
+  for (const row of rows) {
+    if (!Object.hasOwn(row ?? {}, "exptCd")) {
+      throw new Error("service-pattern probe response row exptCd is required");
+    }
+    if (row.exptCd !== null && typeof row.exptCd !== "string") {
+      throw new Error("service-pattern probe response row exptCd must be a string or null");
+    }
+    const key = JSON.stringify(row.exptCd);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const observedExptCd = [...counts]
+    .map(([key, count]) => ({ value: JSON.parse(key), count }))
+    .sort((left, right) => {
+      if (left.value === null) return right.value === null ? 0 : -1;
+      if (right.value === null) return 1;
+      return left.value < right.value ? -1 : left.value > right.value ? 1 : 0;
+    });
+
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-subway-timetable-service-pattern-observation",
+    sourceId: "kric-subway-timetable",
+    operation: request.operation,
+    request: {
+      requestKey: request.requestKey,
+      railOprIsttCd: params.railOprIsttCd,
+      dayCd: params.dayCd,
+      lnCd: params.lnCd,
+      stinCd: params.stinCd,
+    },
+    response: {
+      rawSha256: createHash("sha256").update(rawResponse).digest("hex"),
+      rowCount: rows.length,
+      observedExptCd,
+    },
+  };
+}
+
+export function selectServicePatternProbeRequest(plan, requestKey) {
+  const matches = (plan?.requests ?? []).filter((request) => request.requestKey === requestKey);
+  if (matches.length !== 1) {
+    throw new Error("service-pattern probe request key must match exactly one tracked request");
+  }
+  return matches[0];
+}
+
+export function buildTimetableNoDataObservation(request, rawResponse, payload) {
+  if (request?.operation !== "subwayTimetableExp" || request?.params?.dayCd !== "7") {
+    throw new Error("timetable no-data probe requires subwayTimetableExp dayCd=7");
+  }
+  const params = request.params;
+  const expectedRequestKey = [
+    request.operation,
+    params.railOprIsttCd,
+    params.stinCd,
+    params.dayCd,
+  ].join("|");
+  if (request.requestKey !== expectedRequestKey) {
+    throw new Error("timetable no-data probe requestKey does not match request params");
+  }
+  if (typeof rawResponse !== "string" || rawResponse.length === 0) {
+    throw new Error("timetable no-data probe raw response is required");
+  }
+  const resultCode = payload?.header?.resultCode;
+  const resultMsg = payload?.header?.resultMsg;
+  if (resultCode !== "03" || typeof resultMsg !== "string" || resultMsg.trim() === "") {
+    throw new Error("timetable no-data probe requires provider resultCode 03 and message");
+  }
+  const body = payload?.body;
+  if (body != null && (!Array.isArray(body) || body.length !== 0)) {
+    throw new Error("timetable no-data probe body must be empty");
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-subway-timetable-no-data-observation",
+    sourceId: "kric-subway-timetable",
+    operation: request.operation,
+    request: {
+      requestKey: request.requestKey,
+      railOprIsttCd: params.railOprIsttCd,
+      dayCd: params.dayCd,
+      lnCd: params.lnCd,
+      stinCd: params.stinCd,
+    },
+    response: {
+      rawSha256: createHash("sha256").update(rawResponse).digest("hex"),
+      resultCode,
+      resultMsg,
+      bodyRowCount: Array.isArray(body) ? body.length : 0,
+    },
+  };
+}
+
+export function validateServicePatternEvidence(evidence) {
+  const expectedTopKeys = [
+    "artifactKind",
+    "mapping",
+    "officialDocumentationUrl",
+    "operation",
+    "probe",
+    "providerResultCode",
+    "schemaVersion",
+    "sourceId",
+    "sourceIssue",
+  ];
+  if (!hasExactKeys(evidence, expectedTopKeys)
+    || evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "kric-subway-timetable-service-pattern-evidence"
+    || evidence.sourceIssue !== 28
+    || evidence.sourceId !== "kric-subway-timetable"
+    || evidence.officialDocumentationUrl !== "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp"
+    || evidence.operation !== "subwayTimetableExp"
+    || evidence.providerResultCode !== "00") {
+    throw new Error("service-pattern evidence identity is invalid");
+  }
+
+  const probe = evidence.probe;
+  if (!hasExactKeys(probe, ["observedExptCd", "rawSha256", "requestKey", "rowCount"])
+    || probe.requestKey !== "subwayTimetableExp|S1|433|8"
+    || probe.rawSha256 !== "7a930f324ceb68dfc99f8543da5b442489355b743987235c031aafdedbd202fc"
+    || probe.rowCount !== 473
+    || JSON.stringify(probe.observedExptCd) !== JSON.stringify([
+      { value: null, count: 466 },
+      { value: "1", count: 7 },
+    ])) {
+    throw new Error("service-pattern evidence probe identity is invalid");
+  }
+
+  if (JSON.stringify(evidence.mapping) !== JSON.stringify([
+    { exptCd: null, servicePattern: "LOCAL" },
+    { exptCd: "1", servicePattern: "EXPRESS" },
+  ])) {
+    throw new Error("service-pattern evidence closed mapping is invalid");
+  }
+  return new Map(evidence.mapping.map(({ exptCd, servicePattern }) => [exptCd, servicePattern]));
+}
+
+export function validateTimetableNoDataEvidence(evidence) {
+  if (!hasExactKeys(evidence, [
+    "artifactKind",
+    "classification",
+    "officialDocumentationUrl",
+    "operation",
+    "probe",
+    "schemaVersion",
+    "sourceId",
+    "sourceIssue",
+  ])
+    || evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "kric-subway-timetable-no-data-evidence"
+    || evidence.sourceIssue !== 28
+    || evidence.sourceId !== "kric-subway-timetable"
+    || evidence.officialDocumentationUrl !== "https://data.kric.go.kr/rips/M_01_02/detail.do?id=434&service=trainUseInfo&operation=subwayTimetableExp"
+    || evidence.operation !== "subwayTimetableExp"
+    || JSON.stringify(evidence.probe) !== JSON.stringify({
+      requestKey: "subwayTimetableExp|S1|433|7",
+      rawSha256: "826aedce696396835866fce27ff5f4770ef2a24e9aab1247556a7952972cde14",
+      resultCode: "03",
+      resultMsg: "데이터가 없습니다.",
+      bodyRowCount: 0,
+    })
+    || JSON.stringify(evidence.classification) !== JSON.stringify({
+      state: "EXPECTED_NO_DATA_SATURDAY",
+      expectedDayCd: "7",
+      expectedRequestCount: 51,
+      calendarServiceId: "holiday-kric",
+      productionCoverageClaim: false,
+    })) {
+    throw new Error("timetable no-data evidence identity is invalid");
+  }
+  return evidence;
+}
+
+export function classifyKricTimetablePayload(payload, request, noDataEvidence) {
+  const code = payload?.header?.resultCode;
+  if (code === "00") {
+    if (!Array.isArray(payload.body) || payload.body.length === 0) {
+      throw new Error("KRIC timetable success body must be a non-empty array");
+    }
+    return { classification: "ROWS", rows: payload.body };
+  }
+  if (code === "03"
+    && request?.params?.dayCd === noDataEvidence?.classification?.expectedDayCd
+    && payload?.header?.resultMsg === noDataEvidence?.probe?.resultMsg
+    && (payload.body == null || (Array.isArray(payload.body) && payload.body.length === 0))) {
+    return { classification: noDataEvidence.classification.state, rows: [] };
+  }
+  const safeCode = /^[A-Za-z0-9._-]{1,32}$/.test(String(code ?? "")) ? code : "UNKNOWN";
+  throw new Error(`KRIC timetable provider resultCode ${safeCode}`);
+}
+
+export function assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence) {
+  const expected = (plan?.requests ?? [])
+    .filter((request) => request?.params?.dayCd === noDataEvidence?.classification?.expectedDayCd)
+    .map(({ requestKey }) => requestKey);
+  const observed = (perRequest ?? [])
+    .filter(({ classification }) => classification === noDataEvidence?.classification?.state)
+    .map(({ requestKey, resultCode, rows, normalized }) => ({ requestKey, resultCode, rows, normalized }));
+  if (expected.length !== noDataEvidence?.classification?.expectedRequestCount
+    || observed.length !== expected.length
+    || observed.some((entry, index) => entry.requestKey !== expected[index]
+      || entry.resultCode !== "03" || entry.rows !== 0 || entry.normalized !== 0)) {
+    throw new Error("KRIC timetable Saturday no-data complete-set is invalid");
+  }
+}
+
+export function buildRawResponseRecord(request, rawResponse) {
+  if (typeof request?.requestKey !== "string" || request.requestKey.length === 0) {
+    throw new Error("raw response requestKey is required");
+  }
+  if (typeof rawResponse !== "string" || rawResponse.length === 0) {
+    throw new Error("raw provider response bytes are required");
+  }
+  const bytes = Buffer.from(rawResponse, "utf8");
+  return {
+    requestKey: request.requestKey,
+    rawSha256: createHash("sha256").update(bytes).digest("hex"),
+    byteSize: bytes.length,
+    bodyBase64: bytes.toString("base64"),
+  };
+}
+
+export function buildRawCollectionInventory(plan, responses) {
+  const requests = plan?.requests;
+  if (!Array.isArray(requests) || requests.length === 0
+    || !Array.isArray(responses) || responses.length !== requests.length) {
+    throw new Error("raw response inventory must cover every tracked request");
+  }
+  const seen = new Set();
+  responses.forEach((response, index) => {
+    if (!hasExactKeys(response, ["bodyBase64", "byteSize", "rawSha256", "requestKey"])
+      || response.requestKey !== requests[index]?.requestKey) {
+      throw new Error("raw response inventory request order is invalid");
+    }
+    if (seen.has(response.requestKey)) {
+      throw new Error("raw response inventory request keys must be unique");
+    }
+    seen.add(response.requestKey);
+    if (typeof response.bodyBase64 !== "string" || response.bodyBase64.length === 0
+      || !Number.isInteger(response.byteSize) || response.byteSize < 1
+      || !/^[a-f0-9]{64}$/.test(response.rawSha256)) {
+      throw new Error("raw response identity is invalid");
+    }
+    const bytes = Buffer.from(response.bodyBase64, "base64");
+    if (bytes.toString("base64") !== response.bodyBase64
+      || bytes.length !== response.byteSize
+      || createHash("sha256").update(bytes).digest("hex") !== response.rawSha256) {
+      throw new Error("raw response identity is invalid");
+    }
+  });
+  return {
+    responseCount: responses.length,
+    inventorySha256: createHash("sha256").update(JSON.stringify(responses)).digest("hex"),
+    responses,
+  };
+}
+
+export function buildCollectionTimestamps(now = new Date()) {
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new Error("collection clock must be a valid Date");
+  }
+  const collectedAt = now.toISOString();
+  return { collectedAt, capturedAt: collectedAt.slice(0, 10) };
+}
+
+export function buildTrainDiagnosticArtifact({ lineId, trainNumber, plan, rawResponses, rows, timestamps }) {
+  const normalizedTrainNumber = normalizeTrainNumber(trainNumber);
+  const matchingRows = (rows ?? []).filter(
+    (row) => normalizeTrainNumber(row.trnNo) === normalizedTrainNumber,
+  );
+  if (matchingRows.length === 0) {
+    throw new Error(`KRIC timetable train diagnostic has no rows: ${normalizedTrainNumber}`);
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-line4-timetable-train-diagnostic",
+    sourceId: "kric-subway-timetable",
+    lineId,
+    trainNumber: normalizedTrainNumber,
+    ...timestamps,
+    requestCount: plan.requests.length,
+    rowCount: matchingRows.length,
+    rawResponseInventory: buildRawCollectionInventory(plan, rawResponses),
+    rows: matchingRows,
+  };
+}
+
+export function buildOperationTrainDiagnosticArtifact({
+  operation,
+  lineId,
+  trainNumber,
+  plan,
+  rawResponses,
+  providerRows,
+  timestamps,
+}) {
+  if (operation !== "subwayTimetable"
+    || plan?.operation !== operation
+    || JSON.stringify(plan?.dayCds) !== JSON.stringify(["8"])
+    || !Array.isArray(plan?.requests)
+    || plan.requests.length === 0
+    || plan.requests.some((request) => request?.operation !== operation)) {
+    throw new Error("KRIC operation train diagnostic requires subwayTimetable dayCd=8 plan");
+  }
+  const normalizedTrainNumber = normalizeTrainNumber(trainNumber);
+  const trackedRequestKeys = new Set(plan.requests.map((request) => {
+    const { railOprIsttCd, dayCd, lnCd, stinCd } = request.params ?? {};
+    const expected = `${operation}|${railOprIsttCd}|${stinCd}|${dayCd}`;
+    if (request.requestKey !== expected) {
+      throw new Error("KRIC operation train diagnostic tracked request identity is invalid");
+    }
+    return `${railOprIsttCd}|${lnCd}|${stinCd}|${dayCd}`;
+  }));
+  const matchingRows = [];
+  for (const row of providerRows ?? []) {
+    if (!hasExactKeys(row, [
+      "arvTm",
+      "dayCd",
+      "dayNm",
+      "dptTm",
+      "lnCd",
+      "railOprIsttCd",
+      "stinCd",
+      "trnNo",
+    ])) {
+      throw new Error("KRIC operation train diagnostic provider row schema is invalid");
+    }
+    for (const field of ["railOprIsttCd", "trnNo", "dayCd", "dayNm", "stinCd", "lnCd"]) {
+      if (typeof row[field] !== "string" || row[field].length === 0) {
+        throw new Error(`KRIC operation train diagnostic provider row ${field} is invalid`);
+      }
+    }
+    for (const field of ["arvTm", "dptTm"]) {
+      if (row[field] !== null && typeof row[field] !== "string") {
+        throw new Error(`KRIC operation train diagnostic provider row ${field} is invalid`);
+      }
+    }
+    const requestIdentity = `${row.railOprIsttCd}|${row.lnCd}|${row.stinCd}|${row.dayCd}`;
+    if (!trackedRequestKeys.has(requestIdentity)) {
+      throw new Error("KRIC operation train diagnostic provider row does not match tracked request");
+    }
+    if (normalizeTrainNumber(row.trnNo) === normalizedTrainNumber) {
+      matchingRows.push(row);
+    }
+  }
+  if (matchingRows.length === 0) {
+    throw new Error(`KRIC operation train diagnostic has no rows: ${normalizedTrainNumber}`);
+  }
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-line4-timetable-operation-train-diagnostic",
+    sourceId: "kric-subway-timetable",
+    operation,
+    lineId,
+    trainNumber: normalizedTrainNumber,
+    ...timestamps,
+    requestCount: plan.requests.length,
+    rowCount: matchingRows.length,
+    rawResponseInventory: buildRawCollectionInventory(plan, rawResponses),
+    rows: matchingRows,
+  };
+}
+
+export function buildReconstructionAnomalyDiagnosticArtifact({
+  lineId,
+  plan,
+  rawResponses,
+  rows,
+  timestamps,
+}) {
+  if (typeof lineId !== "string" || lineId.length === 0
+    || !Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("KRIC reconstruction anomaly diagnostic inputs are invalid");
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row?.lineId}|${row?.trnNo}|${row?.dayCd}`;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  const anomalies = [];
+  for (const key of [...groups.keys()].sort(codepointCompare)) {
+    const ordered = groups.get(key).toSorted((left, right) => {
+      const leftSeconds = left.departureSeconds ?? left.arrivalSeconds;
+      const rightSeconds = right.departureSeconds ?? right.arrivalSeconds;
+      if (!Number.isInteger(leftSeconds) || !Number.isInteger(rightSeconds)) {
+        throw new TypeError(`KRIC reconstruction anomaly row time is invalid: ${key}`);
+      }
+      return leftSeconds - rightSeconds || codepointCompare(left.stationId, right.stationId);
+    });
+    ordered.forEach((row, rowIndex) => {
+      const common = {
+        stationId: row.stationId,
+        lineId: row.lineId,
+        trnNo: row.trnNo,
+        dayCd: row.dayCd,
+        rowIndex,
+        rowCount: ordered.length,
+        arrivalSeconds: row.arrivalSeconds,
+        departureSeconds: row.departureSeconds,
+        servicePattern: row.servicePattern,
+      };
+      if (row.arrivalSeconds === null && rowIndex > 0) {
+        anomalies.push({
+          ...common,
+          missingField: "arvTm",
+          classification: row.servicePattern === "EXPRESS"
+            ? "APPROVED_EXPRESS_NON_STOP"
+            : "BLOCKING_LOCAL_MISSING_ARRIVAL",
+        });
+      }
+      if (row.departureSeconds === null && rowIndex < ordered.length - 1) {
+        anomalies.push({
+          ...common,
+          missingField: "dptTm",
+          classification: row.servicePattern === "LOCAL"
+            ? "BLOCKING_LOCAL_MISSING_DEPARTURE"
+            : "BLOCKING_EXPRESS_MISSING_DEPARTURE",
+        });
+      }
+    });
+  }
+  const approvedExpressNonStopCount = anomalies.filter(
+    ({ classification }) => classification === "APPROVED_EXPRESS_NON_STOP",
+  ).length;
+  return {
+    schemaVersion: 1,
+    artifactKind: "kric-line4-timetable-reconstruction-anomaly-diagnostic",
+    sourceId: "kric-subway-timetable",
+    lineId,
+    ...timestamps,
+    requestCount: plan?.requests?.length,
+    rowCount: rows.length,
+    anomalyCount: anomalies.length,
+    approvedExpressNonStopCount,
+    blockingAnomalyCount: anomalies.length - approvedExpressNonStopCount,
+    rawResponseInventory: buildRawCollectionInventory(plan, rawResponses),
+    anomalies,
+  };
+}
+
+export function summarizeTrainDiagnosticArtifact(artifact) {
+  if (artifact?.artifactKind !== "kric-line4-timetable-train-diagnostic"
+    || artifact.sourceId !== "kric-subway-timetable"
+    || typeof artifact.lineId !== "string" || artifact.lineId.length === 0
+    || typeof artifact.trainNumber !== "string" || artifact.trainNumber.length === 0
+    || typeof artifact.collectedAt !== "string" || Number.isNaN(Date.parse(artifact.collectedAt))
+    || !Array.isArray(artifact.rows) || artifact.rows.length === 0
+    || artifact.rowCount !== artifact.rows.length
+    || artifact.rawResponseInventory?.responseCount !== artifact.requestCount) {
+    throw new Error("KRIC train diagnostic artifact identity is invalid");
+  }
+  return {
+    artifactKind: "kric-line4-timetable-train-diagnostic-summary",
+    sourceId: artifact.sourceId,
+    lineId: artifact.lineId,
+    trainNumber: artifact.trainNumber,
+    collectedAt: artifact.collectedAt,
+    rowCount: artifact.rows.length,
+    rows: artifact.rows.map((row, rowIndex) => ({
+      rowIndex,
+      stationId: row.stationId,
+      arrivalSeconds: row.arrivalSeconds,
+      departureSeconds: row.departureSeconds,
+      stopRole: row.stopRole,
+      servicePattern: row.servicePattern,
+    })),
+  };
+}
+
+export function summarizeOperationTrainDiagnosticArtifact(artifact) {
+  if (artifact?.artifactKind !== "kric-line4-timetable-operation-train-diagnostic"
+    || artifact.sourceId !== "kric-subway-timetable"
+    || artifact.operation !== "subwayTimetable"
+    || typeof artifact.lineId !== "string" || artifact.lineId.length === 0
+    || typeof artifact.trainNumber !== "string" || artifact.trainNumber.length === 0
+    || typeof artifact.collectedAt !== "string" || Number.isNaN(Date.parse(artifact.collectedAt))
+    || !Number.isInteger(artifact.requestCount) || artifact.requestCount < 1
+    || artifact.rawResponseInventory?.responseCount !== artifact.requestCount
+    || !Array.isArray(artifact.rows) || artifact.rows.length === 0
+    || artifact.rowCount !== artifact.rows.length
+    || artifact.rows.some((row) => !hasExactKeys(row, [
+      "arvTm",
+      "dayCd",
+      "dayNm",
+      "dptTm",
+      "lnCd",
+      "railOprIsttCd",
+      "stinCd",
+      "trnNo",
+    ]))) {
+    throw new Error("KRIC operation train diagnostic artifact identity is invalid");
+  }
+  return {
+    artifactKind: "kric-line4-timetable-operation-train-diagnostic-summary",
+    sourceId: artifact.sourceId,
+    operation: artifact.operation,
+    lineId: artifact.lineId,
+    trainNumber: artifact.trainNumber,
+    collectedAt: artifact.collectedAt,
+    requestCount: artifact.requestCount,
+    rowCount: artifact.rows.length,
+    rows: artifact.rows.map((row) => ({
+      railOprIsttCd: row.railOprIsttCd,
+      trnNo: row.trnNo,
+      dayCd: row.dayCd,
+      dayNm: row.dayNm,
+      stinCd: row.stinCd,
+      lnCd: row.lnCd,
+      arvTm: row.arvTm,
+      dptTm: row.dptTm,
+    })),
+  };
+}
+
 export function assertCompleteKricCollection(failedRequestCount, requestCount, perRequest = []) {
   if (failedRequestCount !== 0) {
     const diagnostics = [...new Set(perRequest.flatMap(({ error }) => error ? [error] : []))].slice(0, 10);
@@ -157,12 +712,148 @@ export function assertCompleteKricCollection(failedRequestCount, requestCount, p
   }
 }
 
+export function selectKricPilotReconstructionRows(rows, endpointStationIds = [
+  "station-seoul-4-433",
+  "station-seoul-4-448",
+]) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("KRIC pilot reconstruction rows must be a non-empty array");
+  }
+  const requiredStationIds = new Set(endpointStationIds);
+  if (!Array.isArray(endpointStationIds) || endpointStationIds.length !== 2
+    || requiredStationIds.size !== 2
+    || endpointStationIds.some((stationId) => typeof stationId !== "string" || stationId.length === 0)) {
+    throw new TypeError("KRIC pilot endpoint station IDs are invalid");
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    for (const field of ["stationId", "lineId", "trnNo", "dayCd"]) {
+      if (typeof row?.[field] !== "string" || row[field].length === 0) {
+        throw new TypeError(`KRIC pilot reconstruction row ${field} is invalid`);
+      }
+    }
+    const key = `${row.lineId}|${row.trnNo}|${row.dayCd}`;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  const selectedRows = [];
+  const excludedGroups = [];
+  for (const key of [...groups.keys()].sort(codepointCompare)) {
+    const group = groups.get(key);
+    const stationIds = [...new Set(group.map(({ stationId }) => stationId))]
+      .sort(codepointCompare);
+    if ([...requiredStationIds].every((stationId) => stationIds.includes(stationId))) {
+      selectedRows.push(...group);
+      continue;
+    }
+    const { lineId, trnNo, dayCd } = group[0];
+    excludedGroups.push({
+      lineId,
+      trnNo,
+      dayCd,
+      rowCount: group.length,
+      stationIds,
+      reason: "OUTSIDE_PILOT_CORRIDOR",
+    });
+  }
+  if (selectedRows.length === 0) {
+    throw new Error("KRIC collection has no paired pilot reconstruction rows");
+  }
+  return { rows: selectedRows, excludedGroups };
+}
+
+export function classifyKricRowsForReconstruction(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new TypeError("KRIC reconstruction rows must be a non-empty array");
+  }
+  const groups = new Map();
+  for (const row of rows) {
+    for (const field of ["stationId", "lineId", "trnNo", "dayCd"]) {
+      if (typeof row?.[field] !== "string" || row[field].length === 0) {
+        throw new TypeError(`KRIC reconstruction row ${field} is invalid`);
+      }
+    }
+    const key = `${row.lineId}|${row.trnNo}|${row.dayCd}`;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+
+  const classifiedRows = [];
+  const excludedNonStopRows = [];
+  for (const key of [...groups.keys()].sort(codepointCompare)) {
+    const ordered = groups.get(key).toSorted((left, right) => {
+      const leftSeconds = left.departureSeconds ?? left.arrivalSeconds;
+      const rightSeconds = right.departureSeconds ?? right.arrivalSeconds;
+      if (!Number.isInteger(leftSeconds) || !Number.isInteger(rightSeconds)) {
+        throw new TypeError(`KRIC reconstruction row time is invalid: ${key}`);
+      }
+      return leftSeconds - rightSeconds || codepointCompare(left.stationId, right.stationId);
+    });
+    const stationIds = new Set();
+    let previousSeconds = null;
+    ordered.forEach((row, index) => {
+      const orderSeconds = row.departureSeconds ?? row.arrivalSeconds;
+      if (stationIds.has(row.stationId)) {
+        throw new Error(`KRIC reconstruction group has duplicate station: ${key}`);
+      }
+      stationIds.add(row.stationId);
+      if (previousSeconds !== null && orderSeconds === previousSeconds) {
+        throw new Error(`KRIC reconstruction group has duplicate service time: ${key}`);
+      }
+      previousSeconds = orderSeconds;
+
+      if (row.arrivalSeconds === null) {
+        if (index === 0) {
+          if (row.stopRole !== "ORIGIN" || !Number.isInteger(row.departureSeconds)) {
+            throw new Error(`KRIC reconstruction first row origin is invalid: ${key}`);
+          }
+          classifiedRows.push(row);
+          return;
+        }
+        if (row.servicePattern !== "EXPRESS" || !Number.isInteger(row.departureSeconds)) {
+          throw new Error(`KRIC ${row.servicePattern ?? "UNKNOWN"} intermediate row has missing arrival: ${key}`);
+        }
+        excludedNonStopRows.push({
+          stationId: row.stationId,
+          lineId: row.lineId,
+          trnNo: row.trnNo,
+          dayCd: row.dayCd,
+          passageSeconds: row.departureSeconds,
+          servicePattern: row.servicePattern,
+          reason: "EXPRESS_NO_ARRIVAL",
+        });
+        return;
+      }
+      if (row.departureSeconds === null && index !== ordered.length - 1) {
+        throw new Error(`KRIC intermediate row has missing departure: ${key}`);
+      }
+      classifiedRows.push(row);
+    });
+  }
+  return { rows: classifiedRows, excludedNonStopRows };
+}
+
 export function redactKricCredential(text, key) {
   let redacted = String(text);
   for (const value of [key, key ? encodeURIComponent(key) : ""]) {
     if (value) redacted = redacted.split(value).join("[KEY]");
   }
   return redacted;
+}
+
+export async function fetchKricRequestWithCredentialRedaction(request, key, options) {
+  try {
+    return await fetchWithRetry(kricRequestUrl(request, key), options);
+  } catch (error) {
+    const details = [error?.message, error?.cause?.message, error?.cause]
+      .filter(Boolean)
+      .map(String)
+      .join(" | ");
+    throw new Error(`KRIC timetable request failed: ${redactKricCredential(details, key)}`);
+  }
 }
 
 function normalizeTrainNumber(value) {
@@ -175,13 +866,23 @@ function requireServicePatternMapping(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("servicePatternByExptCd is required");
   }
-  for (const [code, servicePattern] of Object.entries(value)) {
-    if (code.trim() === "" || (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS")) {
+  const entries = value instanceof Map ? [...value.entries()] : Object.entries(value);
+  for (const [code, servicePattern] of entries) {
+    if ((code !== null && (typeof code !== "string" || code.trim() === ""))
+      || (servicePattern !== "LOCAL" && servicePattern !== "EXPRESS")) {
       throw new Error("servicePatternByExptCd values must be LOCAL or EXPRESS");
     }
   }
-  if (Object.keys(value).length === 0) throw new Error("servicePatternByExptCd is required");
+  if (entries.length === 0) throw new Error("servicePatternByExptCd is required");
   return value;
+}
+
+function hasExactKeys(value, expectedKeys) {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && JSON.stringify(Object.keys(value).sort(codepointCompare))
+      === JSON.stringify([...expectedKeys].sort(codepointCompare));
 }
 
 function canonicalStationIndex(fixture, lineId) {
@@ -210,6 +911,14 @@ function normalizeStationName(value) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args["inspect-train-diagnostic"]) {
+    const artifact = JSON.parse(await readFile(args["inspect-train-diagnostic"], "utf8"));
+    const summary = artifact?.artifactKind === "kric-line4-timetable-operation-train-diagnostic"
+      ? summarizeOperationTrainDiagnosticArtifact(artifact)
+      : summarizeTrainDiagnosticArtifact(artifact);
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
   const roster = JSON.parse(await readFile(args.roster, "utf8"));
   const lineId = args["line-id"] ?? "seoul-4";
   const fixture = args["canonical-fixture"]
@@ -227,25 +936,118 @@ async function main() {
     includeExpress: args.express !== "false",
     operation: args.operation,
   });
+  if (args["service-pattern-probe-request-key"] && args["no-data-probe-request-key"]) {
+    throw new Error("use only one evidence probe request key");
+  }
+  if (args["no-data-probe-request-key"]) {
+    if (!args.output) {
+      throw new Error("no-data probe --output is required");
+    }
+    const request = selectServicePatternProbeRequest(plan, args["no-data-probe-request-key"]);
+    const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+    const observation = buildTimetableNoDataObservation(
+      request,
+      rawResponse,
+      JSON.parse(rawResponse),
+    );
+    await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(observation, null, 2)}\n`);
+    return;
+  }
+  if (args["service-pattern-probe-request-key"]) {
+    if (!args.output) {
+      throw new Error("service-pattern probe --output is required");
+    }
+    const request = selectServicePatternProbeRequest(
+      plan,
+      args["service-pattern-probe-request-key"],
+    );
+    const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+    const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
+    const observation = buildServicePatternObservation(request, rawResponse, rows);
+    await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(observation, null, 2)}\n`);
+    return;
+  }
+  if (args["operation-diagnostic-train-number"]) {
+    if (args.operation !== "subwayTimetable" || args["day-cds"] !== "8" || !args.output) {
+      throw new Error("operation train diagnostic requires --operation subwayTimetable --day-cds 8 --output");
+    }
+    const rawResponses = [];
+    const providerRows = [];
+    const perRequest = [];
+    let failed = 0;
+    for (const request of plan.requests) {
+      try {
+        const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+        const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
+        if (rows.length === 0) {
+          throw new Error("KRIC operation train diagnostic response rows must be non-empty");
+        }
+        rawResponses.push(buildRawResponseRecord(request, rawResponse));
+        providerRows.push(...rows);
+        perRequest.push({ requestKey: request.requestKey, resultCode: "00", rows: rows.length });
+      } catch (error) {
+        failed += 1;
+        perRequest.push({ requestKey: request.requestKey, error: redactKricCredential(String(error.message), key) });
+      }
+    }
+    assertCompleteKricCollection(failed, plan.requestCount, perRequest);
+    const artifact = buildOperationTrainDiagnosticArtifact({
+      operation: plan.operation,
+      lineId,
+      trainNumber: args["operation-diagnostic-train-number"],
+      plan,
+      rawResponses,
+      providerRows,
+      timestamps: buildCollectionTimestamps(),
+    });
+    await writeFile(args.output, `${JSON.stringify(artifact, null, 2)}\n`);
+    const { rawResponseInventory: _raw, rows: _rows, ...summary } = artifact;
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
   if (fixture && args["canonical-pack"]) {
     throw new Error("use only one of --canonical-fixture or --canonical-pack");
   }
+  if (!args["service-pattern-evidence"]) {
+    throw new Error("--service-pattern-evidence is required");
+  }
+  if (!args["no-data-evidence"]) {
+    throw new Error("--no-data-evidence is required");
+  }
+  if (args["train-diagnostic-number"] && !args.output) {
+    throw new Error("train diagnostic --output is required");
+  }
+  const servicePatternByExptCd = validateServicePatternEvidence(
+    JSON.parse(await readFile(args["service-pattern-evidence"], "utf8")),
+  );
+  const noDataEvidence = validateTimetableNoDataEvidence(
+    JSON.parse(await readFile(args["no-data-evidence"], "utf8")),
+  );
   const context = args["canonical-pack"]
-    ? buildCollectionContextFromPack(roster, lineId, args["canonical-pack"])
-    : buildCollectionContext(roster, lineId, fixture);
+    ? buildCollectionContextFromPack(roster, lineId, args["canonical-pack"], servicePatternByExptCd)
+    : buildCollectionContext(roster, lineId, fixture, servicePatternByExptCd);
 
   const intermediate = [];
   const perRequest = [];
+  const rawResponses = [];
   let failed = 0;
   for (const request of plan.requests) {
-    const url = `${request.endpoint}?serviceKey=${encodeURIComponent(key)}&format=json&railOprIsttCd=${request.params.railOprIsttCd}&dayCd=${request.params.dayCd}&lnCd=${request.params.lnCd}&stinCd=${request.params.stinCd}`;
     try {
-      const payload = JSON.parse(await fetchWithRetry(url));
-      const rows = validateKricTimetablePayload(payload);
+      const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
+      const payload = JSON.parse(rawResponse);
+      const { classification, rows } = classifyKricTimetablePayload(payload, request, noDataEvidence);
+      if (classification === noDataEvidence.classification.state) {
+        rawResponses.push(buildRawResponseRecord(request, rawResponse));
+        perRequest.push({ requestKey: request.requestKey, classification, resultCode: "03", rows: 0, normalized: 0 });
+        continue;
+      }
       // servicePattern은 evidence-backed closed exptCd mapping이 있어야만 normalizer가 해석한다.
       const normalized = normalizeKricSubwayTimetable(rows, context);
       intermediate.push(...normalized);
-      perRequest.push({ requestKey: request.requestKey, resultCode: "00", rows: rows.length, normalized: normalized.length });
+      rawResponses.push(buildRawResponseRecord(request, rawResponse));
+      perRequest.push({ requestKey: request.requestKey, classification, resultCode: "00", rows: rows.length, normalized: normalized.length });
     } catch (error) {
       failed += 1;
       perRequest.push({ requestKey: request.requestKey, error: redactKricCredential(String(error.message), key) });
@@ -253,14 +1055,47 @@ async function main() {
   }
 
   assertCompleteKricCollection(failed, plan.requestCount, perRequest);
+  if (args["reconstruction-anomaly-diagnostic"]) {
+    if (args["reconstruction-anomaly-diagnostic"] !== "true" || !args.output) {
+      throw new Error("reconstruction anomaly diagnostic requires value true and --output");
+    }
+    const diagnostic = buildReconstructionAnomalyDiagnosticArtifact({
+      lineId,
+      plan,
+      rawResponses,
+      rows: intermediate,
+      timestamps: buildCollectionTimestamps(),
+    });
+    await writeFile(args.output, `${JSON.stringify(diagnostic, null, 2)}\n`);
+    const { rawResponseInventory: _raw, ...summary } = diagnostic;
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
+  if (args["train-diagnostic-number"]) {
+    const diagnostic = buildTrainDiagnosticArtifact({
+      lineId,
+      trainNumber: args["train-diagnostic-number"],
+      plan,
+      rawResponses,
+      rows: intermediate,
+      timestamps: buildCollectionTimestamps(),
+    });
+    await writeFile(args.output, `${JSON.stringify(diagnostic, null, 2)}\n`);
+    const { rawResponseInventory: _raw, rows: _rows, ...summary } = diagnostic;
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
+  assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence);
+  const selected = selectKricPilotReconstructionRows(intermediate, context.pilotEndpointStationIds);
+  const classified = classifyKricRowsForReconstruction(selected.rows);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
     throw new Error("ITX OD evidence serviceId is invalid");
   }
   const reconstructionRows = trainNumberEvidence
-    ? filterRowsByTrainNumbers(intermediate, trainNumberEvidence.trainNumbers)
+    ? filterRowsByTrainNumbers(classified.rows, trainNumberEvidence.trainNumbers)
       .filter(({ dayCd }) => evidenceDayCds.has(dayCd))
-    : intermediate;
+    : classified.rows;
   if (trainNumberEvidence && reconstructionRows.length === 0) {
     const available = [...new Set(intermediate.map(({ trnNo }) => trnNo))]
       .sort((left, right) => left.localeCompare(right, "ko", { numeric: true }))
@@ -275,15 +1110,22 @@ async function main() {
   }
   if (trainNumberEvidence) validateItxOdJoin(reconstructionRows, trainNumberEvidence);
   const { transitTrips, transitStopTimes } = reconstructTransitTrips(reconstructionRows, context);
+  const rawResponseInventory = buildRawCollectionInventory(plan, rawResponses);
+  const timestamps = buildCollectionTimestamps();
   const artifact = {
     artifactKind: "kric-line4-timetable-collection",
     sourceId: "kric-subway-route-info",
     lineId,
     operation: plan.operation,
-    capturedAt: new Date().toISOString().slice(0, 10),
+    ...timestamps,
     requestCount: plan.requestCount,
     failedRequestCount: failed,
+    expectedNoDataRequestCount: perRequest.filter(({ classification }) => classification === noDataEvidence.classification.state).length,
     intermediateRowCount: intermediate.length,
+    excludedOutsidePilotGroupCount: selected.excludedGroups.length,
+    excludedOutsidePilotGroups: selected.excludedGroups,
+    excludedNonStopRowCount: classified.excludedNonStopRows.length,
+    excludedNonStopRows: classified.excludedNonStopRows,
     reconstructionRowCount: reconstructionRows.length,
     ...(trainNumberEvidence ? {
       trainNumberFilter: {
@@ -295,6 +1137,7 @@ async function main() {
     } : {}),
     transitTripCount: transitTrips.length,
     transitStopTimeCount: transitStopTimes.length,
+    rawResponseInventory,
     perRequest,
     transitTrips,
     transitStopTimes,
@@ -302,8 +1145,20 @@ async function main() {
   if (args.output) {
     await writeFile(args.output, `${JSON.stringify(artifact, null, 2)}\n`);
   }
-  const { transitTrips: _t, transitStopTimes: _s, perRequest: _p, ...summary } = artifact;
+  const {
+    transitTrips: _t,
+    transitStopTimes: _s,
+    excludedNonStopRows: _e,
+    excludedOutsidePilotGroups: _o,
+    perRequest: _p,
+    rawResponseInventory: _r,
+    ...summary
+  } = artifact;
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+}
+
+function kricRequestUrl(request, key) {
+  return `${request.endpoint}?serviceKey=${encodeURIComponent(key)}&format=json&railOprIsttCd=${request.params.railOprIsttCd}&dayCd=${request.params.dayCd}&lnCd=${request.params.lnCd}&stinCd=${request.params.stinCd}`;
 }
 
 function parseArgs(argv) {
@@ -324,11 +1179,23 @@ function parseArgs(argv) {
 }
 
 // transient 네트워크 오류(DNS ENOTFOUND 등)에만 bounded retry를 적용한다.
-async function fetchWithRetry(url, attempts = 3) {
+export async function fetchWithRetry(url, {
+  attempts = 2,
+  timeoutMs = 3_000,
+  fetchImpl = fetch,
+  sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+} = {}) {
+  if (!Number.isInteger(attempts) || attempts < 1
+    || !Number.isInteger(timeoutMs) || timeoutMs < 1
+    || typeof fetchImpl !== "function" || typeof sleep !== "function") {
+    throw new TypeError("KRIC timetable retry options are invalid");
+  }
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url);
+      const response = await fetchImpl(url, { signal: controller.signal });
       if (!response.ok) {
         const error = new Error(`KRIC timetable HTTP ${response.status}`);
         error.nonRetryable = true;
@@ -337,8 +1204,12 @@ async function fetchWithRetry(url, attempts = 3) {
       return await response.text();
     } catch (error) {
       if (error.nonRetryable === true) throw error;
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      lastError = controller.signal.aborted
+        ? new Error("KRIC timetable request timed out")
+        : error;
+      if (attempt < attempts) await sleep(500 * attempt);
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError;

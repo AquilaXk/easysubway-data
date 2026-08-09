@@ -11923,35 +11923,49 @@ test("KRIC 4호선 pilot 시간표 transformer는 상록수-사당 stop_times를
       },
     ];
   });
-  const fillerTrips = Array.from({ length: 895 - fixtureTrips.length }, (_, index) => ({
-    id: `route-seoul-4-filler-${index}`,
-    routeId: index % 2 === 0 ? "route-seoul-4-up" : "route-seoul-4-down",
-    serviceId: "weekday-kric",
-    tripHeadsign: "station-seoul-4-456",
-    directionId: index % 2 === 0 ? "up" : "down",
-    servicePattern: "LOCAL",
-  }));
-  const fillerStopTimes = Array.from({ length: 33062 - fixtureStopTimes.length }, (_, index) => ({
-    tripId: fillerTrips[index % fillerTrips.length].id,
+  const fillerStopTimes = Array.from({ length: 22004 - fixtureStopTimes.length }, (_, index) => ({
+    tripId: fixtureTrips[index % fixtureTrips.length].id,
     stopSequence: index + 1,
     stationId: `station-seoul-4-filler-${index}`,
     lineId: "seoul-4",
     arrivalSeconds: 18000 + index,
     departureSeconds: 18000 + index,
   }));
+  const rawResponses = Array.from({ length: 153 }, (_, index) => {
+    const bytes = Buffer.from(`response-${index}`);
+    return {
+      requestKey: `subwayTimetableExp|fixture-${index}`,
+      rawSha256: createHash("sha256").update(bytes).digest("hex"),
+      byteSize: bytes.length,
+      bodyBase64: bytes.toString("base64"),
+    };
+  });
   await writeFile(
     artifactPath,
     `${JSON.stringify({
       artifactKind: "kric-line4-timetable-collection",
       sourceId: "kric-subway-timetable",
       lineId: "seoul-4",
-      capturedAt: "2026-07-09",
+      operation: "subwayTimetableExp",
+      collectedAt: "2026-08-09T12:04:20.479Z",
+      capturedAt: "2026-08-09",
       requestCount: 153,
       failedRequestCount: 0,
+      expectedNoDataRequestCount: 51,
       intermediateRowCount: 33062,
-      transitTripCount: 895,
-      transitStopTimeCount: 33062,
-      transitTrips: [...fixtureTrips, ...fillerTrips],
+      excludedOutsidePilotGroupCount: 429,
+      excludedOutsidePilotGroups: Array.from({ length: 429 }, (_, index) => ({ reason: "OUTSIDE_PILOT_CORRIDOR", index })),
+      excludedNonStopRowCount: 42,
+      excludedNonStopRows: Array.from({ length: 42 }, (_, index) => ({ reason: "EXPRESS_NO_ARRIVAL", index })),
+      reconstructionRowCount: 22004,
+      transitTripCount: 466,
+      transitStopTimeCount: 22004,
+      rawResponseInventory: {
+        responseCount: rawResponses.length,
+        inventorySha256: createHash("sha256").update(JSON.stringify(rawResponses)).digest("hex"),
+        responses: rawResponses,
+      },
+      transitTrips: fixtureTrips,
       transitStopTimes: [...fixtureStopTimes, ...fillerStopTimes],
     }, null, 2)}\n`,
   );
@@ -12026,12 +12040,17 @@ test("KRIC 4호선 pilot 시간표 transformer는 summary counter만 복사된 �
       artifactKind: "kric-line4-timetable-collection",
       sourceId: "kric-subway-timetable",
       lineId: "seoul-4",
+      operation: "subwayTimetableExp",
       capturedAt: "2026-07-09",
       requestCount: 153,
       failedRequestCount: 0,
+      expectedNoDataRequestCount: 51,
       intermediateRowCount: 33062,
-      transitTripCount: 895,
-      transitStopTimeCount: 33062,
+      excludedOutsidePilotGroupCount: 429,
+      excludedNonStopRowCount: 42,
+      reconstructionRowCount: 22004,
+      transitTripCount: 466,
+      transitStopTimeCount: 22004,
       transitTrips: [],
       transitStopTimes: [],
     }, null, 2)}\n`,
@@ -12051,7 +12070,7 @@ test("KRIC 4호선 pilot 시간표 transformer는 summary counter만 복사된 �
       ],
       { cwd: root, env: productionEnv },
     ),
-    /KRIC pilot artifact transitTrips\.length mismatch: 0 !== 895/,
+    /KRIC pilot artifact transitTrips\.length mismatch: 0 !== 466/,
   );
 });
 
@@ -12067,6 +12086,7 @@ test("KRIC 4호선 pilot 시간표 transformer는 부분 수집 artifact를 prod
       artifactKind: "kric-line4-timetable-collection",
       sourceId: "kric-subway-timetable",
       lineId: "seoul-4",
+      operation: "subwayTimetableExp",
       capturedAt: "2026-07-09",
       requestCount: 153,
       failedRequestCount: 1,

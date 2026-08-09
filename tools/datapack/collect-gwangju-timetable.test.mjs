@@ -3,6 +3,12 @@ import test from "node:test";
 
 import { collectGwangjuTimetable } from "./collect-gwangju-timetable.mjs";
 
+test("광주 timetable collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectGwangjuTimetable({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 function xmlResponse({ resultCode = "00", rows = sampleRows(), totalCount = rows.length, pageNo = 1, pageSize = rows.length } = {}) {
   const items = rows.map((row) => `<item>${Object.entries(row)
     .map(([field, value]) => `<${field}>${value}</${field}>`).join("")}</item>`).join("");

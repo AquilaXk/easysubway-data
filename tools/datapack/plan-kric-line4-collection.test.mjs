@@ -30,6 +30,18 @@ test("KRIC 역사별 운행시각표 operation은 convenientInfo endpoint를 사
   assert.ok(plan.requests.every(({ endpoint }) => endpoint === "https://openapi.kric.go.kr/openapi/convenientInfo/stationTimetable"));
 });
 
+test("KRIC 기본 운행시각표 diagnostic은 admitted trainUseInfo endpoint를 사용한다", () => {
+  const plan = buildKricLine4CollectionPlan(ROSTER, {
+    dayCds: ["8"],
+    operation: "subwayTimetable",
+  });
+  assert.equal(plan.operation, "subwayTimetable");
+  assert.equal(plan.requestCount, 2);
+  assert.ok(plan.requests.every(
+    ({ endpoint }) => endpoint === "https://openapi.kric.go.kr/openapi/trainUseInfo/subwayTimetable",
+  ));
+});
+
 test("KRIC 수집 계획은 각 역을 자기 소유기관으로 조회한다(직결 열차 포함 목적)", () => {
   const plan = buildKricLine4CollectionPlan(ROSTER);
   const sadang = plan.requests.filter((r) => r.params.stinCd === "433");

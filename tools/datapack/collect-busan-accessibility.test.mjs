@@ -14,6 +14,12 @@ const FIELDS = {
   ourbridge: "1", helptake: "2", toilet: "1", toilet_gubun: "분리",
 };
 
+test("부산 accessibility collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectBusanAccessibility({ serviceKey: "invalid%ZZ", stationScopes: topology.scope, fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 function response(stationName, values = FIELDS) {
   const fields = Object.entries({ sname: stationName, ...values })
     .map(([name, value]) => `<${name}>${value}</${name}>`).join("");

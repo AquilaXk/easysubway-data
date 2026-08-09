@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { scanXmlStructure } from "./lib/source-candidate-evidence-collector.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 export const DAEJEON_COVERAGE_OPERATIONS = Object.freeze({
   "daejeon-train-timetable": Object.freeze({
@@ -32,7 +33,7 @@ export async function probeDaejeonCoverageApi({
 } = {}) {
   const operation = DAEJEON_COVERAGE_OPERATIONS[sourceId];
   if (!operation) throw new Error(`unsupported Daejeon coverage source: ${sourceId ?? "missing"}`);
-  const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   const url = new URL(operation.endpoint);
   url.searchParams.set("serviceKey", key);
   const requestQuery = query ?? operation.query ?? {};
@@ -183,15 +184,6 @@ function validateTimetableItem({ dayType, drctType, stNum, tmList, tmZone }) {
 function xmlScalar(raw, field) {
   const match = new RegExp(`<${field}\\b[^>]*>([^<]{0,64})<\\/${field}>`, "i").exec(raw);
   return match?.[1].trim() ?? null;
-}
-
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 function requiredString(value, label) {

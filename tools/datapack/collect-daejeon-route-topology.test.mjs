@@ -7,6 +7,31 @@ import {
   collectDaejeonRouteTopology,
 } from "./collect-daejeon-route-topology.mjs";
 
+test("대전 topology collector는 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectDaejeonRouteTopology({ serviceKey: "invalid%ZZ", fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("대전 topology collector는 encoded percent credential을 provider에 한 번만 decode해 전달한다", async () => {
+  const observedKeys = [];
+  await collectDaejeonRouteTopology({
+    serviceKey: "a%25b",
+    fetchImpl: async (url) => {
+      observedKeys.push(new URL(url).searchParams.get("serviceKey"));
+      return new Response(
+        "<response><header><resultCode>00</resultCode></header><body><items><item>"
+          + "<distfloat>1.2</distfloat><fee>1400</fee><min>2</min><sec>30</sec>"
+          + "</item></items></body></response>",
+        { status: 200, headers: { "content-type": "application/xml" } },
+      );
+    },
+  });
+
+  assert.equal(observedKeys.length, 42);
+  assert.ok(observedKeys.every((key) => key === "a%b"));
+});
+
 test("대전 topology collector는 22개 역 인접 21구간을 양방향으로 검증한다", async () => {
   const secret = "do-not-store-daejeon-key";
   const requests = [];

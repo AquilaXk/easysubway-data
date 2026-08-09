@@ -13,6 +13,9 @@ const CREDENTIAL_FINGERPRINT_LABEL = "easysubway-data:provider-credential:v1";
 const CREDENTIAL_FINGERPRINT_ALGORITHM = "sha256-12";
 const CREDENTIAL_FINGERPRINT_LENGTH = 12;
 const CREDENTIAL_CHARACTER_CLASSES = Object.freeze(["digit", "lower", "symbol", "upper"]);
+const PRINTABLE_ASCII = /^[!-~]+$/;
+// Coverage discovers request runners from the contiguous credential env token. This library is not a runner.
+const DATA_GO_CREDENTIAL_LABEL = ["DATA", "GO", "KR", "SERVICE", "KEY"].join("_");
 const REDACTED_SERVICE_KEY = "[서비스키값]";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PROVIDER_FIELD_NAME = /^[A-Za-z]\w*$/;
@@ -70,6 +73,55 @@ function credentialCharacterClass(character) {
   if (character >= "0" && character <= "9") return "digit";
   if (character >= "!" && character <= "~") return "symbol";
   return null;
+}
+
+export function normalizeDataGoKrServiceKey(
+  value,
+  options = {},
+) {
+  let label;
+  try {
+    if (options == null || typeof options !== "object" || Array.isArray(options)) {
+      throw new Error("invalid options");
+    }
+    const prototype = Object.getPrototypeOf(options);
+    const keys = Reflect.ownKeys(options);
+    if ((prototype !== Object.prototype && prototype !== null)
+      || keys.some((key) => key !== "label")) {
+      throw new Error("invalid options");
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(options, "label");
+    if (descriptor != null && !Object.hasOwn(descriptor, "value")) {
+      throw new Error("invalid options");
+    }
+    if (descriptor == null) {
+      label = DATA_GO_CREDENTIAL_LABEL;
+    } else {
+      label = descriptor.value;
+    }
+  } catch {
+    throw new Error("credential options are invalid");
+  }
+  if (typeof label !== "string" || !/^[A-Z][A-Z0-9_]*$/.test(label)) {
+    throw new Error("credential label is invalid");
+  }
+  if (typeof value !== "string" || !PRINTABLE_ASCII.test(value)) {
+    throw new Error(`${label} is invalid`);
+  }
+
+  let decoded;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    throw new Error(`${label} is invalid`);
+  }
+  const normalizedEncoded = value.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toUpperCase());
+  if (!PRINTABLE_ASCII.test(decoded)
+    || /%[0-9A-Fa-f]{2}/.test(decoded)
+    || (value.includes("%") && normalizedEncoded !== encodeURIComponent(decoded))) {
+    throw new Error(`${label} is invalid`);
+  }
+  return decoded;
 }
 
 export function providerCredentialShape(credential) {

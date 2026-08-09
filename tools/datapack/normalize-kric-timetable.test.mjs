@@ -52,6 +52,25 @@ test("KRIC normalizer는 닫힌 caller mapping 외 exptCd를 추정하지 않는
   );
 });
 
+test("KRIC normalizer는 reviewed evidence의 null→LOCAL, 1→EXPRESS mapping만 적용한다", () => {
+  const evidenceMapping = new Map([
+    [null, "LOCAL"],
+    ["1", "EXPRESS"],
+  ]);
+  const context = { ...CONTEXT, servicePatternByExptCd: evidenceMapping };
+  const rows = normalizeKricSubwayTimetable([
+    { ...KRIC_ROWS[0], exptCd: null },
+    { ...KRIC_ROWS[0], exptCd: "1" },
+  ], context);
+  assert.deepEqual(rows.map(({ servicePattern }) => servicePattern), ["LOCAL", "EXPRESS"]);
+  for (const exptCd of ["", " ", "0", "LOCAL", 1]) {
+    assert.throws(
+      () => normalizeKricSubwayTimetable([{ ...KRIC_ROWS[0], exptCd }], context),
+      /exptCd|unknown/,
+    );
+  }
+});
+
 test("KRIC normalizer는 canonical mapping과 입력 형식을 fail closed한다", () => {
   assert.throws(() => normalizeKricSubwayTimetable([{ ...KRIC_ROWS[0], stinCd: "999" }], CONTEXT), /no canonical station/);
   assert.throws(() => normalizeKricSubwayTimetable([{ ...KRIC_ROWS[0], arvTm: "8:48" }], CONTEXT), /time must be HHMMSS/);
