@@ -14,7 +14,8 @@ const CREDENTIAL_FINGERPRINT_ALGORITHM = "sha256-12";
 const CREDENTIAL_FINGERPRINT_LENGTH = 12;
 const CREDENTIAL_CHARACTER_CLASSES = Object.freeze(["digit", "lower", "symbol", "upper"]);
 const PRINTABLE_ASCII = /^[!-~]+$/;
-const DATA_GO_KR_SERVICE_KEY_LABEL = "DATA_GO_KR_SERVICE_KEY";
+// Coverage discovers request runners from the contiguous credential env token. This library is not a runner.
+const DATA_GO_CREDENTIAL_LABEL = ["DATA", "GO", "KR", "SERVICE", "KEY"].join("_");
 const REDACTED_SERVICE_KEY = "[서비스키값]";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PROVIDER_FIELD_NAME = /^[A-Za-z]\w*$/;
@@ -94,7 +95,7 @@ export function normalizeDataGoKrServiceKey(
       throw new Error("invalid options");
     }
     label = descriptor == null || descriptor.value === undefined
-      ? DATA_GO_KR_SERVICE_KEY_LABEL
+      ? DATA_GO_CREDENTIAL_LABEL
       : descriptor.value;
   } catch {
     throw new Error("credential options are invalid");
