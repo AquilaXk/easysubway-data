@@ -795,7 +795,7 @@ test("TAGO 시간표 수집기는 service key가 없으면 provider 호출 전�
           },
         },
       ),
-    /serviceKey is required/,
+    /DATA_GO_KR_SERVICE_KEY is invalid/,
   );
 });
 

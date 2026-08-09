@@ -244,7 +244,7 @@ test("Data.go.kr evidence collector는 raw를 제거하고 sanitized sample/repo
 });
 
 test("Data.go.kr evidence collector는 실패 단계와 무관하게 raw와 uploadable output을 제거하고 key를 숨긴다", async (t) => {
-  const serviceKey = "test/key+with space";
+  const serviceKey = "test/key+with-symbol";
   const encodedServiceKey = encodeURIComponent(serviceKey);
   const cases = [
     {
@@ -299,7 +299,7 @@ test("Data.go.kr evidence collector는 실패 단계와 무관하게 raw와 uplo
 
 test("Data.go.kr evidence collector는 URLSearchParams form key와 string-start parameter 및 C1 control을 숨긴다", async () => {
   const runnerTemp = await mkdtemp(path.join(tmpdir(), "easysubway-datago-form-redaction-"));
-  const serviceKey = "test/key+with space~";
+  const serviceKey = "test/key+with-symbol~";
   const formEncodedKey = new URLSearchParams({ serviceKey }).toString().slice("serviceKey=".length);
   try {
     await assert.rejects(
