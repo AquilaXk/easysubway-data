@@ -305,7 +305,7 @@ test("KRIC provider는 키 형상 계약과 검증된 대조군 operation을 카
   assert.deepEqual(unobserved, [], "credentialSignalResultCodes must come from recorded AUTHORIZATION_REQUIRED observations");
 });
 
-test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validation 계약 누락을 숨기지 않는다", async () => {
+test("DATA_GO_KR_SERVICE_KEY runner는 공통 deterministic credential-validation 계약을 구현한다", async () => {
   const coverage = document.credentialBearingProviderCoverage;
   assert.ok(Array.isArray(coverage), "credentialBearingProviderCoverage must be an array");
   assert.equal(coverage.length, 1, "DATA_GO_KR_SERVICE_KEY coverage must have one provider entry");
@@ -314,7 +314,6 @@ test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validatio
   assert.deepEqual(Object.keys(dataGoKr).sort(), [
     "credentialEnv",
     "implementationStatus",
-    "missingContracts",
     "providerId",
     "reason",
     "requiredClassification",
@@ -323,11 +322,10 @@ test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validatio
   assert.equal(dataGoKr.providerId, "data-go-kr");
   assert.equal(dataGoKr.credentialEnv, "DATA_GO_KR_SERVICE_KEY");
   assert.equal(dataGoKr.requiredClassification, "DETERMINISTIC_CREDENTIAL_VALIDATION_ONLY");
-  assert.equal(dataGoKr.implementationStatus, "MISSING");
-  assert.deepEqual(dataGoKr.missingContracts, ["shared-deterministic-credential-validation"]);
+  assert.equal(dataGoKr.implementationStatus, "IMPLEMENTED");
   assert.equal(
     dataGoKr.reason,
-    "current runners only load or decode DATA_GO_KR_SERVICE_KEY and do not share deterministic validation evidence",
+    "all current runners validate DATA_GO_KR_SERVICE_KEY through the shared deterministic boundary before provider calls",
   );
 
   const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
@@ -336,7 +334,10 @@ test("DATA_GO_KR_SERVICE_KEY runner의 공통 deterministic credential-validatio
     if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
     const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
     const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
-    if (source.includes("DATA_GO_KR_SERVICE_KEY")) expectedRunners.push(runner);
+    if (!source.includes("DATA_GO_KR_SERVICE_KEY")) continue;
+    assert.match(source, /import\s*\{[^}]*\bnormalizeDataGoKrServiceKey\b[^}]*\}\s*from\s*["']\.\/lib\/provider-call-integrity\.mjs["']/s, `${runner} must import the shared normalizer`);
+    assert.match(source, /(?<!function\s)normalizeDataGoKrServiceKey\s*\(/, `${runner} must call the shared normalizer`);
+    expectedRunners.push(runner);
   }
   expectedRunners.sort();
 
