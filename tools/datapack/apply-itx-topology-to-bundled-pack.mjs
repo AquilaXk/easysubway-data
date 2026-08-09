@@ -1155,6 +1155,11 @@ async function checkMigratedCurrentV18({ packPath, indexPath, evidencePath }) {
     || !hasExactKeys(evidence.migration, ["fromCatalogVersion", "toCatalogVersion", "inputPack"])
     || evidence.migration.fromCatalogVersion !== 18 || evidence.migration.toCatalogVersion !== 19
     || JSON.stringify(evidence.migration.inputPack) !== JSON.stringify(CURRENT_V18_MIGRATION_INPUT)
+    || !hasExactKeys(evidence.pack, [
+      "id", "inputSha256", "inputSqliteSha256", "inputByteSize", "outputSha256",
+      "outputSqliteSha256", "byteSize", "byteSizeDelta",
+    ])
+    || evidence.pack.id !== "capital"
     || evidence.pack?.outputSha256 !== sha256(packBytes)
     || evidence.pack?.outputSqliteSha256 !== sha256(gunzipSync(packBytes))
     || evidence.pack?.byteSize !== packBytes.length
@@ -1162,6 +1167,10 @@ async function checkMigratedCurrentV18({ packPath, indexPath, evidencePath }) {
     || evidence.pack?.inputSqliteSha256 !== CURRENT_V18_MIGRATION_INPUT.sqliteSha256
     || evidence.pack?.inputByteSize !== CURRENT_V18_MIGRATION_INPUT.byteSize
     || evidence.pack?.byteSizeDelta !== packBytes.length - CURRENT_V18_MIGRATION_INPUT.byteSize
+    || evidence.pack.byteSizeDelta > MAX_GZIP_DELTA_BYTES
+    || evidence.routeServiceEvidence?.artifactEvidence?.timetableArtifactId !== evidence.sourceArtifact.id
+    || evidence.routeServiceEvidence?.artifactEvidence?.timetableArtifactSha256 !== evidence.sourceArtifact.sha256
+    || evidence.routeServiceEvidence?.artifactEvidence?.freshUntil !== evidence.sourceArtifact.freshUntil
     || evidence.topology?.stationMembershipCount !== topology.stations.length
     || evidence.topology?.servedStationCount !== topology.servedStations.length
     || evidence.topology?.edgeCount !== topology.edges.length

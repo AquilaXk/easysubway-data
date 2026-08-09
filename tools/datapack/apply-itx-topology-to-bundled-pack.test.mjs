@@ -498,6 +498,91 @@ test("immutable v18 output은 explicit migration으로만 v19 two-domain evidenc
   assert.equal(capital.sha256, sha256(packBytes));
   assert.equal(capital.sqliteSha256, sha256(gunzipSync(packBytes)));
   assert.equal(capital.byteSize, packBytes.length);
+  await context.test("explicit check binds the stored artifact evidence to the pinned source artifact", async () => {
+    const check = path.join(directory, "check-source-artifact-binding");
+    await mkdir(check);
+    const sqlitePath = path.join(check, "capital.sqlite");
+    await writeFile(sqlitePath, gunzipSync(packBytes));
+    const database = new DatabaseSync(sqlitePath);
+    try {
+      database.prepare(`UPDATE route_service_artifact_evidence
+        SET timetable_artifact_id = ?, timetable_artifact_sha256 = ?, fresh_until = ?
+        WHERE service_class = 'ITX_CHEONGCHUN'`).run(
+        "forged-timetable-artifact", "f".repeat(64), "2026-08-01T00:00:00+09:00",
+      );
+      database.prepare(`UPDATE route_service_station_catalog_evidence SET fresh_until = ?
+        WHERE service_class = 'ITX_CHEONGCHUN'`).run("2026-08-01T00:00:00+09:00");
+    } finally { database.close(); }
+    const candidateSqlite = await readFile(sqlitePath);
+    const candidatePackBytes = gzipSync(candidateSqlite, { level: 9, mtime: 0 });
+    const candidateEvidence = structuredClone(evidence);
+    candidateEvidence.routeServiceEvidence.artifactEvidence.timetableArtifactId = "forged-timetable-artifact";
+    candidateEvidence.routeServiceEvidence.artifactEvidence.timetableArtifactSha256 = "f".repeat(64);
+    candidateEvidence.routeServiceEvidence.artifactEvidence.freshUntil = "2026-08-01T00:00:00+09:00";
+    candidateEvidence.routeServiceEvidence.stationCatalogEvidence.freshUntil = "2026-08-01T00:00:00+09:00";
+    candidateEvidence.pack.outputSha256 = sha256(candidatePackBytes);
+    candidateEvidence.pack.outputSqliteSha256 = sha256(candidateSqlite);
+    candidateEvidence.pack.byteSize = candidatePackBytes.length;
+    candidateEvidence.pack.byteSizeDelta = candidatePackBytes.length - candidateEvidence.pack.inputByteSize;
+    const candidateIndex = structuredClone(index);
+    Object.assign(candidateIndex.packs.find(({ id }) => id === "capital"), {
+      sha256: sha256(candidatePackBytes), sqliteSha256: sha256(candidateSqlite), byteSize: candidatePackBytes.length,
+    });
+    const candidatePack = path.join(check, "capital.sqlite.gz");
+    const candidateIndexPath = path.join(check, "index.json");
+    const candidateEvidencePath = path.join(check, "evidence.json");
+    await Promise.all([
+      writeFile(candidatePack, candidatePackBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
+      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
+    ]);
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
+      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
+    ], { cwd: root }), /migrated v19 evidence or index is stale/);
+  });
+  await context.test("explicit check rejects a non-capital pack identity", async () => {
+    const check = path.join(directory, "check-pack-id");
+    await mkdir(check);
+    const candidateEvidence = structuredClone(evidence);
+    candidateEvidence.pack.id = "other";
+    const candidatePack = path.join(check, "capital.sqlite.gz");
+    const candidateIndexPath = path.join(check, "index.json");
+    const candidateEvidencePath = path.join(check, "evidence.json");
+    await Promise.all([
+      writeFile(candidatePack, packBytes), writeFile(candidateIndexPath, indexBytes),
+      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
+    ]);
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
+      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
+    ], { cwd: root }), /migrated v19 evidence or index is stale/);
+  });
+  await context.test("explicit check rejects an oversized recompressed migration output", async () => {
+    const check = path.join(directory, "check-gzip-delta");
+    await mkdir(check);
+    const candidateSqlite = gunzipSync(packBytes);
+    const candidatePackBytes = gzipSync(candidateSqlite, { level: 0, mtime: 0 });
+    assert.ok(candidatePackBytes.length - evidence.pack.inputByteSize > 64 * 1024);
+    const candidateEvidence = structuredClone(evidence);
+    candidateEvidence.pack.outputSha256 = sha256(candidatePackBytes);
+    candidateEvidence.pack.byteSize = candidatePackBytes.length;
+    candidateEvidence.pack.byteSizeDelta = candidatePackBytes.length - candidateEvidence.pack.inputByteSize;
+    const candidateIndex = structuredClone(index);
+    Object.assign(candidateIndex.packs.find(({ id }) => id === "capital"), {
+      sha256: sha256(candidatePackBytes), byteSize: candidatePackBytes.length,
+    });
+    const candidatePack = path.join(check, "capital.sqlite.gz");
+    const candidateIndexPath = path.join(check, "index.json");
+    const candidateEvidencePath = path.join(check, "evidence.json");
+    await Promise.all([
+      writeFile(candidatePack, candidatePackBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
+      writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
+    ]);
+    await assert.rejects(execFileAsync(process.execPath, [
+      "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
+      "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
+    ], { cwd: root }), /migrated v19 evidence or index is stale/);
+  });
   for (const [name, mutateEvidence, mutateIndex] of [
     ["topology", (value) => { value.topology.edgeCount += 1; }],
     ["input identity", (value) => { value.pack.inputSqliteSha256 = "0".repeat(64); }],
