@@ -78,6 +78,10 @@ test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실�
       && ci.indexOf("Migrate pinned Mobile v18 pack to v19") < ci.indexOf("Verify Data issue 108 bundled-pack regression"),
     "#108 회귀 검증은 fixture stage→catalog artifact→v19 migration 뒤여야 함",
   );
+  assert.ok(
+    ci.indexOf("Set up Node.js") < ci.indexOf("Emit pinned Mobile station catalog artifact"),
+    "pinned Node runtime은 station catalog generator보다 앞서야 함",
+  );
 });
 
 test("CI는 exact staged v18에서만 station catalog를 emit하고 explicit migration을 수행한다", () => {
@@ -91,6 +95,10 @@ test("CI는 exact staged v18에서만 station catalog를 emit하고 explicit mig
   assert.match(migrate, /apply-itx-topology-to-bundled-pack\.mjs/);
   assert.match(migrate, /--migrate-current-v18/);
   assert.match(migrate, /--station-catalog-pack \.external\/mobile-station-catalog/);
+  const node = ci.match(/- name: Set up Node\.js[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(node, "pinned Node setup step을 찾지 못함");
+  assert.match(node, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+  assert.match(node, /node-version:\s*"24\.19\.0"/);
 });
 
 test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {

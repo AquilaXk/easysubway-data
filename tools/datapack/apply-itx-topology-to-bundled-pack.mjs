@@ -545,12 +545,37 @@ function migrationEvidence({ sourceArtifact, topology, admissionEvidence, inputG
 
 async function writeMigrationOutputs(outputs) {
   const suffix = `.migration-${randomUUID()}.tmp`;
-  const staged = outputs.map(({ file, bytes }) => ({ file, bytes, temporary: `${file}${suffix}` }));
+  const staged = await Promise.all(outputs.map(async ({ file, bytes }) => ({
+    file, bytes, original: await readFile(file), temporary: `${file}${suffix}`,
+    backup: `${file}${suffix}.backup`,
+  })));
+  let committed = 0;
   try {
     await Promise.all(staged.map(({ temporary, bytes }) => writeFile(temporary, bytes)));
-    for (const { file, temporary } of staged) await rename(temporary, file);
+    for (const entry of staged) {
+      await rename(entry.file, entry.backup);
+      await rename(entry.temporary, entry.file);
+      committed += 1;
+      if (process.env.EASYSUBWAY_TEST_MIGRATION_FAIL_AFTER_SURFACE === String(committed)) {
+        throw new Error(`injected migration surface failure ${committed}`);
+      }
+    }
+    await Promise.all(staged.map(({ backup }) => rm(backup, { force: true })));
+  } catch (error) {
+    await Promise.all(staged.map(async ({ file, backup, original }) => {
+      const backupExists = await lstat(backup).then(() => true).catch(() => false);
+      if (backupExists) {
+        await rm(file, { force: true });
+        await rename(backup, file);
+      } else if (committed > 0) {
+        await writeFile(file, original);
+      }
+    }));
+    throw error;
   } finally {
-    await Promise.all(staged.map(({ temporary }) => rm(temporary, { force: true })));
+    await Promise.all(staged.flatMap(({ temporary, backup }) => [
+      rm(temporary, { force: true }), rm(backup, { force: true }),
+    ]));
   }
 }
 
@@ -1134,7 +1159,21 @@ async function checkMigratedCurrentV18({ packPath, indexPath, evidencePath }) {
     || evidence.pack?.outputSqliteSha256 !== sha256(gunzipSync(packBytes))
     || evidence.pack?.byteSize !== packBytes.length
     || evidence.pack?.inputSha256 !== CURRENT_V18_MIGRATION_INPUT.sha256
-    || index.packs?.find(({ id }) => id === "capital")?.sha256 !== sha256(packBytes)) {
+    || evidence.pack?.inputSqliteSha256 !== CURRENT_V18_MIGRATION_INPUT.sqliteSha256
+    || evidence.pack?.inputByteSize !== CURRENT_V18_MIGRATION_INPUT.byteSize
+    || evidence.pack?.byteSizeDelta !== packBytes.length - CURRENT_V18_MIGRATION_INPUT.byteSize
+    || evidence.topology?.stationMembershipCount !== topology.stations.length
+    || evidence.topology?.servedStationCount !== topology.servedStations.length
+    || evidence.topology?.edgeCount !== topology.edges.length
+    || evidence.topology?.sha256 !== topology.sha256
+    || JSON.stringify(evidence.topology?.directions) !== JSON.stringify(["up", "down"])
+    || evidence.topology?.connectedComponentCount !== 1
+    || evidence.topology?.isolatedServedStationCount !== 0
+    || evidence.topology?.durationSecondsEmbedded !== false
+    || evidence.topology?.fareEmbedded !== false
+    || index.packs?.find(({ id }) => id === "capital")?.sha256 !== sha256(packBytes)
+    || index.packs?.find(({ id }) => id === "capital")?.sqliteSha256 !== sha256(gunzipSync(packBytes))
+    || index.packs?.find(({ id }) => id === "capital")?.byteSize !== packBytes.length) {
     throw new Error("ITX topology migrated v19 evidence or index is stale");
   }
   validateRouteServiceEvidence(evidence.routeServiceEvidence);

@@ -59,6 +59,11 @@ jobs:
           fi
           mv "${source}" apps/mobile
 
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
       - name: Emit pinned Mobile station catalog artifact
         shell: bash
         run: |
@@ -91,11 +96,6 @@ jobs:
           # 잡히지 않는다. 이미지는 다른 pin과 같은 규칙으로 digest 고정한다.
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "24.19.0"
 
       - name: Verify standalone contracts
         run: >-

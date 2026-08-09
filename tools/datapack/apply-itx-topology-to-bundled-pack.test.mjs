@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -405,6 +405,25 @@ test("immutable current v18 output은 explicit migration으로만 v19 two-domain
     "tools/datapack/emit-station-catalog-from-bundled-pack.mjs", "--input", packPath,
     "--output", stationCatalogPackPath,
   ], { cwd: root });
+  for (const surface of ["2", "3"]) {
+    await context.test(`surface ${surface} rename failure restores every original output`, async () => {
+      const failure = path.join(directory, `failure-${surface}`);
+      await (await import("node:fs/promises")).mkdir(failure);
+      const paths = {
+        pack: path.join(failure, "capital.sqlite.gz"), index: path.join(failure, "index.json"),
+        evidence: path.join(failure, "evidence.json"), catalog: path.join(failure, "station-catalog-pack"),
+      };
+      await Promise.all([writeFile(paths.pack, before[0]), writeFile(paths.index, before[1]), writeFile(paths.evidence, before[2])]);
+      await execFileAsync(process.execPath, ["tools/datapack/emit-station-catalog-from-bundled-pack.mjs", "--input", paths.pack, "--output", paths.catalog], { cwd: root });
+      await assert.rejects(execFileAsync(process.execPath, [
+        "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--migrate-current-v18",
+        "--pack", paths.pack, "--index", paths.index, "--evidence", paths.evidence,
+        "--station-catalog-pack", paths.catalog,
+      ], { cwd: root, env: { ...process.env, EASYSUBWAY_TEST_MIGRATION_FAIL_AFTER_SURFACE: surface } }), new RegExp(`injected migration surface failure ${surface}`));
+      assert.deepEqual(await Promise.all([readFile(paths.pack), readFile(paths.index), readFile(paths.evidence)]), before);
+      assert.deepEqual((await readdir(failure)).sort(), ["capital.sqlite.gz", "evidence.json", "index.json", "station-catalog-pack"]);
+    });
+  }
   await execFileAsync(process.execPath, [
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--migrate-current-v18",
     "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
@@ -435,6 +454,34 @@ test("immutable current v18 output은 explicit migration으로만 v19 two-domain
   assert.equal(capital.sha256, sha256(packBytes));
   assert.equal(capital.sqliteSha256, sha256(gunzipSync(packBytes)));
   assert.equal(capital.byteSize, packBytes.length);
+  for (const [name, mutateEvidence, mutateIndex] of [
+    ["topology", (value) => { value.topology.edgeCount += 1; }],
+    ["input identity", (value) => { value.pack.inputSqliteSha256 = "0".repeat(64); }],
+    ["input byte size", (value) => { value.pack.inputByteSize -= 1; }],
+    ["byte delta", (value) => { value.pack.byteSizeDelta += 1; }],
+    ["lineage", (value) => { value.migration.toCatalogVersion = 18; }],
+    ["index sqlite", undefined, (value) => { value.packs.find(({ id }) => id === "capital").sqliteSha256 = "0".repeat(64); }],
+    ["index size", undefined, (value) => { value.packs.find(({ id }) => id === "capital").byteSize -= 1; }],
+  ]) {
+    await context.test(`explicit check rejects ${name} semantic tamper`, async () => {
+      const check = path.join(directory, `check-${name.replaceAll(" ", "-")}`);
+      await (await import("node:fs/promises")).mkdir(check);
+      const candidateEvidence = JSON.parse(evidenceBytes);
+      const candidateIndex = JSON.parse(indexBytes);
+      mutateEvidence?.(candidateEvidence); mutateIndex?.(candidateIndex);
+      const candidatePack = path.join(check, "capital.sqlite.gz");
+      const candidateIndexPath = path.join(check, "index.json");
+      const candidateEvidencePath = path.join(check, "evidence.json");
+      await Promise.all([
+        writeFile(candidatePack, packBytes), writeFile(candidateIndexPath, JSON.stringify(candidateIndex)),
+        writeFile(candidateEvidencePath, JSON.stringify(candidateEvidence)),
+      ]);
+      await assert.rejects(execFileAsync(process.execPath, [
+        "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
+        "--pack", candidatePack, "--index", candidateIndexPath, "--evidence", candidateEvidencePath,
+      ], { cwd: root }), /migrated v19 evidence or index is stale/);
+    });
+  }
 });
 
 test("custom contract는 legacy tracked source를 승인하지 않고 sentinel 산출물을 변경하지 않는다", async (context) => {
