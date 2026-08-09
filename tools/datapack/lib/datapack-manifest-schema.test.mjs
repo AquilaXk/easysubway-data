@@ -30,6 +30,13 @@ function assertRejected(schema, value) {
   });
 }
 
+function assertSchemaRejected(schema, expectedFragment) {
+  withJsonFiles(schema, { activePack: {} }, (schemaPath, valuePath) => {
+    const errors = validateDatapackManifestJson(schemaPath, valuePath);
+    assert.ok(errors.some((error) => error.includes(expectedFragment)), errors.join("\n"));
+  });
+}
+
 const keywordSchema = {
   type: "object",
   required: ["entries", "minimum", "category", "marker"],
@@ -136,22 +143,22 @@ test("missing, malformed, and unsupported schema input fails closed without thro
     writeFileSync(valuePath, "{");
     assert.doesNotThrow(() => assert.notDeepEqual(validateDatapackManifestJson(schemaPath, valuePath), []));
   });
-  for (const schema of [
-    { type: "unsupported" },
-    { required: ["duplicate", "duplicate"] },
-    { additionalProperties: "false" },
-    { properties: [] },
-    { items: [] },
-    { minItems: -1 },
-    { minimum: "1" },
-    { pattern: "[" },
-    { enum: [] },
-    { unknownKeyword: true },
-    { type: "string", minItems: 1 },
-    { type: "object", minimum: 1 },
-    { type: "array", pattern: "^[a-z]+$" },
-    { type: "string", properties: {} },
+  for (const [schema, expectedFragment] of [
+    [{ type: "unsupported" }, ".type"],
+    [{ type: "object", required: ["duplicate", "duplicate"] }, ".required"],
+    [{ type: "object", additionalProperties: "false" }, ".additionalProperties"],
+    [{ type: "object", properties: [] }, ".properties"],
+    [{ type: "array", items: [] }, ".items"],
+    [{ type: "array", minItems: -1 }, ".minItems"],
+    [{ type: "number", minimum: "1" }, ".minimum"],
+    [{ type: "string", pattern: "[" }, ".pattern"],
+    [{ enum: [] }, ".enum"],
+    [{ unknownKeyword: true }, "unsupported schema keyword: unknownKeyword"],
+    [{ type: "string", minItems: 1 }, ".minItems"],
+    [{ type: "object", minimum: 1 }, ".minimum"],
+    [{ type: "array", pattern: "^[a-z]+$" }, ".pattern"],
+    [{ type: "string", properties: {} }, ".properties"],
   ]) {
-    assertRejected(schema, {});
+    assertSchemaRejected(schema, expectedFragment);
   }
 });
