@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   admittedTopologySource,
   applyTopology,
@@ -21,6 +21,9 @@ import {
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const buildNow = "2026-07-16T00:00:00.000Z";
+const mobileRevision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
+const currentV18GzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
+const currentV18SqliteSha256 = "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -376,6 +379,63 @@ function validateEvidenceCandidate(candidate, topology, gzipBytes, inputByteSize
     },
   });
 }
+
+async function immutableCurrentV18Bytes(relativePath) {
+  const mobileRoot = path.resolve(root, "../easysubway-mobile");
+  const { stdout } = await execFileAsync("git", [
+    "-C", mobileRoot, "show", `${mobileRevision}:apps/mobile/assets/datapacks/${relativePath}`,
+  ], { encoding: "buffer", maxBuffer: 4 * 1024 * 1024 });
+  return stdout;
+}
+
+test("immutable current v18 output은 explicit migration으로만 v19 two-domain evidence로 이행한다", async (context) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-v18-output-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const packPath = path.join(directory, "capital.sqlite.gz");
+  const indexPath = path.join(directory, "index.json");
+  const evidencePath = path.join(directory, "evidence.json");
+  const stationCatalogPackPath = path.join(directory, "station-catalog-pack");
+  await writeFile(packPath, await immutableCurrentV18Bytes("capital.sqlite.gz"));
+  await writeFile(indexPath, await immutableCurrentV18Bytes("index.json"));
+  await writeFile(evidencePath, await readFile(path.join(root, "tools/datapack/itx-cheongchun-topology-evidence.json")));
+  const before = await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]);
+  assert.equal(sha256(before[0]), currentV18GzipSha256);
+  assert.equal(sha256(gunzipSync(before[0])), currentV18SqliteSha256);
+  await execFileAsync(process.execPath, [
+    "tools/datapack/emit-station-catalog-from-bundled-pack.mjs", "--input", packPath,
+    "--output", stationCatalogPackPath,
+  ], { cwd: root });
+  await execFileAsync(process.execPath, [
+    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--migrate-current-v18",
+    "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
+    "--station-catalog-pack", stationCatalogPackPath,
+  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
+  await execFileAsync(process.execPath, [
+    "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--check",
+    "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
+  ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
+  const [packBytes, indexBytes, evidenceBytes] = await Promise.all([
+    readFile(packPath), readFile(indexPath), readFile(evidencePath),
+  ]);
+  const index = JSON.parse(indexBytes);
+  const evidence = JSON.parse(evidenceBytes);
+  await writeFile(path.join(directory, "output.sqlite"), gunzipSync(packBytes));
+  const verified = new DatabaseSync(path.join(directory, "output.sqlite"), { readOnly: true });
+  try {
+    assert.equal(verified.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(verified.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count, 1);
+    assert.equal(verified.prepare("SELECT count(*) AS count FROM route_service_station_catalog_evidence").get().count, 1);
+    assert.equal(verified.prepare("SELECT count(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'").get().count, 0);
+  } finally { verified.close(); }
+  assert.deepEqual(evidence.migration, {
+    fromCatalogVersion: 18, toCatalogVersion: 19,
+    inputPack: { id: "capital", sha256: currentV18GzipSha256, sqliteSha256: currentV18SqliteSha256, byteSize: 1463745 },
+  });
+  const capital = index.packs.find(({ id }) => id === "capital");
+  assert.equal(capital.sha256, sha256(packBytes));
+  assert.equal(capital.sqliteSha256, sha256(gunzipSync(packBytes)));
+  assert.equal(capital.byteSize, packBytes.length);
+});
 
 test("custom contract는 legacy tracked source를 승인하지 않고 sentinel 산출물을 변경하지 않는다", async (context) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-admission-"));

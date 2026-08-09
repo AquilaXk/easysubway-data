@@ -59,6 +59,22 @@ jobs:
           fi
           mv "${source}" apps/mobile
 
+      - name: Emit pinned Mobile station catalog artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-from-bundled-pack.mjs \
+            --input apps/mobile/assets/datapacks/capital.sqlite.gz \
+            --output .external/mobile-station-catalog
+
+      - name: Migrate pinned Mobile v18 pack to v19
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs \
+            --migrate-current-v18 \
+            --station-catalog-pack .external/mobile-station-catalog
+
       - name: Verify Data issue 108 bundled-pack regression
         shell: bash
         run: |
