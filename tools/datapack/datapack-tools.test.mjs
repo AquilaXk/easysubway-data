@@ -230,6 +230,31 @@ test("데이터팩 생성기는 TEST_ONLY admission fixture를 build input으로
   );
 });
 
+test("route service evidence domain split은 legacy TEST_ONLY canonical tuple을 v19 writer 전에 거부한다", async (context) => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-v19-test-only-"));
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  const admissionPath = "tools/datapack/fixtures/test-only-itx-cheongchun-admitted.json";
+  const beforeAdmissionBytes = await readFile(admissionPath);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "tools/datapack/build-datapack.mjs",
+        "--fixture",
+        "tools/datapack/fixtures/catalog-fixture.json",
+        "--test-only-itx-admission",
+        admissionPath,
+        "--output",
+        outputDir,
+      ],
+      { cwd: root, env: productionEnv },
+    ),
+    /test-only ITX legacy canonical pack identity is forbidden/,
+  );
+  assert.deepEqual(await readdir(outputDir), []);
+  assert.deepEqual(await readFile(admissionPath), beforeAdmissionBytes);
+});
+
 test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack을 만든다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-datapack-${Date.now()}`);
   await rm(outputDir, { recursive: true, force: true });
@@ -384,7 +409,7 @@ test("데이터팩 생성기는 fixture로 원격 manifest와 gzip SQLite pack�
   const database = new DatabaseSync(sqlitePath, { readOnly: true });
   try {
     assert.equal(database.prepare("PRAGMA quick_check").get().quick_check, "ok");
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 19);
     assert.equal(database.prepare("SELECT value FROM catalog_metadata WHERE key = 'schemaVersion'").get().value, "1");
     assert.equal(database.prepare("SELECT updated_at FROM catalog_metadata WHERE key = 'schemaVersion'").get().updated_at, 1781827200);
     assert.equal(database.prepare("SELECT last_verified_at FROM stations WHERE id = 'station-sangnoksu'").get().last_verified_at, 1781827200);
@@ -893,7 +918,7 @@ test("데이터팩 검증기는 공개 채널 user_version 상한을 넘는 pack
       ],
       { cwd: root, env: productionEnv },
     ),
-    /capital@1 catalog user_version 18 exceeds public compatibility maximum 14/,
+    /capital@1 catalog user_version 19 exceeds public compatibility maximum 14/,
   );
 });
 
@@ -920,7 +945,7 @@ test("데이터팩 생성기는 transit_feed_info feed_end_date를 적재하고 
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v1.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 19);
     assert.equal(
       database.prepare("SELECT feed_end_date FROM transit_feed_info").get().feed_end_date,
       "20261231",
@@ -3368,7 +3393,7 @@ test("데이터팩 생성기는 schema v2 실시간 provider mapping을 SQLite�
 
   const database = new DatabaseSync(path.join(outputDir, "catalog", "capital-v2.sqlite"), { readOnly: true });
   try {
-    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 18);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 19);
     assert.deepEqual(
       {
         ...database
@@ -17577,7 +17602,7 @@ test("bundled 공식 OD quote 재적용은 SQLite와 gzip hash를 변경하지 �
   }
 });
 
-test("bundled 공식 OD quote check는 catalog user_version 18을 요구한다", async () => {
+test("bundled 공식 OD quote check는 catalog user_version 19을 요구한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-check-version-"));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -17610,14 +17635,14 @@ test("bundled 공식 OD quote check는 catalog user_version 18을 요구한다",
         "--index", indexPath,
         "--check",
       ], { cwd: root }),
-      /bundled catalog user_version must be 18/,
+      /bundled catalog user_version must be 19/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("bundled 공식 OD quote no-op는 입력 catalog user_version 16을 보존한다", async () => {
+test("bundled 공식 OD quote 후처리기는 v18 production pack을 거부한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-user-version-"));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -17628,27 +17653,24 @@ test("bundled 공식 OD quote no-op는 입력 catalog user_version 16을 보존�
       gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
     );
     const database = new DatabaseSync(sqlitePath);
-    database.exec("PRAGMA user_version = 16");
+    database.exec("PRAGMA user_version = 18");
     database.close();
     await writeFile(packPath, gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 }));
     await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
 
-    await execFileAsync(process.execPath, [
+    const inputPack = await readFile(packPath);
+    await assert.rejects(execFileAsync(process.execPath, [
       "tools/datapack/apply-official-od-fares-to-bundled-pack.mjs",
       "--pack", packPath,
       "--index", indexPath,
-    ], { cwd: root });
-
-    await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
-    const updated = new DatabaseSync(sqlitePath, { readOnly: true });
-    assert.equal(updated.prepare("PRAGMA user_version").get().user_version, 16);
-    updated.close();
+    ], { cwd: root }), /requires catalog user_version 19, got 18/);
+    assert.equal(sha256(await readFile(packPath)), sha256(inputPack));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("bundled 공식 OD quote 후처리기는 v19 catalog를 v18로 낮추지 않는다", async () => {
+test("bundled 공식 OD quote 후처리기는 v20 catalog를 v19로 낮추지 않는다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-official-od-newer-version-"));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -17659,7 +17681,7 @@ test("bundled 공식 OD quote 후처리기는 v19 catalog를 v18로 낮추지 �
       gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
     );
     const database = new DatabaseSync(sqlitePath);
-    database.exec("PRAGMA user_version = 19");
+    database.exec("PRAGMA user_version = 20");
     database.close();
     const inputPack = gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 });
     await writeFile(packPath, inputPack);
@@ -17671,7 +17693,7 @@ test("bundled 공식 OD quote 후처리기는 v19 catalog를 v18로 낮추지 �
         "--pack", packPath,
         "--index", indexPath,
       ], { cwd: root }),
-      /does not support catalog user_version 19 newer than 18/,
+      /requires catalog user_version 19, got 20/,
     );
 
     assert.equal(sha256(await readFile(packPath)), sha256(inputPack));
@@ -17737,7 +17759,7 @@ test("bundled 차량·출입문 힌트 재적용은 SQLite와 gzip hash를 변�
   }
 });
 
-test("bundled 차량·출입문 힌트 check는 catalog user_version 18을 요구한다", async () => {
+test("bundled 차량·출입문 힌트 check는 catalog user_version 19을 요구한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-check-version-"));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -17770,14 +17792,14 @@ test("bundled 차량·출입문 힌트 check는 catalog user_version 18을 요�
         "--index", indexPath,
         "--check",
       ], { cwd: root }),
-      /bundled catalog user_version must be 18/,
+      /bundled catalog user_version must be 19/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("bundled 차량·출입문 힌트 no-op는 입력 catalog user_version 16을 보존한다", async () => {
+test("bundled 차량·출입문 힌트 후처리기는 v18 production pack을 거부한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-user-version-"));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -17788,27 +17810,24 @@ test("bundled 차량·출입문 힌트 no-op는 입력 catalog user_version 16�
       gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
     );
     const database = new DatabaseSync(sqlitePath);
-    database.exec("PRAGMA user_version = 16");
+    database.exec("PRAGMA user_version = 18");
     database.close();
     await writeFile(packPath, gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 }));
     await copyFile(path.join(root, "apps/mobile/assets/datapacks/index.json"), indexPath);
 
-    await execFileAsync(process.execPath, [
+    const inputPack = await readFile(packPath);
+    await assert.rejects(execFileAsync(process.execPath, [
       "tools/datapack/apply-car-door-hints-to-bundled-pack.mjs",
       "--pack", packPath,
       "--index", indexPath,
-    ], { cwd: root });
-
-    await writeFile(sqlitePath, gunzipSync(await readFile(packPath)));
-    const updated = new DatabaseSync(sqlitePath, { readOnly: true });
-    assert.equal(updated.prepare("PRAGMA user_version").get().user_version, 16);
-    updated.close();
+    ], { cwd: root }), /requires catalog user_version 19, got 18/);
+    assert.equal(sha256(await readFile(packPath)), sha256(inputPack));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("bundled 차량·출입문 힌트 후처리기는 v19 catalog를 v18로 낮추지 않는다", async () => {
+test("bundled 차량·출입문 힌트 후처리기는 v20 catalog를 v19로 낮추지 않는다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bundled-car-door-hints-newer-version-"));
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -17819,7 +17838,7 @@ test("bundled 차량·출입문 힌트 후처리기는 v19 catalog를 v18로 낮
       gunzipSync(await readFile(path.join(root, "apps/mobile/assets/datapacks/capital.sqlite.gz"))),
     );
     const database = new DatabaseSync(sqlitePath);
-    database.exec("PRAGMA user_version = 19");
+    database.exec("PRAGMA user_version = 20");
     database.close();
     const inputPack = gzipSync(await readFile(sqlitePath), { level: 9, mtime: 0 });
     await writeFile(packPath, inputPack);
@@ -17831,7 +17850,7 @@ test("bundled 차량·출입문 힌트 후처리기는 v19 catalog를 v18로 낮
         "--pack", packPath,
         "--index", indexPath,
       ], { cwd: root }),
-      /does not support catalog user_version 19 newer than 18/,
+      /requires catalog user_version 19, got 20/,
     );
 
     assert.equal(sha256(await readFile(packPath)), sha256(inputPack));

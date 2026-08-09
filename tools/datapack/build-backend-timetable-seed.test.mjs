@@ -57,11 +57,30 @@ const STATION_CATALOG_IDENTITY = Object.freeze({
   manifestSha256: "c".repeat(64),
 });
 
-function stationCatalogEvidence({ timetableArtifactId, timetableArtifactSha256, freshUntil, admissionEligible = true, sourceIssue = 2116 } = {}) {
+const CANONICAL_PACK_IDENTITY = Object.freeze({
+  id: "capital",
+  sha256: "d".repeat(64),
+  sqliteSha256: "e".repeat(64),
+});
+
+function artifactEvidence({ timetableArtifactId, timetableArtifactSha256, freshUntil, admissionEligible = true, sourceIssue = 2135 } = {}) {
   return {
     serviceClass: "ITX_CHEONGCHUN",
     timetableArtifactId,
     timetableArtifactSha256,
+    canonicalPackId: CANONICAL_PACK_IDENTITY.id,
+    canonicalPackSha256: CANONICAL_PACK_IDENTITY.sha256,
+    canonicalPackSqliteSha256: CANONICAL_PACK_IDENTITY.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible,
+    freshUntil,
+    sourceIssue,
+  };
+}
+
+function stationCatalogEvidence({ freshUntil, admissionEligible = true, sourceIssue = 2649 } = {}) {
+  return {
+    serviceClass: "ITX_CHEONGCHUN",
     stationCatalogArtifactKind: STATION_CATALOG_IDENTITY.artifactKind,
     stationCatalogManifestVersion: STATION_CATALOG_IDENTITY.manifestVersion,
     stationCatalogPackId: STATION_CATALOG_IDENTITY.catalogPackId,
@@ -204,56 +223,57 @@ test("재구성한 EXPRESS의 양 끝 승하차 제한은 허용하고 interior 
   );
 });
 
-test("ITX seed는 exact station-catalog identity를 route evidence SQL에 전파한다", async () => {
+test("route service evidence split은 canonical과 station-catalog identity를 별도 seed SQL에 전파한다", async () => {
   const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = JSON.parse(artifactBytes);
   const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
-  artifact.routeServiceArtifactEvidence = [stationCatalogEvidence({
+  artifact.routeServiceArtifactEvidence = [artifactEvidence({
     timetableArtifactId: artifact.timetableArtifactIdentity.id,
     timetableArtifactSha256,
     freshUntil: artifact.freshness.freshUntil,
   })];
+  artifact.routeServiceStationCatalogEvidence = [stationCatalogEvidence({ freshUntil: artifact.freshness.freshUntil })];
   const { sql } = buildBackendTimetableSeed(artifact, {
     ...OPTIONS,
     lineId: artifact.canonicalLineId,
     timetableArtifactSha256,
+    canonicalPackIdentity: CANONICAL_PACK_IDENTITY,
     stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
     serviceCalendarDayMap: Object.fromEntries(artifact.serviceCalendars.map((calendar) => [calendar.serviceId, calendar])),
   });
+  assert.match(sql, /canonical_pack_id/);
   assert.match(sql, /station_catalog_artifact_kind/);
+  for (const value of Object.values(CANONICAL_PACK_IDENTITY)) assert.match(sql, new RegExp(String(value)));
   for (const value of Object.values(STATION_CATALOG_IDENTITY)) assert.match(sql, new RegExp(String(value)));
-  assert.doesNotMatch(sql, /canonical_pack_/);
 });
 
 test("ITX seed는 station-catalog identity missing·legacy·각 필드 mixed mutation을 fail closed한다", async () => {
   const artifactBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = JSON.parse(artifactBytes);
   const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
-  artifact.routeServiceArtifactEvidence = [stationCatalogEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: artifact.freshness.freshUntil })];
-  const options = { ...OPTIONS, lineId: artifact.canonicalLineId, timetableArtifactSha256, stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
+  artifact.routeServiceArtifactEvidence = [artifactEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: artifact.freshness.freshUntil })];
+  artifact.routeServiceStationCatalogEvidence = [stationCatalogEvidence({ freshUntil: artifact.freshness.freshUntil })];
+  const options = { ...OPTIONS, lineId: artifact.canonicalLineId, timetableArtifactSha256, canonicalPackIdentity: CANONICAL_PACK_IDENTITY, stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
   assert.throws(() => buildBackendTimetableSeed(artifact, { ...options, stationCatalogPackIdentity: undefined }), /station catalog identity mismatch/);
-  assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceArtifactEvidence: [{ ...artifact.routeServiceArtifactEvidence[0], canonicalPackId: "capital" }] }, options), /station catalog identity mismatch/);
+  assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceStationCatalogEvidence: [{ ...artifact.routeServiceStationCatalogEvidence[0], canonicalPackId: "capital" }] }, options), /station catalog identity mismatch/);
   for (const key of ["stationCatalogArtifactKind", "stationCatalogManifestVersion", "stationCatalogPackId", "stationCatalogStationSetSha256", "stationCatalogPayloadSha256", "stationCatalogManifestSha256"]) {
-    assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceArtifactEvidence: [{ ...artifact.routeServiceArtifactEvidence[0], [key]: key === "stationCatalogManifestVersion" ? 2 : "0".repeat(64) }] }, options), /station catalog identity mismatch/);
+    assert.throws(() => buildBackendTimetableSeed({ ...artifact, routeServiceStationCatalogEvidence: [{ ...artifact.routeServiceStationCatalogEvidence[0], [key]: key === "stationCatalogManifestVersion" ? 2 : "0".repeat(64) }] }, options), /station catalog identity mismatch/);
   }
 });
 
-test("CLI sidecar는 --canonical-pack 없이 artifact station-catalog identity에만 결합한다", async (context) => {
+test("CLI는 standalone legacy route-service-evidence sidecar를 output 없이 거부한다", async (context) => {
   const temporaryDir = await mkdtemp(path.join(tmpdir(), "easysubway-itx-seed-sidecar-"));
   context.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const fixtureBytes = await readFile(new URL("./fixtures/test-only-itx-cheongchun-admitted.json", import.meta.url));
   const artifact = { ...JSON.parse(fixtureBytes), stationCatalogPackIdentity: STATION_CATALOG_IDENTITY };
   const artifactBytes = Buffer.from(`${JSON.stringify(artifact)}\n`);
-  const timetableArtifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
   const inputPath = path.join(temporaryDir, "timetable.json");
   const evidencePath = path.join(temporaryDir, "evidence.json");
   const outputPath = path.join(temporaryDir, "seed.sql");
-  await Promise.all([writeFile(inputPath, artifactBytes), writeFile(evidencePath, `${JSON.stringify(stationCatalogEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: "2999-01-01T00:00:00.000Z" }))}\n`)]);
+  await Promise.all([writeFile(inputPath, artifactBytes), writeFile(evidencePath, "{}\n")]);
   const args = ["tools/datapack/build-backend-timetable-seed.mjs", "--input", inputPath, "--route-service-evidence", evidencePath, "--line-id", artifact.canonicalLineId, "--start-date", "20300101", "--end-date", "20300131", "--feed-end-date", "20300131", "--output", outputPath];
-  await execFileAsync(process.execPath, args, { cwd: root });
-  assert.match(await readFile(outputPath, "utf8"), new RegExp(STATION_CATALOG_IDENTITY.manifestSha256));
-  await writeFile(evidencePath, `${JSON.stringify({ ...stationCatalogEvidence({ timetableArtifactId: artifact.timetableArtifactIdentity.id, timetableArtifactSha256, freshUntil: "2999-01-01T00:00:00.000Z" }), stationCatalogPayloadSha256: "0".repeat(64) })}\n`);
-  await assert.rejects(execFileAsync(process.execPath, args, { cwd: root }), /station catalog identity mismatch/);
+  await assert.rejects(execFileAsync(process.execPath, args, { cwd: root }), /legacy single sidecar is forbidden/);
+  await assert.rejects(readFile(outputPath), { code: "ENOENT" });
 });
 
 test("stale ITX evidence는 seed 생성 단계에서 거부한다", () => {
@@ -264,14 +284,10 @@ test("stale ITX evidence는 seed 생성 단계에서 거부한다", () => {
       serviceClass: "ITX_CHEONGCHUN",
       servicePattern: "EXPRESS",
     })),
-    routeServiceArtifactEvidence: [{
-      serviceClass: "ITX_CHEONGCHUN",
-      admissionStatus: "ADMITTED",
-      admissionEligible: true,
-      freshUntil: "2026-07-13T00:00:00.000Z",
-    }],
+    routeServiceArtifactEvidence: [artifactEvidence({ timetableArtifactId: "stale", timetableArtifactSha256: "a".repeat(64), freshUntil: "2026-07-13T00:00:00.000Z" })],
+    routeServiceStationCatalogEvidence: [stationCatalogEvidence({ freshUntil: "2026-07-13T00:00:00.000Z" })],
   };
-  assert.throws(() => buildBackendTimetableSeed(artifact, OPTIONS), /must be fresh/);
+  assert.throws(() => buildBackendTimetableSeed(artifact, { ...OPTIONS, timetableArtifactSha256: "a".repeat(64), canonicalPackIdentity: CANONICAL_PACK_IDENTITY, stationCatalogPackIdentity: STATION_CATALOG_IDENTITY }), /must be fresh/);
 });
 
 test("ITX trip 0건인 seed에는 ADMITTED evidence를 기록하지 않는다", () => {
@@ -287,14 +303,17 @@ test("ITX trip 0건인 seed에는 ADMITTED evidence를 기록하지 않는다", 
       admissionStatus: "ADMITTED",
       admissionEligible: true,
       freshUntil: "2999-01-01T00:00:00.000Z",
-      sourceIssue: 2116,
+      sourceIssue: 2135,
     }],
+    routeServiceStationCatalogEvidence: [stationCatalogEvidence({ freshUntil: "2999-01-01T00:00:00.000Z" })],
   };
 
   assert.throws(
     () => buildBackendTimetableSeed(artifact, {
       ...OPTIONS,
       timetableArtifactSha256: "a".repeat(64),
+      canonicalPackIdentity: CANONICAL_PACK_IDENTITY,
+      stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
     }),
     /route service evidence requires ITX_CHEONGCHUN trips/,
   );
@@ -308,26 +327,18 @@ test("ITX evidence freshUntil은 runtime loader가 읽는 offset ISO-8601 형식
       serviceClass: "ITX_CHEONGCHUN",
       servicePattern: "EXPRESS",
     })),
-    routeServiceArtifactEvidence: [{
-      serviceClass: "ITX_CHEONGCHUN",
-      timetableArtifactId: "invalid-freshness-format",
-      timetableArtifactSha256: "a".repeat(64),
-      canonicalPackId: "capital",
-      canonicalPackSha256: "b".repeat(64),
-      canonicalPackSqliteSha256: "c".repeat(64),
-      admissionStatus: "ADMITTED",
-      admissionEligible: true,
-      freshUntil: "2999-01-01",
-      sourceIssue: 2116,
-    }],
+    routeServiceArtifactEvidence: [artifactEvidence({ timetableArtifactId: "invalid-freshness-format", timetableArtifactSha256: "a".repeat(64), freshUntil: "2999-01-01" })],
+    routeServiceStationCatalogEvidence: [stationCatalogEvidence({ freshUntil: "2999-01-01" })],
   };
 
   assert.throws(
     () => buildBackendTimetableSeed(artifact, {
       ...OPTIONS,
       timetableArtifactSha256: "a".repeat(64),
+      canonicalPackIdentity: CANONICAL_PACK_IDENTITY,
+      stationCatalogPackIdentity: STATION_CATALOG_IDENTITY,
     }),
-    /freshUntil must be offset ISO-8601/,
+    /two-domain freshUntil must exact-match as offset ISO-8601/,
   );
 });
 

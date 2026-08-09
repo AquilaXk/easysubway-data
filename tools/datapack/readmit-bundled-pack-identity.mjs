@@ -88,7 +88,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const ITX_SERVICE_CLASS = "ITX_CHEONGCHUN";
 const EXPECTED_ITX_EDGE_COUNT = 48;
-const EXPECTED_CATALOG_VERSION = 18;
+const EXPECTED_CATALOG_VERSION = 19;
 // #2135 원 ITX 반입(commit 35da1b71)이 만든 최초 output identity — 이후
 // 프레시니스 갱신(commit 3cad7466)까지 반영된, 재승인 체인이 시작되기 직전의
 // 마지막 순정 ITX-only output. 재승인 체인의 첫 링크는 반드시 여기서
@@ -253,6 +253,27 @@ function itxRouteServiceEvidenceRows(database) {
   `).all(ITX_SERVICE_CLASS);
 }
 
+function itxRouteServiceStationCatalogEvidenceRows(database) {
+  return database.prepare(`
+    SELECT service_class, station_catalog_artifact_kind, station_catalog_manifest_version,
+           station_catalog_pack_id, station_catalog_station_set_sha256,
+           station_catalog_payload_sha256, station_catalog_manifest_sha256,
+           admission_status, admission_eligible, fresh_until, source_issue
+    FROM route_service_station_catalog_evidence
+    WHERE service_class = ?
+  `).all(ITX_SERVICE_CLASS);
+}
+
+function exactRouteServiceEvidenceRows(database, table, readRows) {
+  if (!listTables(database).includes(table)) throw new Error(`readmission refused: ${table} is missing`);
+  const rows = readRows(database);
+  const count = database.prepare(`SELECT count(*) AS count FROM ${table}`).get().count;
+  if (count !== 1 || rows.length !== 1) {
+    throw new Error(`readmission refused: ${table} requires exactly one ITX_CHEONGCHUN row`);
+  }
+  return rows;
+}
+
 // ITX-청춘 하위그래프(엣지·admission evidence)가 두 pack 사이 byte-identical
 // 임을 fail-closed로 증명한다. 다르면 "무관한 재승인"이 아니라 ITX 위상
 // 자체를 건드린 것이므로 즉시 예외를 던져 재승인을 거부한다.
@@ -272,17 +293,24 @@ function verifyItxSubgraphUnchanged(previousDb, newDb) {
       "(this is an ITX-affecting change, not eligible for unrelated-change readmission)",
     );
   }
-  const previousEvidence = itxRouteServiceEvidenceRows(previousDb);
-  const newEvidence = itxRouteServiceEvidenceRows(newDb);
-  if (JSON.stringify(previousEvidence) !== JSON.stringify(newEvidence)) {
+  const previousEvidence = exactRouteServiceEvidenceRows(previousDb, "route_service_artifact_evidence", itxRouteServiceEvidenceRows);
+  const newEvidence = exactRouteServiceEvidenceRows(newDb, "route_service_artifact_evidence", itxRouteServiceEvidenceRows);
+  const previousStationEvidence = exactRouteServiceEvidenceRows(previousDb, "route_service_station_catalog_evidence", itxRouteServiceStationCatalogEvidenceRows);
+  const newStationEvidence = exactRouteServiceEvidenceRows(newDb, "route_service_station_catalog_evidence", itxRouteServiceStationCatalogEvidenceRows);
+  if (previousEvidence[0].fresh_until !== previousStationEvidence[0].fresh_until
+    || newEvidence[0].fresh_until !== newStationEvidence[0].fresh_until) {
+    throw new Error("readmission refused: route service evidence freshness differs between domains");
+  }
+  if (JSON.stringify(previousEvidence) !== JSON.stringify(newEvidence)
+    || JSON.stringify(previousStationEvidence) !== JSON.stringify(newStationEvidence)) {
     throw new Error(
-      "readmission refused: ITX_CHEONGCHUN route_service_artifact_evidence differs between " +
+      "readmission refused: ITX_CHEONGCHUN route service evidence differs between " +
       "previous and new pack (this is an ITX-affecting change, not eligible for unrelated-change readmission)",
     );
   }
   return {
     edgesSha256: sha256(Buffer.from(previousEdgesJson)),
-    evidenceSha256: sha256(Buffer.from(JSON.stringify(previousEvidence))),
+    evidenceSha256: sha256(Buffer.from(JSON.stringify({ previousEvidence, previousStationEvidence }))),
     edgeCount: previousEdges.length,
   };
 }

@@ -92,6 +92,16 @@ export function buildServerTimetableSnapshot({
     serviceClass: "ITX_CHEONGCHUN",
     timetableArtifactId: source.artifactId,
     timetableArtifactSha256: sha256(sourceBytes),
+    canonicalPackId: canonicalPackIdentity.id,
+    canonicalPackSha256: canonicalPackIdentity.sha256,
+    canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
+    admissionStatus: "ADMITTED",
+    admissionEligible: true,
+    freshUntil: source.freshUntil,
+    sourceIssue: 2135,
+  }];
+  const routeServiceStationCatalogEvidence = [{
+    serviceClass: "ITX_CHEONGCHUN",
     stationCatalogArtifactKind: stationCatalogPackIdentity.artifactKind,
     stationCatalogManifestVersion: stationCatalogPackIdentity.manifestVersion,
     stationCatalogPackId: stationCatalogPackIdentity.catalogPackId,
@@ -101,13 +111,14 @@ export function buildServerTimetableSnapshot({
     admissionStatus: "ADMITTED",
     admissionEligible: true,
     freshUntil: source.freshUntil,
-    sourceIssue: 2135,
+    sourceIssue: 2649,
   }];
   const itxSeed = buildBackendTimetableSeed({
     ...source,
     transitTrips: sortedTrips,
     transitStopTimes: sortedStopTimes,
     routeServiceArtifactEvidence,
+    routeServiceStationCatalogEvidence,
   }, {
     includeFeedInfo: false,
     excludeServiceCalendarIds: existingCalendarIds,
@@ -116,6 +127,7 @@ export function buildServerTimetableSnapshot({
     endDate: latestServiceDate(source.selectedServiceDates),
     buildNow,
     timetableArtifactSha256: sha256(sourceBytes),
+    canonicalPackIdentity,
     stationCatalogPackIdentity,
   });
   assertNoIdentityCollisions(baselineSql, itxSeed);

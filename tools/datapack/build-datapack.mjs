@@ -272,50 +272,13 @@ async function loadBuildInput(args, officialOdFareAdmissions, officialOdFareAdmi
   };
 }
 
-async function materializeTestOnlyItxAdmission(fixture, admission, admissionBytes) {
-  const freshUntil = validateTestOnlyItxAdmission(admission);
+async function materializeTestOnlyItxAdmission(_fixture, admission, _admissionBytes) {
+  validateTestOnlyItxAdmission(admission);
   if (Object.hasOwn(admission, "canonicalPackIdentity")) {
     throw new Error("test-only ITX legacy canonical pack identity is forbidden");
   }
-  const stationIdentity = requiredStationCatalogPackIdentity(
-    admission.stationCatalogPackIdentity,
-    "testOnlyItxAdmission.stationCatalogPackIdentity",
-  );
   validateTestOnlyItxTimetableIdentity(admission);
-  const pack = testOnlyItxTargetPack(fixture);
-  const lineId = requiredString(admission.canonicalLineId, "testOnlyItxAdmission.canonicalLineId");
-  const admittedStationIds = validateTestOnlyItxStations(pack, admission, lineId);
-  const timetableHash = sha256(admissionBytes);
-  const { trips, stopTimes, edges } = deriveTestOnlyItxRows(
-    admission,
-    lineId,
-    admittedStationIds,
-    timetableHash,
-  );
-
-  pack.serviceCalendars = [...(pack.serviceCalendars ?? []), ...(admission.serviceCalendars ?? [])];
-  pack.transitRoutes = [...(pack.transitRoutes ?? []), ...(admission.transitRoutes ?? [])];
-  pack.transitTrips = [...(pack.transitTrips ?? []), ...trips];
-  pack.transitStopTimes = [...(pack.transitStopTimes ?? []), ...stopTimes];
-  pack.networkEdges = [...(pack.networkEdges ?? []), ...edges];
-  validatedItxStationCatalogEvidence.set(pack, {
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: requiredString(
-      admission.timetableArtifactIdentity?.id,
-      "testOnlyItxAdmission.timetableArtifactIdentity.id",
-    ),
-    timetableArtifactSha256: timetableHash,
-    stationCatalogArtifactKind: stationIdentity.artifactKind,
-    stationCatalogManifestVersion: stationIdentity.manifestVersion,
-    stationCatalogPackId: stationIdentity.catalogPackId,
-    stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
-    stationCatalogPayloadSha256: stationIdentity.payloadSha256,
-    stationCatalogManifestSha256: stationIdentity.manifestSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: true,
-    freshUntil,
-    sourceIssue: 2116,
-  });
+  throw new Error("test-only ITX admission cannot create v19 route service evidence without an independently verified #2135 canonical tuple");
 }
 
 function validateTestOnlyItxAdmission(admission) {
@@ -672,9 +635,8 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     materializeCapitalTopologySource(pack, topology, capitalAdmissions);
     applyCapitalNetworkEdgeEvidence(pack, topology, capitalTopology.pinned.snapshotId, capitalAdmissions);
     applyItxNetworkEdgeEvidence(pack, itxAdmission);
-    // The candidate fixture's persisted legacy row is never an admission input. After the
-    // current source/topology identity is fully validated, replace it in-memory with the
-    // verified station-catalog row that the SQLite transaction materializes below.
+    // The candidate fixture's persisted legacy row is never an admission input. The verified
+    // #2135 canonical and #2649 station identities are materialized as independent v19 rows.
     pack.routeServiceArtifactEvidence = [];
     validatedItxStationCatalogEvidence.set(pack, itxAdmission.routeServiceArtifactEvidence);
     normalizeUnverifiedNetworkEdgeStates(pack);
@@ -1170,19 +1132,31 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
     freshUntil,
     pairHashes,
     routeServiceArtifactEvidence: {
-      serviceClass: "ITX_CHEONGCHUN",
-      timetableArtifactId: source.artifactId,
-      timetableArtifactSha256: sha256(sourceBytes),
-      stationCatalogArtifactKind: sourceStationCatalogPackIdentity.artifactKind,
-      stationCatalogManifestVersion: sourceStationCatalogPackIdentity.manifestVersion,
-      stationCatalogPackId: sourceStationCatalogPackIdentity.catalogPackId,
-      stationCatalogStationSetSha256: sourceStationCatalogPackIdentity.stationSetSha256,
-      stationCatalogPayloadSha256: sourceStationCatalogPackIdentity.payloadSha256,
-      stationCatalogManifestSha256: sourceStationCatalogPackIdentity.manifestSha256,
-      admissionStatus: "ADMITTED",
-      admissionEligible: true,
-      freshUntil,
-      sourceIssue: 2135,
+      artifactEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        timetableArtifactId: source.artifactId,
+        timetableArtifactSha256: sha256(sourceBytes),
+        canonicalPackId: contractTopologyInputPackIdentity.id,
+        canonicalPackSha256: contractTopologyInputPackIdentity.sha256,
+        canonicalPackSqliteSha256: contractTopologyInputPackIdentity.sqliteSha256,
+        admissionStatus: "ADMITTED",
+        admissionEligible: true,
+        freshUntil,
+        sourceIssue: 2135,
+      },
+      stationCatalogEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        stationCatalogArtifactKind: sourceStationCatalogPackIdentity.artifactKind,
+        stationCatalogManifestVersion: sourceStationCatalogPackIdentity.manifestVersion,
+        stationCatalogPackId: sourceStationCatalogPackIdentity.catalogPackId,
+        stationCatalogStationSetSha256: sourceStationCatalogPackIdentity.stationSetSha256,
+        stationCatalogPayloadSha256: sourceStationCatalogPackIdentity.payloadSha256,
+        stationCatalogManifestSha256: sourceStationCatalogPackIdentity.manifestSha256,
+        admissionStatus: "ADMITTED",
+        admissionEligible: true,
+        freshUntil,
+        sourceIssue: 2649,
+      },
     },
   };
 }
@@ -2388,9 +2362,11 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
         pack.transitFeedInfo ?? [],
         (row) => [1, serviceDate(row.feedEndDate, "transitFeedInfo.feedEndDate")],
       );
-      const routeServiceArtifactEvidence = validatedItxStationCatalogEvidence.get(pack);
-      if (routeServiceArtifactEvidence != null) {
+      const routeServiceEvidence = validatedItxStationCatalogEvidence.get(pack);
+      if (routeServiceEvidence != null) {
+        const { artifactEvidence, stationCatalogEvidence } = routeServiceEvidence;
         database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+        database.prepare("DELETE FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
         insertRows(
           database,
           "route_service_artifact_evidence",
@@ -2398,6 +2374,33 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
             "service_class",
             "timetable_artifact_id",
             "timetable_artifact_sha256",
+            "canonical_pack_id",
+            "canonical_pack_sha256",
+            "canonical_pack_sqlite_sha256",
+            "admission_status",
+            "admission_eligible",
+            "fresh_until",
+            "source_issue",
+          ],
+          [artifactEvidence],
+          (row) => [
+            requiredString(row.serviceClass, "routeServiceArtifactEvidence.artifactEvidence.serviceClass"),
+            requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactId"),
+            requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.artifactEvidence.timetableArtifactSha256"),
+            requiredString(row.canonicalPackId, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackId"),
+            requiredString(row.canonicalPackSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSha256"),
+            requiredString(row.canonicalPackSqliteSha256, "routeServiceArtifactEvidence.artifactEvidence.canonicalPackSqliteSha256"),
+            requiredString(row.admissionStatus, "routeServiceArtifactEvidence.artifactEvidence.admissionStatus"),
+            boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.artifactEvidence.admissionEligible"),
+            row.freshUntil ?? null,
+            requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.artifactEvidence.sourceIssue"),
+          ],
+        );
+        insertRows(
+          database,
+          "route_service_station_catalog_evidence",
+          [
+            "service_class",
             "station_catalog_artifact_kind",
             "station_catalog_manifest_version",
             "station_catalog_pack_id",
@@ -2409,21 +2412,19 @@ function buildSqlitePack(sqlitePath, schema, pack, officialOdFareAdmissions) {
             "fresh_until",
             "source_issue",
           ],
-          [routeServiceArtifactEvidence],
+          [stationCatalogEvidence],
           (row) => [
-            requiredString(row.serviceClass, "routeServiceArtifactEvidence.serviceClass"),
-            requiredString(row.timetableArtifactId, "routeServiceArtifactEvidence.timetableArtifactId"),
-            requiredString(row.timetableArtifactSha256, "routeServiceArtifactEvidence.timetableArtifactSha256"),
-            requiredString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogArtifactKind"),
-            requiredInteger(row.stationCatalogManifestVersion, "routeServiceArtifactEvidence.stationCatalogManifestVersion"),
-            requiredString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogPackId"),
-            requiredString(row.stationCatalogStationSetSha256, "routeServiceArtifactEvidence.stationCatalogStationSetSha256"),
-            requiredString(row.stationCatalogPayloadSha256, "routeServiceArtifactEvidence.stationCatalogPayloadSha256"),
-            requiredString(row.stationCatalogManifestSha256, "routeServiceArtifactEvidence.stationCatalogManifestSha256"),
-            requiredString(row.admissionStatus, "routeServiceArtifactEvidence.admissionStatus"),
-            boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.admissionEligible"),
+            requiredString(row.serviceClass, "routeServiceArtifactEvidence.stationCatalogEvidence.serviceClass"),
+            requiredString(row.stationCatalogArtifactKind, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogArtifactKind"),
+            requiredInteger(row.stationCatalogManifestVersion, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestVersion"),
+            requiredString(row.stationCatalogPackId, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPackId"),
+            requiredString(row.stationCatalogStationSetSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogStationSetSha256"),
+            requiredString(row.stationCatalogPayloadSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogPayloadSha256"),
+            requiredString(row.stationCatalogManifestSha256, "routeServiceArtifactEvidence.stationCatalogEvidence.stationCatalogManifestSha256"),
+            requiredString(row.admissionStatus, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus"),
+            boolFlag(row.admissionEligible, "routeServiceArtifactEvidence.stationCatalogEvidence.admissionEligible"),
             row.freshUntil ?? null,
-            requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.sourceIssue"),
+            requiredInteger(row.sourceIssue, "routeServiceArtifactEvidence.stationCatalogEvidence.sourceIssue"),
           ],
         );
       }

@@ -3,7 +3,7 @@
 // 반입한다. catalog-schema.sql v16은 이미 이 테이블을 정의하지만(#2033) 번들 팩엔 rows만
 // 누락되어 실사용자에게 힌트가 보이지 않았다(#2066/#2039 맥락). 이 스크립트는 시간 데이터가
 // 아니라 admission·검증 완료된 정적 힌트 행을 번들 팩에 idempotent하게 반입한다.
-// 입력 catalog user_version은 보존하며, production --check에서는 bundled schema v18을 요구한다.
+// 입력 catalog user_version은 보존하며, production --check에서는 bundled schema v19를 요구한다.
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -13,7 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const BUNDLED_CATALOG_USER_VERSION = 18;
+const BUNDLED_CATALOG_USER_VERSION = 19;
 const FACILITY_TYPES = new Set(["STAIR", "ELEVATOR", "ESCALATOR", "TRANSFER"]);
 
 function option(name, fallback) {
@@ -119,11 +119,13 @@ function applyHints(sqlitePath, hints) {
   const canonical = canonicalHints(hints);
   const database = new DatabaseSync(sqlitePath);
   try {
-    rejectNewerCatalogVersion(database);
+    requireBundledCatalogVersion(database);
     database.exec("PRAGMA foreign_keys = ON");
+    const routeEvidence = routeServiceEvidenceSnapshot(database);
     ensureSchema(database);
     if (JSON.stringify(storedHints(database)) === JSON.stringify(canonical)) {
       assertIntegrity(database);
+      assertRouteServiceEvidenceUnchanged(database, routeEvidence);
       return;
     }
     const insert = database.prepare(`
@@ -146,16 +148,32 @@ function applyHints(sqlitePath, hints) {
       throw error;
     }
     assertIntegrity(database);
+    assertRouteServiceEvidenceUnchanged(database, routeEvidence);
   } finally {
     database.close();
   }
 }
 
-function rejectNewerCatalogVersion(database) {
+function routeServiceEvidenceSnapshot(database) {
+  const tables = ["route_service_artifact_evidence", "route_service_station_catalog_evidence"];
+  for (const table of tables) {
+    const exists = database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table);
+    if (exists == null) throw new Error(`bundled route service evidence table is missing: ${table}`);
+  }
+  return JSON.stringify(tables.map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY service_class`).all()));
+}
+
+function assertRouteServiceEvidenceUnchanged(database, expected) {
+  if (routeServiceEvidenceSnapshot(database) !== expected) {
+    throw new Error("bundled route service evidence changed during car door hint postprocessing");
+  }
+}
+
+function requireBundledCatalogVersion(database) {
   const current = database.prepare("PRAGMA user_version").get().user_version;
-  if (current > BUNDLED_CATALOG_USER_VERSION) {
+  if (current !== BUNDLED_CATALOG_USER_VERSION) {
     throw new Error(
-      `car door hint postprocessor does not support catalog user_version ${current} newer than ${BUNDLED_CATALOG_USER_VERSION}`,
+      `car door hint postprocessor requires catalog user_version ${BUNDLED_CATALOG_USER_VERSION}, got ${current}`,
     );
   }
 }

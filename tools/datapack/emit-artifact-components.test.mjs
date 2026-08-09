@@ -75,7 +75,7 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
     const sqlite = path.join(temp, `${component}.sqlite`);
     await writeFile(sqlite, zstdDecompressSync(await readFile(path.join(temp, "one", `server-route-bundle/payload/${component}.sqlite.zst`))));
     const componentDb = new DatabaseSync(sqlite, { readOnly: true });
-    assert.equal(componentDb.prepare("PRAGMA user_version").get().user_version, 18);
+    assert.equal(componentDb.prepare("PRAGMA user_version").get().user_version, 19);
     assert.deepEqual(componentDb.prepare("PRAGMA foreign_key_check").all(), []);
     assert.deepEqual(componentDb.prepare("SELECT * FROM artifact_component_identity").all().map((row) => ({ ...row })), [{ bundleId: "bundle-v1", releaseSequence: 1, stationSetSha256: signingInput.stationSetSha256, serviceTimezone: "Asia/Seoul" }]);
     assert.deepEqual(componentDb.prepare("PRAGMA table_info(stations)").all().map((column) => column.name), ["id"]);
@@ -152,7 +152,7 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
   await writeBindings(temp, source, current, spec);
   await assert.rejects(() => run("bad-version"), /user_version/);
   assert.equal(await exists(path.join(temp, "bad-version")), false);
-  mutate("PRAGMA user_version=18");
+  mutate("PRAGMA user_version=19");
 
   mutate("INSERT INTO network_edges(id,from_node_id,to_node_id,edge_type,facility_id) VALUES('cross-component','s1','s1:l1','WALKWAY','missing-facility')");
   await writeBindings(temp, source, current, spec);

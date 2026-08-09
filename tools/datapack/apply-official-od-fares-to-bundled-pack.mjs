@@ -16,7 +16,7 @@ const root = path.resolve(import.meta.dirname, "../..");
 const FARE_COLUMNS = [
   "gnrlCardFare", "gnrlCashFare", "yungCardFare", "yungCashFare", "childCardFare", "childCashFare",
 ];
-const BUNDLED_CATALOG_USER_VERSION = 18;
+const BUNDLED_CATALOG_USER_VERSION = 19;
 
 function option(name, fallback) {
   const index = process.argv.indexOf(name);
@@ -61,8 +61,9 @@ function validateQuotes(document, admissions) {
 function applyQuotes(sqlitePath, quotes) {
   const database = new DatabaseSync(sqlitePath);
   try {
-    rejectNewerCatalogVersion(database);
+    requireBundledCatalogVersion(database);
     database.exec("PRAGMA foreign_keys = ON");
+    const routeEvidence = routeServiceEvidenceSnapshot(database);
     database.exec(`
       CREATE TABLE IF NOT EXISTS official_od_fare_quotes (
         origin_station_id TEXT NOT NULL,
@@ -88,6 +89,7 @@ function applyQuotes(sqlitePath, quotes) {
     `);
     if (JSON.stringify(storedQuotes(database)) === JSON.stringify(canonicalQuotes(quotes))) {
       assertIntegrity(database);
+      assertRouteServiceEvidenceUnchanged(database, routeEvidence);
       return;
     }
     const insert = database.prepare(`
@@ -108,16 +110,32 @@ function applyQuotes(sqlitePath, quotes) {
       throw error;
     }
     assertIntegrity(database);
+    assertRouteServiceEvidenceUnchanged(database, routeEvidence);
   } finally {
     database.close();
   }
 }
 
-function rejectNewerCatalogVersion(database) {
+function routeServiceEvidenceSnapshot(database) {
+  const tables = ["route_service_artifact_evidence", "route_service_station_catalog_evidence"];
+  for (const table of tables) {
+    const exists = database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table);
+    if (exists == null) throw new Error(`bundled route service evidence table is missing: ${table}`);
+  }
+  return JSON.stringify(tables.map((table) => database.prepare(`SELECT * FROM ${table} ORDER BY service_class`).all()));
+}
+
+function assertRouteServiceEvidenceUnchanged(database, expected) {
+  if (routeServiceEvidenceSnapshot(database) !== expected) {
+    throw new Error("bundled route service evidence changed during official OD fare postprocessing");
+  }
+}
+
+function requireBundledCatalogVersion(database) {
   const current = database.prepare("PRAGMA user_version").get().user_version;
-  if (current > BUNDLED_CATALOG_USER_VERSION) {
+  if (current !== BUNDLED_CATALOG_USER_VERSION) {
     throw new Error(
-      `official OD fare postprocessor does not support catalog user_version ${current} newer than ${BUNDLED_CATALOG_USER_VERSION}`,
+      `official OD fare postprocessor requires catalog user_version ${BUNDLED_CATALOG_USER_VERSION}, got ${current}`,
     );
   }
 }

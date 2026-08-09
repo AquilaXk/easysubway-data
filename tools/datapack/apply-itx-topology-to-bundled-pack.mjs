@@ -9,7 +9,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const CATALOG_VERSION = 18;
+const CATALOG_VERSION = 19;
 const EXPECTED_EDGE_COUNT = 48;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
 
@@ -31,10 +31,29 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
     },
   ],
 ]);
-const ROUTE_SERVICE_EVIDENCE_COLUMNS = `
+const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS = `
   service_class TEXT NOT NULL PRIMARY KEY,
   timetable_artifact_id TEXT NOT NULL,
   timetable_artifact_sha256 TEXT NOT NULL,
+  canonical_pack_id TEXT NOT NULL,
+  canonical_pack_sha256 TEXT NOT NULL,
+  canonical_pack_sqlite_sha256 TEXT NOT NULL,
+  admission_status TEXT NOT NULL,
+  admission_eligible INTEGER NOT NULL,
+  fresh_until TEXT,
+  source_issue INTEGER NOT NULL,
+  CHECK (service_class = 'ITX_CHEONGCHUN'),
+  CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_id) > 0),
+  CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (admission_status = 'ADMITTED'),
+  CHECK (admission_eligible = 1),
+  CHECK (fresh_until IS NOT NULL),
+  CHECK (source_issue IN (2116, 2135))
+`;
+const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMNS = `
+  service_class TEXT NOT NULL PRIMARY KEY,
   station_catalog_artifact_kind TEXT NOT NULL,
   station_catalog_manifest_version INTEGER NOT NULL,
   station_catalog_pack_id TEXT NOT NULL,
@@ -43,10 +62,9 @@ const ROUTE_SERVICE_EVIDENCE_COLUMNS = `
   station_catalog_manifest_sha256 TEXT NOT NULL,
   admission_status TEXT NOT NULL,
   admission_eligible INTEGER NOT NULL,
-  fresh_until TEXT,
+  fresh_until TEXT NOT NULL,
   source_issue INTEGER NOT NULL,
   CHECK (service_class = 'ITX_CHEONGCHUN'),
-  CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
   CHECK (station_catalog_artifact_kind = 'station-catalog-pack'),
   CHECK (station_catalog_manifest_version = 1),
   CHECK (length(station_catalog_pack_id) > 0),
@@ -56,12 +74,22 @@ const ROUTE_SERVICE_EVIDENCE_COLUMNS = `
   CHECK (admission_status = 'ADMITTED'),
   CHECK (admission_eligible = 1),
   CHECK (fresh_until IS NOT NULL),
-  CHECK (source_issue IN (2116, 2135))
+  CHECK (source_issue = 2649)
 `;
-const ROUTE_SERVICE_EVIDENCE_COLUMN_NAMES = Object.freeze([
+const ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMN_NAMES = Object.freeze([
   "service_class",
   "timetable_artifact_id",
   "timetable_artifact_sha256",
+  "canonical_pack_id",
+  "canonical_pack_sha256",
+  "canonical_pack_sqlite_sha256",
+  "admission_status",
+  "admission_eligible",
+  "fresh_until",
+  "source_issue",
+]);
+const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMN_NAMES = Object.freeze([
+  "service_class",
   "station_catalog_artifact_kind",
   "station_catalog_manifest_version",
   "station_catalog_pack_id",
@@ -72,6 +100,30 @@ const ROUTE_SERVICE_EVIDENCE_COLUMN_NAMES = Object.freeze([
   "admission_eligible",
   "fresh_until",
   "source_issue",
+]);
+const ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT = Object.freeze([
+  ["service_class", "TEXT", 1, 1], ["timetable_artifact_id", "TEXT", 1, 0],
+  ["timetable_artifact_sha256", "TEXT", 1, 0], ["canonical_pack_id", "TEXT", 1, 0],
+  ["canonical_pack_sha256", "TEXT", 1, 0], ["canonical_pack_sqlite_sha256", "TEXT", 1, 0],
+  ["admission_status", "TEXT", 1, 0], ["admission_eligible", "INTEGER", 1, 0],
+  ["fresh_until", "TEXT", 0, 0], ["source_issue", "INTEGER", 1, 0],
+]);
+const ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_LAYOUT = Object.freeze([
+  ["service_class", "TEXT", 1, 1], ["station_catalog_artifact_kind", "TEXT", 1, 0],
+  ["station_catalog_manifest_version", "INTEGER", 1, 0], ["station_catalog_pack_id", "TEXT", 1, 0],
+  ["station_catalog_station_set_sha256", "TEXT", 1, 0], ["station_catalog_payload_sha256", "TEXT", 1, 0],
+  ["station_catalog_manifest_sha256", "TEXT", 1, 0], ["admission_status", "TEXT", 1, 0],
+  ["admission_eligible", "INTEGER", 1, 0], ["fresh_until", "TEXT", 1, 0],
+  ["source_issue", "INTEGER", 1, 0],
+]);
+const ROUTE_SERVICE_V18_MIXED_EVIDENCE_LAYOUT = Object.freeze([
+  ["service_class", "TEXT", 1, 1], ["timetable_artifact_id", "TEXT", 1, 0],
+  ["timetable_artifact_sha256", "TEXT", 1, 0], ["station_catalog_artifact_kind", "TEXT", 1, 0],
+  ["station_catalog_manifest_version", "INTEGER", 1, 0], ["station_catalog_pack_id", "TEXT", 1, 0],
+  ["station_catalog_station_set_sha256", "TEXT", 1, 0], ["station_catalog_payload_sha256", "TEXT", 1, 0],
+  ["station_catalog_manifest_sha256", "TEXT", 1, 0], ["admission_status", "TEXT", 1, 0],
+  ["admission_eligible", "INTEGER", 1, 0], ["fresh_until", "TEXT", 0, 0],
+  ["source_issue", "INTEGER", 1, 0],
 ]);
 
 function option(name, fallback) {
@@ -333,7 +385,7 @@ export function validateTopologyEvidence({
   return { inputSqliteBytes };
 }
 
-function routeServiceEvidence(contract, reference, source) {
+function routeServiceEvidence(contract, reference, source, canonicalPackIdentity) {
   const identity = stationCatalogIdentity(
     contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
     "ITX coverage station catalog identity",
@@ -342,19 +394,31 @@ function routeServiceEvidence(contract, reference, source) {
     throw new Error("ITX coverage and source station catalog identity mismatch");
   }
   return {
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: reference.artifactId,
-    timetableArtifactSha256: reference.sha256,
-    stationCatalogArtifactKind: identity.artifactKind,
-    stationCatalogManifestVersion: identity.manifestVersion,
-    stationCatalogPackId: identity.catalogPackId,
-    stationCatalogStationSetSha256: identity.stationSetSha256,
-    stationCatalogPayloadSha256: identity.payloadSha256,
-    stationCatalogManifestSha256: identity.manifestSha256,
-    admissionStatus: "ADMITTED",
-    admissionEligible: 1,
-    freshUntil: reference.freshUntil,
-    sourceIssue: 2135,
+    artifactEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      timetableArtifactId: reference.artifactId,
+      timetableArtifactSha256: reference.sha256,
+      canonicalPackId: canonicalPackIdentity.id,
+      canonicalPackSha256: canonicalPackIdentity.sha256,
+      canonicalPackSqliteSha256: canonicalPackIdentity.sqliteSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: 1,
+      freshUntil: reference.freshUntil,
+      sourceIssue: 2135,
+    },
+    stationCatalogEvidence: {
+      serviceClass: "ITX_CHEONGCHUN",
+      stationCatalogArtifactKind: identity.artifactKind,
+      stationCatalogManifestVersion: identity.manifestVersion,
+      stationCatalogPackId: identity.catalogPackId,
+      stationCatalogStationSetSha256: identity.stationSetSha256,
+      stationCatalogPayloadSha256: identity.payloadSha256,
+      stationCatalogManifestSha256: identity.manifestSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: 1,
+      freshUntil: reference.freshUntil,
+      sourceIssue: 2649,
+    },
   };
 }
 
@@ -474,77 +538,215 @@ function hasColumn(database, table, column) {
 }
 
 function writeRouteServiceEvidence(database, admissionEvidence) {
+  const { artifactEvidence, stationCatalogEvidence } = admissionEvidence;
   database.prepare("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
+  database.prepare("DELETE FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'").run();
   database.prepare(`
     INSERT INTO route_service_artifact_evidence (
       service_class, timetable_artifact_id, timetable_artifact_sha256,
-      station_catalog_artifact_kind, station_catalog_manifest_version,
+      canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+      admission_status, admission_eligible, fresh_until, source_issue
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    artifactEvidence.serviceClass,
+    artifactEvidence.timetableArtifactId,
+    artifactEvidence.timetableArtifactSha256,
+    artifactEvidence.canonicalPackId,
+    artifactEvidence.canonicalPackSha256,
+    artifactEvidence.canonicalPackSqliteSha256,
+    artifactEvidence.admissionStatus,
+    artifactEvidence.admissionEligible,
+    artifactEvidence.freshUntil,
+    artifactEvidence.sourceIssue,
+  );
+  database.prepare(`
+    INSERT INTO route_service_station_catalog_evidence (
+      service_class, station_catalog_artifact_kind, station_catalog_manifest_version,
       station_catalog_pack_id, station_catalog_station_set_sha256,
       station_catalog_payload_sha256, station_catalog_manifest_sha256,
       admission_status, admission_eligible, fresh_until, source_issue
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    admissionEvidence.serviceClass,
-    admissionEvidence.timetableArtifactId,
-    admissionEvidence.timetableArtifactSha256,
-    admissionEvidence.stationCatalogArtifactKind,
-    admissionEvidence.stationCatalogManifestVersion,
-    admissionEvidence.stationCatalogPackId,
-    admissionEvidence.stationCatalogStationSetSha256,
-    admissionEvidence.stationCatalogPayloadSha256,
-    admissionEvidence.stationCatalogManifestSha256,
-    admissionEvidence.admissionStatus,
-    admissionEvidence.admissionEligible,
-    admissionEvidence.freshUntil,
-    admissionEvidence.sourceIssue,
+    stationCatalogEvidence.serviceClass,
+    stationCatalogEvidence.stationCatalogArtifactKind,
+    stationCatalogEvidence.stationCatalogManifestVersion,
+    stationCatalogEvidence.stationCatalogPackId,
+    stationCatalogEvidence.stationCatalogStationSetSha256,
+    stationCatalogEvidence.stationCatalogPayloadSha256,
+    stationCatalogEvidence.stationCatalogManifestSha256,
+    stationCatalogEvidence.admissionStatus,
+    stationCatalogEvidence.admissionEligible,
+    stationCatalogEvidence.freshUntil,
+    stationCatalogEvidence.sourceIssue,
   );
 }
 
-function ensureRouteServiceEvidenceSchema(database, admissionEvidence) {
-  const table = database.prepare(`
-    SELECT sql FROM sqlite_schema
-    WHERE type = 'table' AND name = 'route_service_artifact_evidence'
-  `).get();
-  if (table == null) {
-    database.exec(`CREATE TABLE route_service_artifact_evidence (${ROUTE_SERVICE_EVIDENCE_COLUMNS})`);
-    return;
-  }
-  const columns = database.prepare("PRAGMA table_info(route_service_artifact_evidence)")
-    .all()
-    .map(({ name }) => name);
-  if (JSON.stringify(columns) === JSON.stringify(ROUTE_SERVICE_EVIDENCE_COLUMN_NAMES)
-    && table.sql.includes("station_catalog_manifest_sha256")
-    && !table.sql.includes("canonical_pack_")) return;
-  database.exec(`
-    ALTER TABLE route_service_artifact_evidence
-      RENAME TO route_service_artifact_evidence_replaced;
-    CREATE TABLE route_service_artifact_evidence (${ROUTE_SERVICE_EVIDENCE_COLUMNS});
-  `);
-  writeRouteServiceEvidence(database, admissionEvidence);
-  const replacement = database.prepare(`
-    SELECT timetable_artifact_sha256 AS timetableArtifactSha256,
-           station_catalog_manifest_sha256 AS stationCatalogManifestSha256
-    FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'
-  `).get();
-  if (replacement?.timetableArtifactSha256 !== admissionEvidence.timetableArtifactSha256
-    || replacement?.stationCatalogManifestSha256 !== admissionEvidence.stationCatalogManifestSha256) {
-    throw new Error("current route service evidence replacement is incomplete");
-  }
-  database.exec("DROP TABLE route_service_artifact_evidence_replaced");
+function normalizedSql(value) {
+  return value.replace(/\s+/g, " ").trim();
 }
 
-function ensureVersion18(database, admissionEvidence) {
+function tableHasExactLayout(database, table, expectedLayout, requiredConstraints) {
+  const tableRow = database.prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?`).get(table);
+  if (tableRow == null) return false;
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all()
+    .map(({ name, type, notnull, pk }) => [name, type, notnull, pk]);
+  const schema = normalizedSql(tableRow.sql);
+  return JSON.stringify(columns) === JSON.stringify(expectedLayout)
+    && requiredConstraints.every((constraint) => schema.includes(normalizedSql(constraint)));
+}
+
+function tableExists(database, table) {
+  return database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table) != null;
+}
+
+function routeServiceEvidenceLayout(database) {
+  const artifactExists = tableExists(database, "route_service_artifact_evidence");
+  const stationExists = tableExists(database, "route_service_station_catalog_evidence");
+  const artifactCurrent = tableHasExactLayout(database, "route_service_artifact_evidence", ROUTE_SERVICE_ARTIFACT_EVIDENCE_LAYOUT, [
+    "CHECK (service_class = 'ITX_CHEONGCHUN')",
+    "CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(canonical_pack_id) > 0)",
+    "CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)",
+    "CHECK (fresh_until IS NOT NULL)", "CHECK (source_issue IN (2116, 2135))",
+  ]);
+  const stationCurrent = tableHasExactLayout(database, "route_service_station_catalog_evidence", ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_LAYOUT, [
+    "CHECK (service_class = 'ITX_CHEONGCHUN')", "CHECK (station_catalog_artifact_kind = 'station-catalog-pack')",
+    "CHECK (station_catalog_manifest_version = 1)", "CHECK (length(station_catalog_pack_id) > 0)",
+    "CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)",
+    "CHECK (fresh_until IS NOT NULL)", "CHECK (source_issue = 2649)",
+  ]);
+  const legacyV18 = !stationExists && tableHasExactLayout(database, "route_service_artifact_evidence", ROUTE_SERVICE_V18_MIXED_EVIDENCE_LAYOUT, [
+    "CHECK (service_class = 'ITX_CHEONGCHUN')",
+    "CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (station_catalog_artifact_kind = 'station-catalog-pack')", "CHECK (station_catalog_manifest_version = 1)",
+    "CHECK (length(station_catalog_pack_id) > 0)",
+    "CHECK (length(station_catalog_station_set_sha256) = 64 AND station_catalog_station_set_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_payload_sha256) = 64 AND station_catalog_payload_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (length(station_catalog_manifest_sha256) = 64 AND station_catalog_manifest_sha256 NOT GLOB '*[^0-9a-f]*')",
+    "CHECK (admission_status = 'ADMITTED')", "CHECK (admission_eligible = 1)", "CHECK (fresh_until IS NOT NULL)",
+    "CHECK (source_issue IN (2116, 2135))",
+  ]);
+  return { artifactExists, stationExists, artifactCurrent, stationCurrent, legacyV18 };
+}
+
+function requireExactRouteServiceEvidenceLayout(database, currentVersion) {
+  const layout = routeServiceEvidenceLayout(database);
+  if (currentVersion === 19) {
+    if (!layout.artifactCurrent || !layout.stationCurrent) {
+      throw new Error("v19 route service evidence schema is malformed or partial");
+    }
+    const artifactCount = database.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count;
+    const stationCount = database.prepare("SELECT count(*) AS count FROM route_service_station_catalog_evidence").get().count;
+    if (artifactCount !== 1 || stationCount !== 1) {
+      throw new Error("v19 route service evidence requires exactly one row in each domain");
+    }
+    return "v19";
+  }
+  if (currentVersion === 18) {
+    if (!layout.legacyV18) throw new Error("v18 route service evidence schema is malformed or partial");
+    return "v18";
+  }
+  if ((currentVersion === 16 || currentVersion === 17)
+    && !layout.artifactExists && !layout.stationExists
+    && tableExists(database, "transit_trips") && tableExists(database, "network_edges")) {
+    return "legacy";
+  }
+  throw new Error(`ITX topology does not support route service evidence layout at user_version ${currentVersion}`);
+}
+
+function validateRouteServiceEvidence(admissionEvidence) {
+  const artifact = admissionEvidence?.artifactEvidence;
+  const station = admissionEvidence?.stationCatalogEvidence;
+  const artifactKeys = [
+    "serviceClass", "timetableArtifactId", "timetableArtifactSha256", "canonicalPackId",
+    "canonicalPackSha256", "canonicalPackSqliteSha256", "admissionStatus", "admissionEligible",
+    "freshUntil", "sourceIssue",
+  ];
+  const stationKeys = [
+    "serviceClass", "stationCatalogArtifactKind", "stationCatalogManifestVersion", "stationCatalogPackId",
+    "stationCatalogStationSetSha256", "stationCatalogPayloadSha256", "stationCatalogManifestSha256",
+    "admissionStatus", "admissionEligible", "freshUntil", "sourceIssue",
+  ];
+  if (!hasExactKeys(admissionEvidence, ["artifactEvidence", "stationCatalogEvidence"])
+    || !hasExactKeys(artifact, artifactKeys) || !hasExactKeys(station, stationKeys)
+    || artifact.serviceClass !== "ITX_CHEONGCHUN" || station.serviceClass !== "ITX_CHEONGCHUN"
+    || artifact.admissionStatus !== "ADMITTED" || station.admissionStatus !== "ADMITTED"
+    || artifact.admissionEligible !== 1 || station.admissionEligible !== 1
+    || artifact.sourceIssue !== 2135 || station.sourceIssue !== 2649
+    || typeof artifact.timetableArtifactId !== "string" || artifact.timetableArtifactId.length === 0
+    || typeof artifact.canonicalPackId !== "string" || artifact.canonicalPackId.length === 0
+    || typeof station.stationCatalogPackId !== "string" || station.stationCatalogPackId.length === 0
+    || station.stationCatalogArtifactKind !== "station-catalog-pack"
+    || station.stationCatalogManifestVersion !== 1
+    || artifact.freshUntil !== station.freshUntil || Number.isNaN(Date.parse(artifact.freshUntil ?? ""))
+    || ![
+      artifact.timetableArtifactSha256, artifact.canonicalPackSha256, artifact.canonicalPackSqliteSha256,
+      station.stationCatalogStationSetSha256, station.stationCatalogPayloadSha256,
+      station.stationCatalogManifestSha256,
+    ].every((digest) => /^[a-f0-9]{64}$/.test(digest ?? ""))) {
+    throw new Error("ITX topology requires independent current route service evidence");
+  }
+}
+
+function ensureRouteServiceEvidenceSchemas(database, admissionEvidence, layout) {
+  if (layout === "v18") database.exec("ALTER TABLE route_service_artifact_evidence RENAME TO route_service_artifact_evidence_v18");
+  if (layout !== "v19") {
+    database.exec(`CREATE TABLE route_service_artifact_evidence (${ROUTE_SERVICE_ARTIFACT_EVIDENCE_COLUMNS})`);
+    database.exec(`CREATE TABLE route_service_station_catalog_evidence (${ROUTE_SERVICE_STATION_CATALOG_EVIDENCE_COLUMNS})`);
+  }
+  writeRouteServiceEvidence(database, admissionEvidence);
+  assertStoredRouteServiceEvidence(database, admissionEvidence);
+  if (layout === "v18") database.exec("DROP TABLE route_service_artifact_evidence_v18");
+}
+
+function assertStoredRouteServiceEvidence(database, admissionEvidence) {
+  const artifactEvidence = database.prepare(`
+    SELECT service_class AS serviceClass, timetable_artifact_id AS timetableArtifactId,
+           timetable_artifact_sha256 AS timetableArtifactSha256,
+           canonical_pack_id AS canonicalPackId, canonical_pack_sha256 AS canonicalPackSha256,
+           canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
+           admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+           fresh_until AS freshUntil, source_issue AS sourceIssue
+    FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'
+  `).get();
+  const stationCatalogEvidence = database.prepare(`
+    SELECT service_class AS serviceClass,
+           station_catalog_artifact_kind AS stationCatalogArtifactKind,
+           station_catalog_manifest_version AS stationCatalogManifestVersion,
+           station_catalog_pack_id AS stationCatalogPackId,
+           station_catalog_station_set_sha256 AS stationCatalogStationSetSha256,
+           station_catalog_payload_sha256 AS stationCatalogPayloadSha256,
+           station_catalog_manifest_sha256 AS stationCatalogManifestSha256,
+           admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+           fresh_until AS freshUntil, source_issue AS sourceIssue
+    FROM route_service_station_catalog_evidence WHERE service_class = 'ITX_CHEONGCHUN'
+  `).get();
+  const artifactCount = database.prepare("SELECT count(*) AS count FROM route_service_artifact_evidence").get().count;
+  const stationCount = database.prepare("SELECT count(*) AS count FROM route_service_station_catalog_evidence").get().count;
+  if (artifactCount !== 1 || stationCount !== 1
+    || JSON.stringify({ artifactEvidence, stationCatalogEvidence }) !== JSON.stringify(admissionEvidence)) {
+    throw new Error("current route service evidence replacement is incomplete");
+  }
+}
+
+function ensureVersion19(database, admissionEvidence) {
   const currentVersion = database.prepare("PRAGMA user_version").get().user_version;
   if (currentVersion < 16 || currentVersion > CATALOG_VERSION) {
     throw new Error(`ITX topology does not support catalog user_version ${currentVersion}`);
   }
+  const evidenceLayout = requireExactRouteServiceEvidenceLayout(database, currentVersion);
   if (!hasColumn(database, "transit_trips", "service_class")) {
     database.exec("ALTER TABLE transit_trips ADD COLUMN service_class TEXT NOT NULL DEFAULT 'SUBWAY'");
   }
   if (!hasColumn(database, "network_edges", "service_class")) {
     database.exec("ALTER TABLE network_edges ADD COLUMN service_class TEXT NOT NULL DEFAULT 'SUBWAY'");
   }
-  ensureRouteServiceEvidenceSchema(database, admissionEvidence);
+  ensureRouteServiceEvidenceSchemas(database, admissionEvidence, evidenceLayout);
   database.exec(`PRAGMA user_version = ${CATALOG_VERSION}`);
 }
 
@@ -554,7 +756,8 @@ export function applyTopology(sqlitePath, topology, admissionEvidence) {
     database.exec("PRAGMA foreign_keys = ON");
     database.exec("BEGIN IMMEDIATE");
     try {
-      ensureVersion18(database, admissionEvidence);
+      validateRouteServiceEvidence(admissionEvidence);
+      ensureVersion19(database, admissionEvidence);
       for (const station of topology.stations) {
         const exists = database.prepare(`
           SELECT EXISTS(
@@ -621,9 +824,18 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence) {
       SELECT COUNT(*) AS count FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'
     `).get().count;
     if (timetableRows !== 0) throw new Error("Mobile pack must not contain ITX timetable rows");
-    const storedEvidence = database.prepare(`
+    const storedArtifactEvidence = database.prepare(`
       SELECT service_class AS serviceClass, timetable_artifact_id AS timetableArtifactId,
              timetable_artifact_sha256 AS timetableArtifactSha256,
+             canonical_pack_id AS canonicalPackId, canonical_pack_sha256 AS canonicalPackSha256,
+             canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
+             admission_status AS admissionStatus, admission_eligible AS admissionEligible,
+             fresh_until AS freshUntil, source_issue AS sourceIssue
+      FROM route_service_artifact_evidence
+      WHERE service_class = 'ITX_CHEONGCHUN'
+    `).get();
+    const storedStationCatalogEvidence = database.prepare(`
+      SELECT service_class AS serviceClass,
              station_catalog_artifact_kind AS stationCatalogArtifactKind,
              station_catalog_manifest_version AS stationCatalogManifestVersion,
              station_catalog_pack_id AS stationCatalogPackId,
@@ -632,10 +844,11 @@ export function assertStoredTopology(sqlitePath, topology, admissionEvidence) {
              station_catalog_manifest_sha256 AS stationCatalogManifestSha256,
              admission_status AS admissionStatus, admission_eligible AS admissionEligible,
              fresh_until AS freshUntil, source_issue AS sourceIssue
-      FROM route_service_artifact_evidence
+      FROM route_service_station_catalog_evidence
       WHERE service_class = 'ITX_CHEONGCHUN'
     `).get();
-    if (JSON.stringify(storedEvidence) !== JSON.stringify(admissionEvidence)) {
+    if (JSON.stringify({ artifactEvidence: storedArtifactEvidence, stationCatalogEvidence: storedStationCatalogEvidence })
+      !== JSON.stringify(admissionEvidence)) {
       throw new Error("ITX topology route service admission evidence is stale");
     }
   } finally {
@@ -652,11 +865,11 @@ async function main() {
   const { contract, reference, source, sourceBytes } = await admittedSource(contractPath);
   const topologySource = await admittedTopologySource(reference, source);
   const topology = deriveTopology(source);
-  const admissionEvidence = routeServiceEvidence(contract, reference, source);
   const admittedInputPack = topologyInputPackIdentity(
     contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
     "ITX topology input pack identity",
   );
+  const admissionEvidence = routeServiceEvidence(contract, reference, source, admittedInputPack);
   if (admittedInputPack.sha256 !== topologySource.gzipSha256
     || admittedInputPack.sqliteSha256 !== topologySource.sqliteSha256
     || admittedInputPack.byteSize !== topologySource.byteSize) {

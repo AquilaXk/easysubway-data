@@ -710,7 +710,7 @@ function staleCanonicalInputs(value) {
   return { contract, sourceBytes };
 }
 
-test("current topology evidence 경로는 station-catalog와 topology pack identity를 evidence에 기록한다", async () => {
+test("route service evidence split current topology 경로는 canonical과 station-catalog identity를 별도 SQL row에 기록한다", async () => {
   const value = await inputs({ withTopologyEvidence: true });
   const { contractBytes, sourceBytes, measuredGzipSha, measuredSqliteSha } = consistentFreshnessInputs(value);
 
@@ -723,10 +723,12 @@ test("current topology evidence 경로는 station-catalog와 topology pack ident
   });
   assert.deepEqual(result.evidence.stationCatalogPackIdentity, stationCatalogPackIdentity);
   assert.equal(result.evidence.canonicalPackLineage.topologyEvidenceSha256, sha256(value.topologyEvidenceBytes));
-  assert.match(
-    result.sql,
-    new RegExp(`'ITX_CHEONGCHUN', '[^']+', '[^']+', 'station-catalog-pack', 1, 'station-catalog-test', '${stationCatalogPackIdentity.stationSetSha256}', '${stationCatalogPackIdentity.payloadSha256}', '${stationCatalogPackIdentity.manifestSha256}', 'ADMITTED'`),
-  );
+  assert.match(result.sql, new RegExp(
+    `'ITX_CHEONGCHUN', '[^']+', '[^']+', 'capital', '${measuredGzipSha}', '${measuredSqliteSha}', 'ADMITTED', TRUE, '[^']+', 2135`,
+  ));
+  assert.match(result.sql, new RegExp(
+    `'ITX_CHEONGCHUN', 'station-catalog-pack', 1, 'station-catalog-test', '${stationCatalogPackIdentity.stationSetSha256}', '${stationCatalogPackIdentity.payloadSha256}', '${stationCatalogPackIdentity.manifestSha256}', 'ADMITTED', TRUE, '[^']+', 2649`,
+  ));
 });
 
 test("current 경로는 source와 contract station-catalog identity가 불일치하면 fail closed 한다", async () => {

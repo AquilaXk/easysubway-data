@@ -41,7 +41,7 @@ function buildFixturePack({
   const sqlitePath = path.join(directory, "capital.sqlite");
   const database = new DatabaseSync(sqlitePath);
   database.exec(`
-    PRAGMA user_version = 18;
+    PRAGMA user_version = 19;
     CREATE TABLE network_edges (
       id TEXT PRIMARY KEY, from_node_id TEXT, to_node_id TEXT, duration_seconds INTEGER,
       distance_meters INTEGER, edge_type TEXT, service_pattern TEXT, service_class TEXT
@@ -50,6 +50,13 @@ function buildFixturePack({
       service_class TEXT PRIMARY KEY, timetable_artifact_id TEXT, timetable_artifact_sha256 TEXT,
       canonical_pack_id TEXT, canonical_pack_sha256 TEXT, canonical_pack_sqlite_sha256 TEXT,
       admission_status TEXT, admission_eligible INTEGER, fresh_until TEXT, source_issue INTEGER
+    );
+    CREATE TABLE route_service_station_catalog_evidence (
+      service_class TEXT PRIMARY KEY, station_catalog_artifact_kind TEXT,
+      station_catalog_manifest_version INTEGER, station_catalog_pack_id TEXT,
+      station_catalog_station_set_sha256 TEXT, station_catalog_payload_sha256 TEXT,
+      station_catalog_manifest_sha256 TEXT, admission_status TEXT, admission_eligible INTEGER,
+      fresh_until TEXT, source_issue INTEGER
     );
     CREATE TABLE station_lines (station_id TEXT, line_id TEXT, PRIMARY KEY(station_id, line_id));
     CREATE TABLE route_map_positions (station_id TEXT, line_id TEXT, x REAL, y REAL, PRIMARY KEY(station_id, line_id));
@@ -81,6 +88,10 @@ function buildFixturePack({
   `).run(
     "ITX_CHEONGCHUN", "artifact-1", "a".repeat(64), "capital", "b".repeat(64), "c".repeat(64),
     "ADMITTED", 1, "2999-01-01T00:00:00.000Z", 2135,
+  );
+  database.prepare(`INSERT INTO route_service_station_catalog_evidence VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    "ITX_CHEONGCHUN", "station-catalog-pack", 1, "station-pack", "d".repeat(64), "e".repeat(64),
+    "f".repeat(64), "ADMITTED", 1, "2999-01-01T00:00:00.000Z", 2649,
   );
   database.prepare("INSERT INTO unrelated_table (id, value) VALUES ('row-1', ?)").run(unrelatedValue);
   if (addedTable) {
@@ -262,7 +273,31 @@ test("생성 모드: route_service_artifact_evidence(ITX)가 바뀌면 거부한
   await assert.rejects(execFileAsync(process.execPath, [
     TOOL, "--pack", newPackPath, "--previous-pack", previousPackPath,
     "--evidence", evidencePath, "--provenance", "test",
-  ], { cwd: root }), /route_service_artifact_evidence differs/);
+  ], { cwd: root }), /route service evidence differs/);
+});
+
+test("생성 모드: station evidence mutation·missing·freshness mismatch를 거부한다", async (context) => {
+  const cases = [
+    ["mutation", "UPDATE route_service_station_catalog_evidence SET admission_eligible = 0", /route service evidence differs/],
+    ["missing", "DROP TABLE route_service_station_catalog_evidence", /route_service_station_catalog_evidence is missing/],
+    ["freshness", "UPDATE route_service_station_catalog_evidence SET fresh_until = '2999-01-02T00:00:00.000Z'", /freshness differs between domains/],
+  ];
+  for (const [name, sql, expected] of cases) {
+    await context.test(name, async (childContext) => {
+      const { directory, previousPackPath, evidencePath } = await setupChainStart(childContext);
+      const next = buildFixturePack({ unrelatedValue: "after" });
+      childContext.after(() => rm(next.directory, { recursive: true, force: true }));
+      const database = new DatabaseSync(next.sqlitePath);
+      database.exec(sql);
+      database.close();
+      const newPackPath = path.join(directory, `${name}.sqlite.gz`);
+      await packToGzipFile(next.sqlitePath, newPackPath);
+      await assert.rejects(execFileAsync(process.execPath, [
+        TOOL, "--pack", newPackPath, "--previous-pack", previousPackPath,
+        "--evidence", evidencePath, "--provenance", "test",
+      ], { cwd: root }), expected);
+    });
+  }
 });
 
 test("생성 모드: ITX edge가 참조하는 station_id:line_id가 새 pack에서 사라지면 거부한다", async (context) => {

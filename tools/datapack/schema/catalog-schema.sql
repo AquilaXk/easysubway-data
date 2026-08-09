@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 18;
+PRAGMA user_version = 19;
 
 CREATE TABLE catalog_metadata (
   key TEXT NOT NULL PRIMARY KEY,
@@ -215,6 +215,26 @@ CREATE TABLE route_service_artifact_evidence (
   service_class TEXT NOT NULL PRIMARY KEY,
   timetable_artifact_id TEXT NOT NULL,
   timetable_artifact_sha256 TEXT NOT NULL,
+  canonical_pack_id TEXT NOT NULL,
+  canonical_pack_sha256 TEXT NOT NULL,
+  canonical_pack_sqlite_sha256 TEXT NOT NULL,
+  admission_status TEXT NOT NULL,
+  admission_eligible INTEGER NOT NULL,
+  fresh_until TEXT,
+  source_issue INTEGER NOT NULL,
+  CHECK (service_class = 'ITX_CHEONGCHUN'),
+  CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_id) > 0),
+  CHECK (length(canonical_pack_sha256) = 64 AND canonical_pack_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (length(canonical_pack_sqlite_sha256) = 64 AND canonical_pack_sqlite_sha256 NOT GLOB '*[^0-9a-f]*'),
+  CHECK (admission_status = 'ADMITTED'),
+  CHECK (admission_eligible = 1),
+  CHECK (fresh_until IS NOT NULL),
+  CHECK (source_issue IN (2116, 2135))
+);
+
+CREATE TABLE route_service_station_catalog_evidence (
+  service_class TEXT NOT NULL PRIMARY KEY,
   station_catalog_artifact_kind TEXT NOT NULL,
   station_catalog_manifest_version INTEGER NOT NULL,
   station_catalog_pack_id TEXT NOT NULL,
@@ -223,10 +243,9 @@ CREATE TABLE route_service_artifact_evidence (
   station_catalog_manifest_sha256 TEXT NOT NULL,
   admission_status TEXT NOT NULL,
   admission_eligible INTEGER NOT NULL,
-  fresh_until TEXT,
+  fresh_until TEXT NOT NULL,
   source_issue INTEGER NOT NULL,
   CHECK (service_class = 'ITX_CHEONGCHUN'),
-  CHECK (length(timetable_artifact_sha256) = 64 AND timetable_artifact_sha256 NOT GLOB '*[^0-9a-f]*'),
   CHECK (station_catalog_artifact_kind = 'station-catalog-pack'),
   CHECK (station_catalog_manifest_version = 1),
   CHECK (length(station_catalog_pack_id) > 0),
@@ -236,7 +255,7 @@ CREATE TABLE route_service_artifact_evidence (
   CHECK (admission_status = 'ADMITTED'),
   CHECK (admission_eligible = 1),
   CHECK (fresh_until IS NOT NULL),
-  CHECK (source_issue IN (2116, 2135))
+  CHECK (source_issue = 2649)
 );
 
 CREATE TABLE realtime_provider_line_mappings (
