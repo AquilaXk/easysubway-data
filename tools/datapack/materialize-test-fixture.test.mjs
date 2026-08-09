@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 import { projectRegionalMaterializeFixture } from "./materialize-test-fixture.mjs";
@@ -15,13 +17,16 @@ const legacyEvidence = {
   freshUntil: "2026-07-20T00:00:00.000Z",
   sourceIssue: 2116,
 };
+const root = path.resolve(import.meta.dirname, "../..");
 
 function fixture() {
   return {
+    manifest: { activePack: { id: "capital", version: "1" } },
     packs: [{
       id: "capital",
       version: "1",
-      routeServiceArtifactEvidence: [legacyEvidence],
+      artifactKind: "production",
+      routeServiceArtifactEvidence: [structuredClone(legacyEvidence)],
       minimumTableRows: {
         network_edges: 1,
         transit_routes: 1,
@@ -90,4 +95,29 @@ test("regional projection rejects embedded ITX tokens and mutated legacy evidenc
     () => projectRegionalMaterializeFixture(mutatedEvidence),
     /must match the exact known contract/,
   );
+
+  const manifestItx = fixture();
+  manifestItx.manifest.note = "ITX_CHEONGCHUN";
+  assert.throws(
+    () => projectRegionalMaterializeFixture(manifestItx),
+    /contains an unexpected ITX reference/,
+  );
+
+  const rootSibling = fixture();
+  rootSibling.hidden = "ITX_CHEONGCHUN";
+  assert.throws(() => projectRegionalMaterializeFixture(rootSibling));
+});
+
+test("regional projection preserves the tracked fixture except its sole legacy evidence", async () => {
+  const fixturePath = path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json");
+  const bytes = await readFile(fixturePath);
+  const input = JSON.parse(bytes);
+  const original = structuredClone(input);
+  const projected = projectRegionalMaterializeFixture(input);
+  assert.deepEqual(await readFile(fixturePath), bytes);
+  assert.deepEqual(input, original);
+  assert.deepEqual(projected.manifest, original.manifest);
+  const expectedPack = structuredClone(original.packs[0]);
+  delete expectedPack.routeServiceArtifactEvidence;
+  assert.deepEqual(projected.packs[0], expectedPack);
 });

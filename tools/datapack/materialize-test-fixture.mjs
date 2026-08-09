@@ -36,13 +36,23 @@ function rejectItxReference(value, path = "fixture") {
  * historical route-service evidence. Timetable/topology rows are never filtered.
  */
 export function projectRegionalMaterializeFixture(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("fixture root must be an object");
+  }
+  const rootKeys = Object.keys(input);
+  if (rootKeys.length !== 2 || !rootKeys.includes("manifest") || !rootKeys.includes("packs")) {
+    throw new Error("fixture root must contain exactly manifest and packs");
+  }
   const fixture = structuredClone(input);
+  if (fixture.manifest?.activePack?.id !== "capital" || fixture.manifest?.activePack?.version !== "1") {
+    throw new Error("fixture must have active capital@1 manifest pack");
+  }
   if (!Array.isArray(fixture.packs) || fixture.packs.length !== 1) {
     throw new Error("fixture must contain exactly one capital@1 pack");
   }
 
   const [pack] = fixture.packs;
-  if (pack.id !== "capital" || pack.version !== "1") {
+  if (pack.id !== "capital" || pack.version !== "1" || pack.artifactKind !== "production") {
     throw new Error("fixture must contain exactly one capital@1 pack");
   }
   if (!Array.isArray(pack.routeServiceArtifactEvidence) || pack.routeServiceArtifactEvidence.length !== 1) {
@@ -57,6 +67,6 @@ export function projectRegionalMaterializeFixture(input) {
     throw new Error("capital@1 legacy routeServiceArtifactEvidence must match the exact known contract");
   }
   delete pack.routeServiceArtifactEvidence;
-  rejectItxReference(pack, "capital@1");
+  rejectItxReference(fixture, "fixture");
   return fixture;
 }
