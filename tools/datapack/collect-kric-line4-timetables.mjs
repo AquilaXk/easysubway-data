@@ -16,6 +16,7 @@ import { buildKricLine4CollectionPlan } from "./plan-kric-line4-collection.mjs";
 import { normalizeKricSubwayTimetable } from "./normalize-kric-timetable.mjs";
 import { reconstructTransitTrips } from "./reconstruct-transit-trips.mjs";
 import { cleanupPackDir, openPack } from "../route-map/pack-io.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const SERVICE_ID_BY_DAY_CD = { "8": "weekday-kric", "7": "saturday-kric", "9": "holiday-kric" };
 
@@ -656,7 +657,8 @@ function hasExactKeys(value, expectedKeys) {
   return value !== null
     && typeof value === "object"
     && !Array.isArray(value)
-    && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expectedKeys].sort());
+    && JSON.stringify(Object.keys(value).sort(codepointCompare))
+      === JSON.stringify([...expectedKeys].sort(codepointCompare));
 }
 
 function canonicalStationIndex(fixture, lineId) {
