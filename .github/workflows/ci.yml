@@ -22,6 +22,97 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Checkout pinned Mobile fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: AquilaXk/easysubway-mobile
+          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346
+          path: .external/mobile
+          persist-credentials: false
+
+      - name: Stage pinned Mobile fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="d85742f14cbf97c526a6b94dd55bbf863e1d1346"
+          source=".external/mobile/apps/mobile"
+          capital_gzip="${source}/assets/datapacks/capital.sqlite.gz"
+          expected_sha256="f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+
+          actual_revision="$(git -C .external/mobile rev-parse HEAD)"
+          [[ "${actual_revision}" == "${expected_revision}" ]]
+          [[ -d "${source}" && ! -L "${source}" ]]
+          if find "${source}" -type l -print -quit | grep -q .; then
+            echo "pinned Mobile fixture contains a symlink" >&2
+            exit 1
+          fi
+          [[ -f "${capital_gzip}" && ! -L "${capital_gzip}" ]]
+          actual_sha256="$(sha256sum "${capital_gzip}" | awk '{print $1}')"
+          [[ "${actual_sha256}" == "${expected_sha256}" ]]
+          test ! -e apps/mobile
+          test ! -L apps/mobile
+
+          if [[ -e apps || -L apps ]]; then
+            [[ -d apps && ! -L apps ]]
+          else
+            mkdir apps
+          fi
+          mv "${source}" apps/mobile
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: Backup tracked topology evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="tools/datapack/itx-cheongchun-topology-evidence.json"
+          backup=".external/itx-cheongchun-topology-evidence.json"
+          [[ -f "${source}" && ! -L "${source}" ]]
+          [[ -d .external && ! -L .external ]]
+          test ! -e "${backup}"
+          test ! -L "${backup}"
+          cp "${source}" "${backup}"
+          [[ -f "${backup}" && ! -L "${backup}" ]]
+          cmp -- "${source}" "${backup}"
+
+      - name: Emit pinned Mobile station catalog artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-from-bundled-pack.mjs \
+            --input apps/mobile/assets/datapacks/capital.sqlite.gz \
+            --output .external/mobile-station-catalog
+
+      - name: Migrate pinned Mobile v18 pack to v19
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/datapack/apply-itx-topology-to-bundled-pack.mjs \
+            --migrate-current-v18 \
+            --station-catalog-pack .external/mobile-station-catalog
+
+      - name: Verify Data issue 108 bundled-pack regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tools/datapack/readmit-bundled-pack-identity.test.mjs
+          node --test --test-name-pattern='bundled 공식 OD quote|bundled 차량·출입문 힌트' tools/datapack/datapack-tools.test.mjs
+
+      - name: Restore tracked topology evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="tools/datapack/itx-cheongchun-topology-evidence.json"
+          backup=".external/itx-cheongchun-topology-evidence.json"
+          [[ -f "${source}" && ! -L "${source}" ]]
+          [[ -f "${backup}" && ! -L "${backup}" ]]
+          cp "${backup}" "${source}"
+          cmp -- "${backup}" "${source}"
+          rm "${backup}"
+
       - name: Lint workflows
         shell: bash
         run: |
@@ -31,11 +122,6 @@ jobs:
           # 잡히지 않는다. 이미지는 다른 pin과 같은 규칙으로 digest 고정한다.
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "24.19.0"
 
       - name: Verify standalone contracts
         run: >-
@@ -54,6 +140,7 @@ jobs:
           tools/ci/require-workflow-artifact.test.mjs
           tools/release/validate-promotion-request.test.mjs
           tools/ci/datapack-release-workflow.test.mjs
+          tools/ci/mobile-fixture-staging-workflow.test.mjs
           tools/ci/itx-current-collection-workflow.test.mjs
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
