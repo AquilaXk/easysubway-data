@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { validateJson } from "../ci/check-contracts.mjs";
+import { validateDatapackManifestJson } from "./lib/datapack-manifest-schema.mjs";
 
 test("build-datapack 산출 manifest가 계약 스키마를 통과한다", () => {
   const out = mkdtempSync(join(tmpdir(), "dp-contract-"));
@@ -29,8 +29,10 @@ test("build-datapack 산출 manifest가 계약 스키마를 통과한다", () =>
       },
     );
 
-    const errors = [];
-    validateJson("contracts/datapack/datapack-manifest.schema.json", join(out, "current.json"), errors);
+    const errors = validateDatapackManifestJson(
+      "contracts/datapack/datapack-manifest.schema.json",
+      join(out, "current.json"),
+    );
     assert.deepEqual(errors, []);
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -69,8 +71,10 @@ test("v2 datapack manifest는 activePack 없이 계약 스키마를 통과한다
     );
 
     const manifest = JSON.parse(readFileSync(join(out, "current.json"), "utf8"));
-    const errors = [];
-    validateJson("contracts/datapack/datapack-manifest.schema.json", join(out, "current.json"), errors);
+    const errors = validateDatapackManifestJson(
+      "contracts/datapack/datapack-manifest.schema.json",
+      join(out, "current.json"),
+    );
     assert.equal("activePack" in manifest, false);
     assert.deepEqual(errors, []);
   } finally {
