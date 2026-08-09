@@ -58,7 +58,7 @@ async function main() {
 }
 
 export function applySchedule(input, artifact, artifactBytes = Buffer.from(JSON.stringify(artifact))) {
-  validateArtifact(artifact);
+  validateKricLine4PilotCollectionArtifact(artifact);
   const tripsById = new Map((artifact.transitTrips ?? []).map((trip) => [trip.id, trip]));
   const stopTimesByTrip = new Map();
   for (const stopTime of artifact.transitStopTimes ?? []) {
@@ -212,7 +212,7 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function validateArtifact(artifact) {
+export function validateKricLine4PilotCollectionArtifact(artifact) {
   if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
     throw new Error("KRIC pilot artifact must be an object");
   }
@@ -232,7 +232,7 @@ function validateArtifact(artifact) {
   requireEqual(artifact.transitTripCount, EXPECTED_TRANSIT_TRIP_COUNT, "transitTripCount");
   requireEqual(artifact.transitStopTimeCount, EXPECTED_TRANSIT_STOP_TIME_COUNT, "transitStopTimeCount");
   if (!Array.isArray(artifact.transitTrips) || !Array.isArray(artifact.transitStopTimes)) {
-    throw new TypeError("KRIC pilot artifact missing transit rows");
+    throw new TypeError("KRIC pilot artifact exclusion rows are invalid");
   }
   requireEqual(artifact.transitTrips.length, EXPECTED_TRANSIT_TRIP_COUNT, "transitTrips.length");
   requireEqual(artifact.transitStopTimes.length, EXPECTED_TRANSIT_STOP_TIME_COUNT, "transitStopTimes.length");

@@ -6,35 +6,46 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { validateKricLine4PilotCollectionArtifact } from "./apply-kric-line4-pilot-schedule.mjs";
 
 const execFileAsync = promisify(execFileCallback);
 const BUCKET = "easysubway-datapack-sources";
 const SOURCE_ID = "kric-subway-timetable";
 const ARTIFACT_KIND = "kric-line4-timetable-collection";
 
-export async function publishKricTimetableRawArtifact({ inputPath, receiptPath, execFileImpl = execFileAsync }) {
+export async function publishKricTimetableRawArtifact({
+  inputPath,
+  receiptPath,
+  expectedBucketOwner,
+  expectedRawObjectSha256,
+  expectedByteSize,
+  execFileImpl = execFileAsync,
+}) {
   const resolvedInput = path.resolve(requiredText(inputPath, "inputPath"));
   const resolvedReceipt = path.resolve(requiredText(receiptPath, "receiptPath"));
   const bytes = await readFile(resolvedInput);
   const artifact = JSON.parse(bytes.toString("utf8"));
-  validateArtifact(artifact);
-
   const rawObjectSha256 = createHash("sha256").update(bytes).digest("hex");
+  validateKricLine4PilotCollectionArtifact(artifact);
+  requireEqual(rawObjectSha256, requiredSha256(expectedRawObjectSha256, "expectedRawObjectSha256"), "raw object SHA-256");
+  requireEqual(bytes.length, requiredPositiveInteger(expectedByteSize, "expectedByteSize"), "raw object byte size");
   const checksumSha256 = createHash("sha256").update(bytes).digest("base64");
   const dateToken = artifact.capturedAt.replaceAll("-", "");
   const objectKey = `${SOURCE_ID}/${dateToken}/${rawObjectSha256}.json`;
-  const expectedBucketOwner = await callerAccount(execFileImpl);
+  const trustedBucketOwner = requiredAccount(expectedBucketOwner, "expectedBucketOwner");
+  const caller = await callerAccount(execFileImpl);
+  if (caller !== trustedBucketOwner) throw new Error("AWS caller account does not match expected bucket owner");
   const common = [
     "--bucket", BUCKET,
     "--key", objectKey,
-    "--expected-bucket-owner", expectedBucketOwner,
+    "--expected-bucket-owner", trustedBucketOwner,
     "--output", "json",
     "--no-cli-pager",
   ];
 
   let idempotentExistingObject = false;
   try {
-    await execFileImpl("aws", [
+    await runAws(execFileImpl, "upload", [
       "s3api", "put-object",
       ...common,
       "--body", resolvedInput,
@@ -42,19 +53,17 @@ export async function publishKricTimetableRawArtifact({ inputPath, receiptPath, 
       "--checksum-sha256", checksumSha256,
       "--metadata", `artifact-kind=${ARTIFACT_KIND},source-id=${SOURCE_ID},sha256=${rawObjectSha256}`,
       "--if-none-match", "*",
-    ], { maxBuffer: 1024 * 1024 });
+    ]);
   } catch (error) {
-    if (!/PreconditionFailed|\b412\b/.test(String(error?.stderr ?? error?.message ?? ""))) {
-      throw new Error(`KRIC raw object upload failed: ${safeAwsFailureCode(error)}`);
-    }
+    if (error?.awsFailureCode !== "PreconditionFailed" && error?.awsFailureCode !== "412") throw error;
     idempotentExistingObject = true;
   }
 
-  const { stdout } = await execFileImpl("aws", [
+  const { stdout } = await runAws(execFileImpl, "head verification", [
     "s3api", "head-object",
     ...common,
     "--checksum-mode", "ENABLED",
-  ], { maxBuffer: 1024 * 1024 });
+  ]);
   const head = JSON.parse(stdout);
   validateHead(head, { byteSize: bytes.length, checksumSha256, rawObjectSha256 });
 
@@ -69,7 +78,7 @@ export async function publishKricTimetableRawArtifact({ inputPath, receiptPath, 
     rawObjectSha256,
     checksumSha256,
     byteSize: bytes.length,
-    expectedBucketOwner,
+    expectedBucketOwner: trustedBucketOwner,
     versionId: requiredText(head.VersionId, "S3 VersionId"),
     etag: requiredText(head.ETag, "S3 ETag"),
     storedAt: requiredUtcInstant(head.LastModified, "S3 LastModified"),
@@ -87,25 +96,22 @@ function safeAwsFailureCode(error) {
 }
 
 async function callerAccount(execFileImpl) {
-  const { stdout } = await execFileImpl("aws", [
+  const { stdout } = await runAws(execFileImpl, "caller identity", [
     "sts", "get-caller-identity", "--query", "Account", "--output", "text", "--no-cli-pager",
-  ], { maxBuffer: 1024 * 1024 });
+  ]);
   const account = stdout.trim();
   if (!/^\d{12}$/.test(account)) throw new Error("AWS caller account is invalid");
   return account;
 }
 
-function validateArtifact(artifact) {
-  if (artifact?.artifactKind !== ARTIFACT_KIND
-    || artifact.sourceId !== "kric-subway-route-info"
-    || artifact.operation !== "subwayTimetableExp"
-    || artifact.requestCount !== 153
-    || artifact.failedRequestCount !== 0
-    || typeof artifact.collectedAt !== "string"
-    || Number.isNaN(Date.parse(artifact.collectedAt))
-    || !/^\d{4}-\d{2}-\d{2}$/.test(artifact.capturedAt ?? "")
-    || artifact.capturedAt !== artifact.collectedAt.slice(0, 10)) {
-    throw new Error("KRIC raw artifact identity is invalid");
+async function runAws(execFileImpl, context, args) {
+  try {
+    return await execFileImpl("aws", args, { maxBuffer: 1024 * 1024 });
+  } catch (error) {
+    const failureCode = safeAwsFailureCode(error);
+    const sanitized = new Error(`KRIC raw object ${context} failed: ${failureCode}`);
+    sanitized.awsFailureCode = failureCode;
+    throw sanitized;
   }
 }
 
@@ -136,6 +142,28 @@ function requiredText(value, label) {
   return value.trim();
 }
 
+function requiredAccount(value, label) {
+  const text = requiredText(value, label);
+  if (!/^\d{12}$/.test(text)) throw new Error(`${label} is invalid`);
+  return text;
+}
+
+function requiredSha256(value, label) {
+  const text = requiredText(value, label);
+  if (!/^[a-f0-9]{64}$/.test(text)) throw new Error(`${label} is invalid`);
+  return text;
+}
+
+function requiredPositiveInteger(value, label) {
+  const integer = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+  if (!Number.isSafeInteger(integer) || integer < 1) throw new Error(`${label} is invalid`);
+  return integer;
+}
+
+function requireEqual(actual, expected, label) {
+  if (actual !== expected) throw new Error(`KRIC ${label} mismatch`);
+}
+
 function requiredUtcInstant(value, label) {
   const text = requiredText(value, label);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(text)
@@ -158,7 +186,13 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const receipt = await publishKricTimetableRawArtifact({ inputPath: args.input, receiptPath: args.receipt });
+  const receipt = await publishKricTimetableRawArtifact({
+    inputPath: args.input,
+    receiptPath: args.receipt,
+    expectedBucketOwner: args["expected-bucket-owner"],
+    expectedRawObjectSha256: args["expected-sha256"],
+    expectedByteSize: args["expected-byte-size"],
+  });
   process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
 }
 

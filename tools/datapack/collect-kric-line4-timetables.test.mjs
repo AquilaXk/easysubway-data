@@ -17,6 +17,7 @@ import {
   buildRawResponseRecord,
   buildServicePatternObservation,
   filterRowsByTrainNumbers,
+  fetchKricRequestWithCredentialRedaction,
   fetchWithRetry,
   redactKricCredential,
   selectKricPilotReconstructionRows,
@@ -429,6 +430,15 @@ test("paired pilot reconstruction은 두 endpoint를 모두 가진 group만 선�
     reason: "OUTSIDE_PILOT_CORRIDOR",
   }]);
 
+  const canonicalPilot = pilot.map((row) => ({
+    ...row,
+    stationId: row.stationId === "station-seoul-4-433" ? "station-sadang" : "station-sangnoksu",
+  }));
+  assert.deepEqual(
+    selectKricPilotReconstructionRows(canonicalPilot, ["station-sadang", "station-sangnoksu"]).rows,
+    canonicalPilot,
+  );
+
   assert.throws(
     () => classifyKricRowsForReconstruction([
       pilot[0],
@@ -592,6 +602,25 @@ test("KRIC 오류 진단은 raw·percent-encoded credential을 모두 제거한�
   );
   assert.doesNotMatch(redacted, /abc\+def|abc%2Bdef/);
   assert.equal(redacted, "raw=[KEY]&encoded=[KEY]");
+});
+
+test("KRIC probe fetch 실패는 cause URL의 credential도 제거한다", async () => {
+  const key = "abc+def/ghi=";
+  const request = {
+    endpoint: "https://provider.invalid/timetable",
+    params: { railOprIsttCd: "S1", dayCd: "8", lnCd: "4", stinCd: "433" },
+  };
+  await assert.rejects(
+    () => fetchKricRequestWithCredentialRedaction(request, key, {
+      attempts: 1,
+      fetchImpl: async (url) => {
+        throw new Error("provider request failed", { cause: new Error(url) });
+      },
+    }),
+    (error) => error.message.includes("KRIC timetable request failed")
+      && !error.message.includes(key)
+      && !error.message.includes(encodeURIComponent(key)),
+  );
 });
 
 test("ITX materialization은 TAGO OD의 양 끝역·열차번호·시각이 모두 일치해야 한다", () => {

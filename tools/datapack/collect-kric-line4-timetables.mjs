@@ -35,6 +35,14 @@ export function buildCollectionContext(roster, lineId, fixture = null, servicePa
     lineIdByProviderLine[`${station.railOprIsttCd}|${roster.lnCd}`] = lineId;
     lineSequenceByStationLine[`${stationId}|${lineId}`] = canonicalStation?.lineSequence ?? station.stinConsOrdr;
   }
+  const pilotEndpointStationIds = lineId === "seoul-4"
+    ? ["433", "448"].map((stationCode) => {
+      const matches = roster.stations.filter(({ stinCd }) => stinCd === stationCode);
+      if (matches.length !== 1) throw new Error(`KRIC pilot endpoint station is not unique: ${stationCode}`);
+      const station = matches[0];
+      return stationIdByProviderStation[`${station.railOprIsttCd}|${roster.lnCd}|${station.stinCd}`];
+    })
+    : [];
   return {
     stationIdByProviderStation,
     lineIdByProviderLine,
@@ -42,6 +50,7 @@ export function buildCollectionContext(roster, lineId, fixture = null, servicePa
     routeIdByLineDirection: { [`${lineId}|up`]: `route-${lineId}-up`, [`${lineId}|down`]: `route-${lineId}-down` },
     serviceIdByDayCd: SERVICE_ID_BY_DAY_CD,
     servicePatternByExptCd: requireServicePatternMapping(servicePatternByExptCd),
+    pilotEndpointStationIds,
   };
 }
 
@@ -703,14 +712,19 @@ export function assertCompleteKricCollection(failedRequestCount, requestCount, p
   }
 }
 
-export function selectKricPilotReconstructionRows(rows) {
+export function selectKricPilotReconstructionRows(rows, endpointStationIds = [
+  "station-seoul-4-433",
+  "station-seoul-4-448",
+]) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new TypeError("KRIC pilot reconstruction rows must be a non-empty array");
   }
-  const requiredStationIds = new Set([
-    "station-seoul-4-433",
-    "station-seoul-4-448",
-  ]);
+  const requiredStationIds = new Set(endpointStationIds);
+  if (!Array.isArray(endpointStationIds) || endpointStationIds.length !== 2
+    || requiredStationIds.size !== 2
+    || endpointStationIds.some((stationId) => typeof stationId !== "string" || stationId.length === 0)) {
+    throw new TypeError("KRIC pilot endpoint station IDs are invalid");
+  }
   const groups = new Map();
   for (const row of rows) {
     for (const field of ["stationId", "lineId", "trnNo", "dayCd"]) {
@@ -830,6 +844,18 @@ export function redactKricCredential(text, key) {
   return redacted;
 }
 
+export async function fetchKricRequestWithCredentialRedaction(request, key, options) {
+  try {
+    return await fetchWithRetry(kricRequestUrl(request, key), options);
+  } catch (error) {
+    const details = [error?.message, error?.cause?.message, error?.cause]
+      .filter(Boolean)
+      .map(String)
+      .join(" | ");
+    throw new Error(`KRIC timetable request failed: ${redactKricCredential(details, key)}`);
+  }
+}
+
 function normalizeTrainNumber(value) {
   const digits = String(value ?? "").replace(/\D+/g, "").replace(/^0+/, "");
   if (digits === "") throw new Error(`invalid train number: ${value ?? "missing"}`);
@@ -918,7 +944,7 @@ async function main() {
       throw new Error("no-data probe --output is required");
     }
     const request = selectServicePatternProbeRequest(plan, args["no-data-probe-request-key"]);
-    const rawResponse = await fetchWithRetry(kricRequestUrl(request, key));
+    const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
     const observation = buildTimetableNoDataObservation(
       request,
       rawResponse,
@@ -936,7 +962,7 @@ async function main() {
       plan,
       args["service-pattern-probe-request-key"],
     );
-    const rawResponse = await fetchWithRetry(kricRequestUrl(request, key));
+    const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
     const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
     const observation = buildServicePatternObservation(request, rawResponse, rows);
     await writeFile(args.output, `${JSON.stringify(observation, null, 2)}\n`);
@@ -953,7 +979,7 @@ async function main() {
     let failed = 0;
     for (const request of plan.requests) {
       try {
-        const rawResponse = await fetchWithRetry(kricRequestUrl(request, key));
+        const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
         const rows = validateKricTimetablePayload(JSON.parse(rawResponse));
         if (rows.length === 0) {
           throw new Error("KRIC operation train diagnostic response rows must be non-empty");
@@ -1008,9 +1034,8 @@ async function main() {
   const rawResponses = [];
   let failed = 0;
   for (const request of plan.requests) {
-    const url = kricRequestUrl(request, key);
     try {
-      const rawResponse = await fetchWithRetry(url);
+      const rawResponse = await fetchKricRequestWithCredentialRedaction(request, key);
       const payload = JSON.parse(rawResponse);
       const { classification, rows } = classifyKricTimetablePayload(payload, request, noDataEvidence);
       if (classification === noDataEvidence.classification.state) {
@@ -1061,7 +1086,7 @@ async function main() {
     return;
   }
   assertCompleteSaturdayNoData(plan, perRequest, noDataEvidence);
-  const selected = selectKricPilotReconstructionRows(intermediate);
+  const selected = selectKricPilotReconstructionRows(intermediate, context.pilotEndpointStationIds);
   const classified = classifyKricRowsForReconstruction(selected.rows);
   const evidenceDayCds = trainNumberEvidence ? evidenceServiceDayCds(trainNumberEvidence) : null;
   if (trainNumberEvidence && trainNumberEvidence.serviceId !== "ITX_CHEONGCHUN") {
