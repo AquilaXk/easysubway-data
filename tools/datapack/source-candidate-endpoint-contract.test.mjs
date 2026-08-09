@@ -52,6 +52,25 @@ const URL_FIELDS = Object.freeze([
   ["operation.sampleUrl", (candidate) => candidate.operation?.sampleUrl],
 ]);
 
+const DATA_GO_FOCUSED_TESTS = Object.freeze({
+  "tools/datapack/collect-busan-accessibility.mjs": "tools/datapack/collect-busan-accessibility.test.mjs",
+  "tools/datapack/collect-busan-route-topology.mjs": "tools/datapack/collect-busan-route-topology.test.mjs",
+  "tools/datapack/collect-busan-timetable.mjs": "tools/datapack/collect-busan-timetable.test.mjs",
+  "tools/datapack/collect-daejeon-route-topology.mjs": "tools/datapack/collect-daejeon-route-topology.test.mjs",
+  "tools/datapack/collect-datago-source-candidate-evidence.mjs": "tools/datapack/collect-datago-source-candidate-evidence.test.mjs",
+  "tools/datapack/collect-gwangju-timetable.mjs": "tools/datapack/collect-gwangju-timetable.test.mjs",
+  "tools/datapack/collect-korail-itx-cheongchun-timetable.mjs": "tools/datapack/collect-korail-itx-cheongchun-timetable.test.mjs",
+  "tools/datapack/collect-nationwide-public-api-coverage.mjs": "tools/datapack/collect-nationwide-public-api-coverage.test.mjs",
+  "tools/datapack/collect-seoul-accessibility-evidence.mjs": "tools/datapack/collect-seoul-accessibility-evidence.test.mjs",
+  "tools/datapack/collect-tago-itx-cheongchun-od.mjs": "tools/datapack/collect-tago-itx-cheongchun-od.test.mjs",
+  "tools/datapack/fetch-kasi-public-holiday-calendar.mjs": "tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs",
+  "tools/datapack/probe-daejeon-coverage-api.mjs": "tools/datapack/probe-daejeon-coverage-api.test.mjs",
+  "tools/datapack/probe-korail-train-operation-api.mjs": "tools/datapack/probe-korail-train-operation-api.test.mjs",
+  "tools/datapack/probe-seoul-fare-api.mjs": "tools/datapack/probe-seoul-fare-api.test.mjs",
+  "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
+  "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
+});
+
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
 
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
@@ -344,6 +363,27 @@ test("DATA_GO_KR_SERVICE_KEY runner는 공통 deterministic credential-validatio
   assert.deepEqual(dataGoKr.runners, expectedRunners);
   assert.equal(new Set(dataGoKr.runners).size, dataGoKr.runners.length, "runners must be unique");
   assert.deepEqual(dataGoKr.runners, [...dataGoKr.runners].sort(), "runners must be path-sorted");
+});
+
+test("모든 DATA_GO runner는 정확히 대응하는 focused test에서 malformed credential의 provider 호출 0회를 증명한다", async () => {
+  const [dataGoKr] = document.credentialBearingProviderCoverage;
+  const files = await readdir(DATAPACK_DIRECTORY, { recursive: true });
+  const discoveredRunners = [];
+  for (const file of files) {
+    if (!file.endsWith(".mjs") || file.endsWith(".test.mjs")) continue;
+    const runner = path.posix.join("tools/datapack", file.split(path.sep).join(path.posix.sep));
+    const source = await readFile(path.join(DATAPACK_DIRECTORY, file), "utf8");
+    if (source.includes("DATA_GO_KR_SERVICE_KEY")) discoveredRunners.push(runner);
+  }
+  discoveredRunners.sort();
+
+  assert.deepEqual(Object.keys(DATA_GO_FOCUSED_TESTS).sort(), discoveredRunners);
+  assert.deepEqual(Object.keys(DATA_GO_FOCUSED_TESTS).sort(), dataGoKr.runners);
+  for (const [runner, focusedTest] of Object.entries(DATA_GO_FOCUSED_TESTS)) {
+    const testSource = await readFile(path.join(DATAPACK_DIRECTORY, path.basename(focusedTest)), "utf8");
+    assert.match(testSource, /invalid%ZZ/, `${focusedTest} must cover malformed DATA_GO_KR_SERVICE_KEY for ${runner}`);
+    assert.match(testSource, /assert\.equal\(calls, 0\)/, `${focusedTest} must prove provider/delegate calls stay at zero for ${runner}`);
+  }
 });
 
 test("4개 DATA_GO runner는 malformed credential을 URL·cache·fetch·delegate보다 먼저 preflight하고 matching focused test가 calls=0을 증명한다", async () => {
