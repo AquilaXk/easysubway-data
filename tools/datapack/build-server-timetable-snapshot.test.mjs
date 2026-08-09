@@ -729,6 +729,52 @@ test("route service evidence split current topology 경로는 canonical과 stati
   assert.match(result.sql, new RegExp(
     `'ITX_CHEONGCHUN', 'station-catalog-pack', 1, 'station-catalog-test', '${stationCatalogPackIdentity.stationSetSha256}', '${stationCatalogPackIdentity.payloadSha256}', '${stationCatalogPackIdentity.manifestSha256}', 'ADMITTED', TRUE, '[^']+', 2649`,
   ));
+
+  const evidenceStatements = result.sql.split("\n").filter((statement) =>
+    statement.startsWith("INSERT INTO route_service_artifact_evidence")
+      || statement.startsWith("INSERT INTO route_service_station_catalog_evidence"),
+  );
+  assert.equal(evidenceStatements.length, 2);
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec(await readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
+    for (const statement of evidenceStatements) database.exec(statement);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM route_service_artifact_evidence").get().count, 1);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM route_service_station_catalog_evidence").get().count, 1);
+    assert.deepEqual(
+      { ...database.prepare(`
+        SELECT service_class AS serviceClass, timetable_artifact_id AS timetableArtifactId,
+               timetable_artifact_sha256 AS timetableArtifactSha256, canonical_pack_id AS canonicalPackId,
+               canonical_pack_sha256 AS canonicalPackSha256, canonical_pack_sqlite_sha256 AS canonicalPackSqliteSha256,
+               admission_status AS admissionStatus, admission_eligible AS admissionEligible, source_issue AS sourceIssue
+        FROM route_service_artifact_evidence
+      `).get() },
+      {
+        serviceClass: "ITX_CHEONGCHUN", timetableArtifactId: result.evidence.sourceArtifact.id,
+        timetableArtifactSha256: result.evidence.sourceArtifact.sha256, canonicalPackId: "capital",
+        canonicalPackSha256: measuredGzipSha, canonicalPackSqliteSha256: measuredSqliteSha,
+        admissionStatus: "ADMITTED", admissionEligible: 1, sourceIssue: 2135,
+      },
+    );
+    assert.deepEqual(
+      { ...database.prepare(`
+        SELECT service_class AS serviceClass, station_catalog_artifact_kind AS artifactKind,
+               station_catalog_manifest_version AS manifestVersion, station_catalog_pack_id AS catalogPackId,
+               station_catalog_station_set_sha256 AS stationSetSha256, station_catalog_payload_sha256 AS payloadSha256,
+               station_catalog_manifest_sha256 AS manifestSha256, admission_status AS admissionStatus,
+               admission_eligible AS admissionEligible, source_issue AS sourceIssue
+        FROM route_service_station_catalog_evidence
+      `).get() },
+      {
+        serviceClass: "ITX_CHEONGCHUN", artifactKind: "station-catalog-pack", manifestVersion: 1,
+        catalogPackId: "station-catalog-test", stationSetSha256: stationCatalogPackIdentity.stationSetSha256,
+        payloadSha256: stationCatalogPackIdentity.payloadSha256, manifestSha256: stationCatalogPackIdentity.manifestSha256,
+        admissionStatus: "ADMITTED", admissionEligible: 1, sourceIssue: 2649,
+      },
+    );
+  } finally {
+    database.close();
+  }
 });
 
 test("current 경로는 source와 contract station-catalog identity가 불일치하면 fail closed 한다", async () => {

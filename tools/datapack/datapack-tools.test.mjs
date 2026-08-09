@@ -15,12 +15,38 @@ import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 // 분열(이슈 #2528)을 구조적으로 검출할 수 없다.
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
+import { routeServiceEvidenceSnapshot } from "./lib/route-service-evidence-preservation.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
 const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
 const TEST_ACCESSIBILITY_RETRIEVED_AT = "2026-08-09T00:00:00.000Z";
+
+test("route service evidence preservation은 table별 정확히 하나의 ITX row만 snapshot한다", () => {
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec(`
+      CREATE TABLE route_service_artifact_evidence (service_class TEXT);
+      CREATE TABLE route_service_station_catalog_evidence (service_class TEXT);
+    `);
+    const snapshot = () => routeServiceEvidenceSnapshot(database);
+    assert.throws(snapshot, /exactly one ITX_CHEONGCHUN row/);
+
+    database.exec("INSERT INTO route_service_artifact_evidence VALUES ('ITX_CHEONGCHUN')");
+    database.exec("INSERT INTO route_service_station_catalog_evidence VALUES ('NOT_ITX')");
+    assert.throws(snapshot, /exactly one ITX_CHEONGCHUN row/);
+
+    database.exec("DELETE FROM route_service_station_catalog_evidence");
+    database.exec("INSERT INTO route_service_station_catalog_evidence VALUES ('ITX_CHEONGCHUN')");
+    assert.doesNotThrow(snapshot);
+
+    database.exec("INSERT INTO route_service_artifact_evidence VALUES ('ITX_CHEONGCHUN')");
+    assert.throws(snapshot, /exactly one ITX_CHEONGCHUN row/);
+  } finally {
+    database.close();
+  }
+});
 
 test("official snapshot admission validates exact non-production raw binding", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-official-snapshot-admission-"));
