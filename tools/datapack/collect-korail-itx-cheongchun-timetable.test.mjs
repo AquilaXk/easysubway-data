@@ -30,17 +30,6 @@ await emitStationCatalogPack({
   catalogPackId: "itx-test-catalog-v1",
 });
 
-test("Korail ITX plan은 malformed credential로 provider를 호출하지 않는다", async () => {
-  let calls = 0;
-  await assert.rejects(collectKorailItxCheongchunPlan({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
-  assert.equal(calls, 0);
-});
-
-test("Korail ITX timetable은 malformed credential로 provider를 호출하지 않는다", async () => {
-  let calls = 0;
-  await assert.rejects(collectKorailItxCheongchunTimetable({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
-  assert.equal(calls, 0);
-});
 test.after(() => rm(PACK_ROOT, { recursive: true, force: true }));
 const PACK_BYTES = await readFile(path.join(PACK_PATH, "payload/catalog.sqlite"));
 const PACK_SHA256 = createHash("sha256").update(PACK_BYTES).digest("hex");
@@ -82,6 +71,18 @@ const LIVE_TAGO_EVIDENCE = JSON.parse(await readFile(
   "utf8",
 ));
 const SOURCE_CANDIDATES = JSON.parse(await readFile(new URL("./source-candidates.json", import.meta.url), "utf8"));
+
+test("Korail ITX plan은 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectKorailItxCheongchunPlan({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("Korail ITX timetable은 malformed credential로 provider를 호출하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(collectKorailItxCheongchunTimetable({ serviceKey: "invalid%ZZ", runDate: "20260713", kricServiceDayCode: "8", stationCatalogPackPath: PACK_PATH, trainNumberEvidence: trainNumberEvidence(), fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
 
 test("Korail ITX source candidate는 station catalog materialization runner contract를 고정한다", () => {
   const candidate = SOURCE_CANDIDATES.candidates.find(({ id }) => id === "korail-traveler-train-run-info");
