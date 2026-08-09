@@ -16,31 +16,11 @@ import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
-const execFileAsyncRaw = promisify(execFile);
+const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const TEST_PRODUCTION_ACCESSIBILITY_SOURCE = "test-only-capital-accessibility-fixture";
-
-const execFileAsync = async (file, args, options) => {
-  if (file !== process.execPath || args[0] !== "tools/datapack/import-official-sources.mjs") {
-    return execFileAsyncRaw(file, args, options);
-  }
-  const inventoryIndex = args.indexOf("--inventory");
-  const inputIndex = args.indexOf("--input");
-  const outputIndex = args.indexOf("--output");
-  if (inventoryIndex < 0 || inputIndex < 0 || outputIndex < 0) return execFileAsyncRaw(file, args, options);
-  const input = JSON.parse(await readFile(args[inputIndex + 1], "utf8"));
-  if (!input.sourceIds?.includes(TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) {
-    return execFileAsyncRaw(file, args, options);
-  }
-  const resolvedInventoryPath = await testOnlyInventoryPath(
-    path.dirname(args[outputIndex + 1]),
-    input,
-    args[inventoryIndex + 1],
-  );
-  const resolvedArgs = [...args];
-  resolvedArgs[inventoryIndex + 1] = resolvedInventoryPath;
-  return execFileAsyncRaw(file, resolvedArgs, options);
-};
+const TEST_ACCESSIBILITY_SNAPSHOT_ID = "test-only-capital-accessibility-fixture-20260809";
+const TEST_ACCESSIBILITY_RETRIEVED_AT = "2026-08-09T00:00:00.000Z";
 
 test("official snapshot admission validates exact non-production raw binding", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-official-snapshot-admission-"));
@@ -3996,13 +3976,14 @@ test("데이터팩 생성기는 production 시설 status 의미와 검증 근거
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
 
   await execFileAsync(
     process.execPath,
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      inventoryPath,
       "--input",
       inputPath,
       "--output",
@@ -4038,7 +4019,7 @@ test("데이터팩 검증기는 현장·운영기관 확인 시설 AVAILABLE 근
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
-  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
   makeProductionSourceFixtureStrictCoverageValid(fixture);
   for (const [index, statusMeaning] of ["FIELD_SURVEY", "OPERATOR_CONFIRMED"].entries()) {
     fixture.packs[0].facilities[index].status = "NORMAL";
@@ -4079,7 +4060,7 @@ test("데이터팩 검증기는 근거 없는 시설 operationalStatus AVAILABLE
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
-  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
   makeProductionSourceFixtureStrictCoverageValid(fixture);
   fixture.packs[0].facilities[0].status = "UNKNOWN";
   fixture.packs[0].facilities[0].operationalStatus = "AVAILABLE";
@@ -4120,7 +4101,7 @@ test("데이터팩 검증기는 UNKNOWN 운행상태 시설의 strict route elig
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
 
-  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
   makeProductionSourceFixtureStrictCoverageValid(fixture);
   fixture.packs[0].stationFacilityEvidence[0].operationalStatus = "UNKNOWN";
   fixture.packs[0].stationFacilityEvidence[0].statusMeaning = "STATIC_LOCATION";
@@ -11423,6 +11404,7 @@ test("공식 source ingest adapter는 production pack의 최소 coverage 기준 
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
 
   await assert.rejects(
     execFileAsync(
@@ -11430,7 +11412,7 @@ test("공식 source ingest adapter는 production pack의 최소 coverage 기준 
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         inputPath,
         "--output",
@@ -11451,6 +11433,7 @@ test("공식 source ingest adapter는 production pack의 coverage evidence 누�
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
 
   await assert.rejects(
     execFileAsync(
@@ -11458,7 +11441,7 @@ test("공식 source ingest adapter는 production pack의 coverage evidence 누�
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         inputPath,
         "--output",
@@ -11479,6 +11462,7 @@ test("공식 source ingest adapter는 source inventory가 뒷받침하지 않는
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
 
   await assert.rejects(
     execFileAsync(
@@ -11486,7 +11470,7 @@ test("공식 source ingest adapter는 source inventory가 뒷받침하지 않는
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         inputPath,
         "--output",
@@ -11547,6 +11531,7 @@ test("공식 source ingest adapter는 selected source가 claim한 coverage evide
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
 
   await assert.rejects(
     execFileAsync(
@@ -11554,7 +11539,7 @@ test("공식 source ingest adapter는 selected source가 claim한 coverage evide
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         inputPath,
         "--output",
@@ -11575,6 +11560,7 @@ test("공식 source ingest adapter는 production pack의 최소 coverage 미달�
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
 
   await assert.rejects(
     execFileAsync(
@@ -11582,7 +11568,7 @@ test("공식 source ingest adapter는 production pack의 최소 coverage 미달�
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         inputPath,
         "--output",
@@ -11597,27 +11583,8 @@ test("공식 source ingest adapter는 production pack의 최소 coverage 미달�
 test("공식 source ingest adapter는 production coverage 기준을 manifest 최소 row 기준으로 전파한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-source-ingest-production-coverage-pass-${Date.now()}`);
   const input = productionSourceIngestInput();
-  const inputPath = path.join(outputDir, "official-source-input.json");
+  const generated = await importTestOnlyAccessibilityFixture(outputDir, input);
   const outputPath = path.join(outputDir, "catalog-fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
-
-  await execFileAsync(
-    process.execPath,
-    [
-      "tools/datapack/import-official-sources.mjs",
-      "--inventory",
-      "tools/datapack/source-inventory.json",
-      "--input",
-      inputPath,
-      "--output",
-      outputPath,
-    ],
-    { cwd: root },
-  );
-
-  const generated = JSON.parse(await readFile(outputPath, "utf8"));
   makeProductionSourceFixtureStrictCoverageValid(generated);
   await writeFile(outputPath, `${JSON.stringify(generated, null, 2)}\n`);
   assert.equal(generated.packs[0].artifactKind, "production");
@@ -11812,7 +11779,7 @@ test("공식 source ingest adapter는 canonical transit schedule rows를 보존�
     },
   ];
 
-  const generated = await importOfficialSourceInput(outputDir, input);
+  const generated = await importTestOnlyAccessibilityFixture(outputDir, input);
   assert.equal(generated.packs[0].requiredTables.includes("transit_stop_times"), true);
   assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 2);
   assert.equal(generated.packs[0].transitStopTimes[0].tripId, "trip-seoul-4-local-0805");
@@ -11861,7 +11828,7 @@ test("공식 source ingest adapter는 production schedule pass-through를 거부
   ];
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /production transit schedule import requires sourced schedule provenance/,
   );
 });
@@ -12128,7 +12095,7 @@ test("공식 source ingest adapter는 명시한 lineSequence 경계 wrap만 허�
   );
 
   input.lines[0].lineSequenceWrapAllowed = true;
-  const generated = await importOfficialSourceInput(outputDir, input);
+  const generated = await importTestOnlyAccessibilityFixture(outputDir, input);
   assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 3);
 });
 
@@ -12171,7 +12138,7 @@ test("공식 source ingest adapter는 cross-line trip의 lineSequence를 노선 
     { tripId: "trip-cross-line", stopSequence: 4, stationId: "station-branch-2", lineId: "line-branch", arrivalSeconds: 30600, departureSeconds: 30600 },
   ];
 
-  const generated = await importOfficialSourceInput(outputDir, input);
+  const generated = await importTestOnlyAccessibilityFixture(outputDir, input);
   assert.equal(generated.packs[0].minimumTableRows.transit_stop_times, 4);
 });
 
@@ -12213,7 +12180,7 @@ test("공식 source ingest adapter는 cross-line EXPRESS summary edge도 격리 
   delete input.routeGraphTopologyPolicy;
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /production routeEdges non-adjacent EXPRESS summary edge is fixture-only/,
   );
 });
@@ -12263,7 +12230,7 @@ test("공식 source ingest adapter는 stop_times 순서가 lineSequence와 뒤�
   ];
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /transit_stop_times stop_sequence must follow station lineSequence order: trip-seoul-4-zigzag/,
   );
 });
@@ -12295,7 +12262,7 @@ test("공식 source ingest adapter는 admission 전 schedule provenance도 produ
   ];
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /scheduleProvenance source is not a schedule_timetable source: molit-tago-subway-info/,
   );
 });
@@ -12354,6 +12321,9 @@ test("공식 source ingest adapter는 quota 미승인 schedule source를 product
   tago.capabilities.schedule.productionUseAllowed = true;
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
+  inventory.sources.push(JSON.parse(await readFile(await testOnlyInventoryPath(outputDir), "utf8")).sources.find(
+    ({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
+  ));
   await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
 
   await assert.rejects(
@@ -12578,7 +12548,7 @@ test("공식 source ingest adapter는 station-line 단위 facility evidence cove
   });
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /production facility evidence missing: station-sadang:seoul-2:ELEVATOR/,
   );
 });
@@ -12595,7 +12565,7 @@ test("공식 source ingest adapter는 동일 station-line-type 시설을 evidenc
     evidenceHash: sha256(`evidence:facility-sadang-elevator-kric-2:${TEST_PRODUCTION_ACCESSIBILITY_SOURCE}:2026-06-22T00:00:00.000Z`),
   });
 
-  const generated = await importOfficialSourceInput(outputDir, input);
+  const generated = await importTestOnlyAccessibilityFixture(outputDir, input);
   assert.equal(generated.packs[0].facilities.length, 7);
   assert.equal(generated.packs[0].stationFacilityEvidence.length, 6);
   assert.deepEqual(
@@ -12664,14 +12634,14 @@ test("공식 source ingest adapter는 stationLineRows 없는 facility evidence m
   });
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /production facility evidence station-line missing: station-sadang:seoul-2:ELEVATOR:facility-sadang-seoul-2-elevator/,
   );
 });
 
 test("AVAILABLE ENTRY edge rejects station-line source provenance", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-station-source-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   // AVAILABLE ENTRY edge가 accessibility_facilities 미지원 source(역-노선 정보)면 거부된다.
   const availableEntry = input.routeEdges.find((edge) => edge.id === "edge-entry-sadang-seoul-4");
   availableEntry.accessibilityStatus = "AVAILABLE";
@@ -12679,25 +12649,25 @@ test("AVAILABLE ENTRY edge rejects station-line source provenance", async () => 
   availableEntry.sourceSnapshotId = "seoulmetro-station-line-info-snapshot-20260621";
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /AVAILABLE ENTRY\/EXIT edge requires accessibility_facilities source/,
   );
 });
 
 test("AVAILABLE ENTRY edge rejects missing strict operational facility evidence", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-facility-evidence-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   useAccessibilitySourceForAvailableEdge(input, "edge-entry-sadang-seoul-4");
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /AVAILABLE ENTRY\/EXIT edge requires strict-eligible operational facility evidence/,
   );
 });
 
 test("AVAILABLE ENTRY edge rejects missing approved movement pathway", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-approved-pathway-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   useAccessibilitySourceForAvailableEdge(input, "edge-entry-sadang-seoul-4");
   const facility = input.facilityRows.find((row) =>
     row.station.sourceStationCode === "MOLIT-SEOUL-4-433" && row.type === "ELEVATOR");
@@ -12707,7 +12677,7 @@ test("AVAILABLE ENTRY edge rejects missing approved movement pathway", async () 
   facility.statusMeaning = "OPERATOR_CONFIRMED";
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /AVAILABLE ENTRY\/EXIT edge requires approved movement pathway/,
   );
 });
@@ -12716,7 +12686,7 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line sou
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-source-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput({ testOnly: true }));
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
   // 빌드 후 edge를 AVAILABLE로 바꾸고 source를 accessibility_facilities 미지원(역-노선)으로 우회 → validator 거부.
   const builtEntry = fixture.packs[0].networkEdges.find((edge) => edge.id === "edge-entry-sadang-seoul-4");
   builtEntry.accessibilityStatus = "AVAILABLE";
@@ -12752,13 +12722,16 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line ope
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-facility-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput({ testOnly: true }));
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
   const edge = fixture.packs[0].networkEdges.find((row) => row.id === "edge-entry-sadang-seoul-4");
   edge.accessibilityStatus = "AVAILABLE";
   edge.stairAccessState = "STEP_FREE";
   edge.verificationStatus = "VERIFIED";
   edge.sourceId = TEST_PRODUCTION_ACCESSIBILITY_SOURCE;
-  edge.sourceSnapshotId = "seoul-metro-accessibility-20260728";
+  edge.sourceSnapshotId = TEST_ACCESSIBILITY_SNAPSHOT_ID;
+  edge.providerRecordHash = sha256(`provider:${edge.id}:test-only-capital-accessibility-fixture`);
+  edge.evidenceHash = sha256(`evidence:${edge.id}:test-only-capital-accessibility-fixture:${TEST_ACCESSIBILITY_RETRIEVED_AT}`);
+  edge.lastVerifiedAt = TEST_ACCESSIBILITY_RETRIEVED_AT;
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await execFileAsync(
     process.execPath,
@@ -12785,7 +12758,7 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 station-line ope
 
 test("UNDER_MAINTENANCE ENTRY edge는 실측 보수중 시설 증거 없이는 거부된다 (#1996)", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-maintenance-missing-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   for (const edge of input.routeEdges.filter((row) => row.id.includes("sadang-seoul-4"))) {
     edge.accessibilityStatus = "UNDER_MAINTENANCE";
     edge.stairAccessState = "STEP_FREE";
@@ -12796,14 +12769,14 @@ test("UNDER_MAINTENANCE ENTRY edge는 실측 보수중 시설 증거 없이는 �
   );
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /UNDER_MAINTENANCE ENTRY\/EXIT edge requires field-verified maintenance facility evidence/,
   );
 });
 
 test("NO_OFFICIAL_FEED ENTRY edge는 피드 부재 기록 증거 없이는 거부된다 (#1996)", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-nofeed-missing-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   for (const edge of input.routeEdges.filter((row) => row.id.includes("sangnoksu-seoul-4"))) {
     edge.accessibilityStatus = "NO_OFFICIAL_FEED";
     edge.stairAccessState = "STEP_FREE";
@@ -12814,14 +12787,14 @@ test("NO_OFFICIAL_FEED ENTRY edge는 피드 부재 기록 증거 없이는 거�
   );
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /NO_OFFICIAL_FEED ENTRY\/EXIT edge requires recorded absence-of-feed evidence/,
   );
 });
 
 test("NO_OFFICIAL_FEED ENTRY edge는 NOT_EXISTS이나 statusMeaning이 FEED_ABSENCE_RECORD가 아니면 거부된다 (#1998)", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-nofeed-statusmeaning-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   // 상록수 NO_OFFICIAL_FEED probe는 NOT_EXISTS로 남기되 statusMeaning을 피드 부재 기록이 아닌 값(시설 물리
   // 부재)으로 변조 → 임의 NOT_EXISTS로는 피드 부재 커버리지를 채울 수 없어야 하므로 검증 실패해야 한다.
   for (const edge of input.routeEdges.filter((row) => row.id.includes("sangnoksu-seoul-4"))) {
@@ -12837,18 +12810,18 @@ test("NO_OFFICIAL_FEED ENTRY edge는 NOT_EXISTS이나 statusMeaning이 FEED_ABSE
   probe.operationalStatus = "NOT_INSTALLED";
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /NO_OFFICIAL_FEED ENTRY\/EXIT edge requires recorded absence-of-feed evidence/,
   );
 });
 
 test("공식 source ingest adapter는 임의 strict route reason을 거부한다", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-strict-reason-${Date.now()}`);
-  const input = await capitalPilotProductionSourceInput({ testOnly: true });
+  const input = await capitalPilotProductionSourceInput();
   input.accessibilityStatusEvidence[0].strictRouteEligibleReason = "ARBITRARY_REASON";
 
   await assert.rejects(
-    importOfficialSourceInput(outputDir, input),
+    importTestOnlyAccessibilityFixture(outputDir, input),
     /accessibilityStatusEvidence.strictRouteEligibleReason is not allowed: ARBITRARY_REASON/,
   );
 });
@@ -12856,7 +12829,7 @@ test("공식 source ingest adapter는 임의 strict route reason을 거부한다
 test("station status probe가 route evidence가 아니면 production edge coverage는 fail-closed다 (#2609)", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-verified-states-${Date.now()}`);
   const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput({ testOnly: true }));
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
   const fixturePath = path.join(outputDir, "fixture.json");
   // 서울 station status와 KRIC feed absence는 route pathway 증거가 아니므로 strict route로 승격하지 않는다.
   const sadangEntry = fixture.packs[0].networkEdges.find((e) => e.id === "edge-entry-sadang-seoul-4");
@@ -12890,7 +12863,7 @@ test("station status probe가 route evidence가 아니면 production edge covera
 
 test("NO_OFFICIAL_FEED edge는 EXISTS status probe와 결합되면 UNKNOWN으로 정규화된다 (#2609)", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-contradictory-feed-${Date.now()}`);
-  const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput({ testOnly: true }));
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
   const probe = fixture.packs[0].stationFacilityEvidence.find(
     (row) => row.stationId === "station-sangnoksu" && row.facilityType === "ACCESSIBILITY_STATUS_PROBE",
   );
@@ -12906,7 +12879,7 @@ test("NO_OFFICIAL_FEED edge는 EXISTS status probe와 결합되면 UNKNOWN으로
 test("field provenance는 materialized facility와 EXISTS evidence를 중복 집계하지 않는다 (#2609)", async () => {
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-provenance-dedup-${Date.now()}`);
   const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importOfficialSourceInput(outputDir, await capitalPilotProductionSourceInput({ testOnly: true }));
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, await capitalPilotProductionSourceInput());
   const fixturePath = path.join(outputDir, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
   await execFileAsync(
@@ -12929,7 +12902,7 @@ test("데이터팩 검증기는 AVAILABLE accessibility edge의 승인된 이동
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-pathway-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
   makeProductionSourceFixtureStrictCoverageValid(fixture);
   fixture.packs[0].stationPathwayNodes = [];
   fixture.packs[0].stationPathwayEdges = [];
@@ -12961,7 +12934,7 @@ test("데이터팩 검증기는 STAIR pathway를 승인된 접근성 이동 경�
   const outputDir = path.join(tmpdir(), `easysubway-accessibility-edge-validator-stair-${Date.now()}`);
   const fixturePath = path.join(outputDir, "fixture.json");
   const packOutputDir = path.join(outputDir, "pack");
-  const fixture = await importOfficialSourceInput(outputDir, productionSourceIngestInput());
+  const fixture = await importTestOnlyAccessibilityFixture(outputDir, productionSourceIngestInput());
   makeProductionSourceFixtureStrictCoverageValid(fixture);
   for (const edge of fixture.packs[0].stationPathwayEdges) {
     edge.edgeType = "STAIR";
@@ -12998,6 +12971,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
   const packOutputDir = path.join(outputDir, "pack");
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
   const input = withTestProductionAccessibility(JSON.parse(await readFile(path.join(root, inputPath), "utf8")));
   assert.equal(input.manifest.releaseSequence, undefined);
   assert.equal(input.manifest.publishedAt, undefined);
@@ -13017,7 +12991,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         summaryRideFixtureOnlyInputPath,
         "--output",
@@ -13040,7 +13014,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         lowercaseRideEdgeInputPath,
         "--output",
@@ -13056,7 +13030,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      inventoryPath,
       "--input",
       adjacencySafeInputPath,
       "--output",
@@ -13152,7 +13126,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      inventoryPath,
       "--input",
       scheduleExtrasInputPath,
       "--output",
@@ -13215,11 +13189,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       execFileAsync(
         process.execPath,
         [
-          "tools/datapack/import-official-sources.mjs",
-          "--inventory",
-          "tools/datapack/source-inventory.json",
-          "--input",
-          invalidRouteMapPositionInputPath,
+        "tools/datapack/import-official-sources.mjs",
+        "--inventory",
+        inventoryPath,
+        "--input",
+        invalidRouteMapPositionInputPath,
           "--output",
           invalidRouteMapPositionOutputPath,
         ],
@@ -13301,7 +13275,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       [
         "tools/datapack/import-official-sources.mjs",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--input",
         nonAdjacentInputPath,
         "--output",
@@ -13328,11 +13302,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     execFileAsync(
       process.execPath,
       [
-        "tools/datapack/import-official-sources.mjs",
-        "--inventory",
-        "tools/datapack/source-inventory.json",
-        "--input",
-        missingFacilityInputPath,
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      inventoryPath,
+      "--input",
+      missingFacilityInputPath,
         "--output",
         path.join(outputDir, "missing-facility.json"),
       ],
@@ -13361,11 +13335,11 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
     execFileAsync(
       process.execPath,
       [
-        "tools/datapack/import-official-sources.mjs",
-        "--inventory",
-        "tools/datapack/source-inventory.json",
-        "--input",
-        missingWheelchairLiftEvidenceInputPath,
+      "tools/datapack/import-official-sources.mjs",
+      "--inventory",
+      inventoryPath,
+      "--input",
+      missingWheelchairLiftEvidenceInputPath,
         "--output",
         path.join(outputDir, "missing-wheelchair-lift-evidence.json"),
       ],
@@ -13571,7 +13545,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
       "--targets",
       "tools/datapack/nationwide-coverage-targets.json",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      inventoryPath,
       "--manifest",
       path.join(packOutputDir, "current.json"),
       "--provenance",
@@ -13664,7 +13638,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
         "--targets",
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--manifest",
         path.join(packOutputDir, "current.json"),
         "--provenance",
@@ -13706,7 +13680,7 @@ test("수도권 pilot source coverage는 완결되지만 route coverage는 edge 
         "--targets",
         "tools/datapack/nationwide-coverage-targets.json",
         "--inventory",
-        "tools/datapack/source-inventory.json",
+        inventoryPath,
         "--manifest",
         path.join(packOutputDir, "current.json"),
         "--provenance",
@@ -13732,6 +13706,7 @@ test("관리자 검수 NORMAL override는 production 시설 provenance와 valida
   await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(productionSourceIngestInput(), null, 2)}\n`);
+  const inventoryPath = await testOnlyInventoryPath(outputDir);
   await writeFile(
     overridePath,
     `${JSON.stringify(
@@ -13761,7 +13736,7 @@ test("관리자 검수 NORMAL override는 production 시설 provenance와 valida
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      "tools/datapack/source-inventory.json",
+      inventoryPath,
       "--input",
       inputPath,
       "--output",
@@ -15488,7 +15463,7 @@ function productionSourceIngestInput() {
       "사당 휠체어리프트 설치 정보",
       "MOLIT-SEOUL-4-433",
     ],
-  ].map(([sourceId, id, type, name, sourceStationCode], index) => ({
+  ].map(([sourceId, id, type, name, sourceStationCode]) => testAccessibilitySourceRow({
     sourceId,
     id,
     station: {
@@ -15504,14 +15479,14 @@ function productionSourceIngestInput() {
     installationStatus: "INSTALLED",
     providerFacilityRef: id,
     provenanceKind: "OFFICIAL_SOURCE",
-    description: "서울교통공사 접근성 source 기준 시설 운행 상태입니다.",
-    verifiedAt: "2026-06-22T00:00:00.000Z",
-    retrievedAt: "2026-06-22T00:00:00.000Z",
-    sourceSnapshotId: `${sourceId}-snapshot-20260622`,
+    description: "test-only accessibility fixture facility evidence",
+    verifiedAt: TEST_ACCESSIBILITY_RETRIEVED_AT,
+    retrievedAt: TEST_ACCESSIBILITY_RETRIEVED_AT,
+    sourceSnapshotId: TEST_ACCESSIBILITY_SNAPSHOT_ID,
     providerRecordHash: sha256(`provider:${id}:${sourceId}`),
     evidenceHash: sha256(`evidence:${id}:${sourceId}:2026-06-22T00:00:00.000Z`),
     confidence: 80,
-  }));
+  }, id));
   input.movementPathCandidates = [];
   input.minimumProductionCoverage = {
     stations: 2,
@@ -15558,25 +15533,24 @@ function productionSourceIngestInput() {
       operatorId: "seoul-metro",
       sourceDomain: "accessibility_facilities",
       sourceIds: [TEST_PRODUCTION_ACCESSIBILITY_SOURCE],
-      evidence: "서울교통공사 접근성 시설 source inventory coverageScope",
+      evidence: "test-only accessibility fixture inventory coverageScope",
     },
   ];
   return input;
 }
 
-async function importOfficialSourceInput(outputDir, input, inventoryPath = "tools/datapack/source-inventory.json") {
+async function importOfficialSourceInput(outputDir, input, inventoryPath = "tools/datapack/source-inventory.json", resetOutput = true) {
   const inputPath = path.join(outputDir, "official-source-input.json");
   const outputPath = path.join(outputDir, "catalog-fixture.json");
-  await rm(outputDir, { recursive: true, force: true });
+  if (resetOutput) await rm(outputDir, { recursive: true, force: true });
   await mkdir(outputDir, { recursive: true });
   await writeFile(inputPath, `${JSON.stringify(input, null, 2)}\n`);
-  const resolvedInventoryPath = await testOnlyInventoryPath(outputDir, input, inventoryPath);
   await execFileAsync(
     process.execPath,
     [
       "tools/datapack/import-official-sources.mjs",
       "--inventory",
-      resolvedInventoryPath,
+      inventoryPath,
       "--input",
       inputPath,
       "--output",
@@ -15587,44 +15561,125 @@ async function importOfficialSourceInput(outputDir, input, inventoryPath = "tool
   return JSON.parse(await readFile(outputPath, "utf8"));
 }
 
-async function testOnlyInventoryPath(outputDir, input, inventoryPath) {
-  if (!input.sourceIds?.includes(TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) return inventoryPath;
-  const inventory = JSON.parse(await readFile(
-    path.isAbsolute(inventoryPath) ? inventoryPath : path.join(root, inventoryPath),
-    "utf8",
-  ));
+async function importTestOnlyAccessibilityFixture(outputDir, input) {
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+  return importOfficialSourceInput(outputDir, input, await testOnlyInventoryPath(outputDir), false);
+}
+
+async function testOnlyInventoryPath(outputDir) {
+  const inventory = structuredClone(JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8")));
+  if (inventory.sources.some(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) {
+    throw new Error(`duplicate test-only accessibility source: ${TEST_PRODUCTION_ACCESSIBILITY_SOURCE}`);
+  }
   const baseline = inventory.sources.find(({ id }) => id === "seoul-metro-accessibility");
   assert.ok(baseline, "test-only accessibility fixture requires inventory schema baseline");
-  if (!inventory.sources.some(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE)) inventory.sources.push({
+  inventory.sources.push({
     ...baseline,
     id: TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
-    displayName: "테스트 전용 수도권 접근성 fixture",
-    owner: "테스트",
-    provider: "테스트",
-    providerDepartment: "테스트",
-    sourceSystem: "test-fixture",
-    datasetUrl: "https://example.invalid/test-only-capital-accessibility-fixture",
-    datasetKind: "fixture-only",
+    displayName: "Test-only capital accessibility fixture",
+    owner: "EasySubway deterministic test",
+    provider: "EasySubway deterministic test",
+    providerDepartment: "test only",
+    sourceSystem: "test fixture",
+    datasetUrl: "https://test-only-capital-accessibility-fixture.invalid/source",
+    datasetKind: "test-fixture",
+    coverage: "test-only capital accessibility fixture",
+    coverageScope: { regionIds: ["capital"], operatorIds: ["seoul-metro"], sourceDomains: ["accessibility_facilities"] },
+    requiredForProductionPack: false,
+    productionUseAllowed: true,
     updateFrequency: "test-only",
-    observedDataUpdatedAt: "2026-07-28",
-    retrievedAt: "2026-07-28",
-    license: {
-      ...baseline.license,
-      attribution: "테스트 전용 fixture",
-      evidenceUrl: "https://example.invalid/test-only-capital-accessibility-fixture/license",
+    observedDataUpdatedAt: "2026-08-09",
+    retrievedAt: "2026-08-09",
+    license: { type: "TEST_ONLY", name: "Test-only fixture", attribution: "EasySubway deterministic test", commercialUseAllowed: true, derivativeWorkAllowed: true, redistributionAllowed: true, evidenceUrl: "https://test-only-capital-accessibility-fixture.invalid/license" },
+    fieldsProvided: ["test_only_accessibility_fixture"],
+    capabilities: {
+      schedule: { status: "UNSUPPORTED", productionUseAllowed: false, coverageStatus: "NOT_PROVIDED_BY_SOURCE", updateFrequency: "test-only", unsupportedNotes: "test-only fixture" },
+      realtime: { status: "UNSUPPORTED", productionUseAllowed: false, liveEtaEligible: false, rateLimitStatus: "NOT_APPLICABLE", coverageStatus: "NOT_PROVIDED_BY_SOURCE", updateFrequency: "test-only", unsupportedNotes: "test-only fixture" },
+      facility: { status: "SUPPORTED", productionUseAllowed: true, coverageStatus: "SOURCE_INVENTORY_COVERED", updateFrequency: "test-only", unsupportedNotes: "test-only fixture" },
     },
+    admissionEvidence: { artifactKind: "test-only-admission", issue: 0, candidateId: TEST_PRODUCTION_ACCESSIBILITY_SOURCE, sourceId: TEST_PRODUCTION_ACCESSIBILITY_SOURCE, snapshotId: TEST_ACCESSIBILITY_SNAPSHOT_ID, decision: "APPROVED", approvedBy: "test-only", approvedAt: TEST_ACCESSIBILITY_RETRIEVED_AT, sampleEvidenceHash: sha256("test-source-sample"), rawSha256: sha256("test-source-raw"), schemaFingerprint: sha256("test-source-schema"), sourceSnapshotSetHash: sha256("test-source-set"), sourceInventorySha256: sha256("test-source-inventory"), adminReviewRecordHash: sha256("test-source-review"), licenseEvidenceHash: sha256("test-source-license"), aliasLedgerHash: sha256("test-source-alias"), operatorMappingLedgerHash: sha256("test-source-operator"), facilityEvidenceLedgerHash: sha256("test-source-facility"), routeEvidenceLedgerHash: sha256("test-source-route"), overrideHash: sha256("test-source-override"), admissionDurationSeconds: 0, quotaEvidence: { portal: "test-only", defaultDailyLimit: "unlimited", unlockStatus: "approved", productionUseAllowed: true }, productionUseNoteKo: "test-only fixture" },
+    accessibilityAdmissionEvidence: { issue: 0, decision: "APPROVED", productionUseAllowed: true, licenseEvidenceHash: sha256("test-accessibility-license"), snapshotId: TEST_ACCESSIBILITY_SNAPSHOT_ID, snapshotPath: "test-only-capital-accessibility-fixture.invalid/snapshot", capturedAt: TEST_ACCESSIBILITY_RETRIEVED_AT, observedAt: TEST_ACCESSIBILITY_RETRIEVED_AT, freshUntil: "2026-08-10T00:00:00.000Z", rawSha256: sha256("test-accessibility-raw"), contentSha256: sha256("test-accessibility-content"), schemaFingerprint: sha256("test-accessibility-schema"), snapshotFileSha256: sha256("test-accessibility-file"), absenceEvidenceMode: "EXHAUSTIVE_LIST" },
   });
   const testInventoryPath = path.join(outputDir, "test-only-source-inventory.json");
   await writeFile(testInventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
   return testInventoryPath;
 }
 
-async function capitalPilotProductionSourceInput({ testOnly = false } = {}) {
+function testAccessibilitySourceRow(row, label) {
+  return {
+    ...row,
+    sourceId: TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
+    sourceSnapshotId: TEST_ACCESSIBILITY_SNAPSHOT_ID,
+    providerFacilityRef: `test-only:${label}`,
+    providerRecordHash: sha256(`test-only:${label}:provider`),
+    evidenceHash: sha256(`test-only:${label}:evidence`),
+    verifiedAt: TEST_ACCESSIBILITY_RETRIEVED_AT,
+    retrievedAt: TEST_ACCESSIBILITY_RETRIEVED_AT,
+    description: `test-only accessibility fixture: ${label}`,
+    note: `test-only accessibility fixture: ${label}`,
+  };
+}
+
+async function capitalPilotProductionSourceInput() {
   const input = JSON.parse(
     await readFile(path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "utf8"),
   );
-  return testOnly ? withTestProductionAccessibility(input) : input;
+  return withTestProductionAccessibility(input);
 }
+
+test("공식 source ingest adapter는 provenance 전용 source와 test-only projection을 격리한다", async () => {
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-test-only-accessibility-isolation-"));
+  const raw = JSON.parse(await readFile(
+    path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "utf8",
+  ));
+  const trackedInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
+  assert.equal(trackedInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").productionUseAllowed, false);
+  assert.equal(trackedInventory.sources.some(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE), false);
+  await assert.rejects(
+    importOfficialSourceInput(path.join(outputDir, "raw"), raw),
+    /kric-station-convenience-standard source inventory is provenance-only/,
+  );
+  const rawBeforeProjection = structuredClone(raw);
+  const projected = withTestProductionAccessibility(raw);
+  assert.deepEqual(raw, rawBeforeProjection);
+  assert.deepEqual(projected.manifest, raw.manifest);
+  assert.deepEqual(projected.routeEdges, raw.routeEdges);
+  for (const coverage of raw.coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "accessibility_facilities")) {
+    assert.deepEqual(
+      projected.coverageEvidence.find(({ sourceDomain }) => sourceDomain === coverage.sourceDomain),
+      coverage,
+    );
+  }
+  const projectedStaticRows = [...projected.facilityRows, ...projected.accessibilityStatusEvidence]
+    .filter((row) => row.sourceId === TEST_PRODUCTION_ACCESSIBILITY_SOURCE);
+  assert.ok(projectedStaticRows.length > 0);
+  for (const row of projectedStaticRows) {
+    const label = row.id ?? `${row.stationId}:${row.lineId}:${row.facilityType}`;
+    assert.equal(row.sourceSnapshotId, TEST_ACCESSIBILITY_SNAPSHOT_ID);
+    assert.equal(JSON.stringify(row).includes("kric-station-convenience-standard"), false);
+    assert.equal(row.providerFacilityRef, `test-only:${label}`);
+    assert.equal(row.providerRecordHash, sha256(`test-only:${label}:provider`));
+    assert.equal(row.evidenceHash, sha256(`test-only:${label}:evidence`));
+  }
+  assert.equal(new Set(projectedStaticRows.map((row) => row.providerRecordHash)).size, projectedStaticRows.length);
+  assert.equal(new Set(projectedStaticRows.map((row) => row.evidenceHash)).size, projectedStaticRows.length);
+  await assert.rejects(
+    importOfficialSourceInput(path.join(outputDir, "actual"), projected),
+    /source inventory missing: test-only-capital-accessibility-fixture/,
+  );
+  const tempOutput = path.join(outputDir, "projected");
+  await mkdir(tempOutput, { recursive: true });
+  const inventoryPath = await testOnlyInventoryPath(tempOutput);
+  const tempInventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+  const testSource = tempInventory.sources.find(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE);
+  assert.match(testSource.datasetUrl, /\.invalid/);
+  assert.equal(testSource.owner, "EasySubway deterministic test");
+  assert.equal(JSON.stringify(testSource.admissionEvidence).includes("seoul-metro"), false);
+  assert.equal(JSON.stringify(testSource.accessibilityAdmissionEvidence).includes("seoul-metro"), false);
+  const generated = await importOfficialSourceInput(tempOutput, projected, inventoryPath, false);
+  assert.equal(generated.packs[0].artifactKind, "production");
+});
 
 function withTestProductionAccessibility(input) {
   const fixture = structuredClone(input);
@@ -15634,26 +15689,32 @@ function withTestProductionAccessibility(input) {
       : value
   );
   fixture.sourceIds = fixture.sourceIds.map(replaceSource);
-  fixture.facilityRows.forEach((row) => { row.sourceId = replaceSource(row.sourceId); });
-  fixture.routeEdges.forEach((edge) => { edge.sourceId = replaceSource(edge.sourceId); });
-  fixture.coverageEvidence.forEach((evidence) => {
-    evidence.sourceIds = evidence.sourceIds.map(replaceSource);
+  fixture.facilityRows.forEach((row) => {
+    if (row.sourceId === "kric-station-convenience-standard") Object.assign(row, testAccessibilitySourceRow(row, row.id));
   });
-  fixture.accessibilityStatusEvidence?.forEach((evidence) => { evidence.sourceId = replaceSource(evidence.sourceId); });
+  fixture.coverageEvidence.forEach((evidence) => {
+    if (evidence.sourceDomain === "accessibility_facilities") {
+      evidence.sourceIds = evidence.sourceIds.map(replaceSource);
+    }
+  });
+  fixture.accessibilityStatusEvidence?.forEach((evidence) => {
+    if (evidence.sourceId === "kric-station-convenience-standard") {
+      Object.assign(evidence, testAccessibilitySourceRow(evidence, `${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}`));
+    }
+  });
   return fixture;
 }
 
 function useAccessibilitySourceForAvailableEdge(input, edgeId) {
+  if (!input.sourceIds.includes("seoul-metro-accessibility")) input.sourceIds.push("seoul-metro-accessibility");
+  const coverage = input.coverageEvidence.find((row) => row.sourceDomain === "accessibility_facilities");
+  if (coverage && !coverage.sourceIds.includes("seoul-metro-accessibility")) coverage.sourceIds.push("seoul-metro-accessibility");
   const edge = input.routeEdges.find((row) => row.id === edgeId);
   edge.accessibilityStatus = "AVAILABLE";
   edge.stairAccessState = "STEP_FREE";
   edge.verificationStatus = "VERIFIED";
-  edge.sourceId = input.sourceIds.includes(TEST_PRODUCTION_ACCESSIBILITY_SOURCE)
-    ? TEST_PRODUCTION_ACCESSIBILITY_SOURCE
-    : "kric-station-convenience-standard";
-  edge.sourceSnapshotId = edge.sourceId === TEST_PRODUCTION_ACCESSIBILITY_SOURCE
-    ? "test-only-capital-accessibility-fixture-20260728"
-    : "kric-station-convenience-standard-20260728T184503338Z";
+  edge.sourceId = "seoul-metro-accessibility";
+  edge.sourceSnapshotId = "seoul-metro-accessibility-20260728";
 }
 
 function addSeoul2ProductionScope(input) {
@@ -16147,16 +16208,16 @@ function makeProductionSourceFixtureStrictCoverageValid(fixture) {
   for (const edge of pack.networkEdges.filter((row) => ["ENTRY", "EXIT"].includes(row.edgeType))) {
     edge.accessibilityStatus = "AVAILABLE";
     edge.sourceId = TEST_PRODUCTION_ACCESSIBILITY_SOURCE;
-    edge.sourceSnapshotId = "test-only-capital-accessibility-fixture-20260728";
+    edge.sourceSnapshotId = TEST_ACCESSIBILITY_SNAPSHOT_ID;
     edge.providerRecordHash = sha256(`provider:${edge.id}:test-only-capital-accessibility-fixture`);
-    edge.evidenceHash = sha256(`evidence:${edge.id}:test-only-capital-accessibility-fixture:2026-07-28T00:00:00.000Z`);
-    edge.lastVerifiedAt = "2026-07-28T00:00:00.000Z";
+    edge.evidenceHash = sha256(`evidence:${edge.id}:test-only-capital-accessibility-fixture:${TEST_ACCESSIBILITY_RETRIEVED_AT}`);
+    edge.lastVerifiedAt = TEST_ACCESSIBILITY_RETRIEVED_AT;
   }
   for (const evidence of pack.stationFacilityEvidence) {
     evidence.sourceId = testAccessibilitySource.id;
-    evidence.sourceSnapshotId = "test-only-capital-accessibility-fixture-20260728";
+    evidence.sourceSnapshotId = TEST_ACCESSIBILITY_SNAPSHOT_ID;
     evidence.providerRecordHash = sha256(`provider:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:test-only-capital-accessibility-fixture`);
-    evidence.evidenceHash = sha256(`evidence:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:test-only-capital-accessibility-fixture:2026-07-28T00:00:00.000Z`);
+    evidence.evidenceHash = sha256(`evidence:${evidence.stationId}:${evidence.lineId}:${evidence.facilityType}:test-only-capital-accessibility-fixture:${TEST_ACCESSIBILITY_RETRIEVED_AT}`);
     evidence.operationalStatus = "AVAILABLE";
     evidence.statusMeaning = "OPERATOR_CONFIRMED";
     evidence.strictRouteEligible = true;
@@ -16164,8 +16225,8 @@ function makeProductionSourceFixtureStrictCoverageValid(fixture) {
   }
   addApprovedMovementPathwayEvidence(pack, {
     sourceId: TEST_PRODUCTION_ACCESSIBILITY_SOURCE,
-    sourceSnapshotId: "test-only-capital-accessibility-fixture-20260728",
-    verifiedAt: "2026-07-28T00:00:00.000Z",
+    sourceSnapshotId: TEST_ACCESSIBILITY_SNAPSHOT_ID,
+    verifiedAt: TEST_ACCESSIBILITY_RETRIEVED_AT,
   });
 }
 
