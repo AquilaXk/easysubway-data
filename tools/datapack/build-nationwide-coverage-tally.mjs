@@ -39,8 +39,8 @@
 //   --resolutions tools/datapack/release/nationwide-public-api-coverage-resolutions-20260725.json \
 //   --expected-launch-required-total 270 \
 //   --output tools/datapack/reports/nationwide-coverage-tally.json
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -655,8 +655,19 @@ async function main(argv) {
     expectedLaunchRequiredTotal: expectedRaw === undefined ? null : Number(expectedRaw),
   });
 
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(sortJson(ledger), null, 2)}\n`);
+  const outputDirectory = path.dirname(outputPath);
+  const temporaryOutputPath = path.join(
+    outputDirectory,
+    `.${path.basename(outputPath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  const bytes = `${JSON.stringify(sortJson(ledger), null, 2)}\n`;
+  await mkdir(outputDirectory, { recursive: true });
+  try {
+    await writeFile(temporaryOutputPath, bytes, { flag: "wx" });
+    await rename(temporaryOutputPath, outputPath);
+  } finally {
+    await rm(temporaryOutputPath, { force: true });
+  }
 }
 
 if (isMainModule(import.meta.url)) {

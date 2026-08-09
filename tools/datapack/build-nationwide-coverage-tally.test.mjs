@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -117,7 +117,7 @@ function requirementFor(ledger, operatorId, sourceDomain = "station_line_members
 // 실행하면 ledger가 기록하는 입력 경로는 tracked 산출물과 같으므로, 바이트 차이는 입력 내용 차이만 남는다.
 async function stageWorkspace(mutate) {
   const workspace = await mkdtemp(path.join(tmpdir(), "coverage-tally-"));
-  for (const relativePath of INPUT_PATHS) {
+  for (const relativePath of [...INPUT_PATHS, LEDGER_PATH]) {
     await mkdir(path.join(workspace, path.dirname(relativePath)), { recursive: true });
     await copyFile(path.join(root, relativePath), path.join(workspace, relativePath));
   }
@@ -125,8 +125,13 @@ async function stageWorkspace(mutate) {
   return workspace;
 }
 
-async function regenerateLedger(workspace, expectedLaunchRequiredTotal = EXPECTED_LAUNCH_REQUIRED_TOTAL) {
-  const output = path.join(workspace, "ledger.json");
+async function regenerateLedger(
+  workspace,
+  {
+    expectedLaunchRequiredTotal = EXPECTED_LAUNCH_REQUIRED_TOTAL,
+    output = path.join(workspace, "ledger.json"),
+  } = {},
+) {
   await execFileAsync(process.execPath, [
     path.join(root, TOOL_PATH),
     "--targets", TARGETS_PATH,
@@ -138,12 +143,20 @@ async function regenerateLedger(workspace, expectedLaunchRequiredTotal = EXPECTE
   return readFile(output, "utf8");
 }
 
+async function assertNoLedgerTempResidue(output) {
+  const prefix = `.${path.basename(output)}.`;
+  const entries = await readdir(path.dirname(output));
+  assert.deepEqual(entries.filter((entry) => entry.startsWith(prefix)), []);
+}
+
 test("커밋된 전국 coverage tally ledger는 현행 입력에서 바이트 단위로 재생성된다", async () => {
   const workspace = await stageWorkspace();
   try {
-    const regenerated = await regenerateLedger(workspace);
+    const stagedLedgerPath = path.join(workspace, LEDGER_PATH);
+    const regenerated = await regenerateLedger(workspace, { output: stagedLedgerPath });
     const tracked = await readFile(path.join(root, LEDGER_PATH), "utf8");
     assert.equal(regenerated, tracked, "ledger는 재생성 결과와 바이트 단위로 같아야 한다");
+    await assertNoLedgerTempResidue(stagedLedgerPath);
 
     const ledger = JSON.parse(tracked);
     assert.equal(ledger.artifactKind, "nationwide-coverage-tally-ledger");
@@ -265,9 +278,45 @@ test("분모 drift는 fail closed다", async (context) => {
     const workspace = await stageWorkspace();
     try {
       await assert.rejects(
-        regenerateLedger(workspace, "269"),
+        regenerateLedger(workspace, { expectedLaunchRequiredTotal: "269" }),
         (error) => /launch-required denominator drift: expected 269, computed 270/.test(error.stderr),
       );
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+test("generator 또는 분모 실패는 tracked ledger를 변경하지 않는다", async (context) => {
+  await context.test("잘못된 입력으로 generator가 실패해도", async () => {
+    const workspace = await stageWorkspace(async (dir) => {
+      await writeFile(path.join(dir, INVENTORY_PATH), "{");
+    });
+    try {
+      const stagedLedgerPath = path.join(workspace, LEDGER_PATH);
+      const before = await readFile(stagedLedgerPath, "utf8");
+      await assert.rejects(regenerateLedger(workspace, { output: stagedLedgerPath }));
+      assert.equal(await readFile(stagedLedgerPath, "utf8"), before);
+      await assertNoLedgerTempResidue(stagedLedgerPath);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  await context.test("분모가 일치하지 않아 generator가 실패해도", async () => {
+    const workspace = await stageWorkspace();
+    try {
+      const stagedLedgerPath = path.join(workspace, LEDGER_PATH);
+      const before = await readFile(stagedLedgerPath, "utf8");
+      await assert.rejects(
+        regenerateLedger(workspace, {
+          expectedLaunchRequiredTotal: "269",
+          output: stagedLedgerPath,
+        }),
+        (error) => /launch-required denominator drift: expected 269, computed 270/.test(error.stderr),
+      );
+      assert.equal(await readFile(stagedLedgerPath, "utf8"), before);
+      await assertNoLedgerTempResidue(stagedLedgerPath);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
