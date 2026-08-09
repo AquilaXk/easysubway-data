@@ -7,6 +7,7 @@ import {
   classifyProviderFailure,
   CONTROL_OPERATION_STATUSES,
   formatProviderFailureEvidence,
+  normalizeDataGoKrServiceKey,
   PROVIDER_FAILURE_CLASSIFICATIONS,
   providerCredentialShape,
   requiresControlOperation,
@@ -34,6 +35,122 @@ const CONTROL_OPERATION = Object.freeze({
 
 // 실제 자격증명처럼 보이지 않는 명백한 더미. 실키는 어떤 형태로도 두지 않는다.
 const DUMMY_CREDENTIAL = "DUMMY-NOT-A-CREDENTIAL";
+
+test("DATA_GO_KR_SERVICE_KEY는 decoded 또는 한 번 encoded된 값만 정규화한다", () => {
+  const raw = "DUMMY+NOT+A+CREDENTIAL";
+  const encoded = encodeURIComponent(raw);
+  const lowercaseEncoded = encoded.replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase());
+
+  assert.equal(normalizeDataGoKrServiceKey(raw), raw);
+  assert.equal(normalizeDataGoKrServiceKey(encoded), raw);
+  assert.equal(normalizeDataGoKrServiceKey(lowercaseEncoded), raw);
+});
+
+test("DATA_GO_KR_SERVICE_KEY 정상화는 비문자열·빈 값·비인쇄 ASCII와 불완전 인코딩을 거부한다", () => {
+  const invalidValues = [
+    null,
+    42,
+    "",
+    "raw key",
+    "raw\tkey",
+    "raw\rkey",
+    "raw\nkey",
+    "raw\u0000key",
+    "한글키",
+    "DUMMY%",
+    "DUMMY%2",
+    "DUMMY%ZZ",
+    "DUM%4DY+NOT+A+CREDENTIAL",
+    encodeURIComponent(encodeURIComponent("DUMMY+NOT+A+CREDENTIAL")),
+    "DUMMY%20KEY",
+    "DUMMY%09KEY",
+    "DUMMY%0DKEY",
+    "DUMMY%0AKEY",
+    "DUMMY%00KEY",
+    "DUMMY%ED%95%9C",
+  ];
+
+  for (const value of invalidValues) {
+    assert.throws(() => normalizeDataGoKrServiceKey(value), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  }
+});
+
+test("DATA_GO_KR_SERVICE_KEY 정상화 오류는 자격증명이나 형상 정보를 노출하지 않는다", () => {
+  const raw = "DUMMY+NOT+A+CREDENTIAL";
+  const encoded = encodeURIComponent(raw);
+
+  assert.throws(
+    () => normalizeDataGoKrServiceKey(encoded.replace("%2B", "%20")),
+    (error) => {
+      assert.equal(error.message, "DATA_GO_KR_SERVICE_KEY is invalid");
+      assert.doesNotMatch(error.message, /DUMMY|%20|length|class|fingerprint/i);
+      return true;
+    },
+  );
+});
+
+test("DATA_GO_KR_SERVICE_KEY 정상화는 안전한 label만 오류에 반영한다", () => {
+  assert.throws(
+    () => normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", { label: "DUMMY+NOT+A+CREDENTIAL" }),
+    (error) => {
+      assert.equal(error.message, "credential label is invalid");
+      assert.doesNotMatch(error.message, /DUMMY|length|class|fingerprint/i);
+      return true;
+    },
+  );
+  assert.throws(
+    () => normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", { label: 42 }),
+    /credential label is invalid/,
+  );
+  assert.throws(
+    () => normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", { label: undefined }),
+    /credential label is invalid/,
+  );
+});
+
+test("DATA_GO_KR_SERVICE_KEY 정상화 options는 closed object다", () => {
+  const inherited = Object.create({ extra: true });
+  const nonEnumerable = Object.defineProperty({}, "extra", { value: true });
+  const symbol = { [Symbol("extra")]: true };
+  const accessor = Object.defineProperty({}, "label", {
+    get() {
+      throw new Error("DUMMY+NOT+A+CREDENTIAL");
+    },
+  });
+  const trapped = new Proxy({}, {
+    ownKeys() {
+      throw new Error("DUMMY+NOT+A+CREDENTIAL");
+    },
+  });
+  for (const options of [
+    null,
+    [],
+    new Date(0),
+    inherited,
+    nonEnumerable,
+    symbol,
+    accessor,
+    trapped,
+    { extra: true },
+    { label: "DATA_GO_KR_SERVICE_KEY", extra: true },
+  ]) {
+    assert.throws(
+      () => normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", options),
+      (error) => {
+        assert.equal(error.message, "credential options are invalid");
+        assert.doesNotMatch(error.message, /DUMMY|extra|length|class|fingerprint/i);
+        return true;
+      },
+    );
+  }
+
+  const nullPrototype = Object.create(null);
+  nullPrototype.label = "DATA_GO_KR_SERVICE_KEY";
+  assert.equal(
+    normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", nullPrototype),
+    "DUMMY+NOT+A+CREDENTIAL",
+  );
+});
 
 function document(overrides = {}) {
   return documentWithControlOperation(
