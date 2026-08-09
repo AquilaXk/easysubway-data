@@ -98,13 +98,12 @@ export async function collectDatagoSourceCandidateEvidence({
   runnerTemp = process.env.RUNNER_TEMP,
   serviceKey = process.env.DATA_GO_KR_SERVICE_KEY,
 } = {}) {
-  requiredText(serviceKey, "DATA_GO_KR_SERVICE_KEY");
+  const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   if (!path.isAbsolute(requiredText(runnerTemp, "RUNNER_TEMP"))) {
     throw new Error("RUNNER_TEMP must be an absolute path");
   }
   const document = candidatesDocument ?? JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
   const request = resolveDatagoCandidateRequest(document, candidateId);
-  const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   try {
     return await collectSourceCandidateEvidence({
       candidateId,

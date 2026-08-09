@@ -204,11 +204,11 @@ export async function collectSeoulAccessibility({
   if (source === "facility-location" && endpoint !== sourceConfig.endpoint) {
     throw new Error(`${INVALID_RESPONSE}: endpoint`);
   }
+  const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   const endpointUrl = new URL(endpoint);
   if (endpointUrl.protocol !== "https:") {
     throw new Error("HTTPS endpoint is required");
   }
-  const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey);
   const collected = [];
   const rawPages = [];
   const rowIdentities = new Set();

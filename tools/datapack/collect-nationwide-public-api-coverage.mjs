@@ -302,6 +302,14 @@ export async function collectNationwidePublicApiCoverage({
   fetchImpl = fetch,
   now = new Date(),
 } = {}) {
+  const normalizedCredentials = planReferencesDataGoCredential(searchPlan)
+    ? {
+      ...(credentials ?? {}),
+      DATA_GO_KR_SERVICE_KEY: normalizeDataGoKrServiceKey(
+        requiredString(credentials?.DATA_GO_KR_SERVICE_KEY, "DATA_GO_KR_SERVICE_KEY"),
+      ),
+    }
+    : credentials;
   validatePlan(searchPlan);
   const entries = [];
   const unresolved = [];
@@ -310,7 +318,7 @@ export async function collectNationwidePublicApiCoverage({
     const results = [];
     let unresolvedResult = null;
     for (const query of target.queries) {
-      const result = await runQuery(query, credentials, fetchImpl, requestCache);
+      const result = await runQuery(query, normalizedCredentials, fetchImpl, requestCache);
       if (result.reasonCode) {
         unresolvedResult = result;
         break;
@@ -378,6 +386,14 @@ export async function collectNationwidePublicApiCoverage({
     entries,
     unresolved,
   };
+}
+
+function planReferencesDataGoCredential(searchPlan) {
+  return Array.isArray(searchPlan?.entries) && searchPlan.entries.some((entry) => (
+    Array.isArray(entry?.queries) && entry.queries.some((query) => (
+      query?.credentialEnv === "DATA_GO_KR_SERVICE_KEY"
+    ))
+  ));
 }
 
 export function summarizeUnresolvedDiagnostics(unresolved) {

@@ -8,9 +8,7 @@ export async function fetchKasiPublicHolidayCalendar({
   months,
   fetchImpl = fetch,
 } = {}) {
-  if (typeof serviceKey !== "string" || serviceKey.length === 0 || /[\r\n]/.test(serviceKey)) {
-    throw new Error("DATA_GO_KR_SERVICE_KEY must be a nonempty single line");
-  }
+  const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey, { label: "DATA_GO_KR_SERVICE_KEY" });
   if (!Number.isInteger(year) || year < 2000 || year > 9999) throw new Error("KASI public holiday year is invalid");
   const requestedMonths = [...new Set(months ?? [])].sort((left, right) => left - right);
   if (requestedMonths.length === 0 || requestedMonths.some((month) => !Number.isInteger(month) || month < 1 || month > 12)) {
@@ -19,7 +17,7 @@ export async function fetchKasiPublicHolidayCalendar({
   const holidays = new Set();
   for (const month of requestedMonths) {
     const url = new URL(ENDPOINT);
-    url.searchParams.set("ServiceKey", normalizeDataGoKrServiceKey(serviceKey));
+    url.searchParams.set("ServiceKey", normalizedServiceKey);
     url.searchParams.set("pageNo", "1");
     url.searchParams.set("numOfRows", "100");
     url.searchParams.set("solYear", String(year));
