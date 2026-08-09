@@ -16,6 +16,7 @@ import {
   buildRawResponseRecord,
   buildServicePatternObservation,
   filterRowsByTrainNumbers,
+  fetchWithRetry,
   redactKricCredential,
   selectServicePatternProbeRequest,
   summarizeOperationTrainDiagnosticArtifact,
@@ -499,6 +500,25 @@ test("KRIC provider 실패·schema mismatch·부분 수집을 성공 artifact로
     }]),
     /failed requests: 1\/25; diagnostics=KRIC timetable provider resultCode 30/,
   );
+});
+
+test("KRIC provider request는 bounded timeout 뒤에만 재시도하고 최종 실패한다", async () => {
+  let calls = 0;
+  await assert.rejects(
+    () => fetchWithRetry("https://provider.invalid/timetable", {
+      attempts: 2,
+      timeoutMs: 5,
+      fetchImpl: async (_url, { signal }) => {
+        calls += 1;
+        return await new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+      sleep: async () => {},
+    }),
+    /KRIC timetable request timed out/,
+  );
+  assert.equal(calls, 2);
 });
 
 test("KRIC 오류 진단은 raw·percent-encoded credential을 모두 제거한다", () => {

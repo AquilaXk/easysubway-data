@@ -1008,11 +1008,23 @@ function parseArgs(argv) {
 }
 
 // transient 네트워크 오류(DNS ENOTFOUND 등)에만 bounded retry를 적용한다.
-async function fetchWithRetry(url, attempts = 3) {
+export async function fetchWithRetry(url, {
+  attempts = 2,
+  timeoutMs = 3_000,
+  fetchImpl = fetch,
+  sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+} = {}) {
+  if (!Number.isInteger(attempts) || attempts < 1
+    || !Number.isInteger(timeoutMs) || timeoutMs < 1
+    || typeof fetchImpl !== "function" || typeof sleep !== "function") {
+    throw new TypeError("KRIC timetable retry options are invalid");
+  }
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url);
+      const response = await fetchImpl(url, { signal: controller.signal });
       if (!response.ok) {
         const error = new Error(`KRIC timetable HTTP ${response.status}`);
         error.nonRetryable = true;
@@ -1021,8 +1033,12 @@ async function fetchWithRetry(url, attempts = 3) {
       return await response.text();
     } catch (error) {
       if (error.nonRetryable === true) throw error;
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      lastError = controller.signal.aborted
+        ? new Error("KRIC timetable request timed out")
+        : error;
+      if (attempt < attempts) await sleep(500 * attempt);
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError;
