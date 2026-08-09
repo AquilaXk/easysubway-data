@@ -5,10 +5,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const workflows = [
-  ".github/workflows/ci.yml",
-  ".github/workflows/datapack-release.yml",
-];
+const workflow = ".github/workflows/ci.yml";
 const mobileRepository = "AquilaXk/easysubway-mobile";
 const mobileRevision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
 const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
@@ -22,7 +19,7 @@ function fixtureStep(workflow) {
   return { yml, block, stage };
 }
 
-for (const workflow of workflows) {
+{
   test(`${workflow}: pinned Mobile fixture는 immutable checkout을 credentials 없이 수행한다`, () => {
     const { yml, block, stage } = fixtureStep(workflow);
     assert.match(block, new RegExp(`repository:\\s*${mobileRepository}`));
@@ -66,4 +63,22 @@ for (const workflow of workflows) {
 test("CI는 pinned Mobile fixture workflow 계약을 standalone contracts에서 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.match(ci, /node --test[\s\S]*tools\/ci\/mobile-fixture-staging-workflow\.test\.mjs/);
+});
+
+test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실행한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const verification = ci.match(/- name: Verify Data issue 108 bundled-pack regression[\s\S]*?\n\s+- name:/)?.[0];
+  assert.ok(verification, "#108 bundled-pack 회귀 검증 스텝을 찾지 못함");
+  assert.match(verification, /set -euo pipefail/);
+  assert.match(verification, /node --test tools\/datapack\/readmit-bundled-pack-identity\.test\.mjs/);
+  assert.match(verification, /node --test --test-name-pattern='bundled 공식 OD quote\|bundled 차량·출입문 힌트' tools\/datapack\/datapack-tools\.test\.mjs/);
+  assert.ok(
+    ci.indexOf("Stage pinned Mobile fixture") < ci.indexOf("Verify Data issue 108 bundled-pack regression"),
+    "#108 회귀 검증은 fixture stage 뒤여야 함",
+  );
+});
+
+test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {
+  const release = readFileSync(path.join(root, ".github/workflows/datapack-release.yml"), "utf8");
+  assert.doesNotMatch(release, /apps\/mobile|Checkout pinned Mobile fixture|Stage pinned Mobile fixture/);
 });
