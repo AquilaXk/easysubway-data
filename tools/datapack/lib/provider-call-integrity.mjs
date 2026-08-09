@@ -94,9 +94,11 @@ export function normalizeDataGoKrServiceKey(
     if (descriptor != null && !Object.hasOwn(descriptor, "value")) {
       throw new Error("invalid options");
     }
-    label = descriptor?.value === undefined
-      ? DATA_GO_CREDENTIAL_LABEL
-      : descriptor.value;
+    if (descriptor == null) {
+      label = DATA_GO_CREDENTIAL_LABEL;
+    } else {
+      label = descriptor.value;
+    }
   } catch {
     throw new Error("credential options are invalid");
   }

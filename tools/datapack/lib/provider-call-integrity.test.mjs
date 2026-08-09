@@ -102,6 +102,10 @@ test("DATA_GO_KR_SERVICE_KEY 정상화는 안전한 label만 오류에 반영한
     () => normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", { label: 42 }),
     /credential label is invalid/,
   );
+  assert.throws(
+    () => normalizeDataGoKrServiceKey("DUMMY+NOT+A+CREDENTIAL", { label: undefined }),
+    /credential label is invalid/,
+  );
 });
 
 test("DATA_GO_KR_SERVICE_KEY 정상화 options는 closed object다", () => {
