@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const API_ORIGIN = "https://apis.data.go.kr";
 
@@ -38,7 +39,7 @@ export async function probeKorailTrainOperationApi({
 } = {}) {
   const operation = KORAIL_TRAIN_OPERATION_APIS[sourceId];
   if (!operation) throw new Error(`unsupported Korail train operation source: ${sourceId ?? "missing"}`);
-  const key = decodedServiceKey(requiredString(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   if (operation.requiresRunDate && !/^\d{8}$/.test(runDate ?? "")) {
     throw new Error("KORAIL_TRAIN_OPERATION_RUN_DATE must be YYYYMMDD");
   }
@@ -148,15 +149,6 @@ function objectValue(value, label, parent) {
 function safeToken(value) {
   const text = String(value ?? "UNKNOWN");
   return /^[A-Za-z0-9._/+:-]{1,64}$/.test(text) ? text : "UNKNOWN";
-}
-
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 function requiredString(value, label) {

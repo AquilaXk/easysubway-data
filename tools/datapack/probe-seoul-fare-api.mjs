@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { sanitizeErrorMessage } from "./lib/source-candidate-evidence-collector.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const FARE_ENDPOINT = "https://apis.data.go.kr/B553766/fare2/getRltmFare2";
 const MAX_ATTEMPTS = 2;
@@ -44,15 +45,6 @@ function requiredText(value, label) {
   return value;
 }
 
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 function sleep(milliseconds) {
   if (milliseconds <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -73,7 +65,7 @@ export function sanitizeProbeError(error, secrets = []) {
   let message = error instanceof Error ? error.message : String(error);
   for (const secret of secrets) {
     const original = secret ?? "";
-    for (const variant of new Set([original, decodedServiceKey(original)])) {
+    for (const variant of new Set([original, encodeURIComponent(original)])) {
       message = sanitizeErrorMessage(message, variant);
     }
   }
@@ -117,7 +109,7 @@ async function fetchJsonWithRetry({ fetchImpl, url, timeoutMs, retryDelayMs, lab
 
 function fareUrl({ fareServiceKey, origin, destination }) {
   const url = new URL(FARE_ENDPOINT);
-  url.searchParams.set("serviceKey", decodedServiceKey(fareServiceKey));
+  url.searchParams.set("serviceKey", fareServiceKey);
   url.searchParams.set("pageNo", "1");
   url.searchParams.set("numOfRows", "10");
   url.searchParams.set("dataType", "JSON");
@@ -183,7 +175,7 @@ export async function probeOfficialOdFares({
       throw new Error("FARE_API_PROBE_OUTPUT must be an absolute path");
     }
     await rm(outputPath, { force: true });
-    requiredText(fareServiceKey, "DATA_GO_KR_SERVICE_KEY");
+    fareServiceKey = normalizeDataGoKrServiceKey(fareServiceKey);
 
     const canary = await fetchFareQuote({
       destination: CANARY_DESTINATION,

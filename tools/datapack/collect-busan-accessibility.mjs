@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 const ENDPOINT = "http://data.humetro.busan.kr/voc/api/open_api_convenience.tnn"; // NOSONAR -- provider contract is HTTP-only
 const DETAIL_URL = "https://www.data.go.kr/data/15001020/openapi.do";
@@ -25,7 +26,7 @@ export async function collectBusanAccessibility({
   sleepImpl = sleep,
 } = {}) {
   const capturedAt = validDate(now, "now");
-  const key = decodedServiceKey(requiredText(serviceKey, "DATA_GO_KR_SERVICE_KEY"));
+  const key = normalizeDataGoKrServiceKey(serviceKey);
   const scope = validateScope(stationScopes);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("concurrency is invalid");
   const responses = new Array(scope.length);
@@ -193,11 +194,6 @@ function decodeEntities(value) {
   return value.replace(/&(amp|lt|gt|quot|apos);/g, (_, entity) => ({
     amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
   })[entity]);
-}
-
-function decodedServiceKey(value) {
-  if (!/%[0-9a-f]{2}/i.test(value)) return value;
-  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 function validDate(value, label) {

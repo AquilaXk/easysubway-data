@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "./check-timetable-snapshot-freshness.mjs";
 import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
+import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 
 function currentCollectionArgs(argv) {
   const args = parseArgs(argv);
@@ -106,7 +107,8 @@ async function defaultPublicHolidays({ now, env, fetchHolidayCalendar }) {
   }
   const holidays = new Set();
   for (const [year, months] of requested) {
-    const result = await fetchHolidayCalendar({ serviceKey: env.DATA_GO_KR_SERVICE_KEY, year, months });
+    const serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
+    const result = await fetchHolidayCalendar({ serviceKey, year, months });
     for (const date of result) holidays.add(date);
   }
   return holidays;
@@ -123,6 +125,7 @@ export async function runCurrentItxCollectionCli({
   collectImpl = runKorailItxCompletenessCli,
 } = {}) {
   const args = currentCollectionArgs(argv);
+  normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
   await assertAbsent([args.output, args["completeness-output"], args["freshness-output"]]);
   const outputParent = await bindOutputParent(args.output);
   const holidayDates = await (fetchPublicHolidays ?? defaultPublicHolidays)({ now, env, fetchHolidayCalendar });

@@ -35,6 +35,27 @@ function plan(entries = [target]) {
   };
 }
 
+test("전국 coverage collector는 유효한 DATA_GO plan에서 malformed credential을 cache·provider 호출 전에 거부한다", async () => {
+  let calls = 0;
+  const query = { ...target.queries[0], providerId: "data-go-search", endpoint: "https://api.odcloud.kr/api/GetSearchDataList/v1/searchData", operation: "searchData", credentialEnv: "DATA_GO_KR_SERVICE_KEY", credentialParam: "Authorization", credentialPlacement: "header", method: "POST", format: "json", query: { page: 0, size: 10_000, dataType: ["API"], keyword: "test" } };
+  await assert.rejects(collectNationwidePublicApiCoverage({ searchPlan: plan([{ ...target, queries: [query] }]), credentials: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" }, fetchImpl: async () => { calls += 1; } }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
+test("전국 coverage collector는 DATA_GO query가 없는 plan에선 사용하지 않는 malformed DATA_GO credential을 거부하지 않는다", async () => {
+  let calls = 0;
+  const resolutions = await collectNationwidePublicApiCoverage({
+    searchPlan: plan(),
+    credentials: { KRIC_SERVICE_KEY: "key", DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" },
+    fetchImpl: async () => {
+      calls += 1;
+      return xmlResponse();
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(resolutions.entries.length, 1);
+});
+
 function xmlResponse({ code = "00", items = "" } = {}) {
   return new Response(
     `<ROOT><header><resultCnt>${items ? 1 : 0}</resultCnt><resultCode>${code}</resultCode><resultMsg>OK</resultMsg></header><body>${items}</body></ROOT>`,
