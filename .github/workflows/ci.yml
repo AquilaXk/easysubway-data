@@ -143,6 +143,7 @@ jobs:
           tools/ci/require-workflow-artifact.test.mjs
           tools/release/validate-promotion-request.test.mjs
           tools/ci/datapack-release-workflow.test.mjs
+          tools/ci/public-sensitivity-owner-receipt-caller.test.mjs
           tools/ci/mobile-fixture-staging-workflow.test.mjs
           tools/ci/itx-current-collection-workflow.test.mjs
           tools/datapack/lib/provider-call-integrity.test.mjs
