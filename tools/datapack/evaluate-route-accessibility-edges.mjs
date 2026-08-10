@@ -304,14 +304,22 @@ function validateEdge(value, stationLineIndex) {
   assertSha256(value.edgeSha256, "route edge sha256");
   const withoutHash = Object.fromEntries(EDGE_KEYS.filter((key) => key !== "edgeSha256").map((key) => [key, value[key]]));
   if (value.edgeSha256 !== routeEdgeSha256(withoutHash)) throw new Error("route edge sha256 mismatch");
-  const from = routeEndpoint(value.fromNodeId, stationLineIndex);
-  const to = routeEndpoint(value.toNodeId, stationLineIndex);
+  const from = routeEndpoint(value.fromNodeId, stationLineIndex, value);
+  const to = routeEndpoint(value.toNodeId, stationLineIndex, value);
   return canonicalObject({ ...value, from, to });
 }
 
-function routeEndpoint(nodeId, stationLineIndex) {
+function routeEndpoint(nodeId, stationLineIndex, edge) {
   const segments = String(nodeId).split(":");
   if (segments.some((segment) => segment === "")) throw new Error("route edge endpoint is invalid");
+  const isTrackedItxExpressEndpoint = segments.length === 3
+    && segments[2] === "EXPRESS"
+    && edge.edgeType === "RIDE"
+    && edge.serviceClass === "ITX_CHEONGCHUN"
+    && edge.servicePattern === "EXPRESS";
+  if (segments.length > 2 && !isTrackedItxExpressEndpoint) {
+    throw new Error("route edge endpoint suffix is invalid");
+  }
   if (segments.length === 1) {
     if (!stationLineIndex.stationIds.has(segments[0])) throw new Error("unmapped route edge endpoint");
     return canonicalObject({ stationId: segments[0], lineId: null, operatorId: null, lineSequence: null });

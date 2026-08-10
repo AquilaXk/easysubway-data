@@ -260,6 +260,9 @@ test("identity·closed schema·digest·endpoint·denominator 오류를 fail clos
     routeEdges: [edge({ edgeId: "unmapped", edgeType: "RIDE", fromNodeId: "station-z:line-1", toNodeId: "station-b:line-1", servicePattern: "LOCAL" })],
   }), unitPolicy), /unmapped route edge endpoint/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    routeEdges: [edge({ edgeId: "ambiguous-suffix", edgeType: "RIDE", fromNodeId: "station-a:line-1:LOCAL", toNodeId: "station-b:line-1", servicePattern: "LOCAL" })],
+  }), unitPolicy), /route edge endpoint suffix is invalid/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [edge({ edgeId: "unmapped-station", edgeType: "FUTURE_EDGE", fromNodeId: "station-z", toNodeId: "station-b:line-1" })],
   }), unitPolicy), /unmapped route edge endpoint/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
