@@ -4,6 +4,7 @@ import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { isMainModule } from "../lib/is-main-module.mjs";
 import {
   validateManifest,
   sha256,
@@ -822,7 +823,7 @@ function validateProductionRideEdgeSpeed(database, pack) {
   }
 }
 
-function validateProductionRideEdgeAdjacency(database, pack, requireProduction) {
+export function validateProductionRideEdgeAdjacency(database, pack, requireProduction) {
   if (!requireProduction || pack.artifactKind !== "production" || !hasTable(database, "station_lines") || !hasTable(database, "network_edges")) {
     return;
   }
@@ -837,12 +838,23 @@ function validateProductionRideEdgeAdjacency(database, pack, requireProduction) 
   );
   const edges = database
     .prepare(`
-      SELECT id, from_node_id, to_node_id, service_pattern
+      SELECT id, from_node_id, to_node_id, service_pattern, service_class,
+             source_id, source_snapshot_id, provider_record_hash,
+             provenance_kind, verification_status, last_verified_at, evidence_hash
       FROM network_edges
       WHERE edge_type = 'RIDE'
       ORDER BY id
     `)
     .all();
+  const localEdgesByPair = new Map();
+  for (const edge of edges) {
+    if (edge.service_pattern !== "LOCAL") continue;
+    const key = edgePairKey(edge.from_node_id, edge.to_node_id);
+    const pairEdges = localEdgesByPair.get(key) ?? [];
+    pairEdges.push(edge);
+    localEdgesByPair.set(key, pairEdges);
+  }
+  const sourceById = new Map((pack.sourceInventory ?? []).map((source) => [source.id, source]));
   for (const edge of edges) {
     if (String(edge.service_pattern || "LOCAL").toUpperCase() === "EXPRESS") {
       continue;
@@ -856,9 +868,46 @@ function validateProductionRideEdgeAdjacency(database, pack, requireProduction) 
       throw new Error(`${pack.id}@${pack.version} network_edges RIDE edge must stay on one line: ${edge.id}`);
     }
     if (Math.abs(from.lineSequence - to.lineSequence) !== 1) {
+      if (isVerifiedTopologyBranchEdge(edge, from.lineId, localEdgesByPair, sourceById)) {
+        continue;
+      }
       throw new Error(`${pack.id}@${pack.version} network_edges LOCAL RIDE edge must connect adjacent station-line sequences: ${edge.id}`);
     }
   }
+}
+
+function isVerifiedTopologyBranchEdge(edge, lineId, localEdgesByPair, sourceById) {
+  const source = sourceById.get(edge.source_id);
+  if (edge.service_pattern !== "LOCAL"
+    || !sourceSupportsDomain(source, "route_graph_topology")
+    || source.coverageScope?.lineIds?.includes(lineId) !== true
+    || !hasCompleteOfficialTopologyProvenance(edge)) {
+    return false;
+  }
+  const reverseEdges = localEdgesByPair.get(edgePairKey(edge.to_node_id, edge.from_node_id)) ?? [];
+  return reverseEdges.some((reverse) =>
+    reverse.service_class === edge.service_class
+    && reverse.source_id === edge.source_id
+    && reverse.source_snapshot_id === edge.source_snapshot_id
+    && reverse.evidence_hash === edge.evidence_hash
+    && reverse.last_verified_at === edge.last_verified_at
+    && hasCompleteOfficialTopologyProvenance(reverse));
+}
+
+function hasCompleteOfficialTopologyProvenance(edge) {
+  return edge.provenance_kind === "OFFICIAL_SOURCE"
+    && edge.verification_status === "VERIFIED"
+    && typeof edge.source_snapshot_id === "string"
+    && edge.source_snapshot_id.length > 0
+    && isProductionSha256(edge.provider_record_hash)
+    && isProductionSha256(edge.evidence_hash)
+    && Number.isInteger(edge.last_verified_at)
+    && edge.last_verified_at > 0;
+}
+
+function isProductionSha256(value) {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/u.test(value)) return false;
+  return !/^([0-9a-f])\1{63}$/u.test(value);
 }
 
 function representativeRouteGraph(database) {
@@ -2412,7 +2461,9 @@ function requiredProductionSha256(value, label) {
   }
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (isMainModule(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
