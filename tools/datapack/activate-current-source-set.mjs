@@ -2,15 +2,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  open,
-  readFile,
-  rename,
-  rm,
-  rmdir,
-  writeFile,
+  lstat, mkdir, mkdtemp, open, readFile, rename, rm, rmdir, writeFile,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -30,12 +22,9 @@ const root = path.resolve(import.meta.dirname, "../..");
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 export const CURRENT_PRODUCTION_SOURCE_IDS = Object.freeze([
-  "molit-urban-rail-full-route",
-  "seoulmetro-station-line-info",
-  "seoulmetro-cyberstation-route-map",
-  "kric-subway-timetable",
-  "seoul-metro-accessibility",
-  "kric-station-convenience-standard",
+  "molit-urban-rail-full-route", "seoulmetro-station-line-info",
+  "seoulmetro-cyberstation-route-map", "kric-subway-timetable",
+  "seoul-metro-accessibility", "kric-station-convenience-standard",
   "seoul-metro-official-od-fares",
 ]);
 
@@ -62,18 +51,11 @@ export const CURRENT_SOURCE_HANDOFF = Object.freeze({
 });
 
 export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
-  "tools/datapack/sources/capital-route-topology-20260809.json",
-  "tools/datapack/release/capital-topology-reverification-20260809.json",
-  "tools/datapack/release/source-snapshots.json",
-  "tools/datapack/source-inventory.json",
-  "tools/datapack/inputs/capital-pilot-production-source-input.json",
-  "tools/datapack/release/capital-production-reviewed-pack.json",
-  "tools/datapack/release/capital-production-canonical-pack.json",
-  "tools/datapack/release/candidate-build-spec.json",
-  "tools/datapack/release/release-request.json",
-  "tools/datapack/release/hash-evidence.json",
+  "tools/datapack/sources/capital-route-topology-20260809.json", "tools/datapack/release/capital-topology-reverification-20260809.json",
+  "tools/datapack/release/source-snapshots.json", "tools/datapack/source-inventory.json", "tools/datapack/inputs/capital-pilot-production-source-input.json",
+  "tools/datapack/release/capital-production-reviewed-pack.json", "tools/datapack/release/capital-production-canonical-pack.json",
+  "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json",
 ]);
-
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
 
 function sha256(bytes) {
