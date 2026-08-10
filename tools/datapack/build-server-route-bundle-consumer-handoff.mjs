@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { promisify, TextDecoder } from "node:util";
 import {
   link,
   lstat,
@@ -26,6 +26,7 @@ import { validatePublicationReceipt } from "./publish-server-route-bundle.mjs";
 import { inspectSignedServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const execFileAsync = promisify(execFile);
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
 const COMPONENTS = ["accessibility", "fare", "timetable", "topology"];
 const SIGNED_PATHS = [
   "compatibility.json",
@@ -409,29 +410,29 @@ async function verifyRepositoryHead(repositoryRoot, expected) {
 }
 
 async function readNonEmptyRegular(target, label) {
-  let stat;
-  try {
-    stat = await lstat(target);
-  } catch (error) {
-    if (error.code === "ENOENT") throw new Error(`${label} is missing`);
-    throw error;
-  }
-  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular non-symlink`);
-  if (stat.size === 0) throw new Error(`${label} must be non-empty`);
+  await inspectRequiredEntry(target, label, "file");
   return readFile(target);
 }
 
 async function realDirectory(target, label) {
   const resolved = path.resolve(requiredRaw(target, label));
-  let stat;
-  try {
-    stat = await lstat(resolved);
-  } catch (error) {
-    if (error.code === "ENOENT") throw new Error(`${label} is missing`);
-    throw error;
-  }
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label} must be a real directory`);
+  await inspectRequiredEntry(resolved, label, "directory");
   return resolved;
+}
+
+async function inspectRequiredEntry(target, label, kind) {
+  const stat = await lstat(target).catch((error) => {
+    if (error?.code === "ENOENT") throw new Error(`${label} is missing`);
+    throw error;
+  });
+  const realEntry = !stat.isSymbolicLink()
+    && (kind === "file" ? stat.isFile() : stat.isDirectory());
+  if (!realEntry) {
+    throw new Error(kind === "file"
+      ? `${label} must be a regular non-symlink`
+      : `${label} must be a real directory`);
+  }
+  if (kind === "file" && stat.size === 0) throw new Error(`${label} must be non-empty`);
 }
 
 async function assertDirectoryEntries(root, expected, label) {
@@ -450,23 +451,23 @@ async function requireNewOutput(output) {
 }
 
 function parseCanonicalJson(bytes, label) {
+  let text;
   let value;
   try {
-    value = JSON.parse(Buffer.from(bytes).toString("utf8"));
+    text = strictUtf8.decode(Buffer.from(bytes));
+    value = JSON.parse(text);
   } catch {
     throw new Error(`${label} must be JSON`);
   }
-  if (!Buffer.from(bytes).equals(Buffer.from(canonicalJson(value)))) {
-    throw new Error(`${label} must be canonical JSON`);
-  }
+  if (text !== canonicalJson(value)) throw new Error(`${label} must be canonical JSON`);
   return value;
 }
 
 function assertKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
-  const actual = Object.keys(value).sort(bytewise);
-  const wanted = [...expected].sort(bytewise);
-  if (canonicalJson(actual) !== canonicalJson(wanted)) throw new Error(`${label} mismatch`);
+  const actual = Object.keys(value);
+  const wanted = new Set(expected);
+  if (actual.length !== wanted.size || actual.some((key) => !wanted.has(key))) throw new Error(`${label} mismatch`);
 }
 
 function canonicalObject(value) {
