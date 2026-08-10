@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "route-edge-evaluation-policy",
+  "policyVersion": "route-edge-evaluation-v1",
+  "states": [
+    "PASS",
+    "BLOCKED",
+    "NOT_APPLICABLE",
+    "UNKNOWN",
+    "MISSING",
+    "STALE",
+    "NOT_EVALUATED"
+  ],
+  "unresolvedStatePrecedence": [
+    "STALE",
+    "MISSING",
+    "UNKNOWN"
+  ],
+  "edgeDomainMap": {
+    "ENTRY": { "endpointTarget": "TO", "domains": ["FACILITY"] },
+    "EXIT": { "endpointTarget": "FROM", "domains": ["EXIT"] },
+    "IN_STATION_TRANSFER": { "endpointTarget": "BOTH", "domains": ["TRANSFER"] },
+    "OUT_OF_STATION_TRANSFER": { "endpointTarget": "BOTH", "domains": ["TRANSFER"] },
+    "LEGACY_TRANSFER": { "endpointTarget": "BOTH", "domains": ["TRANSFER"] },
+    "WALKWAY": { "endpointTarget": "BOTH", "domains": ["FACILITY"] },
+    "ELEVATOR": { "endpointTarget": "BOTH", "domains": ["FACILITY"] },
+    "RAMP": { "endpointTarget": "BOTH", "domains": ["FACILITY"] },
+    "STAIR": { "endpointTarget": "BOTH", "domains": ["FACILITY"] },
+    "ESCALATOR": { "endpointTarget": "BOTH", "domains": ["FACILITY"] },
+    "FACILITY_CONNECTOR": { "endpointTarget": "BOTH", "domains": ["FACILITY"] },
+    "RIDE": { "endpointTarget": "NONE", "domains": [] }
+  },
+  "rideInvariant": {
+    "subwayLocal": {
+      "serviceClass": "SUBWAY",
+      "servicePattern": "LOCAL",
+      "sameLine": true,
+      "lineSequenceDelta": 1,
+      "measuredSpeedKmhMinimum": 15,
+      "measuredSpeedKmhMaximum": 110
+    },
+    "itxCheongchunExpress": {
+      "serviceClass": "ITX_CHEONGCHUN",
+      "servicePattern": "EXPRESS",
+      "admittedEdgeSetSha256": "da771d5264efd198989b6e1c589c130620274f7c7d99c423909f3a1c5acf2b2f",
+      "digestShape": "sqlite-route-graph-v1"
+    }
+  }
+}
