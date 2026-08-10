@@ -134,11 +134,13 @@ function validateGoIdentity(candidate) {
 
 function assertKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
-  const actual = Object.keys(value).sort(compareBytes);
-  const wanted = [...expected].sort(compareBytes);
-  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
-    throw new Error(`${label} mismatch`);
+  const remaining = new Set(expected);
+  const actual = Object.keys(value);
+  if (actual.length !== remaining.size) throw new Error(`${label} mismatch`);
+  for (const key of actual) {
+    if (!remaining.delete(key)) throw new Error(`${label} mismatch`);
   }
+  if (remaining.size !== 0) throw new Error(`${label} mismatch`);
 }
 
 function raw(value, label) {
@@ -174,11 +176,13 @@ function kst(value, label) {
 }
 
 function canonicalObject(value) {
-  if (Array.isArray(value)) return value.map(canonicalObject);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, canonicalObject(value[key])]));
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((entry) => canonicalObject(entry));
+  const sorted = [];
+  for (const key of Object.keys(value).sort(compareBytes)) {
+    sorted.push([key, canonicalObject(value[key])]);
   }
-  return value;
+  return Object.fromEntries(sorted);
 }
 
 function canonicalJson(value) {
