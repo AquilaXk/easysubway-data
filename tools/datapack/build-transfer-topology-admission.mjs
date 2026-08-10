@@ -20,18 +20,18 @@ const STATES = [
 ];
 const OUTPUT_KEYS = [
   "schemaVersion", "artifactKind", "candidate", "topologySourceIdentity", "topologySourceIdentitySha256",
-  "stationLineSetSha256", "normalizedEvidenceSha256", "cells", "tuplePartition", "materializerEvidenceRows", "stateSummary",
-  "decision", "admissionDigest",
+  "stationLineMappingSha256", "stationLineSetSha256", "normalizedEvidenceSha256", "cells", "tuplePartition",
+  "materializerEvidenceRows", "stateSummary", "decision", "admissionDigest",
 ];
 
 export function buildTransferTopologyAdmission(input) {
   assertKeys(input, [
     "candidate", "observedAt", "providerCodeCatalog", "snapshot", "source", "sourceSnapshots",
-    "stationLines", "stationLineSetSha256",
+    "stationLines", "stationLineMappingSha256", "stationLineSetSha256",
   ], "transfer topology input keys");
   const candidate = validateCandidate(input.candidate);
   const stationLines = validateStationLines(
-    input.stationLines, candidate.stationSetSha256, input.stationLineSetSha256,
+    input.stationLines, candidate.stationSetSha256, input.stationLineSetSha256, input.stationLineMappingSha256,
   );
   const observedAtMillis = requiredUtcInstant(input.observedAt, "observedAt");
   const source = validateSourceAndSnapshot(input.source, input.snapshot, observedAtMillis, candidate);
@@ -90,6 +90,7 @@ export function buildTransferTopologyAdmission(input) {
     schemaVersion: 1,
     artifactKind: "transfer-topology-admission-matrix",
     candidate,
+    stationLineMappingSha256: input.stationLineMappingSha256,
     stationLineSetSha256: input.stationLineSetSha256,
     topologySourceIdentity,
     topologySourceIdentitySha256,
@@ -119,9 +120,12 @@ function validateCandidate(value) {
   return canonicalObject(value);
 }
 
-function validateStationLines(value, expectedStationSetSha256, expectedStationLineSetSha256) {
+function validateStationLines(
+  value, expectedStationSetSha256, expectedStationLineSetSha256, expectedStationLineMappingSha256,
+) {
   if (!Array.isArray(value) || value.length === 0) throw new Error("stationLines must be a non-empty array");
   assertSha256(expectedStationLineSetSha256, "stationLineSetSha256");
+  assertSha256(expectedStationLineMappingSha256, "stationLineMappingSha256");
   const lines = value.map((line) => {
     assertKeys(line, STATION_LINE_KEYS, "station line keys");
     for (const key of STATION_LINE_KEYS.filter((key) => key !== "stationAliases")) {
@@ -149,6 +153,9 @@ function validateStationLines(value, expectedStationSetSha256, expectedStationLi
   if (sha256(canonicalJson(stationLineSet)) !== expectedStationLineSetSha256) {
     throw new Error("station-line denominator identity mismatch");
   }
+  if (sha256(canonicalJson(lines)) !== expectedStationLineMappingSha256) {
+    throw new Error("station-line mapping identity mismatch");
+  }
   return lines;
 }
 
@@ -159,6 +166,7 @@ function validateSourceSnapshotSet(sourceSnapshots, expectedSourceSetSha256, sna
   if (sha256(JSON.stringify(sourceSnapshots)) !== expectedSourceSetSha256) {
     throw new Error("source snapshot set identity mismatch");
   }
+  const seenIdentities = new Set();
   let matched = 0;
   for (const entry of sourceSnapshots) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -166,6 +174,9 @@ function validateSourceSnapshotSet(sourceSnapshots, expectedSourceSetSha256, sna
     }
     for (const key of ["sourceId", "snapshotId"]) assertNonBlank(entry[key], `source snapshot ${key}`);
     assertSha256(entry.rawSha256, "source snapshot rawSha256");
+    const identity = `${entry.sourceId}\u0000${entry.snapshotId}`;
+    if (seenIdentities.has(identity)) throw new Error("duplicate source snapshot identity");
+    seenIdentities.add(identity);
     if (entry.sourceId === snapshot.sourceId
       && entry.snapshotId === snapshot.snapshotId
       && entry.rawSha256 === snapshot.rawSha256) matched += 1;
@@ -200,7 +211,9 @@ function validateSourceAndSnapshot(source, snapshot, observedAtMillis, candidate
   validateSnapshotMetadata(snapshot);
   const rawSnapshotSource = source.rawSnapshotAdmission !== undefined;
   if (rawSnapshotSource) validateRawSnapshotAdmission(source, snapshot);
-  else validateProductionAdmissionEvidence(source, snapshot, candidate);
+  const productionCoverageScope = rawSnapshotSource
+    ? null
+    : validateProductionAdmissionEvidence(source, snapshot, candidate, observedAtMillis);
   const capturedAtMillis = requiredUtcInstant(snapshot.capturedAt, "snapshot capturedAt");
   const freshUntilMillis = requiredUtcInstant(snapshot.freshUntil, "snapshot freshUntil");
   if (capturedAtMillis > observedAtMillis) throw new Error("source snapshot is future-dated");
@@ -224,6 +237,7 @@ function validateSourceAndSnapshot(source, snapshot, observedAtMillis, candidate
       && source.capabilities.facility.productionUseAllowed === true
       && source.capabilities.facility.coverageStatus === "SOURCE_INVENTORY_COVERED"
       && license.redistributionAllowed === true,
+    productionCoverageScope,
     provenanceId: sha256(canonicalJson(provenance)),
     licenseId: sha256(canonicalJson(license)),
   };
@@ -242,7 +256,7 @@ function validateRawSnapshotAdmission(source, snapshot) {
   }
 }
 
-function validateProductionAdmissionEvidence(source, snapshot, candidate) {
+function validateProductionAdmissionEvidence(source, snapshot, candidate, observedAtMillis) {
   const evidence = source.admissionEvidence;
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)
     || source.coverageScope?.mappingStatus !== undefined
@@ -262,7 +276,10 @@ function validateProductionAdmissionEvidence(source, snapshot, candidate) {
   for (const key of ["approvedBy", "approvedAt"]) {
     assertNonBlank(evidence[key], `production admission ${key}`);
   }
-  requiredUtcInstant(evidence.approvedAt, "production admission approvedAt");
+  const approvedAtMillis = requiredUtcInstant(evidence.approvedAt, "production admission approvedAt");
+  if (approvedAtMillis > observedAtMillis) {
+    throw new Error("production admission approval is future-dated");
+  }
   for (const key of [
     "sampleEvidenceHash", "rawSha256", "schemaFingerprint", "sourceSnapshotSetHash",
     "sourceInventorySha256", "adminReviewRecordHash", "licenseEvidenceHash", "aliasLedgerHash",
@@ -274,12 +291,39 @@ function validateProductionAdmissionEvidence(source, snapshot, candidate) {
   if (evidence.quotaEvidence.defaultDailyLimit === undefined) {
     throw new Error("production admission quota defaultDailyLimit is required");
   }
+  return validateProductionCoverageScope(source.coverageScope);
+}
+
+function validateProductionCoverageScope(value) {
+  assertKeys(value, ["operatorIds", "regionIds", "sourceDomains"], "production coverage scope keys");
+  const scope = {};
+  for (const key of ["operatorIds", "regionIds", "sourceDomains"]) {
+    if (!Array.isArray(value[key]) || value[key].length === 0) {
+      throw new Error(`production coverage ${key} must be a non-empty array`);
+    }
+    const entries = value[key].map((entry) => {
+      assertNonBlank(entry, `production coverage ${key}`);
+      return entry;
+    });
+    if (new Set(entries).size !== entries.length) {
+      throw new Error(`production coverage ${key} must be unique`);
+    }
+    scope[key] = [...entries].sort(compareBytes);
+  }
+  if (!scope.sourceDomains.includes("indoor_movement_paths")) {
+    throw new Error("production coverage source domain mismatch");
+  }
+  return scope;
 }
 
 function validateSnapshotMetadata(snapshot) {
   const metadata = snapshot.metadata;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     throw new Error("snapshot metadata must be an object");
+  }
+  if (metadata.schemaVersion !== 1
+    || metadata.artifactKind !== "molit-railway-transfer-movement-snapshot-metadata") {
+    throw new Error("snapshot metadata schema mismatch");
   }
   const metadataBytes = `${JSON.stringify(metadata, null, 2)}\n`;
   if (sha256(metadataBytes) !== snapshot.metadataFileSha256) {
@@ -408,14 +452,19 @@ function buildCell({
   candidate, stationLine, stationLineSetSha256, joined, source, snapshot,
   normalizedEvidenceSha256, topologySourceIdentitySha256,
 }) {
+  const sourceCoversStationLine = source.productionAdmitted
+    && source.productionCoverageScope.regionIds.includes(stationLine.regionId)
+    && source.productionCoverageScope.operatorIds.includes(stationLine.operatorId);
   const state = source.stale
     ? "STALE"
     : joined
-      ? source.productionAdmitted ? "ADMITTED_TRANSFER_TOPOLOGY" : "BLOCKED_WITH_EVIDENCE"
+      ? sourceCoversStationLine ? "ADMITTED_TRANSFER_TOPOLOGY" : "BLOCKED_WITH_EVIDENCE"
       : "MISSING";
   const applicabilityReason = {
     ADMITTED_TRANSFER_TOPOLOGY: "OFFICIAL_TRANSFER_TOPOLOGY_PRESENT",
-    BLOCKED_WITH_EVIDENCE: "SOURCE_NOT_PRODUCTION_ADMITTED",
+    BLOCKED_WITH_EVIDENCE: source.productionAdmitted
+      ? "SOURCE_COVERAGE_SCOPE_MISMATCH"
+      : "SOURCE_NOT_PRODUCTION_ADMITTED",
     MISSING: "OFFICIAL_TRANSFER_TOPOLOGY_MISSING",
     STALE: "SOURCE_SNAPSHOT_STALE",
   }[state];

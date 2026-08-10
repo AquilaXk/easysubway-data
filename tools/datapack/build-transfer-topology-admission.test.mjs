@@ -62,8 +62,7 @@ test("current non-production MOLIT topology는 joined를 BLOCKED_WITH_EVIDENCE�
 test("fresh production-admitted joined topology만 exact Data #8 materializer evidence가 된다", () => {
   const input = validInput();
   input.stationLines = [input.stationLines[0]];
-  input.candidate.stationSetSha256 = stationSetSha256(input.stationLines);
-  input.stationLineSetSha256 = stationLineSetSha256(input.stationLines);
+  refreshStationLineBindings(input);
   promoteSourceForTest(input);
 
   const result = buildTransferTopologyAdmission(input);
@@ -122,8 +121,7 @@ test("unmatched와 ambiguous topology는 partition에 남고 NOT_APPLICABLE로 �
     ...input.stationLines[0],
     stationId: "station-a2",
   }, input.stationLines[0]];
-  input.candidate.stationSetSha256 = stationSetSha256(input.stationLines);
-  input.stationLineSetSha256 = stationLineSetSha256(input.stationLines);
+  refreshStationLineBindings(input);
 
   const result = buildTransferTopologyAdmission(input);
 
@@ -137,8 +135,7 @@ test("unmatched와 ambiguous topology는 partition에 남고 NOT_APPLICABLE로 �
 test("서로 다른 provider tuple이 같은 canonical station-line에 결속되면 fail closed한다", () => {
   const input = validInput();
   input.stationLines = [input.stationLines[0]];
-  input.candidate.stationSetSha256 = stationSetSha256(input.stationLines);
-  input.stationLineSetSha256 = stationLineSetSha256(input.stationLines);
+  refreshStationLineBindings(input);
   input.snapshot.rows.push({
     ...input.snapshot.rows[0],
     LN_NM: "수도권 4호선",
@@ -160,8 +157,7 @@ test("candidate station-line/source set과 locked source/snapshot identity misma
     lineId: "line-1b",
     lineName: "5호선",
   }];
-  lineOmission.candidate.stationSetSha256 = stationSetSha256(lineOmission.stationLines);
-  lineOmission.stationLineSetSha256 = stationLineSetSha256(lineOmission.stationLines);
+  refreshStationLineBindings(lineOmission);
   lineOmission.stationLines.pop();
   assert.throws(() => buildTransferTopologyAdmission(lineOmission), /station-line denominator identity mismatch/);
 
@@ -184,10 +180,64 @@ test("candidate station-line/source set과 locked source/snapshot identity misma
   assert.throws(() => buildTransferTopologyAdmission(admissionMismatch), /production admission evidence mismatch/);
 });
 
+test("canonical station-line mapping과 다른 역명은 candidate identity 아래 admission될 수 없다", () => {
+  const input = validInput();
+  input.stationLines[0].stationName = "변조된 사당";
+
+  assert.throws(() => buildTransferTopologyAdmission(input), /station-line mapping identity mismatch/);
+});
+
+test("production source scope 밖의 joined station-line은 blocked이고 materializer evidence가 아니다", () => {
+  const input = validInput();
+  input.stationLines = [input.stationLines[0]];
+  refreshStationLineBindings(input);
+  promoteSourceForTest(input);
+  input.source.coverageScope.regionIds = ["outside-capital"];
+
+  const result = buildTransferTopologyAdmission(input);
+
+  assert.equal(result.decision, "NO_GO");
+  assert.equal(result.cells[0].state, "BLOCKED_WITH_EVIDENCE");
+  assert.equal(result.cells[0].applicabilityReason, "SOURCE_COVERAGE_SCOPE_MISMATCH");
+  assert.deepEqual(result.materializerEvidenceRows, []);
+});
+
+test("observedAt 이후 승인된 source는 production admission이 아니다", () => {
+  const input = validInput();
+  promoteSourceForTest(input);
+  input.source.admissionEvidence.approvedAt = "2026-08-10T00:00:00.001Z";
+
+  assert.throws(() => buildTransferTopologyAdmission(input), /production admission approval is future-dated/);
+});
+
+test("self-consistent hash여도 다른 snapshot metadata schema와 artifact kind는 거부한다", () => {
+  const wrongVersion = validInput();
+  wrongVersion.snapshot.metadata.schemaVersion = 2;
+  wrongVersion.snapshot.metadataFileSha256 = metadataFileSha256(wrongVersion.snapshot.metadata);
+  assert.throws(() => buildTransferTopologyAdmission(wrongVersion), /snapshot metadata schema mismatch/);
+
+  const wrongKind = validInput();
+  wrongKind.snapshot.metadata.artifactKind = "another-snapshot-metadata";
+  wrongKind.snapshot.metadataFileSha256 = metadataFileSha256(wrongKind.snapshot.metadata);
+  assert.throws(() => buildTransferTopologyAdmission(wrongKind), /snapshot metadata schema mismatch/);
+});
+
+test("같은 source와 snapshot identity의 상충 sourceSnapshots entry는 거부한다", () => {
+  const input = validInput();
+  input.sourceSnapshots.push({
+    ...input.sourceSnapshots[0],
+    rawSha256: "0".repeat(64),
+  });
+  input.candidate.sourceSetSha256 = sha256(JSON.stringify(input.sourceSnapshots));
+
+  assert.throws(() => buildTransferTopologyAdmission(input), /duplicate source snapshot identity/);
+});
+
 test("alias, catalog 변조, unbound row content는 admission evidence가 아니다", () => {
   for (const providerStationName of ["이수", "사당역"]) {
     const nonExactName = validInput();
     nonExactName.stationLines[0].stationAliases = ["이수"];
+    refreshStationLineBindings(nonExactName);
     nonExactName.snapshot.rows[0].STIN_NM = providerStationName;
     refreshSyntheticSnapshotBindings(nonExactName);
     const nonExactResult = buildTransferTopologyAdmission(nonExactName);
@@ -208,8 +258,7 @@ test("alias, catalog 변조, unbound row content는 admission evidence가 아니
 test("rawSnapshotAdmission source는 production 상태를 변조해도 blocked다", () => {
   const input = validInput();
   input.stationLines = [input.stationLines[0]];
-  input.candidate.stationSetSha256 = stationSetSha256(input.stationLines);
-  input.stationLineSetSha256 = stationLineSetSha256(input.stationLines);
+  refreshStationLineBindings(input);
   input.source.productionUseAllowed = true;
   input.source.capabilities.facility.status = "SUPPORTED";
   input.source.capabilities.facility.productionUseAllowed = true;
@@ -302,6 +351,7 @@ function validInput() {
       mappingContractVersion: "transfer-topology-v1",
       materializerVersion: "1",
     },
+    stationLineMappingSha256: stationLineMappingSha256(stationLines),
     stationLineSetSha256: stationLineSetSha256(stationLines),
     sourceSnapshots,
     stationLines,
@@ -374,6 +424,31 @@ function stationLineSetSha256(stationLines) {
     `${left.stationId}\0${left.lineId}\0${left.operatorId}`,
     `${right.stationId}\0${right.lineId}\0${right.operatorId}`,
   ))));
+}
+
+function stationLineMappingSha256(stationLines) {
+  const mapping = stationLines.map(({
+    lineId, lineName, operatorId, operatorName, regionId, stationAliases, stationId, stationName,
+  }) => ({
+    lineId,
+    lineName,
+    operatorId,
+    operatorName,
+    regionId,
+    stationAliases: [...new Set(stationAliases)].sort(compareBytes),
+    stationId,
+    stationName,
+  })).sort((left, right) => compareBytes(
+    `${left.stationId}\0${left.lineId}\0${left.operatorId}`,
+    `${right.stationId}\0${right.lineId}\0${right.operatorId}`,
+  ));
+  return sha256(JSON.stringify(mapping));
+}
+
+function refreshStationLineBindings(input) {
+  input.candidate.stationSetSha256 = stationSetSha256(input.stationLines);
+  input.stationLineSetSha256 = stationLineSetSha256(input.stationLines);
+  input.stationLineMappingSha256 = stationLineMappingSha256(input.stationLines);
 }
 
 function refreshSyntheticSnapshotBindings(input) {
