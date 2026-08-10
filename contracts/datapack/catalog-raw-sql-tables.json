@@ -7,26 +7,26 @@
     {
       "name": "route_map_positions",
       "disposition": "APP_RESCUE",
-      "issue": "#2527",
+      "issue": "Hub Issue #2527",
       "readSites": ["features/stations/data/drift_station_repository.dart"],
       "reason": "노선도 화면의 구동 테이블이다. 비면 그 화면이 빈 상태가 되지만 역 검색·경로 탐색·시간표 등 다른 도메인의 정상 데이터는 소거되지 않는다. 결측이면 조회가 예외로 죽으므로 빈 테이블 구제가 현행보다 안전하고, 앱에 _createRouteMapPositionsTable() 선례가 있다."
     },
     {
       "name": "route_map_line_tracks",
       "disposition": "APP_RESCUE",
-      "issue": "#2527",
+      "issue": "Hub Issue #2527",
       "readSites": ["features/stations/data/drift_station_repository.dart"],
       "reason": "노선 track polyline을 읽는 유일한 테이블이다. 비면 노선도에서 track만 빠지고 다른 조회는 영향이 없다. 앱에 _createRouteMapLineTracksTable() 선례가 있고 구팩에서도 열리도록 이미 IF NOT EXISTS로 만들어 왔다."
     },
     {
       "name": "transit_feed_info",
       "disposition": "ABSENCE_TOLERATED",
-      "issue": "#2530",
+      "issue": "Hub Issue #2530",
       "readSites": [
         "core/database/catalog/station_timetable_query.dart",
         "features/home_widget/next_train_widget_repository.dart"
       ],
-      "reason": "빈 테이블을 만들면 시간표 쿼리의 EXISTS (SELECT 1 FROM transit_feed_info ...) 필터가 항상 거짓이 되어 시간표가 전부 사라지므로 구제 대상이 될 수 없다. 반대로 결측을 이유로 팩 전체를 거부하면 과잉 대응이며, 결측 시 필터를 생략하는 쿼리 가드 대칭화는 #2530이 맡는다. 만들지도 막지도 않는다."
+      "reason": "빈 테이블을 만들면 시간표 쿼리의 EXISTS (SELECT 1 FROM transit_feed_info ...) 필터가 항상 거짓이 되어 시간표가 전부 사라지므로 구제 대상이 될 수 없다. 반대로 결측을 이유로 팩 전체를 거부하면 과잉 대응이며, 결측 시 필터를 생략하는 쿼리 가드 대칭화는 Hub Issue #2530이 맡는다. 만들지도 막지도 않는다."
     }
   ],
   "ignoredTokens": [

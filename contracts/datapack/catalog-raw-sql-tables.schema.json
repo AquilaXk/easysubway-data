@@ -22,7 +22,7 @@
         "properties": {
           "name": { "type": "string", "pattern": "^[a-z0-9_]+$" },
           "disposition": { "type": "string", "enum": ["APP_RESCUE", "ABSENCE_TOLERATED", "PACK_REQUIRED"] },
-          "issue": { "type": "string", "pattern": "^#[0-9]+$" },
+          "issue": { "type": "string", "pattern": "^(?:#[0-9]+|Hub Issue #[1-9][0-9]*)$" },
           "readSites": {
             "type": "array",
             "minItems": 1,
