@@ -883,33 +883,77 @@ function materializeCapitalTopologySource(pack, topology, admissions) {
   }
 }
 
-function admittedCapitalLineEvidence(sourceInventory, topology, snapshotId, reviewedAt) {
+export function admittedCapitalLineEvidence(
+  sourceInventory,
+  topology,
+  snapshotId,
+  reviewedAt,
+  now = candidateBuildNow(),
+) {
   if (sourceInventory?.schemaVersion !== 1
     || sourceInventory.artifactKind !== "production-source-inventory"
     || !Array.isArray(sourceInventory.sources)) {
     throw new Error("network edge source inventory identity is invalid");
   }
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("capital topology admission validation time is invalid");
+  }
+  const requiredReviewedAt = requiredUtcDateString(reviewedAt, "capital topology reviewedAt");
   const topologyLines = new Set(topology.lines.map(({ lineId }) => lineId));
   const admissions = new Map();
   for (const source of sourceInventory.sources.filter(({ routeMapAdmissionEvidence }) =>
     routeMapAdmissionEvidence?.topologySourceId === topology.sourceId)) {
     const evidence = source.routeMapAdmissionEvidence;
-    if (evidence.topologySnapshotId !== snapshotId
-      || evidence.topologyContentSha256 !== topology.contentSha256
-      || !Array.isArray(evidence.topologyLineages)
-      || evidence.topologyLineages.length === 0) {
-      throw new Error(`capital topology admission identity mismatch: ${source.id}`);
+    const current = evidence.currentTopologyAdmission;
+    const admission = current ?? evidence;
+    if (current != null) {
+      assertExactKeys(current, [
+        "schemaVersion", "artifactKind", "issue", "status", "topologySnapshotId",
+        "topologyContentSha256", "positionSnapshotSha256", "reviewedAt", "freshUntil",
+        "topologyLineages",
+      ], `${source.id}.routeMapAdmissionEvidence.currentTopologyAdmission`);
+      if (current.schemaVersion !== 1
+        || current.artifactKind !== "capital-route-map-current-topology-admission"
+        || current.issue !== 2776
+        || current.status !== "ADMITTED"
+        || current.positionSnapshotSha256 !== sha256HexString(
+          evidence.snapshotSha256,
+          `${source.id}.routeMapAdmissionEvidence.snapshotSha256`,
+        )
+        || current.reviewedAt !== requiredReviewedAt) {
+        throw new Error(`capital current topology admission identity mismatch: ${source.id}`);
+      }
     }
-    const capturedAt = requiredUtcDateString(evidence.capturedAt, `${source.id}.routeMapAdmissionEvidence.capturedAt`);
-    const freshUntil = requiredUtcDateString(evidence.freshUntil, `${source.id}.routeMapAdmissionEvidence.freshUntil`);
-    const now = candidateBuildNow().getTime();
-    if (Date.parse(capturedAt) > Date.parse(reviewedAt) || Date.parse(capturedAt) > now) {
+    if (admission.topologySnapshotId !== snapshotId
+      || admission.topologyContentSha256 !== topology.contentSha256
+      || !Array.isArray(admission.topologyLineages)
+      || admission.topologyLineages.length === 0) {
+      throw new Error(
+        `capital ${current == null ? "" : "current "}topology admission identity mismatch: ${source.id}`,
+      );
+    }
+    const capturedAt = requiredUtcDateString(
+      current?.reviewedAt ?? evidence.capturedAt,
+      `${source.id}.routeMapAdmissionEvidence.${current == null ? "capturedAt" : "currentTopologyAdmission.reviewedAt"}`,
+    );
+    const freshUntil = requiredUtcDateString(
+      admission.freshUntil,
+      `${source.id}.routeMapAdmissionEvidence.${current == null ? "freshUntil" : "currentTopologyAdmission.freshUntil"}`,
+    );
+    if (Date.parse(capturedAt) > Date.parse(requiredReviewedAt) || Date.parse(capturedAt) > now.getTime()) {
       throw new Error(`capital topology admission is future-dated: ${source.id}`);
     }
-    if (Date.parse(freshUntil) <= now) {
-      throw new Error(`capital topology admission is stale: ${source.id}`);
+    if (Date.parse(freshUntil) <= now.getTime()) {
+      throw new Error(`capital ${current == null ? "topology admission" : "current topology admission"} is stale: ${source.id}`);
     }
-    for (const lineage of evidence.topologyLineages) {
+    for (const lineage of admission.topologyLineages) {
+      if (current != null) {
+        assertExactKeys(
+          lineage,
+          ["sourceId", "snapshotId", "contentSha256", "lineId"],
+          `${source.id}.routeMapAdmissionEvidence.currentTopologyAdmission.topologyLineages`,
+        );
+      }
       const lineId = requiredCapitalLineAdmission(source, evidence, lineage, topology, snapshotId, topologyLines);
       const previous = admissions.get(lineId);
       if (previous == null || Date.parse(capturedAt) > Date.parse(previous.verifiedAt)) {
@@ -918,7 +962,9 @@ function admittedCapitalLineEvidence(sourceInventory, topology, snapshotId, revi
     }
   }
   if (admissions.size === 0) throw new Error("capital topology has no fresh admitted line evidence");
-  for (const [lineId, admission] of admissions) admissions.set(lineId, { ...admission, verifiedAt: reviewedAt });
+  for (const [lineId, admission] of admissions) {
+    admissions.set(lineId, { ...admission, verifiedAt: requiredReviewedAt });
+  }
   return admissions;
 }
 
@@ -1047,6 +1093,19 @@ function projectedItxDirectionalPairs(stationSequences) {
   return { admittedPairs, pairHashes, stationIds };
 }
 
+function nextDayMidnightKst(value) {
+  if (!/^\d{8}$/u.test(value ?? "")) throw new Error("ITX current topology admission serviceDate must be YYYYMMDD");
+  const date = new Date(Date.UTC(
+    Number(value.slice(0, 4)),
+    Number(value.slice(4, 6)) - 1,
+    Number(value.slice(6, 8)),
+  ));
+  const actual = `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+  if (actual !== value) throw new Error("ITX current topology admission serviceDate is invalid");
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T00:00:00+09:00`;
+}
+
 export function validateItxCurrentTopologyAdmission(currentAdmission, {
   previousArtifactSha256,
   stationSequences,
@@ -1090,6 +1149,7 @@ export function validateItxCurrentTopologyAdmission(currentAdmission, {
     currentAdmission.freshUntil,
     "ITX current topology admission freshUntil",
   );
+  const expectedFreshUntil = nextDayMidnightKst(currentAdmission.serviceDate);
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("ITX current topology admission validation time is invalid");
   }
@@ -1111,6 +1171,9 @@ export function validateItxCurrentTopologyAdmission(currentAdmission, {
     || JSON.stringify(currentAdmission.pairHashes)
       !== JSON.stringify(admittedPairs.map((tuple) => sha256(Buffer.from(JSON.stringify(tuple)))))) {
     throw new Error("ITX current topology admission identity mismatch");
+  }
+  if (freshUntil !== expectedFreshUntil) {
+    throw new Error("ITX current topology admission freshUntil must equal serviceDate next-day midnight KST");
   }
   for (const [field, value] of Object.entries({
     collectionSha256: currentAdmission.collectionSha256,

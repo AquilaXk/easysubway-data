@@ -11,6 +11,21 @@ import {
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const currentNow = new Date("2026-08-10T00:00:00.000Z");
+
+function rehashAdmission(admission) {
+  delete admission.evidenceHash;
+  admission.evidenceHash = sha256(Buffer.from(JSON.stringify(admission)));
+  return admission;
+}
+
+function validateAdmission(admission, contract, source, now = currentNow) {
+  return validateItxCurrentTopologyAdmission(admission, {
+    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
+    stationSequences: source.stationSequences,
+    now,
+  });
+}
 
 function networkEdgeEvidenceFixture() {
   return {
@@ -76,11 +91,7 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
   ));
   const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
 
-  const validated = validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-10T00:00:00.000Z"),
-  });
+  const validated = validateAdmission(admission, contract, source);
   assert.equal(validated.sourceId, "itx-current-network-edge-admission");
   assert.equal(validated.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
   assert.equal(validated.freshUntil, "2026-08-11T00:00:00+09:00");
@@ -94,17 +105,31 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
 
   const pairTampered = structuredClone(admission);
   pairTampered.pairHashes[0] = "0".repeat(64);
-  delete pairTampered.evidenceHash;
-  pairTampered.evidenceHash = sha256(Buffer.from(JSON.stringify(pairTampered)));
-  assert.throws(() => validateItxCurrentTopologyAdmission(pairTampered, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-10T00:00:00.000Z"),
-  }), /identity mismatch/);
+  rehashAdmission(pairTampered);
+  assert.throws(() => validateAdmission(pairTampered, contract, source), /identity mismatch/);
 
-  assert.throws(() => validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
-    stationSequences: source.stationSequences,
-    now: new Date("2026-08-11T00:00:00.000Z"),
-  }), /stale/);
+  assert.throws(() => validateAdmission(
+    admission,
+    contract,
+    source,
+    new Date("2026-08-11T00:00:00.000Z"),
+  ), /stale/);
+
+  const extended = structuredClone(admission);
+  extended.freshUntil = "2027-08-11T00:00:00+09:00";
+  rehashAdmission(extended);
+  assert.throws(() => validateAdmission(extended, contract, source), /freshUntil.*serviceDate/);
+
+  const invalidDate = structuredClone(admission);
+  invalidDate.serviceDate = "20260230";
+  invalidDate.artifactId = "itx-current-network-edge-admission-20260230";
+  invalidDate.observedAt = "2026-02-28T00:00:00.000Z";
+  invalidDate.freshUntil = "2026-03-01T00:00:00+09:00";
+  rehashAdmission(invalidDate);
+  assert.throws(() => validateAdmission(
+    invalidDate,
+    contract,
+    source,
+    new Date("2026-02-28T01:00:00.000Z"),
+  ), /serviceDate is invalid/);
 });

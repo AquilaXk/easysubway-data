@@ -1310,13 +1310,20 @@ export async function collectCapitalRouteTopology({
 } = {}) {
   const captured = validDate(now, "now");
   const lines = [];
+  const detailDownloads = new Map();
+  const downloadDetailFile = (detailUrl) => {
+    if (!detailDownloads.has(detailUrl)) {
+      detailDownloads.set(detailUrl, downloadDataGoDetailFile(fetchImpl, detailUrl));
+    }
+    return detailDownloads.get(detailUrl);
+  };
   for (const source of sources) {
     const primary = useLocalFiles
       ? {
           bytes: await readFile(path.resolve(root, source.localCsv)),
           downloadUrl: source.downloadUrl,
         }
-      : await downloadBytes(fetchImpl, source);
+      : await downloadBytes(fetchImpl, source, downloadDetailFile);
     let secondary = null;
     if (source.kind === "seohae-merged") {
       if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
@@ -1327,7 +1334,7 @@ export async function collectCapitalRouteTopology({
             bytes: await readFile(path.resolve(root, source.localMolitCsv)),
             downloadUrl: source.molitDownloadUrl,
           }
-        : await downloadDataGoDetailFile(fetchImpl, source.molitDownloadUrl);
+        : await downloadDetailFile(source.molitDownloadUrl);
     }
     try {
       lines.push(parseLineSource(source, primary.bytes, {
@@ -1397,9 +1404,10 @@ export async function collectCapitalRouteTopology({
   };
 }
 
-async function downloadBytes(fetchImpl, source) {
+async function downloadBytes(fetchImpl, source, downloadDetailFile = (detailUrl) =>
+  downloadDataGoDetailFile(fetchImpl, detailUrl)) {
   if (source.resolveDownloadFromDetail === true) {
-    return downloadDataGoDetailFile(fetchImpl, source.downloadUrl);
+    return downloadDetailFile(source.downloadUrl);
   }
   const response = await fetchImpl(source.downloadUrl, {
     headers: {
@@ -1436,12 +1444,22 @@ async function downloadDataGoDetailFile(fetchImpl, detailUrl) {
 export function resolveDataGoDownloadUrl(html, detailUrl) {
   if (typeof html !== "string") throw new TypeError("data.go.kr detail HTML is required");
   const normalized = html.replaceAll("&amp;", "&");
-  const candidates = [...normalized.matchAll(/(?:https:\/\/[A-Za-z0-9.-]+)?\/cmm\/cmm\/fileDownload\.do\?[^\s"'<>]+/g)]
+  const directCandidates = [...normalized.matchAll(/(?:https?:\/\/[^/\s"'<>]+)?\/cmm\/cmm\/fileDownload\.do\?[^\s"'<>]+/g)]
     .map(([value]) => new URL(value, detailUrl))
-    .filter((url) => url.hostname === "www.data.go.kr"
+    .filter((url) => url.origin === "https://www.data.go.kr"
       && url.pathname === "/cmm/cmm/fileDownload.do"
       && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
       && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
+  const functionCandidates = [...normalized.matchAll(
+    /(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?\s*\)/gu,
+  )].map(([, atchFileId, fileDetailSn]) => new URL(
+    `/cmm/cmm/fileDownload.do?atchFileId=${encodeURIComponent(atchFileId)}&fileDetailSn=${fileDetailSn}&insertDataPrcus=N`,
+    detailUrl,
+  )).filter((url) => url.origin === "https://www.data.go.kr"
+    && url.pathname === "/cmm/cmm/fileDownload.do"
+    && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
+    && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
+  const candidates = [...directCandidates, ...functionCandidates];
   const unique = [...new Map(candidates.map((url) => [url.toString(), url])).values()];
   if (unique.length === 0 && /https?:\/\/[^\s"'<>]+\/cmm\/cmm\/fileDownload\.do/.test(normalized)) {
     throw new Error("data.go.kr download URL must use canonical data.go.kr host");

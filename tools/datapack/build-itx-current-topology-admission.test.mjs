@@ -19,6 +19,8 @@ function fixture() {
     sequence("down", ["station-c", "station-b", "station-a"]),
   ];
   const reconstructionSummary = {
+    trainCount: 2,
+    stopCount: 6,
     conflictingTimestampCount: 0,
     missingPairCount: 0,
     duplicateOdCount: 0,
@@ -88,16 +90,18 @@ function fixture() {
   return { collection, previousSource };
 }
 
+function build(values) {
+  return buildItxCurrentTopologyAdmission({
+    collection: values.collection,
+    collectionSha256: sha256(Buffer.from(JSON.stringify(values.collection))),
+    previousSource: values.previousSource,
+    previousSha256: sha256(Buffer.from(JSON.stringify(values.previousSource))),
+  });
+}
+
 test("current weekday OD pair가 previous admission과 exact 같으면 topology-only admission을 만든다", () => {
   const values = fixture();
-  const collectionBytes = Buffer.from(JSON.stringify(values.collection));
-  const previousBytes = Buffer.from(JSON.stringify(values.previousSource));
-  const result = buildItxCurrentTopologyAdmission({
-    collection: values.collection,
-    collectionSha256: sha256(collectionBytes),
-    previousSource: values.previousSource,
-    previousSha256: sha256(previousBytes),
-  });
+  const result = build(values);
 
   assert.equal(result.artifactKind, "itx-current-network-edge-admission");
   assert.equal(result.status, "ADMITTED");
@@ -111,12 +115,17 @@ test("current weekday OD pair가 previous admission과 exact 같으면 topology-
 test("current weekday canonical station set이 previous admission과 다르면 topology admission을 만들지 않는다", () => {
   const values = fixture();
   values.collection.serviceDays[0].roster.stationSequences[0].stops[1].stationId = "station-x";
-  assert.throws(() => buildItxCurrentTopologyAdmission({
-    collection: values.collection,
-    collectionSha256: "6".repeat(64),
-    previousSource: values.previousSource,
-    previousSha256: "7".repeat(64),
-  }), /canonical station set mismatch/);
+  assert.throws(() => build(values), /canonical station set mismatch/);
+});
+
+test("reconstruction train·stop count가 누락되거나 0이면 admission을 만들지 않는다", () => {
+  const missing = fixture();
+  delete missing.collection.serviceDays[0].roster.reconstructionSummary.trainCount;
+  assert.throws(() => build(missing), /trainCount/);
+
+  const zero = fixture();
+  zero.collection.serviceDays[0].roster.reconstructionSummary.stopCount = 0;
+  assert.throws(() => build(zero), /stopCount/);
 });
 
 test("current weekday는 up/down sequence를 정확히 하나씩만 허용한다", () => {
@@ -124,12 +133,7 @@ test("current weekday는 up/down sequence를 정확히 하나씩만 허용한다
   values.collection.serviceDays[0].roster.stationSequences.push(
     structuredClone(values.collection.serviceDays[0].roster.stationSequences[1]),
   );
-  assert.throws(() => buildItxCurrentTopologyAdmission({
-    collection: values.collection,
-    collectionSha256: "6".repeat(64),
-    previousSource: values.previousSource,
-    previousSha256: "7".repeat(64),
-  }), /must contain exactly one up and one down station sequence/);
+  assert.throws(() => build(values), /must contain exactly one up and one down station sequence/);
 });
 
 test("station set이 같고 pair가 다르면 previous pair를 유지한 admission에 drift를 명시한다", () => {
@@ -138,12 +142,7 @@ test("station set이 같고 pair가 다르면 previous pair를 유지한 admissi
     sequence("up", ["station-a", "station-c", "station-b"]),
     sequence("down", ["station-b", "station-c", "station-a"]),
   ];
-  const result = buildItxCurrentTopologyAdmission({
-    collection: values.collection,
-    collectionSha256: "6".repeat(64),
-    previousSource: values.previousSource,
-    previousSha256: "7".repeat(64),
-  });
+  const result = build(values);
 
   assert.equal(result.status, "ADMITTED");
   assert.equal(result.topologyMode, "UNCHANGED_AUTO_STATION_SET");

@@ -102,7 +102,26 @@ function validateOperations(operations) {
 }
 
 function validateReconstruction(summary) {
-  if (summary?.conflictingTimestampCount !== 0
+  const keys = ["trainCount", "stopCount", "conflictingTimestampCount", "missingPairCount", "duplicateOdCount"];
+  if (summary == null || typeof summary !== "object" || Array.isArray(summary)) {
+    throw new Error("weekday reconstruction evidence must be an object");
+  }
+  for (const field of keys) {
+    if (!Object.hasOwn(summary, field)) {
+      throw new Error(`weekday reconstruction ${field} is required`);
+    }
+  }
+  for (const field of Object.keys(summary)) {
+    if (!keys.includes(field)) {
+      throw new Error(`weekday reconstruction ${field} is not allowed`);
+    }
+  }
+  for (const field of ["trainCount", "stopCount"]) {
+    if (!Number.isSafeInteger(summary[field]) || summary[field] <= 0) {
+      throw new Error(`weekday reconstruction ${field} must be a positive safe integer`);
+    }
+  }
+  if (summary.conflictingTimestampCount !== 0
     || summary.missingPairCount !== 0
     || summary.duplicateOdCount !== 0) {
     throw new Error("weekday reconstruction evidence is not exact");

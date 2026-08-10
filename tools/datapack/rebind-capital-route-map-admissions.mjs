@@ -4,6 +4,7 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { normalizeStationName } from "./collect-capital-route-topology.mjs";
 import { replaceFileAtomically } from "./refresh-route-map-admission-freshness.mjs";
 
@@ -84,9 +85,7 @@ export function withCurrentCapitalTopologyAdmissions({
     || !Array.isArray(inventory.sources)) {
     throw new Error("production source inventory identity is invalid");
   }
-  if (topology?.sourceId !== "capital-route-topology") {
-    throw new Error("capital topology source identity is invalid");
-  }
+  const validatedTopology = loadCapitalRouteTopologySnapshot(topology);
   requiredSha256(topology.contentSha256, "capital topology contentSha256");
   requiredUtcInstant(topology.capturedAt, "capital topology capturedAt");
   requiredUtcInstant(topology.freshUntil, "capital topology freshUntil");
@@ -99,7 +98,7 @@ export function withCurrentCapitalTopologyAdmissions({
   }
   if (!(snapshotBytesByPath instanceof Map)) throw new Error("snapshot bytes map is required");
 
-  const stationsByLine = topologyStationsByLine(topology);
+  const stationsByLine = topologyStationsByLine(validatedTopology);
   const next = structuredClone(inventory);
   let admissionCount = 0;
   for (const source of next.sources) {

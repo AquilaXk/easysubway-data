@@ -14,6 +14,7 @@ import {
   compareCapitalRouteTopologies,
   LINE_SOURCES,
   mergeOfficialDistanceEvidence,
+  MOLIT_FULL_ROUTE_DETAIL_URL,
   parseLineSource,
   parseSeohaeMerged,
   resolveDataGoDownloadUrl,
@@ -220,6 +221,13 @@ test("data.go.kr 상세 페이지는 단일 canonical FILE download만 허용한
     resolved,
     "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N",
   );
+  assert.equal(
+    resolveDataGoDownloadUrl(
+      `<button onclick="fn_fileDown('FILE_000000003700001', '1')">CSV</button>`,
+      detail,
+    ),
+    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N",
+  );
   assert.throws(() => resolveDataGoDownloadUrl("<html>none</html>", detail), /exactly one/);
   assert.throws(
     () => resolveDataGoDownloadUrl(`
@@ -235,6 +243,51 @@ test("data.go.kr 상세 페이지는 단일 canonical FILE download만 허용한
     ),
     /canonical data.go.kr/,
   );
+});
+
+test("한 topology snapshot은 shared MOLIT bytes와 resolved URL을 한 번만 수집한다", async () => {
+  const sources = ["gimpo", "sillim", "seohae"]
+    .map((slug) => LINE_SOURCES.find((source) => source.slug === slug));
+  const seohae = sources.find(({ slug }) => slug === "seohae");
+  const sharedDownloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N";
+  const molitCsv = `권역,권역명,철도운영기관명,노선명,순번,역명
+1,수도권,김포골드라인운영,김포골드라인,1,양촌
+1,수도권,김포골드라인운영,김포골드라인,2,구래
+1,수도권,남서울경전철,신림선,1,샛강
+1,수도권,남서울경전철,신림선,2,대방
+1,수도권,서해철도,서해선,10,소사
+1,수도권,서해철도,서해선,11,원시`;
+  const seohaeCsv = `철도운영기관명,선명,역명,역간거리(km)
+코레일,서해선,일산,1.9
+코레일,서해선,부천종합운동장역,1.4`;
+  const responses = new Map([
+    [MOLIT_FULL_ROUTE_DETAIL_URL, `<a href="${sharedDownloadUrl}">CSV</a>`],
+    [sharedDownloadUrl, molitCsv],
+    [seohae.downloadUrl, seohaeCsv],
+  ]);
+  const requestCounts = new Map();
+
+  const snapshot = await collectCapitalRouteTopology({
+    useLocalFiles: false,
+    sources,
+    now: new Date("2026-08-09T12:04:20.479Z"),
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (!responses.has(value)) throw new Error(`unexpected URL: ${value}`);
+      requestCounts.set(value, (requestCounts.get(value) ?? 0) + 1);
+      return new Response(responses.get(value));
+    },
+  });
+
+  assert.deepEqual([...requestCounts.values()], [1, 1, 1]);
+  const bySlug = new Map(snapshot.lines.map((line) => [line.slug, line]));
+  assert.equal(bySlug.get("gimpo").rawSha256, bySlug.get("sillim").rawSha256);
+  assert.equal(
+    bySlug.get("gimpo").rawSha256,
+    bySlug.get("seohae").inputProvenance[1].rawSha256,
+  );
+  assert.equal(bySlug.get("gimpo").endpoint, sharedDownloadUrl);
+  assert.equal(bySlug.get("seohae").inputProvenance[1].downloadUrl, sharedDownloadUrl);
 });
 
 test("data.go.kr detail source는 실제 resolved download URL을 line provenance에 보존한다", async () => {
