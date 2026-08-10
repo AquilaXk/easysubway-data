@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createSign, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -160,6 +160,15 @@ test("identity drift와 non-GO FINAL은 handoff output 없이 fail closed한다"
     await assertNoOutput(fixture, /provenance sourceSnapshotSetHash mismatch/);
   });
 
+  await t.test("BOM-prefixed FINAL", async (t) => {
+    const fixture = await createFixture(t);
+    await writeFile(fixture.finalPath, Buffer.concat([
+      Buffer.from([0xef, 0xbb, 0xbf]),
+      fixture.finalBytes,
+    ]));
+    await assertNoOutput(fixture, /FINAL must be canonical JSON/);
+  });
+
   await t.test("publication receipt raw digest drift", async (t) => {
     const fixture = await createFixture(t);
     const final = buildServerRouteBundleFinal({
@@ -221,6 +230,31 @@ test("identity drift와 non-GO FINAL은 handoff output 없이 fail closed한다"
 });
 
 test("symlink·occupied output·input mutation을 거부하고 activation identity를 발명하지 않는다", async (t) => {
+  await t.test("..-prefixed artifact child output", async (t) => {
+    const fixture = await createFixture(t);
+    const output = path.join(fixture.artifactRoot, "..handoff.json");
+    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+      ...fixture.input,
+      output,
+      clock: () => NOW,
+    }), /output must be outside the signed artifact root/);
+    await assertMissing(output);
+  });
+
+  await t.test("ancestor symlink alias into artifact", async (t) => {
+    const fixture = await createFixture(t);
+    const aliasRoot = path.join(fixture.root, "artifact-parent-alias");
+    await symlink(fixture.root, aliasRoot);
+    const output = path.join(fixture.artifactRoot, "alias-handoff.json");
+    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+      ...fixture.input,
+      artifactRoot: path.join(aliasRoot, "signed"),
+      output,
+      clock: () => NOW,
+    }), /output must be outside the signed artifact root/);
+    await assertMissing(output);
+  });
+
   await t.test("symlink receipt", async (t) => {
     const fixture = await createFixture(t);
     const link = path.join(fixture.root, "receipt-link.json");
@@ -255,6 +289,24 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
       },
     }), /promotion request changed during handoff build/);
     await assertMissing(output);
+  });
+
+  await t.test("post-link verification failure cleanup", async (t) => {
+    const fixture = await createFixture(t);
+    const output = path.join(fixture.root, "post-link-failure.json");
+    const residueBefore = (await readdir(fixture.root))
+      .filter((entry) => entry.startsWith(".server-route-handoff-"));
+    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+      ...fixture.input,
+      output,
+      clock: () => NOW,
+      afterOutputLink: async () => writeFile(output, "corrupted after link"),
+    }), /output bytes mismatch after create/);
+    await assertMissing(output);
+    assert.deepEqual(
+      (await readdir(fixture.root)).filter((entry) => entry.startsWith(".server-route-handoff-")),
+      residueBefore,
+    );
   });
 
   const fixture = await createFixture(t);

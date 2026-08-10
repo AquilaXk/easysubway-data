@@ -6,7 +6,9 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -81,6 +83,9 @@ export async function buildServerRouteBundleConsumerHandoff(input) {
   if (input.beforeOutput !== undefined && typeof input.beforeOutput !== "function") {
     throw new Error("beforeOutput must be a function");
   }
+  if (input.afterOutputLink !== undefined && typeof input.afterOutputLink !== "function") {
+    throw new Error("afterOutputLink must be a function");
+  }
   if (input.clock !== undefined && typeof input.clock !== "function") {
     throw new Error("clock must be a function");
   }
@@ -90,8 +95,9 @@ export async function buildServerRouteBundleConsumerHandoff(input) {
   await assertDirectoryEntries(artifactRoot, ROOT_ENTRIES, "signed artifact root entries");
   await assertDirectoryEntries(payloadRoot, PAYLOAD_ENTRIES, "signed artifact payload entries");
 
-  const output = path.resolve(requiredRaw(input.output, "output"));
-  const outputParent = await realDirectory(path.dirname(output), "output parent");
+  const requestedOutput = path.resolve(requiredRaw(input.output, "output"));
+  const outputParent = await realDirectory(path.dirname(requestedOutput), "output parent");
+  const output = path.join(outputParent, path.basename(requestedOutput));
   await requireNewOutput(output);
   if (isWithin(artifactRoot, output) || output === artifactRoot) {
     throw new Error("output must be outside the signed artifact root");
@@ -195,7 +201,7 @@ export async function buildServerRouteBundleConsumerHandoff(input) {
   await assertInputsUnchanged(snapshots);
   await assertDirectoryEntries(artifactRoot, ROOT_ENTRIES, "signed artifact root entries");
   await assertDirectoryEntries(payloadRoot, PAYLOAD_ENTRIES, "signed artifact payload entries");
-  await persistNewOutput(outputParent, output, handoffBytes);
+  await persistNewOutput(outputParent, output, handoffBytes, input.afterOutputLink);
   return handoff;
 }
 
@@ -387,21 +393,40 @@ async function assertInputsUnchanged(snapshots) {
   }
 }
 
-async function persistNewOutput(parent, output, bytes) {
+async function persistNewOutput(parent, output, bytes, afterOutputLink) {
   const stage = await mkdtemp(path.join(parent, ".server-route-handoff-"));
   const staged = path.join(stage, "handoff.json");
+  let stagedIdentity;
+  let linked = false;
   try {
     await writeFile(staged, bytes, { flag: "wx" });
+    stagedIdentity = await lstat(staged);
     try {
       await link(staged, output);
+      linked = true;
     } catch (error) {
       if (error.code === "EEXIST") throw new Error("output must not already exist");
       throw error;
     }
+    await afterOutputLink?.();
     if (!(await readFile(output)).equals(bytes)) throw new Error("output bytes mismatch after create");
+  } catch (error) {
+    if (linked) await removeOwnLinkedOutput(output, stagedIdentity);
+    throw error;
   } finally {
     await rm(stage, { recursive: true, force: true });
   }
+}
+
+async function removeOwnLinkedOutput(output, expectedIdentity) {
+  const current = await lstat(output).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (!current || current.dev !== expectedIdentity.dev || current.ino !== expectedIdentity.ino) return;
+  await unlink(output).catch((error) => {
+    if (error?.code !== "ENOENT") throw error;
+  });
 }
 
 async function verifyRepositoryHead(repositoryRoot, expected) {
@@ -417,7 +442,7 @@ async function readNonEmptyRegular(target, label) {
 async function realDirectory(target, label) {
   const resolved = path.resolve(requiredRaw(target, label));
   await inspectRequiredEntry(resolved, label, "directory");
-  return resolved;
+  return realpath(resolved);
 }
 
 async function inspectRequiredEntry(target, label, kind) {
@@ -451,10 +476,14 @@ async function requireNewOutput(output) {
 }
 
 function parseCanonicalJson(bytes, label) {
+  const rawBytes = Buffer.from(bytes);
+  if (rawBytes[0] === 0xef && rawBytes[1] === 0xbb && rawBytes[2] === 0xbf) {
+    throw new Error(`${label} must be canonical JSON`);
+  }
   let text;
   let value;
   try {
-    text = strictUtf8.decode(Buffer.from(bytes));
+    text = strictUtf8.decode(rawBytes);
     value = JSON.parse(text);
   } catch {
     throw new Error(`${label} must be JSON`);
@@ -499,7 +528,10 @@ function sha256Reference(value) {
 
 function isWithin(parent, target) {
   const relative = path.relative(parent, target);
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  return relative !== ""
+    && relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
 }
 
 function bytewise(left, right) {
