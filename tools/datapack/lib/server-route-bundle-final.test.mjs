@@ -199,4 +199,89 @@ test("tracked JSON schema는 runtime exact field와 gate enum을 같은 v1 contr
     assert.equal(schema.properties.gates.properties[gate].additionalProperties, false);
     assert.deepEqual(schema.properties.gates.properties[gate].properties.state.enum, GATE_STATES[gate]);
   }
+  assert.deepEqual(
+    [...schema.properties.blockers.items.enum].sort(),
+    GATES.flatMap((gate) => GATE_STATES[gate]
+      .filter((state) => state !== "PASS")
+      .map((state) => `${gate}:${state}`))
+      .sort(),
+  );
 });
+
+test("tracked JSON schema는 runtime이 거부하는 GO identity, gate evidence, blocker 조합을 거부한다", async () => {
+  const schema = JSON.parse(await readFile(
+    new URL("../../../contracts/datapack/server-route-bundle-final.schema.json", import.meta.url),
+    "utf8",
+  ));
+  const valid = buildServerRouteBundleFinal(passingInput());
+  assert.equal(validateSchemaNode(schema, valid, schema), true);
+
+  for (const field of ["signedManifestRawSha256", "payloadRootSha256", "componentInventorySha256"]) {
+    const mutated = structuredClone(valid);
+    mutated.candidate[field] = null;
+    assert.equal(validateSchemaNode(schema, mutated, schema), false, `GO ${field}`);
+  }
+  for (const component of ["topology", "timetable", "accessibility", "fare"]) {
+    const mutated = structuredClone(valid);
+    mutated.candidate.componentDigests[component] = null;
+    assert.equal(validateSchemaNode(schema, mutated, schema), false, `GO componentDigests.${component}`);
+  }
+
+  for (const gate of GATES) {
+    const passWithoutEvidence = structuredClone(valid);
+    passWithoutEvidence.gates[gate].evidenceSha256 = null;
+    assert.equal(validateSchemaNode(schema, passWithoutEvidence, schema), false, `${gate} PASS null evidence`);
+
+    const unavailable = buildServerRouteBundleFinal(withGate(gate, "UNAVAILABLE"));
+    assert.equal(validateSchemaNode(schema, unavailable, schema), true, `${gate} UNAVAILABLE null evidence`);
+    unavailable.gates[gate].evidenceSha256 = SHA("f");
+    assert.equal(validateSchemaNode(schema, unavailable, schema), false, `${gate} UNAVAILABLE hash evidence`);
+  }
+
+  const impossibleBlockers = ["signature:MISSING", "sourceFreshness:NOT_EVALUATED"];
+  for (const blocker of impossibleBlockers) {
+    const mutated = structuredClone(buildServerRouteBundleFinal(withGate("signature", "UNAVAILABLE")));
+    mutated.blockers = [blocker];
+    assert.equal(validateSchemaNode(schema, mutated, schema), false, blocker);
+  }
+});
+
+function validateSchemaNode(rule, value, root) {
+  if (rule.$ref) {
+    const target = rule.$ref.slice(2).split("/").reduce((current, part) => current[part], root);
+    return validateSchemaNode(target, value, root);
+  }
+  if (rule.allOf && !rule.allOf.every((child) => validateSchemaNode(child, value, root))) return false;
+  if (rule.oneOf && rule.oneOf.filter((child) => validateSchemaNode(child, value, root)).length !== 1) return false;
+  if (rule.if) {
+    const branch = validateSchemaNode(rule.if, value, root) ? rule.then : rule.else;
+    if (branch && !validateSchemaNode(branch, value, root)) return false;
+  }
+  if (Object.hasOwn(rule, "const") && !Object.is(value, rule.const)) return false;
+  if (rule.enum && !rule.enum.some((entry) => Object.is(entry, value))) return false;
+  if (rule.type && !matchesSchemaType(rule.type, value)) return false;
+  if (typeof value === "string" && rule.pattern && !new RegExp(rule.pattern).test(value)) return false;
+  if (typeof value === "number" && rule.minimum !== undefined && value < rule.minimum) return false;
+  if (typeof value === "number" && rule.maximum !== undefined && value > rule.maximum) return false;
+  if (Array.isArray(value)) {
+    if (rule.uniqueItems && new Set(value.map((entry) => JSON.stringify(entry))).size !== value.length) return false;
+    if (rule.items && !value.every((entry) => validateSchemaNode(rule.items, entry, root))) return false;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if ((rule.required ?? []).some((field) => !Object.hasOwn(value, field))) return false;
+    if (rule.additionalProperties === false
+      && Object.keys(value).some((field) => !Object.hasOwn(rule.properties ?? {}, field))) return false;
+    if (!Object.entries(rule.properties ?? {}).every(([field, child]) => (
+      !Object.hasOwn(value, field) || validateSchemaNode(child, value[field], root)
+    ))) return false;
+  }
+  return true;
+}
+
+function matchesSchemaType(type, value) {
+  if (type === "null") return value === null;
+  if (type === "object") return value !== null && typeof value === "object" && !Array.isArray(value);
+  if (type === "array") return Array.isArray(value);
+  if (type === "integer") return Number.isInteger(value);
+  return typeof value === type;
+}

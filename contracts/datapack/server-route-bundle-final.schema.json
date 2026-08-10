@@ -58,7 +58,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "STALE", "PARTIAL", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
         "stationLineAccessibility": {
           "type": "object",
@@ -67,7 +68,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "MISSING", "STALE", "UNKNOWN", "PARTIAL", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
         "routeEdgeEvaluation": {
           "type": "object",
@@ -76,7 +78,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "MISSING", "STALE", "UNKNOWN", "NOT_EVALUATED", "PARTIAL", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
         "artifactInventory": {
           "type": "object",
@@ -85,7 +88,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "MISSING", "PARTIAL", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
         "signature": {
           "type": "object",
@@ -94,7 +98,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
         "publication": {
           "type": "object",
@@ -103,7 +108,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         },
         "rebuildParityPromotion": {
           "type": "object",
@@ -112,7 +118,8 @@
           "properties": {
             "state": { "enum": ["PASS", "UNAVAILABLE", "PARTIAL", "IDENTITY_MISMATCH"] },
             "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
-          }
+          },
+          "allOf": [{ "$ref": "#/$defs/gateEvidenceBinding" }]
         }
       }
     },
@@ -121,11 +128,48 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^(?:sourceFreshness|stationLineAccessibility|routeEdgeEvaluation|artifactInventory|signature|publication|rebuildParityPromotion):(?:UNAVAILABLE|MISSING|STALE|UNKNOWN|NOT_EVALUATED|PARTIAL|IDENTITY_MISMATCH)$"
+        "enum": [
+          "sourceFreshness:UNAVAILABLE", "sourceFreshness:STALE", "sourceFreshness:PARTIAL", "sourceFreshness:IDENTITY_MISMATCH",
+          "stationLineAccessibility:UNAVAILABLE", "stationLineAccessibility:MISSING", "stationLineAccessibility:STALE",
+          "stationLineAccessibility:UNKNOWN", "stationLineAccessibility:PARTIAL", "stationLineAccessibility:IDENTITY_MISMATCH",
+          "routeEdgeEvaluation:UNAVAILABLE", "routeEdgeEvaluation:MISSING", "routeEdgeEvaluation:STALE",
+          "routeEdgeEvaluation:UNKNOWN", "routeEdgeEvaluation:NOT_EVALUATED", "routeEdgeEvaluation:PARTIAL",
+          "routeEdgeEvaluation:IDENTITY_MISMATCH", "artifactInventory:UNAVAILABLE", "artifactInventory:MISSING",
+          "artifactInventory:PARTIAL", "artifactInventory:IDENTITY_MISMATCH", "signature:UNAVAILABLE",
+          "signature:IDENTITY_MISMATCH", "publication:UNAVAILABLE", "publication:IDENTITY_MISMATCH",
+          "rebuildParityPromotion:UNAVAILABLE", "rebuildParityPromotion:PARTIAL", "rebuildParityPromotion:IDENTITY_MISMATCH"
+        ]
       }
     },
     "finalSha256": { "$ref": "#/$defs/sha256" }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["result"],
+        "properties": { "result": { "const": "GO" } }
+      },
+      "then": {
+        "properties": {
+          "candidate": {
+            "properties": {
+              "signedManifestRawSha256": { "$ref": "#/$defs/sha256" },
+              "payloadRootSha256": { "$ref": "#/$defs/sha256" },
+              "componentInventorySha256": { "$ref": "#/$defs/sha256" },
+              "componentDigests": {
+                "properties": {
+                  "topology": { "$ref": "#/$defs/sha256" },
+                  "timetable": { "$ref": "#/$defs/sha256" },
+                  "accessibility": { "$ref": "#/$defs/sha256" },
+                  "fare": { "$ref": "#/$defs/sha256" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "nullableSha256": {
@@ -133,6 +177,14 @@
         { "$ref": "#/$defs/sha256" },
         { "type": "null" }
       ]
+    },
+    "gateEvidenceBinding": {
+      "if": {
+        "required": ["state"],
+        "properties": { "state": { "const": "UNAVAILABLE" } }
+      },
+      "then": { "properties": { "evidenceSha256": { "type": "null" } } },
+      "else": { "properties": { "evidenceSha256": { "$ref": "#/$defs/sha256" } } }
     },
     "rawString": { "type": "string", "pattern": "^(?!\\s)[\\s\\S]*\\S$" },
     "kstMillisecondInstant": {
