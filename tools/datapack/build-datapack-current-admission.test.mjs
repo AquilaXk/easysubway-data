@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   candidateNetworkEdgeEvidence,
+  validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
 } from "./build-datapack.mjs";
 
@@ -59,9 +60,12 @@ function networkEdgeEvidenceFixture() {
   };
 }
 
-test("networkEdgeEvidence는 migration 전후 exact key set만 수용한다", () => {
+test("networkEdgeEvidence는 activation 뒤 current ITX admission을 필수로 수용한다", () => {
   const legacy = networkEdgeEvidenceFixture();
-  assert.equal(candidateNetworkEdgeEvidence(legacy).itxCurrentTopologyAdmissionSha256, undefined);
+  assert.throws(
+    () => candidateNetworkEdgeEvidence(legacy),
+    /itxCurrentTopologyAdmission is required/,
+  );
 
   const current = {
     ...legacy,
@@ -77,6 +81,34 @@ test("networkEdgeEvidence는 migration 전후 exact key set만 수용한다", ()
   assert.throws(
     () => candidateNetworkEdgeEvidence({ ...current, unknown: true }),
     /unknown is not allowed/,
+  );
+});
+
+test("capital topology reverification은 historical baseline과 current admitted candidate를 독립 검증한다", async () => {
+  const [baseline, candidate, reverification] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260804.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-topology-reverification-20260804.json"), "utf8").then(JSON.parse),
+  ]);
+  const admission = {
+    schemaVersion: 1,
+    artifactKind: "capital-network-edge-admission",
+    issue: 2649,
+    status: "ADMITTED",
+    snapshotId: "capital-route-topology-20260804",
+    contentSha256: candidate.contentSha256,
+    reviewedAt: candidate.capturedAt,
+    reverifiedAt: candidate.capturedAt,
+    freshUntil: candidate.freshUntil,
+  };
+
+  validateCapitalTopologyReverification(
+    reverification,
+    baseline,
+    candidate,
+    admission,
+    admission.snapshotId,
+    "capital-route-topology-20260724",
   );
 });
 

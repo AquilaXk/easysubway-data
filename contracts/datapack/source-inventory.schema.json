@@ -274,6 +274,17 @@
             "type": "object",
             "description": "공식 노선도 좌표 snapshot의 production materialization 승인 근거다. 사이버스테이션 HTML/CSS(부산)와 FILE 위경도(서울) 두 형태를 공통 필드로 수용한다.",
             "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "required": ["topologySourceId"],
+                  "properties": {
+                    "topologySourceId": { "const": "capital-route-topology" }
+                  }
+                },
+                "then": { "required": ["currentTopologyAdmission"] }
+              }
+            ],
             "required": [
               "issue",
               "materializer",

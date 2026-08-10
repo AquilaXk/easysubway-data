@@ -228,14 +228,33 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
       : edge);
   pack.stationExits = (pack.stationExits ?? []).map((exit) =>
     exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
-  const freshSources = reviewedPack.sourceInventory.filter(({ id }) =>
-    ["kric-station-convenience-standard", "seoul-metro-accessibility"].includes(id));
+  const freshSources = reviewedPack.sourceInventory;
+  const freshSourceIds = new Set(freshSources.map(({ id }) => id));
   pack.sourceInventory = pack.sourceInventory
-    .filter(({ id }) => !replacedSourceIds.has(id) && id !== "kric-station-convenience-standard")
+    .filter(({ id }) => !replacedSourceIds.has(id) && !freshSourceIds.has(id))
     .concat(freshSources);
   const sourceInventoryIds = new Set(pack.sourceInventory.map(({ id }) => id));
   pack.movementPathCandidates = (reviewedPack.movementPathCandidates ?? [])
     .filter(({ sourceId }) => sourceInventoryIds.has(sourceId));
+  if (pack.movementPathCandidates.length === 0) {
+    delete pack.metadata.movementPathCandidateCount;
+  } else {
+    pack.metadata.movementPathCandidateCount = String(pack.movementPathCandidates.length);
+  }
+  const reviewedFareSourceIds = new Set([
+    ...(reviewedPack.sourceInventory ?? [])
+      .filter(({ coverageScope }) => coverageScope?.sourceDomains?.includes("official_od_fares"))
+      .map(({ id }) => id),
+    ...(reviewedPack.officialOdFareQuotes ?? []).map(({ sourceId }) => sourceId),
+  ]);
+  pack.officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
+    .filter(({ sourceId }) => !reviewedFareSourceIds.has(sourceId))
+    .concat(reviewedPack.officialOdFareQuotes ?? []);
+  pack.routeServiceArtifactEvidence = reviewedPack.routeServiceArtifactEvidence ?? [];
+  pack.requiredTables = [...new Set([
+    ...(pack.requiredTables ?? []),
+    ...(reviewedPack.requiredTables ?? []),
+  ])];
   const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
   pack.metadata.productionCoverageEvidence = JSON.stringify(productionCoverageEvidence.map((entry) => ({
     ...entry,
@@ -243,6 +262,11 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   })));
   pack.minimumTableRows.facilities = pack.facilities.length;
   pack.minimumTableRows.station_facility_evidence = pack.stationFacilityEvidence.length;
+  if (pack.officialOdFareQuotes.length > 0) {
+    pack.minimumTableRows.official_od_fare_quotes = pack.officialOdFareQuotes.length;
+  } else {
+    delete pack.minimumTableRows.official_od_fare_quotes;
+  }
   return canonical;
 }
 

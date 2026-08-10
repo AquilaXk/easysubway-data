@@ -169,7 +169,7 @@ test("capital topology admission 대상 source가 없으면 input을 변경하�
   assert.deepEqual(values.inventory, before);
 });
 
-test("source inventory schema는 current topology admission을 closed optional migration field로 고정한다", async () => {
+test("source inventory schema는 capital topology source에 current admission을 필수화한다", async () => {
   const schema = JSON.parse(await readFile(
     path.join(root, "contracts/datapack/source-inventory.schema.json"),
     "utf8",
@@ -177,7 +177,13 @@ test("source inventory schema는 current topology admission을 closed optional m
   const routeMapEvidence = schema.properties.sources.items.properties.routeMapAdmissionEvidence;
   const current = routeMapEvidence.properties.currentTopologyAdmission;
 
-  assert.equal(routeMapEvidence.required.includes("currentTopologyAdmission"), false);
+  assert.deepEqual(routeMapEvidence.allOf, [{
+    if: {
+      required: ["topologySourceId"],
+      properties: { topologySourceId: { const: "capital-route-topology" } },
+    },
+    then: { required: ["currentTopologyAdmission"] },
+  }]);
   assert.equal(current.additionalProperties, false);
   assert.deepEqual(current.required, [
     "schemaVersion", "artifactKind", "issue", "status", "topologySnapshotId",
