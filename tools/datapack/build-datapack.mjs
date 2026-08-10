@@ -465,10 +465,29 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
   };
 }
 
-function candidateNetworkEdgeEvidence(evidence) {
+const legacyNetworkEdgeEvidenceKeys = Object.freeze([
+  "sourceInventory",
+  "capitalTopology",
+  "capitalTopologyAdmission",
+  "capitalTopologyCandidate",
+  "capitalTopologyReverification",
+  "itxCoverageContract",
+]);
+const currentNetworkEdgeEvidenceKeys = Object.freeze([
+  ...legacyNetworkEdgeEvidenceKeys,
+  "itxCurrentTopologyAdmission",
+]);
+
+function exactNetworkEdgeEvidenceKeys(evidence) {
+  return Object.hasOwn(evidence ?? {}, "itxCurrentTopologyAdmission")
+    ? currentNetworkEdgeEvidenceKeys
+    : legacyNetworkEdgeEvidenceKeys;
+}
+
+export function candidateNetworkEdgeEvidence(evidence) {
   assertExactKeys(
     evidence,
-    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyCandidate", "capitalTopologyReverification", "itxCoverageContract"],
+    exactNetworkEdgeEvidenceKeys(evidence),
     "buildSpec.networkEdgeEvidence",
   );
   const sourceInventory = pinnedBuildInput(evidence.sourceInventory, "buildSpec.networkEdgeEvidence.sourceInventory");
@@ -490,6 +509,12 @@ function candidateNetworkEdgeEvidence(evidence) {
     "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
     ["path", "sha256", "snapshotId"],
   );
+  const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
+    ? null
+    : pinnedBuildInput(
+        evidence.itxCurrentTopologyAdmission,
+        "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+      );
   return {
     sourceInventorySha256: sourceInventory.sha256,
     capitalTopologySnapshotId: capitalTopology.snapshotId,
@@ -499,6 +524,9 @@ function candidateNetworkEdgeEvidence(evidence) {
     capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
     capitalTopologyAdmission: candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
     itxCoverageContractSha256: itxCoverageContract.sha256,
+    ...(itxCurrentTopologyAdmission == null
+      ? {}
+      : { itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256 }),
   };
 }
 
@@ -566,7 +594,7 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
   }
   assertExactKeys(
     evidence,
-    ["sourceInventory", "capitalTopology", "capitalTopologyAdmission", "capitalTopologyCandidate", "capitalTopologyReverification", "itxCoverageContract"],
+    exactNetworkEdgeEvidenceKeys(evidence),
     "buildSpec.networkEdgeEvidence",
   );
   const sourceInventory = await readPinnedBuildJson(
@@ -595,6 +623,12 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     evidence.itxCoverageContract,
     "buildSpec.networkEdgeEvidence.itxCoverageContract",
   );
+  const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
+    ? null
+    : await readPinnedBuildJson(
+        evidence.itxCurrentTopologyAdmission,
+        "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+      );
   const topology = loadCapitalRouteTopologySnapshot(capitalTopology.value);
   const candidateTopology = loadCapitalRouteTopologySnapshot(capitalTopologyCandidate.value);
   if (JSON.stringify([...(topology.fieldsProvided ?? [])].sort(compareStrings))
@@ -619,7 +653,11 @@ async function validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopo
     capitalTopology.pinned.snapshotId,
     topologyAdmission.reviewedAt,
   );
-  const itxAdmission = await admittedItxNetworkEdgeEvidence(itxContract.value, itxTopologyEvidence);
+  const itxAdmission = await admittedItxNetworkEdgeEvidence(
+    itxContract.value,
+    itxTopologyEvidence,
+    itxCurrentTopologyAdmission?.value ?? null,
+  );
   const productionPacks = fixture.packs?.filter(({ artifactKind }) => artifactKind === "production") ?? [];
   if (productionPacks.length === 0) throw new Error("network edge evidence requires a production pack");
   for (const pack of productionPacks) {
@@ -986,8 +1024,168 @@ function assertExactCapitalTopologyProjection(pack, admittedLineIds, expectedEdg
   }
 }
 
-async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
+function projectedItxDirectionalPairs(stationSequences) {
+  const directionalPairs = [];
+  const pairHashes = new Map();
+  for (const sequence of stationSequences ?? []) {
+    for (let index = 0; index < (sequence.stops?.length ?? 0) - 1; index += 1) {
+      const fromStationId = requiredString(sequence.stops[index].stationId, "ITX network edge from stationId");
+      const toStationId = requiredString(sequence.stops[index + 1].stationId, "ITX network edge to stationId");
+      const tuple = [fromStationId, toStationId, "ITX_CHEONGCHUN"];
+      directionalPairs.push(tuple);
+      const record = { fromStationId, toStationId, serviceClass: "ITX_CHEONGCHUN" };
+      pairHashes.set(`${fromStationId}\0${toStationId}`, sha256(Buffer.from(canonicalJson(record))));
+    }
+  }
+  const admittedPairs = [...new Map(directionalPairs.map((tuple) => [JSON.stringify(tuple), tuple])).values()]
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right), "en"));
+  if (admittedPairs.length === 0 || pairHashes.size !== admittedPairs.length) {
+    throw new Error("ITX network edge admission has no exact directional pairs");
+  }
+  const stationIds = [...new Set(admittedPairs.flatMap(([fromStationId, toStationId]) =>
+    [fromStationId, toStationId]))].sort(compareStrings);
+  return { admittedPairs, pairHashes, stationIds };
+}
+
+export function validateItxCurrentTopologyAdmission(currentAdmission, {
+  previousArtifactSha256,
+  stationSequences,
+  now = candidateBuildNow(),
+}) {
+  const keys = [
+    "schemaVersion",
+    "artifactKind",
+    "artifactId",
+    "serviceId",
+    "sourceIssue",
+    "status",
+    "scheduleAdmissionStatus",
+    "topologyMode",
+    "serviceDate",
+    "observedAt",
+    "freshUntil",
+    "collectionSha256",
+    "previousArtifactSha256",
+    "stationSetHash",
+    "odMatrixHash",
+    "operationEvidenceSha256",
+    "stationSequenceSha256",
+    "canonicalStationSetSha256",
+    "observedPairSetSha256",
+    "admittedPairSetSha256",
+    "observedPairChange",
+    "pairHashes",
+    "reconstructionSummary",
+    "credentialRedacted",
+    "evidenceHash",
+  ];
+  assertExactKeys(currentAdmission, keys, "networkEdgeEvidence.itxCurrentTopologyAdmission");
+  const { admittedPairs, pairHashes, stationIds } = projectedItxDirectionalPairs(stationSequences);
+  const { evidenceHash, ...withoutEvidenceHash } = currentAdmission;
+  const observedAt = requiredUtcDateString(
+    currentAdmission.observedAt,
+    "ITX current topology admission observedAt",
+  );
+  const freshUntil = requiredUtcDateString(
+    currentAdmission.freshUntil,
+    "ITX current topology admission freshUntil",
+  );
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new TypeError("ITX current topology admission validation time is invalid");
+  }
+  if (currentAdmission.schemaVersion !== 1
+    || currentAdmission.artifactKind !== "itx-current-network-edge-admission"
+    || currentAdmission.artifactId !== `itx-current-network-edge-admission-${currentAdmission.serviceDate}`
+    || currentAdmission.serviceId !== "ITX_CHEONGCHUN"
+    || currentAdmission.sourceIssue !== 2776
+    || currentAdmission.status !== "ADMITTED"
+    || currentAdmission.scheduleAdmissionStatus !== "MISSING"
+    || currentAdmission.topologyMode !== "UNCHANGED_AUTO_STATION_SET"
+    || !/^\d{8}$/u.test(currentAdmission.serviceDate ?? "")
+    || currentAdmission.previousArtifactSha256
+      !== sha256HexString(previousArtifactSha256, "ITX previous artifact sha256")
+    || currentAdmission.credentialRedacted !== true
+    || evidenceHash !== sha256(Buffer.from(JSON.stringify(withoutEvidenceHash)))
+    || currentAdmission.canonicalStationSetSha256 !== sha256(Buffer.from(JSON.stringify(stationIds)))
+    || currentAdmission.admittedPairSetSha256 !== sha256(Buffer.from(JSON.stringify(admittedPairs)))
+    || JSON.stringify(currentAdmission.pairHashes)
+      !== JSON.stringify(admittedPairs.map((tuple) => sha256(Buffer.from(JSON.stringify(tuple)))))) {
+    throw new Error("ITX current topology admission identity mismatch");
+  }
+  for (const [field, value] of Object.entries({
+    collectionSha256: currentAdmission.collectionSha256,
+    stationSetHash: currentAdmission.stationSetHash,
+    odMatrixHash: currentAdmission.odMatrixHash,
+    operationEvidenceSha256: currentAdmission.operationEvidenceSha256,
+    stationSequenceSha256: currentAdmission.stationSequenceSha256,
+    observedPairSetSha256: currentAdmission.observedPairSetSha256,
+    evidenceHash,
+  })) {
+    sha256HexString(value, `ITX current topology admission ${field}`);
+  }
+  assertExactKeys(
+    currentAdmission.observedPairChange,
+    ["addedCount", "removedCount", "addedSha256", "removedSha256"],
+    "ITX current topology admission observedPairChange",
+  );
+  requiredNonNegativeSafeInteger(
+    currentAdmission.observedPairChange.addedCount,
+    "ITX current topology admission addedCount",
+  );
+  requiredNonNegativeSafeInteger(
+    currentAdmission.observedPairChange.removedCount,
+    "ITX current topology admission removedCount",
+  );
+  sha256HexString(
+    currentAdmission.observedPairChange.addedSha256,
+    "ITX current topology admission addedSha256",
+  );
+  sha256HexString(
+    currentAdmission.observedPairChange.removedSha256,
+    "ITX current topology admission removedSha256",
+  );
+  assertExactKeys(
+    currentAdmission.reconstructionSummary,
+    ["trainCount", "stopCount", "conflictingTimestampCount", "missingPairCount", "duplicateOdCount"],
+    "ITX current topology admission reconstructionSummary",
+  );
+  requiredPositiveSafeInteger(
+    currentAdmission.reconstructionSummary.trainCount,
+    "ITX current topology admission trainCount",
+  );
+  requiredPositiveSafeInteger(
+    currentAdmission.reconstructionSummary.stopCount,
+    "ITX current topology admission stopCount",
+  );
+  for (const field of ["conflictingTimestampCount", "missingPairCount", "duplicateOdCount"]) {
+    if (requiredNonNegativeSafeInteger(
+      currentAdmission.reconstructionSummary[field],
+      `ITX current topology admission ${field}`,
+    ) !== 0) {
+      throw new Error(`ITX current topology admission ${field} must be zero`);
+    }
+  }
+  if (Date.parse(observedAt) > now.getTime()) {
+    throw new Error("ITX current topology admission is future-dated");
+  }
+  if (Date.parse(freshUntil) <= now.getTime()) {
+    throw new Error("ITX current topology admission is stale");
+  }
+  return {
+    sourceId: currentAdmission.artifactKind,
+    sourceSnapshotId: currentAdmission.artifactId,
+    evidenceHash,
+    verifiedAt: observedAt,
+    freshUntil,
+    pairHashes,
+  };
+}
+
+async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, currentAdmission = null) {
   const reference = contract?.sourceTimetableArtifact;
+  const expectedPromotionMode = currentAdmission == null
+    ? "CURRENT_CANDIDATE_OWNER_APPROVED"
+    : "UNCHANGED_AUTO";
   if (contract?.schemaVersion !== 2
     || contract.artifactKind !== "itx-cheongchun-coverage-contract"
     || contract.serviceId !== "ITX_CHEONGCHUN"
@@ -996,7 +1194,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
     || reference?.schemaVersion !== 1
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
-    || reference.promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || reference.promotion?.mode !== expectedPromotionMode
     || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== reference.sha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
@@ -1103,19 +1301,12 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
   }
   const observedAt = requiredUtcDateString(source.observedAt, "ITX network edge source observedAt");
   const freshUntil = requiredUtcDateString(source.freshUntil, "ITX network edge source freshUntil");
-  if (Date.parse(freshUntil) <= candidateBuildNow().getTime()) throw new Error("ITX network edge admission is stale");
-  const pairHashes = new Map();
-  for (const sequence of source.stationSequences ?? []) {
-    for (let index = 0; index < (sequence.stops?.length ?? 0) - 1; index += 1) {
-      const fromStationId = requiredString(sequence.stops[index].stationId, "ITX network edge from stationId");
-      const toStationId = requiredString(sequence.stops[index + 1].stationId, "ITX network edge to stationId");
-      const record = { fromStationId, toStationId, serviceClass: "ITX_CHEONGCHUN" };
-      pairHashes.set(`${fromStationId}\0${toStationId}`, sha256(Buffer.from(canonicalJson(record))));
-    }
+  if (currentAdmission == null && Date.parse(freshUntil) <= candidateBuildNow().getTime()) {
+    throw new Error("ITX network edge admission is stale");
   }
-  if (pairHashes.size === 0) throw new Error("ITX network edge admission has no directional pairs");
+  const legacyProjection = projectedItxDirectionalPairs(source.stationSequences);
   const topology = topologyAdmission.evidence.topology;
-  if (topology.edgeCount !== pairHashes.size
+  if (topology.edgeCount !== legacyProjection.pairHashes.size
     || JSON.stringify(topology.directions) !== JSON.stringify(["up", "down"])
     || topology.connectedComponentCount !== 1
     || topology.isolatedServedStationCount !== 0
@@ -1124,13 +1315,22 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
     || !/^[a-f0-9]{64}$/.test(topology.sha256 ?? "")) {
     throw new Error("ITX topology evidence projection does not match admitted directional pairs");
   }
+  const currentProjection = currentAdmission == null
+    ? {
+        sourceId: source.artifactKind,
+        sourceSnapshotId: source.artifactId,
+        evidenceHash: sourceEvidenceHash,
+        verifiedAt: observedAt,
+        freshUntil,
+        pairHashes: legacyProjection.pairHashes,
+      }
+    : validateItxCurrentTopologyAdmission(currentAdmission, {
+        previousArtifactSha256: reference.sha256,
+        stationSequences: source.stationSequences,
+        now: candidateBuildNow(),
+      });
   return {
-    sourceId: source.artifactKind,
-    sourceSnapshotId: source.artifactId,
-    evidenceHash: sourceEvidenceHash,
-    verifiedAt: observedAt,
-    freshUntil,
-    pairHashes,
+    ...currentProjection,
     routeServiceArtifactEvidence: {
       artifactEvidence: {
         serviceClass: "ITX_CHEONGCHUN",
@@ -1141,7 +1341,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
         canonicalPackSqliteSha256: contractTopologyInputPackIdentity.sqliteSha256,
         admissionStatus: "ADMITTED",
         admissionEligible: true,
-        freshUntil,
+        freshUntil: currentProjection.freshUntil,
         sourceIssue: 2135,
       },
       stationCatalogEvidence: {
@@ -1154,7 +1354,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission) {
         stationCatalogManifestSha256: sourceStationCatalogPackIdentity.manifestSha256,
         admissionStatus: "ADMITTED",
         admissionEligible: true,
-        freshUntil,
+        freshUntil: currentProjection.freshUntil,
         sourceIssue: 2649,
       },
     },

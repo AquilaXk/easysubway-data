@@ -120,6 +120,11 @@ test("원문 CSV 재파싱이 스냅샷 contentSha256과 일치한다(대표 노
     {
       capturedAt: new Date(snapshot.capturedAt),
       secondaryBytes: await readFile(path.resolve(root, seohaeSource.localMolitCsv)),
+      secondaryProvenance: {
+        datasetId: seohaeSource.molitDatasetId,
+        detailUrl: seohaeSource.molitDownloadUrl,
+        downloadUrl: seohaeSource.molitDownloadUrl,
+      },
     },
   );
   const seohaeLine = snapshot.lines.find(({ lineId }) => lineId === seohaeSource.lineId);

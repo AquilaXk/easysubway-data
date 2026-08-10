@@ -128,7 +128,7 @@ export function applySchedule(input, artifact, artifactBytes = Buffer.from(JSON.
           ...stationLineTemplate(input, station.stationCode),
           sourceId: SOURCE_ID,
           sourceStationCode: station.stationCode,
-          lastVerifiedAt: `${artifact.capturedAt ?? "2026-07-09"}T00:00:00.000Z`,
+          lastVerifiedAt: artifact.collectedAt,
         })),
       ],
       (row) => `${row.sourceId}:${row.sourceStationCode}:${row.lineId}`,
@@ -151,7 +151,7 @@ export function applySchedule(input, artifact, artifactBytes = Buffer.from(JSON.
       sourceSnapshotId: `kric-subway-timetable-line4-pilot-${String(artifact.capturedAt ?? "20260709").replaceAll("-", "")}`,
       providerRecordHash: sha256(artifactBytes),
       evidenceHash: sha256(`kric-line4-pilot-schedule:${sha256(artifactBytes)}`),
-      retrievedAt: `${artifact.capturedAt ?? "2026-07-09"}T00:00:00.000Z`,
+      retrievedAt: artifact.collectedAt,
     },
     serviceCalendars,
     serviceCalendarDates: holidayExceptionDates(),
@@ -217,7 +217,10 @@ export function validateKricLine4PilotCollectionArtifact(artifact) {
     throw new Error("KRIC pilot artifact must be an object");
   }
   requireEqual(artifact.artifactKind, "kric-line4-timetable-collection", "artifactKind");
-  if (artifact.sourceId && !SOURCE_ARTIFACT_IDS.has(artifact.sourceId)) {
+  if (typeof artifact.sourceId !== "string" || artifact.sourceId.length === 0) {
+    throw new Error("KRIC pilot artifact sourceId is required");
+  }
+  if (!SOURCE_ARTIFACT_IDS.has(artifact.sourceId)) {
     throw new Error(`KRIC pilot artifact sourceId mismatch: ${artifact.sourceId}`);
   }
   requireEqual(artifact.lineId, LINE_ID, "lineId");
