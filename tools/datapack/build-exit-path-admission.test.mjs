@@ -191,7 +191,8 @@ test("한 station-line의 모든 방향 query를 평가해 observed와 explicit 
     records: [],
     zeroEvidenceSha256: sha256("official-zero-query-3"),
   });
-  replaceSnapshot(input, snapshot);
+  snapshot.queryPlan = [snapshot.queryPlan[0], snapshot.queryPlan[2], snapshot.queryPlan[1]];
+  replaceSnapshotInProvidedOrder(input, snapshot);
 
   const result = buildExitPathAdmission(input);
 
@@ -201,11 +202,37 @@ test("한 station-line의 모든 방향 query를 평가해 observed와 explicit 
 
   snapshot.results.find(({ queryId }) => queryId === "query-3").state = "FAILED";
   snapshot.results.find(({ queryId }) => queryId === "query-3").zeroEvidenceSha256 = null;
-  replaceSnapshot(input, snapshot);
+  replaceSnapshotInProvidedOrder(input, snapshot);
   const failed = buildExitPathAdmission(input);
   assert.equal(failed.cells[0].state, "BLOCKED_WITH_EVIDENCE");
   assert.equal(failed.cells[0].admissionReason, "PROVIDER_REQUEST_FAILED");
   assert.equal(failed.decision, "NO_GO");
+});
+
+test("planner canonical query order를 snapshot에서 재정렬 없이 소비한다", () => {
+  const input = validInput();
+  const snapshot = parseSnapshot(input);
+  snapshot.queryPlan[0].queryId = "z-query";
+  snapshot.queryPlan[1].queryId = "a-query";
+  snapshot.coverage.queryIds = ["a-query", "z-query"];
+  snapshot.results[0].queryId = "z-query";
+  snapshot.results[1].queryId = "a-query";
+  snapshot.results.reverse();
+  replaceSnapshotInProvidedOrder(input, snapshot);
+
+  const result = buildExitPathAdmission(input);
+
+  assert.equal(result.decision, "GO");
+  assert.deepEqual(result.queryPartition.joined.map(({ queryId }) => queryId), ["z-query", "a-query"]);
+});
+
+test("expanded EXIT query shape를 legacy normalized snapshot v1로 수용하지 않는다", () => {
+  const input = validInput();
+  const snapshot = parseSnapshot(input);
+  snapshot.schemaVersion = 1;
+  replaceSnapshotInProvidedOrder(input, snapshot);
+
+  assert.throws(() => buildExitPathAdmission(input), /EXIT snapshot schema mismatch/);
 });
 
 test("duplicate query/result/record와 malformed result shape는 output 전에 거부한다", () => {
@@ -364,7 +391,7 @@ function validInput() {
     regionId: line.regionId,
   }));
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "exit-path-normalized-source-snapshot",
     sourceId: "official-exit-path-source",
     snapshotId: "official-exit-path-source-20260810",
@@ -454,6 +481,18 @@ function replaceSnapshot(input, snapshot) {
       exhaustive: snapshot.coverage.exhaustive,
       queryIds: [...snapshot.coverage.queryIds].sort(compareBytes),
     })),
+  });
+}
+
+function replaceSnapshotInProvidedOrder(input, snapshot) {
+  input.snapshotBytes = canonicalBytes(snapshot);
+  input.sourceSnapshots[0].rawSha256 = sha256(input.snapshotBytes);
+  input.candidate.sourceSetSha256 = sha256(JSON.stringify(input.sourceSnapshots));
+  Object.assign(input.sourceAdmission, {
+    rawSha256: input.sourceSnapshots[0].rawSha256,
+    sourceSnapshotSetHash: input.candidate.sourceSetSha256,
+    queryPlanSha256: sha256(canonicalJson(snapshot.queryPlan)),
+    coverageScopeSha256: sha256(canonicalJson(snapshot.coverage)),
   });
 }
 

@@ -188,7 +188,7 @@ function normalizeStationLine(line) {
 
 function validateSnapshot(value, observedAt) {
   assertKeys(value, SNAPSHOT_KEYS, "EXIT snapshot keys");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
+  if (value.schemaVersion !== 2 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
     throw new Error("EXIT snapshot schema mismatch");
   }
   for (const key of ["sourceId", "snapshotId"]) assertNonBlank(value[key], `EXIT snapshot ${key}`);
@@ -538,7 +538,10 @@ function compareStationLines(left, right) {
 }
 
 function compareQueries(left, right) {
-  return compareBytes(left.queryId, right.queryId);
+  return compareBytes(left.providerStationId, right.providerStationId)
+    || compareBytes(left.providerNextStationId, right.providerNextStationId)
+    || compareBytes(left.routeEdgeId, right.routeEdgeId)
+    || compareBytes(left.queryId, right.queryId);
 }
 
 function compareResults(left, right) {
