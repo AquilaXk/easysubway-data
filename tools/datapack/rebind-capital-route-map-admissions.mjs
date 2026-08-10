@@ -125,6 +125,7 @@ export function withCurrentCapitalTopologyAdmissions({
       throw new Error(`${source.id} admitted line set is invalid`);
     }
     const observedStationsByLine = new Map();
+    const observedPositionKeys = new Set();
     for (const position of snapshot.positions) {
       const stations = stationsByLine.get(position.lineId);
       const stationName = canonicalStationName(position.stationName);
@@ -132,17 +133,17 @@ export function withCurrentCapitalTopologyAdmissions({
         || !stations?.has(stationName)) {
         throw new Error(`${source.id} station membership mismatch: ${position.lineId}:${position.stationName}`);
       }
+      const positionKey = `${position.lineId}\0${stationName}`;
+      if (observedPositionKeys.has(positionKey)) {
+        throw new Error(`${source.id} duplicate position: ${position.lineId}:${position.stationName}`);
+      }
+      observedPositionKeys.add(positionKey);
       const observed = observedStationsByLine.get(position.lineId) ?? new Set();
       observed.add(stationName);
       observedStationsByLine.set(position.lineId, observed);
     }
     if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
       throw new Error(`${source.id} position line coverage mismatch`);
-    }
-    for (const lineId of evidence.lineIds) {
-      const expected = [...stationsByLine.get(lineId)].sort(compareStrings);
-      const observed = [...observedStationsByLine.get(lineId)].sort(compareStrings);
-      if (!same(observed, expected)) throw new Error(`${source.id} station coverage mismatch: ${lineId}`);
     }
     evidence.currentTopologyAdmission = {
       schemaVersion: 1,

@@ -124,7 +124,7 @@ test("current topology에 없는 station은 input을 변경하지 않고 거부�
   assert.deepEqual(values.inventory, before);
 });
 
-test("current topology station이 position snapshot에 없으면 input을 변경하지 않고 거부한다", () => {
+test("position snapshot의 declared station subset은 좌표를 추정하지 않고 current topology에 결속된다", () => {
   const values = fixture();
   const snapshot = JSON.parse(values.snapshotBytes);
   snapshot.positions.pop();
@@ -133,9 +133,25 @@ test("current topology station이 position snapshot에 없으면 input을 변경
   const evidence = values.inventory.sources[0].routeMapAdmissionEvidence;
   evidence.snapshotSha256 = sha256(values.snapshotBytes);
   evidence.stationCount = 1;
+
+  const result = rebind(values);
+  assert.equal(
+    result.sources[0].routeMapAdmissionEvidence.currentTopologyAdmission.topologySnapshotId,
+    topologySnapshotId,
+  );
+  assert.equal(snapshot.positions.length, 1);
+});
+
+test("position snapshot의 duplicate station은 input을 변경하지 않고 거부한다", () => {
+  const values = fixture();
+  const snapshot = JSON.parse(values.snapshotBytes);
+  snapshot.positions[1] = { ...snapshot.positions[0] };
+  values.snapshotBytes = Buffer.from(JSON.stringify(snapshot));
+  const evidence = values.inventory.sources[0].routeMapAdmissionEvidence;
+  evidence.snapshotSha256 = sha256(values.snapshotBytes);
   const before = structuredClone(values.inventory);
 
-  assert.throws(() => rebind(values), /station coverage mismatch/);
+  assert.throws(() => rebind(values), /duplicate position/);
   assert.deepEqual(values.inventory, before);
 });
 
