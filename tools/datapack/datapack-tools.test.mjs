@@ -17,6 +17,11 @@ import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifes
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { routeServiceEvidenceSnapshot } from "./lib/route-service-evidence-preservation.mjs";
 import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
+import { activateIncheonTopologyAdmission } from "./activate-current-source-set.mjs";
+import {
+  buildCapitalTopologyReverificationEvidence,
+  projectCapitalTopologyOwnership,
+} from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -18208,10 +18213,10 @@ async function writeCurrentItxReleaseInputs(
     freshUntil,
     promotion: {
       mode: "UNCHANGED_AUTO",
-      previousArtifactSha256: null,
-      previousArtifactPath: null,
-      approvalUrl: "https://example.test/itx-current-admission",
-      approvedArtifactSha256: sha256(sourceBytes),
+      previousArtifactSha256: topologyEvidence.sourceArtifact.sha256,
+      previousArtifactPath: `tools/datapack/sources/${topologyEvidence.sourceArtifact.id}.json`,
+      approvalUrl: null,
+      approvedArtifactSha256: null,
     },
   });
   const contractPath = path.join(workspace, "itx-coverage-contract.json");
@@ -18220,13 +18225,7 @@ async function writeCurrentItxReleaseInputs(
 
   delete topologyEvidence.readmissions;
   topologyEvidence.stationCatalogPackIdentity = structuredClone(currentIdentity);
-  topologyEvidence.sourceArtifact = {
-    id: source.artifactId,
-    sha256: sha256(sourceBytes),
-    completenessEvidenceSha256: sha256(completenessBytes),
-    freshUntil,
-    stationCatalogPackIdentity: structuredClone(currentIdentity),
-  };
+  topologyEvidence.sourceArtifact.stationCatalogPackIdentity = structuredClone(currentIdentity);
   mutateTopologyEvidence?.(topologyEvidence);
   const topologyEvidencePath = path.join(workspace, "itx-topology-evidence.json");
   const topologyEvidenceBytes = Buffer.from(`${JSON.stringify(topologyEvidence)}\n`);
@@ -18235,14 +18234,77 @@ async function writeCurrentItxReleaseInputs(
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
-  const candidateTopology = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path, "utf8"));
+  const [baselineTopology, candidateTopology] = await Promise.all([
+    readFile(buildSpec.networkEdgeEvidence.capitalTopology.path, "utf8")
+      .then(JSON.parse),
+    readFile(buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path, "utf8")
+      .then(JSON.parse)
+      .then(projectCapitalTopologyOwnership),
+  ]);
+  const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
+  const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
+  const topologyReverificationPath = path.join(workspace, "capital-topology-reverification.json");
+  const baselineTopologyBytes = Buffer.from(`${JSON.stringify(baselineTopology)}\n`);
+  const candidateTopologyBytes = Buffer.from(`${JSON.stringify(candidateTopology)}\n`);
+  const topologyReverificationBytes = Buffer.from(`${JSON.stringify(
+    buildCapitalTopologyReverificationEvidence(
+      projectCapitalTopologyOwnership(baselineTopology),
+      candidateTopology,
+    ),
+  )}\n`);
+  await Promise.all([
+    writeFile(baselineTopologyPath, baselineTopologyBytes),
+    writeFile(candidateTopologyPath, candidateTopologyBytes),
+    writeFile(topologyReverificationPath, topologyReverificationBytes),
+  ]);
+  Object.assign(buildSpec.networkEdgeEvidence.capitalTopology, {
+    path: path.relative(root, baselineTopologyPath),
+    sha256: sha256(baselineTopologyBytes),
+  });
+  Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyCandidate, {
+    path: path.relative(root, candidateTopologyPath),
+    sha256: sha256(candidateTopologyBytes),
+  });
+  Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyReverification, {
+    path: path.relative(root, topologyReverificationPath),
+    sha256: sha256(topologyReverificationBytes),
+  });
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
   const snapshotPaths = sourceInventory.sources.flatMap(({ routeMapAdmissionEvidence: evidence }) => evidence?.snapshotPath ?? []);
   const snapshotBytesByPath = new Map(await Promise.all(snapshotPaths.map(async (snapshotPath) =>
     [snapshotPath, await readFile(snapshotPath)])));
-  const currentInventory = withCurrentCapitalTopologyAdmissions({ inventory: sourceInventory,
+  let currentInventory = withCurrentCapitalTopologyAdmissions({ inventory: sourceInventory,
     topology: candidateTopology, topologySnapshotId: buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
     reviewedAt: candidateTopology.capturedAt, snapshotBytesByPath });
+  const currentIncheonSnapshot = JSON.parse(await readFile(
+    "tools/datapack/sources/incheon-transit-station-info-20260724.json",
+    "utf8",
+  ));
+  Object.assign(currentIncheonSnapshot, {
+    capturedAt: "2026-08-04T18:00:00.000Z",
+    freshUntil: "2026-08-05T18:00:00.000Z",
+  });
+  const currentIncheonSnapshotPath = path.join(
+    workspace,
+    "incheon-transit-station-info-20260804.json",
+  );
+  const currentIncheonSnapshotBytes = Buffer.from(`${JSON.stringify(currentIncheonSnapshot)}\n`);
+  await writeFile(currentIncheonSnapshotPath, currentIncheonSnapshotBytes);
+  currentInventory = activateIncheonTopologyAdmission({
+    sourceInventory: currentInventory,
+    snapshot: currentIncheonSnapshot,
+    snapshotBytes: currentIncheonSnapshotBytes,
+    snapshotPath: "tools/datapack/sources/incheon-transit-station-info-20260804.json",
+    now: new Date("2026-08-04T19:00:00.000Z"),
+  });
+  const currentIncheonSource = currentInventory.sources.find(
+    ({ id }) => id === "incheon-transit-station-info",
+  );
+  const tempIncheonSnapshotPath = path.relative(root, currentIncheonSnapshotPath);
+  currentIncheonSource.topologyAdmissionEvidence.snapshotPath = tempIncheonSnapshotPath;
+  currentIncheonSource.routeMapAdmissionEvidence.snapshotPath = tempIncheonSnapshotPath;
+  assert.equal(currentIncheonSource.topologyAdmissionEvidence.freshUntil, currentIncheonSnapshot.freshUntil);
+  assert.equal(currentIncheonSource.routeMapAdmissionEvidence.snapshotSha256, sha256(currentIncheonSnapshotBytes));
   const currentInventoryPath = path.join(workspace, "source-inventory.json");
   const currentInventoryBytes = Buffer.from(`${JSON.stringify(currentInventory)}\n`);
   await writeFile(currentInventoryPath, currentInventoryBytes);
