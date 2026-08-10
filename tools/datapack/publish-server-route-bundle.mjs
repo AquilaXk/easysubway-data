@@ -11,7 +11,7 @@ import {
   sha256,
 } from "./lib/manifest-validation.mjs";
 import { validateServerRouteBundleFinal } from "./lib/server-route-bundle-final.mjs";
-import { publishObjectStoragePlan } from "./publish-object-storage.mjs";
+import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 import { inspectSignedServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -82,7 +82,7 @@ export async function publishServerRouteBundle(input) {
   const stage = await mkdtemp(path.join(receiptParent, ".server-route-publication-"));
   try {
     await writeSnapshot(stage, snapshot);
-    await publishObjectStoragePlan({
+    await publishImmutableObjectPlan({
       plan: publicationPlan(receipt),
       root: stage,
       client: input.client ?? null,
@@ -245,9 +245,17 @@ export function validatePublicationReceipt(receipt) {
   assertKeys(receipt.repository, ["name", "gitSha"], "repository keys");
   if (receipt.repository.name !== "AquilaXk/easysubway-data") throw new Error("receipt repository mismatch");
   requiredGitSha(receipt.repository.gitSha);
-  assertKeys(receipt.candidate, CANDIDATE_KEYS, "candidate keys");
-  raw(receipt.candidate.bundleId, "candidate bundleId");
-  if (!Number.isSafeInteger(receipt.candidate.releaseSequence) || receipt.candidate.releaseSequence < 1) {
+  validateReceiptCandidate(receipt.candidate);
+  const expectedPrefix = validateReceiptLocator(receipt.locator, receipt.candidate.signedManifestRawSha256);
+  validateReceiptObjects(receipt.objects, receipt.candidate, expectedPrefix);
+  validateReceiptSelfDigest(receipt);
+  return canonicalObject(receipt);
+}
+
+function validateReceiptCandidate(candidate) {
+  assertKeys(candidate, CANDIDATE_KEYS, "candidate keys");
+  raw(candidate.bundleId, "candidate bundleId");
+  if (!Number.isSafeInteger(candidate.releaseSequence) || candidate.releaseSequence < 1) {
     throw new Error("candidate releaseSequence must be a safe positive integer");
   }
   for (const field of [
@@ -258,22 +266,29 @@ export function validatePublicationReceipt(receipt) {
     "payloadRootSha256",
     "componentInventorySha256",
     "prePublicationFinalSha256",
-  ]) sha(receipt.candidate[field], `candidate ${field}`);
-  assertKeys(receipt.candidate.componentDigests, COMPONENTS, "componentDigests keys");
-  for (const component of COMPONENTS) sha(receipt.candidate.componentDigests[component], `${component} digest`);
-  const activeFrom = kst(receipt.candidate.activeFrom, "candidate activeFrom");
-  const freshUntil = kst(receipt.candidate.freshUntil, "candidate freshUntil");
+  ]) sha(candidate[field], `candidate ${field}`);
+  assertKeys(candidate.componentDigests, COMPONENTS, "componentDigests keys");
+  for (const component of COMPONENTS) sha(candidate.componentDigests[component], `${component} digest`);
+  const activeFrom = kst(candidate.activeFrom, "candidate activeFrom");
+  const freshUntil = kst(candidate.freshUntil, "candidate freshUntil");
   if (activeFrom >= freshUntil) throw new Error("candidate activeFrom must be before freshUntil");
-  raw(receipt.candidate.keyId, "candidate keyId");
-  assertKeys(receipt.locator, ["publicBaseUrl", "objectPrefix"], "locator keys");
-  validatePublicBaseUrl(receipt.locator.publicBaseUrl);
-  const expectedPrefix = `server-route-bundles/v1/${receipt.candidate.signedManifestRawSha256}/`;
-  if (receipt.locator.objectPrefix !== expectedPrefix) throw new Error("locator objectPrefix mismatch");
-  if (!Array.isArray(receipt.objects) || receipt.objects.length !== 8) {
+  raw(candidate.keyId, "candidate keyId");
+}
+
+function validateReceiptLocator(locator, signedManifestRawSha256) {
+  assertKeys(locator, ["publicBaseUrl", "objectPrefix"], "locator keys");
+  validatePublicBaseUrl(locator.publicBaseUrl);
+  const expectedPrefix = `server-route-bundles/v1/${signedManifestRawSha256}/`;
+  if (locator.objectPrefix !== expectedPrefix) throw new Error("locator objectPrefix mismatch");
+  return expectedPrefix;
+}
+
+function validateReceiptObjects(objects, candidate, expectedPrefix) {
+  if (!Array.isArray(objects) || objects.length !== 8) {
     throw new Error("receipt objects must contain exact eight entries");
   }
   const paths = [];
-  for (const entry of receipt.objects) {
+  for (const entry of objects) {
     assertKeys(entry, ["path", "objectKey", "sizeBytes", "sha256"], "object inventory keys");
     const relative = safeRelativePath(entry.path, "object path");
     if (entry.objectKey !== `${expectedPrefix}${relative}`) throw new Error("objectKey mismatch");
@@ -293,15 +308,15 @@ export function validatePublicationReceipt(receipt) {
     "provenance.json",
   ].sort(bytewise);
   if (canonicalJson(paths) !== canonicalJson(expectedPaths)) throw new Error("receipt object path set mismatch");
-  const byPath = new Map(receipt.objects.map((entry) => [entry.path, entry]));
-  if (byPath.get("manifest.json").sha256 !== receipt.candidate.signedManifestRawSha256) {
+  const byPath = new Map(objects.map((entry) => [entry.path, entry]));
+  if (byPath.get("manifest.json").sha256 !== candidate.signedManifestRawSha256) {
     throw new Error("receipt manifest digest identity mismatch");
   }
-  if (byPath.get("manifest.signing-input.json").sha256 !== receipt.candidate.signingInputSha256) {
+  if (byPath.get("manifest.signing-input.json").sha256 !== candidate.signingInputSha256) {
     throw new Error("receipt signing input digest identity mismatch");
   }
   for (const component of COMPONENTS) {
-    if (byPath.get(`payload/${component}.sqlite.zst`).sha256 !== receipt.candidate.componentDigests[component]) {
+    if (byPath.get(`payload/${component}.sqlite.zst`).sha256 !== candidate.componentDigests[component]) {
       throw new Error(`receipt ${component} digest identity mismatch`);
     }
   }
@@ -310,17 +325,19 @@ export function validatePublicationReceipt(receipt) {
     return { path: entry.path, sizeBytes: entry.sizeBytes, sha256: entry.sha256 };
   }).sort((left, right) => bytewise(left.path, right.path));
   const payloadInventorySha256 = sha256(Buffer.from(canonicalJson(payloadInventory)));
-  if (payloadInventorySha256 !== receipt.candidate.payloadRootSha256
-    || payloadInventorySha256 !== receipt.candidate.componentInventorySha256) {
+  if (payloadInventorySha256 !== candidate.payloadRootSha256
+    || payloadInventorySha256 !== candidate.componentInventorySha256) {
     throw new Error("receipt payload inventory digest identity mismatch");
   }
+}
+
+function validateReceiptSelfDigest(receipt) {
   sha(receipt.receiptSha256, "receiptSha256");
   const payload = structuredClone(receipt);
   delete payload.receiptSha256;
   if (receipt.receiptSha256 !== sha256(Buffer.from(canonicalJson(payload)))) {
     throw new Error("receiptSha256 mismatch");
   }
-  return canonicalObject(receipt);
 }
 
 function publicationPlan(receipt) {

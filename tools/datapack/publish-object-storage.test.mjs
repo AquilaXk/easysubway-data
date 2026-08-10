@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { publishObjectStoragePlan } from "./publish-object-storage.mjs";
+import { publishImmutableObjectPlan } from "./publish-object-storage.mjs";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
@@ -115,18 +115,18 @@ test("generic immutable bundle object는 conditional create와 full-byte GET 검
     },
   };
 
-  await publishObjectStoragePlan({ plan, root: workspace, client });
+  await publishImmutableObjectPlan({ plan, root: workspace, client });
   assert.equal(conditionalPuts, 1);
   assert.equal(fullReads, 1);
   assert.deepEqual(objects.get(objectKey), bytes);
 
-  await publishObjectStoragePlan({ plan, root: workspace, client });
+  await publishImmutableObjectPlan({ plan, root: workspace, client });
   assert.equal(conditionalPuts, 2);
   assert.equal(fullReads, 3, "existing bytes are read once for collision proof and once for final verification");
 
   objects.set(objectKey, Buffer.from("collision"));
   await assert.rejects(
-    () => publishObjectStoragePlan({ plan, root: workspace, client }),
+    () => publishImmutableObjectPlan({ plan, root: workspace, client }),
     /immutable violation/,
   );
 });

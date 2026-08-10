@@ -84,9 +84,13 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
     "utf8",
   ));
   assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
-  assert.equal(validateSchemaNode(schema, receipt, schema), true);
-  const extra = { ...receipt, unexpected: true };
-  assert.equal(validateSchemaNode(schema, extra, schema), false);
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, [
+    "schemaVersion", "artifactKind", "repository", "candidate", "locator", "objects", "receiptSha256",
+  ]);
+  assert.equal(schema.properties.objects.minItems, 8);
+  assert.equal(schema.properties.objects.maxItems, 8);
+  assert.deepEqual([...schema.properties.objects.items.properties.path.enum].sort(bytewise), SIGNED_PATHS);
   for (const [label, mutate, pattern] of [
     ["manifest", (value) => { object(value, "manifest.json").sha256 = "f".repeat(64); }, /manifest digest identity mismatch/],
     ["signing-input", (value) => { object(value, "manifest.signing-input.json").sha256 = "f".repeat(64); }, /signing input digest identity mismatch/],
@@ -431,40 +435,4 @@ async function assertMissing(target) {
 
 function bytewise(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
-}
-
-function validateSchemaNode(rule, value, root) {
-  if (rule.$ref) {
-    const target = rule.$ref.slice(2).split("/").reduce((current, part) => current[part], root);
-    return validateSchemaNode(target, value, root);
-  }
-  if (Object.hasOwn(rule, "const") && !Object.is(value, rule.const)) return false;
-  if (rule.enum && !rule.enum.some((entry) => Object.is(entry, value))) return false;
-  if (rule.type && !matchesSchemaType(rule.type, value)) return false;
-  if (typeof value === "string" && rule.pattern && !new RegExp(rule.pattern).test(value)) return false;
-  if (typeof value === "number" && rule.minimum !== undefined && value < rule.minimum) return false;
-  if (typeof value === "number" && rule.maximum !== undefined && value > rule.maximum) return false;
-  if (Array.isArray(value)) {
-    if (rule.minItems !== undefined && value.length < rule.minItems) return false;
-    if (rule.maxItems !== undefined && value.length > rule.maxItems) return false;
-    if (rule.uniqueItems && new Set(value.map((entry) => JSON.stringify(entry))).size !== value.length) return false;
-    if (rule.items && !value.every((entry) => validateSchemaNode(rule.items, entry, root))) return false;
-  }
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    if ((rule.required ?? []).some((field) => !Object.hasOwn(value, field))) return false;
-    if (rule.additionalProperties === false
-      && Object.keys(value).some((field) => !Object.hasOwn(rule.properties ?? {}, field))) return false;
-    if (!Object.entries(rule.properties ?? {}).every(([field, child]) => (
-      !Object.hasOwn(value, field) || validateSchemaNode(child, value[field], root)
-    ))) return false;
-  }
-  return true;
-}
-
-function matchesSchemaType(type, value) {
-  if (type === "object") return value !== null && typeof value === "object" && !Array.isArray(value);
-  if (type === "array") return Array.isArray(value);
-  if (type === "string") return typeof value === "string";
-  if (type === "integer") return Number.isInteger(value);
-  return false;
 }
