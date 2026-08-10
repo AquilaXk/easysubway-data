@@ -154,6 +154,7 @@ jobs:
           tools/datapack/build-nationwide-coverage-tally.test.mjs
           tools/datapack/contract-producer.test.mjs
           tools/datapack/lib/datapack-manifest-schema.test.mjs
+          tools/datapack/catalog-raw-sql-tables.test.mjs
 
       - name: Verify current ITX station catalog admission consumers
         run: |
