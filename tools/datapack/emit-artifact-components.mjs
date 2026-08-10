@@ -11,6 +11,7 @@ import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   evaluateRouteAccessibilityEdges,
+  routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
 import {
   canonicalStationLineAccessibilityJson,
@@ -208,6 +209,7 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
       generatedEvidence = buildGeneratedEvidence({
         ...evidenceInput,
         bundleId: ids.bundleId,
+        source,
         stationSetSha256,
         sourceSetSha256: buildSpec.sourceSnapshotSetHash,
         topologySha256: hashes.topologySha256,
@@ -238,6 +240,12 @@ function buildGeneratedEvidence(input) {
     ...input.stationLineInput,
     observedAt: input.evaluationAt,
   });
+  assertExactProjection(
+    input.stationLineInput.stationLines,
+    sourceStationLines(input.source, false),
+    ["stationId", "lineId", "operatorId"],
+    "station-line materializer source projection",
+  );
   const routeEdgeSeed = requireObject(input.routeEdgeInput, "route-edge seed input");
   assertKeys(routeEdgeSeed, ["candidate", "stationLines", "routeEdges"], "route-edge seed input keys");
   const candidateSeed = requireObject(routeEdgeSeed.candidate, "route-edge seed candidate");
@@ -249,6 +257,18 @@ function buildGeneratedEvidence(input) {
   ]) {
     if (candidateSeed[field] !== expected) throw new Error(`route-edge seed ${label} identity mismatch`);
   }
+  assertExactProjection(
+    routeEdgeSeed.stationLines,
+    sourceStationLines(input.source, true),
+    ["stationId", "lineId", "operatorId", "lineSequence"],
+    "route-edge station-line source projection",
+  );
+  assertExactProjection(
+    routeEdgeSeed.routeEdges,
+    sourceRouteEdges(input.source),
+    ["edgeId"],
+    "route-edge source projection",
+  );
   const evaluation = evaluateRouteAccessibilityEdges({
     ...routeEdgeSeed,
     candidate: { ...candidateSeed, topologySha256: input.topologySha256 },
@@ -258,6 +278,45 @@ function buildGeneratedEvidence(input) {
   const materializationJson = canonicalStationLineAccessibilityJson(materialization);
   const evaluationJson = canonicalRouteEdgeEvaluationJson(evaluation);
   return { materialization, materializationJson, evaluation, evaluationJson };
+}
+
+function sourceStationLines(source, includeSequence) {
+  return source.prepare(`
+    SELECT station_lines.station_id AS stationId,
+           station_lines.line_id AS lineId,
+           lines.operator_id AS operatorId${includeSequence ? ",\n           station_lines.line_sequence AS lineSequence" : ""}
+      FROM station_lines
+      JOIN lines ON lines.id = station_lines.line_id
+     ORDER BY station_lines.station_id COLLATE BINARY,
+              station_lines.line_id COLLATE BINARY
+  `).all().map((row) => ({ ...row }));
+}
+
+function sourceRouteEdges(source) {
+  return source.prepare(`
+    SELECT id AS edgeId,
+           edge_type AS edgeType,
+           from_node_id AS fromNodeId,
+           to_node_id AS toNodeId,
+           duration_seconds AS durationSeconds,
+           distance_meters AS distanceMeters,
+           service_pattern AS servicePattern,
+           service_class AS serviceClass
+      FROM network_edges
+     ORDER BY id COLLATE BINARY
+  `).all().map((row) => {
+    const edge = { ...row };
+    return { ...edge, edgeSha256: routeEdgeSha256(edge) };
+  });
+}
+
+function assertExactProjection(actual, expected, orderFields, label) {
+  if (!Array.isArray(actual)) throw new Error(`${label} mismatch`);
+  const ordered = actual.map((row) => requireObject(row, label)).sort((left, right) => bytes(
+    canonicalJson(orderFields.map((field) => left[field])),
+    canonicalJson(orderFields.map((field) => right[field])),
+  ));
+  if (canonicalJson(ordered) !== canonicalJson(expected)) throw new Error(`${label} mismatch`);
 }
 
 function assertStationLineCandidate(candidate, input) {

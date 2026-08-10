@@ -45,6 +45,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
   const routeEdgeInput = completeRouteEdgeInput(buildSpec.sourceSnapshotSetHash);
   const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: "2026-08-03T00:00:00.000+09:00", freshUntil: "2026-08-04T00:00:00.000+09:00", builtAt: "2026-08-03T00:00:00.000Z", keyId: "test-key", evaluationAt: "2026-08-03T00:00:00.000Z", stationLineInput, routeEdgeInput, ...values });
+  const applySourceSql = (sql) => { const mutation = new DatabaseSync(source); mutation.exec(sql); mutation.close(); };
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);
@@ -58,12 +59,38 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     ["route-seed-extra-topology", (seed) => { seed.candidate.topologySha256 = "f".repeat(64); }, /route-edge seed candidate keys mismatch/],
     ["route-seed-missing-version", (seed) => { delete seed.candidate.evaluatorVersion; }, /route-edge seed candidate keys mismatch/],
     ["route-seed-bundle-mismatch", (seed) => { seed.candidate.candidateId = "other-bundle"; }, /route-edge seed candidate identity mismatch/],
+    ["route-seed-sequence-mismatch", (seed) => { seed.stationLines[1].lineSequence = 3; }, /route-edge station-line source projection mismatch/],
+    ["route-seed-edge-value-mismatch", (seed) => {
+      const edge = { ...seed.routeEdges[0] };
+      delete edge.edgeSha256;
+      edge.durationSeconds += 1;
+      seed.routeEdges[0] = { ...edge, edgeSha256: routeEdgeSha256(edge) };
+    }, /route-edge source projection mismatch/],
   ]) {
     const seed = structuredClone(routeEdgeInput);
     mutate(seed);
     await assert.rejects(() => run(name, { routeEdgeInput: seed }), pattern);
     assert.equal(await exists(path.join(temp, name)), false);
   }
+  const operatorMismatch = structuredClone(stationLineInput);
+  operatorMismatch.stationLines = operatorMismatch.stationLines.map((line) => ({ ...line, operatorId: "other-operator" }));
+  operatorMismatch.evidenceRows = operatorMismatch.evidenceRows.map((row) => ({ ...row, operatorId: "other-operator" }));
+  await assert.rejects(() => run("station-line-operator-mismatch", { stationLineInput: operatorMismatch }), /station-line materializer source projection mismatch/);
+  assert.equal(await exists(path.join(temp, "station-line-operator-mismatch")), false);
+
+  applySourceSql("INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l2','o1','2호선','Line 2','#654321'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l2',1)");
+  await writeBindings(temp, source, current, spec);
+  await assert.rejects(() => run("station-line-source-subset"), /station-line materializer source projection mismatch/);
+  assert.equal(await exists(path.join(temp, "station-line-source-subset")), false);
+  applySourceSql("DELETE FROM station_lines WHERE line_id='l2'; DELETE FROM lines WHERE id='l2'");
+
+  applySourceSql("INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('ride-s2-s1','s2:l1','s1:l1',120,1000,'RIDE','LOCAL','SUBWAY')");
+  await writeBindings(temp, source, current, spec);
+  await assert.rejects(() => run("route-edge-source-subset"), /route-edge source projection mismatch/);
+  assert.equal(await exists(path.join(temp, "route-edge-source-subset")), false);
+  applySourceSql("DELETE FROM network_edges WHERE id='ride-s2-s1'");
+  await writeBindings(temp, source, current, spec);
+
   const stationLineInputPath = path.join(temp, "station-line-input.json");
   const routeEdgeInputPath = path.join(temp, "route-edge-input.json");
   const cliOutput = path.join(temp, "cli-output");
