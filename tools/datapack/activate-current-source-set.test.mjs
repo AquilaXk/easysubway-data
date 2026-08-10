@@ -218,6 +218,14 @@ test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence�
   assert.deepEqual(reviewedPack.officialOdFareQuotes, input.officialOdFareQuotes);
   assert.deepEqual(reviewedPack.routeServiceArtifactEvidence, []);
   assert.deepEqual(reviewedPack.movementPathCandidates, []);
+  const syncedCanonical = syncCanonicalFixture(
+    await readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    reviewedPack,
+  );
+  const syncedCapital = syncedCanonical.packs.find(({ id }) => id === "capital");
+  assert.equal(syncedCapital.sourceInventory.some(({ id }) => id === fareSourceId), true);
+  assert.deepEqual(syncedCapital.officialOdFareQuotes, input.officialOdFareQuotes);
+  assert.deepEqual(syncedCapital.internalRouteEdges, []);
 });
 
 test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route evidence를 제거한다", () => {

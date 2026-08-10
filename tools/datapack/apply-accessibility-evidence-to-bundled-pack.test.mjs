@@ -258,7 +258,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     ],
   });
   assert.deepEqual(synced.packs[0].networkEdges, [reviewedEdge]);
-  assert.equal(synced.packs[0].internalRouteEdges[0].accessibilityStatus, "UNKNOWN");
+  assert.deepEqual(synced.packs[0].internalRouteEdges, []);
   assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, false);
   assert.deepEqual(synced.packs[0].officialOdFareQuotes, officialOdFareQuotes);
   assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, routeServiceArtifactEvidence);

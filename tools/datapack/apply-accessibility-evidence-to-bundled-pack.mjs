@@ -222,10 +222,6 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   pack.networkEdges = (pack.networkEdges ?? [])
     .filter((edge) => !isAccessibilityRouteEdge(edge))
     .concat(accessibilityRouteEdges(reviewedPack));
-  pack.internalRouteEdges = (pack.internalRouteEdges ?? []).map((edge) =>
-    edge.accessibilityStatus !== "UNKNOWN" && !completeInternalRouteEdgeProvenance(edge)
-      ? { ...edge, accessibilityStatus: "UNKNOWN" }
-      : edge);
   pack.stationExits = (pack.stationExits ?? []).map((exit) =>
     exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
   const freshSources = reviewedPack.sourceInventory;
@@ -234,6 +230,8 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     .filter(({ id }) => !replacedSourceIds.has(id) && !freshSourceIds.has(id))
     .concat(freshSources);
   const sourceInventoryIds = new Set(pack.sourceInventory.map(({ id }) => id));
+  pack.internalRouteEdges = (pack.internalRouteEdges ?? []).filter((edge) =>
+    sourceInventoryIds.has(edge.sourceId) && completeInternalRouteEdgeProvenance(edge));
   pack.movementPathCandidates = (reviewedPack.movementPathCandidates ?? [])
     .filter(({ sourceId }) => sourceInventoryIds.has(sourceId));
   if (pack.movementPathCandidates.length === 0) {
