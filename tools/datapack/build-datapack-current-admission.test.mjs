@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,6 +9,7 @@ import {
   admittedIncheonTopologyEvidence,
   candidateNetworkEdgeEvidence,
   materializeIncheonNetworkEdges,
+  validateTrackedItxTopologyEvidence,
   validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
@@ -277,4 +279,117 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
     source,
     new Date("2026-02-28T01:00:00.000Z"),
   ), /serviceDate is invalid/);
+});
+
+test("tracked migrated v19 ITX evidence는 exact v18 lineage와 두 route-service domain을 유지한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "build-current-migrated-itx-"));
+  const evidencePath = path.join(directory, "itx-topology-evidence.json");
+  const stationIdentity = {
+    artifactKind: "station-catalog-pack",
+    manifestVersion: 1,
+    catalogPackId: "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1",
+    stationSetSha256: "1".repeat(64),
+    payloadSha256: "2".repeat(64),
+    manifestSha256: "3".repeat(64),
+  };
+  const evidence = {
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    serviceId: "ITX_CHEONGCHUN",
+    sourceIssue: 2135,
+    sourceArtifact: {
+      id: "itx-cheongchun-source-timetable-20260719230524758",
+      sha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+      completenessEvidenceSha256: "4".repeat(64),
+      freshUntil: "2026-07-27T00:00:00+09:00",
+    },
+    topology: {
+      stationMembershipCount: 18,
+      servedStationCount: 14,
+      edgeCount: 48,
+      directions: ["up", "down"],
+      connectedComponentCount: 1,
+      isolatedServedStationCount: 0,
+      sha256: "5".repeat(64),
+      durationSecondsEmbedded: false,
+      fareEmbedded: false,
+    },
+    migration: {
+      fromCatalogVersion: 18,
+      toCatalogVersion: 19,
+      inputPack: {
+        id: "capital",
+        sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+        sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+        byteSize: 1463745,
+      },
+    },
+    routeServiceEvidence: {
+      artifactEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        timetableArtifactId: "itx-cheongchun-source-timetable-20260719230524758",
+        timetableArtifactSha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+        canonicalPackId: "capital",
+        canonicalPackSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+        canonicalPackSqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+        admissionStatus: "ADMITTED",
+        admissionEligible: 1,
+        freshUntil: "2026-07-27T00:00:00+09:00",
+        sourceIssue: 2135,
+      },
+      stationCatalogEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        stationCatalogArtifactKind: stationIdentity.artifactKind,
+        stationCatalogManifestVersion: stationIdentity.manifestVersion,
+        stationCatalogPackId: stationIdentity.catalogPackId,
+        stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
+        stationCatalogPayloadSha256: stationIdentity.payloadSha256,
+        stationCatalogManifestSha256: stationIdentity.manifestSha256,
+        admissionStatus: "ADMITTED",
+        admissionEligible: 1,
+        freshUntil: "2026-07-27T00:00:00+09:00",
+        sourceIssue: 2649,
+      },
+    },
+    pack: {
+      id: "capital",
+      inputSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+      inputSqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+      inputByteSize: 1463745,
+      outputSha256: "6".repeat(64),
+      outputSqliteSha256: "7".repeat(64),
+      byteSize: 393974,
+      byteSizeDelta: -1069771,
+    },
+  };
+  const fixture = {
+    packs: [{
+      transitTrips: [],
+      networkEdges: [{ serviceClass: "ITX_CHEONGCHUN" }],
+    }],
+  };
+  try {
+    const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`);
+    await writeFile(evidencePath, evidenceBytes);
+    const validated = await validateTrackedItxTopologyEvidence({
+      itxTopologyEvidencePath: evidencePath,
+      itxTopologyEvidenceSha256: sha256(evidenceBytes),
+    }, fixture);
+    assert.equal(validated.migratedCurrentV18, true);
+    assert.deepEqual(validated.stationCatalogPackIdentity, stationIdentity);
+
+    const forged = structuredClone(evidence);
+    forged.migration.inputPack.sha256 = "0".repeat(64);
+    const forgedBytes = Buffer.from(`${JSON.stringify(forged, null, 2)}\n`);
+    await writeFile(evidencePath, forgedBytes);
+    await assert.rejects(
+      validateTrackedItxTopologyEvidence({
+        itxTopologyEvidencePath: evidencePath,
+        itxTopologyEvidenceSha256: sha256(forgedBytes),
+      }, fixture),
+      /migration input pack identity mismatch/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
