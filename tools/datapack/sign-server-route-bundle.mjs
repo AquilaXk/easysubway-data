@@ -207,11 +207,14 @@ function parseArgs(argv) {
   return args;
 }
 
+async function main(argv) {
+  const { manifestSha256 } = await signServerRouteBundle(parseArgs(argv));
+  process.stdout.write(`SIGNED ${manifestSha256}\n`);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  signServerRouteBundle(parseArgs(process.argv.slice(2)))
-    .then(({ manifestSha256 }) => process.stdout.write(`SIGNED ${manifestSha256}\n`))
-    .catch((error) => {
-      process.stderr.write(`sign-server-route-bundle: ${error.message}\n`);
-      process.exitCode = 1;
-    });
+  main(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`sign-server-route-bundle: ${error.message}\n`);
+    process.exitCode = 1;
+  });
 }

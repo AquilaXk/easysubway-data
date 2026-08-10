@@ -59,6 +59,13 @@ test("exact keyless bundle은 current key signed manifest와 byte-preserving tre
   assert.match(manifest.signature.value, /^[A-Za-z0-9_-]+$/);
 });
 
+test("malformed CLI arguments는 stack trace 없이 잠금된 진단으로 실패한다", () => {
+  const result = spawnSync(process.execPath, [SCRIPT, "--input"], { encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "sign-server-route-bundle: invalid argument near --input\n");
+});
+
 test("key·identity·artifact·output 경계 실패는 기존 bytes와 temp를 보존한다", async (t) => {
   await t.test("private key 누락", async (t) => {
     const fixture = await createFixture(t);
