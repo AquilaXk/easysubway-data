@@ -11,6 +11,7 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   buildServerRouteBundleFinalEvidence,
 } from "./build-server-route-bundle-final.mjs";
+import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
   canonicalJson,
   sha256,
@@ -114,6 +115,7 @@ test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed�
     ["missing-route-row", "DELETE FROM route_accessibility_edge_evidence", /embedded route-edge evaluation evidence mismatch/],
     ["extra-station-row", `INSERT INTO station_line_accessibility_evidence VALUES('${"d".repeat(64)}','{}')`, /embedded station-line accessibility evidence mismatch/],
     ["route-digest-mismatch", `UPDATE route_accessibility_edge_evidence SET evaluation_digest='${"e".repeat(64)}'`, /embedded route-edge evaluation evidence mismatch/],
+    ["route-schema-without-constraints", "ALTER TABLE route_accessibility_edge_evidence RENAME TO route_accessibility_edge_evidence_old; CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL); INSERT INTO route_accessibility_edge_evidence SELECT * FROM route_accessibility_edge_evidence_old; DROP TABLE route_accessibility_edge_evidence_old", /embedded route_accessibility_edge_evidence schema mismatch/],
     ["missing-route-table", "DROP TABLE route_accessibility_edge_evidence", /embedded route_accessibility_edge_evidence schema mismatch/],
   ]) {
     await t.test(name, async () => {
@@ -365,7 +367,7 @@ async function createArtifact(repositoryRoot, artifactRoot, buildSpec, stationLi
   await mkdir(artifactRoot, { recursive: true });
   const accessibilitySqlite = path.join(artifactRoot, ".accessibility.sqlite");
   const accessibilityDatabase = new DatabaseSync(accessibilitySqlite);
-  accessibilityDatabase.exec("CREATE TABLE station_line_accessibility_evidence (materialization_digest TEXT NOT NULL PRIMARY KEY, canonical_json TEXT NOT NULL); CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))");
+  accessibilityDatabase.exec(Object.values(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL).join("; "));
   accessibilityDatabase.prepare("INSERT INTO station_line_accessibility_evidence VALUES(?,?)").run(
     materialization.materializationDigest,
     canonicalStationLineAccessibilityJson(materialization),

@@ -28,6 +28,7 @@ import {
   canonicalRouteEdgeEvaluationJson,
   evaluateRouteAccessibilityEdges,
 } from "./evaluate-route-accessibility-edges.mjs";
+import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
@@ -268,12 +269,12 @@ async function assertEmbeddedEvidence(input) {
     assertEmbeddedTable(database, "station_line_accessibility_evidence", [
       { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 1 },
       { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
-    ]);
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.station_line_accessibility_evidence);
     assertEmbeddedTable(database, "route_accessibility_edge_evidence", [
       { name: "evaluation_digest", type: "TEXT", notnull: 1, pk: 1 },
       { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 0 },
       { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
-    ]);
+    ], GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL.route_accessibility_edge_evidence);
     const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
     if (stationRows.length !== 1
       || stationRows[0].materialization_digest !== input.materialization.materializationDigest
@@ -293,14 +294,15 @@ async function assertEmbeddedEvidence(input) {
   }
 }
 
-function assertEmbeddedTable(database, table, expected) {
+function assertEmbeddedTable(database, table, expected, expectedDdl) {
   const actual = database.prepare(`PRAGMA table_xinfo(${table})`).all().map((column) => ({
     name: column.name,
     type: column.type,
     notnull: column.notnull,
     pk: column.pk,
   }));
-  if (canonicalJson(actual) !== canonicalJson(expected)) {
+  const definition = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table);
+  if (canonicalJson(actual) !== canonicalJson(expected) || definition?.sql !== expectedDdl) {
     throw new Error(`embedded ${table} schema mismatch`);
   }
 }
