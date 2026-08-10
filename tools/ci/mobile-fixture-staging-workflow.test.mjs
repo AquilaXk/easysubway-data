@@ -73,6 +73,11 @@ test("CI는 TRANSFER topology admission contract를 standalone contracts에서 �
   assert.match(ci, /node --test[\s\S]*tools\/datapack\/build-transfer-topology-admission\.test\.mjs/);
 });
 
+test("CI는 EXIT path admission contract를 standalone contracts에서 실행한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.match(ci, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
+});
+
 test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = ci.match(/- name: Verify Data issue 108 bundled-pack regression[\s\S]*?\n\s+- name:/)?.[0];
