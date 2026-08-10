@@ -205,6 +205,40 @@ test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로
   ]);
 });
 
+test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes mismatch는 거부한다", async (t) => {
+  installSigningEnvironment(t);
+  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);
+  await rewriteReceipt(releaseEvidence.publicationReceiptPath, (receipt) => {
+    receipt.objects.find((entry) => entry.path === "compatibility.json").sha256 = "f".repeat(64);
+  });
+  await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+    inventory.entries.find((entry) => (
+      entry.path === "server-route-bundle/compatibility.json"
+    )).sha256 = "f".repeat(64);
+  });
+  const output = path.join(fixture.temp, "release-rejected-published-byte-drift");
+  await assert.rejects(
+    () => build(fixture, output, FRESH_AT, releaseEvidence),
+    /publication receipt object inventory mismatch/,
+  );
+  await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
+test("FINAL closure는 bundle보다 이른 source freshness cutoff를 거부한다", async (t) => {
+  installSigningEnvironment(t);
+  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
+    freshUntil: "2026-08-09T08:00:00.000+09:00",
+  });
+  const output = path.join(fixture.temp, "release-rejected-source-cutoff");
+  await assert.rejects(
+    () => build(fixture, output, FRESH_AT, releaseEvidence, {
+      clock: () => Date.parse("2026-08-08T01:00:00.000Z"),
+    }),
+    /source freshness cutoff must cover candidate freshUntil/,
+  );
+  await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
 test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail closed한다", async (t) => {
   installSigningEnvironment(t);
   for (const [name, mutate, pattern, evaluationAt = FRESH_AT] of [
@@ -447,9 +481,9 @@ test("standalone CLI도 exact inputs로 같은 FINAL을 생성한다", async (t)
 
 test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성한다", async (t) => {
   installSigningEnvironment(t);
-  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
-    freshUntil: "2099-08-08T08:00:00.000+09:00",
-  });
+  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);
+  const clockPath = path.join(fixture.temp, "release-cli-clock.mjs");
+  await writeFile(clockPath, `Date.now = () => ${Date.parse(FRESH_AT)};\n`);
   const stationLineInputPath = path.join(fixture.temp, "release-station-line-input.json");
   const routeEdgeInputPath = path.join(fixture.temp, "release-route-edge-input.json");
   await writeFile(stationLineInputPath, canonicalJson(fixture.stationLineInput));
@@ -472,7 +506,7 @@ test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성�
     "--approval-evidence", releaseEvidence.approvalEvidencePath,
     "--promotion-workflow-run-id", releaseEvidence.promotionWorkflowRunId,
   ];
-  const result = spawnSync(process.execPath, baseArgs, {
+  const result = spawnSync(process.execPath, ["--import", clockPath, ...baseArgs], {
     cwd: fixture.repositoryRoot,
     encoding: "utf8",
   });
@@ -484,7 +518,7 @@ test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성�
   const rejectedOutput = path.join(fixture.temp, "partial-release-cli-output");
   const partialArgs = baseArgs.slice(0, -2);
   partialArgs[partialArgs.indexOf("--output") + 1] = rejectedOutput;
-  const partial = spawnSync(process.execPath, partialArgs, {
+  const partial = spawnSync(process.execPath, ["--import", clockPath, ...partialArgs], {
     cwd: fixture.repositoryRoot,
     encoding: "utf8",
   });

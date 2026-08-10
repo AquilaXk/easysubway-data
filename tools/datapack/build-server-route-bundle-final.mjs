@@ -162,7 +162,12 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   });
   const release = input.releaseEvidence === undefined
     ? null
-    : await closeReleaseFinal(prePublicationFinal, input.releaseEvidence);
+    : await closeReleaseFinal(
+      prePublicationFinal,
+      input.releaseEvidence,
+      artifact.publicationObjects,
+      sourceFreshness,
+    );
   const final = release?.final ?? prePublicationFinal;
   const finalBytes = Buffer.from(canonicalServerRouteBundleFinalJson(final));
 
@@ -191,7 +196,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   return final;
 }
 
-async function closeReleaseFinal(prePublicationFinal, releaseEvidence) {
+async function closeReleaseFinal(prePublicationFinal, releaseEvidence, publicationObjects, sourceFreshness) {
   if (prePublicationFinal.result !== "NO_GO"
     || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
       "publication:UNAVAILABLE",
@@ -199,6 +204,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence) {
     ])) {
     throw new Error("pre-publication FINAL is not release eligible");
   }
+  assertSourceFreshnessCoversCandidate(sourceFreshness, prePublicationFinal.candidate.freshUntil);
   assertKeys(releaseEvidence, RELEASE_EVIDENCE_KEYS, "release evidence keys");
   const paths = Object.fromEntries(RELEASE_EVIDENCE_KEYS
     .filter((key) => key.endsWith("Path"))
@@ -216,7 +222,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence) {
     bytes.publicationReceiptPath,
     "publication receipt",
   ));
-  assertReceiptCandidate(prePublicationFinal, publicationReceipt);
+  assertReceiptCandidate(prePublicationFinal, publicationReceipt, publicationObjects);
 
   const promotionRequest = parseCanonicalOrFormattedJson(bytes.promotionRequestPath, "promotion request");
   const promotionComponent = parseCanonicalOrFormattedJson(bytes.promotionComponentPath, "promotion component");
@@ -256,7 +262,7 @@ async function closeReleaseFinal(prePublicationFinal, releaseEvidence) {
   };
 }
 
-function assertReceiptCandidate(prePublicationFinal, receipt) {
+function assertReceiptCandidate(prePublicationFinal, receipt, publicationObjects) {
   if (receipt.repository.name !== prePublicationFinal.candidate.repository
     || receipt.repository.gitSha !== prePublicationFinal.candidate.gitSha
     || receipt.candidate.prePublicationFinalSha256 !== prePublicationFinal.finalSha256) {
@@ -265,6 +271,28 @@ function assertReceiptCandidate(prePublicationFinal, receipt) {
   for (const key of RECEIPT_CANDIDATE_KEYS) {
     if (canonicalJson(receipt.candidate[key]) !== canonicalJson(prePublicationFinal.candidate[key])) {
       throw new Error(`publication receipt candidate ${key} mismatch`);
+    }
+  }
+  const receiptObjects = receipt.objects.map(({ path: objectPath, sizeBytes, sha256: digest }) => ({
+    path: objectPath,
+    sizeBytes,
+    sha256: digest,
+  }));
+  if (canonicalJson(receiptObjects) !== canonicalJson(publicationObjects)) {
+    throw new Error("publication receipt object inventory mismatch");
+  }
+}
+
+function assertSourceFreshnessCoversCandidate(sourceFreshness, freshUntil) {
+  const results = sourceFreshness?.evidence?.validation?.results;
+  if (sourceFreshness?.state !== "PASS" || !Array.isArray(results) || results.length === 0) {
+    throw new Error("source freshness cutoff evidence is unavailable");
+  }
+  const candidateCutoff = Date.parse(freshUntil);
+  if (!Number.isFinite(candidateCutoff)) throw new Error("candidate freshUntil is invalid");
+  for (const result of results) {
+    if (requiredUtcInstant(result.freshnessExpiresAt, "source freshness cutoff") < candidateCutoff) {
+      throw new Error("source freshness cutoff must cover candidate freshUntil");
     }
   }
 }
@@ -325,9 +353,10 @@ async function inspectArtifact(artifactRoot, fixed) {
     ...manifest,
     signature: { algorithm: SIGNATURE_ALGORITHM, value: "AA" },
   });
+  let manifestBytes = null;
   let signedManifestRawSha256 = null;
   if (signed) {
-    const manifestBytes = await readNonEmptyRegular(path.join(artifactRoot, "manifest.json"), "signed manifest");
+    manifestBytes = await readNonEmptyRegular(path.join(artifactRoot, "manifest.json"), "signed manifest");
     const signedManifest = parseCanonicalJson(manifestBytes, "signed manifest");
     validateArtifactComponentManifest(signedManifest);
     if (!Buffer.from(canonicalJson(withoutSignature(signedManifest))).equals(signingInputBytes)) {
@@ -361,6 +390,20 @@ async function inspectArtifact(artifactRoot, fixed) {
   if (manifest.compatibilitySha256 !== sha256(compatibilityBytes)) throw new Error("compatibility digest mismatch");
 
   const signingInputSha256 = sha256(signingInputBytes);
+  const publicationObjects = [
+    ["compatibility.json", compatibilityBytes],
+    ["manifest.signing-input.json", signingInputBytes],
+    ...COMPONENTS.map((component, index) => [
+      `payload/${component}.sqlite.zst`,
+      payloadBytes[index],
+    ]),
+    ["provenance.json", provenanceBytes],
+    ...(manifestBytes === null ? [] : [["manifest.json", manifestBytes]]),
+  ].map(([objectPath, bytes]) => ({
+    path: objectPath,
+    sizeBytes: bytes.length,
+    sha256: sha256(bytes),
+  })).sort((left, right) => bytewise(left.path, right.path));
   return {
     manifest,
     provenance,
@@ -368,6 +411,7 @@ async function inspectArtifact(artifactRoot, fixed) {
     signingInputSha256,
     signedManifestRawSha256,
     componentInventorySha256,
+    publicationObjects,
     accessibilityPayloadBytes: payloadBytes[COMPONENTS.indexOf("accessibility")],
     evidence: canonicalObject({
       schemaVersion: 1,
