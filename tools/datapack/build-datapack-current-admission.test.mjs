@@ -102,14 +102,14 @@ test("capital topology reverification은 historical baseline과 current admitted
     freshUntil: candidate.freshUntil,
   };
 
-  validateCapitalTopologyReverification(
+  assert.doesNotThrow(() => validateCapitalTopologyReverification(
     reverification,
     baseline,
     candidate,
     admission,
     admission.snapshotId,
     "capital-route-topology-20260724",
-  );
+  ));
 });
 
 test("tracked current ITX admission은 admitted pair와 fresh evidence identity에 결속된다", async () => {

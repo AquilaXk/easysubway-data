@@ -319,6 +319,23 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   database.close();
 });
 
+test("canonical sync는 reviewed 필수 계약과 fare table minimum을 함께 닫는다", () => {
+  const canonical = () => ({ packs: [{ id: "capital", facilities: [], metadata: {},
+    sourceInventory: [{ id: "seoul-metro-accessibility" }],
+    officialOdFareQuotes: [{ sourceId: "seoul-metro-accessibility" }],
+    requiredTables: ["stations", "official_od_fare_quotes"], minimumTableRows: { official_od_fare_quotes: 1 } }] });
+  const reviewed = {
+    facilities: [], stationFacilityEvidence: [], sourceInventory: [], metadata: { productionCoverageEvidence: "[]" },
+  };
+  assert.throws(() => syncCanonicalFixture(canonical(), { ...reviewed, sourceInventory: undefined }),
+    /reviewedPack.sourceInventory must be an array/);
+  assert.throws(() => syncCanonicalFixture(canonical(), { ...reviewed, metadata: {} }),
+    /reviewedPack.metadata.productionCoverageEvidence must be a string/);
+  const synced = syncCanonicalFixture(canonical(), reviewed).packs[0];
+  assert.deepEqual(synced.requiredTables, ["stations"]);
+  assert.equal("official_od_fare_quotes" in synced.minimumTableRows, false);
+});
+
 test("active canonical source inventory excludes retired movement snapshot heads", () => {
   const snapshots = [
     { sourceId: "active-source", snapshotId: "active-old", supersededBy: "active-head" },

@@ -8,61 +8,34 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import {
-  buildCurrentSourcePrimaryOutputs,
-  commitCurrentSourceActivation,
-  requireCleanBuilder,
-} from "./activate-current-source-set.mjs";
+import { buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
+  requireCleanBuilder } from "./activate-current-source-set.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-async function readJson(relativePath) {
-  return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
-}
+function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
 
 test("primary source set은 current KRIC·7-source·topology identity를 한 번에 활성화한다", () => {
   const rawArtifactBytes = Buffer.from('{"artifact":"current"}\n');
   const previousSnapshot = {
-    schemaVersion: 1,
-    artifactKind: "official-source-snapshot",
-    snapshotId: "kric-subway-timetable-line4-pilot-20260709",
-    sourceId: "kric-subway-timetable",
-    provider: "국가철도공단",
-    retrievedAt: "2026-07-09T00:00:00Z",
-    sourceUpdatedAt: "2026-07-09T00:00:00Z",
-    serviceEffectiveAt: "2026-07-09T00:00:00Z",
-    serviceEffectiveUntil: "2026-12-31T00:00:00Z",
-    rowCount: 473,
-    coverageCount: 1,
-    rawSha256: "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
-    rawObjectUri: "s3://legacy/20260709.json",
-    redactedRequestFingerprint: "4ab1e2d84e511733f7f2c95023d853089d6f31e9a39cfe617037edc58112b1aa",
-    schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
-    snapshotStatus: "LOCKED",
-    schemaStatus: "PASS",
-    licenseStatus: "PASS",
-    fetchStatus: "SUCCESS",
-    redistributionAllowed: true,
-    credentialRedacted: true,
-    previousSnapshotId: null,
-    diffSummary: null,
-    freshnessExpiresAt: "2026-08-08T00:00:00.000Z",
+    schemaVersion: 1, artifactKind: "official-source-snapshot",
+    snapshotId: "kric-subway-timetable-line4-pilot-20260709", sourceId: "kric-subway-timetable",
+    provider: "국가철도공단", retrievedAt: "2026-07-09T00:00:00Z",
+    sourceUpdatedAt: "2026-07-09T00:00:00Z", serviceEffectiveAt: "2026-07-09T00:00:00Z",
+    serviceEffectiveUntil: "2026-12-31T00:00:00Z", rowCount: 473,
+    coverageCount: 1, rawSha256: "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
+    rawObjectUri: "s3://legacy/20260709.json", redactedRequestFingerprint: "4ab1e2d84e511733f7f2c95023d853089d6f31e9a39cfe617037edc58112b1aa",
+    schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", snapshotStatus: "LOCKED",
+    schemaStatus: "PASS", licenseStatus: "PASS", fetchStatus: "SUCCESS",
+    redistributionAllowed: true, credentialRedacted: true, previousSnapshotId: null,
+    diffSummary: null, freshnessExpiresAt: "2026-08-08T00:00:00.000Z",
     rawRetentionExpiresAt: "2026-10-07T00:00:00.000Z",
   };
-  const sourceIds = [
-    "molit-urban-rail-full-route",
-    "seoulmetro-station-line-info",
-    "seoulmetro-cyberstation-route-map",
-    "kric-subway-timetable",
-    "seoul-metro-accessibility",
-    "kric-station-convenience-standard",
-    "seoul-metro-official-od-fares",
-  ];
+  const sourceIds = ["molit-urban-rail-full-route", "seoulmetro-station-line-info",
+    "seoulmetro-cyberstation-route-map", "kric-subway-timetable", "seoul-metro-accessibility",
+    "kric-station-convenience-standard", "seoul-metro-official-od-fares"];
   const inventory = {
     schemaVersion: 1,
     artifactKind: "production-source-inventory",
@@ -83,28 +56,17 @@ test("primary source set은 current KRIC·7-source·topology identity를 한 번
       } : {}),
     })),
   };
-  const officialOdFareQuotes = [
-    { sourceId: "seoul-metro-official-od-fares", direction: "UP" },
-    { sourceId: "seoul-metro-official-od-fares", direction: "DOWN" },
-  ];
+  const officialOdFareQuotes = [{ sourceId: "seoul-metro-official-od-fares", direction: "UP" },
+    { sourceId: "seoul-metro-official-od-fares", direction: "DOWN" }];
   const handoff = {
-    hubCommit: "9251acdcc563975e8757d61f03e398d10c935d8b",
-    rawSizeBytes: rawArtifactBytes.length,
-    rawSha256: sha256(rawArtifactBytes),
-    rawObjectUri: `oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260809/${sha256(rawArtifactBytes)}.json`,
-    snapshotId: "kric-subway-timetable-line4-pilot-20260809",
-    previousSnapshotId: previousSnapshot.snapshotId,
-    collectedAt: "2026-08-09T12:04:20.479Z",
-    serviceEffectiveUntil: "2026-12-31T00:00:00Z",
-    rowCount: 466,
-    coverageCount: 1,
-    freshnessExpiresAt: "2026-09-08T12:04:20.479Z",
-    rawRetentionExpiresAt: "2026-11-07T12:04:20.479Z",
-    redactedRequestFingerprint: "bb6302775c0afecf0b5e6d3c7e4bf89cdec4a2cfef01fbb80d2ea5ace234f0f7",
-    schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
-    governancePolicyVersion: "2026-07-15",
-    governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
-    topologySnapshotId: "capital-route-topology-20260809",
+    hubCommit: "9251acdcc563975e8757d61f03e398d10c935d8b", rawSizeBytes: rawArtifactBytes.length,
+    rawSha256: sha256(rawArtifactBytes), rawObjectUri: `oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260809/${sha256(rawArtifactBytes)}.json`,
+    snapshotId: "kric-subway-timetable-line4-pilot-20260809", previousSnapshotId: previousSnapshot.snapshotId,
+    collectedAt: "2026-08-09T12:04:20.479Z", serviceEffectiveUntil: "2026-12-31T00:00:00Z",
+    rowCount: 466, coverageCount: 1, freshnessExpiresAt: "2026-09-08T12:04:20.479Z",
+    rawRetentionExpiresAt: "2026-11-07T12:04:20.479Z", redactedRequestFingerprint: "bb6302775c0afecf0b5e6d3c7e4bf89cdec4a2cfef01fbb80d2ea5ace234f0f7",
+    schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", governancePolicyVersion: "2026-07-15",
+    governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70", topologySnapshotId: "capital-route-topology-20260809",
     topologyFileSha256: "a".repeat(64),
     topologyContentSha256: "b".repeat(64),
   };
@@ -220,9 +182,7 @@ test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence�
   assert.deepEqual(reviewedPack.routeServiceArtifactEvidence, []);
   assert.deepEqual(reviewedPack.movementPathCandidates, []);
   const syncedCanonical = syncCanonicalFixture(
-    await readJson("tools/datapack/release/capital-production-canonical-pack.json"),
-    reviewedPack,
-  );
+    await readJson("tools/datapack/release/capital-production-canonical-pack.json"), reviewedPack);
   const syncedCapital = syncedCanonical.packs.find(({ id }) => id === "capital");
   assert.equal(syncedCapital.sourceInventory.some(({ id }) => id === fareSourceId), true);
   assert.deepEqual(syncedCapital.officialOdFareQuotes, input.officialOdFareQuotes);
@@ -230,9 +190,7 @@ test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence�
 });
 
 test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route evidence를 제거한다", () => {
-  const canonical = {
-    packs: [
-      {
+  const canonical = { packs: [{
         id: "capital",
         facilities: [],
         dataQualityRecords: [],
@@ -253,16 +211,9 @@ test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route 
         routeServiceArtifactEvidence: [{ sourceId: "legacy-route-service" }],
         movementPathCandidates: [{ sourceId: "kric-station-elevator-movement" }],
         requiredTables: ["catalog_metadata"],
-        minimumTableRows: {
-          facilities: 0,
-          station_facility_evidence: 0,
-        },
-        metadata: {
-          productionCoverageEvidence: "[]",
-        },
-      },
-    ],
-  };
+        minimumTableRows: { facilities: 0, station_facility_evidence: 0 },
+        metadata: { productionCoverageEvidence: "[]" },
+      }] };
   const reviewedPack = {
     facilities: [],
     stationFacilityEvidence: [],
@@ -277,7 +228,7 @@ test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route 
     ],
     routeServiceArtifactEvidence: [],
     movementPathCandidates: [],
-    requiredTables: ["catalog_metadata", "official_od_fare_quotes"],
+    requiredTables: ["catalog_metadata"],
     metadata: {
       productionCoverageEvidence: "[]",
     },

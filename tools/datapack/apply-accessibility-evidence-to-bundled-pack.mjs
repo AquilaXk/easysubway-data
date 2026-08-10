@@ -206,6 +206,11 @@ export function applyEvidenceIfStale(sqlitePath, pack) {
 }
 
 export function syncCanonicalFixture(canonical, reviewedPack) {
+  if (!Array.isArray(reviewedPack?.sourceInventory)) throw new Error("reviewedPack.sourceInventory must be an array");
+  if (typeof reviewedPack.metadata?.productionCoverageEvidence !== "string") {
+    throw new Error("reviewedPack.metadata.productionCoverageEvidence must be a string");
+  }
+  const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
   const pack = canonical.packs?.find(({ id }) => id === "capital");
   if (!pack) throw new Error("canonical capital pack is missing");
   const retainedFacilities = (pack.facilities ?? []).filter(({ stationId, type, sourceId }) => !stationIds.includes(stationId)
@@ -240,7 +245,7 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     pack.metadata.movementPathCandidateCount = String(pack.movementPathCandidates.length);
   }
   const reviewedFareSourceIds = new Set([
-    ...(reviewedPack.sourceInventory ?? [])
+    ...reviewedPack.sourceInventory
       .filter(({ coverageScope }) => coverageScope?.sourceDomains?.includes("official_od_fares"))
       .map(({ id }) => id),
     ...(reviewedPack.officialOdFareQuotes ?? []).map(({ sourceId }) => sourceId),
@@ -257,7 +262,6 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     ...(pack.requiredTables ?? []),
     ...(reviewedPack.requiredTables ?? []),
   ])];
-  const productionCoverageEvidence = JSON.parse(reviewedPack.metadata.productionCoverageEvidence);
   pack.metadata.productionCoverageEvidence = JSON.stringify(productionCoverageEvidence.map((entry) => ({
     ...entry,
     sourceIds: entry.sourceIds.filter((sourceId) => !replacedSourceIds.has(sourceId) || sourceInventoryIds.has(sourceId)),
@@ -265,8 +269,10 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
   pack.minimumTableRows.facilities = pack.facilities.length;
   pack.minimumTableRows.station_facility_evidence = pack.stationFacilityEvidence.length;
   if (pack.officialOdFareQuotes.length > 0) {
+    if (!pack.requiredTables.includes("official_od_fare_quotes")) pack.requiredTables.push("official_od_fare_quotes");
     pack.minimumTableRows.official_od_fare_quotes = pack.officialOdFareQuotes.length;
   } else {
+    pack.requiredTables = pack.requiredTables.filter((table) => table !== "official_od_fare_quotes");
     delete pack.minimumTableRows.official_od_fare_quotes;
   }
   return canonical;

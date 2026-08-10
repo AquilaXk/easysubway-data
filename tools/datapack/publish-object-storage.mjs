@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, createHmac } from "node:crypto";
-import { open, readFile, unlink } from "node:fs/promises";
+import { lstat, open, readFile, unlink } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -486,7 +486,7 @@ async function fetchSourceRawObject(client, root, step) {
     requireString(step.destinationPath, "step.destinationPath"),
     "step.destinationPath",
   );
-  const outputPath = path.join(root, destinationPath);
+  const outputPath = await safeCreateNewOutputPath(root, destinationPath);
   let output;
   try {
     output = await open(outputPath, "wx", 0o600);
@@ -529,6 +529,20 @@ async function fetchSourceRawObject(client, root, step) {
       });
     }
   }
+}
+
+async function safeCreateNewOutputPath(root, destinationPath) {
+  const rootStat = await lstat(root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error("fetch destination root must be a real directory, not a symlink");
+  let parent = root;
+  for (const segment of path.posix.dirname(destinationPath).split("/")) {
+    if (segment === "." || segment === "") continue;
+    parent = path.join(parent, segment);
+    const stat = await lstat(parent);
+    if (stat.isSymbolicLink()) throw new Error(`${destinationPath} parent must not be a symlink`);
+    if (!stat.isDirectory()) throw new Error(`${destinationPath} parent must be a directory`);
+  }
+  return path.join(root, destinationPath);
 }
 
 function validatePlan(plan) {
