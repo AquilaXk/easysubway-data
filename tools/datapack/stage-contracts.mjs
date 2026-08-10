@@ -4,7 +4,7 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/main/contracts/bundles/data-contracts-v1.0.0.json";
+const bundleUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/9251acdcc563975e8757d61f03e398d10c935d8b/contracts/bundles/data-contracts-v1.0.0.json";
 const resourceNames = [
   "datapack/mobility-profile-policy.json",
   "datapack/datapack-freshness-sla.json",
