@@ -10,6 +10,14 @@ const mobileRepository = "AquilaXk/easysubway-mobile";
 const mobileRevision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
 const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 
+function namedWorkflowStep(yml, name) {
+  const marker = `      - name: ${name}\n`;
+  const start = yml.indexOf(marker);
+  assert.notEqual(start, -1, `${name} step을 찾지 못함`);
+  const next = yml.indexOf("\n      - name:", start + marker.length);
+  return yml.slice(start, next === -1 ? yml.length : next);
+}
+
 function fixtureStep(workflow) {
   const yml = readFileSync(path.join(root, workflow), "utf8");
   const block = yml.match(/- name: [^\n]*Checkout pinned Mobile fixture[\s\S]*?\n\s+- name:/)?.[0];
@@ -65,19 +73,22 @@ function fixtureStep(workflow) {
 
 test("CI는 pinned Mobile fixture workflow 계약을 standalone contracts에서 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  assert.match(ci, /node --test[\s\S]*tools\/ci\/mobile-fixture-staging-workflow\.test\.mjs/);
+  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
+  assert.match(standalone, /node --test[\s\S]*tools\/ci\/mobile-fixture-staging-workflow\.test\.mjs/);
 });
 
 test("CI는 TRANSFER topology admission contract를 standalone contracts에서 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  assert.match(ci, /node --test[\s\S]*tools\/datapack\/build-transfer-topology-admission\.test\.mjs/);
+  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-transfer-topology-admission\.test\.mjs/);
 });
 
 test("CI는 EXIT path admission contract를 standalone contracts에서 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
-  assert.match(ci, /node --test[\s\S]*tools\/datapack\/plan-kric-exit-path-collection\.test\.mjs/);
-  assert.match(ci, /node --test[\s\S]*tools\/datapack\/collect-kric-exit-path-provider-snapshot\.test\.mjs/);
-  assert.match(ci, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
+  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/plan-kric-exit-path-collection\.test\.mjs/);
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/collect-kric-exit-path-provider-snapshot\.test\.mjs/);
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
 });
 
 test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실행한다", () => {

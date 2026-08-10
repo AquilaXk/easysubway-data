@@ -238,6 +238,14 @@ test("provider transport·envelope·strict JSON·row drift는 partial snapshot�
     response: jsonResponse('{"header":{"resultCode":"00","resultCode":"00"},"body":[]}'),
     expected: /duplicate JSON key/,
   }, {
+    label: "unsafe positive integer",
+    response: jsonResponse(providerSuccessWithIntegerLiteral("9007199254740993")),
+    expected: /KRIC EXIT response must be strict UTF-8 JSON/,
+  }, {
+    label: "unsafe negative integer",
+    response: jsonResponse(providerSuccessWithIntegerLiteral("-9007199254740993")),
+    expected: /KRIC EXIT response must be strict UTF-8 JSON/,
+  }, {
     label: "oversized body",
     response: jsonResponse(JSON.stringify({
       header: { resultCode: "00" },
@@ -376,6 +384,11 @@ function providerSuccess(rows) {
 
 function providerNoData() {
   return JSON.stringify({ header: { resultCode: "03", resultMsg: "NO DATA" }, body: [] });
+}
+
+function providerSuccessWithIntegerLiteral(literal) {
+  return providerSuccess([{ ...providerRow("path-a", "1"), exitMvTpOrdr: "UNSAFE_INTEGER" }])
+    .replace('"UNSAFE_INTEGER"', literal);
 }
 
 function jsonResponse(raw) {

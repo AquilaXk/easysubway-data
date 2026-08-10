@@ -342,7 +342,7 @@ function parseStrictJson(raw) {
     if (!match) fail();
     index += match[0].length;
     const value = Number(match[0]);
-    if (!Number.isFinite(value)) fail();
+    if (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value))) fail();
     return value;
   };
   const parseValue = () => {
