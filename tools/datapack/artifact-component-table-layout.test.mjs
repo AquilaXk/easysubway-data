@@ -151,6 +151,37 @@ test("route service evidence tables는 server timetable component의 exact refer
   assert.deepEqual(components.accessibility.ownedTables, [
     "station_exits", "facilities", "facility_status_snapshots", "station_facility_evidence", "station_accessibility_summaries", "internal_route_nodes", "internal_route_edges", "station_pathway_nodes", "station_pathway_edges", "station_car_door_hints",
   ]);
+  assert.deepEqual(components.accessibility.generatedEvidence, {
+    stationLineAccessibility: {
+      table: "station_line_accessibility_evidence",
+      columns: ["materialization_digest", "canonical_json"],
+      rowCount: 1,
+      canonicalJson: "canonicalStationLineAccessibilityJson",
+      digest: {
+        field: "materializationDigest",
+        column: "materialization_digest",
+        input: "canonical-payload-without-self-digest",
+        algorithm: "sha256",
+      },
+    },
+    routeEdgeEvaluation: {
+      table: "route_accessibility_edge_evidence",
+      columns: ["evaluation_digest", "materialization_digest", "canonical_json"],
+      rowCount: 1,
+      canonicalJson: "canonicalRouteEdgeEvaluationJson",
+      digest: {
+        field: "evaluationDigest",
+        column: "evaluation_digest",
+        input: "canonical-payload-without-self-digest",
+        algorithm: "sha256",
+      },
+      materializationBinding: {
+        field: "materializationDigest",
+        column: "materialization_digest",
+        equals: "station_line_accessibility_evidence.materialization_digest",
+      },
+    },
+  });
   assert.deepEqual(components.fare.ownedTables, [
     "fare_zones", "fare_rules", "fare_discounts", "station_fare_zones", "official_od_fare_quotes",
   ]);

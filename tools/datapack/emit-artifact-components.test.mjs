@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -9,22 +10,41 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { emitArtifactComponents } from "./emit-artifact-components.mjs";
+import {
+  canonicalRouteEdgeEvaluationJson,
+  canonicalRideEdgeSetSha256,
+  evaluateRouteAccessibilityEdges,
+  routeEdgeSha256,
+} from "./evaluate-route-accessibility-edges.mjs";
+import {
+  canonicalStationLineAccessibilityJson,
+  materializeStationLineAccessibility,
+} from "./materialize-station-line-accessibility.mjs";
 
-test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit한다", async (t) => {
+const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
+
+test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "artifact-emitter-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const fixtureRoot = path.join(temp, "repository");
-  for (const relative of ["contracts/datapack", "tools/datapack/release", "tools/datapack/schema", "tools/datapack/source-governance-policy.json", "tools/datapack/source-inventory.json", "release/product-gates/datapack-freshness-sla.json", "tools/route-map/basemap-build-manifest.json", "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg"]) await cp(relative, path.join(fixtureRoot, relative), { recursive: true });
+  for (const relative of ["contracts/datapack", "tools/datapack/release", "tools/datapack/schema", "tools/datapack/source-governance-policy.json", "tools/datapack/source-inventory.json", "release/product-gates/datapack-freshness-sla.json", "release/product-gates/route-edge-evaluation-policy.json", "tools/route-map/basemap-build-manifest.json", "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg"]) await cp(relative, path.join(fixtureRoot, relative), { recursive: true });
   const source = path.join(temp, "source.sqlite");
   const db = new DatabaseSync(source);
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
-  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
+  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
   db.close();
   const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-03T15:00:00.000Z" };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
+  const buildSpec = JSON.parse(spec);
+  const routePolicyPath = path.join(fixtureRoot, "release/product-gates/route-edge-evaluation-policy.json");
+  const routePolicy = JSON.parse(await readFile(routePolicyPath, "utf8"));
+  routePolicy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256([]);
+  await writeFile(routePolicyPath, `${JSON.stringify(routePolicy, null, 2)}\n`);
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: hash(Buffer.from(canonicalJson(current))), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
-  const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: "2026-08-03T00:00:00.000+09:00", freshUntil: "2026-08-04T00:00:00.000+09:00", builtAt: "2026-08-03T00:00:00.000Z", keyId: "test-key", ...values });
+  const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
+  const routeEdgeInput = completeRouteEdgeInput(buildSpec.sourceSnapshotSetHash);
+  const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: "2026-08-03T00:00:00.000+09:00", freshUntil: "2026-08-04T00:00:00.000+09:00", builtAt: "2026-08-03T00:00:00.000Z", keyId: "test-key", evaluationAt: "2026-08-03T00:00:00.000Z", stationLineInput, routeEdgeInput, ...values });
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
   assert.deepEqual(paths, ["map-pack/manifest.json", "map-pack/payload/interchange-layout.json", "map-pack/payload/line-styles.json", "map-pack/payload/metropolitan.svg", "map-pack/payload/stations-layout.json", "server-route-bundle/compatibility.json", "server-route-bundle/manifest.signing-input.json", "server-route-bundle/payload/accessibility.sqlite.zst", "server-route-bundle/payload/fare.sqlite.zst", "server-route-bundle/payload/timetable.sqlite.zst", "server-route-bundle/payload/topology.sqlite.zst", "server-route-bundle/provenance.json", "station-catalog-pack/manifest.json", "station-catalog-pack/payload/catalog.sqlite"]);
@@ -34,6 +54,41 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
     assert.deepEqual(await readFile(path.join(temp, "one", file)), await readFile(path.join(temp, "two", file)), `two: ${file}`);
     assert.deepEqual(await readFile(path.join(temp, "one", file)), await readFile(path.join(temp, "three", file)), `three: ${file}`);
   }
+  for (const [name, mutate, pattern] of [
+    ["route-seed-extra-topology", (seed) => { seed.candidate.topologySha256 = "f".repeat(64); }, /route-edge seed candidate keys mismatch/],
+    ["route-seed-missing-version", (seed) => { delete seed.candidate.evaluatorVersion; }, /route-edge seed candidate keys mismatch/],
+    ["route-seed-bundle-mismatch", (seed) => { seed.candidate.candidateId = "other-bundle"; }, /route-edge seed candidate identity mismatch/],
+  ]) {
+    const seed = structuredClone(routeEdgeInput);
+    mutate(seed);
+    await assert.rejects(() => run(name, { routeEdgeInput: seed }), pattern);
+    assert.equal(await exists(path.join(temp, name)), false);
+  }
+  const stationLineInputPath = path.join(temp, "station-line-input.json");
+  const routeEdgeInputPath = path.join(temp, "route-edge-input.json");
+  const cliOutput = path.join(temp, "cli-output");
+  await writeFile(stationLineInputPath, canonicalJson(stationLineInput));
+  await writeFile(routeEdgeInputPath, canonicalJson(routeEdgeInput));
+  const cli = spawnSync(process.execPath, [
+    SCRIPT,
+    "--source-sqlite", source,
+    "--source-provenance", path.join(temp, "current.provenance.json"),
+    "--build-spec", "tools/datapack/release/candidate-build-spec.json",
+    "--output", cliOutput,
+    "--map-pack-id", "map-v1",
+    "--catalog-pack-id", "catalog-v1",
+    "--bundle-id", "bundle-v1",
+    "--release-sequence", "1",
+    "--active-from", "2026-08-03T00:00:00.000+09:00",
+    "--fresh-until", "2026-08-04T00:00:00.000+09:00",
+    "--built-at", "2026-08-03T00:00:00.000Z",
+    "--key-id", "test-key",
+    "--evaluation-at", "2026-08-03T00:00:00.000Z",
+    "--station-line-input", stationLineInputPath,
+    "--route-edge-input", routeEdgeInputPath,
+  ], { cwd: fixtureRoot, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual(await emittedPaths(cliOutput), paths);
   assert.deepEqual((await readdir(path.join(temp, "one"))).sort(), ["map-pack", "server-route-bundle", "station-catalog-pack"]);
   const mapRoot = path.join(temp, "one", "map-pack");
   const mapManifest = JSON.parse(await readFile(path.join(mapRoot, "manifest.json"), "utf8"));
@@ -86,6 +141,28 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
     for (const table of ["stations", "station_lines"]) {
       assert.deepEqual(tablePrimaryKey(componentDb, table), tablePrimaryKey(sourceDb, table));
       assert.deepEqual(groupedForeignKeys(componentDb, table), groupedForeignKeys(sourceDb, table));
+    }
+    if (component === "accessibility") {
+      const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: "2026-08-03T00:00:00.000Z" });
+      const evaluation = evaluateRouteAccessibilityEdges({
+        ...routeEdgeInput,
+        candidate: { ...routeEdgeInput.candidate, topologySha256: signingInput.topologySha256 },
+        evaluationAt: "2026-08-03T00:00:00.000Z",
+        materialization,
+      }, routePolicy);
+      assert.deepEqual(componentDb.prepare("PRAGMA table_info(station_line_accessibility_evidence)").all().map((column) => column.name), ["materialization_digest", "canonical_json"]);
+      assert.deepEqual(componentDb.prepare("PRAGMA table_info(route_accessibility_edge_evidence)").all().map((column) => column.name), ["evaluation_digest", "materialization_digest", "canonical_json"]);
+      assert.deepEqual({ ...componentDb.prepare("SELECT * FROM station_line_accessibility_evidence").get() }, {
+        materialization_digest: materialization.materializationDigest,
+        canonical_json: canonicalStationLineAccessibilityJson(materialization),
+      });
+      assert.deepEqual({ ...componentDb.prepare("SELECT * FROM route_accessibility_edge_evidence").get() }, {
+        evaluation_digest: evaluation.evaluationDigest,
+        materialization_digest: materialization.materializationDigest,
+        canonical_json: canonicalRouteEdgeEvaluationJson(evaluation),
+      });
+    } else {
+      assert.equal(componentDb.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('station_line_accessibility_evidence','route_accessibility_edge_evidence')").get().count, 0);
     }
     componentDb.close();
     assert.equal((await readFile(sqlite)).readUInt32BE(96), 3053000);
@@ -202,6 +279,64 @@ test("materialized SQLite에서 keyless 세 artifact를 deterministic하게 emit
 });
 
 function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+function completeStationLineInput(sourceSetSha256) {
+  const candidate = {
+    candidateId: "bundle-v1",
+    stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2"]))),
+    sourceSetSha256,
+    mappingContractVersion: "station-line-v1",
+    materializerVersion: "1",
+  };
+  const stationLines = [
+    { stationId: "s1", lineId: "l1", operatorId: "o1" },
+    { stationId: "s2", lineId: "l1", operatorId: "o1" },
+  ];
+  const evidenceRows = stationLines.flatMap((line) => ["FACILITY", "EXIT", "TRANSFER"].map((domain) => ({
+    ...candidate,
+    ...line,
+    domain,
+    state: domain === "TRANSFER" ? "NOT_APPLICABLE" : "VERIFIED_PRESENT",
+    sourceId: "fixture-source",
+    sourceSnapshotId: "fixture-snapshot",
+    evidenceRawSha256: "a".repeat(64),
+    providerRecordHash: "b".repeat(64),
+    capturedAt: "2026-08-02T00:00:00.000Z",
+    freshUntil: "2026-08-04T00:00:00.000Z",
+    provenanceId: "fixture-provenance",
+    licenseId: "fixture-license",
+    mappingContractVersion: candidate.mappingContractVersion,
+    materializerVersion: candidate.materializerVersion,
+    evidenceKind: domain === "TRANSFER" ? "CURRENT_APPLICABILITY_RULE" : "OBSERVED",
+    evidenceReason: domain === "TRANSFER" ? "no transfer boundary" : "official current evidence",
+  })));
+  return { candidate, stationLines, evidenceRows };
+}
+function completeRouteEdgeInput(sourceSetSha256) {
+  const rawEdge = {
+    edgeId: "ride-s1-s2",
+    edgeType: "RIDE",
+    fromNodeId: "s1:l1",
+    toNodeId: "s2:l1",
+    durationSeconds: 120,
+    distanceMeters: 1000,
+    servicePattern: "LOCAL",
+    serviceClass: "SUBWAY",
+  };
+  return {
+    candidate: {
+      candidateId: "bundle-v1",
+      stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2"]))),
+      sourceSetSha256,
+      policyVersion: "route-edge-evaluation-v1",
+      evaluatorVersion: "1",
+    },
+    stationLines: [
+      { stationId: "s1", lineId: "l1", operatorId: "o1", lineSequence: 1 },
+      { stationId: "s2", lineId: "l1", operatorId: "o1", lineSequence: 2 },
+    ],
+    routeEdges: [{ ...rawEdge, edgeSha256: routeEdgeSha256(rawEdge) }],
+  };
+}
 async function payloadDigest(artifact) {
   const payload = path.join(artifact, "payload");
   const inventory = [];

@@ -2,8 +2,10 @@
 import { execFile } from "node:child_process";
 import { lstat, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { zstdDecompressSync } from "node:zlib";
 
 import {
   canonicalJson,
@@ -90,6 +92,14 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   const artifactInventoryBytes = Buffer.from(canonicalJson(artifact.evidence));
   const materializationBytes = Buffer.from(canonicalStationLineAccessibilityJson(materialization));
   const evaluationBytes = Buffer.from(canonicalRouteEdgeEvaluationJson(evaluation));
+  await assertEmbeddedEvidence({
+    accessibilityPayloadBytes: artifact.accessibilityPayloadBytes,
+    evaluation,
+    evaluationBytes,
+    materialization,
+    materializationBytes,
+    outputParent,
+  });
   const final = buildServerRouteBundleFinal({
     candidate: {
       repository: "AquilaXk/easysubway-data",
@@ -216,6 +226,7 @@ async function inspectArtifact(artifactRoot, fixed) {
     signingInputSha256,
     signedManifestRawSha256,
     componentInventorySha256,
+    accessibilityPayloadBytes: payloadBytes[COMPONENTS.indexOf("accessibility")],
     evidence: canonicalObject({
       schemaVersion: 1,
       artifactKind: "server-route-bundle-artifact-inventory",
@@ -230,6 +241,68 @@ async function inspectArtifact(artifactRoot, fixed) {
       entries,
     }),
   };
+}
+
+async function assertEmbeddedEvidence(input) {
+  const temporary = await mkdtemp(path.join(input.outputParent, ".server-route-evidence-inspect-"));
+  const sqlitePath = path.join(temporary, "accessibility.sqlite");
+  let database;
+  try {
+    let sqliteBytes;
+    try {
+      sqliteBytes = zstdDecompressSync(input.accessibilityPayloadBytes);
+    } catch {
+      throw new Error("embedded accessibility evidence component is not valid Zstd");
+    }
+    await writeFile(sqlitePath, sqliteBytes, { flag: "wx" });
+    database = new DatabaseSync(sqlitePath, { open: true, readOnly: true });
+    if (database.prepare("PRAGMA user_version").get().user_version !== 19) {
+      throw new Error("embedded accessibility evidence SQLite user_version mismatch");
+    }
+    if (database.prepare("PRAGMA quick_check").all().some((row) => row.quick_check !== "ok")) {
+      throw new Error("embedded accessibility evidence SQLite quick_check failed");
+    }
+    if (database.prepare("PRAGMA foreign_key_check").all().length !== 0) {
+      throw new Error("embedded accessibility evidence foreign key mismatch");
+    }
+    assertEmbeddedTable(database, "station_line_accessibility_evidence", [
+      { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
+    ]);
+    assertEmbeddedTable(database, "route_accessibility_edge_evidence", [
+      { name: "evaluation_digest", type: "TEXT", notnull: 1, pk: 1 },
+      { name: "materialization_digest", type: "TEXT", notnull: 1, pk: 0 },
+      { name: "canonical_json", type: "TEXT", notnull: 1, pk: 0 },
+    ]);
+    const stationRows = database.prepare("SELECT materialization_digest, canonical_json FROM station_line_accessibility_evidence").all();
+    if (stationRows.length !== 1
+      || stationRows[0].materialization_digest !== input.materialization.materializationDigest
+      || stationRows[0].canonical_json !== input.materializationBytes.toString("utf8")) {
+      throw new Error("embedded station-line accessibility evidence mismatch");
+    }
+    const routeRows = database.prepare("SELECT evaluation_digest, materialization_digest, canonical_json FROM route_accessibility_edge_evidence").all();
+    if (routeRows.length !== 1
+      || routeRows[0].evaluation_digest !== input.evaluation.evaluationDigest
+      || routeRows[0].materialization_digest !== input.materialization.materializationDigest
+      || routeRows[0].canonical_json !== input.evaluationBytes.toString("utf8")) {
+      throw new Error("embedded route-edge evaluation evidence mismatch");
+    }
+  } finally {
+    database?.close();
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+function assertEmbeddedTable(database, table, expected) {
+  const actual = database.prepare(`PRAGMA table_xinfo(${table})`).all().map((column) => ({
+    name: column.name,
+    type: column.type,
+    notnull: column.notnull,
+    pk: column.pk,
+  }));
+  if (canonicalJson(actual) !== canonicalJson(expected)) {
+    throw new Error(`embedded ${table} schema mismatch`);
+  }
 }
 
 function validateMetadata({ manifest, provenance, compatibility, fixed }) {
