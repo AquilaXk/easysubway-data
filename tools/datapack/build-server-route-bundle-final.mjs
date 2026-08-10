@@ -8,7 +8,11 @@ import { promisify } from "node:util";
 import {
   canonicalJson,
   sha256,
+  signingKeyId,
+  signingPublicKey,
   validateArtifactComponentManifest,
+  verifyRsaSha256Signature,
+  withoutSignature,
 } from "./lib/manifest-validation.mjs";
 import {
   buildServerRouteBundleFinal,
@@ -26,8 +30,10 @@ import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
-const ARTIFACT_ROOT_FILES = ["compatibility.json", "manifest.signing-input.json", "payload", "provenance.json"];
+const KEYLESS_ARTIFACT_ROOT_FILES = ["compatibility.json", "manifest.signing-input.json", "payload", "provenance.json"];
+const SIGNED_ARTIFACT_ROOT_FILES = ["compatibility.json", "manifest.json", "manifest.signing-input.json", "payload", "provenance.json"];
 const COMPONENTS = ["accessibility", "fare", "timetable", "topology"];
+const SIGNATURE_ALGORITHM = "rsa-sha256-server-route-bundle-v1";
 const PAYLOAD_FILES = COMPONENTS.map((component) => `${component}.sqlite.zst`);
 const OUTPUT_FILES = [
   "artifact-inventory.json",
@@ -93,7 +99,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
       stationSetSha256: artifact.manifest.stationSetSha256,
       sourceSnapshotSetHash: artifact.provenance.sourceSnapshotSetHash,
       signingInputSha256: artifact.signingInputSha256,
-      signedManifestRawSha256: null,
+      signedManifestRawSha256: artifact.signedManifestRawSha256,
       payloadRootSha256: artifact.manifest.payloadSha256,
       componentInventorySha256: artifact.componentInventorySha256,
       componentDigests: Object.fromEntries(COMPONENTS.map((component) => [
@@ -115,7 +121,9 @@ export async function buildServerRouteBundleFinalEvidence(input) {
         evidenceSha256: sha256(evaluationBytes),
       },
       artifactInventory: { state: "PASS", evidenceSha256: sha256(artifactInventoryBytes) },
-      signature: { state: "UNAVAILABLE", evidenceSha256: null },
+      signature: artifact.signedManifestRawSha256 === null
+        ? { state: "UNAVAILABLE", evidenceSha256: null }
+        : { state: "PASS", evidenceSha256: artifact.signedManifestRawSha256 },
       publication: { state: "UNAVAILABLE", evidenceSha256: null },
       rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
     },
@@ -143,7 +151,11 @@ export async function buildServerRouteBundleFinalEvidence(input) {
 }
 
 async function inspectArtifact(artifactRoot, fixed) {
-  await assertDirectoryEntries(artifactRoot, ARTIFACT_ROOT_FILES, "artifact file set");
+  const rootEntries = (await readdir(artifactRoot)).sort(bytewise);
+  const signed = canonicalJson(rootEntries) === canonicalJson([...SIGNED_ARTIFACT_ROOT_FILES].sort(bytewise));
+  if (!signed && canonicalJson(rootEntries) !== canonicalJson([...KEYLESS_ARTIFACT_ROOT_FILES].sort(bytewise))) {
+    throw new Error("artifact file set mismatch");
+  }
   const payloadRoot = await realDirectory(path.join(artifactRoot, "payload"), "artifact payload root");
   await assertDirectoryEntries(payloadRoot, PAYLOAD_FILES, "artifact payload file set");
   const [signingInputBytes, provenanceBytes, compatibilityBytes, ...payloadBytes] = await Promise.all([
@@ -159,8 +171,23 @@ async function inspectArtifact(artifactRoot, fixed) {
   assertKeys(manifest, SIGNING_INPUT_KEYS, "manifest signing input keys");
   validateArtifactComponentManifest({
     ...manifest,
-    signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: "AA" },
+    signature: { algorithm: SIGNATURE_ALGORITHM, value: "AA" },
   });
+  let signedManifestRawSha256 = null;
+  if (signed) {
+    const manifestBytes = await readNonEmptyRegular(path.join(artifactRoot, "manifest.json"), "signed manifest");
+    const signedManifest = parseCanonicalJson(manifestBytes, "signed manifest");
+    validateArtifactComponentManifest(signedManifest);
+    if (!Buffer.from(canonicalJson(withoutSignature(signedManifest))).equals(signingInputBytes)) {
+      throw new Error("signed manifest does not match signing input");
+    }
+    if (signedManifest.keyId !== signingKeyId()) throw new Error("signed manifest keyId mismatch");
+    if (signedManifest.signature.algorithm !== SIGNATURE_ALGORITHM
+      || !verifyRsaSha256Signature(signingPublicKey(), signingInputBytes, signedManifest.signature.value)) {
+      throw new Error("signed manifest signature mismatch");
+    }
+    signedManifestRawSha256 = sha256(manifestBytes);
+  }
   const provenance = parseCanonicalJson(provenanceBytes, "provenance");
   const compatibility = parseCanonicalJson(compatibilityBytes, "compatibility");
   validateMetadata({ manifest, provenance, compatibility, fixed });
@@ -187,6 +214,7 @@ async function inspectArtifact(artifactRoot, fixed) {
     provenance,
     compatibility,
     signingInputSha256,
+    signedManifestRawSha256,
     componentInventorySha256,
     evidence: canonicalObject({
       schemaVersion: 1,
@@ -195,6 +223,7 @@ async function inspectArtifact(artifactRoot, fixed) {
       releaseSequence: manifest.releaseSequence,
       stationSetSha256: manifest.stationSetSha256,
       signingInputSha256,
+      signedManifestRawSha256,
       provenanceSha256: sha256(provenanceBytes),
       compatibilitySha256: sha256(compatibilityBytes),
       componentInventorySha256,
