@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Server route bundle consumer handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactKind",
+    "manifest",
+    "sourceSnapshotSetHash",
+    "publicationReceipt",
+    "release",
+    "backendAdmission",
+    "platformRelease",
+    "handoffSha256"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "server-route-bundle-consumer-handoff" },
+    "manifest": {
+      "allOf": [
+        { "$ref": "artifact-component-manifest.schema.json" },
+        {
+          "type": "object",
+          "required": ["artifactKind"],
+          "properties": { "artifactKind": { "const": "server-route-bundle" } }
+        }
+      ]
+    },
+    "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
+    "publicationReceipt": { "$ref": "server-route-bundle-publication-receipt.schema.json" },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "finalSha256",
+        "finalRawSha256",
+        "publicationReceiptSha256",
+        "publicationReceiptRawSha256",
+        "promotionEvidenceSha256"
+      ],
+      "properties": {
+        "result": { "const": "GO" },
+        "finalSha256": { "$ref": "#/$defs/sha256" },
+        "finalRawSha256": { "$ref": "#/$defs/sha256" },
+        "publicationReceiptSha256": { "$ref": "#/$defs/sha256" },
+        "publicationReceiptRawSha256": { "$ref": "#/$defs/sha256" },
+        "promotionEvidenceSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "backendAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestSha256",
+        "finalEvidenceReference",
+        "promotionEvidenceReference",
+        "immutablePublicationReceiptIdentity"
+      ],
+      "properties": {
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "finalEvidenceReference": { "$ref": "#/$defs/sha256Reference" },
+        "promotionEvidenceReference": { "$ref": "#/$defs/sha256Reference" },
+        "immutablePublicationReceiptIdentity": { "$ref": "#/$defs/sha256Reference" }
+      }
+    },
+    "platformRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverRouteBundleDigest"],
+      "properties": {
+        "serverRouteBundleDigest": { "$ref": "#/$defs/sha256Reference" }
+      }
+    },
+    "handoffSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "sha256Reference": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}
