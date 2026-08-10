@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,12 +20,16 @@ import {
   canonicalRideEdgeSetSha256,
   routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
+import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const FRESH_AT = "2026-08-07T00:00:00.000Z";
 const STALE_AT = "2026-08-10T00:00:00.000Z";
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCRIPT = path.resolve("tools/datapack/build-server-route-bundle-final.mjs");
+const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "pem" });
 
 test("keyless bytes와 current #8/#9 evidence를 deterministic NO_GO FINAL로 결속한다", async (t) => {
   const fixture = await createFixture(t);
@@ -83,6 +87,40 @@ test("keyless bytes와 current #8/#9 evidence를 deterministic NO_GO FINAL로 �
     "payload/topology.sqlite.zst",
   ]);
   assert.equal(inventory.componentInventorySha256, fixture.manifest.payloadSha256);
+});
+
+test("current-key signed manifest는 signature gate만 닫고 publication·parity NO_GO를 유지한다", async (t) => {
+  const fixture = await createFixture(t);
+  installSigningEnvironment(t);
+  const signedRoot = path.join(fixture.temp, "signed-bundle");
+  await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
+  fixture.artifactRoot = signedRoot;
+  const output = path.join(fixture.temp, "signed-final");
+  await build(fixture, output, FRESH_AT);
+
+  const manifestSha256 = await fileSha(path.join(signedRoot, "manifest.json"));
+  const final = await readJson(path.join(output, "server-route-bundle-final.json"));
+  assert.equal(final.candidate.signedManifestRawSha256, manifestSha256);
+  assert.deepEqual(final.gates.signature, { state: "PASS", evidenceSha256: manifestSha256 });
+  assert.deepEqual(final.blockers, ["publication:UNAVAILABLE", "rebuildParityPromotion:UNAVAILABLE"]);
+  assert.equal(final.result, "NO_GO");
+  const inventory = await readJson(path.join(output, "artifact-inventory.json"));
+  assert.equal(inventory.signedManifestRawSha256, manifestSha256);
+  assert.doesNotThrow(() => validateServerRouteBundleFinal(final));
+
+  const manifestPath = path.join(signedRoot, "manifest.json");
+  const manifest = await readJson(manifestPath);
+  await writeCanonical(manifestPath, { ...manifest, bundleId: "other-bundle" });
+  const driftOutput = path.join(fixture.temp, "manifest-drift");
+  await assert.rejects(() => build(fixture, driftOutput, FRESH_AT), /signed manifest does not match signing input/);
+  await assert.rejects(() => readFile(driftOutput), /ENOENT/);
+
+  const head = manifest.signature.value[0];
+  manifest.signature.value = `${head === "A" ? "B" : "A"}${manifest.signature.value.slice(1)}`;
+  await writeCanonical(manifestPath, manifest);
+  const rejectedOutput = path.join(fixture.temp, "invalid-signature");
+  await assert.rejects(() => build(fixture, rejectedOutput, FRESH_AT), /signed manifest signature mismatch/);
+  await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
 });
 
 test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다", async (t) => {
@@ -426,6 +464,24 @@ async function build(fixture, output, evaluationAt) {
     routeEdgeInput: fixture.routeEdgeInput,
     evaluationAt,
     output,
+  });
+}
+
+function installSigningEnvironment(t) {
+  const names = [
+    "EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM",
+    "EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM",
+    "EASYSUBWAY_DATAPACK_SIGNING_KEY_ID",
+  ];
+  const before = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM = signingPrivateKey;
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM = signingPublicKey;
+  process.env.EASYSUBWAY_DATAPACK_SIGNING_KEY_ID = "production-v1";
+  t.after(() => {
+    for (const name of names) {
+      if (before[name] === undefined) delete process.env[name];
+      else process.env[name] = before[name];
+    }
   });
 }
 
