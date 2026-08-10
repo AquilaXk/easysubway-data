@@ -76,16 +76,26 @@ function buildFixture(inventory, input) {
   );
   const routeMapPositions = routeMapPositionRows(input.routeMapPositions ?? [], allowedSourceIds, mappingBySourceKey);
   const transitSchedule = transitScheduleRows(input);
+  const officialOdFareQuotes = optionalRows(input.officialOdFareQuotes, "officialOdFareQuotes");
+  const routeServiceArtifactEvidence = optionalRows(
+    input.routeServiceArtifactEvidence,
+    "routeServiceArtifactEvidence",
+  );
   validateTransitStopTimesFollowLineSequence(transitSchedule.transitStopTimes, stationLines, input.lines ?? []);
   const transitScheduleTableRows = transitScheduleMinimumTableRows(transitSchedule);
   let scheduleProvenance = null;
-  if (isProductionPack && Object.keys(transitScheduleTableRows).length > 0) {
+  const hasSelectedScheduleSource = selectedSources.some((source) =>
+    sourceDomainEnabled([source], "schedule_timetable"));
+  if (isProductionPack && (hasSelectedScheduleSource || Object.keys(transitScheduleTableRows).length > 0)) {
     scheduleProvenance = validateProductionScheduleProvenance(input.scheduleProvenance, selectedSources, allowedSourceIds);
+    if (hasSelectedScheduleSource && !hasTimetableRows(transitSchedule)) {
+      throw new Error("production schedule source requires non-empty transitRoutes, transitTrips, and transitStopTimes");
+    }
   }
   const transitScheduleWithProvenance = scheduleProvenance
     ? transitScheduleRowsWithProvenance(transitSchedule, scheduleProvenance)
     : transitSchedule;
-  validateSelectedSourceRows(input, sourceIds);
+  validateSelectedSourceRows(input, sourceIds, transitSchedule, scheduleProvenance);
   validateSupportedScopeDenominator(input, stationRows, networkEdges, facilities, movementCandidates, routeMapPositions);
   validateSupportedFacilityCoverage(input, stationRows, stationFacilityEvidence);
   const requiresRouteMapPositions = sourceDomainEnabled(selectedSources, "route_map_positions");
@@ -119,6 +129,7 @@ function buildFixture(inventory, input) {
           "network_edges",
           ...(requiresRouteMapPositions ? ["route_map_positions"] : []),
           ...Object.keys(transitScheduleTableRows),
+          ...(officialOdFareQuotes.length > 0 ? ["official_od_fare_quotes"] : []),
           "facilities",
           "station_facility_evidence",
         ]),
@@ -131,6 +142,7 @@ function buildFixture(inventory, input) {
           network_edges: productionMinimumRows?.network_edges ?? networkEdges.length,
           ...(requiresRouteMapPositions ? { route_map_positions: routeMapPositions.length } : {}),
           ...transitScheduleTableRows,
+          ...(officialOdFareQuotes.length > 0 ? { official_od_fare_quotes: officialOdFareQuotes.length } : {}),
           facilities: productionMinimumRows?.facilities ?? facilities.length,
           station_facility_evidence: stationFacilityEvidence.length,
         },
@@ -160,6 +172,8 @@ function buildFixture(inventory, input) {
         facilities,
         stationFacilityEvidence,
         ...transitScheduleWithProvenance,
+        officialOdFareQuotes,
+        routeServiceArtifactEvidence,
         movementPathCandidates: movementCandidates,
         stationAccessibilitySummaries: input.stationAccessibilitySummaries ?? [],
         routeRegressionScope: input.routeRegressionScope,
@@ -258,11 +272,12 @@ function addOperatorCoverageKeys(sourceId, coverage, regionId, supportedOperator
   }
 }
 
-function validateSelectedSourceRows(input, sourceIds) {
+function validateSelectedSourceRows(input, sourceIds, transitSchedule, scheduleProvenance) {
   if ((input.pack.artifactKind ?? "fixture") !== "production") {
     return;
   }
   const counts = new Map(sourceIds.map((sourceId) => [sourceId, 0]));
+  const allowedSourceIds = new Set(sourceIds);
   const add = (sourceId) => {
     if (counts.has(sourceId)) {
       counts.set(sourceId, counts.get(sourceId) + 1);
@@ -273,6 +288,14 @@ function validateSelectedSourceRows(input, sourceIds) {
   for (const row of input.facilityRows ?? []) add(row.sourceId ?? row.station?.sourceId);
   for (const row of input.movementPathCandidates ?? []) add(row.sourceId);
   for (const row of input.routeMapPositions ?? []) add(row.sourceId);
+  for (const row of input.officialOdFareQuotes ?? []) {
+    const sourceId = requiredString(row.sourceId, "officialOdFareQuotes.sourceId");
+    if (!allowedSourceIds.has(sourceId)) {
+      throw new Error(`officialOdFareQuotes sourceId must be selected: ${sourceId}`);
+    }
+    add(sourceId);
+  }
+  if (scheduleProvenance && hasTimetableRows(transitSchedule)) add(scheduleProvenance.sourceId);
   for (const sourceId of sourceIds) {
     if ((counts.get(sourceId) ?? 0) === 0) {
       throw new Error(`selected production source has no row provenance: ${sourceId}`);
@@ -280,10 +303,19 @@ function validateSelectedSourceRows(input, sourceIds) {
   }
 }
 
+function hasTimetableRows(rows) {
+  return rows.transitRoutes.length > 0
+    && rows.transitTrips.length > 0
+    && rows.transitStopTimes.length > 0;
+}
+
 function validateProductionSourceSelection(selectedSources, isProductionPack) {
   if (!isProductionPack) return;
   for (const source of selectedSources) {
-    if (source.productionUseAllowed === false) {
+    const coversAccessibilityFacilities = source.coverageScope?.sourceDomains
+      ?.includes("accessibility_facilities") === true;
+    if (source.productionUseAllowed === false
+      || (coversAccessibilityFacilities && source.capabilities?.facility?.productionUseAllowed !== true)) {
       throw new Error(`${source.id} source inventory is provenance-only and cannot be selected for production rows`);
     }
   }
@@ -1389,13 +1421,20 @@ function validateProductionScheduleProvenance(provenance, selectedSources, allow
   if (source.admissionEvidence?.quotaEvidence?.productionUseAllowed !== true) {
     throw new Error(`scheduleProvenance source quota does not allow production schedule use: ${sourceId}`);
   }
-  requiredString(provenance.sourceSnapshotId, "scheduleProvenance.sourceSnapshotId");
+  const sourceSnapshotId = requiredString(provenance.sourceSnapshotId, "scheduleProvenance.sourceSnapshotId");
+  const admittedSnapshotId = requiredString(
+    source.admissionEvidence?.snapshotId,
+    `source admission snapshotId: ${sourceId}`,
+  );
+  if (sourceSnapshotId !== admittedSnapshotId) {
+    throw new Error(`scheduleProvenance.sourceSnapshotId must match selected source admission snapshot: ${sourceId}`);
+  }
   productionEvidenceHash(provenance.providerRecordHash, true, sourceId, "scheduleProvenance.providerRecordHash");
   productionEvidenceHash(provenance.evidenceHash, true, sourceId, "scheduleProvenance.evidenceHash");
   requiredString(provenance.retrievedAt, "scheduleProvenance.retrievedAt");
   return {
     sourceId,
-    sourceSnapshotId: provenance.sourceSnapshotId,
+    sourceSnapshotId,
     providerRecordHash: provenance.providerRecordHash,
     evidenceHash: provenance.evidenceHash,
     retrievedAt: provenance.retrievedAt,

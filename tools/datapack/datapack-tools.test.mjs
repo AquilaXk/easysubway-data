@@ -16,6 +16,7 @@ import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { routeServiceEvidenceSnapshot } from "./lib/route-service-evidence-preservation.mjs";
+import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -18176,6 +18177,18 @@ async function writeCurrentItxReleaseInputs(
   const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
 
+  const currentAdmission = JSON.parse(await readFile(
+    "tools/datapack/itx-current-network-edge-admission-20260810.json", "utf8",
+  ));
+  Object.assign(currentAdmission, { artifactId: "itx-current-network-edge-admission-20260805",
+    serviceDate: "20260805", observedAt, freshUntil: "2026-08-06T00:00:00+09:00",
+    previousArtifactSha256: sha256(sourceBytes) });
+  const { evidenceHash: _currentEvidenceHash, ...currentWithoutEvidenceHash } = currentAdmission;
+  currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(currentWithoutEvidenceHash)));
+  const currentAdmissionPath = path.join(workspace, "itx-current-admission.json");
+  const currentAdmissionBytes = Buffer.from(`${JSON.stringify(currentAdmission)}\n`);
+  await writeFile(currentAdmissionPath, currentAdmissionBytes);
+
   const topologyEvidence = JSON.parse(await readFile("tools/datapack/itx-cheongchun-topology-evidence.json", "utf8"));
   const contract = JSON.parse(await readFile("tools/datapack/itx-cheongchun-coverage-contract.json", "utf8"));
   const admission = contract.officialEvidence.korailCompletenessAdmission;
@@ -18194,7 +18207,7 @@ async function writeCurrentItxReleaseInputs(
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil,
     promotion: {
-      mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+      mode: "UNCHANGED_AUTO",
       previousArtifactSha256: null,
       previousArtifactPath: null,
       approvalUrl: "https://example.test/itx-current-admission",
@@ -18222,12 +18235,33 @@ async function writeCurrentItxReleaseInputs(
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   const buildSpec = JSON.parse(await readFile("tools/datapack/release/candidate-build-spec.json", "utf8"));
+  const candidateTopology = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path, "utf8"));
+  const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
+  const snapshotPaths = sourceInventory.sources.flatMap(({ routeMapAdmissionEvidence: evidence }) => evidence?.snapshotPath ?? []);
+  const snapshotBytesByPath = new Map(await Promise.all(snapshotPaths.map(async (snapshotPath) =>
+    [snapshotPath, await readFile(snapshotPath)])));
+  const currentInventory = withCurrentCapitalTopologyAdmissions({ inventory: sourceInventory,
+    topology: candidateTopology, topologySnapshotId: buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
+    reviewedAt: candidateTopology.capturedAt, snapshotBytesByPath });
+  const currentInventoryPath = path.join(workspace, "source-inventory.json");
+  const currentInventoryBytes = Buffer.from(`${JSON.stringify(currentInventory)}\n`);
+  await writeFile(currentInventoryPath, currentInventoryBytes);
   buildSpec.fixturePath = fixturePath;
+  buildSpec.sourceInventorySha256 = sha256(Buffer.from(JSON.stringify(currentInventory)));
+  buildSpec.networkEdgeEvidence.sourceInventory = { path: currentInventoryPath, sha256: sha256(currentInventoryBytes) };
+  Object.assign(buildSpec.networkEdgeEvidence.capitalTopologyAdmission, {
+    snapshotId: buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
+    contentSha256: candidateTopology.contentSha256, reviewedAt: candidateTopology.capturedAt,
+    reverifiedAt: candidateTopology.capturedAt, freshUntil: candidateTopology.freshUntil,
+  });
   buildSpec.itxTopologyEvidencePath = topologyEvidencePath;
   buildSpec.itxTopologyEvidenceSha256 = sha256(topologyEvidenceBytes);
   buildSpec.networkEdgeEvidence.itxCoverageContract = {
     path: contractPath,
     sha256: sha256(contractBytes),
+  };
+  buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission = {
+    path: currentAdmissionPath, sha256: sha256(currentAdmissionBytes),
   };
   const buildSpecPath = path.join(workspace, "build-spec.json");
   await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);

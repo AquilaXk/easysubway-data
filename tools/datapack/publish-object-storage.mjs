@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, createHmac } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, open, readFile, unlink } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -109,6 +109,13 @@ async function main() {
           || sha256(stored.body) !== step.sha256) {
           throw new Error(`${step.objectKey} uploaded checksum mismatch`);
         }
+      }
+      continue;
+    }
+
+    if (step.type === "fetch-source-raw-object") {
+      if (!dryRun && !verifyOnly) {
+        await fetchSourceRawObject(client, root, step);
       }
       continue;
     }
@@ -474,6 +481,70 @@ async function readAndVerifySource(root, step) {
   return bytes;
 }
 
+async function fetchSourceRawObject(client, root, step) {
+  const destinationPath = safeRelativeObjectPath(
+    requireString(step.destinationPath, "step.destinationPath"),
+    "step.destinationPath",
+  );
+  const outputPath = await safeCreateNewOutputPath(root, destinationPath);
+  let output;
+  try {
+    output = await open(outputPath, "wx", 0o600);
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      throw new Error(`${destinationPath} create-new destination already exists`);
+    }
+    throw error;
+  }
+
+  let complete = false;
+  try {
+    const stored = await client.readObject(step.objectKey);
+    if (!stored.exists) {
+      throw new Error(`${step.objectKey} source object is unavailable`);
+    }
+    if (stored.body.length !== step.sizeBytes) {
+      throw new Error(`${step.objectKey} source size mismatch`);
+    }
+    if (sha256(stored.body) !== step.sha256) {
+      throw new Error(`${step.objectKey} source checksum mismatch`);
+    }
+    await output.writeFile(stored.body);
+    await output.sync();
+    await output.close();
+    output = null;
+
+    const written = await readFile(outputPath);
+    if (written.length !== step.sizeBytes || sha256(written) !== step.sha256) {
+      throw new Error(`${step.objectKey} downloaded file checksum mismatch`);
+    }
+    complete = true;
+  } finally {
+    if (output) {
+      await output.close().catch(() => {});
+    }
+    if (!complete) {
+      await unlink(outputPath).catch((error) => {
+        if (error?.code !== "ENOENT") throw error;
+      });
+    }
+  }
+}
+
+async function safeCreateNewOutputPath(root, destinationPath) {
+  const rootStat = await lstat(root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error("fetch destination root must be a real directory, not a symlink");
+  let parent = root;
+  for (const segment of path.posix.dirname(destinationPath).split("/")) {
+    if (segment === "." || segment === "") continue;
+    parent = path.join(parent, segment);
+    const stat = await lstat(parent);
+    if (stat.isSymbolicLink()) throw new Error(`${destinationPath} parent must not be a symlink`);
+    if (!stat.isDirectory()) throw new Error(`${destinationPath} parent must be a directory`);
+  }
+  return path.join(root, destinationPath);
+}
+
 function validatePlan(plan) {
   if (!plan || typeof plan !== "object" || !Array.isArray(plan.steps) || plan.steps.length === 0) {
     throw new Error("publish plan steps must be a non-empty array");
@@ -484,6 +555,12 @@ function validatePlan(plan) {
     safeRelativeObjectPath(step.objectKey, "step.objectKey");
     if (step.sourcePath !== undefined) {
       safeRelativeObjectPath(step.sourcePath, "step.sourcePath");
+    }
+    if (step.destinationPath !== undefined) {
+      safeRelativeObjectPath(step.destinationPath, "step.destinationPath");
+    }
+    if (step.type === "fetch-source-raw-object" && step.destinationPath === undefined) {
+      throw new Error("fetch-source-raw-object destinationPath is required");
     }
     if (step.sha256 !== undefined && !/^[a-f0-9]{64}$/.test(step.sha256)) {
       throw new Error(`${step.objectKey} sha256 must be lowercase hex`);

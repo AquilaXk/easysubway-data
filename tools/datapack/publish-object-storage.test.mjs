@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -253,6 +253,71 @@ test("OCI PAR raw source 객체는 조건부 생성 후 전체 바이트로 재�
   } finally {
     mock.server.close();
     await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("OCI raw source 객체는 exact bytes를 create-new로만 내려받는다", async () => {
+  const mock = await startMockStorage();
+  const workspace = await mkdtemp(path.join(tmpdir(), "fetch-source-raw-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "fetch-source-outside-"));
+  const baseUrl = `http://127.0.0.1:${mock.port}`;
+  const objectKey = `source-raw/kric-subway-timetable/20260809/${"d".repeat(64)}.json`;
+  const destinationPath = "download/kric.json";
+  try {
+    const rawBytes = Buffer.from(JSON.stringify({
+      artifactKind: "kric-line4-timetable-collection",
+      sourceSnapshotId: "kric-subway-timetable-line4-pilot-20260809",
+    }));
+    mock.objects.set(objectKey, {
+      body: rawBytes,
+      sha256: sha256(rawBytes),
+      cacheControl: "public, max-age=31536000, immutable",
+    });
+    await mkdir(path.join(workspace, "download"), { recursive: true });
+    const planPath = path.join(workspace, "plan.json");
+    const step = {
+      type: "fetch-source-raw-object",
+      objectKey,
+      destinationPath,
+      sha256: sha256(rawBytes),
+      sizeBytes: rawBytes.length,
+      immutable: true,
+    };
+    await writeFile(planPath, JSON.stringify({
+      schemaVersion: 2,
+      mode: "object-storage-preflight",
+      steps: [step],
+    }));
+
+    await runPublish(planPath, workspace, baseUrl);
+    assert.deepEqual(await readFile(path.join(workspace, destinationPath)), rawBytes);
+
+    await assert.rejects(runPublish(planPath, workspace, baseUrl), /exist|create-new|EEXIST/i);
+    assert.deepEqual(await readFile(path.join(workspace, destinationPath)), rawBytes);
+
+    await symlink(outside, path.join(workspace, "download", "escape"), "dir");
+    await writeFile(planPath, JSON.stringify({ schemaVersion: 2, mode: "object-storage-preflight",
+      steps: [{ ...step, destinationPath: "download/escape/kric.json" }] }));
+    await assert.rejects(runPublish(planPath, workspace, baseUrl), /symlink/);
+    await assert.rejects(readFile(path.join(outside, "kric.json")), { code: "ENOENT" });
+
+    const mismatchPath = "download/mismatch.json";
+    mock.objects.set(objectKey, {
+      body: Buffer.from("different"),
+      sha256: sha256(rawBytes),
+      cacheControl: "public, max-age=31536000, immutable",
+    });
+    await writeFile(planPath, JSON.stringify({
+      schemaVersion: 2,
+      mode: "object-storage-preflight",
+      steps: [{ ...step, destinationPath: mismatchPath }],
+    }));
+    await assert.rejects(runPublish(planPath, workspace, baseUrl), /size mismatch|checksum mismatch/);
+    await assert.rejects(readFile(path.join(workspace, mismatchPath)), { code: "ENOENT" });
+  } finally {
+    mock.server.close();
+    await rm(workspace, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
   }
 });
 

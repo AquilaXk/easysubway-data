@@ -124,7 +124,7 @@ test("current topology에 없는 station은 input을 변경하지 않고 거부�
   assert.deepEqual(values.inventory, before);
 });
 
-test("current topology station이 position snapshot에 없으면 input을 변경하지 않고 거부한다", () => {
+test("position snapshot의 declared station subset은 좌표를 추정하지 않고 current topology에 결속된다", () => {
   const values = fixture();
   const snapshot = JSON.parse(values.snapshotBytes);
   snapshot.positions.pop();
@@ -133,9 +133,25 @@ test("current topology station이 position snapshot에 없으면 input을 변경
   const evidence = values.inventory.sources[0].routeMapAdmissionEvidence;
   evidence.snapshotSha256 = sha256(values.snapshotBytes);
   evidence.stationCount = 1;
+
+  const result = rebind(values);
+  assert.equal(
+    result.sources[0].routeMapAdmissionEvidence.currentTopologyAdmission.topologySnapshotId,
+    topologySnapshotId,
+  );
+  assert.equal(snapshot.positions.length, 1);
+});
+
+test("position snapshot의 duplicate station은 input을 변경하지 않고 거부한다", () => {
+  const values = fixture();
+  const snapshot = JSON.parse(values.snapshotBytes);
+  snapshot.positions[1] = { ...snapshot.positions[0] };
+  values.snapshotBytes = Buffer.from(JSON.stringify(snapshot));
+  const evidence = values.inventory.sources[0].routeMapAdmissionEvidence;
+  evidence.snapshotSha256 = sha256(values.snapshotBytes);
   const before = structuredClone(values.inventory);
 
-  assert.throws(() => rebind(values), /station coverage mismatch/);
+  assert.throws(() => rebind(values), /duplicate position/);
   assert.deepEqual(values.inventory, before);
 });
 
@@ -169,7 +185,7 @@ test("capital topology admission 대상 source가 없으면 input을 변경하�
   assert.deepEqual(values.inventory, before);
 });
 
-test("source inventory schema는 current topology admission을 closed optional migration field로 고정한다", async () => {
+test("source inventory schema는 capital topology source에 current admission을 필수화한다", async () => {
   const schema = JSON.parse(await readFile(
     path.join(root, "contracts/datapack/source-inventory.schema.json"),
     "utf8",
@@ -177,7 +193,13 @@ test("source inventory schema는 current topology admission을 closed optional m
   const routeMapEvidence = schema.properties.sources.items.properties.routeMapAdmissionEvidence;
   const current = routeMapEvidence.properties.currentTopologyAdmission;
 
-  assert.equal(routeMapEvidence.required.includes("currentTopologyAdmission"), false);
+  assert.deepEqual(routeMapEvidence.allOf, [{
+    if: {
+      required: ["topologySourceId"],
+      properties: { topologySourceId: { const: "capital-route-topology" } },
+    },
+    then: { required: ["currentTopologyAdmission"] },
+  }]);
   assert.equal(current.additionalProperties, false);
   assert.deepEqual(current.required, [
     "schemaVersion", "artifactKind", "issue", "status", "topologySnapshotId",

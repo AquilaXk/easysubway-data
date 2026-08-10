@@ -210,7 +210,11 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
       { sourceDomain: "station_line_membership", sourceIds: ["seoulmetro-station-line-info"] },
     ]) },
   };
-  const officialOdFareQuotes = [{ originStationId: "station-sadang", destinationStationId: "station-sangnoksu" }];
+  const officialOdFareQuotes = [{
+    originStationId: "station-sadang",
+    destinationStationId: "station-sangnoksu",
+    sourceId: "unrelated-official-fares",
+  }];
   const routeServiceArtifactEvidence = [{ serviceClass: "ITX_CHEONGCHUN", admissionStatus: "MISSING" }];
   const canonical = { packs: [{
     id: "capital",
@@ -240,6 +244,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     }],
     sourceInventory: [
       { id: "seoulmetro-station-line-info" },
+      { id: "unrelated-official-fares" },
       { id: "kric-station-elevator-movement" },
       { id: "kric-wheelchair-lift-movement" },
     ],
@@ -258,12 +263,13 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     ],
   });
   assert.deepEqual(synced.packs[0].networkEdges, [reviewedEdge]);
-  assert.equal(synced.packs[0].internalRouteEdges[0].accessibilityStatus, "UNKNOWN");
+  assert.deepEqual(synced.packs[0].internalRouteEdges, []);
   assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, false);
   assert.deepEqual(synced.packs[0].officialOdFareQuotes, officialOdFareQuotes);
-  assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, routeServiceArtifactEvidence);
+  assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, []);
   assert.deepEqual(synced.packs[0].sourceInventory, [
     { id: "seoulmetro-station-line-info" },
+    { id: "unrelated-official-fares" },
     { id: "kric-station-convenience-standard" },
     { id: "seoul-metro-accessibility" },
   ]);
@@ -311,6 +317,23 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   database.prepare("UPDATE network_edges SET source_snapshot_id = 'stale'").run();
   assert.throws(() => assertAccessibilityEdges(database, reviewedPack), /bundled accessibility edge is stale/);
   database.close();
+});
+
+test("canonical sync는 reviewed 필수 계약과 fare table minimum을 함께 닫는다", () => {
+  const canonical = () => ({ packs: [{ id: "capital", facilities: [], metadata: {},
+    sourceInventory: [{ id: "seoul-metro-accessibility" }],
+    officialOdFareQuotes: [{ sourceId: "seoul-metro-accessibility" }],
+    requiredTables: ["stations", "official_od_fare_quotes"], minimumTableRows: { official_od_fare_quotes: 1 } }] });
+  const reviewed = {
+    facilities: [], stationFacilityEvidence: [], sourceInventory: [], metadata: { productionCoverageEvidence: "[]" },
+  };
+  assert.throws(() => syncCanonicalFixture(canonical(), { ...reviewed, sourceInventory: undefined }),
+    /reviewedPack.sourceInventory must be an array/);
+  assert.throws(() => syncCanonicalFixture(canonical(), { ...reviewed, metadata: {} }),
+    /reviewedPack.metadata.productionCoverageEvidence must be a string/);
+  const synced = syncCanonicalFixture(canonical(), reviewed).packs[0];
+  assert.deepEqual(synced.requiredTables, ["stations"]);
+  assert.equal("official_od_fare_quotes" in synced.minimumTableRows, false);
 });
 
 test("active canonical source inventory excludes retired movement snapshot heads", () => {
