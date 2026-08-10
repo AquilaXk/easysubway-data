@@ -31,6 +31,8 @@ import {
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import { parseArgs, requiredArg } from "./lib/cli-args.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import { validatePublicationReceipt } from "./publish-server-route-bundle.mjs";
+import { validateRequest } from "../release/validate-promotion-request.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
 const KEYLESS_ARTIFACT_ROOT_FILES = ["compatibility.json", "manifest.signing-input.json", "payload", "provenance.json"];
@@ -44,8 +46,21 @@ const OUTPUT_FILES = [
   "source-freshness.json",
   "station-line-accessibility.json",
 ];
-const CLI_KEYS = [
+const BASE_CLI_KEYS = [
   "artifact-root", "evaluation-at", "output", "repository-git-sha", "route-edge-input", "station-line-input",
+];
+const RELEASE_CLI_KEYS = [
+  "approval-evidence", "compatibility-evidence", "promotion-component", "promotion-inventory",
+  "promotion-request", "promotion-workflow-run-id", "publication-receipt", "rebuild-parity-evidence",
+];
+const RELEASE_EVIDENCE_KEYS = [
+  "approvalEvidencePath", "compatibilityEvidencePath", "promotionComponentPath", "promotionInventoryPath",
+  "promotionRequestPath", "promotionWorkflowRunId", "publicationReceiptPath", "rebuildParityEvidencePath",
+];
+const RECEIPT_CANDIDATE_KEYS = [
+  "bundleId", "releaseSequence", "stationSetSha256", "sourceSnapshotSetHash", "signingInputSha256",
+  "signedManifestRawSha256", "payloadRootSha256", "componentInventorySha256", "componentDigests",
+  "activeFrom", "freshUntil", "keyId",
 ];
 const SIGNING_INPUT_KEYS = [
   "manifestVersion", "artifactKind", "bundleId", "releaseSequence", "stationSetSha256", "payloadSha256",
@@ -66,6 +81,12 @@ const FIXED_INPUTS = {
 const execFileAsync = promisify(execFile);
 
 export async function buildServerRouteBundleFinalEvidence(input) {
+  if (input.beforeReleaseOutput !== undefined && typeof input.beforeReleaseOutput !== "function") {
+    throw new Error("beforeReleaseOutput must be a function");
+  }
+  if (input.clock !== undefined && typeof input.clock !== "function") {
+    throw new Error("clock must be a function");
+  }
   const repositoryRoot = await realDirectory(input.repositoryRoot ?? process.cwd(), "repository root");
   const artifactRoot = await realDirectory(input.artifactRoot, "artifact root");
   const output = path.resolve(requiredRaw(input.output, "output"));
@@ -101,7 +122,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
     materializationBytes,
     outputParent,
   });
-  const final = buildServerRouteBundleFinal({
+  const prePublicationFinal = buildServerRouteBundleFinal({
     candidate: {
       repository: "AquilaXk/easysubway-data",
       gitSha: repositoryGitSha,
@@ -139,6 +160,10 @@ export async function buildServerRouteBundleFinalEvidence(input) {
       rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
     },
   });
+  const release = input.releaseEvidence === undefined
+    ? null
+    : await closeReleaseFinal(prePublicationFinal, input.releaseEvidence);
+  const final = release?.final ?? prePublicationFinal;
   const finalBytes = Buffer.from(canonicalServerRouteBundleFinalJson(final));
 
   const temp = await mkdtemp(path.join(outputParent, ".server-route-final-"));
@@ -153,12 +178,128 @@ export async function buildServerRouteBundleFinalEvidence(input) {
     }
     await writeFile(path.join(temp, "server-route-bundle-final.json"), finalBytes, { flag: "wx" });
     await assertExactOutput(temp);
+    if (release !== null) {
+      await input.beforeReleaseOutput?.();
+      await assertEvidenceFilesUnchanged(release.files);
+      assertReleaseCandidateFresh(final.candidate.freshUntil, (input.clock ?? Date.now)());
+    }
     await rename(temp, output);
   } catch (error) {
     await rm(temp, { recursive: true, force: true });
     throw error;
   }
   return final;
+}
+
+async function closeReleaseFinal(prePublicationFinal, releaseEvidence) {
+  if (prePublicationFinal.result !== "NO_GO"
+    || canonicalJson(prePublicationFinal.blockers) !== canonicalJson([
+      "publication:UNAVAILABLE",
+      "rebuildParityPromotion:UNAVAILABLE",
+    ])) {
+    throw new Error("pre-publication FINAL is not release eligible");
+  }
+  assertKeys(releaseEvidence, RELEASE_EVIDENCE_KEYS, "release evidence keys");
+  const paths = Object.fromEntries(RELEASE_EVIDENCE_KEYS
+    .filter((key) => key.endsWith("Path"))
+    .map((key) => [key, path.resolve(requiredRaw(releaseEvidence[key], key))]));
+  if (new Set(Object.values(paths)).size !== Object.values(paths).length) {
+    throw new Error("release evidence paths must be distinct");
+  }
+  const files = await Promise.all(Object.entries(paths).map(async ([key, target]) => ({
+    key,
+    target,
+    bytes: await readNonEmptyRegular(target, key),
+  })));
+  const bytes = Object.fromEntries(files.map((entry) => [entry.key, entry.bytes]));
+  const publicationReceipt = validatePublicationReceipt(parseCanonicalJson(
+    bytes.publicationReceiptPath,
+    "publication receipt",
+  ));
+  assertReceiptCandidate(prePublicationFinal, publicationReceipt);
+
+  const promotionRequest = parseCanonicalOrFormattedJson(bytes.promotionRequestPath, "promotion request");
+  const promotionComponent = parseCanonicalOrFormattedJson(bytes.promotionComponentPath, "promotion component");
+  const promotionInventory = parseCanonicalOrFormattedJson(bytes.promotionInventoryPath, "promotion inventory");
+  const compatibilityEvidence = parseCanonicalOrFormattedJson(
+    bytes.compatibilityEvidencePath,
+    "compatibility evidence",
+  );
+  const rebuildParityEvidence = parseCanonicalOrFormattedJson(
+    bytes.rebuildParityEvidencePath,
+    "rebuild parity evidence",
+  );
+  validateRequest({
+    request: promotionRequest,
+    component: promotionComponent,
+    inventory: promotionInventory,
+    inventoryBytes: bytes.promotionInventoryPath,
+    compatibility: compatibilityEvidence,
+    compatibilityBytes: bytes.compatibilityEvidencePath,
+    rebuildParity: rebuildParityEvidence,
+    rebuildParityBytes: bytes.rebuildParityEvidencePath,
+    approvalBytes: bytes.approvalEvidencePath,
+    workflowRunId: requiredRaw(releaseEvidence.promotionWorkflowRunId, "promotionWorkflowRunId"),
+  });
+  assertPromotionCandidate(prePublicationFinal, promotionComponent, promotionInventory, publicationReceipt);
+
+  return {
+    final: buildServerRouteBundleFinal({
+      candidate: prePublicationFinal.candidate,
+      gates: {
+        ...prePublicationFinal.gates,
+        publication: { state: "PASS", evidenceSha256: sha256(bytes.publicationReceiptPath) },
+        rebuildParityPromotion: { state: "PASS", evidenceSha256: sha256(bytes.promotionRequestPath) },
+      },
+    }),
+    files,
+  };
+}
+
+function assertReceiptCandidate(prePublicationFinal, receipt) {
+  if (receipt.repository.name !== prePublicationFinal.candidate.repository
+    || receipt.repository.gitSha !== prePublicationFinal.candidate.gitSha
+    || receipt.candidate.prePublicationFinalSha256 !== prePublicationFinal.finalSha256) {
+    throw new Error("publication receipt FINAL identity mismatch");
+  }
+  for (const key of RECEIPT_CANDIDATE_KEYS) {
+    if (canonicalJson(receipt.candidate[key]) !== canonicalJson(prePublicationFinal.candidate[key])) {
+      throw new Error(`publication receipt candidate ${key} mismatch`);
+    }
+  }
+}
+
+function assertPromotionCandidate(final, component, inventory, receipt) {
+  if (component.gitSha !== final.candidate.gitSha
+    || component.releaseSequence !== final.candidate.releaseSequence
+    || component.provenance.sourceSnapshotSetHash !== final.candidate.sourceSnapshotSetHash) {
+    throw new Error("promotion candidate identity mismatch");
+  }
+  const actual = inventory.entries.filter((entry) => entry.path.startsWith("server-route-bundle/"));
+  const expected = receipt.objects
+    .filter((entry) => entry.path !== "manifest.json")
+    .map((entry) => ({
+      path: `server-route-bundle/${entry.path}`,
+      sizeBytes: entry.sizeBytes,
+      sha256: entry.sha256,
+    }));
+  if (canonicalJson(actual) !== canonicalJson(expected)) {
+    throw new Error("promotion server-route-bundle inventory mismatch");
+  }
+}
+
+async function assertEvidenceFilesUnchanged(files) {
+  for (const file of files) {
+    const current = await readNonEmptyRegular(file.target, file.key);
+    if (!current.equals(file.bytes)) throw new Error(`${file.key} changed during FINAL build`);
+  }
+}
+
+function assertReleaseCandidateFresh(freshUntil, now) {
+  if (!Number.isSafeInteger(now) || now < 0) throw new Error("clock result must be epoch milliseconds");
+  if (Date.parse(freshUntil) <= now) {
+    throw new Error("candidate freshUntil must be in the future at FINAL closure");
+  }
 }
 
 async function inspectArtifact(artifactRoot, fixed) {
@@ -591,7 +732,13 @@ function bytewise(left, right) {
 
 async function main(argv) {
   const args = parseArgs(argv);
-  assertKeys(Object.fromEntries(args), CLI_KEYS, "CLI arguments");
+  const cliArguments = Object.fromEntries(args);
+  const suppliedKeys = Object.keys(cliArguments).sort(bytewise);
+  const baseKeys = [...BASE_CLI_KEYS].sort(bytewise);
+  const releaseKeys = [...BASE_CLI_KEYS, ...RELEASE_CLI_KEYS].sort(bytewise);
+  const baseMode = canonicalJson(suppliedKeys) === canonicalJson(baseKeys);
+  const releaseMode = canonicalJson(suppliedKeys) === canonicalJson(releaseKeys);
+  if (!baseMode && !releaseMode) throw new Error("CLI arguments mismatch");
   const stationLinePath = path.resolve(requiredArg(args, "station-line-input"));
   const routeEdgePath = path.resolve(requiredArg(args, "route-edge-input"));
   const [stationLineBytes, routeEdgeBytes] = await Promise.all([
@@ -606,6 +753,18 @@ async function main(argv) {
     routeEdgeInput: parseCanonicalJson(routeEdgeBytes, "route-edge input"),
     evaluationAt: requiredArg(args, "evaluation-at"),
     output: requiredArg(args, "output"),
+    ...(releaseMode ? {
+      releaseEvidence: {
+        approvalEvidencePath: requiredArg(args, "approval-evidence"),
+        compatibilityEvidencePath: requiredArg(args, "compatibility-evidence"),
+        promotionComponentPath: requiredArg(args, "promotion-component"),
+        promotionInventoryPath: requiredArg(args, "promotion-inventory"),
+        promotionRequestPath: requiredArg(args, "promotion-request"),
+        promotionWorkflowRunId: requiredArg(args, "promotion-workflow-run-id"),
+        publicationReceiptPath: requiredArg(args, "publication-receipt"),
+        rebuildParityEvidencePath: requiredArg(args, "rebuild-parity-evidence"),
+      },
+    } : {}),
   });
   process.stdout.write(`${final.result} ${final.finalSha256}\n`);
 }
