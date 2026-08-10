@@ -193,6 +193,7 @@ test("production source scope 밖의 joined station-line은 blocked이고 materi
   refreshStationLineBindings(input);
   promoteSourceForTest(input);
   input.source.coverageScope.regionIds = ["outside-capital"];
+  input.source.admissionEvidence.coverageScopeSha256 = coverageScopeSha256(input.source.coverageScope);
 
   const result = buildTransferTopologyAdmission(input);
 
@@ -200,6 +201,17 @@ test("production source scope 밖의 joined station-line은 blocked이고 materi
   assert.equal(result.cells[0].state, "BLOCKED_WITH_EVIDENCE");
   assert.equal(result.cells[0].applicabilityReason, "SOURCE_COVERAGE_SCOPE_MISMATCH");
   assert.deepEqual(result.materializerEvidenceRows, []);
+});
+
+test("승인 evidence에 결속되지 않은 production coverage scope 확장은 거부한다", () => {
+  const input = validInput();
+  input.stationLines = [input.stationLines[0]];
+  refreshStationLineBindings(input);
+  promoteSourceForTest(input);
+  input.source.coverageScope.regionIds.push("outside-capital");
+  input.source.coverageScope.operatorIds.push("operator-2");
+
+  assert.throws(() => buildTransferTopologyAdmission(input), /production admission coverage scope mismatch/);
 });
 
 test("observedAt 이후 승인된 source는 production admission이 아니다", () => {
@@ -498,6 +510,7 @@ function promoteSourceForTest(input) {
     approvedBy: "test-owner",
     approvedAt: OBSERVED_AT,
     sampleEvidenceHash: sha256("sample"),
+    coverageScopeSha256: coverageScopeSha256(input.source.coverageScope),
     rawSha256: input.snapshot.rawSha256,
     schemaFingerprint: sha256("schema"),
     sourceSnapshotSetHash: input.candidate.sourceSetSha256,
@@ -518,6 +531,14 @@ function promoteSourceForTest(input) {
     },
     productionUseNoteKo: "test-only admitted topology",
   };
+}
+
+function coverageScopeSha256(value) {
+  return sha256(JSON.stringify({
+    operatorIds: [...value.operatorIds].sort(compareBytes),
+    regionIds: [...value.regionIds].sort(compareBytes),
+    sourceDomains: [...value.sourceDomains].sort(compareBytes),
+  }));
 }
 
 function sortedContentSha256(rows) {

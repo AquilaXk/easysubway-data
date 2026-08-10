@@ -281,7 +281,7 @@ function validateProductionAdmissionEvidence(source, snapshot, candidate, observ
     throw new Error("production admission approval is future-dated");
   }
   for (const key of [
-    "sampleEvidenceHash", "rawSha256", "schemaFingerprint", "sourceSnapshotSetHash",
+    "sampleEvidenceHash", "coverageScopeSha256", "rawSha256", "schemaFingerprint", "sourceSnapshotSetHash",
     "sourceInventorySha256", "adminReviewRecordHash", "licenseEvidenceHash", "aliasLedgerHash",
     "operatorMappingLedgerHash", "facilityEvidenceLedgerHash", "routeEvidenceLedgerHash", "overrideHash",
   ]) assertSha256(evidence[key], `production admission ${key}`);
@@ -291,7 +291,11 @@ function validateProductionAdmissionEvidence(source, snapshot, candidate, observ
   if (evidence.quotaEvidence.defaultDailyLimit === undefined) {
     throw new Error("production admission quota defaultDailyLimit is required");
   }
-  return validateProductionCoverageScope(source.coverageScope);
+  const coverageScope = validateProductionCoverageScope(source.coverageScope);
+  if (evidence.coverageScopeSha256 !== sha256(canonicalJson(coverageScope))) {
+    throw new Error("production admission coverage scope mismatch");
+  }
+  return coverageScope;
 }
 
 function validateProductionCoverageScope(value) {
