@@ -33,7 +33,11 @@ function assertMatchesSchema(schema, value, path = "$") {
     assert.ok(Array.isArray(value), `${path} must be an array`);
     assert.ok(value.length >= (schema.minItems ?? 0), `${path} must contain enough items`);
     if (schema.uniqueItems) {
-      assert.equal(new Set(value.map((item) => JSON.stringify(item))).size, value.length, `${path} items must be unique`);
+      for (let index = 0; index < value.length; index += 1) {
+        for (let previousIndex = 0; previousIndex < index; previousIndex += 1) {
+          assert.notDeepEqual(value[index], value[previousIndex], `${path} items must be unique`);
+        }
+      }
     }
     value.forEach((item, index) => assertMatchesSchema(schema.items, item, `${path}[${index}]`));
     return;
@@ -63,6 +67,11 @@ test("raw SQL table catalog는 Hub issue reference와 기존 same-repo issue ref
     transit_feed_info: "Hub Issue #2530",
   });
 
+  const transitFeedInfoReason = catalog.tables.find(({ name }) => name === "transit_feed_info").reason;
+  const transitFeedInfoTarget = "Hub Issue #2530";
+  assert.equal(transitFeedInfoReason.match(new RegExp(transitFeedInfoTarget, "g"))?.length, 1);
+  assert.doesNotMatch(transitFeedInfoReason.replaceAll(transitFeedInfoTarget, ""), /#2530\b/);
+
   const issuePattern = new RegExp(schema.properties.tables.items.properties.issue.pattern);
   for (const issue of ["#96", "Hub Issue #2527"]) {
     assert.match(issue, issuePattern);
@@ -75,4 +84,17 @@ test("raw SQL table catalog는 Hub issue reference와 기존 same-repo issue ref
   const invalidCatalog = structuredClone(catalog);
   invalidCatalog.tables[0].issue = "Hub PR #2527";
   assert.throws(() => assertMatchesSchema(schema, invalidCatalog), /must match its pattern/);
+});
+
+test("uniqueItems는 key 순서만 다른 JSON 객체도 중복으로 거부한다", () => {
+  const schema = {
+    type: "array",
+    uniqueItems: true,
+    items: { type: "object" },
+  };
+
+  assert.throws(
+    () => assertMatchesSchema(schema, [{ name: "transit_feed_info", disposition: "ABSENCE_TOLERATED" }, { disposition: "ABSENCE_TOLERATED", name: "transit_feed_info" }]),
+    /items must be unique/,
+  );
 });

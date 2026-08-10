@@ -26,7 +26,7 @@
         "core/database/catalog/station_timetable_query.dart",
         "features/home_widget/next_train_widget_repository.dart"
       ],
-      "reason": "빈 테이블을 만들면 시간표 쿼리의 EXISTS (SELECT 1 FROM transit_feed_info ...) 필터가 항상 거짓이 되어 시간표가 전부 사라지므로 구제 대상이 될 수 없다. 반대로 결측을 이유로 팩 전체를 거부하면 과잉 대응이며, 결측 시 필터를 생략하는 쿼리 가드 대칭화는 #2530이 맡는다. 만들지도 막지도 않는다."
+      "reason": "빈 테이블을 만들면 시간표 쿼리의 EXISTS (SELECT 1 FROM transit_feed_info ...) 필터가 항상 거짓이 되어 시간표가 전부 사라지므로 구제 대상이 될 수 없다. 반대로 결측을 이유로 팩 전체를 거부하면 과잉 대응이며, 결측 시 필터를 생략하는 쿼리 가드 대칭화는 Hub Issue #2530이 맡는다. 만들지도 막지도 않는다."
     }
   ],
   "ignoredTokens": [
