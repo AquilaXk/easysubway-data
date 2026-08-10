@@ -108,7 +108,7 @@ export async function publishServerRouteBundle(input) {
 async function verifyPublicLocator(receipt, publicRead) {
   for (const entry of receipt.objects) {
     const url = publicObjectUrl(receipt.locator.publicBaseUrl, entry.objectKey);
-    const response = await publicRead(url);
+    const response = await publicRead(url, entry.sizeBytes);
     if (!response || response.statusCode !== 200 || !Buffer.isBuffer(response.body)) {
       throw new Error(`${entry.objectKey} public locator GET failed`);
     }
@@ -118,15 +118,53 @@ async function verifyPublicLocator(receipt, publicRead) {
   }
 }
 
-function readCredentialFreeObject(url) {
+export function readCredentialFreeObject(url, maxBytes, get = https.get) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new Error("public locator expected size must be a positive safe integer");
+  }
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { accept: "application/octet-stream" } }, (response) => {
+    let settled = false;
+    let request;
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    request = get(url, { headers: { accept: "application/octet-stream" } }, (response) => {
       const chunks = [];
-      response.on("data", (chunk) => chunks.push(chunk));
-      response.on("end", () => resolve({ statusCode: response.statusCode, body: Buffer.concat(chunks) }));
+      let length = 0;
+      const abortResponse = (error) => {
+        if (settled) return;
+        rejectOnce(error);
+        response.destroy();
+        request?.destroy();
+      };
+      response.on("data", (chunk) => {
+        if (settled) return;
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        length += bytes.length;
+        if (length > maxBytes) {
+          abortResponse(new Error("public locator response exceeds expected size"));
+          return;
+        }
+        chunks.push(bytes);
+      });
+      response.once("aborted", () => abortResponse(new Error("public locator GET aborted")));
+      response.once("error", (error) => abortResponse(error));
+      response.once("close", () => {
+        if (!response.complete) abortResponse(new Error("public locator GET closed prematurely"));
+      });
+      response.once("end", () => {
+        if (settled) return;
+        settled = true;
+        resolve({ statusCode: response.statusCode, body: Buffer.concat(chunks, length) });
+      });
     });
-    request.setTimeout(30_000, () => request.destroy(new Error("public locator GET timed out")));
-    request.on("error", reject);
+    request.setTimeout(30_000, () => {
+      rejectOnce(new Error("public locator GET timed out"));
+      request.destroy();
+    });
+    request.on("error", rejectOnce);
   });
 }
 

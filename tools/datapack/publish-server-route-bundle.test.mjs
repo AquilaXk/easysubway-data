@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import {
@@ -16,6 +18,7 @@ import {
 } from "./lib/server-route-bundle-final.mjs";
 import {
   publishServerRouteBundle,
+  readCredentialFreeObject,
   validatePublicationReceipt,
 } from "./publish-server-route-bundle.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
@@ -46,6 +49,33 @@ test("malformed publication CLI는 stack trace 없이 fail closed한다", () => 
   assert.equal(result.status, 1);
   assert.equal(result.stdout, "");
   assert.equal(result.stderr, "publish-server-route-bundle: invalid argument near --artifact-root\n");
+});
+
+test("credential-free public GET은 response 중단과 expected-size 초과를 즉시 거부한다", async () => {
+  await assert.rejects(
+    () => readCredentialFreeObject(PUBLIC_BASE_URL, 4, scriptedHttpsGet((response) => {
+      response.emit("aborted");
+    })),
+    /public locator GET aborted/,
+  );
+  await assert.rejects(
+    () => readCredentialFreeObject(PUBLIC_BASE_URL, 4, scriptedHttpsGet((response) => {
+      response.emit("error", new Error("public response stream failed"));
+    })),
+    /public response stream failed/,
+  );
+  await assert.rejects(
+    () => readCredentialFreeObject(PUBLIC_BASE_URL, 4, scriptedHttpsGet((response) => {
+      response.emit("close");
+    })),
+    /public locator GET closed prematurely/,
+  );
+  await assert.rejects(
+    () => readCredentialFreeObject(PUBLIC_BASE_URL, 4, scriptedHttpsGet((response) => {
+      response.end(Buffer.alloc(5));
+    })),
+    /public locator response exceeds expected size/,
+  );
 });
 
 test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed receipt를 만든다", async (t) => {
@@ -493,4 +523,27 @@ function bytewise(left, right) {
 
 function escapeRegex(value) {
   return value.replaceAll(".", "\\.");
+}
+
+function scriptedHttpsGet(script) {
+  return (_url, _options, onResponse) => {
+    const request = new EventEmitter();
+    let timeout = null;
+    request.setTimeout = (_milliseconds, onTimeout) => {
+      timeout = setTimeout(onTimeout, 5);
+      return request;
+    };
+    request.destroy = (error) => {
+      if (timeout !== null) clearTimeout(timeout);
+      if (error) queueMicrotask(() => request.emit("error", error));
+    };
+    queueMicrotask(() => {
+      const response = new PassThrough();
+      response.statusCode = 200;
+      response.complete = false;
+      onResponse(response);
+      script(response);
+    });
+    return request;
+  };
 }
