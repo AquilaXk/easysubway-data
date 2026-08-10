@@ -210,7 +210,11 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
       { sourceDomain: "station_line_membership", sourceIds: ["seoulmetro-station-line-info"] },
     ]) },
   };
-  const officialOdFareQuotes = [{ originStationId: "station-sadang", destinationStationId: "station-sangnoksu" }];
+  const officialOdFareQuotes = [{
+    originStationId: "station-sadang",
+    destinationStationId: "station-sangnoksu",
+    sourceId: "unrelated-official-fares",
+  }];
   const routeServiceArtifactEvidence = [{ serviceClass: "ITX_CHEONGCHUN", admissionStatus: "MISSING" }];
   const canonical = { packs: [{
     id: "capital",
@@ -240,6 +244,7 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
     }],
     sourceInventory: [
       { id: "seoulmetro-station-line-info" },
+      { id: "unrelated-official-fares" },
       { id: "kric-station-elevator-movement" },
       { id: "kric-wheelchair-lift-movement" },
     ],
@@ -261,9 +266,10 @@ test("canonical and SQLite refresh the reviewed ENTRY/EXIT identity together", (
   assert.deepEqual(synced.packs[0].internalRouteEdges, []);
   assert.equal(synced.packs[0].stationExits[0].hasElevatorConnection, false);
   assert.deepEqual(synced.packs[0].officialOdFareQuotes, officialOdFareQuotes);
-  assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, routeServiceArtifactEvidence);
+  assert.deepEqual(synced.packs[0].routeServiceArtifactEvidence, []);
   assert.deepEqual(synced.packs[0].sourceInventory, [
     { id: "seoulmetro-station-line-info" },
+    { id: "unrelated-official-fares" },
     { id: "kric-station-convenience-standard" },
     { id: "seoul-metro-accessibility" },
   ]);

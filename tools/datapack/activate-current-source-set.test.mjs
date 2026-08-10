@@ -215,6 +215,7 @@ test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence�
   );
 
   const reviewedPack = JSON.parse(await readFile(outputPath, "utf8")).packs[0];
+  assert.equal(reviewedPack.sourceInventory.some(({ id }) => id === fareSourceId), true);
   assert.deepEqual(reviewedPack.officialOdFareQuotes, input.officialOdFareQuotes);
   assert.deepEqual(reviewedPack.routeServiceArtifactEvidence, []);
   assert.deepEqual(reviewedPack.movementPathCandidates, []);
@@ -289,15 +290,13 @@ test("canonical sync는 current source와 Seoul OD만 교체하고 legacy route 
     { id: "seoul-metro-official-od-fares", updatedAt: "current" },
   ]);
   assert.deepEqual(pack.officialOdFareQuotes, [
-    { sourceId: "seoul-metro-official-od-fare-canary", snapshotId: "canary" },
-    { sourceId: "busan-transportation-official-od-fares", snapshotId: "busan" },
     { sourceId: "seoul-metro-official-od-fares", snapshotId: "current-seoul-up" },
     { sourceId: "seoul-metro-official-od-fares", snapshotId: "current-seoul-down" },
   ]);
   assert.deepEqual(pack.routeServiceArtifactEvidence, []);
   assert.deepEqual(pack.movementPathCandidates, []);
   assert.ok(pack.requiredTables.includes("official_od_fare_quotes"));
-  assert.equal(pack.minimumTableRows.official_od_fare_quotes, 4);
+  assert.equal(pack.minimumTableRows.official_od_fare_quotes, 2);
 });
 
 test("activation transaction은 검증 실패에서 모든 기존 bytes를 복구하고 residue를 남기지 않는다", async (context) => {

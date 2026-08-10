@@ -245,8 +245,12 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
       .map(({ id }) => id),
     ...(reviewedPack.officialOdFareQuotes ?? []).map(({ sourceId }) => sourceId),
   ]);
+  if ((reviewedPack.officialOdFareQuotes ?? [])
+    .some(({ sourceId }) => !sourceInventoryIds.has(sourceId))) {
+    throw new Error("reviewed official OD fare source is missing from sourceInventory");
+  }
   pack.officialOdFareQuotes = (pack.officialOdFareQuotes ?? [])
-    .filter(({ sourceId }) => !reviewedFareSourceIds.has(sourceId))
+    .filter(({ sourceId }) => sourceInventoryIds.has(sourceId) && !reviewedFareSourceIds.has(sourceId))
     .concat(reviewedPack.officialOdFareQuotes ?? []);
   pack.routeServiceArtifactEvidence = reviewedPack.routeServiceArtifactEvidence ?? [];
   pack.requiredTables = [...new Set([
