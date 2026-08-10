@@ -5,7 +5,10 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  admittedIncheonTopologyEvidence,
   candidateNetworkEdgeEvidence,
+  materializeIncheonNetworkEdges,
+  validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
 } from "./build-datapack.mjs";
@@ -59,6 +62,116 @@ function networkEdgeEvidenceFixture() {
     itxCoverageContract: { path: "itx-coverage.json", sha256: "6".repeat(64) },
   };
 }
+
+function capitalTopologyWithoutIncheon(topology) {
+  const incheonLineIds = new Set(["line-98718184f016", "line-42b5805f3b5a"]);
+  const lines = topology.lines.filter(({ lineId }) => !incheonLineIds.has(lineId));
+  const topologyGaps = topology.topologyGaps ?? [];
+  return {
+    ...structuredClone(topology),
+    lines,
+    lineCount: lines.length,
+    totalEdgeCount: lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
+    contentSha256: sha256(Buffer.from(JSON.stringify({
+      lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
+        lineId,
+        edgeCount,
+        stationCount,
+        contentSha256,
+        rawSha256,
+        datasetId,
+      })),
+      topologyGaps,
+    }))),
+  };
+}
+
+test("source-separated current topology는 capital과 Incheon 1/2 line ownership을 겹치지 않는다", async () => {
+  const [capital, incheon] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
+      .then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const projectedCapital = capitalTopologyWithoutIncheon(capital);
+
+  assert.deepEqual(
+    validateSourceSeparatedCurrentTopology({ capitalTopology: projectedCapital, incheonSnapshot: incheon }),
+    {
+      capitalLineCount: projectedCapital.lineCount,
+      incheonLineIds: ["line-42b5805f3b5a", "line-98718184f016"],
+      incheonEdgeCount: 116,
+    },
+  );
+  assert.throws(
+    () => validateSourceSeparatedCurrentTopology({ capitalTopology: capital, incheonSnapshot: incheon }),
+    /topology line ownership overlap/,
+  );
+  const missingCapitalLine = structuredClone(projectedCapital);
+  missingCapitalLine.lines = missingCapitalLine.lines.slice(1);
+  missingCapitalLine.lineCount = missingCapitalLine.lines.length;
+  missingCapitalLine.totalEdgeCount = missingCapitalLine.lines
+    .reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  missingCapitalLine.contentSha256 = sha256(Buffer.from(JSON.stringify({
+    lines: missingCapitalLine.lines.map(({
+      lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+    }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+    topologyGaps: missingCapitalLine.topologyGaps,
+  })));
+  assert.throws(
+    () => validateSourceSeparatedCurrentTopology({
+      capitalTopology: missingCapitalLine,
+      incheonSnapshot: incheon,
+    }),
+    /capital topology ownership is invalid/,
+  );
+});
+
+test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
+  const [inventory, snapshotBytes, fixture] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json")),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const snapshot = JSON.parse(snapshotBytes);
+  const admission = admittedIncheonTopologyEvidence({
+    sourceInventory: inventory,
+    snapshot,
+    snapshotBytes,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  });
+  const pack = structuredClone(fixture.packs[0]);
+  const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+  const unrelatedBefore = pack.networkEdges.filter(({ fromNodeId }) => (
+    !incheonLineIds.has(fromNodeId.split(":").at(-1))
+  ));
+
+  assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
+    snapshotId: "incheon-transit-station-info-20260724",
+    edgeCount: 116,
+  });
+  const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
+    incheonLineIds.has(fromNodeId.split(":").at(-1))
+  ));
+  assert.equal(incheonEdges.length, 116);
+  assert.equal(incheonEdges.every(({ sourceId }) => sourceId === "incheon-transit-station-info"), true);
+  assert.deepEqual(
+    pack.networkEdges.filter(({ fromNodeId }) => !incheonLineIds.has(fromNodeId.split(":").at(-1))),
+    unrelatedBefore,
+  );
+  for (const stationId of ["station-62fe7e203078", "station-b78008d08d1f", "station-996efa447ecf"]) {
+    assert.equal(incheonEdges.some(({ fromNodeId }) => (
+      fromNodeId === `${stationId}:line-98718184f016`
+    )), true);
+  }
+  assert.throws(() => admittedIncheonTopologyEvidence({
+    sourceInventory: inventory,
+    snapshot,
+    snapshotBytes,
+    now: new Date("2026-07-25T06:00:00.000Z"),
+  }), /Incheon topology admission is stale/);
+});
 
 test("networkEdgeEvidence는 activation 뒤 current ITX admission을 필수로 수용한다", () => {
   const legacy = networkEdgeEvidenceFixture();

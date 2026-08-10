@@ -24,6 +24,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { resolveDataGoDownloadUrl } from "./collect-capital-route-topology.mjs";
+
 const SOURCE_ID = "incheon-transit-station-info";
 const ARTIFACT_KIND = "incheon-station-info-snapshot";
 const DATASET_ID = "15083751";
@@ -213,11 +215,23 @@ export function projectLatLon(latitude, longitude) {
   return { x, y };
 }
 
-export function parseIncheonStationInfoCsv(csvBytes) {
+export function decodeIncheonStationInfoCsv(csvBytes) {
   if (!(csvBytes instanceof Uint8Array) || csvBytes.byteLength === 0) {
     throw new Error("Incheon station info CSV bytes are required");
   }
-  const table = parseCsv(new TextDecoder("utf-8", { fatal: true }).decode(csvBytes));
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(csvBytes);
+  } catch {
+    try {
+      return new TextDecoder("euc-kr", { fatal: true }).decode(csvBytes);
+    } catch {
+      throw new Error("Incheon station info CSV must be strict UTF-8 or EUC-KR");
+    }
+  }
+}
+
+export function parseIncheonStationInfoCsv(csvBytes) {
+  const table = parseCsv(decodeIncheonStationInfoCsv(csvBytes));
   if (table.length < 2) throw new Error("Incheon station info CSV empty");
   const header = table[0];
   if (JSON.stringify(header) !== JSON.stringify([...HEADERS])) {
@@ -637,28 +651,59 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function usage() {
+  return "usage: collect-incheon-station-info.mjs (--input <csv> | --download) --output <absolute.json> [--captured-at <iso>]";
+}
+
 function parseArgs(argv) {
-  const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
-    if (!argv[index]?.startsWith("--")) {
-      throw new Error("usage: collect-incheon-station-info.mjs --input <csv> --output <absolute.json> [--captured-at <iso>]");
+  const args = { download: false };
+  const seen = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (seen.has(flag)) throw new Error(`duplicate argument: ${flag}`);
+    seen.add(flag);
+    if (flag === "--download") {
+      args.download = true;
+      continue;
     }
-    args[argv[index].slice(2)] = argv[index + 1];
+    if (!["--input", "--output", "--captured-at"].includes(flag)) throw new Error(usage());
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) throw new Error(usage());
+    args[flag.slice(2)] = value;
+    index += 1;
   }
-  if (!args.input || !args.output || !path.isAbsolute(args.output)) {
-    throw new Error("usage: collect-incheon-station-info.mjs --input <csv> --output <absolute.json> [--captured-at <iso>]");
+  if (Boolean(args.input) === args.download || !args.output || !path.isAbsolute(args.output)) {
+    throw new Error(usage());
   }
   return args;
 }
 
-export async function runIncheonStationInfoCollector(argv) {
+async function downloadIncheonStationInfoCsv(fetchImpl) {
+  const detailResponse = await fetchImpl(DETAIL_URL, {
+    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
+  });
+  if (!detailResponse.ok) throw new Error(`Incheon station info detail HTTP ${detailResponse.status}`);
+  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), DETAIL_URL);
+  const fileResponse = await fetchImpl(downloadUrl, {
+    headers: {
+      "User-Agent": "easysubway-datapack-collector/1.0",
+      Referer: DETAIL_URL,
+    },
+  });
+  if (!fileResponse.ok) throw new Error(`Incheon station info CSV HTTP ${fileResponse.status}`);
+  return Buffer.from(await fileResponse.arrayBuffer());
+}
+
+export async function runIncheonStationInfoCollector(argv, { fetchImpl = fetch } = {}) {
   const args = parseArgs(argv);
-  const csvBytes = await readFile(args.input);
+  const csvBytes = args.download
+    ? await downloadIncheonStationInfoCsv(fetchImpl)
+    : await readFile(args.input);
   const snapshot = collectIncheonStationInfo({
     csvBytes,
     now: args["captured-at"] ? new Date(args["captured-at"]) : new Date(),
   });
-  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`);
+  await writeFile(args.output, `${JSON.stringify(snapshot)}\n`, { flag: "wx" });
   console.log(
     `Incheon station info snapshot ready: stations=${snapshot.stationCount} edges=${snapshot.edgeCount} positions=${snapshot.positionCount}`,
   );

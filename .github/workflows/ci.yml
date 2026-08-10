@@ -138,6 +138,10 @@ jobs:
           tools/datapack/plan-kric-exit-path-collection.test.mjs
           tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs
           tools/datapack/build-exit-path-admission.test.mjs
+          tools/datapack/collect-capital-route-topology.test.mjs
+          tools/datapack/collect-incheon-station-info.test.mjs
+          tools/datapack/activate-current-source-set.test.mjs
+          tools/datapack/build-datapack-current-admission.test.mjs
           tools/datapack/build-server-route-bundle-consumer-handoff.test.mjs
           tools/datapack/publish-object-storage.test.mjs
           tools/datapack/publish-server-route-bundle.test.mjs

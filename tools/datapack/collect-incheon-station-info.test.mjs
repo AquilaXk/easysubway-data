@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   collectIncheonStationInfo,
+  decodeIncheonStationInfoCsv,
   normalizeIncheonStationName,
   parseIncheonStationInfoCsv,
   projectLatLon,
@@ -174,4 +175,45 @@ test("인천 station-info collector CLI가 snapshot 파일을 기록한다", asy
   assert.equal(written.contentSha256, snapshot.contentSha256);
   assert.equal(written.stationCount, 71);
   assert.equal(written.admittedLine7Count, 11);
+});
+
+test("current Incheon public attachment는 bounded download와 strict EUC-KR decode로 create-new snapshot을 만든다", async (context) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-incheon-current-"));
+  context.after(() => rm(outputDir, { recursive: true, force: true }));
+  const output = path.join(outputDir, "snapshot.json");
+  const csvBytes = await loadCsv();
+  const requests = [];
+  const detailUrl = "https://www.data.go.kr/data/15083751/fileData.do";
+  const downloadUrl = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700002&fileDetailSn=1&insertDataPrcus=N";
+  const fetchImpl = async (url) => {
+    requests.push(String(url));
+    if (String(url) === detailUrl) {
+      return new Response(`<a href="${downloadUrl}">download</a>`, { status: 200 });
+    }
+    if (String(url) === downloadUrl) return new Response(csvBytes, { status: 200 });
+    return new Response("not found", { status: 404 });
+  };
+
+  const snapshot = await runIncheonStationInfoCollector([
+    "--download",
+    "--output", output,
+    "--captured-at", "2026-08-11T01:02:03.000Z",
+  ], { fetchImpl });
+  assert.deepEqual(requests, [detailUrl, downloadUrl]);
+  assert.equal(snapshot.capturedAt, "2026-08-11T01:02:03.000Z");
+  assert.equal(snapshot.freshUntil, "2026-08-12T01:02:03.000Z");
+  assert.equal(decodeIncheonStationInfoCsv(Buffer.from([0xb0, 0xa1])), "가");
+
+  const original = await readFile(output);
+  await assert.rejects(
+    () => runIncheonStationInfoCollector([
+      "--download",
+      "--output", output,
+      "--captured-at", "2026-08-11T01:02:03.000Z",
+    ], { fetchImpl }),
+    /output.*exists|EEXIST/,
+  );
+  assert.deepEqual(await readFile(output), original);
 });
