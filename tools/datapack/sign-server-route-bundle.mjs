@@ -56,6 +56,22 @@ export async function signServerRouteBundle(input) {
   return { manifestSha256: sha256(manifestBytes) };
 }
 
+export async function inspectSignedServerRouteBundle(input) {
+  const root = await realDirectory(input, "signed artifact root");
+  const artifact = await inspectArtifact(root, true);
+  return {
+    root,
+    manifest: artifact.manifest,
+    manifestBytes: artifact.manifestBytes,
+    signingInput: artifact.signingInput,
+    signingInputBytes: artifact.signingInputBytes,
+    files: [
+      ...artifact.files,
+      ["manifest.json", artifact.manifestBytes],
+    ].sort(([left], [right]) => bytewise(left, right)),
+  };
+}
+
 async function inspectArtifact(root, signed) {
   await assertDirectoryEntries(root, signed ? SIGNED_ROOT_FILES : KEYLESS_ROOT_FILES, signed ? "signed artifact file set" : "keyless artifact file set");
   const payloadRoot = await realDirectory(path.join(root, "payload"), "payload root");
@@ -77,10 +93,11 @@ async function inspectArtifact(root, signed) {
   });
   validateDigests({ signingInput, provenanceBytes, compatibilityBytes, payloadBytes });
 
+  let manifest = null;
   let manifestBytes = null;
   if (signed) {
     manifestBytes = await readNonEmptyRegular(path.join(root, "manifest.json"), "signed manifest");
-    const manifest = parseCanonicalJson(manifestBytes, "signed manifest");
+    manifest = parseCanonicalJson(manifestBytes, "signed manifest");
     validateArtifactComponentManifest(manifest);
     if (!Buffer.from(canonicalJson(withoutSignature(manifest))).equals(signingInputBytes)) {
       throw new Error("signed manifest does not match signing input");
@@ -93,6 +110,7 @@ async function inspectArtifact(root, signed) {
   }
 
   return {
+    manifest,
     signingInput,
     signingInputBytes,
     manifestBytes,

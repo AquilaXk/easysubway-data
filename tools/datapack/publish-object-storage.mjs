@@ -4,29 +4,35 @@ import { lstat, open, readFile, unlink } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+async function main(argv) {
+  const args = parseArgs(argv);
   const planPath = path.resolve(requireArg(args, "plan"));
   const root = path.resolve(requireArg(args, "root"));
   const dryRun = args.has("dry-run");
   const verifyOnly = args.has("verify-only");
   const plan = JSON.parse(await readFile(planPath, "utf8"));
+  await publishObjectStoragePlan({ plan, root, dryRun, verifyOnly });
+}
+
+export async function publishObjectStoragePlan({ plan, root, dryRun = false, verifyOnly = false, client = null }) {
+  const resolvedRoot = path.resolve(root);
   validatePlan(plan);
 
-  const client = dryRun ? null : objectStorageClient();
+  const storage = dryRun ? null : (client ?? objectStorageClient());
   const putPackKeys = new Set();
   const verifiedPackKeys = new Set();
 
   for (const step of plan.steps) {
     if (step.type === "put-pack-object") {
-      const bytes = await readAndVerifySource(root, step);
+      const bytes = await readAndVerifySource(resolvedRoot, step);
       putPackKeys.add(step.objectKey);
       if (!dryRun && !verifyOnly) {
-        await client.putObject(step.objectKey, bytes, step);
+        await storage.putObject(step.objectKey, bytes, step);
       }
       continue;
     }
@@ -36,7 +42,7 @@ async function main() {
         throw new Error(`${step.objectKey} must be uploaded before verification`);
       }
       if (!dryRun) {
-        await client.verifyObject(step.objectKey, step);
+        await storage.verifyObject(step.objectKey, step);
       }
       verifiedPackKeys.add(step.objectKey);
       continue;
@@ -48,31 +54,31 @@ async function main() {
           throw new Error(`catalog/current.json cannot be published before ${key} verification`);
         }
       }
-      const bytes = await readAndVerifySource(root, step);
+      const bytes = await readAndVerifySource(resolvedRoot, step);
       if (!dryRun && !verifyOnly) {
-        await client.putObject(step.objectKey, bytes, step);
+        await storage.putObject(step.objectKey, bytes, step);
       }
       continue;
     }
 
     if (step.type === "verify-manifest-object") {
       if (!dryRun) {
-        await client.verifyObject(step.objectKey, step);
+        await storage.verifyObject(step.objectKey, step);
       }
       continue;
     }
 
     if (step.type === "put-release-manifest-object") {
-      const bytes = await readAndVerifySource(root, step);
+      const bytes = await readAndVerifySource(resolvedRoot, step);
       if (!dryRun && !verifyOnly) {
-        const existing = await client.headObject(step.objectKey);
+        const existing = await storage.headObject(step.objectKey);
         if (existing.exists) {
           if (existing.sha256 !== step.sha256) {
             throw new Error(`${step.objectKey} immutable violation: stored sha ${existing.sha256} != ${step.sha256}`);
           }
           // 동일 바이트 → 멱등 skip.
         } else {
-          await client.putObject(step.objectKey, bytes, step);
+          await storage.putObject(step.objectKey, bytes, step);
         }
       }
       continue;
@@ -80,17 +86,17 @@ async function main() {
 
     if (step.type === "verify-release-manifest-object") {
       if (!dryRun) {
-        await client.verifyObject(step.objectKey, step);
+        await storage.verifyObject(step.objectKey, step);
       }
       continue;
     }
 
     if (step.type === "put-source-raw-object") {
-      const bytes = await readAndVerifySource(root, step);
+      const bytes = await readAndVerifySource(resolvedRoot, step);
       if (!dryRun && !verifyOnly) {
-        const created = await client.putObjectIfAbsent(step.objectKey, bytes, step);
+        const created = await storage.putObjectIfAbsent(step.objectKey, bytes, step);
         if (!created) {
-          const existing = await client.readObject(step.objectKey);
+          const existing = await storage.readObject(step.objectKey);
           if (!existing.exists
             || existing.body.length !== step.sizeBytes
             || sha256(existing.body) !== step.sha256) {
@@ -103,7 +109,7 @@ async function main() {
 
     if (step.type === "verify-source-raw-object") {
       if (!dryRun) {
-        const stored = await client.readObject(step.objectKey);
+        const stored = await storage.readObject(step.objectKey);
         if (!stored.exists
           || stored.body.length !== step.sizeBytes
           || sha256(stored.body) !== step.sha256) {
@@ -115,17 +121,17 @@ async function main() {
 
     if (step.type === "fetch-source-raw-object") {
       if (!dryRun && !verifyOnly) {
-        await fetchSourceRawObject(client, root, step);
+        await fetchSourceRawObject(storage, resolvedRoot, step);
       }
       continue;
     }
 
     if (step.type === "put-release-request-binding-object") {
-      const bytes = await readAndVerifySource(root, step);
+      const bytes = await readAndVerifySource(resolvedRoot, step);
       if (!dryRun && !verifyOnly) {
-        const created = await client.putObjectIfAbsent(step.objectKey, bytes, step);
+        const created = await storage.putObjectIfAbsent(step.objectKey, bytes, step);
         if (!created) {
-          const existing = await client.readObject(step.objectKey);
+          const existing = await storage.readObject(step.objectKey);
           if (!existing.exists) {
             throw new Error(`${step.objectKey} conditional create conflict but object is unavailable`);
           }
@@ -140,8 +146,36 @@ async function main() {
 
     if (step.type === "verify-release-request-binding-object") {
       if (!dryRun) {
-        const stored = await client.readObject(step.objectKey);
+        const stored = await storage.readObject(step.objectKey);
         if (!stored.exists || stored.body.length !== step.sizeBytes
+          || sha256(stored.body) !== step.sha256) {
+          throw new Error(`${step.objectKey} uploaded checksum mismatch`);
+        }
+      }
+      continue;
+    }
+
+    if (step.type === "put-immutable-bundle-object") {
+      const bytes = await readAndVerifySource(resolvedRoot, step);
+      if (!dryRun && !verifyOnly) {
+        const created = await storage.putObjectIfAbsent(step.objectKey, bytes, step);
+        if (!created) {
+          const existing = await storage.readObject(step.objectKey);
+          if (!existing.exists
+            || existing.body.length !== step.sizeBytes
+            || sha256(existing.body) !== step.sha256) {
+            throw new Error(`${step.objectKey} immutable violation`);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (step.type === "verify-immutable-bundle-object") {
+      if (!dryRun) {
+        const stored = await storage.readObject(step.objectKey);
+        if (!stored.exists
+          || stored.body.length !== step.sizeBytes
           || sha256(stored.body) !== step.sha256) {
           throw new Error(`${step.objectKey} uploaded checksum mismatch`);
         }
@@ -568,6 +602,11 @@ function validatePlan(plan) {
     if (step.sizeBytes !== undefined && (!Number.isInteger(step.sizeBytes) || step.sizeBytes < 1)) {
       throw new Error(`${step.objectKey} sizeBytes must be a positive integer`);
     }
+    if (new Set(["put-immutable-bundle-object", "verify-immutable-bundle-object"]).has(step.type)) {
+      if (step.sourcePath === undefined) throw new Error(`${step.type} sourcePath is required`);
+      if (step.sha256 === undefined) throw new Error(`${step.type} sha256 is required`);
+      if (step.sizeBytes === undefined) throw new Error(`${step.type} sizeBytes is required`);
+    }
   }
 }
 
@@ -693,7 +732,9 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

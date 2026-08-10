@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Server route bundle publication receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactKind", "repository", "candidate", "locator", "objects", "receiptSha256"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": { "const": "server-route-bundle-publication-receipt" },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "gitSha"],
+      "properties": {
+        "name": { "const": "AquilaXk/easysubway-data" },
+        "gitSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundleId", "releaseSequence", "stationSetSha256", "sourceSnapshotSetHash", "signingInputSha256",
+        "signedManifestRawSha256", "payloadRootSha256", "componentInventorySha256", "componentDigests",
+        "activeFrom", "freshUntil", "keyId", "prePublicationFinalSha256"
+      ],
+      "properties": {
+        "bundleId": { "$ref": "#/$defs/rawString" },
+        "releaseSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "stationSetSha256": { "$ref": "#/$defs/sha256" },
+        "sourceSnapshotSetHash": { "$ref": "#/$defs/sha256" },
+        "signingInputSha256": { "$ref": "#/$defs/sha256" },
+        "signedManifestRawSha256": { "$ref": "#/$defs/sha256" },
+        "payloadRootSha256": { "$ref": "#/$defs/sha256" },
+        "componentInventorySha256": { "$ref": "#/$defs/sha256" },
+        "componentDigests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accessibility", "fare", "timetable", "topology"],
+          "properties": {
+            "accessibility": { "$ref": "#/$defs/sha256" },
+            "fare": { "$ref": "#/$defs/sha256" },
+            "timetable": { "$ref": "#/$defs/sha256" },
+            "topology": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "activeFrom": { "$ref": "#/$defs/kstMillisecondInstant" },
+        "freshUntil": { "$ref": "#/$defs/kstMillisecondInstant" },
+        "keyId": { "$ref": "#/$defs/rawString" },
+        "prePublicationFinalSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicBaseUrl", "objectPrefix"],
+      "properties": {
+        "publicBaseUrl": { "type": "string", "pattern": "^https://[^/?#]+/.+[^/]$" },
+        "objectPrefix": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/$" }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "objectKey", "sizeBytes", "sha256"],
+        "properties": {
+          "path": {
+            "enum": [
+              "compatibility.json", "manifest.json", "manifest.signing-input.json",
+              "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst",
+              "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"
+            ]
+          },
+          "objectKey": {
+            "type": "string",
+            "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/(?:compatibility\\.json|manifest\\.json|manifest\\.signing-input\\.json|payload/(?:accessibility|fare|timetable|topology)\\.sqlite\\.zst|provenance\\.json)$"
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "receiptSha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "rawString": { "type": "string", "pattern": "^(?!\\s)[\\s\\S]*\\S$" },
+    "kstMillisecondInstant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}\\+09:00$"
+    }
+  }
+}

@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { publishObjectStoragePlan } from "./publish-object-storage.mjs";
+
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -77,6 +79,57 @@ async function runPublishSigned(planPath, root, port) {
     "--plan", planPath, "--root", root,
   ], { env });
 }
+
+test("generic immutable bundle object는 conditional create와 full-byte GET 검증만 허용한다", async (t) => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "publish-immutable-bundle-"));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await mkdir(path.join(workspace, "payload"));
+  const bytes = Buffer.from("signed bundle payload bytes");
+  await writeFile(path.join(workspace, "payload/topology.sqlite.zst"), bytes);
+  const objectKey = `server-route-bundles/v1/${"a".repeat(64)}/payload/topology.sqlite.zst`;
+  const step = {
+    sourcePath: "payload/topology.sqlite.zst",
+    objectKey,
+    sha256: sha256(bytes),
+    sizeBytes: bytes.length,
+  };
+  const plan = {
+    steps: [
+      { type: "put-immutable-bundle-object", ...step },
+      { type: "verify-immutable-bundle-object", ...step },
+    ],
+  };
+  const objects = new Map();
+  let conditionalPuts = 0;
+  let fullReads = 0;
+  const client = {
+    async putObjectIfAbsent(key, body) {
+      conditionalPuts += 1;
+      if (objects.has(key)) return false;
+      objects.set(key, Buffer.from(body));
+      return true;
+    },
+    async readObject(key) {
+      fullReads += 1;
+      return objects.has(key) ? { exists: true, body: Buffer.from(objects.get(key)) } : { exists: false };
+    },
+  };
+
+  await publishObjectStoragePlan({ plan, root: workspace, client });
+  assert.equal(conditionalPuts, 1);
+  assert.equal(fullReads, 1);
+  assert.deepEqual(objects.get(objectKey), bytes);
+
+  await publishObjectStoragePlan({ plan, root: workspace, client });
+  assert.equal(conditionalPuts, 2);
+  assert.equal(fullReads, 3, "existing bytes are read once for collision proof and once for final verification");
+
+  objects.set(objectKey, Buffer.from("collision"));
+  await assert.rejects(
+    () => publishObjectStoragePlan({ plan, root: workspace, client }),
+    /immutable violation/,
+  );
+});
 
 test("게시 실행기는 동일 sha의 releases 객체 재게시를 멱등 skip하고 상이 sha는 거부한다", async () => {
   const mock = await startMockStorage();
