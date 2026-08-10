@@ -483,11 +483,9 @@ function compareStationLines(left, right) {
 
 function assertKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
-  const actual = Object.keys(value).sort(compareBytes);
-  const wanted = [...expected].sort(compareBytes);
-  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
-    throw new Error(`${label} mismatch`);
-  }
+  const actualKeySet = Object.keys(value).sort(compareBytes).join("\u0000");
+  const expectedKeySet = [...expected].sort(compareBytes).join("\u0000");
+  if (actualKeySet !== expectedKeySet) throw new Error(`${label} mismatch`);
 }
 
 function assertNonBlank(value, label) {
@@ -503,19 +501,22 @@ function isSha256(value) {
 }
 
 function canonicalObject(value) {
-  if (Array.isArray(value)) return value.map(canonicalObject);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, canonicalObject(value[key])]));
-  }
-  return value;
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((entry) => canonicalObject(entry));
+  const result = {};
+  for (const key of Object.keys(value).sort(compareBytes)) result[key] = canonicalObject(value[key]);
+  return result;
 }
 
 function canonicalJson(value) {
-  return JSON.stringify(canonicalObject(value));
+  const canonical = canonicalObject(value);
+  return JSON.stringify(canonical);
 }
 
 function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
+  const hash = createHash("sha256");
+  hash.update(value);
+  return hash.digest("hex");
 }
 
 function compareBytes(left, right) {
