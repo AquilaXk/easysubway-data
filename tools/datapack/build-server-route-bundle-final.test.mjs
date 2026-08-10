@@ -5,10 +5,13 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile }
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
+import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import {
   buildServerRouteBundleFinalEvidence,
 } from "./build-server-route-bundle-final.mjs";
+import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
   canonicalJson,
   sha256,
@@ -17,9 +20,15 @@ import {
   validateServerRouteBundleFinal,
 } from "./lib/server-route-bundle-final.mjs";
 import {
+  canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
+  evaluateRouteAccessibilityEdges,
   routeEdgeSha256,
 } from "./evaluate-route-accessibility-edges.mjs";
+import {
+  canonicalStationLineAccessibilityJson,
+  materializeStationLineAccessibility,
+} from "./materialize-station-line-accessibility.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const FRESH_AT = "2026-08-07T00:00:00.000Z";
@@ -31,7 +40,7 @@ const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
 const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "pem" });
 
-test("keyless bytes와 current #8/#9 evidence를 deterministic NO_GO FINAL로 결속한다", async (t) => {
+test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FINAL로 결속한다", async (t) => {
   const fixture = await createFixture(t);
   const beforeStation = structuredClone(fixture.stationLineInput);
   const beforeRoute = structuredClone(fixture.routeEdgeInput);
@@ -87,6 +96,36 @@ test("keyless bytes와 current #8/#9 evidence를 deterministic NO_GO FINAL로 �
     "payload/topology.sqlite.zst",
   ]);
   assert.equal(inventory.componentInventorySha256, fixture.manifest.payloadSha256);
+
+  await mutateAccessibilityPayload(
+    fixture,
+    "UPDATE station_line_accessibility_evidence SET canonical_json = canonical_json || ' '",
+  );
+  const tamperedOutput = path.join(fixture.temp, "tampered-final");
+  await assert.rejects(
+    () => build(fixture, tamperedOutput, FRESH_AT),
+    /embedded station-line accessibility evidence mismatch/,
+  );
+  await assert.rejects(() => readFile(tamperedOutput), /ENOENT/);
+});
+
+test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed한다", async (t) => {
+  for (const [name, sql, pattern] of [
+    ["wrong-user-version", "PRAGMA user_version=18", /embedded accessibility evidence SQLite user_version mismatch/],
+    ["missing-route-row", "DELETE FROM route_accessibility_edge_evidence", /embedded route-edge evaluation evidence mismatch/],
+    ["extra-station-row", `INSERT INTO station_line_accessibility_evidence VALUES('${"d".repeat(64)}','{}')`, /embedded station-line accessibility evidence mismatch/],
+    ["route-digest-mismatch", `UPDATE route_accessibility_edge_evidence SET evaluation_digest='${"e".repeat(64)}'`, /embedded route-edge evaluation evidence mismatch/],
+    ["route-schema-without-constraints", "ALTER TABLE route_accessibility_edge_evidence RENAME TO route_accessibility_edge_evidence_old; CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL); INSERT INTO route_accessibility_edge_evidence SELECT * FROM route_accessibility_edge_evidence_old; DROP TABLE route_accessibility_edge_evidence_old", /embedded route_accessibility_edge_evidence schema mismatch/],
+    ["missing-route-table", "DROP TABLE route_accessibility_edge_evidence", /embedded route_accessibility_edge_evidence schema mismatch/],
+  ]) {
+    await t.test(name, async () => {
+      const fixture = await createFixture(t);
+      await mutateAccessibilityPayload(fixture, sql);
+      const output = path.join(fixture.temp, `rejected-${name}`);
+      await assert.rejects(() => build(fixture, output, FRESH_AT), pattern);
+      await assert.rejects(() => readFile(output), /ENOENT/);
+    });
+  }
 });
 
 test("current-key signed manifest는 signature gate만 닫고 publication·parity NO_GO를 유지한다", async (t) => {
@@ -124,17 +163,20 @@ test("current-key signed manifest는 signature gate만 닫고 publication·parit
 });
 
 test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다", async (t) => {
-  const stale = await createFixture(t);
+  const stale = await createFixture(t, { evaluationAt: STALE_AT });
   const staleOutput = path.join(stale.temp, "stale");
   await build(stale, staleOutput, STALE_AT);
   const staleFinal = await readJson(path.join(staleOutput, "server-route-bundle-final.json"));
   assert.equal(staleFinal.gates.sourceFreshness.state, "STALE");
   assert.ok(staleFinal.blockers.includes("sourceFreshness:STALE"));
 
-  const incomplete = await createFixture(t);
-  incomplete.stationLineInput.evidenceRows = incomplete.stationLineInput.evidenceRows.filter((row) => !(
-    row.stationId === "station-a" && row.domain === "FACILITY"
-  ));
+  const incomplete = await createFixture(t, {
+    configureInputs: ({ stationLineInput }) => {
+      stationLineInput.evidenceRows = stationLineInput.evidenceRows.filter((row) => !(
+        row.stationId === "station-a" && row.domain === "FACILITY"
+      ));
+    },
+  });
   const incompleteOutput = path.join(incomplete.temp, "incomplete");
   await build(incomplete, incompleteOutput, FRESH_AT);
   const incompleteFinal = await readJson(path.join(incompleteOutput, "server-route-bundle-final.json"));
@@ -267,7 +309,7 @@ test("standalone CLI도 exact inputs로 같은 FINAL을 생성한다", async (t)
   await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
 });
 
-async function createFixture(t) {
+async function createFixture(t, options = {}) {
   const temp = await mkdtemp(path.join(os.tmpdir(), "server-route-final-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repositoryRoot = path.join(temp, "repository");
@@ -280,9 +322,20 @@ async function createFixture(t) {
 
   const buildSpec = await readJson(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"));
   const artifactRoot = path.join(temp, "server-route-bundle");
-  const { manifest } = await createArtifact(repositoryRoot, artifactRoot, buildSpec);
   const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
-  const routeEdgeInput = completeRouteEdgeInput(buildSpec.sourceSnapshotSetHash, manifest.topologySha256);
+  const routeEdgeInput = completeRouteEdgeInput(
+    buildSpec.sourceSnapshotSetHash,
+    sha256(Buffer.from("topology payload")),
+  );
+  options.configureInputs?.({ stationLineInput, routeEdgeInput });
+  const { manifest } = await createArtifact(
+    repositoryRoot,
+    artifactRoot,
+    buildSpec,
+    stationLineInput,
+    routeEdgeInput,
+    options.evaluationAt ?? FRESH_AT,
+  );
   return { temp, repositoryRoot, repositoryGitSha, artifactRoot, buildSpec, manifest, stationLineInput, routeEdgeInput };
 }
 
@@ -303,9 +356,37 @@ async function copyRepositoryInputs(repositoryRoot) {
   }
 }
 
-async function createArtifact(repositoryRoot, artifactRoot, buildSpec) {
+async function createArtifact(repositoryRoot, artifactRoot, buildSpec, stationLineInput, routeEdgeInput, evaluationAt) {
+  const routePolicy = await readJson(path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"));
+  const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
+  const evaluation = evaluateRouteAccessibilityEdges({
+    ...routeEdgeInput,
+    evaluationAt,
+    materialization,
+  }, routePolicy);
+  await mkdir(artifactRoot, { recursive: true });
+  const accessibilitySqlite = path.join(artifactRoot, ".accessibility.sqlite");
+  const accessibilityDatabase = new DatabaseSync(accessibilitySqlite);
+  accessibilityDatabase.exec(Object.values(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL).join("; "));
+  accessibilityDatabase.prepare("INSERT INTO station_line_accessibility_evidence VALUES(?,?)").run(
+    materialization.materializationDigest,
+    canonicalStationLineAccessibilityJson(materialization),
+  );
+  accessibilityDatabase.prepare("INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)").run(
+    evaluation.evaluationDigest,
+    materialization.materializationDigest,
+    canonicalRouteEdgeEvaluationJson(evaluation),
+  );
+  accessibilityDatabase.exec("PRAGMA user_version=19; VACUUM");
+  accessibilityDatabase.close();
+  const buildContract = await readJson(path.join(repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
   const payloads = {
-    accessibility: Buffer.from("accessibility payload"),
+    accessibility: zstdCompressSync(await readFile(accessibilitySqlite), {
+      params: {
+        [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
+        [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
+      },
+    }),
     fare: Buffer.from("fare payload"),
     timetable: Buffer.from("timetable payload"),
     topology: Buffer.from("topology payload"),
@@ -314,9 +395,9 @@ async function createArtifact(repositoryRoot, artifactRoot, buildSpec) {
   for (const [name, bytes] of Object.entries(payloads)) {
     await writeFile(path.join(artifactRoot, `payload/${name}.sqlite.zst`), bytes);
   }
+  await rm(accessibilitySqlite);
 
   const buildSpecBytes = await readFile(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"));
-  const buildContract = await readJson(path.join(repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
   const layout = await readJson(path.join(repositoryRoot, "contracts/datapack/artifact-component-table-layout.json"));
   const provenance = {
     schemaVersion: 1,
@@ -377,6 +458,37 @@ async function createArtifact(repositoryRoot, artifactRoot, buildSpec) {
   };
   await writeCanonical(path.join(artifactRoot, "manifest.signing-input.json"), manifest);
   return { manifest, provenance, compatibility };
+}
+
+async function rebindPayloadManifest(artifactRoot) {
+  const manifestPath = path.join(artifactRoot, "manifest.signing-input.json");
+  const manifest = await readJson(manifestPath);
+  const entries = [];
+  for (const component of ["accessibility", "fare", "timetable", "topology"]) {
+    const bytes = await readFile(path.join(artifactRoot, `payload/${component}.sqlite.zst`));
+    const digest = sha256(bytes);
+    manifest[`${component}Sha256`] = digest;
+    entries.push({ path: `payload/${component}.sqlite.zst`, sizeBytes: bytes.length, sha256: digest });
+  }
+  manifest.payloadSha256 = sha256(Buffer.from(canonicalJson(entries.sort((left, right) => bytewise(left.path, right.path)))));
+  await writeCanonical(manifestPath, manifest);
+}
+
+async function mutateAccessibilityPayload(fixture, sql) {
+  const accessibilityPath = path.join(fixture.artifactRoot, "payload/accessibility.sqlite.zst");
+  const sqlitePath = path.join(fixture.temp, "mutated-accessibility.sqlite");
+  await writeFile(sqlitePath, zstdDecompressSync(await readFile(accessibilityPath)));
+  const database = new DatabaseSync(sqlitePath);
+  database.exec(sql);
+  database.close();
+  const buildContract = await readJson(path.join(fixture.repositoryRoot, "contracts/datapack/server-route-bundle-build-contract.json"));
+  await writeFile(accessibilityPath, zstdCompressSync(await readFile(sqlitePath), {
+    params: {
+      [constants.ZSTD_c_compressionLevel]: buildContract.compressionProfile.compressionLevel,
+      [constants.ZSTD_c_checksumFlag]: buildContract.compressionProfile.checksumFlag,
+    },
+  }));
+  await rebindPayloadManifest(fixture.artifactRoot);
 }
 
 function completeStationLineInput(sourceSetSha256) {

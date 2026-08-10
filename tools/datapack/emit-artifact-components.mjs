@@ -8,9 +8,18 @@ import { constants, zstdCompressSync } from "node:zlib";
 
 import { canonicalJson, validateArtifactComponentManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
+import {
+  canonicalRouteEdgeEvaluationJson,
+  evaluateRouteAccessibilityEdges,
+  routeEdgeSha256,
+} from "./evaluate-route-accessibility-edges.mjs";
+import {
+  canonicalStationLineAccessibilityJson,
+  materializeStationLineAccessibility,
+} from "./materialize-station-line-accessibility.mjs";
 import { validateSourceSnapshotFreshness } from "./validate-source-snapshot-freshness.mjs";
 
-const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id"]);
+const CLI_ARGS = new Set(["source-sqlite", "source-provenance", "build-spec", "output", "map-pack-id", "catalog-pack-id", "bundle-id", "release-sequence", "active-from", "fresh-until", "built-at", "key-id", "evaluation-at", "station-line-input", "route-edge-input"]);
 const COMPONENTS = {
   topology: ["network_edges", "out_of_station_transfer_links", "transfer_rules", "realtime_provider_line_mappings", "realtime_provider_station_mappings"],
   timetable: ["service_calendars", "service_calendar_dates", "transit_routes", "transit_trips", "transit_stop_times", "transit_frequencies", "transit_feed_info", "route_service_artifact_evidence", "route_service_station_catalog_evidence"],
@@ -20,6 +29,30 @@ const COMPONENTS = {
 const REFERENCES = { stations: ["id"], lines: ["id"], station_lines: ["station_id", "line_id", "line_sequence"] };
 const EXPECTED_CHILDREN = ["map-pack", "station-catalog-pack", "server-route-bundle"];
 const IDENTITY_DDL = "CREATE TABLE artifact_component_identity (bundleId TEXT NOT NULL, releaseSequence INTEGER NOT NULL CHECK (releaseSequence BETWEEN 1 AND 9007199254740991), stationSetSha256 TEXT NOT NULL, serviceTimezone TEXT NOT NULL CHECK (serviceTimezone = 'Asia/Seoul'))";
+const GENERATED_EVIDENCE_LAYOUT = {
+  stationLineAccessibility: {
+    table: "station_line_accessibility_evidence",
+    columns: ["materialization_digest", "canonical_json"],
+    rowCount: 1,
+    canonicalJson: "canonicalStationLineAccessibilityJson",
+    digest: { field: "materializationDigest", column: "materialization_digest", input: "canonical-payload-without-self-digest", algorithm: "sha256" },
+  },
+  routeEdgeEvaluation: {
+    table: "route_accessibility_edge_evidence",
+    columns: ["evaluation_digest", "materialization_digest", "canonical_json"],
+    rowCount: 1,
+    canonicalJson: "canonicalRouteEdgeEvaluationJson",
+    digest: { field: "evaluationDigest", column: "evaluation_digest", input: "canonical-payload-without-self-digest", algorithm: "sha256" },
+    materializationBinding: { field: "materializationDigest", column: "materialization_digest", equals: "station_line_accessibility_evidence.materialization_digest" },
+  },
+};
+export const GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL = Object.freeze({
+  station_line_accessibility_evidence: "CREATE TABLE station_line_accessibility_evidence (materialization_digest TEXT NOT NULL PRIMARY KEY CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL)",
+  route_accessibility_edge_evidence: "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY CHECK(length(evaluation_digest)=64 AND evaluation_digest NOT GLOB '*[^0-9a-f]*'), materialization_digest TEXT NOT NULL CHECK(length(materialization_digest)=64 AND materialization_digest NOT GLOB '*[^0-9a-f]*'), canonical_json TEXT NOT NULL, FOREIGN KEY(materialization_digest) REFERENCES station_line_accessibility_evidence(materialization_digest))",
+});
+const ROUTE_EDGE_SEED_CANDIDATE_KEYS = [
+  "candidateId", "stationSetSha256", "sourceSetSha256", "policyVersion", "evaluatorVersion",
+];
 
 export async function emitArtifactComponents(input) {
   const root = path.resolve(input.repositoryRoot ?? process.cwd());
@@ -28,15 +61,20 @@ export async function emitArtifactComponents(input) {
   if (await exists(output)) throw new Error("--output must not already exist");
   const buildSpecPath = exact(required(input.buildSpec, "--build-spec"), "tools/datapack/release/candidate-build-spec.json", "--build-spec");
   const ids = readIds(input);
+  const evaluationAt = new Date(requiredUtcInstant(input.evaluationAt, "--evaluation-at")).toISOString();
+  requireObject(input.stationLineInput, "--station-line-input");
+  requireObject(input.routeEdgeInput, "--route-edge-input");
   if (Date.parse(ids.activeFrom) >= Date.parse(ids.freshUntil)) throw new Error("--active-from must be before --fresh-until");
 
-  const [buildSpecBytes, layoutBytes, contractBytes, sourceSchemaBytes] = await Promise.all([
+  const [buildSpecBytes, layoutBytes, contractBytes, sourceSchemaBytes, routeEdgePolicyBytes] = await Promise.all([
     readFile(path.join(root, buildSpecPath)), readFile(path.join(root, "contracts/datapack/artifact-component-table-layout.json")),
     readFile(path.join(root, "contracts/datapack/server-route-bundle-build-contract.json")), readFile(path.join(root, "tools/datapack/schema/catalog-schema.sql")),
+    readFile(path.join(root, "release/product-gates/route-edge-evaluation-policy.json")),
   ]);
   const buildSpec = parseJson(buildSpecBytes, "build spec");
   const layout = parseJson(layoutBytes, "table layout");
   const buildContract = parseJson(contractBytes, "build contract");
+  const routeEdgePolicy = parseJson(routeEdgePolicyBytes, "route edge evaluation policy");
   const sourceSchema = layout?.serverRouteBundle?.sourceSchema;
   validateFixedContracts(layout, buildContract, sourceSchema, sourceSchemaBytes);
   const provenancePath = await regular(input.sourceProvenance, "--source-provenance");
@@ -65,7 +103,12 @@ export async function emitArtifactComponents(input) {
     validateBundleReferences(sourceDb, layout.serverRouteBundle);
     await emitMap(root, temp, sourceDb, ids, stationSetSha256, buildContract);
     await emitCatalog(temp, sourceDb, ids, stationSetSha256);
-    await emitServer(temp, sourceDb, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, buildContract);
+    await emitServer(temp, sourceDb, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, buildContract, {
+      evaluationAt,
+      stationLineInput: input.stationLineInput,
+      routeEdgeInput: input.routeEdgeInput,
+      routeEdgePolicy,
+    });
     sourceDb.close(); sourceDb = undefined;
     await Promise.all([snapshot, `${snapshot}-wal`, `${snapshot}-shm`].map((file) => rm(file, { force: true })));
     await validateOutput(temp);
@@ -85,6 +128,7 @@ function validateFixedContracts(layout, build, sourceSchema, sourceSchemaBytes) 
   if (layout?.schemaVersion !== 1 || layout?.artifactKind !== "artifact-component-table-layout") throw new Error("table layout contract mismatch");
   if (!sourceSchema || sourceSchema.path !== "tools/datapack/schema/catalog-schema.sql" || sourceSchema.sqliteUserVersion !== 19 || sha(sourceSchemaBytes) !== sourceSchema.sha256) throw new Error("source schema contract mismatch");
   if (build?.artifactKind !== "server-route-bundle-build-contract" || build?.compressionProfile?.api !== "node:zlib.zstdCompressSync" || build.compressionProfile.requiredNodeMajor !== 24 || build.compressionProfile.compressionLevel !== 10 || build.compressionProfile.checksumFlag !== 1 || build.compressionProfile.dictionary !== null || build?.capitalMapInput?.sourcePath !== "tools/route-map/route-map-defs/svg-sources/easy-subway-sma-v4.svg") throw new Error("build contract mismatch");
+  if (canonicalJson(layout?.serverRouteBundle?.components?.accessibility?.generatedEvidence) !== canonicalJson(GENERATED_EVIDENCE_LAYOUT)) throw new Error("generated accessibility evidence contract mismatch");
   if (Number(process.versions.node.split(".")[0]) !== 24 || !raw(process.versions.node, "process.versions.node") || !raw(process.versions.zstd, "process.versions.zstd")) throw new Error("Node 24 Zstd runtime is required");
 }
 
@@ -155,8 +199,9 @@ async function emitCatalog(out, source, ids, stationSetSha256) {
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.json"), manifest);
 }
 
-async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, build) {
+async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSpecBytes, layout, build, evidenceInput) {
   const artifact = path.join(out, "server-route-bundle"); const payload = path.join(artifact, "payload"); await mkdir(payload, { recursive: true }); const hashes = {};
+  let generatedEvidence;
   for (const [name, owned] of Object.entries(COMPONENTS)) {
     const componentPath = path.join(artifact, `.${name}.sqlite`); const target = new DatabaseSync(componentPath); sqliteProfile(target);
     const present = new Set([...Object.keys(REFERENCES), ...owned]);
@@ -164,12 +209,24 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
     const requiredKeys = requiredUniqueKeys(source, present, selected);
     for (const [table, columns] of Object.entries(REFERENCES)) copyTable(source, target, table, columns, present, selected, requiredKeys.get(table));
     for (const table of owned) copyTable(source, target, table, undefined, present, selected, requiredKeys.get(table));
+    if (name === "accessibility") {
+      generatedEvidence = buildGeneratedEvidence({
+        ...evidenceInput,
+        bundleId: ids.bundleId,
+        source,
+        stationSetSha256,
+        sourceSetSha256: buildSpec.sourceSnapshotSetHash,
+        topologySha256: hashes.topologySha256,
+      });
+      insertGeneratedEvidence(target, generatedEvidence);
+    }
     target.exec(IDENTITY_DDL); target.prepare("INSERT INTO artifact_component_identity VALUES(?,?,?,?)").run(ids.bundleId, ids.releaseSequence, stationSetSha256, "Asia/Seoul");
     validateComponent(target, name, layout.serverRouteBundle);
     finishSqlite(target); target.close(); await normalizeHeader(componentPath);
     const compressed = zstdCompressSync(await readFile(componentPath), { params: { [constants.ZSTD_c_compressionLevel]: build.compressionProfile.compressionLevel, [constants.ZSTD_c_checksumFlag]: build.compressionProfile.checksumFlag } }); await rm(componentPath);
     const output = path.join(payload, `${name}.sqlite.zst`); await writeFile(output, compressed); hashes[`${name}Sha256`] = sha(compressed);
   }
+  if (!generatedEvidence) throw new Error("generated accessibility evidence is required");
   const manifest = { manifestVersion: 1, artifactKind: "server-route-bundle", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, payloadSha256: await inventory(artifact, new Set(Object.keys(COMPONENTS).map((name) => `payload/${name}.sqlite.zst`))), ...hashes, provenanceSha256: "0".repeat(64), compatibilitySha256: "0".repeat(64), serviceTimezone: "Asia/Seoul", activeFrom: ids.activeFrom, freshUntil: ids.freshUntil, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, keyId: ids.keyId, signature: { algorithm: "rsa-sha256-server-route-bundle-v1", value: "probe" } };
   validateArtifactComponentManifest(manifest, stationSetSha256);
   const provenance = { schemaVersion: 1, artifactKind: "server-route-bundle-provenance", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", activeFrom: ids.activeFrom, freshUntil: ids.freshUntil, builtAt: ids.builtAt, buildSpecSha256: sha(buildSpecBytes), sourceSnapshotSetHash: buildSpec.sourceSnapshotSetHash, sourceInventorySha256: buildSpec.sourceInventorySha256, sourceSnapshotIds: [...new Set(buildSpec.sourceSnapshotIds)].sort(bytes) };
@@ -178,6 +235,116 @@ async function emitServer(out, source, ids, stationSetSha256, buildSpec, buildSp
   const compatibility = { schemaVersion: 1, artifactKind: "server-route-bundle-compatibility", bundleId: ids.bundleId, releaseSequence: ids.releaseSequence, stationSetSha256, serviceTimezone: "Asia/Seoul", manifestVersion: 1, tableLayoutSchemaVersion: layout.schemaVersion, sourceSchemaPath: sourceSchema.path, sourceSqliteUserVersion: sourceSchema.sqliteUserVersion, sourceSchemaSha256: sourceSchema.sha256, schemaCompatibility: build.manifestLifecycle.schemaCompatibility, compressionProfile: build.compressionProfile, encoderRuntime: { node: process.versions.node, zstd: process.versions.zstd } };
   await json(path.join(artifact, "compatibility.json"), compatibility); manifest.compatibilitySha256 = sha(await readFile(path.join(artifact, "compatibility.json")));
   validateArtifactComponentManifest(manifest, stationSetSha256); await json(path.join(artifact, "manifest.signing-input.json"), withoutSignature(manifest));
+}
+
+function buildGeneratedEvidence(input) {
+  assertKeys(input.stationLineInput, ["candidate", "stationLines", "evidenceRows"], "station-line input keys");
+  assertStationLineCandidate(input.stationLineInput?.candidate, input);
+  const materialization = materializeStationLineAccessibility({
+    ...input.stationLineInput,
+    observedAt: input.evaluationAt,
+  });
+  assertExactProjection(
+    input.stationLineInput.stationLines,
+    sourceStationLines(input.source, false),
+    ["stationId", "lineId", "operatorId"],
+    "station-line materializer source projection",
+  );
+  const routeEdgeSeed = requireObject(input.routeEdgeInput, "route-edge seed input");
+  assertKeys(routeEdgeSeed, ["candidate", "stationLines", "routeEdges"], "route-edge seed input keys");
+  const candidateSeed = requireObject(routeEdgeSeed.candidate, "route-edge seed candidate");
+  assertKeys(candidateSeed, ROUTE_EDGE_SEED_CANDIDATE_KEYS, "route-edge seed candidate keys");
+  for (const [field, expected, label] of [
+    ["candidateId", input.bundleId, "candidate"],
+    ["stationSetSha256", input.stationSetSha256, "station set"],
+    ["sourceSetSha256", input.sourceSetSha256, "source set"],
+  ]) {
+    if (candidateSeed[field] !== expected) throw new Error(`route-edge seed ${label} identity mismatch`);
+  }
+  assertExactProjection(
+    routeEdgeSeed.stationLines,
+    sourceStationLines(input.source, true),
+    ["stationId", "lineId", "operatorId", "lineSequence"],
+    "route-edge station-line source projection",
+  );
+  assertExactProjection(
+    routeEdgeSeed.routeEdges,
+    sourceRouteEdges(input.source),
+    ["edgeId"],
+    "route-edge source projection",
+  );
+  const evaluation = evaluateRouteAccessibilityEdges({
+    ...routeEdgeSeed,
+    candidate: { ...candidateSeed, topologySha256: input.topologySha256 },
+    evaluationAt: input.evaluationAt,
+    materialization,
+  }, input.routeEdgePolicy);
+  const materializationJson = canonicalStationLineAccessibilityJson(materialization);
+  const evaluationJson = canonicalRouteEdgeEvaluationJson(evaluation);
+  return { materialization, materializationJson, evaluation, evaluationJson };
+}
+
+function sourceStationLines(source, includeSequence) {
+  return source.prepare(`
+    SELECT station_lines.station_id AS stationId,
+           station_lines.line_id AS lineId,
+           lines.operator_id AS operatorId${includeSequence ? ",\n           station_lines.line_sequence AS lineSequence" : ""}
+      FROM station_lines
+      JOIN lines ON lines.id = station_lines.line_id
+     ORDER BY station_lines.station_id COLLATE BINARY,
+              station_lines.line_id COLLATE BINARY
+  `).all().map((row) => ({ ...row }));
+}
+
+function sourceRouteEdges(source) {
+  return source.prepare(`
+    SELECT id AS edgeId,
+           edge_type AS edgeType,
+           from_node_id AS fromNodeId,
+           to_node_id AS toNodeId,
+           duration_seconds AS durationSeconds,
+           distance_meters AS distanceMeters,
+           service_pattern AS servicePattern,
+           service_class AS serviceClass
+      FROM network_edges
+     ORDER BY id COLLATE BINARY
+  `).all().map((row) => {
+    const edge = { ...row };
+    return { ...edge, edgeSha256: routeEdgeSha256(edge) };
+  });
+}
+
+function assertExactProjection(actual, expected, orderFields, label) {
+  if (!Array.isArray(actual)) throw new Error(`${label} mismatch`);
+  const ordered = actual.map((row) => requireObject(row, label)).sort((left, right) => bytes(
+    canonicalJson(orderFields.map((field) => left[field])),
+    canonicalJson(orderFields.map((field) => right[field])),
+  ));
+  if (canonicalJson(ordered) !== canonicalJson(expected)) throw new Error(`${label} mismatch`);
+}
+
+function assertStationLineCandidate(candidate, input) {
+  requireObject(candidate, "station-line candidate");
+  for (const [field, expected, label] of [
+    ["candidateId", input.bundleId, "candidate"],
+    ["stationSetSha256", input.stationSetSha256, "station set"],
+    ["sourceSetSha256", input.sourceSetSha256, "source set"],
+  ]) {
+    if (candidate[field] !== expected) throw new Error(`station-line ${label} identity mismatch`);
+  }
+}
+
+function insertGeneratedEvidence(target, evidence) {
+  target.exec(Object.values(GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL).join("; "));
+  target.prepare("INSERT INTO station_line_accessibility_evidence VALUES(?,?)").run(
+    evidence.materialization.materializationDigest,
+    evidence.materializationJson,
+  );
+  target.prepare("INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)").run(
+    evidence.evaluation.evaluationDigest,
+    evidence.materialization.materializationDigest,
+    evidence.evaluationJson,
+  );
 }
 
 function copyTable(source, target, table, projection = undefined, presentTables = undefined, selected = undefined, uniqueKeys = []) {
@@ -244,11 +411,14 @@ async function validateOutput(root) { const children = (await readdir(root)).sor
 async function collectFiles(root, current, output) { for (const entry of await readdir(current, { withFileTypes: true })) { const target = path.join(current, entry.name); if (entry.isDirectory()) await collectFiles(root, target, output); else if (entry.isFile() && !entry.isSymbolicLink()) output.add(path.relative(root, target).split(path.sep).join("/")); else throw new Error("artifact output must be regular files"); } }
 function validateInputBinding(provenance, current, currentHash, sourceHash, buildSpecHash) { if (provenance?.schemaVersion !== 1 || provenance.artifactKind !== "datapack-field-provenance" || provenance.manifestSha256 !== currentHash) throw new Error("source provenance does not bind raw current.json"); for (const packs of [current?.packs, provenance?.packs]) { if (!Array.isArray(packs)) throw new Error("source pack identities are required"); const matching = packs.filter((pack) => pack?.id === "capital" && pack?.artifactKind === "production"); if (matching.length !== 1 || matching[0].sqliteSha256 !== sourceHash) throw new Error("source pack identity mismatch"); } if (!provenance?.candidateBuild || typeof provenance.candidateBuild !== "object" || Array.isArray(provenance.candidateBuild) || provenance.candidateBuild.buildSpecSha256 !== buildSpecHash) throw new Error("build spec identity mismatch"); }
 function parseJson(bytes, label) { try { return JSON.parse(Buffer.from(bytes).toString("utf8")); } catch { throw new Error(`${label} must be JSON`); } }
+function parseCanonicalJson(bytes, label) { const value = parseJson(bytes, label); if (!Buffer.from(bytes).equals(Buffer.from(canonicalJson(value)))) throw new Error(`${label} must be canonical JSON`); return value; }
 function tupleCompare(a, b, fields) { for (const field of fields) { const result = bytes(a[field], b[field]); if (result) return result; } return 0; }
 function sha(value) { return createHash("sha256").update(value).digest("hex"); }
 function bytes(a, b) { return Buffer.compare(Buffer.from(a), Buffer.from(b)); }
 function quote(value) { return `"${String(value).replaceAll('"', '""')}"`; }
 function required(value, label) { if (typeof value !== "string" || !value) throw new Error(`${label} is required`); return value; }
+function requireObject(value, label) { if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`); return value; }
+function assertKeys(value, expected, label) { const actual = Object.keys(requireObject(value, label)).sort(bytes); const wanted = [...expected].sort(bytes); if (canonicalJson(actual) !== canonicalJson(wanted)) throw new Error(`${label} mismatch`); }
 function raw(value, label) { value = required(value, label); if (value.trim() !== value) throw new Error(`${label} must be raw`); return value; }
 function exact(value, expected, label) { if (value !== expected) throw new Error(`${label} must be ${expected}`); return value; }
 function positive(value) { value = Number(value); if (!Number.isSafeInteger(value) || value < 1) throw new Error("--release-sequence must be positive safe integer"); return value; }
@@ -259,4 +429,14 @@ async function exists(target) { try { await lstat(target); return true; } catch 
 async function readJson(target) { return parseJson(await readFile(target), target); }
 async function json(target, value) { await writeFile(target, Buffer.from(canonicalJson(value))); }
 function parse(argv) { if (argv.length !== CLI_ARGS.size * 2) throw new Error("exactly the required arguments are required"); const values = {}; for (let index = 0; index < argv.length; index += 2) { const key = argv[index]; const value = argv[index + 1]; if (!key?.startsWith("--") || value === undefined || value.startsWith("--") || !CLI_ARGS.has(key.slice(2)) || Object.hasOwn(values, key.slice(2))) throw new Error("invalid arguments"); values[key.slice(2)] = value; } return values; }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) emitArtifactComponents(Object.fromEntries(Object.entries(parse(process.argv.slice(2))).map(([key, value]) => [key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()), value]))).catch((error) => { process.stderr.write(`emit-artifact-components: ${error.message}\n`); process.exitCode = 1; });
+async function main(argv) {
+  const values = Object.fromEntries(Object.entries(parse(argv)).map(([key, value]) => [key.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()), value]));
+  const [stationLinePath, routeEdgePath] = await Promise.all([
+    regular(values.stationLineInput, "--station-line-input"),
+    regular(values.routeEdgeInput, "--route-edge-input"),
+  ]);
+  values.stationLineInput = parseCanonicalJson(await readFile(stationLinePath), "station-line input");
+  values.routeEdgeInput = parseCanonicalJson(await readFile(routeEdgePath), "route-edge input");
+  await emitArtifactComponents(values);
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch((error) => { process.stderr.write(`emit-artifact-components: ${error.message}\n`); process.exitCode = 1; });
