@@ -76,14 +76,35 @@ test("raw SQL table catalog는 Hub issue reference와 기존 same-repo issue ref
   for (const issue of ["#96", "Hub Issue #2527"]) {
     assert.match(issue, issuePattern);
   }
-  for (const issue of ["Hub Issue #0", "hub Issue #2527", "Data Issue #2527", "Hub PR #2527"]) {
+  for (const issue of ["Hub Issue #0", "hub Issue #2527", "Data Issue #2527", "Hub PR #2527", "https://example.com/issues/2527"]) {
     assert.doesNotMatch(issue, issuePattern);
   }
 
   assertMatchesSchema(schema, catalog);
+  const expectedReadSites = {
+    route_map_positions: ["features/stations/data/drift_station_repository.dart"],
+    route_map_line_tracks: ["features/stations/data/drift_station_repository.dart"],
+    transit_feed_info: [
+      "core/database/catalog/station_timetable_query.dart",
+      "features/home_widget/next_train_widget_repository.dart",
+    ],
+  };
+  const assertReadSitesMatchCatalogProjection = (value) => assert.deepEqual(
+    Object.fromEntries(value.tables.map(({ name, readSites }) => [name, readSites])),
+    expectedReadSites,
+    "readSites must match the catalog projection",
+  );
+  assertReadSitesMatchCatalogProjection(catalog);
   const invalidCatalog = structuredClone(catalog);
   invalidCatalog.tables[0].issue = "Hub PR #2527";
   assert.throws(() => assertMatchesSchema(schema, invalidCatalog), /must match its pattern/);
+
+  const invalidReadSitesCatalog = structuredClone(catalog);
+  invalidReadSitesCatalog.tables[0].readSites = ["arbitrary/non-empty.dart"];
+  assert.throws(
+    () => assertReadSitesMatchCatalogProjection(invalidReadSitesCatalog),
+    /readSites must match the catalog projection/,
+  );
 });
 
 test("uniqueItems는 key 순서만 다른 JSON 객체도 중복으로 거부한다", () => {
