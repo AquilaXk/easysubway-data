@@ -75,6 +75,7 @@ const currentV18MigrationInputPack = Object.freeze({
   sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
   byteSize: 1463745,
 });
+const currentV18CanonicalTopologyInputByteSize = 359319;
 
 export function validateSourceSeparatedCurrentTopology({ capitalTopology, incheonSnapshot }) {
   const capital = loadCapitalRouteTopologySnapshot(capitalTopology);
@@ -1521,11 +1522,14 @@ export function validateItxCurrentTopologyAdmission(currentAdmission, {
   };
 }
 
-async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, currentAdmission = null) {
+export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, currentAdmission = null) {
   const reference = contract?.sourceTimetableArtifact;
   const expectedPromotionMode = currentAdmission == null
     ? "CURRENT_CANDIDATE_OWNER_APPROVED"
     : "UNCHANGED_AUTO";
+  const expectedTopologySourceSha256 = currentAdmission == null
+    ? reference?.sha256
+    : reference?.promotion?.previousArtifactSha256;
   if (contract?.schemaVersion !== 2
     || contract.artifactKind !== "itx-cheongchun-coverage-contract"
     || contract.serviceId !== "ITX_CHEONGCHUN"
@@ -1535,7 +1539,7 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, curre
     || reference?.status !== "ADMITTED"
     || reference.admissionEligible !== true
     || reference.promotion?.mode !== expectedPromotionMode
-    || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== reference.sha256) {
+    || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== expectedTopologySourceSha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
   if (contract.coverageStates?.schedule_timetable !== "MISSING"
@@ -1587,7 +1591,17 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, curre
     throw new Error("ITX network edge admission evidence mismatch");
   }
   try {
-    validateSourceCandidateSchema(source);
+    const schemaSource = currentAdmission != null
+      && source.stationCatalogPackIdentity == null
+      && source.canonicalPackIdentity != null
+      ? (() => {
+          const normalized = structuredClone(source);
+          delete normalized.canonicalPackIdentity;
+          normalized.stationCatalogPackIdentity = topologyAdmission.stationCatalogPackIdentity;
+          return normalized;
+        })()
+      : source;
+    validateSourceCandidateSchema(schemaSource);
     const observedAt = new Date(source.observedAt);
     if (observedAt.getTime() > candidateBuildNow().getTime()) throw new Error("future-dated ITX observation");
     validateItxServiceDates(source.selectedServiceDates, { now: observedAt });
@@ -1595,18 +1609,29 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, curre
   } catch (error) {
     throw new Error("ITX network edge admission evidence mismatch", { cause: error });
   }
-  const sourceStationCatalogPackIdentity = requiredStationCatalogPackIdentity(
-    source.stationCatalogPackIdentity,
-    "ITX network edge source.stationCatalogPackIdentity",
-  );
-  const contractStationCatalogPackIdentity = requiredStationCatalogPackIdentity(
-    contract?.officialEvidence?.korailCompletenessAdmission?.stationCatalogPackIdentity,
-    "ITX coverage contract stationCatalogPackIdentity",
-  );
-  const contractTopologyInputPackIdentity = requiredTopologyInputPackIdentity(
-    contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
-    "ITX coverage contract topologyInputPackIdentity",
-  );
+  const inheritedStationCatalogPackIdentity = topologyAdmission.stationCatalogPackIdentity;
+  const sourceStationCatalogPackIdentity = currentAdmission != null
+    && source.stationCatalogPackIdentity == null
+    ? inheritedStationCatalogPackIdentity
+    : requiredStationCatalogPackIdentity(
+        source.stationCatalogPackIdentity,
+        "ITX network edge source.stationCatalogPackIdentity",
+      );
+  const completenessAdmission = contract?.officialEvidence?.korailCompletenessAdmission;
+  const contractStationCatalogPackIdentity = currentAdmission != null
+    && completenessAdmission?.stationCatalogPackIdentity == null
+    ? inheritedStationCatalogPackIdentity
+    : requiredStationCatalogPackIdentity(
+        completenessAdmission?.stationCatalogPackIdentity,
+        "ITX coverage contract stationCatalogPackIdentity",
+      );
+  const contractTopologyInputPackIdentity = currentAdmission != null
+    && completenessAdmission?.topologyInputPackIdentity == null
+    ? topologyAdmission.topologyInputPackIdentity
+    : requiredTopologyInputPackIdentity(
+        completenessAdmission?.topologyInputPackIdentity,
+        "ITX coverage contract topologyInputPackIdentity",
+      );
   const topologyEvidenceInputPackIdentity = topologyAdmission.topologyInputPackIdentity;
   const topologyInputMatches = topologyAdmission.migratedCurrentV18
     ? contractTopologyInputPackIdentity.id === topologyEvidenceInputPackIdentity.id
@@ -1623,10 +1648,13 @@ async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission, curre
     || Object.hasOwn(completeness, "readmissions")) {
     throw new Error("ITX completeness legacy admission identity is forbidden");
   }
-  const completenessStationCatalogPackIdentity = requiredStationCatalogPackIdentity(
-    completeness.stationCatalogPackIdentity,
-    "ITX completeness stationCatalogPackIdentity",
-  );
+  const completenessStationCatalogPackIdentity = currentAdmission != null
+    && completeness.stationCatalogPackIdentity == null
+    ? inheritedStationCatalogPackIdentity
+    : requiredStationCatalogPackIdentity(
+        completeness.stationCatalogPackIdentity,
+        "ITX completeness stationCatalogPackIdentity",
+      );
   if (!sameStationCatalogPackIdentity(
     topologyAdmission.stationCatalogPackIdentity,
     sourceStationCatalogPackIdentity,
@@ -1900,6 +1928,7 @@ export async function validateTrackedItxTopologyEvidence(buildSpec, fixture) {
         artifactEvidence.canonicalPackSqliteSha256,
         "ITX topology evidence.routeServiceEvidence.artifactEvidence.canonicalPackSqliteSha256",
       ),
+      byteSize: currentV18CanonicalTopologyInputByteSize,
     };
     stationCatalogPackIdentity = requiredStationCatalogPackIdentity({
       artifactKind: stationCatalogEvidence.stationCatalogArtifactKind,

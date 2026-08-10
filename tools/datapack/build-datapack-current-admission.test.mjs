@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   admittedIncheonTopologyEvidence,
+  admittedItxNetworkEdgeEvidence,
   candidateNetworkEdgeEvidence,
   materializeIncheonNetworkEdges,
   validateTrackedItxTopologyEvidence,
@@ -321,9 +322,9 @@ test("tracked migrated v19 ITX evidence는 exact v18 lineage와 두 route-servic
     artifactKind: "station-catalog-pack",
     manifestVersion: 1,
     catalogPackId: "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1",
-    stationSetSha256: "1".repeat(64),
-    payloadSha256: "2".repeat(64),
-    manifestSha256: "3".repeat(64),
+    stationSetSha256: "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17",
+    payloadSha256: "3f7cfe2ae30133239665e8b0cb7c2cb7030d59c3fcf6a2574491f070a880ce89",
+    manifestSha256: "73b626004f9de99f1431604dbbda41893ee7b37c39957cbfd980864207a7029f",
   };
   const evidence = {
     schemaVersion: 1,
@@ -410,6 +411,35 @@ test("tracked migrated v19 ITX evidence는 exact v18 lineage와 두 route-servic
     }, fixture);
     assert.equal(validated.migratedCurrentV18, true);
     assert.deepEqual(validated.stationCatalogPackIdentity, stationIdentity);
+    const [contract, currentAdmission] = await Promise.all([
+      readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8")
+        .then(JSON.parse),
+      readFile(path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"), "utf8")
+        .then(JSON.parse),
+    ]);
+    const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = currentNow.toISOString();
+    let admitted;
+    try {
+      admitted = await admittedItxNetworkEdgeEvidence(contract, validated, currentAdmission);
+    } finally {
+      if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+      else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+    }
+    assert.equal(admitted.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
+    assert.deepEqual(admitted.routeServiceArtifactEvidence.stationCatalogEvidence, {
+      serviceClass: "ITX_CHEONGCHUN",
+      stationCatalogArtifactKind: stationIdentity.artifactKind,
+      stationCatalogManifestVersion: stationIdentity.manifestVersion,
+      stationCatalogPackId: stationIdentity.catalogPackId,
+      stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
+      stationCatalogPayloadSha256: stationIdentity.payloadSha256,
+      stationCatalogManifestSha256: stationIdentity.manifestSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: true,
+      freshUntil: currentAdmission.freshUntil,
+      sourceIssue: 2649,
+    });
 
     const forged = structuredClone(evidence);
     forged.migration.inputPack.sha256 = "0".repeat(64);
