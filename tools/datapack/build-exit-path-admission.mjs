@@ -21,7 +21,7 @@ const SNAPSHOT_KEYS = [
   "coverage", "queryPlan", "results",
 ];
 const QUERY_KEYS = [
-  "queryId", "providerOperatorId", "providerLineId", "providerStationId",
+  "queryId", "routeEdgeId", "providerOperatorId", "providerLineId", "providerStationId", "providerNextStationId",
   "operatorName", "lineName", "stationName", "regionId",
 ];
 const RESULT_KEYS = ["queryId", "state", "records", "zeroEvidenceSha256"];
@@ -188,7 +188,7 @@ function normalizeStationLine(line) {
 
 function validateSnapshot(value, observedAt) {
   assertKeys(value, SNAPSHOT_KEYS, "EXIT snapshot keys");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
+  if (value.schemaVersion !== 2 || value.artifactKind !== "exit-path-normalized-source-snapshot") {
     throw new Error("EXIT snapshot schema mismatch");
   }
   for (const key of ["sourceId", "snapshotId"]) assertNonBlank(value[key], `EXIT snapshot ${key}`);
@@ -228,7 +228,9 @@ function validateQueryPlan(value) {
     for (const key of QUERY_KEYS) assertNonBlank(query[key], `EXIT query ${key}`);
     if (seenIds.has(query.queryId)) throw new Error("duplicate EXIT queryId");
     seenIds.add(query.queryId);
-    const providerTuple = [query.providerOperatorId, query.providerLineId, query.providerStationId].join("\0");
+    const providerTuple = [
+      query.providerOperatorId, query.providerLineId, query.providerStationId, query.providerNextStationId,
+    ].join("\0");
     if (seenProviderTuples.has(providerTuple)) throw new Error("duplicate EXIT provider query tuple");
     seenProviderTuples.add(providerTuple);
     return canonicalObject(query);
@@ -375,9 +377,10 @@ function partitionQueries(queryPlan, stationLines) {
 function indexJoinedQueries(joined) {
   const result = new Map();
   for (const query of joined) {
-    if (result.has(query.stationLineId)) throw new Error("duplicate EXIT station-line mapping");
-    result.set(query.stationLineId, query);
+    if (!result.has(query.stationLineId)) result.set(query.stationLineId, []);
+    result.get(query.stationLineId).push(query);
   }
+  for (const queries of result.values()) queries.sort(compareQueries);
   return result;
 }
 
@@ -438,24 +441,29 @@ function resolveCellOutcome({
   if (sourceAdmission.decision !== "APPROVED" || sourceAdmission.productionUseAllowed !== true) {
     return cellOutcome("BLOCKED_WITH_EVIDENCE", "SOURCE_NOT_PRODUCTION_ADMITTED", missingHash);
   }
-  if (!snapshot.coverage.queryIds.includes(joined.queryId)) {
+  if (joined.some(({ queryId }) => !snapshot.coverage.queryIds.includes(queryId))) {
     return cellOutcome("BLOCKED_WITH_EVIDENCE", "SOURCE_COVERAGE_PARTIAL", missingHash);
   }
-  const result = resultByQuery.get(joined.queryId);
-  if (!result) return cellOutcome("MISSING", "OFFICIAL_EXIT_RESULT_MISSING", missingHash);
-  const resultHash = sha256(canonicalJson(result));
-  if (result.state === "OBSERVED_EXIT_PATH") {
+  const results = joined.map(({ queryId }) => resultByQuery.get(queryId));
+  if (results.some((result) => result == null)) {
+    return cellOutcome("MISSING", "OFFICIAL_EXIT_RESULT_MISSING", missingHash);
+  }
+  const resultHash = sha256(canonicalJson(results));
+  if (results.some(({ state }) => state === "FAILED")) {
+    return cellOutcome("BLOCKED_WITH_EVIDENCE", "PROVIDER_REQUEST_FAILED", resultHash);
+  }
+  if (results.some(({ state }) => state === "PROVIDER_NO_DATA")) {
+    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
+  }
+  if (results.some(({ state }) => state === "OBSERVED_EXIT_PATH")) {
     return cellOutcome("ADMITTED_EXIT_PATH", "OFFICIAL_EXIT_PATH_PRESENT", resultHash);
   }
-  if (result.state === "EXPLICIT_ZERO") {
+  if (results.every(({ state }) => state === "EXPLICIT_ZERO")) {
     return snapshot.coverage.exhaustive
       ? cellOutcome("ADMITTED_VERIFIED_ABSENCE", "OFFICIAL_EXIT_EXPLICIT_ZERO", resultHash)
       : cellOutcome("BLOCKED_WITH_EVIDENCE", "SOURCE_COVERAGE_PARTIAL", resultHash);
   }
-  if (result.state === "PROVIDER_NO_DATA") {
-    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
-  }
-  return cellOutcome("BLOCKED_WITH_EVIDENCE", "PROVIDER_REQUEST_FAILED", resultHash);
+  throw new Error("unsupported EXIT station-line result aggregation");
 }
 
 function cellOutcome(state, admissionReason, providerRecordHash) {
@@ -530,7 +538,10 @@ function compareStationLines(left, right) {
 }
 
 function compareQueries(left, right) {
-  return compareBytes(left.queryId, right.queryId);
+  return compareBytes(left.providerStationId, right.providerStationId)
+    || compareBytes(left.providerNextStationId, right.providerNextStationId)
+    || compareBytes(left.routeEdgeId, right.routeEdgeId)
+    || compareBytes(left.queryId, right.queryId);
 }
 
 function compareResults(left, right) {

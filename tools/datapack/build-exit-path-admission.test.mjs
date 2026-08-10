@@ -175,24 +175,64 @@ test("alias·unmatched·ambiguous query는 exact join으로 승격되지 않는�
   assert.equal(ambiguousResult.stateSummary.ADMITTED_EXIT_PATH, 0);
 });
 
-test("두 provider query가 같은 canonical station-line에 결속되면 fail closed한다", () => {
+test("한 station-line의 모든 방향 query를 평가해 observed와 explicit zero를 present로 집계한다", () => {
   const input = validInput();
   const snapshot = parseSnapshot(input);
   snapshot.queryPlan.push({
     ...snapshot.queryPlan[0],
     queryId: "query-3",
-    providerStationId: "S1-duplicate",
+    routeEdgeId: "edge-a-c",
+    providerNextStationId: "S3",
   });
   snapshot.coverage.queryIds.push("query-3");
   snapshot.results.push({
     queryId: "query-3",
-    state: "OBSERVED_EXIT_PATH",
-    records: [record("path-3")],
-    zeroEvidenceSha256: null,
+    state: "EXPLICIT_ZERO",
+    records: [],
+    zeroEvidenceSha256: sha256("official-zero-query-3"),
   });
-  replaceSnapshot(input, snapshot);
+  snapshot.queryPlan = [snapshot.queryPlan[0], snapshot.queryPlan[2], snapshot.queryPlan[1]];
+  replaceSnapshotInProvidedOrder(input, snapshot);
 
-  assert.throws(() => buildExitPathAdmission(input), /duplicate EXIT station-line mapping/);
+  const result = buildExitPathAdmission(input);
+
+  assert.equal(result.cells[0].state, "ADMITTED_EXIT_PATH");
+  assert.equal(result.cells[0].admissionReason, "OFFICIAL_EXIT_PATH_PRESENT");
+  assert.equal(result.decision, "GO");
+
+  snapshot.results.find(({ queryId }) => queryId === "query-3").state = "FAILED";
+  snapshot.results.find(({ queryId }) => queryId === "query-3").zeroEvidenceSha256 = null;
+  replaceSnapshotInProvidedOrder(input, snapshot);
+  const failed = buildExitPathAdmission(input);
+  assert.equal(failed.cells[0].state, "BLOCKED_WITH_EVIDENCE");
+  assert.equal(failed.cells[0].admissionReason, "PROVIDER_REQUEST_FAILED");
+  assert.equal(failed.decision, "NO_GO");
+});
+
+test("planner canonical query order를 snapshot에서 재정렬 없이 소비한다", () => {
+  const input = validInput();
+  const snapshot = parseSnapshot(input);
+  snapshot.queryPlan[0].queryId = "z-query";
+  snapshot.queryPlan[1].queryId = "a-query";
+  snapshot.coverage.queryIds = ["a-query", "z-query"];
+  snapshot.results[0].queryId = "z-query";
+  snapshot.results[1].queryId = "a-query";
+  snapshot.results.reverse();
+  replaceSnapshotInProvidedOrder(input, snapshot);
+
+  const result = buildExitPathAdmission(input);
+
+  assert.equal(result.decision, "GO");
+  assert.deepEqual(result.queryPartition.joined.map(({ queryId }) => queryId), ["z-query", "a-query"]);
+});
+
+test("expanded EXIT query shape를 legacy normalized snapshot v1로 수용하지 않는다", () => {
+  const input = validInput();
+  const snapshot = parseSnapshot(input);
+  snapshot.schemaVersion = 1;
+  replaceSnapshotInProvidedOrder(input, snapshot);
+
+  assert.throws(() => buildExitPathAdmission(input), /EXIT snapshot schema mismatch/);
 });
 
 test("duplicate query/result/record와 malformed result shape는 output 전에 거부한다", () => {
@@ -340,16 +380,18 @@ function validInput() {
   }];
   const queryPlan = stationLines.map((line, index) => ({
     queryId: `query-${index + 1}`,
+    routeEdgeId: "edge-a-b",
     providerOperatorId: "OP",
     providerLineId: "L1",
     providerStationId: `S${index + 1}`,
+    providerNextStationId: `S${index === 0 ? 2 : 1}`,
     operatorName: line.operatorName,
     lineName: line.lineName,
     stationName: line.stationName,
     regionId: line.regionId,
   }));
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "exit-path-normalized-source-snapshot",
     sourceId: "official-exit-path-source",
     snapshotId: "official-exit-path-source-20260810",
@@ -439,6 +481,18 @@ function replaceSnapshot(input, snapshot) {
       exhaustive: snapshot.coverage.exhaustive,
       queryIds: [...snapshot.coverage.queryIds].sort(compareBytes),
     })),
+  });
+}
+
+function replaceSnapshotInProvidedOrder(input, snapshot) {
+  input.snapshotBytes = canonicalBytes(snapshot);
+  input.sourceSnapshots[0].rawSha256 = sha256(input.snapshotBytes);
+  input.candidate.sourceSetSha256 = sha256(JSON.stringify(input.sourceSnapshots));
+  Object.assign(input.sourceAdmission, {
+    rawSha256: input.sourceSnapshots[0].rawSha256,
+    sourceSnapshotSetHash: input.candidate.sourceSetSha256,
+    queryPlanSha256: sha256(canonicalJson(snapshot.queryPlan)),
+    coverageScopeSha256: sha256(canonicalJson(snapshot.coverage)),
   });
 }
 

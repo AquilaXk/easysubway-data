@@ -135,6 +135,7 @@ jobs:
           tools/datapack/sign-server-route-bundle.test.mjs
           tools/datapack/build-server-route-bundle-final.test.mjs
           tools/datapack/build-transfer-topology-admission.test.mjs
+          tools/datapack/plan-kric-exit-path-collection.test.mjs
           tools/datapack/build-exit-path-admission.test.mjs
           tools/datapack/build-server-route-bundle-consumer-handoff.test.mjs
           tools/datapack/publish-object-storage.test.mjs
