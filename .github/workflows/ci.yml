@@ -131,6 +131,7 @@ jobs:
           tools/datapack/bundle-component-contract.test.mjs
           tools/datapack/artifact-component-manifest.test.mjs
           tools/datapack/server-route-bundle-build-contract.test.mjs
+          tools/datapack/lib/server-route-bundle-final.test.mjs
           tools/datapack/artifact-component-table-layout.test.mjs
           tools/datapack/emit-artifact-components.test.mjs
           tools/datapack/emit-station-catalog-pack.test.mjs
