@@ -26,6 +26,7 @@ import {
   CAPITAL_MAP_LINE_IDS,
   FRESHNESS_MILLIS,
   normalizeStationName,
+  projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import {
   validateSourceCandidateSchema,
@@ -959,6 +960,15 @@ export function validateCapitalTopologyReverification(
   candidateSnapshotId,
   baselineSnapshotId,
 ) {
+  const sourceSeparatedLineIds = CAPITAL_MAP_LINE_IDS.filter(
+    (lineId) => !incheonTopologyLineIds.includes(lineId),
+  );
+  const candidateLineIds = new Set(candidateTopology.lines?.map(({ lineId }) => lineId) ?? []);
+  const sourceSeparated = candidateLineIds.size === sourceSeparatedLineIds.length
+    && sourceSeparatedLineIds.every((lineId) => candidateLineIds.has(lineId));
+  const baselineTopology = sourceSeparated
+    ? projectCapitalTopologyOwnership(topology)
+    : topology;
   assertExactKeys(
     evidence,
     ["schemaVersion", "artifactKind", "sourceIssue", "admissionIssue", "baseline", "candidate", "comparison"],
@@ -980,7 +990,7 @@ export function validateCapitalTopologyReverification(
     || evidence.sourceIssue !== 60
     || evidence.admissionIssue !== 2649
     || evidence.baseline.snapshotId !== baselineSnapshotId
-    || evidence.baseline.contentSha256 !== topology.contentSha256
+    || evidence.baseline.contentSha256 !== baselineTopology.contentSha256
     || admission.snapshotId !== candidateSnapshotId
     || admission.contentSha256 !== candidateTopology.contentSha256
     || evidence.candidate.freshUntil !== admission.freshUntil
@@ -1012,7 +1022,7 @@ export function validateCapitalTopologyReverification(
   const candidateNormalized = sha256(Buffer.from(JSON.stringify(candidateLines
     .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
     .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
-  const topologyNormalized = sha256(Buffer.from(JSON.stringify(topology.lines
+  const topologyNormalized = sha256(Buffer.from(JSON.stringify(baselineTopology.lines
     .map(({ lineId, contentSha256 }) => ({ lineId, contentSha256 }))
     .sort((left, right) => compareStrings(left.lineId, right.lineId)))));
   if (candidateNormalized !== evidence.candidate.normalizedLineSetSha256
@@ -1031,7 +1041,7 @@ export function validateCapitalTopologyReverification(
     || candidateTopology.freshUntil !== evidence.candidate.freshUntil
     || candidateTopology.lineCount !== evidence.candidate.lineCount
     || candidateTopology.totalEdgeCount !== evidence.candidate.totalEdgeCount
-    || JSON.stringify(candidateTopology.topologyGaps) !== JSON.stringify(topology.topologyGaps)
+    || JSON.stringify(candidateTopology.topologyGaps) !== JSON.stringify(baselineTopology.topologyGaps)
     || JSON.stringify(candidateLines) !== JSON.stringify(evidenceCandidateLines)) {
     throw new Error("capital topology reverification candidate snapshot mismatch");
   }

@@ -14,6 +14,7 @@ import {
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
 } from "./build-datapack.mjs";
+import { buildCapitalTopologyReverificationEvidence } from "./collect-capital-route-topology.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -221,6 +222,38 @@ test("capital topology reverification은 historical baseline과 current admitted
     reverification,
     baseline,
     candidate,
+    admission,
+    admission.snapshotId,
+    "capital-route-topology-20260724",
+  ));
+});
+
+test("source-separated reverification은 historical baseline도 동일 ownership으로 투영한다", async () => {
+  const [baseline, candidate] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
+      .then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260804.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const projectedBaseline = capitalTopologyWithoutIncheon(baseline);
+  const projectedCandidate = capitalTopologyWithoutIncheon(candidate);
+  const evidence = buildCapitalTopologyReverificationEvidence(projectedBaseline, projectedCandidate);
+  const admission = {
+    schemaVersion: 1,
+    artifactKind: "capital-network-edge-admission",
+    issue: 2649,
+    status: "ADMITTED",
+    snapshotId: "capital-route-topology-20260804",
+    contentSha256: projectedCandidate.contentSha256,
+    reviewedAt: projectedCandidate.capturedAt,
+    reverifiedAt: projectedCandidate.capturedAt,
+    freshUntil: projectedCandidate.freshUntil,
+  };
+
+  assert.doesNotThrow(() => validateCapitalTopologyReverification(
+    evidence,
+    baseline,
+    projectedCandidate,
     admission,
     admission.snapshotId,
     "capital-route-topology-20260724",
