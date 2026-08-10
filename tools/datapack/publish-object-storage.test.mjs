@@ -212,6 +212,50 @@ test("signed 클라이언트는 releases 객체 불변 제약과 멱등 skip을 
   }
 });
 
+test("OCI PAR raw source 객체는 조건부 생성 후 전체 바이트로 재검증한다", async () => {
+  const mock = await startMockStorage();
+  const workspace = await mkdtemp(path.join(tmpdir(), "publish-source-raw-"));
+  const baseUrl = `http://127.0.0.1:${mock.port}`;
+  const objectKey = `source-raw/kric-subway-timetable/20260809/${"d".repeat(64)}.json`;
+  try {
+    const rawBytes = Buffer.from(JSON.stringify({ artifactKind: "kric-line4-timetable-collection" }));
+    await writeFile(path.join(workspace, "raw.json"), rawBytes);
+    const step = {
+      sourcePath: "raw.json",
+      objectKey,
+      sha256: sha256(rawBytes),
+      sizeBytes: rawBytes.length,
+      immutable: true,
+    };
+    const planPath = path.join(workspace, "plan.json");
+    await writeFile(planPath, JSON.stringify({
+      schemaVersion: 2,
+      mode: "object-storage-preflight",
+      steps: [
+        { ...step, type: "put-source-raw-object" },
+        { ...step, sourcePath: undefined, type: "verify-source-raw-object" },
+      ],
+    }));
+
+    await runPublish(planPath, workspace, baseUrl);
+    assert.deepEqual(mock.objects.get(objectKey)?.body, rawBytes);
+    assert.equal(mock.conditionalPutAttempts.get(objectKey), 1);
+
+    await runPublish(planPath, workspace, baseUrl);
+    assert.equal(mock.conditionalPutAttempts.get(objectKey), 2);
+
+    mock.objects.set(objectKey, {
+      body: Buffer.from("different"),
+      sha256: sha256(rawBytes),
+      cacheControl: "public, max-age=31536000, immutable",
+    });
+    await assert.rejects(runPublish(planPath, workspace, baseUrl), /immutable violation|checksum mismatch/);
+  } finally {
+    mock.server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("게시 실행기는 current=max-age=60, releases=immutable Cache-Control을 PUT에 부여한다", async () => {
   const mock = await startMockStorage();
   const workspace = await mkdtemp(path.join(tmpdir(), "publish-cc-"));

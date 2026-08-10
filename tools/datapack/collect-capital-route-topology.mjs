@@ -320,6 +320,7 @@ export const LINE_SOURCES = Object.freeze([
     datasetId: "15122916",
     detailUrl: "https://www.data.go.kr/data/15122916/fileData.do",
     downloadUrl: MOLIT_FULL_ROUTE_DETAIL_URL,
+    resolveDownloadFromDetail: true,
     localCsv: "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
     kind: "molit-sequence",
     molitRouteName: "김포골드라인",
@@ -330,6 +331,7 @@ export const LINE_SOURCES = Object.freeze([
     datasetId: "15122916",
     detailUrl: "https://www.data.go.kr/data/15122916/fileData.do",
     downloadUrl: MOLIT_FULL_ROUTE_DETAIL_URL,
+    resolveDownloadFromDetail: true,
     localCsv: "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
     kind: "molit-sequence",
     molitRouteName: "신림선",
@@ -343,7 +345,10 @@ export const LINE_SOURCES = Object.freeze([
       "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003639143&fileDetailSn=1&insertDataPrcus=N",
     localCsv: "tools/datapack/sources/capital-seohae-korail-distance-20260724.csv",
     localMolitCsv: "tools/datapack/sources/molit-urban-rail-full-route-20251211.csv",
+    molitDatasetId: "15122916",
+    molitDownloadUrl: MOLIT_FULL_ROUTE_DETAIL_URL,
     kind: "seohae-merged",
+    acceptedBranchNames: ["서해선"],
     molitRouteName: "서해선",
     molitMinSequence: 10,
     note: "코레일 15081858 서해선(원종 포함)+MOLIT 순번≥10(소사~원시)+부천종합운동장↔소사 스플라이스",
@@ -534,19 +539,33 @@ function upsertUndirected(map, fromStationName, toStationName, distanceMeters, b
     });
     return;
   }
-  if (existing.distanceMeters !== distanceMeters
-    && existing.distanceMeters > 0
-    && distanceMeters > 0) {
-    // Prefer positive consistent; allow equal. Conflict → keep existing if both >0 differ? throw.
-    throw new Error(
-      `distance conflict: ${fromStationName}-${toStationName} `
-      + `${existing.distanceMeters} vs ${distanceMeters}`,
-    );
-  }
-  if (existing.distanceMeters === 0 && distanceMeters > 0) {
-    existing.distanceMeters = distanceMeters;
+  const mergedDistance = mergeOfficialDistanceEvidence(existing, distanceMeters);
+  existing.distanceMeters = mergedDistance.distanceMeters;
+  if (mergedDistance.distanceConflictMeters) {
+    existing.distanceConflictMeters = mergedDistance.distanceConflictMeters;
   }
   existing.branchNames.add(branchName);
+}
+
+export function mergeOfficialDistanceEvidence(existing, incomingDistanceMeters) {
+  if (!Number.isInteger(existing?.distanceMeters) || existing.distanceMeters < 0
+    || !Number.isInteger(incomingDistanceMeters) || incomingDistanceMeters < 0) {
+    throw new TypeError("official distance evidence must be non-negative integer meters");
+  }
+  const priorConflicts = existing.distanceConflictMeters ?? [];
+  if (!Array.isArray(priorConflicts)
+    || priorConflicts.some((value) => !Number.isInteger(value) || value < 1)) {
+    throw new TypeError("official distance conflict evidence is invalid");
+  }
+  const positive = [...new Set([
+    ...priorConflicts,
+    existing.distanceMeters,
+    incomingDistanceMeters,
+  ].filter((value) => value > 0))].sort((left, right) => left - right);
+  if (priorConflicts.length > 0 || positive.length > 1) {
+    return { distanceMeters: 0, distanceConflictMeters: positive };
+  }
+  return { distanceMeters: positive[0] ?? 0 };
 }
 
 function materializeEdges(undirected) {
@@ -561,6 +580,9 @@ function materializeEdges(undirected) {
       distanceMeters: edge.distanceMeters,
       durationSeconds: 0,
       branchNames,
+      ...(edge.distanceConflictMeters
+        ? { distanceConflictMeters: [...edge.distanceConflictMeters] }
+        : {}),
     });
     edges.push({
       fromStationName: edge.toStationName,
@@ -568,6 +590,9 @@ function materializeEdges(undirected) {
       distanceMeters: edge.distanceMeters,
       durationSeconds: 0,
       branchNames,
+      ...(edge.distanceConflictMeters
+        ? { distanceConflictMeters: [...edge.distanceConflictMeters] }
+        : {}),
     });
   }
   edges.sort((left, right) => codepointCompare(left.fromStationName, right.fromStationName)
@@ -594,10 +619,28 @@ function findRow(rows, name) {
  * Generic CSV → undirected edges for one capital line.
  */
 export function parseGenericCapitalDistanceCsv(csvBytes, source) {
-  const rows = parseDistanceCsv(csvBytes)
-    .filter(({ branchName }) => source.branchNameFilter == null
-      || branchName === source.branchNameFilter);
+  const parsedRows = parseDistanceCsv(csvBytes);
+  const acceptedBranchNames = source.acceptedBranchNames == null
+    ? null
+    : new Set(source.acceptedBranchNames);
+  if (acceptedBranchNames != null
+    && (acceptedBranchNames.size === 0
+      || acceptedBranchNames.size !== source.acceptedBranchNames.length
+      || [...acceptedBranchNames].some((value) => typeof value !== "string" || value.length === 0))) {
+    throw new Error(`${source.slug}: acceptedBranchNames is invalid`);
+  }
+  const rows = acceptedBranchNames == null
+    ? parsedRows
+    : parsedRows.filter(({ branchName }) => acceptedBranchNames.has(branchName));
   if (rows.length < 2) throw new Error(`${source.slug}: too few rows`);
+  if (acceptedBranchNames != null) {
+    const observedBranchNames = new Set(rows.map(({ branchName }) => branchName));
+    for (const branchName of acceptedBranchNames) {
+      if (!observedBranchNames.has(branchName)) {
+        throw new Error(`${source.slug}: accepted branch is missing: ${branchName}`);
+      }
+    }
+  }
   const undirected = new Map();
   const branchSequences = [];
 
@@ -903,7 +946,7 @@ export function parseSeohaeMerged(korailBytes, molitBytes, source) {
     ...source,
     slug: `${source.slug}-korail`,
     splices: [],
-    branchNameFilter: routeName,
+    acceptedBranchNames: source.acceptedBranchNames ?? [routeName],
   });
   const minSequence = Number.isInteger(source.molitMinSequence) ? source.molitMinSequence : 10;
   const molitRows = parseMolitFullRouteRows(molitBytes)
@@ -930,10 +973,15 @@ export function parseSeohaeMerged(korailBytes, molitBytes, source) {
       routeName,
     );
   }
+  const korailSpliceEndpoint = findRow(korailParsed.rows, "부천종합운동장역")
+    ?? findRow(korailParsed.rows, "부천종합운동장");
+  if (korailSpliceEndpoint == null || findRow(molitRows, "소사") == null) {
+    throw new Error("서해선 splice endpoint missing: 부천종합운동장-소사");
+  }
   // 코레일 종점(부천종합운동장) ↔ 서해철도 기점(소사) — MOLIT 순번상 인접, 거리 미제공 → 0.
   upsertUndirected(
     undirected,
-    normalizeStationName("부천종합운동장역"),
+    normalizeStationName(korailSpliceEndpoint.stationName),
     normalizeStationName("소사"),
     0,
     routeName,
@@ -1117,7 +1165,7 @@ function indexToColumn(index) {
   return out;
 }
 
-function lineSnapshotFromUndirected(source, csvBytes, parsed, capturedAt) {
+function lineSnapshotFromUndirected(source, csvBytes, parsed, capturedAt, resolvedDownloadUrl) {
   const edges = materializeEdges(parsed.undirected);
   const scope = buildScope(parsed.undirected);
   const rawSha256 = sha256(Buffer.from(csvBytes));
@@ -1126,7 +1174,7 @@ function lineSnapshotFromUndirected(source, csvBytes, parsed, capturedAt) {
     slug: source.slug,
     datasetId: source.datasetId,
     detailUrl: source.detailUrl,
-    endpoint: source.downloadUrl,
+    endpoint: resolvedDownloadUrl,
     branchNames: parsed.branchNames,
     branchSequences: parsed.branchSequences,
     stationCount: scope.length,
@@ -1141,7 +1189,12 @@ function lineSnapshotFromUndirected(source, csvBytes, parsed, capturedAt) {
   };
 }
 
-export function parseLineSource(source, fileBytes, { capturedAt = new Date(), secondaryBytes = null } = {}) {
+export function parseLineSource(source, fileBytes, {
+  capturedAt = new Date(),
+  resolvedDownloadUrl = source.downloadUrl,
+  secondaryBytes = null,
+  secondaryProvenance = null,
+} = {}) {
   const captured = validDate(capturedAt, "capturedAt");
   if (source.kind === "line1") {
     const snap = parseCapitalLine1RouteTopology(fileBytes, { capturedAt: captured });
@@ -1165,10 +1218,22 @@ export function parseLineSource(source, fileBytes, { capturedAt = new Date(), se
     };
   }
   if (source.kind === "line6") {
-    return lineSnapshotFromUndirected(source, fileBytes, parseLine6DistanceCsv(fileBytes, source), captured);
+    return lineSnapshotFromUndirected(
+      source,
+      fileBytes,
+      parseLine6DistanceCsv(fileBytes, source),
+      captured,
+      resolvedDownloadUrl,
+    );
   }
   if (source.kind === "gtxa-xlsx") {
-    return lineSnapshotFromUndirected(source, fileBytes, parseGtxADistanceXlsx(fileBytes), captured);
+    return lineSnapshotFromUndirected(
+      source,
+      fileBytes,
+      parseGtxADistanceXlsx(fileBytes),
+      captured,
+      resolvedDownloadUrl,
+    );
   }
   if (source.kind === "molit-sequence") {
     return lineSnapshotFromUndirected(
@@ -1176,11 +1241,15 @@ export function parseLineSource(source, fileBytes, { capturedAt = new Date(), se
       fileBytes,
       parseMolitSequenceCsv(fileBytes, source),
       captured,
+      resolvedDownloadUrl,
     );
   }
   if (source.kind === "seohae-merged") {
     if (secondaryBytes == null) {
       throw new Error(`${source.slug}: MOLIT secondaryBytes required for seohae-merged`);
+    }
+    if (secondaryProvenance == null) {
+      throw new Error(`${source.slug}: secondaryProvenance required for seohae-merged`);
     }
     const parsed = parseSeohaeMerged(fileBytes, secondaryBytes, source);
     const rawSha256 = sha256(Buffer.concat([
@@ -1195,7 +1264,21 @@ export function parseLineSource(source, fileBytes, { capturedAt = new Date(), se
       slug: source.slug,
       datasetId: source.datasetId,
       detailUrl: source.detailUrl,
-      endpoint: source.downloadUrl,
+      endpoint: resolvedDownloadUrl,
+      inputProvenance: [
+        {
+          datasetId: source.datasetId,
+          detailUrl: source.detailUrl,
+          downloadUrl: resolvedDownloadUrl,
+          rawSha256: sha256(Buffer.from(fileBytes)),
+        },
+        {
+          datasetId: secondaryProvenance.datasetId,
+          detailUrl: secondaryProvenance.detailUrl,
+          downloadUrl: secondaryProvenance.downloadUrl,
+          rawSha256: sha256(Buffer.from(secondaryBytes)),
+        },
+      ],
       branchNames: parsed.branchNames,
       branchSequences: parsed.branchSequences,
       stationCount: scope.length,
@@ -1214,6 +1297,7 @@ export function parseLineSource(source, fileBytes, { capturedAt = new Date(), se
     fileBytes,
     parseGenericCapitalDistanceCsv(fileBytes, source),
     captured,
+    resolvedDownloadUrl,
   );
 }
 
@@ -1226,28 +1310,43 @@ export async function collectCapitalRouteTopology({
 } = {}) {
   const captured = validDate(now, "now");
   const lines = [];
-  let molitBytes = null;
-  const getMolitBytes = async () => {
-    molitBytes ??= await collectMolitFullRouteCsv({ fetchImpl });
-    return molitBytes;
+  const detailDownloads = new Map();
+  const downloadDetailFile = (detailUrl) => {
+    if (!detailDownloads.has(detailUrl)) {
+      detailDownloads.set(detailUrl, downloadDataGoDetailFile(fetchImpl, detailUrl));
+    }
+    return detailDownloads.get(detailUrl);
   };
   for (const source of sources) {
-    const bytes = useLocalFiles
-      ? await readFile(path.resolve(root, source.localCsv))
-      : source.kind === "molit-sequence"
-        ? await getMolitBytes()
-        : await downloadBytes(fetchImpl, source);
-    let secondaryBytes = null;
+    const primary = useLocalFiles
+      ? {
+          bytes: await readFile(path.resolve(root, source.localCsv)),
+          downloadUrl: source.downloadUrl,
+        }
+      : await downloadBytes(fetchImpl, source, downloadDetailFile);
+    let secondary = null;
     if (source.kind === "seohae-merged") {
       if (typeof source.localMolitCsv !== "string" || source.localMolitCsv.length === 0) {
         throw new Error(`${source.slug}: localMolitCsv required`);
       }
-      secondaryBytes = useLocalFiles
-        ? await readFile(path.resolve(root, source.localMolitCsv))
-        : await getMolitBytes();
+      secondary = useLocalFiles
+        ? {
+            bytes: await readFile(path.resolve(root, source.localMolitCsv)),
+            downloadUrl: source.molitDownloadUrl,
+          }
+        : await downloadDetailFile(source.molitDownloadUrl);
     }
     try {
-      lines.push(parseLineSource(source, bytes, { capturedAt: captured, secondaryBytes }));
+      lines.push(parseLineSource(source, primary.bytes, {
+        capturedAt: captured,
+        resolvedDownloadUrl: primary.downloadUrl,
+        secondaryBytes: secondary?.bytes ?? null,
+        secondaryProvenance: secondary == null ? null : {
+          datasetId: source.molitDatasetId,
+          detailUrl: source.molitDownloadUrl,
+          downloadUrl: secondary.downloadUrl,
+        },
+      }));
     } catch (error) {
       throw new Error(`${source.slug}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -1305,7 +1404,11 @@ export async function collectCapitalRouteTopology({
   };
 }
 
-async function downloadBytes(fetchImpl, source) {
+async function downloadBytes(fetchImpl, source, downloadDetailFile = (detailUrl) =>
+  downloadDataGoDetailFile(fetchImpl, detailUrl)) {
+  if (source.resolveDownloadFromDetail === true) {
+    return downloadDetailFile(source.downloadUrl);
+  }
   const response = await fetchImpl(source.downloadUrl, {
     headers: {
       "User-Agent": "easysubway-datapack-collector/1.0",
@@ -1313,7 +1416,61 @@ async function downloadBytes(fetchImpl, source) {
     },
   });
   if (!response.ok) throw new Error(`${source.slug} CSV HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return {
+    bytes: Buffer.from(await response.arrayBuffer()),
+    downloadUrl: source.downloadUrl,
+  };
+}
+
+async function downloadDataGoDetailFile(fetchImpl, detailUrl) {
+  const detailResponse = await fetchImpl(detailUrl, {
+    headers: { "User-Agent": "easysubway-datapack-collector/1.0" },
+  });
+  if (!detailResponse.ok) throw new Error(`data.go.kr detail HTTP ${detailResponse.status}`);
+  const downloadUrl = resolveDataGoDownloadUrl(await detailResponse.text(), detailUrl);
+  const fileResponse = await fetchImpl(downloadUrl, {
+    headers: {
+      "User-Agent": "easysubway-datapack-collector/1.0",
+      Referer: detailUrl,
+    },
+  });
+  if (!fileResponse.ok) throw new Error(`data.go.kr file HTTP ${fileResponse.status}`);
+  return {
+    bytes: Buffer.from(await fileResponse.arrayBuffer()),
+    downloadUrl,
+  };
+}
+
+export function resolveDataGoDownloadUrl(html, detailUrl) {
+  if (typeof html !== "string") throw new TypeError("data.go.kr detail HTML is required");
+  const normalized = html.replaceAll("&amp;", "&");
+  const directCandidates = [...normalized.matchAll(/(?:https?:\/\/[^/\s"'<>]+)?\/cmm\/cmm\/fileDownload\.do\?[^\s"'<>]+/g)]
+    .map(([value]) => new URL(value, detailUrl))
+    .filter((url) => url.origin === "https://www.data.go.kr"
+      && url.pathname === "/cmm/cmm/fileDownload.do"
+      && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
+      && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
+  const functionCandidates = [...normalized.matchAll(
+    /(?:fn_)?fileDown\(\s*['"](FILE_[^'"]+)['"]\s*,\s*['"]?(\d+)['"]?\s*\)/gu,
+  )].map(([, atchFileId, fileDetailSn]) => new URL(
+    `/cmm/cmm/fileDownload.do?atchFileId=${encodeURIComponent(atchFileId)}&fileDetailSn=${fileDetailSn}&insertDataPrcus=N`,
+    detailUrl,
+  )).filter((url) => url.origin === "https://www.data.go.kr"
+    && url.pathname === "/cmm/cmm/fileDownload.do"
+    && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
+    && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
+  const candidates = [...directCandidates, ...functionCandidates];
+  const unique = [...new Map(candidates.map((url) => [
+    `${url.searchParams.get("atchFileId")}\0${url.searchParams.get("fileDetailSn")}`,
+    url,
+  ])).values()];
+  if (unique.length === 0 && /https?:\/\/[^\s"'<>]+\/cmm\/cmm\/fileDownload\.do/.test(normalized)) {
+    throw new Error("data.go.kr download URL must use canonical data.go.kr host");
+  }
+  if (unique.length !== 1) {
+    throw new Error("data.go.kr detail must contain exactly one canonical FILE download URL");
+  }
+  return unique[0].toString();
 }
 
 function validDate(value, label) {

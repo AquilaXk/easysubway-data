@@ -350,6 +350,50 @@
                   }
                 }
               },
+              "currentTopologyAdmission": {
+                "type": "object",
+                "description": "historical route-map position snapshot을 current capital topology에 다시 결속한 admission이다.",
+                "additionalProperties": false,
+                "required": [
+                  "schemaVersion",
+                  "artifactKind",
+                  "issue",
+                  "status",
+                  "topologySnapshotId",
+                  "topologyContentSha256",
+                  "positionSnapshotSha256",
+                  "reviewedAt",
+                  "freshUntil",
+                  "topologyLineages"
+                ],
+                "properties": {
+                  "schemaVersion": { "const": 1 },
+                  "artifactKind": { "const": "capital-route-map-current-topology-admission" },
+                  "issue": { "type": "integer", "minimum": 1 },
+                  "status": { "const": "ADMITTED" },
+                  "topologySnapshotId": { "type": "string", "pattern": "^capital-route-topology-[0-9]{8}$" },
+                  "topologyContentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "positionSnapshotSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "reviewedAt": { "type": "string", "format": "date-time" },
+                  "freshUntil": { "type": "string", "format": "date-time" },
+                  "topologyLineages": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["sourceId", "snapshotId", "contentSha256", "lineId"],
+                      "properties": {
+                        "sourceId": { "const": "capital-route-topology" },
+                        "snapshotId": { "type": "string", "pattern": "^capital-route-topology-[0-9]{8}$" },
+                        "contentSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                        "lineId": { "type": "string", "minLength": 1 }
+                      }
+                    }
+                  }
+                }
+              },
               "overlayDatasetId": {
                 "type": "string",
                 "minLength": 1,

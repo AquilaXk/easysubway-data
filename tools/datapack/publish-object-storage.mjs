@@ -85,6 +85,34 @@ async function main() {
       continue;
     }
 
+    if (step.type === "put-source-raw-object") {
+      const bytes = await readAndVerifySource(root, step);
+      if (!dryRun && !verifyOnly) {
+        const created = await client.putObjectIfAbsent(step.objectKey, bytes, step);
+        if (!created) {
+          const existing = await client.readObject(step.objectKey);
+          if (!existing.exists
+            || existing.body.length !== step.sizeBytes
+            || sha256(existing.body) !== step.sha256) {
+            throw new Error(`${step.objectKey} immutable violation`);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (step.type === "verify-source-raw-object") {
+      if (!dryRun) {
+        const stored = await client.readObject(step.objectKey);
+        if (!stored.exists
+          || stored.body.length !== step.sizeBytes
+          || sha256(stored.body) !== step.sha256) {
+          throw new Error(`${step.objectKey} uploaded checksum mismatch`);
+        }
+      }
+      continue;
+    }
+
     if (step.type === "put-release-request-binding-object") {
       const bytes = await readAndVerifySource(root, step);
       if (!dryRun && !verifyOnly) {
