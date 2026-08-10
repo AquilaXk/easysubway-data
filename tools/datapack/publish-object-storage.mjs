@@ -4,6 +4,7 @@ import { lstat, open, readFile, unlink } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const emptySha256 = sha256(Buffer.alloc(0));
@@ -150,6 +151,54 @@ async function main() {
     }
 
     throw new Error(`unsupported publish step: ${step.type}`);
+  }
+}
+
+export async function publishImmutableObjectPlan({ plan, root, client = null }) {
+  const resolvedRoot = path.resolve(root);
+  validateImmutableObjectPlan(plan);
+  const storage = client ?? objectStorageClient();
+  for (const step of plan.steps) {
+    if (step.type === "put-immutable-bundle-object") {
+      await putImmutableObject(storage, resolvedRoot, step);
+    } else {
+      await verifyImmutableObject(storage, step);
+    }
+  }
+}
+
+async function putImmutableObject(client, root, step) {
+  const bytes = await readAndVerifySource(root, step);
+  if (await client.putObjectIfAbsent(step.objectKey, bytes, step)) return;
+  const existing = await client.readObject(step.objectKey);
+  if (!exactStoredObject(existing, step)) throw new Error(`${step.objectKey} immutable violation`);
+}
+
+async function verifyImmutableObject(client, step) {
+  const stored = await client.readObject(step.objectKey);
+  if (!exactStoredObject(stored, step)) throw new Error(`${step.objectKey} uploaded checksum mismatch`);
+}
+
+function exactStoredObject(stored, step) {
+  return stored.exists
+    && stored.body.length === step.sizeBytes
+    && sha256(stored.body) === step.sha256;
+}
+
+function validateImmutableObjectPlan(plan) {
+  if (!plan || typeof plan !== "object" || !Array.isArray(plan.steps) || plan.steps.length === 0) {
+    throw new Error("immutable object plan steps must be a non-empty array");
+  }
+  for (const step of plan.steps) {
+    if (!new Set(["put-immutable-bundle-object", "verify-immutable-bundle-object"]).has(step.type)) {
+      throw new Error(`unsupported immutable object step: ${step.type}`);
+    }
+    safeRelativeObjectPath(requireString(step.objectKey, "step.objectKey"), "step.objectKey");
+    safeRelativeObjectPath(requireString(step.sourcePath, "step.sourcePath"), "step.sourcePath");
+    if (!/^[a-f0-9]{64}$/.test(step.sha256)) throw new Error(`${step.objectKey} sha256 must be lowercase hex`);
+    if (!Number.isInteger(step.sizeBytes) || step.sizeBytes < 1) {
+      throw new Error(`${step.objectKey} sizeBytes must be a positive integer`);
+    }
   }
 }
 
@@ -693,7 +742,9 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
