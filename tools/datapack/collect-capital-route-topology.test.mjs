@@ -228,6 +228,10 @@ test("data.go.kr 상세 페이지는 단일 canonical FILE download만 허용한
     ),
     "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&fileDetailSn=1&insertDataPrcus=N",
   );
+  assert.equal(resolveDataGoDownloadUrl(`
+    <a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003700001&amp;fileDetailSn=1">CSV</a>
+    <button onclick="fn_fileDown('FILE_000000003700001', '1')">CSV</button>
+  `, detail), resolved);
   assert.throws(() => resolveDataGoDownloadUrl("<html>none</html>", detail), /exactly one/);
   assert.throws(
     () => resolveDataGoDownloadUrl(`

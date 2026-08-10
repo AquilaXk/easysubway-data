@@ -124,17 +124,25 @@ export function withCurrentCapitalTopologyAdmissions({
     if (new Set(evidence.lineIds).size !== evidence.lineIds.length || evidence.lineIds.length === 0) {
       throw new Error(`${source.id} admitted line set is invalid`);
     }
-    const observedLines = new Set();
+    const observedStationsByLine = new Map();
     for (const position of snapshot.positions) {
       const stations = stationsByLine.get(position.lineId);
+      const stationName = canonicalStationName(position.stationName);
       if (!evidence.lineIds.includes(position.lineId)
-        || !stations?.has(canonicalStationName(position.stationName))) {
+        || !stations?.has(stationName)) {
         throw new Error(`${source.id} station membership mismatch: ${position.lineId}:${position.stationName}`);
       }
-      observedLines.add(position.lineId);
+      const observed = observedStationsByLine.get(position.lineId) ?? new Set();
+      observed.add(stationName);
+      observedStationsByLine.set(position.lineId, observed);
     }
-    if (!same([...observedLines].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
+    if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
       throw new Error(`${source.id} position line coverage mismatch`);
+    }
+    for (const lineId of evidence.lineIds) {
+      const expected = [...stationsByLine.get(lineId)].sort(compareStrings);
+      const observed = [...observedStationsByLine.get(lineId)].sort(compareStrings);
+      if (!same(observed, expected)) throw new Error(`${source.id} station coverage mismatch: ${lineId}`);
     }
     evidence.currentTopologyAdmission = {
       schemaVersion: 1,

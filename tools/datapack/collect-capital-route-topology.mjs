@@ -1460,7 +1460,10 @@ export function resolveDataGoDownloadUrl(html, detailUrl) {
     && /^FILE_[0-9]+$/.test(url.searchParams.get("atchFileId") ?? "")
     && /^[1-9][0-9]*$/.test(url.searchParams.get("fileDetailSn") ?? ""));
   const candidates = [...directCandidates, ...functionCandidates];
-  const unique = [...new Map(candidates.map((url) => [url.toString(), url])).values()];
+  const unique = [...new Map(candidates.map((url) => [
+    `${url.searchParams.get("atchFileId")}\0${url.searchParams.get("fileDetailSn")}`,
+    url,
+  ])).values()];
   if (unique.length === 0 && /https?:\/\/[^\s"'<>]+\/cmm\/cmm\/fileDownload\.do/.test(normalized)) {
     throw new Error("data.go.kr download URL must use canonical data.go.kr host");
   }

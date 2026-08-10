@@ -19,40 +19,28 @@ function fixture(stationName = "서울역") {
   const scope = [{ stationName: "서울역", sequence: 1 }, { stationName: "시청", sequence: 2 }];
   const edges = [{ fromStationName: "서울역", toStationName: "시청", distanceMeters: 1_000 }];
   const line = {
-    lineId,
-    datasetId: "capital-route-source",
-    stationCount: scope.length,
-    edgeCount: edges.length,
-    scope,
-    edges,
+    lineId, datasetId: "capital-route-source",
+    stationCount: scope.length, edgeCount: edges.length,
+    scope, edges,
     rawSha256: "9".repeat(64),
     contentSha256: sha256(Buffer.from(JSON.stringify({ scope, edges }))),
   };
   const topologyContentSha256 = sha256(Buffer.from(JSON.stringify({
     lines: [{
-      lineId: line.lineId,
-      edgeCount: line.edgeCount,
-      stationCount: line.stationCount,
-      contentSha256: line.contentSha256,
-      rawSha256: line.rawSha256,
-      datasetId: line.datasetId,
+      lineId: line.lineId, edgeCount: line.edgeCount, stationCount: line.stationCount,
+      contentSha256: line.contentSha256, rawSha256: line.rawSha256, datasetId: line.datasetId,
     }],
     topologyGaps: [],
   })));
   const snapshot = {
-    sourceId: "official-route-map",
-    topologySourceId: "capital-route-topology",
-    topologySnapshotId: "capital-route-topology-20260724",
-    topologyContentSha256: "1".repeat(64),
+    sourceId: "official-route-map", topologySourceId: "capital-route-topology",
+    topologySnapshotId: "capital-route-topology-20260724", topologyContentSha256: "1".repeat(64),
     topologyLineages: [{
-      sourceId: "capital-route-topology",
-      snapshotId: "capital-route-topology-20260724",
-      contentSha256: "1".repeat(64),
-      lineId,
+      sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260724",
+      contentSha256: "1".repeat(64), lineId,
     }],
-    lineIds: [lineId],
-    stationCount: 1,
-    positions: [{ lineId, stationName }],
+    lineIds: [lineId], stationCount: 2,
+    positions: [{ lineId, stationName }, { lineId, stationName: "시청" }],
   };
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot));
   const inventory = {
@@ -61,11 +49,8 @@ function fixture(stationName = "서울역") {
     sources: [{
       id: "official-route-map",
       routeMapAdmissionEvidence: {
-        snapshotPath: positionPath,
-        snapshotSha256: sha256(snapshotBytes),
-        stationCount: 1,
-        lineIds: [lineId],
-        topologySourceId: "capital-route-topology",
+        snapshotPath: positionPath, snapshotSha256: sha256(snapshotBytes),
+        stationCount: 2, lineIds: [lineId], topologySourceId: "capital-route-topology",
         topologySnapshotId: "capital-route-topology-20260724",
         topologyContentSha256: "1".repeat(64),
         topologyLineages: snapshot.topologyLineages,
@@ -73,14 +58,10 @@ function fixture(stationName = "서울역") {
     }],
   };
   const topology = {
-    schemaVersion: 1,
-    artifactKind: ARTIFACT_KIND,
-    sourceId: "capital-route-topology",
+    schemaVersion: 1, artifactKind: ARTIFACT_KIND, sourceId: "capital-route-topology",
     contentSha256: topologyContentSha256,
-    capturedAt: "2026-08-09T12:04:20.479Z",
-    freshUntil: "2026-08-10T12:04:20.479Z",
-    topologyGaps: [],
-    lines: [line],
+    capturedAt: "2026-08-09T12:04:20.479Z", freshUntil: "2026-08-10T12:04:20.479Z",
+    topologyGaps: [], lines: [line],
   };
   return { inventory, topology, snapshotBytes, lineId };
 }
@@ -102,20 +83,14 @@ test("historical route-map snapshot은 current capital topology membership 검�
   assert.deepEqual(
     result.sources[0].routeMapAdmissionEvidence.currentTopologyAdmission,
     {
-      schemaVersion: 1,
-      artifactKind: "capital-route-map-current-topology-admission",
-      issue: 2776,
-      status: "ADMITTED",
-      topologySnapshotId,
+      schemaVersion: 1, artifactKind: "capital-route-map-current-topology-admission",
+      issue: 2776, status: "ADMITTED", topologySnapshotId,
       topologyContentSha256: values.topology.contentSha256,
       positionSnapshotSha256: sha256(values.snapshotBytes),
-      reviewedAt,
-      freshUntil: "2026-08-10T12:04:20.479Z",
+      reviewedAt, freshUntil: "2026-08-10T12:04:20.479Z",
       topologyLineages: [{
-        sourceId: "capital-route-topology",
-        snapshotId: "capital-route-topology-20260809",
-        contentSha256: values.topology.contentSha256,
-        lineId: values.lineId,
+        sourceId: "capital-route-topology", snapshotId: "capital-route-topology-20260809",
+        contentSha256: values.topology.contentSha256, lineId: values.lineId,
       }],
     },
   );
@@ -146,6 +121,21 @@ test("current topology에 없는 station은 input을 변경하지 않고 거부�
   const before = structuredClone(values.inventory);
 
   assert.throws(() => rebind(values), /station membership mismatch/);
+  assert.deepEqual(values.inventory, before);
+});
+
+test("current topology station이 position snapshot에 없으면 input을 변경하지 않고 거부한다", () => {
+  const values = fixture();
+  const snapshot = JSON.parse(values.snapshotBytes);
+  snapshot.positions.pop();
+  snapshot.stationCount = 1;
+  values.snapshotBytes = Buffer.from(JSON.stringify(snapshot));
+  const evidence = values.inventory.sources[0].routeMapAdmissionEvidence;
+  evidence.snapshotSha256 = sha256(values.snapshotBytes);
+  evidence.stationCount = 1;
+  const before = structuredClone(values.inventory);
+
+  assert.throws(() => rebind(values), /station coverage mismatch/);
   assert.deepEqual(values.inventory, before);
 });
 
@@ -190,15 +180,8 @@ test("source inventory schema는 current topology admission을 closed optional m
   assert.equal(routeMapEvidence.required.includes("currentTopologyAdmission"), false);
   assert.equal(current.additionalProperties, false);
   assert.deepEqual(current.required, [
-    "schemaVersion",
-    "artifactKind",
-    "issue",
-    "status",
-    "topologySnapshotId",
-    "topologyContentSha256",
-    "positionSnapshotSha256",
-    "reviewedAt",
-    "freshUntil",
+    "schemaVersion", "artifactKind", "issue", "status", "topologySnapshotId",
+    "topologyContentSha256", "positionSnapshotSha256", "reviewedAt", "freshUntil",
     "topologyLineages",
   ]);
   assert.equal(current.properties.artifactKind.const, "capital-route-map-current-topology-admission");
