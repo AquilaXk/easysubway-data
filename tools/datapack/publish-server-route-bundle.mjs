@@ -16,6 +16,7 @@ import { inspectSignedServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const execFileAsync = promisify(execFile);
 const COMPONENTS = ["accessibility", "fare", "timetable", "topology"];
+const PUBLIC_BASE_URL_PATTERN = /^https:\/\/objectstorage\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.oraclecloud\.com\/n\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\/b\/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?\/o$/;
 const PASS_GATES = [
   "sourceFreshness",
   "stationLineAccessibility",
@@ -61,8 +62,14 @@ export async function publishServerRouteBundle(input) {
   const publicBaseUrl = validatePublicBaseUrl(input.publicBaseUrl);
   const receiptPath = path.resolve(requiredRaw(input.receiptPath, "receiptPath"));
   const receiptParent = await realDirectory(path.dirname(receiptPath), "receipt parent");
-  const publicationNow = input.now === undefined ? Date.now() : input.now;
-  if (!Number.isSafeInteger(publicationNow) || publicationNow < 0) throw new Error("now must be epoch milliseconds");
+  const clock = input.clock ?? Date.now;
+  if (typeof clock !== "function") throw new Error("clock must be a function");
+  const publicationNow = input.now === undefined ? readEpochMilliseconds(clock, "clock") : input.now;
+  assertEpochMilliseconds(publicationNow, "now");
+  const beforeReceiptCreate = input.beforeReceiptCreate ?? null;
+  if (beforeReceiptCreate !== null && typeof beforeReceiptCreate !== "function") {
+    throw new Error("beforeReceiptCreate must be a function");
+  }
   if (isWithin(artifact.root, receiptPath) || receiptPath === finalPath) {
     throw new Error("receiptPath must be outside signed artifact and FINAL inputs");
   }
@@ -90,7 +97,8 @@ export async function publishServerRouteBundle(input) {
     await verifyPublicLocator(receipt, publicRead);
     await assertInputsUnchanged({ artifactRoot, snapshot, finalPath, finalBytes });
     await verifyRepositoryHead(repositoryRoot, repositoryGitSha);
-    await persistReceipt(receiptPath, Buffer.from(canonicalJson(receipt)));
+    assertCandidateFresh(final.candidate.freshUntil, readEpochMilliseconds(clock, "clock"));
+    await persistReceipt(receiptPath, Buffer.from(canonicalJson(receipt)), beforeReceiptCreate);
     return receipt;
   } finally {
     await rm(stage, { recursive: true, force: true });
@@ -163,9 +171,7 @@ function validatePrePublicationFinal({ final, artifact, snapshot, repositoryGitS
   ])) {
     throw new Error("pre-publication FINAL blockers mismatch");
   }
-  if (Date.parse(final.candidate.freshUntil) <= publicationNow) {
-    throw new Error("candidate freshUntil must be in the future at publication");
-  }
+  assertCandidateFresh(final.candidate.freshUntil, publicationNow);
 
   const manifest = artifact.manifest;
   const candidate = final.candidate;
@@ -402,14 +408,9 @@ async function assertCompatibleReceipt(receiptPath, expectedBytes) {
   }
 }
 
-async function persistReceipt(receiptPath, bytes) {
+async function persistReceipt(receiptPath, bytes, beforeCreate) {
   await assertCompatibleReceipt(receiptPath, bytes);
-  try {
-    await lstat(receiptPath);
-    return;
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
+  await beforeCreate?.();
   const parent = path.dirname(receiptPath);
   const stage = await mkdtemp(path.join(parent, ".server-route-receipt-"));
   const staged = path.join(stage, "receipt.json");
@@ -434,29 +435,30 @@ async function persistReceipt(receiptPath, bytes) {
 
 function validatePublicBaseUrl(value) {
   const rawValue = requiredRaw(value, "public base URL");
-  let url;
+  let canonical;
   try {
-    url = new URL(rawValue);
+    canonical = new URL(rawValue).toString();
   } catch {
     throw new Error("public base URL must be an exact HTTPS URL");
   }
-  const hostname = url.hostname.toLowerCase();
-  if (url.protocol !== "https:"
-    || url.username !== ""
-    || url.password !== ""
-    || url.search !== ""
-    || url.hash !== ""
-    || rawValue.endsWith("/")
-    || url.pathname.includes("%")
-    || url.pathname.includes("//")
-    || url.toString() !== rawValue
-    || hostname === "localhost"
-    || hostname.endsWith(".localhost")
-    || hostname === "127.0.0.1"
-    || hostname === "::1") {
-    throw new Error("public base URL must be credential-free HTTPS without query, fragment, localhost, or trailing slash");
+  if (!PUBLIC_BASE_URL_PATTERN.test(rawValue) || canonical !== rawValue) {
+    throw new Error("public base URL must be an exact credential-free OCI public bucket endpoint");
   }
   return rawValue;
+}
+
+function readEpochMilliseconds(clock, label) {
+  const value = clock();
+  assertEpochMilliseconds(value, `${label} result`);
+  return value;
+}
+
+function assertEpochMilliseconds(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be epoch milliseconds`);
+}
+
+function assertCandidateFresh(freshUntil, now) {
+  if (Date.parse(freshUntil) <= now) throw new Error("candidate freshUntil must be in the future at publication");
 }
 
 async function verifyRepositoryHead(repositoryRoot, expected) {

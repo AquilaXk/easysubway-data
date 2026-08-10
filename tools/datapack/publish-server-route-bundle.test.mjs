@@ -35,6 +35,7 @@ const SIGNED_PATHS = [
   "provenance.json",
 ].sort(bytewise);
 const PUBLIC_BASE_URL = "https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/easysubway/o";
+const PUBLIC_BASE_URL_PATTERN = "^https://objectstorage\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.oraclecloud\\.com/n/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?/b/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?/o$";
 const PUBLICATION_NOW = Date.parse("2026-08-10T00:00:00.000Z");
 const keyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privateKey = keyPair.privateKey.export({ type: "pkcs8", format: "pem" });
@@ -61,6 +62,7 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
     client,
     publicRead: client.readPublicObject,
     now: PUBLICATION_NOW,
+    clock: () => PUBLICATION_NOW,
   });
 
   const manifestSha256 = sha256(await readFile(path.join(fixture.signedRoot, "manifest.json")));
@@ -90,7 +92,28 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
   ]);
   assert.equal(schema.properties.objects.minItems, 8);
   assert.equal(schema.properties.objects.maxItems, 8);
-  assert.deepEqual([...schema.properties.objects.items.properties.path.enum].sort(bytewise), SIGNED_PATHS);
+  assert.equal(schema.properties.objects.items, false);
+  assert.deepEqual(
+    schema.properties.objects.prefixItems.map((rule) => rule.properties.path.const),
+    SIGNED_PATHS,
+  );
+  for (const [index, relative] of SIGNED_PATHS.entries()) {
+    const rule = schema.properties.objects.prefixItems[index];
+    assert.equal(rule.$ref, "#/$defs/receiptObject");
+    assert.equal(
+      rule.properties.objectKey.pattern,
+      `^server-route-bundles/v1/[a-f0-9]{64}/${escapeRegex(relative)}$`,
+    );
+  }
+  assert.equal(schema.properties.locator.properties.publicBaseUrl.pattern, PUBLIC_BASE_URL_PATTERN);
+  const publicBasePattern = new RegExp(PUBLIC_BASE_URL_PATTERN);
+  assert.equal(publicBasePattern.test(PUBLIC_BASE_URL), true);
+  for (const invalid of [
+    "https://objects.example.test/x",
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/easysubway/o?token=secret",
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/n/example/b/easysubway/o/",
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/n/../b/easysubway/o",
+  ]) assert.equal(publicBasePattern.test(invalid), false, invalid);
   for (const [label, mutate, pattern] of [
     ["manifest", (value) => { object(value, "manifest.json").sha256 = "f".repeat(64); }, /manifest digest identity mismatch/],
     ["signing-input", (value) => { object(value, "manifest.signing-input.json").sha256 = "f".repeat(64); }, /signing input digest identity mismatch/],
@@ -117,6 +140,7 @@ test("signed server-route-bundle은 OCI immutable tree 검증 뒤에만 closed r
     client,
     publicRead: client.readPublicObject,
     now: PUBLICATION_NOW,
+    clock: () => PUBLICATION_NOW,
   });
   assert.deepEqual(repeated, receipt);
   assert.deepEqual(await readFile(fixture.receiptPath), firstReceiptBytes);
@@ -170,6 +194,19 @@ test("pre-publication gate·identity·remote collision 실패는 request 전 또
     await assertMissing(fixture.receiptPath);
   });
 
+  await t.test("candidate expires during publication", async (t) => {
+    const fixture = await createFixture(t);
+    const client = memoryObjectStorageClient();
+    await assert.rejects(
+      () => publishFixture(fixture, client, {
+        clock: () => Date.parse("2026-08-12T00:00:00.000Z"),
+      }),
+      /freshUntil must be in the future/,
+    );
+    assert.equal(client.objects.size, SIGNED_PATHS.length);
+    await assertMissing(fixture.receiptPath);
+  });
+
   await t.test("public locator mismatch", async (t) => {
     const fixture = await createFixture(t);
     const client = memoryObjectStorageClient({ publicBodyOverride: Buffer.from("wrong public bytes") });
@@ -202,6 +239,18 @@ test("pre-publication gate·identity·remote collision 실패는 request 전 또
     await assert.rejects(() => publishFixture(fixture, memoryObjectStorageClient()), /receipt must be a regular non-symlink/);
     assert.equal(await readFile(owner, "utf8"), "owner bytes");
   });
+
+  await t.test("receipt creation race", async (t) => {
+    const fixture = await createFixture(t);
+    const ownerBytes = Buffer.from("racing owner bytes");
+    await assert.rejects(
+      () => publishFixture(fixture, memoryObjectStorageClient(), {
+        beforeReceiptCreate: () => writeFile(fixture.receiptPath, ownerBytes, { flag: "wx" }),
+      }),
+      /receipt already exists with different bytes/,
+    );
+    assert.deepEqual(await readFile(fixture.receiptPath), ownerBytes);
+  });
 });
 
 test("public locator와 signed tree는 closed URL·file-set 계약을 강제한다", async (t) => {
@@ -212,6 +261,10 @@ test("public locator와 signed tree는 closed URL·file-set 계약을 강제한�
     "https://objects.example.test/public#fragment",
     "https://localhost/public",
     "https://127.0.0.1/public",
+    "https://127.0.0.2/public",
+    "https://[::1]/public",
+    "https://objects.example.test/public",
+    "https://objectstorage.ap-seoul-1.oraclecloud.com/p/secret/n/example/b/easysubway/o",
     "https://objects.example.test/public/",
   ]) {
     await t.test(invalid, async (t) => {
@@ -361,6 +414,7 @@ function publishFixture(fixture, client, overrides = {}) {
     client,
     publicRead: client.readPublicObject,
     now: PUBLICATION_NOW,
+    clock: () => overrides.now ?? PUBLICATION_NOW,
     ...overrides,
   });
 }
@@ -435,4 +489,8 @@ async function assertMissing(target) {
 
 function bytewise(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+function escapeRegex(value) {
+  return value.replaceAll(".", "\\.");
 }

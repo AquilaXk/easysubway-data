@@ -55,7 +55,10 @@
       "additionalProperties": false,
       "required": ["publicBaseUrl", "objectPrefix"],
       "properties": {
-        "publicBaseUrl": { "type": "string", "pattern": "^https://[^/?#]+/.+[^/]$" },
+        "publicBaseUrl": {
+          "type": "string",
+          "pattern": "^https://objectstorage\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.oraclecloud\\.com/n/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?/b/[A-Za-z0-9_~-](?:[A-Za-z0-9._~-]*[A-Za-z0-9_~-])?/o$"
+        },
         "objectPrefix": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/$" }
       }
     },
@@ -64,30 +67,80 @@
       "minItems": 8,
       "maxItems": 8,
       "uniqueItems": true,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["path", "objectKey", "sizeBytes", "sha256"],
-        "properties": {
-          "path": {
-            "enum": [
-              "compatibility.json", "manifest.json", "manifest.signing-input.json",
-              "payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst",
-              "payload/timetable.sqlite.zst", "payload/topology.sqlite.zst", "provenance.json"
-            ]
-          },
-          "objectKey": {
-            "type": "string",
-            "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/(?:compatibility\\.json|manifest\\.json|manifest\\.signing-input\\.json|payload/(?:accessibility|fare|timetable|topology)\\.sqlite\\.zst|provenance\\.json)$"
-          },
-          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-          "sha256": { "$ref": "#/$defs/sha256" }
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "compatibility.json" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/compatibility\\.json$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "manifest.json" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/manifest\\.json$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "manifest.signing-input.json" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/manifest\\.signing-input\\.json$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "payload/accessibility.sqlite.zst" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/payload/accessibility\\.sqlite\\.zst$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "payload/fare.sqlite.zst" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/payload/fare\\.sqlite\\.zst$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "payload/timetable.sqlite.zst" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/payload/timetable\\.sqlite\\.zst$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "payload/topology.sqlite.zst" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/payload/topology\\.sqlite\\.zst$" }
+          }
+        },
+        {
+          "$ref": "#/$defs/receiptObject",
+          "properties": {
+            "path": { "const": "provenance.json" },
+            "objectKey": { "type": "string", "pattern": "^server-route-bundles/v1/[a-f0-9]{64}/provenance\\.json$" }
+          }
         }
-      }
+      ],
+      "items": false
     },
     "receiptSha256": { "$ref": "#/$defs/sha256" }
   },
   "$defs": {
+    "receiptObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "objectKey", "sizeBytes", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "objectKey": { "type": "string" },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
     "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "rawString": { "type": "string", "pattern": "^(?!\\s)[\\s\\S]*\\S$" },
     "kstMillisecondInstant": {
