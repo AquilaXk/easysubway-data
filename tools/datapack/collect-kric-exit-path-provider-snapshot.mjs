@@ -55,7 +55,7 @@ export async function collectKricExitPathProviderSnapshot({
     throw new Error("KRIC EXIT request interval is invalid");
   }
   if (typeof fetchImpl !== "function" || typeof delayImpl !== "function") {
-    throw new Error("KRIC EXIT collector dependencies are invalid");
+    throw new TypeError("KRIC EXIT collector dependencies are invalid");
   }
 
   const results = [];
@@ -145,87 +145,14 @@ function validateCollectionPlan(plan) {
 }
 
 async function collectQuery({ fetchImpl, query, requestTimeoutMs, serviceKey, source }) {
-  const url = new URL(source.endpoint);
-  url.searchParams.set("serviceKey", serviceKey);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("railOprIsttCd", query.providerOperatorId);
-  url.searchParams.set("lnCd", query.providerLineId);
-  url.searchParams.set("stinCd", query.providerStationId);
-  url.searchParams.set("nextStinCd", query.providerNextStationId);
-  let response;
-  try {
-    response = await fetchImpl(url, {
-      redirect: "error",
-      signal: AbortSignal.timeout(requestTimeoutMs),
-      headers: { accept: "application/json" },
-    });
-  } catch {
-    throw new Error(`KRIC EXIT request failed: ${query.queryId}`);
-  }
-  if (!response?.ok) {
-    const status = Number.isInteger(response?.status) ? response.status : "unknown";
-    throw new Error(`KRIC EXIT HTTP ${status}: ${query.queryId}`);
-  }
-  let bytes;
-  try {
-    bytes = Buffer.from(await response.arrayBuffer());
-  } catch {
-    throw new Error(`KRIC EXIT response read failed: ${query.queryId}`);
-  }
-  if (bytes.length === 0 || bytes.length > MAX_RESPONSE_BYTES) {
-    throw new Error(`KRIC EXIT response size invalid: ${query.queryId}`);
-  }
-  let raw;
-  try {
-    raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error(`KRIC EXIT response must be strict UTF-8 JSON: ${query.queryId}`);
-  }
-  if (raw.includes(serviceKey)) throw new Error(`KRIC EXIT response echoed credential: ${query.queryId}`);
-  let payload;
-  try {
-    payload = parseStrictJson(raw);
-  } catch (error) {
-    if (error instanceof Error && error.message === "duplicate JSON key") throw error;
-    throw new Error(`KRIC EXIT response must be strict UTF-8 JSON: ${query.queryId}`);
-  }
-  if (containsCredential(payload, serviceKey)) {
-    throw new Error(`KRIC EXIT response echoed credential: ${query.queryId}`);
-  }
-  let providerResultCode = null;
-  let resultState = "PROVIDER_RESULT_UNVERIFIED";
-  let providerRows;
-  if (Array.isArray(payload)) {
-    providerRows = payload;
-  } else {
-    assertKeys(payload, ["body", "header"], "KRIC EXIT response envelope keys");
-    if (!payload.header || typeof payload.header !== "object" || Array.isArray(payload.header)) {
-      throw new Error(`KRIC EXIT response header mismatch: ${query.queryId}`);
-    }
-    providerResultCode = payload.header.resultCode;
-    if (typeof providerResultCode !== "string" || !/^[A-Za-z0-9._-]{1,32}$/.test(providerResultCode)) {
-      throw new Error(`KRIC EXIT provider result invalid: ${query.queryId}/UNKNOWN`);
-    }
-    if (!Array.isArray(payload.body)) {
-      throw new Error(`KRIC EXIT response body must be an array: ${query.queryId}`);
-    }
-    providerRows = payload.body;
-    if (providerResultCode === "03") {
-      if (providerRows.length !== 0) throw new Error(`KRIC EXIT provider no-data shape mismatch: ${query.queryId}`);
-      resultState = "PROVIDER_NO_DATA";
-    } else if (providerResultCode === "00") {
-      resultState = providerRows.length === 0 ? "EXPLICIT_ZERO" : "ROWS_OBSERVED";
-    } else {
-      throw new Error(`KRIC EXIT provider result invalid: ${query.queryId}/${providerResultCode}`);
-    }
-  }
-  const rows = providerRows.map(validateProviderRow).sort(compareProviderRows);
-  const seenRows = new Set();
-  for (const row of rows) {
-    const key = canonicalJson(row);
-    if (seenRows.has(key)) throw new Error(`duplicate KRIC EXIT provider row: ${query.queryId}`);
-    seenRows.add(key);
-  }
+  const url = buildProviderUrl(source.endpoint, query, serviceKey);
+  const bytes = await requestProviderBytes({ fetchImpl, queryId: query.queryId, requestTimeoutMs, url });
+  const { providerResultCode, providerRows, resultState } = parseProviderResult({
+    bytes,
+    queryId: query.queryId,
+    serviceKey,
+  });
+  const rows = normalizeProviderRows(providerRows, query.queryId);
   return canonicalObject({
     queryId: query.queryId,
     state: resultState,
@@ -235,6 +162,107 @@ async function collectQuery({ fetchImpl, query, requestTimeoutMs, serviceKey, so
     providerRecordHash: sha256(canonicalJson(rows)),
     rows,
   });
+}
+
+function buildProviderUrl(endpoint, query, serviceKey) {
+  const url = new URL(endpoint);
+  url.searchParams.set("serviceKey", serviceKey);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("railOprIsttCd", query.providerOperatorId);
+  url.searchParams.set("lnCd", query.providerLineId);
+  url.searchParams.set("stinCd", query.providerStationId);
+  url.searchParams.set("nextStinCd", query.providerNextStationId);
+  return url;
+}
+
+async function requestProviderBytes({ fetchImpl, queryId, requestTimeoutMs, url }) {
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(requestTimeoutMs),
+      headers: { accept: "application/json" },
+    });
+  } catch {
+    throw new Error(`KRIC EXIT request failed: ${queryId}`);
+  }
+  if (!response?.ok) {
+    const status = Number.isInteger(response?.status) ? response.status : "unknown";
+    throw new Error(`KRIC EXIT HTTP ${status}: ${queryId}`);
+  }
+  let bytes;
+  try {
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch {
+    throw new Error(`KRIC EXIT response read failed: ${queryId}`);
+  }
+  if (bytes.length === 0 || bytes.length > MAX_RESPONSE_BYTES) {
+    throw new Error(`KRIC EXIT response size invalid: ${queryId}`);
+  }
+  return bytes;
+}
+
+function parseProviderResult({ bytes, queryId, serviceKey }) {
+  let raw;
+  try {
+    raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(`KRIC EXIT response must be strict UTF-8 JSON: ${queryId}`);
+  }
+  if (raw.includes(serviceKey)) throw new Error(`KRIC EXIT response echoed credential: ${queryId}`);
+  let payload;
+  try {
+    payload = parseStrictJson(raw);
+  } catch (error) {
+    if (error instanceof Error && error.message === "duplicate JSON key") throw error;
+    throw new Error(`KRIC EXIT response must be strict UTF-8 JSON: ${queryId}`);
+  }
+  if (containsCredential(payload, serviceKey)) {
+    throw new Error(`KRIC EXIT response echoed credential: ${queryId}`);
+  }
+  return classifyProviderPayload(payload, queryId);
+}
+
+function classifyProviderPayload(payload, queryId) {
+  let providerResultCode = null;
+  let resultState = "PROVIDER_RESULT_UNVERIFIED";
+  let providerRows;
+  if (Array.isArray(payload)) {
+    providerRows = payload;
+  } else {
+    assertKeys(payload, ["body", "header"], "KRIC EXIT response envelope keys");
+    if (!payload.header || typeof payload.header !== "object" || Array.isArray(payload.header)) {
+      throw new Error(`KRIC EXIT response header mismatch: ${queryId}`);
+    }
+    providerResultCode = payload.header.resultCode;
+    if (typeof providerResultCode !== "string" || !/^[A-Za-z0-9._-]{1,32}$/.test(providerResultCode)) {
+      throw new Error(`KRIC EXIT provider result invalid: ${queryId}/UNKNOWN`);
+    }
+    if (!Array.isArray(payload.body)) {
+      throw new TypeError(`KRIC EXIT response body must be an array: ${queryId}`);
+    }
+    providerRows = payload.body;
+    if (providerResultCode === "03") {
+      if (providerRows.length !== 0) throw new Error(`KRIC EXIT provider no-data shape mismatch: ${queryId}`);
+      resultState = "PROVIDER_NO_DATA";
+    } else if (providerResultCode === "00") {
+      resultState = providerRows.length === 0 ? "EXPLICIT_ZERO" : "ROWS_OBSERVED";
+    } else {
+      throw new Error(`KRIC EXIT provider result invalid: ${queryId}/${providerResultCode}`);
+    }
+  }
+  return { providerResultCode, providerRows, resultState };
+}
+
+function normalizeProviderRows(providerRows, queryId) {
+  const rows = providerRows.map(validateProviderRow).sort(compareProviderRows);
+  const seenRows = new Set();
+  for (const row of rows) {
+    const key = canonicalJson(row);
+    if (seenRows.has(key)) throw new Error(`duplicate KRIC EXIT provider row: ${queryId}`);
+    seenRows.add(key);
+  }
+  return rows;
 }
 
 function containsCredential(value, serviceKey) {
@@ -269,7 +297,7 @@ function validateProviderRow(row) {
       throw new Error(`KRIC EXIT provider row scalar mismatch: ${field}`);
     }
     if (typeof value === "number" && !Number.isFinite(value)) {
-      throw new Error(`KRIC EXIT provider row scalar mismatch: ${field}`);
+      throw new TypeError(`KRIC EXIT provider row scalar mismatch: ${field}`);
     }
   }
   for (const field of ["mvPathMgNo", "exitMvTpOrdr"]) {
@@ -285,7 +313,7 @@ function parseStrictJson(raw) {
   let index = 0;
   const fail = () => { throw new Error("invalid JSON"); };
   const skipWhitespace = () => {
-    while (/[\u0009\u000a\u000d\u0020]/.test(raw[index] ?? "")) index += 1;
+    while (isJsonWhitespace(raw[index])) index += 1;
   };
   const parseString = () => {
     if (raw[index] !== '"') fail();
@@ -304,7 +332,7 @@ function parseStrictJson(raw) {
           fail();
         }
       }
-      if (raw.charCodeAt(index) < 0x20) fail();
+      if (raw.codePointAt(index) < 0x20) fail();
       index += 1;
     }
     fail();
@@ -382,6 +410,11 @@ function parseStrictJson(raw) {
   skipWhitespace();
   if (index !== raw.length) fail();
   return value;
+}
+
+function isJsonWhitespace(character) {
+  const codePoint = character?.codePointAt(0);
+  return codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d || codePoint === 0x20;
 }
 
 function assertKeys(value, keys, label) {
