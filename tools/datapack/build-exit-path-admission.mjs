@@ -9,6 +9,7 @@ const CANDIDATE_KEYS = [
 const STATION_LINE_KEYS = [
   "stationId", "stationName", "stationAliases", "regionId", "lineId", "lineName", "operatorId", "operatorName",
 ];
+const STATION_LINE_REQUIRED_KEYS = STATION_LINE_KEYS.filter((key) => key !== "stationAliases");
 const SOURCE_ADMISSION_KEYS = [
   "schemaVersion", "artifactKind", "candidateId", "sourceId", "snapshotId", "rawSha256",
   "sourceSnapshotSetHash", "stationSetSha256", "stationLineMappingSha256", "queryPlanSha256",
@@ -153,17 +154,7 @@ function validateStationLines(value, expectedStationSet, expectedStationLineSet,
   if (!Array.isArray(value) || value.length === 0) throw new Error("stationLines must be a non-empty array");
   assertSha256(expectedStationLineSet, "stationLineSetSha256");
   assertSha256(expectedMapping, "stationLineMappingSha256");
-  const lines = value.map((line) => {
-    assertKeys(line, STATION_LINE_KEYS, "station line keys");
-    for (const key of STATION_LINE_KEYS.filter((key) => key !== "stationAliases")) {
-      assertNonBlank(line[key], `station line ${key}`);
-    }
-    if (!Array.isArray(line.stationAliases)
-      || line.stationAliases.some((alias) => typeof alias !== "string" || alias.trim() === "")) {
-      throw new Error("station line aliases must be non-blank strings");
-    }
-    return canonicalObject({ ...line, stationAliases: [...new Set(line.stationAliases)].sort(compareBytes) });
-  }).sort(compareStationLines);
+  const lines = value.map(normalizeStationLine).toSorted(compareStationLines);
   const seen = new Set();
   for (const line of lines) {
     const key = stationLineKey(line);
@@ -180,6 +171,19 @@ function validateStationLines(value, expectedStationSet, expectedStationLineSet,
   }
   if (sha256(canonicalJson(lines)) !== expectedMapping) throw new Error("station-line mapping identity mismatch");
   return lines;
+}
+
+function normalizeStationLine(line) {
+  assertKeys(line, STATION_LINE_KEYS, "station line keys");
+  for (const key of STATION_LINE_REQUIRED_KEYS) assertNonBlank(line[key], `station line ${key}`);
+  if (!Array.isArray(line.stationAliases)) throw new Error("station line aliases must be non-blank strings");
+  for (const alias of line.stationAliases) {
+    if (typeof alias !== "string" || alias.trim() === "") {
+      throw new Error("station line aliases must be non-blank strings");
+    }
+  }
+  const stationAliases = [...new Set(line.stationAliases)].toSorted(compareBytes);
+  return canonicalObject({ ...line, stationAliases });
 }
 
 function validateSnapshot(value, observedAt) {
@@ -202,13 +206,16 @@ function validateSnapshot(value, observedAt) {
     throw new Error("EXIT snapshot exhaustive coverage is incomplete");
   }
   const results = validateResults(value.results, plannedIds);
+  const orderedQueryIds = queryIds.toSorted(compareBytes);
+  const orderedQueryPlan = queryPlan.toSorted(compareQueries);
+  const orderedResults = results.toSorted(compareResults);
   return canonicalObject({
     ...value,
     capturedAt: new Date(capturedAt).toISOString(),
     freshUntil: new Date(freshUntil).toISOString(),
-    coverage: canonicalObject({ exhaustive: value.coverage.exhaustive, queryIds: queryIds.sort(compareBytes) }),
-    queryPlan: queryPlan.sort(compareQueries),
-    results: results.sort(compareResults),
+    coverage: canonicalObject({ exhaustive: value.coverage.exhaustive, queryIds: orderedQueryIds }),
+    queryPlan: orderedQueryPlan,
+    results: orderedResults,
   });
 }
 
@@ -409,47 +416,50 @@ function buildCell({
     materializerVersion: candidate.materializerVersion,
     normalizedEvidenceSha256,
   };
-  let state;
-  let admissionReason;
-  let providerRecordHash = sha256(canonicalJson({ stationLineId: base.stationLineId, state: "MISSING" }));
+  const outcome = resolveCellOutcome({
+    stationLineId: base.stationLineId,
+    joined,
+    resultByQuery,
+    snapshot,
+    sourceAdmission,
+    observedAt,
+  });
+  return canonicalObject({ ...base, ...outcome });
+}
+
+function resolveCellOutcome({
+  stationLineId, joined, resultByQuery, snapshot, sourceAdmission, observedAt,
+}) {
+  const missingHash = sha256(canonicalJson({ stationLineId, state: "MISSING" }));
   if (requiredUtcInstant(snapshot.freshUntil, "EXIT snapshot freshUntil") <= observedAt) {
-    state = "STALE";
-    admissionReason = "OFFICIAL_EXIT_SOURCE_STALE";
-  } else if (!joined) {
-    state = "MISSING";
-    admissionReason = "OFFICIAL_EXIT_EVIDENCE_MISSING";
-  } else if (sourceAdmission.decision !== "APPROVED" || sourceAdmission.productionUseAllowed !== true) {
-    state = "BLOCKED_WITH_EVIDENCE";
-    admissionReason = "SOURCE_NOT_PRODUCTION_ADMITTED";
-  } else if (!snapshot.coverage.queryIds.includes(joined.queryId)) {
-    state = "BLOCKED_WITH_EVIDENCE";
-    admissionReason = "SOURCE_COVERAGE_PARTIAL";
-  } else {
-    const result = resultByQuery.get(joined.queryId);
-    if (!result) {
-      state = "MISSING";
-      admissionReason = "OFFICIAL_EXIT_RESULT_MISSING";
-    } else {
-      providerRecordHash = sha256(canonicalJson(result));
-      if (result.state === "OBSERVED_EXIT_PATH") {
-        state = "ADMITTED_EXIT_PATH";
-        admissionReason = "OFFICIAL_EXIT_PATH_PRESENT";
-      } else if (result.state === "EXPLICIT_ZERO" && snapshot.coverage.exhaustive) {
-        state = "ADMITTED_VERIFIED_ABSENCE";
-        admissionReason = "OFFICIAL_EXIT_EXPLICIT_ZERO";
-      } else if (result.state === "EXPLICIT_ZERO") {
-        state = "BLOCKED_WITH_EVIDENCE";
-        admissionReason = "SOURCE_COVERAGE_PARTIAL";
-      } else if (result.state === "PROVIDER_NO_DATA") {
-        state = "UNKNOWN";
-        admissionReason = "PROVIDER_NO_DATA_IS_NOT_ABSENCE";
-      } else {
-        state = "BLOCKED_WITH_EVIDENCE";
-        admissionReason = "PROVIDER_REQUEST_FAILED";
-      }
-    }
+    return cellOutcome("STALE", "OFFICIAL_EXIT_SOURCE_STALE", missingHash);
   }
-  return canonicalObject({ ...base, state, admissionReason, providerRecordHash });
+  if (!joined) return cellOutcome("MISSING", "OFFICIAL_EXIT_EVIDENCE_MISSING", missingHash);
+  if (sourceAdmission.decision !== "APPROVED" || sourceAdmission.productionUseAllowed !== true) {
+    return cellOutcome("BLOCKED_WITH_EVIDENCE", "SOURCE_NOT_PRODUCTION_ADMITTED", missingHash);
+  }
+  if (!snapshot.coverage.queryIds.includes(joined.queryId)) {
+    return cellOutcome("BLOCKED_WITH_EVIDENCE", "SOURCE_COVERAGE_PARTIAL", missingHash);
+  }
+  const result = resultByQuery.get(joined.queryId);
+  if (!result) return cellOutcome("MISSING", "OFFICIAL_EXIT_RESULT_MISSING", missingHash);
+  const resultHash = sha256(canonicalJson(result));
+  if (result.state === "OBSERVED_EXIT_PATH") {
+    return cellOutcome("ADMITTED_EXIT_PATH", "OFFICIAL_EXIT_PATH_PRESENT", resultHash);
+  }
+  if (result.state === "EXPLICIT_ZERO") {
+    return snapshot.coverage.exhaustive
+      ? cellOutcome("ADMITTED_VERIFIED_ABSENCE", "OFFICIAL_EXIT_EXPLICIT_ZERO", resultHash)
+      : cellOutcome("BLOCKED_WITH_EVIDENCE", "SOURCE_COVERAGE_PARTIAL", resultHash);
+  }
+  if (result.state === "PROVIDER_NO_DATA") {
+    return cellOutcome("UNKNOWN", "PROVIDER_NO_DATA_IS_NOT_ABSENCE", resultHash);
+  }
+  return cellOutcome("BLOCKED_WITH_EVIDENCE", "PROVIDER_REQUEST_FAILED", resultHash);
+}
+
+function cellOutcome(state, admissionReason, providerRecordHash) {
+  return { state, admissionReason, providerRecordHash };
 }
 
 function materializerEvidenceRow(cell) {
@@ -537,9 +547,9 @@ function compareBytes(left, right) {
 
 function assertKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
-  const actual = Object.keys(value).sort(compareBytes);
-  const wanted = [...expected].sort(compareBytes);
-  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
+  const actual = Object.keys(value);
+  const wanted = new Set(expected);
+  if (actual.length !== wanted.size || actual.some((key) => !wanted.has(key))) {
     throw new Error(`${label} mismatch`);
   }
 }
@@ -554,10 +564,9 @@ function assertSha256(value, label) {
 
 function canonicalObject(value) {
   if (Array.isArray(value)) return value.map(canonicalObject);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, canonicalObject(value[key])]));
-  }
-  return value;
+  if (!value || typeof value !== "object") return value;
+  const entries = Object.entries(value).toSorted(([left], [right]) => compareBytes(left, right));
+  return Object.fromEntries(entries.map(([key, entry]) => [key, canonicalObject(entry)]));
 }
 
 function canonicalJson(value) {
