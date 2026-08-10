@@ -75,6 +75,7 @@ test("CI는 TRANSFER topology admission contract를 standalone contracts에서 �
 
 test("CI는 EXIT path admission contract를 standalone contracts에서 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  assert.match(ci, /node --test[\s\S]*tools\/datapack\/plan-kric-exit-path-collection\.test\.mjs/);
   assert.match(ci, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
 });
 
