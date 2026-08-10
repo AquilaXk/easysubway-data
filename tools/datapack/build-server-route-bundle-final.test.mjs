@@ -162,6 +162,176 @@ test("current-key signed manifest는 signature gate만 닫고 publication·parit
   await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
 });
 
+test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로 결속한다", async (t) => {
+  const fixture = await createFixture(t);
+  installSigningEnvironment(t);
+  const signedRoot = path.join(fixture.temp, "signed-release-bundle");
+  await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
+  fixture.artifactRoot = signedRoot;
+
+  const prePublicationOutput = path.join(fixture.temp, "pre-publication-final");
+  await build(fixture, prePublicationOutput, FRESH_AT);
+  const prePublicationFinal = await readJson(
+    path.join(prePublicationOutput, "server-route-bundle-final.json"),
+  );
+  assert.equal(prePublicationFinal.result, "NO_GO");
+  assert.deepEqual(prePublicationFinal.blockers, [
+    "publication:UNAVAILABLE",
+    "rebuildParityPromotion:UNAVAILABLE",
+  ]);
+
+  const releaseEvidence = await createReleaseEvidence(fixture, prePublicationFinal);
+  const output = path.join(fixture.temp, "release-final");
+  await build(fixture, output, FRESH_AT, releaseEvidence);
+
+  const final = await readJson(path.join(output, "server-route-bundle-final.json"));
+  assert.equal(final.result, "GO");
+  assert.deepEqual(final.blockers, []);
+  assert.deepEqual(final.gates.publication, {
+    state: "PASS",
+    evidenceSha256: await fileSha(releaseEvidence.publicationReceiptPath),
+  });
+  assert.deepEqual(final.gates.rebuildParityPromotion, {
+    state: "PASS",
+    evidenceSha256: await fileSha(releaseEvidence.promotionRequestPath),
+  });
+  assert.doesNotThrow(() => validateServerRouteBundleFinal(final));
+  assert.deepEqual((await readdir(output)).sort(bytewise), [
+    "artifact-inventory.json",
+    "route-edge-evaluation.json",
+    "server-route-bundle-final.json",
+    "source-freshness.json",
+    "station-line-accessibility.json",
+  ]);
+});
+
+test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes mismatch는 거부한다", async (t) => {
+  installSigningEnvironment(t);
+  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);
+  await rewriteReceipt(releaseEvidence.publicationReceiptPath, (receipt) => {
+    receipt.objects.find((entry) => entry.path === "compatibility.json").sha256 = "f".repeat(64);
+  });
+  await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+    inventory.entries.find((entry) => (
+      entry.path === "server-route-bundle/compatibility.json"
+    )).sha256 = "f".repeat(64);
+  });
+  const output = path.join(fixture.temp, "release-rejected-published-byte-drift");
+  await assert.rejects(
+    () => build(fixture, output, FRESH_AT, releaseEvidence),
+    /publication receipt object inventory mismatch/,
+  );
+  await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
+test("FINAL closure는 bundle보다 이른 source freshness cutoff를 거부한다", async (t) => {
+  installSigningEnvironment(t);
+  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
+    freshUntil: "2026-08-09T08:00:00.000+09:00",
+  });
+  const output = path.join(fixture.temp, "release-rejected-source-cutoff");
+  await assert.rejects(
+    () => build(fixture, output, FRESH_AT, releaseEvidence, {
+      clock: () => Date.parse("2026-08-08T01:00:00.000Z"),
+    }),
+    /source freshness cutoff must cover candidate freshUntil/,
+  );
+  await assert.rejects(() => readFile(output), /ENOENT/);
+});
+
+test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail closed한다", async (t) => {
+  installSigningEnvironment(t);
+  for (const [name, mutate, pattern, evaluationAt = FRESH_AT] of [
+    ["partial-input", async ({ releaseEvidence }) => {
+      delete releaseEvidence.approvalEvidencePath;
+    }, /release evidence keys mismatch/],
+    ["receipt-final", async ({ releaseEvidence }) => {
+      await rewriteReceipt(releaseEvidence.publicationReceiptPath, (receipt) => {
+        receipt.candidate.prePublicationFinalSha256 = "f".repeat(64);
+      });
+    }, /publication receipt FINAL identity mismatch/],
+    ["receipt-noncanonical", async ({ releaseEvidence }) => {
+      const receipt = await readJson(releaseEvidence.publicationReceiptPath);
+      await writeFile(releaseEvidence.publicationReceiptPath, JSON.stringify(receipt, null, 2));
+    }, /publication receipt must be canonical JSON/],
+    ["promotion-git", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ component }) => {
+        component.gitSha = "f".repeat(40);
+      });
+    }, /promotion candidate identity mismatch/],
+    ["promotion-release", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ component }) => {
+        component.releaseSequence += 1;
+      });
+    }, /promotion candidate identity mismatch/],
+    ["promotion-source", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ component }) => {
+        component.provenance.sourceSnapshotSetHash = "f".repeat(64);
+      });
+    }, /promotion candidate identity mismatch/],
+    ["server-digest", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+        inventory.entries.find((entry) => entry.path === "server-route-bundle/provenance.json").sha256 = "f".repeat(64);
+      });
+    }, /promotion server-route-bundle inventory mismatch/],
+    ["server-missing", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+        inventory.entries = inventory.entries.filter((entry) => (
+          entry.path !== "server-route-bundle/payload/fare.sqlite.zst"
+        ));
+      });
+    }, /promotion server-route-bundle inventory mismatch/],
+    ["server-extra", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+        inventory.entries.push({
+          path: "server-route-bundle/extra.bin",
+          sizeBytes: 1,
+          sha256: "e".repeat(64),
+        });
+        inventory.entries.sort((left, right) => bytewise(left.path, right.path));
+      });
+    }, /promotion server-route-bundle inventory mismatch/],
+    ["inventory-duplicate", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+        inventory.entries.push(structuredClone(inventory.entries.find((entry) => (
+          entry.path === "server-route-bundle/provenance.json"
+        ))));
+        inventory.entries.sort((left, right) => bytewise(left.path, right.path));
+      });
+    }, /inventory entry is invalid/],
+    ["inventory-order", async ({ releaseEvidence }) => {
+      await rewritePromotionEvidence(releaseEvidence, ({ inventory }) => {
+        inventory.entries.reverse();
+      });
+    }, /inventory entry is invalid/],
+    ["symlink", async ({ fixture, releaseEvidence }) => {
+      const target = path.join(fixture.temp, "approval-target.json");
+      await rename(releaseEvidence.approvalEvidencePath, target);
+      await symlink(target, releaseEvidence.approvalEvidencePath);
+    }, /approvalEvidencePath must be a regular non-symlink/],
+    ["stale", async () => {}, /embedded route-edge evaluation evidence mismatch/, STALE_AT],
+    ["wall-clock-expired", async () => ({
+      clock: () => Date.parse(STALE_AT),
+    }), /candidate freshUntil must be in the future at FINAL closure/],
+    ["changed-during-build", async ({ releaseEvidence }) => ({
+      beforeReleaseOutput: async () => {
+        await writeFile(releaseEvidence.promotionRequestPath, "changed");
+      },
+    }), /promotionRequestPath changed during FINAL build/],
+  ]) {
+    await t.test(name, async () => {
+      const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);
+      const extraInput = await mutate({ fixture, releaseEvidence }) ?? {};
+      const output = path.join(fixture.temp, `release-rejected-${name}`);
+      await assert.rejects(
+        () => build(fixture, output, evaluationAt, releaseEvidence, extraInput),
+        pattern,
+      );
+      await assert.rejects(() => readFile(output), /ENOENT/);
+    });
+  }
+});
+
 test("stale source와 unresolved #8/#9 denominator를 NO_GO gate로 보존한다", async (t) => {
   const stale = await createFixture(t, { evaluationAt: STALE_AT });
   const staleOutput = path.join(stale.temp, "stale");
@@ -309,6 +479,54 @@ test("standalone CLI도 exact inputs로 같은 FINAL을 생성한다", async (t)
   await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
 });
 
+test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성한다", async (t) => {
+  installSigningEnvironment(t);
+  const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);
+  const clockPath = path.join(fixture.temp, "release-cli-clock.mjs");
+  await writeFile(clockPath, `Date.now = () => ${Date.parse(FRESH_AT)};\n`);
+  const stationLineInputPath = path.join(fixture.temp, "release-station-line-input.json");
+  const routeEdgeInputPath = path.join(fixture.temp, "release-route-edge-input.json");
+  await writeFile(stationLineInputPath, canonicalJson(fixture.stationLineInput));
+  await writeFile(routeEdgeInputPath, canonicalJson(fixture.routeEdgeInput));
+  const output = path.join(fixture.temp, "release-cli-output");
+  const baseArgs = [
+    SCRIPT,
+    "--artifact-root", fixture.artifactRoot,
+    "--station-line-input", stationLineInputPath,
+    "--route-edge-input", routeEdgeInputPath,
+    "--repository-git-sha", fixture.repositoryGitSha,
+    "--evaluation-at", FRESH_AT,
+    "--output", output,
+    "--publication-receipt", releaseEvidence.publicationReceiptPath,
+    "--promotion-request", releaseEvidence.promotionRequestPath,
+    "--promotion-component", releaseEvidence.promotionComponentPath,
+    "--promotion-inventory", releaseEvidence.promotionInventoryPath,
+    "--compatibility-evidence", releaseEvidence.compatibilityEvidencePath,
+    "--rebuild-parity-evidence", releaseEvidence.rebuildParityEvidencePath,
+    "--approval-evidence", releaseEvidence.approvalEvidencePath,
+    "--promotion-workflow-run-id", releaseEvidence.promotionWorkflowRunId,
+  ];
+  const result = spawnSync(process.execPath, ["--import", clockPath, ...baseArgs], {
+    cwd: fixture.repositoryRoot,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^GO [a-f0-9]{64}\n$/);
+  const final = await readJson(path.join(output, "server-route-bundle-final.json"));
+  assert.equal(final.result, "GO");
+
+  const rejectedOutput = path.join(fixture.temp, "partial-release-cli-output");
+  const partialArgs = baseArgs.slice(0, -2);
+  partialArgs[partialArgs.indexOf("--output") + 1] = rejectedOutput;
+  const partial = spawnSync(process.execPath, ["--import", clockPath, ...partialArgs], {
+    cwd: fixture.repositoryRoot,
+    encoding: "utf8",
+  });
+  assert.equal(partial.status, 1);
+  assert.match(partial.stderr, /CLI arguments mismatch/);
+  await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
+});
+
 async function createFixture(t, options = {}) {
   const temp = await mkdtemp(path.join(os.tmpdir(), "server-route-final-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -335,6 +553,7 @@ async function createFixture(t, options = {}) {
     stationLineInput,
     routeEdgeInput,
     options.evaluationAt ?? FRESH_AT,
+    options.freshUntil,
   );
   return { temp, repositoryRoot, repositoryGitSha, artifactRoot, buildSpec, manifest, stationLineInput, routeEdgeInput };
 }
@@ -356,7 +575,15 @@ async function copyRepositoryInputs(repositoryRoot) {
   }
 }
 
-async function createArtifact(repositoryRoot, artifactRoot, buildSpec, stationLineInput, routeEdgeInput, evaluationAt) {
+async function createArtifact(
+  repositoryRoot,
+  artifactRoot,
+  buildSpec,
+  stationLineInput,
+  routeEdgeInput,
+  evaluationAt,
+  freshUntil = "2026-08-08T08:00:00.000+09:00",
+) {
   const routePolicy = await readJson(path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"));
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
   const evaluation = evaluateRouteAccessibilityEdges({
@@ -407,7 +634,7 @@ async function createArtifact(repositoryRoot, artifactRoot, buildSpec, stationLi
     stationSetSha256: STATION_SET_SHA256,
     serviceTimezone: "Asia/Seoul",
     activeFrom: "2026-08-07T09:00:00.000+09:00",
-    freshUntil: "2026-08-08T08:00:00.000+09:00",
+    freshUntil,
     builtAt: FRESH_AT,
     buildSpecSha256: sha256(buildSpecBytes),
     sourceSnapshotSetHash: buildSpec.sourceSnapshotSetHash,
@@ -567,7 +794,235 @@ function edge(value) {
   return { ...raw, edgeSha256: routeEdgeSha256(raw) };
 }
 
-async function build(fixture, output, evaluationAt) {
+async function createReleaseEvidence(fixture, prePublicationFinal) {
+  const objectPrefix = `server-route-bundles/v1/${prePublicationFinal.candidate.signedManifestRawSha256}/`;
+  const signedPaths = [
+    "compatibility.json",
+    "manifest.json",
+    "manifest.signing-input.json",
+    "payload/accessibility.sqlite.zst",
+    "payload/fare.sqlite.zst",
+    "payload/timetable.sqlite.zst",
+    "payload/topology.sqlite.zst",
+    "provenance.json",
+  ];
+  const objects = [];
+  for (const entryPath of signedPaths) {
+    const bytes = await readFile(path.join(fixture.artifactRoot, entryPath));
+    objects.push({
+      path: entryPath,
+      objectKey: `${objectPrefix}${entryPath}`,
+      sizeBytes: bytes.length,
+      sha256: sha256(bytes),
+    });
+  }
+  const receiptPayload = {
+    schemaVersion: 1,
+    artifactKind: "server-route-bundle-publication-receipt",
+    repository: {
+      name: "AquilaXk/easysubway-data",
+      gitSha: fixture.repositoryGitSha,
+    },
+    candidate: {
+      bundleId: prePublicationFinal.candidate.bundleId,
+      releaseSequence: prePublicationFinal.candidate.releaseSequence,
+      stationSetSha256: prePublicationFinal.candidate.stationSetSha256,
+      sourceSnapshotSetHash: prePublicationFinal.candidate.sourceSnapshotSetHash,
+      signingInputSha256: prePublicationFinal.candidate.signingInputSha256,
+      signedManifestRawSha256: prePublicationFinal.candidate.signedManifestRawSha256,
+      payloadRootSha256: prePublicationFinal.candidate.payloadRootSha256,
+      componentInventorySha256: prePublicationFinal.candidate.componentInventorySha256,
+      componentDigests: prePublicationFinal.candidate.componentDigests,
+      activeFrom: prePublicationFinal.candidate.activeFrom,
+      freshUntil: prePublicationFinal.candidate.freshUntil,
+      keyId: prePublicationFinal.candidate.keyId,
+      prePublicationFinalSha256: prePublicationFinal.finalSha256,
+    },
+    locator: {
+      publicBaseUrl: "https://objectstorage.ap-seoul-1.oraclecloud.com/n/easysubway/b/releases/o",
+      objectPrefix,
+    },
+    objects,
+  };
+  const receipt = {
+    ...receiptPayload,
+    receiptSha256: sha256(Buffer.from(canonicalJson(receiptPayload))),
+  };
+  const publicationReceiptPath = path.join(fixture.temp, "publication-receipt.json");
+  await writeCanonical(publicationReceiptPath, receipt);
+
+  const inventory = {
+    schemaVersion: 1,
+    artifactKind: "datapack-candidate-inventory",
+    entries: [
+      { path: "map-pack/manifest.json", sizeBytes: 1, sha256: "a".repeat(64) },
+      ...objects.filter((entry) => entry.path !== "manifest.json").map((entry) => ({
+        path: `server-route-bundle/${entry.path}`,
+        sizeBytes: entry.sizeBytes,
+        sha256: entry.sha256,
+      })),
+      { path: "station-catalog-pack/manifest.json", sizeBytes: 1, sha256: "b".repeat(64) },
+    ].sort((left, right) => bytewise(left.path, right.path)),
+  };
+  const inventoryBytes = Buffer.from(canonicalJson(inventory));
+  const component = {
+    schemaVersion: 1,
+    component: "data",
+    repository: "AquilaXk/easysubway-data",
+    gitSha: fixture.repositoryGitSha,
+    workflowRunId: "123",
+    dataVersion: "1",
+    releaseSequence: prePublicationFinal.candidate.releaseSequence,
+    manifestSha256: "c".repeat(64),
+    provenance: {
+      sourceSnapshotSetHash: prePublicationFinal.candidate.sourceSnapshotSetHash,
+    },
+    artifactInventorySha256: sha256(inventoryBytes),
+    contractVersion: "datapack-contract-v3",
+    issueRef: "AquilaXk/easysubway#2705",
+  };
+  const compatibility = {
+    schemaVersion: 1,
+    artifactKind: "datapack-mobile-compatibility-evidence",
+    decision: "PASS",
+    candidate: structuredClone(component),
+  };
+  const compatibilityBytes = Buffer.from(canonicalJson(compatibility));
+  const rebuildParity = {
+    schemaVersion: 1,
+    artifactKind: "datapack-rebuild-parity-evidence",
+    selectedCandidateWorkflowRunId: component.workflowRunId,
+    candidates: [
+      structuredClone(component),
+      { ...component, workflowRunId: "234" },
+      { ...component, workflowRunId: "345" },
+    ],
+    artifactInventorySha256: component.artifactInventorySha256,
+    contractVersion: "datapack-rebuild-parity-v1",
+    issueRef: component.issueRef,
+  };
+  const rebuildParityBytes = Buffer.from(canonicalJson(rebuildParity));
+  const approval = [{
+    state: "approved",
+    environments: [{ name: "datapack-promotion" }],
+    user: { login: "AquilaXk" },
+  }];
+  const approvalBytes = Buffer.from(canonicalJson(approval));
+  const promotionWorkflowRunId = "456";
+  const request = {
+    schemaVersion: 1,
+    artifactKind: "datapack-promotion-request",
+    candidate: structuredClone(component),
+    compatibilityEvidenceSha256: sha256(compatibilityBytes),
+    rebuildParityEvidenceSha256: sha256(rebuildParityBytes),
+    requestedBy: "AquilaXk",
+    approval: {
+      workflowRunId: promotionWorkflowRunId,
+      environment: "datapack-promotion",
+      reviewer: "AquilaXk",
+      approvalEvidenceSha256: sha256(approvalBytes),
+    },
+    contractVersion: "datapack-promotion-v1",
+    issueRef: component.issueRef,
+  };
+
+  const paths = {
+    promotionRequestPath: path.join(fixture.temp, "promotion-request.json"),
+    promotionComponentPath: path.join(fixture.temp, "promotion-component.json"),
+    promotionInventoryPath: path.join(fixture.temp, "promotion-inventory.json"),
+    compatibilityEvidencePath: path.join(fixture.temp, "compatibility-evidence.json"),
+    rebuildParityEvidencePath: path.join(fixture.temp, "rebuild-parity-evidence.json"),
+    approvalEvidencePath: path.join(fixture.temp, "promotion-approvals.json"),
+  };
+  for (const [target, bytes] of [
+    [paths.promotionRequestPath, Buffer.from(canonicalJson(request))],
+    [paths.promotionComponentPath, Buffer.from(canonicalJson(component))],
+    [paths.promotionInventoryPath, inventoryBytes],
+    [paths.compatibilityEvidencePath, compatibilityBytes],
+    [paths.rebuildParityEvidencePath, rebuildParityBytes],
+    [paths.approvalEvidencePath, approvalBytes],
+  ]) await writeFile(target, bytes);
+  return { publicationReceiptPath, promotionWorkflowRunId, ...paths };
+}
+
+async function prepareSignedReleaseFixture(t, options = {}) {
+  const fixture = await createFixture(t, options);
+  const signedRoot = path.join(fixture.temp, "signed-release-fixture");
+  await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
+  fixture.artifactRoot = signedRoot;
+  const prePublicationOutput = path.join(fixture.temp, "pre-publication-fixture");
+  await build(fixture, prePublicationOutput, FRESH_AT);
+  const prePublicationFinal = await readJson(
+    path.join(prePublicationOutput, "server-route-bundle-final.json"),
+  );
+  return {
+    fixture,
+    releaseEvidence: await createReleaseEvidence(fixture, prePublicationFinal),
+  };
+}
+
+async function rewriteReceipt(target, mutate) {
+  const receipt = await readJson(target);
+  delete receipt.receiptSha256;
+  mutate(receipt);
+  receipt.receiptSha256 = sha256(Buffer.from(canonicalJson(receipt)));
+  await writeCanonical(target, receipt);
+}
+
+async function rewritePromotionEvidence(releaseEvidence, mutate) {
+  const inventory = await readJson(releaseEvidence.promotionInventoryPath);
+  const component = await readJson(releaseEvidence.promotionComponentPath);
+  await mutate({ inventory, component });
+  const inventoryBytes = Buffer.from(canonicalJson(inventory));
+  component.artifactInventorySha256 = sha256(inventoryBytes);
+  const compatibility = {
+    schemaVersion: 1,
+    artifactKind: "datapack-mobile-compatibility-evidence",
+    decision: "PASS",
+    candidate: structuredClone(component),
+  };
+  const compatibilityBytes = Buffer.from(canonicalJson(compatibility));
+  const rebuildParity = {
+    schemaVersion: 1,
+    artifactKind: "datapack-rebuild-parity-evidence",
+    selectedCandidateWorkflowRunId: component.workflowRunId,
+    candidates: [
+      structuredClone(component),
+      { ...component, workflowRunId: "234" },
+      { ...component, workflowRunId: "345" },
+    ],
+    artifactInventorySha256: component.artifactInventorySha256,
+    contractVersion: "datapack-rebuild-parity-v1",
+    issueRef: component.issueRef,
+  };
+  const rebuildParityBytes = Buffer.from(canonicalJson(rebuildParity));
+  const approvalBytes = await readFile(releaseEvidence.approvalEvidencePath);
+  const request = {
+    schemaVersion: 1,
+    artifactKind: "datapack-promotion-request",
+    candidate: structuredClone(component),
+    compatibilityEvidenceSha256: sha256(compatibilityBytes),
+    rebuildParityEvidenceSha256: sha256(rebuildParityBytes),
+    requestedBy: "AquilaXk",
+    approval: {
+      workflowRunId: releaseEvidence.promotionWorkflowRunId,
+      environment: "datapack-promotion",
+      reviewer: "AquilaXk",
+      approvalEvidenceSha256: sha256(approvalBytes),
+    },
+    contractVersion: "datapack-promotion-v1",
+    issueRef: component.issueRef,
+  };
+  for (const [target, bytes] of [
+    [releaseEvidence.promotionRequestPath, Buffer.from(canonicalJson(request))],
+    [releaseEvidence.promotionComponentPath, Buffer.from(canonicalJson(component))],
+    [releaseEvidence.promotionInventoryPath, inventoryBytes],
+    [releaseEvidence.compatibilityEvidencePath, compatibilityBytes],
+    [releaseEvidence.rebuildParityEvidencePath, rebuildParityBytes],
+  ]) await writeFile(target, bytes);
+}
+
+async function build(fixture, output, evaluationAt, releaseEvidence = undefined, extraInput = {}) {
   return buildServerRouteBundleFinalEvidence({
     repositoryRoot: fixture.repositoryRoot,
     repositoryGitSha: fixture.repositoryGitSha,
@@ -576,6 +1031,9 @@ async function build(fixture, output, evaluationAt) {
     routeEdgeInput: fixture.routeEdgeInput,
     evaluationAt,
     output,
+    ...(releaseEvidence === undefined ? {} : { releaseEvidence }),
+    ...(releaseEvidence === undefined ? {} : { clock: () => Date.parse(FRESH_AT) }),
+    ...extraInput,
   });
 }
 
