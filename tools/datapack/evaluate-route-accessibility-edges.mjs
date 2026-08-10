@@ -323,8 +323,7 @@ function routeEndpoint(nodeId, stationLineIndex) {
 
 function validateRideEdgeSet(edges, policy) {
   const itxEdges = edges.filter(({ edgeType, serviceClass }) => edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN");
-  if (itxEdges.length > 0
-    && canonicalRideEdgeSetSha256(itxEdges) !== policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256) {
+  if (canonicalRideEdgeSetSha256(itxEdges) !== policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256) {
     throw new Error("ITX EXPRESS edge set identity mismatch");
   }
 }
@@ -369,6 +368,9 @@ function validateKnownEndpointShape(edge, endpointTarget) {
       throw new Error("EXIT route edge endpoint identity mismatch");
     }
     return;
+  }
+  if (edge.edgeType === "IN_STATION_TRANSFER" && edge.from.stationId !== edge.to.stationId) {
+    throw new Error("IN_STATION_TRANSFER station identity mismatch");
   }
   if (endpointTarget === "BOTH" || edge.edgeType === "RIDE") {
     if (!fromIsStationLine || !toIsStationLine) throw new Error("route edge station-line endpoint is required");

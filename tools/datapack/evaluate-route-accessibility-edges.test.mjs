@@ -90,6 +90,7 @@ function materialization() {
       evidence({ domain: "TRANSFER", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "no interchange at this line" }),
       evidence({ stationId: "station-a", lineId: "line-2", operatorId: "operator-2", domain: "TRANSFER", state: "NOT_APPLICABLE", evidenceKind: "CURRENT_APPLICABILITY_RULE", evidenceReason: "no interchange at this line" }),
       evidence({ stationId: "station-b", domain: "FACILITY", state: "UNKNOWN", evidenceKind: "PROVIDER_NO_DATA", evidenceReason: "provider no data" }),
+      evidence({ stationId: "station-b", domain: "TRANSFER" }),
       evidence({ stationId: "station-c", lineId: "line-3", operatorId: "operator-3", freshUntil: NOW }),
     ],
   });
@@ -142,12 +143,21 @@ function rebindMaterialization(value) {
   };
 }
 
+function policyForEdges(edges) {
+  const value = structuredClone(policy);
+  value.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
+    edges.filter(({ edgeType, serviceClass }) => edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN"),
+  );
+  return value;
+}
+
 test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 분모에 보존한다", () => {
   const value = input();
   const before = structuredClone(value);
+  const fixturePolicy = policyForEdges(value.routeEdges);
 
-  const first = evaluateRouteAccessibilityEdges(value, policy);
-  const second = evaluateRouteAccessibilityEdges(value, policy);
+  const first = evaluateRouteAccessibilityEdges(value, fixturePolicy);
+  const second = evaluateRouteAccessibilityEdges(value, fixturePolicy);
 
   assert.deepEqual(value, before);
   assert.equal(first.denominator.edgeCount, value.routeEdges.length);
@@ -182,21 +192,39 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
 
 test("SUBWAY LOCAL과 policy-bound ITX EXPRESS RIDE invariant를 exact하게 강제한다", () => {
   const local = routeEdges().find(({ edgeId }) => edgeId === "ride-a-b");
-  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), policy).results[0].state, "PASS");
+  const localPolicy = policyForEdges([local]);
+  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), localPolicy).results[0].state, "PASS");
+  assert.throws(
+    () => evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), policy),
+    /ITX EXPRESS edge set identity mismatch/,
+  );
 
   const nonAdjacent = edge({ edgeId: "ride-a-c", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-c:line-3", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" });
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [nonAdjacent] }), policy), /SUBWAY LOCAL RIDE must connect adjacent station-line sequences/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [nonAdjacent] }), localPolicy), /SUBWAY LOCAL RIDE must connect adjacent station-line sequences/);
   const tooFast = edge({ edgeId: "ride-fast", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 1, distanceMeters: 1000, servicePattern: "LOCAL" });
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [tooFast] }), policy), /RIDE speed is outside policy bounds/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [tooFast] }), localPolicy), /RIDE speed is outside policy bounds/);
 
   const itxEdges = [
     edge({ edgeId: "itx-1", edgeType: "RIDE", fromNodeId: "station-a:line-1:EXPRESS", toNodeId: "station-b:line-1:EXPRESS", durationSeconds: 120, distanceMeters: 1000, servicePattern: "EXPRESS", serviceClass: "ITX_CHEONGCHUN" }),
   ];
-  const fixturePolicy = structuredClone(policy);
-  fixturePolicy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(itxEdges);
+  const fixturePolicy = policyForEdges(itxEdges);
   assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: itxEdges }), fixturePolicy).results[0].state, "PASS");
   assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [edge({ ...itxEdges[0], edgeId: "itx-tampered" })] }), fixturePolicy), /ITX EXPRESS edge set identity mismatch/);
   assert.equal(policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256, "da771d5264efd198989b6e1c589c130620274f7c7d99c423909f3a1c5acf2b2f");
+
+  const crossStationTransfer = edge({
+    edgeId: "transfer-cross-station",
+    edgeType: "IN_STATION_TRANSFER",
+    fromNodeId: "station-a:line-1",
+    toNodeId: "station-b:line-1",
+  });
+  assert.throws(
+    () => evaluateRouteAccessibilityEdges(
+      input({ routeEdges: [crossStationTransfer] }),
+      policyForEdges([crossStationTransfer]),
+    ),
+    /IN_STATION_TRANSFER station identity mismatch/,
+  );
 });
 
 test("tracked capital topology의 current ITX RIDE edge set이 policy digest와 exact하게 결속된다", () => {
@@ -225,42 +253,43 @@ test("tracked capital topology의 current ITX RIDE edge set이 policy digest와 
 });
 
 test("identity·closed schema·digest·endpoint·denominator 오류를 fail closed한다", () => {
+  const unitPolicy = policyForEdges(routeEdges());
   const duplicate = routeEdges()[0];
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [duplicate, duplicate] }), policy), /duplicate route edge/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [duplicate, duplicate] }), unitPolicy), /duplicate route edge/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [edge({ edgeId: "unmapped", edgeType: "RIDE", fromNodeId: "station-z:line-1", toNodeId: "station-b:line-1", servicePattern: "LOCAL" })],
-  }), policy), /unmapped route edge endpoint/);
+  }), unitPolicy), /unmapped route edge endpoint/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [edge({ edgeId: "unmapped-station", edgeType: "FUTURE_EDGE", fromNodeId: "station-z", toNodeId: "station-b:line-1" })],
-  }), policy), /unmapped route edge endpoint/);
+  }), unitPolicy), /unmapped route edge endpoint/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     candidate: evaluationCandidate({ stationSetSha256: "9".repeat(64) }),
-  }), policy), /materialization station set identity mismatch/);
+  }), unitPolicy), /materialization station set identity mismatch/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [{ ...routeEdges()[0], edgeSha256: "0".repeat(64) }],
-  }), policy), /route edge sha256 mismatch/);
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ evaluationAt: "2026-08-10" }), policy), /evaluationAt/);
-  assert.throws(() => evaluateRouteAccessibilityEdges({ ...input(), extra: true }, policy), /input keys mismatch/);
+  }), unitPolicy), /route edge sha256 mismatch/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ evaluationAt: "2026-08-10" }), unitPolicy), /evaluationAt/);
+  assert.throws(() => evaluateRouteAccessibilityEdges({ ...input(), extra: true }, unitPolicy), /input keys mismatch/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     materialization: { ...materialization(), materializationDigest: "0".repeat(64) },
-  }), policy), /materialization digest mismatch/);
+  }), unitPolicy), /materialization digest mismatch/);
   const reordered = materialization();
   reordered.rows.reverse();
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     materialization: rebindMaterialization(reordered),
-  }), policy), /materialization row order is not canonical/);
+  }), unitPolicy), /materialization row order is not canonical/);
   const forged = materialization();
   const forgedRow = forged.rows.find(({ state }) => state === "VERIFIED_PRESENT");
   forgedRow.evidenceKind = "EXPLICIT_ZERO";
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     materialization: rebindMaterialization(forged),
-  }), policy), /materialization evidence kind mismatch/);
+  }), unitPolicy), /materialization evidence kind mismatch/);
   const future = materialization();
   const futureRow = future.rows.find(({ state }) => state === "NOT_APPLICABLE");
   futureRow.capturedAt = "2026-08-10T00:00:00.001Z";
   futureRow.freshUntil = "2026-08-11T00:00:00.000Z";
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     materialization: rebindMaterialization(future),
-  }), policy), /materialization capturedAt is after evaluationAt/);
-  assert.throws(() => evaluateRouteAccessibilityEdges(input(), { ...policy, unexpected: true }), /policy keys mismatch/);
+  }), unitPolicy), /materialization capturedAt is after evaluationAt/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input(), { ...unitPolicy, unexpected: true }), /policy keys mismatch/);
 });
