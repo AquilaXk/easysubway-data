@@ -371,7 +371,7 @@ export async function collectTagoItxCheongchunRoster({
   const catalogRequestCount = [trainGrades, cities, ...stationOperations]
     .reduce((total, operation) => total + operation.requestCount, 0);
   const remainingInitialRequestBudget = requestBudget.remaining;
-  const initialOdRequestCount = matrix.expectedOdCount;
+  const initialOdRequestCount = matrix.expectedOdCount * 2;
   if (initialOdRequestCount > remainingInitialRequestBudget) {
     throw new Error("TAGO_QUOTA_BUDGET_EXHAUSTED");
   }
@@ -379,35 +379,37 @@ export async function collectTagoItxCheongchunRoster({
   const odOperations = [];
   const itineraries = [];
   const failedOds = [];
+  let completedOdCount = 0;
   for (const { depStationId, arrStationId } of matrix.rows) {
     const departureStation = stationByProviderId.get(depStationId);
     const arrivalStation = stationByProviderId.get(arrStationId);
     const remainingBeforeOd = requestBudget.remaining;
     try {
-      const operation = await fetchAll("GetStrtpntAlocFndTrainInfo", {
-        depPlaceId: depStationId,
-        arrPlaceId: arrStationId,
-        depPlandTime: nextCalendarDay(serviceDate),
-        trainGradeCode: gradeId,
-      }, key, fetchImpl, requestBudget, waitImpl);
-      const normalizedRows = operation.rows.map((row, index) => ({
-        itinerary: {
-          ...normalizeItinerary(row, index, {
-          departureStationName: departureStation.providerStationName,
-          arrivalStationName: arrivalStation.providerStationName,
-          }),
-          departureStationId: departureStation.canonicalStationId,
-          arrivalStationId: arrivalStation.canonicalStationId,
-        },
-        ...tagoServiceDayPartition(row.depplandtime),
-      }));
-      const normalizedItineraries = normalizedRows.flatMap(({ itinerary, calendarDay, serviceDay }, index) => {
-        if (serviceDay === serviceDate) return [itinerary];
-        if (calendarDay === serviceDate) return [];
-        throw dateMismatchError(index, calendarDay, serviceDay, serviceDate);
-      });
-      odOperations.push(operation);
-      itineraries.push(...normalizedItineraries);
+      const projectedWindows = [];
+      let firstWindowError = null;
+      for (const queryDate of [serviceDate, nextCalendarDay(serviceDate)]) {
+        try {
+          const operation = await fetchAll("GetStrtpntAlocFndTrainInfo", {
+            depPlaceId: depStationId,
+            arrPlaceId: arrStationId,
+            depPlandTime: queryDate,
+            trainGradeCode: gradeId,
+          }, key, fetchImpl, requestBudget, waitImpl);
+          odOperations.push(operation);
+          projectedWindows.push(projectTagoCalendarDateWindow(operation.rows, {
+            serviceDate,
+            queryDate,
+            departureStation,
+            arrivalStation,
+          }));
+        } catch (error) {
+          if (error instanceof Error && error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED") throw error;
+          firstWindowError ??= error;
+        }
+      }
+      if (firstWindowError) throw firstWindowError;
+      itineraries.push(...corroborateTagoCalendarDateWindows(projectedWindows));
+      completedOdCount += 1;
     } catch (error) {
       if (error instanceof Error && error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED") throw error;
       const failure = tagoOdFailure(error);
@@ -438,11 +440,15 @@ export async function collectTagoItxCheongchunRoster({
       excludedCanonicalStations: excludedCanonicalStations.sort((left, right) => naturalCompare(left.nameKo, right.nameKo)),
       stations,
       expectedOdCount: matrix.expectedOdCount,
-      completedOdCount: odOperations.length,
+      completedOdCount,
       failedOdCount: failedOds.length,
       ...(failedOds.length > 0 ? { failedOds } : {}),
       stationSetHash: matrix.stationSetHash,
       odMatrixHash: matrix.odMatrixHash,
+      calendarDateProjection: {
+        contractVersion: "tago-itx-calendar-date-projection-v1",
+        queryCalendarOffsets: [0, 1],
+      },
       quotaSummary: {
         catalogRequestCount,
         remainingInitialRequestBudget,
@@ -682,18 +688,70 @@ function tagoServiceDayPartition(value) {
   return { calendarDay, serviceDay };
 }
 
-function dateMismatchError(index, calendarDay, serviceDay, requestedServiceDay) {
-  const relation = serviceDay < requestedServiceDay
-    ? "previous_service_day"
+function calendarDateMismatchError(index, calendarDay, requestedServiceDay) {
+  const relation = calendarDay === previousCalendarDay(requestedServiceDay)
+    ? "previous_calendar_day"
     : calendarDay === nextCalendarDay(requestedServiceDay)
-      ? "next_calendar_day_after_cutoff"
-      : "future_service_day";
+      ? "next_calendar_day"
+      : "non_adjacent_calendar_day";
   return new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+}
+
+function projectTagoCalendarDateWindow(rows, {
+  serviceDate,
+  queryDate,
+  departureStation,
+  arrivalStation,
+}) {
+  const allowedCalendarDays = new Set([serviceDate, queryDate]);
+  if (queryDate === serviceDate) allowedCalendarDays.add(previousCalendarDay(serviceDate));
+  const projected = new Map();
+  for (const [index, row] of rows.entries()) {
+    const itinerary = {
+      ...normalizeItinerary(row, index, {
+        departureStationName: departureStation.providerStationName,
+        arrivalStationName: arrivalStation.providerStationName,
+      }),
+      departureStationId: departureStation.canonicalStationId,
+      arrivalStationId: arrivalStation.canonicalStationId,
+    };
+    const calendarDay = String(row.depplandtime).slice(0, 8);
+    calendarDate(calendarDay);
+    if (!allowedCalendarDays.has(calendarDay)) {
+      throw calendarDateMismatchError(index, calendarDay, serviceDate);
+    }
+    if (calendarDay !== serviceDate) continue;
+    const key = JSON.stringify([
+      itinerary.trainNumber,
+      itinerary.departureStationId,
+      itinerary.arrivalStationId,
+    ]);
+    if (projected.has(key)) throw new Error(`TAGO_OD_DUPLICATE: ${itinerary.trainNumber}`);
+    projected.set(key, itinerary);
+  }
+  return projected;
+}
+
+function corroborateTagoCalendarDateWindows([first, second]) {
+  if (first.size !== second.size) throw new Error("TAGO_OD_WINDOW_MISMATCH");
+  for (const [key, itinerary] of first) {
+    const counterpart = second.get(key);
+    if (!counterpart || JSON.stringify(itinerary) !== JSON.stringify(counterpart)) {
+      throw new Error("TAGO_OD_WINDOW_MISMATCH");
+    }
+  }
+  return [...first.values()];
 }
 
 function nextCalendarDay(value) {
   const date = calendarDate(value);
   date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function previousCalendarDay(value) {
+  const date = calendarDate(value);
+  date.setUTCDate(date.getUTCDate() - 1);
   return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
@@ -756,7 +814,7 @@ function operationEvidence({ operation, endpoint, pageCount, requestCount, total
 
 function tagoOdFailure(error) {
   const message = error instanceof Error ? error.message : "";
-  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_service_day|next_calendar_day_after_cutoff|future_service_day)$/.exec(message)?.[1];
+  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day)$/.exec(message)?.[1];
   if (dateMismatch) {
     return {
       reasonCode: "PROVIDER_SCHEMA_FAILURE",
