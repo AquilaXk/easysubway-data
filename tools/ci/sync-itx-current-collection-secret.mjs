@@ -5,6 +5,7 @@ import { normalizeDataGoKrServiceKey } from "../datapack/lib/provider-call-integ
 
 const SECRET_NAME = "DATA_GO_KR_SERVICE_KEY";
 const REPOSITORY = "AquilaXk/easysubway-data";
+const GH_REPOSITORY = "github.com/AquilaXk/easysubway-data";
 const ENVIRONMENT = "itx-current-collection";
 const TIMEOUT_MS = 15_000;
 const FAILURE_MESSAGE = "ITX current collection secret synchronization failed";
@@ -26,14 +27,15 @@ function requiredCanonicalServiceKey(env) {
 }
 
 async function setSecretWithGh({ serviceKey, env, spawnImpl }) {
-  const childEnv = { ...env };
-  delete childEnv[SECRET_NAME];
+  const childEnv = Object.fromEntries(
+    Object.entries(env).filter(([key]) => key.toUpperCase() !== SECRET_NAME),
+  );
 
   let child;
   try {
     child = spawnImpl("gh", [
       "secret", "set", SECRET_NAME,
-      "--repo", REPOSITORY,
+      "--repo", GH_REPOSITORY,
       "--env", ENVIRONMENT,
     ], {
       env: childEnv,

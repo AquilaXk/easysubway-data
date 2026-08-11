@@ -109,7 +109,14 @@ test("ITX current collection secret 동기화는 stdin으로 gh secret set을 �
 
   const result = await syncItxCurrentCollectionSecret({
     argv: [],
-    env: { DATA_GO_KR_SERVICE_KEY: serviceKey, PATH: "/usr/bin" },
+    env: {
+      DATA_GO_KR_SERVICE_KEY: serviceKey,
+      data_go_kr_service_key: "synthetic-lowercase-key",
+      Data_Go_Kr_Service_Key: "synthetic-mixed-case-key",
+      GH_HOST: "synthetic.example.test",
+      PATH: "/usr/bin",
+      SAFE_ENV: "safe",
+    },
     spawnImpl(command, args, options) {
       const child = childResult();
       calls.push({ command, args, options, child });
@@ -126,13 +133,14 @@ test("ITX current collection secret 동기화는 stdin으로 gh secret set을 �
   assert.equal(calls[0].command, "gh");
   assert.deepEqual(calls[0].args, [
     "secret", "set", "DATA_GO_KR_SERVICE_KEY",
-    "--repo", "AquilaXk/easysubway-data",
+    "--repo", "github.com/AquilaXk/easysubway-data",
     "--env", "itx-current-collection",
   ]);
   assert.equal(calls[0].options.shell, false);
   assert.equal(calls[0].options.timeout, 15_000);
-  assert.equal(calls[0].options.env.DATA_GO_KR_SERVICE_KEY, undefined);
+  assert.equal(Object.keys(calls[0].options.env).some((key) => key.toUpperCase() === "DATA_GO_KR_SERVICE_KEY"), false);
   assert.ok(calls[0].options.env.PATH);
+  assert.equal(calls[0].options.env.SAFE_ENV, "safe");
   assert.doesNotMatch(calls[0].args.join(" "), /(?:--body|synthetic-itx-service-key-2026%2Bencoded)/);
   assert.equal(calls[0].child.input(), serviceKey);
 });
