@@ -69,6 +69,12 @@ function rehash(value) {
   return value;
 }
 
+function jsonBytesOfSize(value, size) {
+  const json = Buffer.from(JSON.stringify(value));
+  assert.ok(json.length <= size);
+  return Buffer.concat([json, Buffer.alloc(size - json.length, 0x20)]);
+}
+
 async function diagnostic(run) {
   try {
     await run();
@@ -237,7 +243,7 @@ test("relative, symlink, oversize, malformed, extra/wrong-type evidence를 내�
     await assert.rejects(run(["--evidence", wrongType]), (error) => !error.stderr.includes(secret));
 
     const oversized = path.join(directory, "oversized.json");
-    await writeFile(oversized, `${JSON.stringify(evidence())}${" ".repeat(1_048_577)}`);
+    await writeFile(oversized, jsonBytesOfSize(evidence(), 4_194_305));
     await assert.rejects(run(["--evidence", oversized]), (error) => !error.stderr.includes(secret));
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -259,7 +265,7 @@ test("closed diagnostic code는 오류 원인만 출력하고 evidence 값·경�
     cases.push(["FILE_OPEN", () => run(["--evidence", linked])]);
 
     const oversized = path.join(directory, "oversized.json");
-    await writeFile(oversized, `${JSON.stringify(evidence())}${" ".repeat(1_048_577)}`);
+    await writeFile(oversized, jsonBytesOfSize(evidence(), 4_194_305));
     cases.push(["FILE_IDENTITY", () => run(["--evidence", oversized])]);
 
     const malformed = path.join(directory, "malformed.json");
@@ -290,6 +296,25 @@ test("closed diagnostic code는 오류 원인만 출력하고 evidence 값·경�
       assert.equal(stderr, code);
       assert.doesNotMatch(stderr, /RAW_PROVIDER|credential|target|\.json|[a-f0-9]{64}/i);
     }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("current producer-sized regular evidence를 수용하고 4 MiB 초과는 FILE_IDENTITY로 거부한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-evidence-inspector-size-"));
+  try {
+    const producerSized = path.join(directory, "producer-sized.json");
+    await writeFile(producerSized, jsonBytesOfSize(evidence(), 2_308_657));
+    const { stdout } = await execFileAsync(process.execPath, [script, "--evidence", producerSized], { encoding: "utf8" });
+    assert.equal(JSON.parse(stdout).serviceDayCount, 3);
+
+    const oversized = path.join(directory, "oversized.json");
+    await writeFile(oversized, jsonBytesOfSize(evidence(), 4_194_305));
+    assert.equal(
+      await diagnostic(() => execFileAsync(process.execPath, [script, "--evidence", oversized], { encoding: "utf8" })),
+      "FILE_IDENTITY",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

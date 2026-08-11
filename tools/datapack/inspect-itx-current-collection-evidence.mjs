@@ -5,7 +5,7 @@ import { open } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const MAX_EVIDENCE_BYTES = 1_048_576;
+const MAX_EVIDENCE_BYTES = 4_194_304;
 const TOP_LEVEL_KEYS = new Set([
   "schemaVersion", "artifactKind", "serviceId", "observedAt", "timezone", "validationMode",
   "selectedServiceDates", "validationStatus", "admissionStatus", "admissionEligible",
