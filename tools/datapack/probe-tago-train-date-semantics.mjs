@@ -180,7 +180,7 @@ async function fetchAndSummarize({ target, key, offset, queryDate, fetchImpl }) 
       throw failureError("schema", response.status, providerResultCode);
     }
   }
-  const counts = relationCounts(rows, queryDate);
+  const counts = relationCounts(rows, queryDate, response.status, providerResultCode);
   return {
     offset,
     httpStatus: response.status,
@@ -192,13 +192,13 @@ async function fetchAndSummarize({ target, key, offset, queryDate, fetchImpl }) 
   };
 }
 
-function relationCounts(rows, queryDate) {
+function relationCounts(rows, queryDate, httpStatus, providerResultCode) {
   const counts = { ...EMPTY_RELATION_COUNTS };
   for (const row of rows) {
     const timestamp = row.depplandtime;
     if (typeof timestamp !== "string" || !/^\d{14}$/u.test(timestamp) || !isCalendarDate(timestamp.slice(0, 8))
       || Number(timestamp.slice(8, 10)) > 23 || Number(timestamp.slice(10, 12)) > 59 || Number(timestamp.slice(12, 14)) > 59) {
-      throw failureError("schema", 200, "00");
+      throw failureError("schema", httpStatus, providerResultCode);
     }
     const delta = Math.round((calendarMillis(timestamp.slice(0, 8)) - calendarMillis(queryDate)) / 86_400_000);
     if (delta === -1) counts.previousCalendarDay += 1;
@@ -250,12 +250,15 @@ async function writeArtifact(outputPath, artifact, snapshot, testHooks) {
   const temporaryPath = path.join(path.dirname(outputPath), `.${path.basename(outputPath)}.${randomUUID()}.tmp`);
   const bytes = Buffer.from(`${JSON.stringify(artifact, null, 2)}\n`);
   let temporaryHandle;
+  let initialTemporarySnapshot;
   let temporarySnapshot;
   try {
     await testHooks?.beforeTempWrite?.();
     await revalidateAbsentOutput(outputPath, snapshot);
     temporaryHandle = await open(temporaryPath, "wx+", 0o600);
-    await temporaryHandle.writeFile(bytes);
+    initialTemporarySnapshot = await snapshotTemporaryHandle(temporaryHandle, 0);
+    if (testHooks?.writeTemporary) await testHooks.writeTemporary(temporaryHandle, bytes);
+    else await temporaryHandle.writeFile(bytes);
     await temporaryHandle.chmod(0o600);
     await temporaryHandle.sync();
     temporarySnapshot = await snapshotTemporaryHandle(temporaryHandle, bytes.length);
@@ -269,6 +272,14 @@ async function writeArtifact(outputPath, artifact, snapshot, testHooks) {
     await removeOwnedTemporary(temporaryPath, temporarySnapshot, snapshot);
   } catch {
     if (temporarySnapshot) await removeOwnedTemporary(temporaryPath, temporarySnapshot, snapshot).catch(() => {});
+    else if (initialTemporarySnapshot && temporaryHandle) {
+      const currentTemporarySnapshot = await snapshotTemporaryHandleState(temporaryHandle).catch(() => null);
+      if (currentTemporarySnapshot
+        && currentTemporarySnapshot.dev === initialTemporarySnapshot.dev
+        && currentTemporarySnapshot.ino === initialTemporarySnapshot.ino) {
+        await removeInterruptedTemporary(temporaryPath, initialTemporarySnapshot, snapshot).catch(() => {});
+      }
+    }
     throw new Error("sanitized diagnostic artifact could not be written");
   } finally {
     await temporaryHandle?.close().catch(() => {});
@@ -276,8 +287,16 @@ async function writeArtifact(outputPath, artifact, snapshot, testHooks) {
 }
 
 async function snapshotTemporaryHandle(handle, expectedSize) {
+  const current = await snapshotTemporaryHandleState(handle);
+  if (current.size !== expectedSize) {
+    throw new Error("temporary artifact is invalid");
+  }
+  return current;
+}
+
+async function snapshotTemporaryHandleState(handle) {
   const current = await handle.stat();
-  if (!current.isFile() || (current.mode & 0o777) !== 0o600 || current.size !== expectedSize) {
+  if (!current.isFile() || (current.mode & 0o777) !== 0o600) {
     throw new Error("temporary artifact is invalid");
   }
   return { dev: current.dev, ino: current.ino, size: current.size };
@@ -306,6 +325,18 @@ async function removeOwnedTemporary(temporaryPath, temporarySnapshot, outputSnap
     await unlink(temporaryPath);
   } catch {
     // 외부 교체 또는 parent drift 뒤에는 소유하지 않은 경로를 지우지 않는다.
+  }
+}
+
+async function removeInterruptedTemporary(temporaryPath, temporarySnapshot, outputSnapshot) {
+  try {
+    await revalidateAncestorSnapshot(outputSnapshot);
+    const current = await lstat(temporaryPath);
+    if (!current.isFile() || current.isSymbolicLink() || current.dev !== temporarySnapshot.dev || current.ino !== temporarySnapshot.ino
+      || (current.mode & 0o777) !== 0o600) return;
+    await unlink(temporaryPath);
+  } catch {
+    // 부분 write 실패 뒤에도 외부 교체 또는 parent drift 경로는 삭제하지 않는다.
   }
 }
 

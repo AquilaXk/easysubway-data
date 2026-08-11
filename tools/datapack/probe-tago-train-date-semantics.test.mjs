@@ -78,6 +78,53 @@ test("TAGO date semantics probe는 provider·schema·transport 실패를 sanitiz
   }
 });
 
+test("TAGO date semantics probe는 206 response의 malformed timestamp failure에 실제 status와 provider code를 보존한다", async () => {
+  const directory = await temporaryDirectory("tago-date-206-");
+  const outputPath = path.join(directory, "evidence.json");
+  try {
+    await assert.rejects(probeTagoTrainDateSemantics({
+      ...TARGET,
+      serviceKey: SECRET,
+      outputPath,
+      now: new Date("2026-08-11T00:00:00.000Z"),
+      fetchImpl: async () => new Response(JSON.stringify({
+        response: {
+          header: { resultCode: "00" },
+          body: { items: { item: [{ depplandtime: "malformed" }] }, totalCount: 1 },
+        },
+      }), { status: 206, headers: { "content-type": "application/json" } }),
+    }), /TAGO train date semantics probe failed/);
+    const artifact = JSON.parse(await readFile(outputPath, "utf8"));
+    assert.deepEqual(artifact.failure, { stage: "schema", offset: -1, httpStatus: 206, providerResultCode: "00" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("TAGO date semantics probe는 partial temp write failure에서 owned temp만 정리한다", async () => {
+  const directory = await temporaryDirectory("tago-date-partial-write-");
+  const outputPath = path.join(directory, "evidence.json");
+  try {
+    await assert.rejects(probeTagoTrainDateSemantics({
+      ...TARGET,
+      serviceKey: SECRET,
+      outputPath,
+      now: new Date("2026-08-11T00:00:00.000Z"),
+      fetchImpl: async () => responseFor({ timestamps: ["20260814070000"] }),
+      testHooks: {
+        writeTemporary: async (handle, bytes) => {
+          await handle.write(bytes.subarray(0, 7));
+          throw new Error("partial write failure");
+        },
+      },
+    }), /sanitized diagnostic artifact could not be written/);
+    await assert.rejects(access(outputPath));
+    assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("TAGO date semantics probe의 target tuple hash와 request는 service date를 제외한 canonical target만 고정한다", async () => {
   const directory = await temporaryDirectory("tago-date-contract-");
   const outputPath = path.join(directory, "evidence.json");
