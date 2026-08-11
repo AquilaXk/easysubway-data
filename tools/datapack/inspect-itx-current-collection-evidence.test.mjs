@@ -319,3 +319,33 @@ test("current producer-sized regular evidence를 수용하고 4 MiB 초과는 FI
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("FIFO와 numeric/date/failureContext 경계는 closed diagnostic으로 fail-closed한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-evidence-inspector-review-"));
+  try {
+    const fifo = path.join(directory, "evidence.fifo");
+    await execFileAsync("mkfifo", [fifo]);
+    assert.equal(
+      await diagnostic(() => execFileAsync(process.execPath, [script, "--evidence", fifo], { encoding: "utf8", timeout: 1_000 })),
+      "FILE_IDENTITY",
+    );
+
+    const overflowing = evidence();
+    overflowing.serviceDays[0].expectedOdCount = Number.MAX_SAFE_INTEGER;
+    overflowing.serviceDays[1].expectedOdCount = Number.MAX_SAFE_INTEGER;
+    rehash(overflowing);
+    assert.equal(await diagnostic(() => invoke(directory, overflowing, "overflowing.json")), "SERVICE_DAY_SHAPE");
+
+    const numericDate = evidence();
+    numericDate.selectedServiceDates["8"] = 20260812;
+    rehash(numericDate);
+    assert.equal(await diagnostic(() => invoke(directory, numericDate, "numeric-date.json")), "BASE_IDENTITY");
+
+    const objectFailureContext = evidence();
+    objectFailureContext.serviceDays[0].failureContext = { code: "not-a-string" };
+    rehash(objectFailureContext);
+    assert.equal(await diagnostic(() => invoke(directory, objectFailureContext, "object-context.json")), "FAILURE_CONTEXT");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

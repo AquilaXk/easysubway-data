@@ -69,17 +69,18 @@ function exactKeys(value, keys, code) {
 }
 
 function nonnegativeInteger(value) {
-  return Number.isInteger(value) && value >= 0;
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function serviceDates(value) {
   if (!object(value) || Object.keys(value).length !== DAY_CODES.length
-    || DAY_CODES.some((dayCd) => !/^\d{8}$/.test(value[dayCd] ?? ""))) invalid("BASE_IDENTITY");
+    || DAY_CODES.some((dayCd) => typeof value[dayCd] !== "string" || !/^\d{8}$/.test(value[dayCd]))) invalid("BASE_IDENTITY");
   return { "7": value["7"], "8": value["8"], "9": value["9"] };
 }
 
 function failureContextInventory(value) {
   if (value == null) return [];
+  if (typeof value !== "string") invalid("FAILURE_CONTEXT");
   if (value === "operation=travelerTrainRunPlan2,total=0") return ["KORAIL_RUN_PLAN_EMPTY"];
   if (value === "operation=travelerTrainRunInfo2,total=0") return ["KORAIL_RUN_INFO_EMPTY"];
   if (/^reason=KORAIL_PLAN_(?:MISSING|DUPLICATE|MISMATCH),trainNumber=\d+$/.test(value)) return ["KORAIL_PLAN"];
@@ -106,6 +107,12 @@ function failureContextInventory(value) {
 
 function validateFailure(stage, reason, code) {
   if (!FAILURE_STAGES.has(stage) || !FAILURE_REASONS.has(reason)) invalid(code);
+}
+
+function addSafe(left, right) {
+  const total = left + right;
+  if (!Number.isSafeInteger(total)) invalid("SERVICE_DAY_SHAPE");
+  return total;
 }
 
 function validateEvidence(value) {
@@ -157,9 +164,9 @@ function validateEvidence(value) {
       || !VALIDATION_STATUSES.has(day.status) || !nonnegativeInteger(day.expectedOdCount)
       || !nonnegativeInteger(day.completedOdCount) || !nonnegativeInteger(day.failedOdCount)) invalid("SERVICE_DAY_SHAPE");
     seen.add(day.dayCd);
-    expectedOdCount += day.expectedOdCount;
-    completedOdCount += day.completedOdCount;
-    failedOdCount += day.failedOdCount;
+    expectedOdCount = addSafe(expectedOdCount, day.expectedOdCount);
+    completedOdCount = addSafe(completedOdCount, day.completedOdCount);
+    failedOdCount = addSafe(failedOdCount, day.failedOdCount);
     const hasFailure = day.failureStage !== undefined || day.failureReasonCode !== undefined || day.failureContext !== undefined;
     if (day.status === "MISSING" && (day.failureStage === undefined || day.failureReasonCode === undefined)) invalid("SERVICE_DAY_SHAPE");
     if (day.status === "SUPPORTED" && hasFailure) invalid("SERVICE_DAY_SHAPE");
@@ -210,7 +217,7 @@ export async function inspectItxCurrentCollectionEvidenceCli({ argv = process.ar
 export async function readEvidenceBytes(evidencePath, { openFile = open, afterOpen = async () => {} } = {}) {
   let handle;
   try {
-    handle = await openFile(evidencePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await openFile(evidencePath, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
   } catch {
     invalid("FILE_OPEN");
   }
