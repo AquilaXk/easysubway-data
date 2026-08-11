@@ -1600,11 +1600,14 @@ export function validateKorailItxPlans({ plans, materialized, runDate }) {
     const sequence = stationSequences.get(trainNumber);
     const first = sequence?.stops?.[0];
     const last = sequence?.stops?.at(-1);
-    if (String(plan.run_ymd) !== runDate || !first || !last
+    if (String(plan.run_ymd) !== runDate) {
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} run_date`);
+    }
+    if (!first || !last
       || normalizeStationName(plan.dptre_stn_nm) !== normalizeStationName(first.nameKo)
       || normalizeStationName(plan.arvl_stn_nm) !== normalizeStationName(last.nameKo)
       || [plan.dptre_stn_nm, plan.arvl_stn_nm].some((name) => normalizeStationName(name) === normalizeStationName("대전"))) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)}`);
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} endpoint`);
     }
     let departureSeconds;
     let arrivalSeconds;
@@ -1616,14 +1619,17 @@ export function validateKorailItxPlans({ plans, materialized, runDate }) {
         plan.trn_plan_arvl_dt, runDate, `plan arrival[${safeToken(trainNumber)}]`,
       );
     } catch {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)}`);
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} timestamp_format`);
     }
-    if (departureSeconds !== first.departureSeconds || arrivalSeconds !== last.arrivalSeconds) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)}`);
+    if (departureSeconds !== first.departureSeconds) {
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} departure_time`);
+    }
+    if (arrivalSeconds !== last.arrivalSeconds) {
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} arrival_time`);
     }
     const normalizedPlanTrainNumber = normalizeTrainNumber(plan.trn_no);
     if (normalizedPlanTrainNumber !== trainNumber) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)}`);
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} endpoint`);
     }
     selectedPlans.push({ ...plan, normalizedTrainNumber: normalizedPlanTrainNumber });
   }
@@ -2067,8 +2073,10 @@ function completenessFailureContext(error) {
   if (station) return safeLabel(station);
   const requiredStations = /^TAGO required station mapping is incomplete: ([\p{L}\p{N},._-]+)$/u.exec(message)?.[1];
   if (requiredStations) return `missingStations=${requiredStations}`;
-  const plan = /^(KORAIL_PLAN_(?:MISSING|DUPLICATE|MISMATCH)): ([0-9]+)$/.exec(message);
+  const plan = /^(KORAIL_PLAN_(?:MISSING|DUPLICATE)): ([0-9]+)$/.exec(message);
   if (plan) return `reason=${plan[1]},trainNumber=${plan[2]}`;
+  const mismatch = /^KORAIL_PLAN_MISMATCH: ([0-9]+) (run_date|endpoint|departure_time|arrival_time|timestamp_format)$/.exec(message);
+  if (mismatch) return `reason=KORAIL_PLAN_MISMATCH,trainNumber=${mismatch[1]},relation=${mismatch[2]}`;
   const tagoSchema = /^TAGO ([A-Za-z0-9]+) schema mismatch: (content-type|invalid JSON|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
   if (tagoSchema) {
     const reason = tagoSchema[2] === "invalid JSON" ? "invalid-json" : tagoSchema[2];
