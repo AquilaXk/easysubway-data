@@ -44,21 +44,28 @@ const ADMISSION_STATUSES = new Set([
   "SUPPORTED", "MISSING", "REPLAY_ONLY", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED",
 ]);
 
-function invalid() {
-  throw new Error("ITX collection evidence is invalid");
+class DiagnosticError extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+}
+
+function invalid(code) {
+  throw new DiagnosticError(code);
 }
 
 function object(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function exactAllowedKeys(value, keys) {
-  if (!object(value) || Object.keys(value).some((key) => !keys.has(key))) invalid();
+function exactAllowedKeys(value, keys, code) {
+  if (!object(value) || Object.keys(value).some((key) => !keys.has(key))) invalid(code);
 }
 
-function exactKeys(value, keys) {
+function exactKeys(value, keys, code) {
   if (!object(value) || Object.keys(value).length !== keys.size
-    || [...keys].some((key) => !Object.hasOwn(value, key))) invalid();
+    || [...keys].some((key) => !Object.hasOwn(value, key))) invalid(code);
 }
 
 function nonnegativeInteger(value) {
@@ -67,7 +74,7 @@ function nonnegativeInteger(value) {
 
 function serviceDates(value) {
   if (!object(value) || Object.keys(value).length !== DAY_CODES.length
-    || DAY_CODES.some((dayCd) => !/^\d{8}$/.test(value[dayCd] ?? ""))) invalid();
+    || DAY_CODES.some((dayCd) => !/^\d{8}$/.test(value[dayCd] ?? ""))) invalid("BASE_IDENTITY");
   return { "7": value["7"], "8": value["8"], "9": value["9"] };
 }
 
@@ -85,24 +92,24 @@ function failureContextInventory(value) {
   if (suffixIndex > 0) {
     const prefix = value.slice(0, suffixIndex);
     const stationTuple = value.slice(suffixIndex);
-    if (!/^,departureStationId=[A-Za-z0-9._-]+,arrivalStationId=[A-Za-z0-9._-]+$/.test(stationTuple)) invalid();
+    if (!/^,departureStationId=[A-Za-z0-9._-]+,arrivalStationId=[A-Za-z0-9._-]+$/.test(stationTuple)) invalid("FAILURE_CONTEXT");
     if (prefix === "operation=GetStrtpntAlocFndTrainInfo") return ["TAGO_OD_PROVIDER_FAILURE"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,httpStatus=\d{3}$/.test(prefix)) return ["TAGO_OD_HTTP_FAILURE"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=(?:previous_calendar_day|next_calendar_day|non_adjacent_calendar_day)$/.test(prefix)) return ["TAGO_OD_DATE_MISMATCH"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,(?:invalid-json|content-type|body|item|totalCount)(?:,bodyFields=[A-Za-z0-9_,.-]+)?$/.test(prefix)) return ["TAGO_OD_SCHEMA_FAILURE"];
     if (prefix === "operation=GetStrtpntAlocFndTrainInfo,reason=pagination_incomplete") return ["TAGO_OD_PAGINATION_INCOMPLETE"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,reason=(?:station_mismatch|date_mismatch|train_grade_mismatch|time_order_mismatch|field_contract_mismatch)$/.test(prefix)) return ["TAGO_OD_FIELD_CONTRACT_FAILURE"];
-    invalid();
+    invalid("FAILURE_CONTEXT");
   }
-  invalid();
+  invalid("FAILURE_CONTEXT");
 }
 
-function validateFailure(stage, reason) {
-  if (!FAILURE_STAGES.has(stage) || !FAILURE_REASONS.has(reason)) invalid();
+function validateFailure(stage, reason, code) {
+  if (!FAILURE_STAGES.has(stage) || !FAILURE_REASONS.has(reason)) invalid(code);
 }
 
 function validateEvidence(value) {
-  exactAllowedKeys(value, TOP_LEVEL_KEYS);
+  exactAllowedKeys(value, TOP_LEVEL_KEYS, "TOP_LEVEL_SHAPE");
   if (value.schemaVersion !== 2 || value.artifactKind !== "korail-itx-cheongchun-completeness-evidence"
     || value.serviceId !== "ITX_CHEONGCHUN" || value.timezone !== "Asia/Seoul"
     || !/^\d{4}-\d{2}-\d{2}T/.test(value.observedAt ?? "")
@@ -111,14 +118,14 @@ function validateEvidence(value) {
     || typeof value.admissionEligible !== "boolean" || value.credentialRedacted !== true
     || !Array.isArray(value.allowedConsumerIssues) || !nonnegativeInteger(value.legacyDaejeonRowCount)
     || !nonnegativeInteger(value.legacyYongsanDaejeonTripCount) || !object(value.materialization)
-    || !/^[a-f0-9]{64}$/.test(value.evidenceHash ?? "")) invalid();
+    || !/^[a-f0-9]{64}$/.test(value.evidenceHash ?? "")) invalid("BASE_IDENTITY");
   const selectedServiceDates = serviceDates(value.selectedServiceDates);
   const { evidenceHash, ...withoutEvidenceHash } = value;
-  if (createHash("sha256").update(JSON.stringify(withoutEvidenceHash)).digest("hex") !== evidenceHash) invalid();
+  if (createHash("sha256").update(JSON.stringify(withoutEvidenceHash)).digest("hex") !== evidenceHash) invalid("EVIDENCE_HASH");
   if (Array.isArray(value.serviceDays) && value.serviceDays.length === 0) {
-    exactKeys(value, PRE_SERVICE_DAY_TOP_LEVEL_KEYS);
+    exactKeys(value, PRE_SERVICE_DAY_TOP_LEVEL_KEYS, "PRE_SERVICE_SHAPE");
     if (value.validationStatus !== "MISSING" || value.admissionStatus !== "MISSING"
-      || !FAILURE_REASONS.has(value.failureReasonCode)) invalid();
+      || !FAILURE_REASONS.has(value.failureReasonCode)) invalid("PRE_SERVICE_SHAPE");
     return {
       schemaVersion: 1,
       artifactKind: "itx-current-collection-evidence-inspection",
@@ -131,10 +138,10 @@ function validateEvidence(value) {
     };
   }
   if (!object(value.snapshotDiff) || !object(value.sourceTimetableArtifact)
-    || !object(value.stationCatalogPackIdentity)) invalid();
+    || !object(value.stationCatalogPackIdentity)) invalid("TOP_LEVEL_SHAPE");
   const hasTopLevelFailure = value.failureStage !== undefined || value.failureReasonCode !== undefined;
-  if (hasTopLevelFailure) validateFailure(value.failureStage, value.failureReasonCode);
-  if (!Array.isArray(value.serviceDays) || value.serviceDays.length !== DAY_CODES.length) invalid();
+  if (hasTopLevelFailure) validateFailure(value.failureStage, value.failureReasonCode, "TOP_LEVEL_SHAPE");
+  if (!Array.isArray(value.serviceDays) || value.serviceDays.length !== DAY_CODES.length) invalid("SERVICE_DAY_SHAPE");
 
   const failures = [];
   if (hasTopLevelFailure) {
@@ -145,26 +152,26 @@ function validateEvidence(value) {
   let completedOdCount = 0;
   let failedOdCount = 0;
   for (const day of value.serviceDays) {
-    exactAllowedKeys(day, SERVICE_DAY_KEYS);
+    exactAllowedKeys(day, SERVICE_DAY_KEYS, "SERVICE_DAY_SHAPE");
     if (!DAY_CODES.includes(day.dayCd) || seen.has(day.dayCd) || day.serviceDate !== selectedServiceDates[day.dayCd]
       || !VALIDATION_STATUSES.has(day.status) || !nonnegativeInteger(day.expectedOdCount)
-      || !nonnegativeInteger(day.completedOdCount) || !nonnegativeInteger(day.failedOdCount)) invalid();
+      || !nonnegativeInteger(day.completedOdCount) || !nonnegativeInteger(day.failedOdCount)) invalid("SERVICE_DAY_SHAPE");
     seen.add(day.dayCd);
     expectedOdCount += day.expectedOdCount;
     completedOdCount += day.completedOdCount;
     failedOdCount += day.failedOdCount;
     const hasFailure = day.failureStage !== undefined || day.failureReasonCode !== undefined || day.failureContext !== undefined;
-    if (day.status === "MISSING" && (day.failureStage === undefined || day.failureReasonCode === undefined)) invalid();
-    if (day.status === "SUPPORTED" && hasFailure) invalid();
+    if (day.status === "MISSING" && (day.failureStage === undefined || day.failureReasonCode === undefined)) invalid("SERVICE_DAY_SHAPE");
+    if (day.status === "SUPPORTED" && hasFailure) invalid("SERVICE_DAY_SHAPE");
     if (hasFailure) {
-      validateFailure(day.failureStage, day.failureReasonCode);
+      validateFailure(day.failureStage, day.failureReasonCode, "SERVICE_DAY_SHAPE");
       failures.push({
         scope: "SERVICE_DAY", dayCd: day.dayCd, failureStage: day.failureStage,
         failureReasonCode: day.failureReasonCode, failureContexts: failureContextInventory(day.failureContext),
       });
     }
   }
-  if (seen.size !== DAY_CODES.length) invalid();
+  if (seen.size !== DAY_CODES.length) invalid("SERVICE_DAY_SHAPE");
   return {
     schemaVersion: 1,
     artifactKind: "itx-current-collection-evidence-inspection",
@@ -178,17 +185,24 @@ function validateEvidence(value) {
 }
 
 function args(argv) {
-  if (argv.length !== 2 || argv[0] !== "--evidence" || typeof argv[1] !== "string" || !path.isAbsolute(argv[1])) invalid();
+  if (argv.length !== 2 || argv[0] !== "--evidence" || typeof argv[1] !== "string" || !path.isAbsolute(argv[1])) invalid("ARGUMENT");
   return argv[1];
 }
 
 export async function inspectItxCurrentCollectionEvidenceCli({ argv = process.argv.slice(2) } = {}) {
   const evidencePath = args(argv);
+  let bytes;
+  try {
+    bytes = await readEvidenceBytes(evidencePath);
+  } catch (error) {
+    if (error instanceof DiagnosticError) throw error;
+    invalid("FILE_OPEN");
+  }
   let parsed;
   try {
-    parsed = JSON.parse((await readEvidenceBytes(evidencePath)).toString("utf8"));
+    parsed = JSON.parse(bytes.toString("utf8"));
   } catch {
-    invalid();
+    invalid("JSON");
   }
   return validateEvidence(parsed);
 }
@@ -197,21 +211,26 @@ export async function readEvidenceBytes(evidencePath, { openFile = open, afterOp
   let handle;
   try {
     handle = await openFile(evidencePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch {
+    invalid("FILE_OPEN");
+  }
+  try {
     await afterOpen();
     const before = await handle.stat();
-    if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_EVIDENCE_BYTES) invalid();
+    if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_EVIDENCE_BYTES) invalid("FILE_IDENTITY");
     const bytes = Buffer.alloc(before.size);
     let offset = 0;
     while (offset < bytes.length) {
       const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-      if (bytesRead === 0) invalid();
+      if (bytesRead === 0) invalid("FILE_IDENTITY");
       offset += bytesRead;
     }
     const after = await handle.stat();
-    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size) invalid();
+    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size) invalid("FILE_IDENTITY");
     return bytes;
-  } catch {
-    invalid();
+  } catch (error) {
+    if (error instanceof DiagnosticError) throw error;
+    invalid("FILE_IDENTITY");
   } finally {
     await handle?.close().catch(() => {});
   }
@@ -220,8 +239,8 @@ export async function readEvidenceBytes(evidencePath, { openFile = open, afterOp
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     process.stdout.write(`${JSON.stringify(await inspectItxCurrentCollectionEvidenceCli())}\n`);
-  } catch {
-    process.stderr.write("ITX collection evidence is invalid\n");
+  } catch (error) {
+    process.stderr.write(`${error instanceof DiagnosticError ? error.code : "FILE_OPEN"}\n`);
     process.exitCode = 1;
   }
 }

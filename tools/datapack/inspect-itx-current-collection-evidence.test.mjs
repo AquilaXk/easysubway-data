@@ -63,6 +63,21 @@ async function invoke(directory, value, file = "evidence.json") {
   return execFileAsync(process.execPath, [script, "--evidence", evidencePath], { encoding: "utf8" });
 }
 
+function rehash(value) {
+  const { evidenceHash: _hash, ...withoutHash } = value;
+  value.evidenceHash = createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
+  return value;
+}
+
+async function diagnostic(run) {
+  try {
+    await run();
+    assert.fail("diagnostic failure가 필요합니다");
+  } catch (error) {
+    return error.stderr.trim();
+  }
+}
+
 test("MISSING top-level/per-day failure를 raw 없이 canonical aggregate로 출력한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "itx-evidence-inspector-"));
   try {
@@ -224,6 +239,57 @@ test("relative, symlink, oversize, malformed, extra/wrong-type evidence를 내�
     const oversized = path.join(directory, "oversized.json");
     await writeFile(oversized, `${JSON.stringify(evidence())}${" ".repeat(1_048_577)}`);
     await assert.rejects(run(["--evidence", oversized]), (error) => !error.stderr.includes(secret));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("closed diagnostic code는 오류 원인만 출력하고 evidence 값·경로·credential을 반사하지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-evidence-inspector-diagnostics-"));
+  const secret = "RAW_PROVIDER_BODY_MUST_NOT_LEAK";
+  try {
+    const run = (args) => execFileAsync(process.execPath, [script, ...args], { encoding: "utf8" });
+    const cases = [];
+    cases.push(["ARGUMENT", () => run(["--evidence", "relative.json"])]);
+
+    const target = path.join(directory, "target.json");
+    const linked = path.join(directory, "linked.json");
+    await writeFile(target, JSON.stringify(evidence()));
+    await symlink(target, linked);
+    cases.push(["FILE_OPEN", () => run(["--evidence", linked])]);
+
+    const oversized = path.join(directory, "oversized.json");
+    await writeFile(oversized, `${JSON.stringify(evidence())}${" ".repeat(1_048_577)}`);
+    cases.push(["FILE_IDENTITY", () => run(["--evidence", oversized])]);
+
+    const malformed = path.join(directory, "malformed.json");
+    await writeFile(malformed, `{\"credential\":\"${secret}\"`);
+    cases.push(["JSON", () => run(["--evidence", malformed])]);
+
+    cases.push(["TOP_LEVEL_SHAPE", () => invoke(directory, evidence({ providerBody: secret }), "top-level.json")]);
+    cases.push(["BASE_IDENTITY", () => invoke(directory, evidence({ credentialRedacted: false }), "base.json")]);
+    cases.push(["EVIDENCE_HASH", () => invoke(directory, evidence({ evidenceHash: "0".repeat(64) }), "hash.json")]);
+
+    const preServiceExtra = evidence({ failureReasonCode: "PROVIDER_HTTP_FAILURE", serviceDays: [] });
+    for (const key of ["snapshotDiff", "sourceTimetableArtifact"]) delete preServiceExtra[key];
+    rehash(preServiceExtra);
+    cases.push(["PRE_SERVICE_SHAPE", () => invoke(directory, preServiceExtra, "pre-service.json")]);
+
+    const badDay = evidence();
+    badDay.serviceDays[1].dayCd = "8";
+    rehash(badDay);
+    cases.push(["SERVICE_DAY_SHAPE", () => invoke(directory, badDay, "service-day.json")]);
+
+    const badContext = evidence();
+    badContext.serviceDays[0].failureContext = `raw=${secret}`;
+    rehash(badContext);
+    cases.push(["FAILURE_CONTEXT", () => invoke(directory, badContext, "failure-context.json")]);
+
+    for (const [code, runCase] of cases) {
+      const stderr = await diagnostic(runCase);
+      assert.equal(stderr, code);
+      assert.doesNotMatch(stderr, /RAW_PROVIDER|credential|target|\.json|[a-f0-9]{64}/i);
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
