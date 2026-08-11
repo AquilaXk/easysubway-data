@@ -1607,13 +1607,20 @@ export function validateKorailItxPlans({ plans, materialized, runDate }) {
     if ([plan.dptre_stn_nm, plan.arvl_stn_nm].some((name) => normalizeStationName(name) === normalizeStationName("대전"))) {
       throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} forbidden_daejeon_endpoint`);
     }
-    const departureEndpointMismatch = normalizeStationName(plan.dptre_stn_nm) !== normalizeStationName(first.nameKo);
-    const arrivalEndpointMismatch = normalizeStationName(plan.arvl_stn_nm) !== normalizeStationName(last.nameKo);
-    if (departureEndpointMismatch && arrivalEndpointMismatch) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} both_endpoints`);
-    }
-    if (departureEndpointMismatch) throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} departure_endpoint`);
-    if (arrivalEndpointMismatch) throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} arrival_endpoint`);
+    const planDeparture = normalizeStationName(plan.dptre_stn_nm);
+    const planArrival = normalizeStationName(plan.arvl_stn_nm);
+    const tagoDeparture = normalizeStationName(first.nameKo);
+    const tagoArrival = normalizeStationName(last.nameKo);
+    const endpointRelation = planDeparture === tagoDeparture && planArrival === tagoArrival
+      ? null
+      : planDeparture === tagoArrival && planArrival === tagoDeparture
+        ? "reversed"
+        : planDeparture !== tagoDeparture && planArrival === tagoArrival
+          ? "arrival_only"
+          : planDeparture === tagoDeparture && planArrival !== tagoArrival
+            ? "departure_only"
+            : "neither";
+    if (endpointRelation) throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${endpointRelation}`);
     let departureSeconds;
     let arrivalSeconds;
     try {
@@ -2076,7 +2083,7 @@ function completenessFailureContext(error) {
   if (requiredStations) return `missingStations=${requiredStations}`;
   const plan = /^(KORAIL_PLAN_(?:MISSING|DUPLICATE)): ([0-9]+)$/.exec(message);
   if (plan) return `reason=${plan[1]},trainNumber=${plan[2]}`;
-  const mismatch = /^KORAIL_PLAN_MISMATCH: ([0-9]+) (run_date|tago_endpoint_missing|forbidden_daejeon_endpoint|both_endpoints|departure_endpoint|arrival_endpoint|departure_time|arrival_time|timestamp_format)$/.exec(message);
+  const mismatch = /^KORAIL_PLAN_MISMATCH: ([0-9]+) (run_date|tago_endpoint_missing|forbidden_daejeon_endpoint|reversed|departure_only|arrival_only|neither|departure_time|arrival_time|timestamp_format)$/.exec(message);
   if (mismatch) return `reason=KORAIL_PLAN_MISMATCH,trainNumber=${mismatch[1]},relation=${mismatch[2]}`;
   const tagoSchema = /^TAGO ([A-Za-z0-9]+) schema mismatch: (content-type|invalid JSON|body|item|totalCount)(?: bodyFields=([A-Za-z0-9_,.-]+))?$/.exec(message);
   if (tagoSchema) {
