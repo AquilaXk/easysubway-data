@@ -105,7 +105,7 @@ test("current collection wrapper는 공휴일을 day8/day7에서 제외하고 ca
     ],
     env: VALID_ENV,
     now: new Date("2026-08-16T15:00:00.000Z"),
-    fetchPublicHolidays: async () => new Set(["20260817"]),
+    fetchPublicHolidays: async () => new Set(["20260817", "20260823"]),
     collectImpl: async ({ argv }) => {
       collectorArgv = argv;
       return { exitCode: 0 };
