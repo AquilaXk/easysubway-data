@@ -187,7 +187,13 @@ test("TAGO 날짜 불일치와 Korail plan 불일치는 producer discriminator�
       assert.deepEqual(JSON.parse(stdout).failures.find((failure) => failure.dayCd === "8").failureContexts, ["TAGO_OD_DATE_MISMATCH"]);
     }
 
-    for (const relation of ["run_date", "endpoint", "timestamp_format", "departure_time", "arrival_time"]) {
+    const korailRelations = [
+      "run_date", "endpoint", "tago_endpoint_missing", "forbidden_daejeon_endpoint",
+      "both_endpoints", "departure_endpoint", "arrival_endpoint",
+      "reversed", "departure_only", "arrival_only", "neither",
+      "timestamp_format", "departure_time", "arrival_time",
+    ];
+    for (const relation of korailRelations) {
       const value = evidence();
       value.serviceDays[0] = {
         ...value.serviceDays[0], failureStage: "PLAN_CORROBORATION",
@@ -197,6 +203,7 @@ test("TAGO 날짜 불일치와 Korail plan 불일치는 producer discriminator�
       rehash(value);
       const { stdout } = await invoke(directory, value, `korail-${relation}.json`);
       assert.deepEqual(JSON.parse(stdout).failures.find((failure) => failure.dayCd === "8").failureContexts, ["KORAIL_PLAN"]);
+      assert.doesNotMatch(stdout, new RegExp(`2052|${relation}`));
     }
 
     const invalidContexts = [
