@@ -1080,39 +1080,85 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     assert.equal(artifact.serviceDays[0].korailPlanSummary.mismatchCount, 1);
   });
 
-  await context.test("KORAIL plan mismatch token은 raw provider row 없이 sanitized completeness context로 투영한다", async () => {
+  await context.test("KORAIL endpoint mismatch token은 raw provider row 없이 sanitized completeness context로 투영한다", async () => {
     const rawProviderRow = "RAW_KORAIL_ROW_DO_NOT_PERSIST";
     const rawProviderDate = "RAW_KORAIL_DATE_DO_NOT_PERSIST";
     const rawProviderTime = "RAW_KORAIL_TIME_DO_NOT_PERSIST";
     const rawProviderStation = "RAW_KORAIL_STATION_DO_NOT_PERSIST";
     const rawProviderBody = "RAW_KORAIL_BODY_DO_NOT_PERSIST";
     const rawProviderKey = "RAW_KORAIL_KEY_DO_NOT_PERSIST";
-    const artifact = await collectKorailItxCheongchunCompleteness({
-      serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
-      now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
-      collectTimetableImpl: async () => {
-        const error = new Error("KORAIL_PLAN_MISMATCH: 2052 both_endpoints");
-        Object.assign(error, {
-          rawProviderRow,
-          rawProviderDate,
-          rawProviderTime,
-          rawProviderStation,
-          rawProviderBody,
-          rawProviderKey,
-        });
-        throw error;
-      },
-    });
-    assert.equal(artifact.serviceDays[0].failureReasonCode, "KORAIL_PLAN_MISMATCH");
-    assert.equal(
-      artifact.serviceDays[0].failureContext,
-      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=both_endpoints",
-    );
-    assert.equal(artifact.serviceDays[0].korailPlanSummary.mismatchCount, 1);
-    assert.doesNotMatch(
-      JSON.stringify(artifact),
-      /RAW_KORAIL_(?:ROW|DATE|TIME|STATION|BODY|KEY)_DO_NOT_PERSIST/,
-    );
+    for (const relation of ["reversed", "departure_only", "arrival_only", "neither"]) {
+      const artifact = await collectKorailItxCheongchunCompleteness({
+        serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
+        now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
+        collectTimetableImpl: async () => {
+          const error = new Error(`KORAIL_PLAN_MISMATCH: 2052 ${relation}`);
+          Object.assign(error, {
+            rawProviderRow,
+            rawProviderDate,
+            rawProviderTime,
+            rawProviderStation,
+            rawProviderBody,
+            rawProviderKey,
+          });
+          throw error;
+        },
+      });
+      assert.equal(artifact.serviceDays[0].failureReasonCode, "KORAIL_PLAN_MISMATCH");
+      assert.equal(
+        artifact.serviceDays[0].failureContext,
+        `reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=${relation}`,
+      );
+      assert.equal(artifact.serviceDays[0].korailPlanSummary.mismatchCount, 1);
+      assert.doesNotMatch(
+        JSON.stringify(artifact),
+        /RAW_KORAIL_(?:ROW|DATE|TIME|STATION|BODY|KEY)_DO_NOT_PERSIST/,
+      );
+    }
+  });
+
+  await context.test("KORAIL endpoint relation은 plan-row permutation을 classifier까지 deterministic하게 투영한다", async () => {
+    const rawProviderRow = "RAW_PLAN_ROW_DO_NOT_PERSIST";
+    const cases = [
+      ["reversed", "춘천", "용산"],
+      ["departure_only", "용산", "청량리"],
+      ["arrival_only", "청량리", "춘천"],
+      ["neither", "청량리", "서울"],
+    ];
+    for (const [relation, departure, arrival] of cases) {
+      const collect = (reverse) => collectKorailItxCheongchunCompleteness({
+        serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
+        now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
+        collectTimetableImpl: async ({ runDate }) => {
+          const mismatchPlan = {
+            ...planRow("02001", departure, arrival, `${runDate}060000`, `${runDate}080000`),
+            run_ymd: runDate,
+            rawProviderRow,
+          };
+          const validPlan = {
+            ...planRow("02002", "춘천", "용산", `${runDate}070000`, `${runDate}090000`),
+            run_ymd: runDate,
+          };
+          return validateKorailItxPlans({
+            plans: reverse ? [validPlan, mismatchPlan] : [mismatchPlan, validPlan],
+            materialized: tagoMaterializedFixture(),
+            runDate,
+          });
+        },
+      });
+      const forward = await collect(false);
+      const reversed = await collect(true);
+      assert.equal(
+        forward.serviceDays[0].failureContext,
+        `reason=KORAIL_PLAN_MISMATCH,trainNumber=2001,relation=${relation}`,
+      );
+      assert.equal(reversed.serviceDays[0].failureContext, forward.serviceDays[0].failureContext);
+      assert.match(forward.evidenceHash, /^[a-f0-9]{64}$/);
+      assert.equal(forward.evidenceHash, reversed.evidenceHash);
+      assert.deepEqual(forward, reversed);
+      assert.doesNotMatch(JSON.stringify(forward), /RAW_PLAN_ROW_DO_NOT_PERSIST/);
+      assert.doesNotMatch(JSON.stringify(reversed), /RAW_PLAN_ROW_DO_NOT_PERSIST/);
+    }
   });
 
   await context.test("station mapping 오류", async () => {
@@ -4008,6 +4054,12 @@ test("KORAIL plan selection은 sanitized first-mismatch token과 기존 missing 
   const valid = planRow("02001", "용산", "춘천", "20260713060000", "20260713080000");
   const input = (plans) => ({ plans, materialized, runDate: "20260713" });
 
+  assert.deepEqual(validateKorailItxPlans(input([valid])).trainNumbers, ["2001"]);
+  assert.deepEqual(validateKorailItxPlans(input([{
+    ...valid,
+    dptre_stn_nm: "용 산 (임시)!",
+    arvl_stn_nm: "춘 천 (임시).",
+  }])).trainNumbers, ["2001"]);
   const missing = validateKorailItxPlans(input([]));
   assert.deepEqual(missing.trainNumbers, []);
   assert.deepEqual(missing.missingTrainNumbers, ["2001", "2002"]);
@@ -4032,15 +4084,19 @@ test("KORAIL plan selection은 sanitized first-mismatch token과 기존 missing 
   );
   assert.throws(
     () => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "청량리" }])),
-    { message: "KORAIL_PLAN_MISMATCH: 2001 departure_endpoint" },
+    { message: "KORAIL_PLAN_MISMATCH: 2001 arrival_only" },
   );
   assert.throws(
     () => validateKorailItxPlans(input([{ ...valid, arvl_stn_nm: "청량리" }])),
-    { message: "KORAIL_PLAN_MISMATCH: 2001 arrival_endpoint" },
+    { message: "KORAIL_PLAN_MISMATCH: 2001 departure_only" },
   );
   assert.throws(
     () => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "청량리", arvl_stn_nm: "용산" }])),
-    { message: "KORAIL_PLAN_MISMATCH: 2001 both_endpoints" },
+    { message: "KORAIL_PLAN_MISMATCH: 2001 neither" },
+  );
+  assert.throws(
+    () => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "춘천", arvl_stn_nm: "용산" }])),
+    { message: "KORAIL_PLAN_MISMATCH: 2001 reversed" },
   );
   assert.throws(
     () => validateKorailItxPlans(input([{
