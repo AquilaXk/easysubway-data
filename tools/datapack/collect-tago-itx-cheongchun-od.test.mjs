@@ -974,18 +974,34 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     },
     {
       name: "익일 03:00 출발",
-      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day_after_cutoff",
       mutate: (payload) => {
         payload.response.body.items.item[0].depplandtime = "20260716030000";
         payload.response.body.items.item[0].arrplandtime = "20260716031000";
       },
     },
     {
-      name: "요청과 다른 날짜",
-      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch",
+      name: "요청 전일 출발",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_service_day",
       mutate: (payload) => {
         payload.response.body.items.item[0].depplandtime = "20260714083000";
         payload.response.body.items.item[0].arrplandtime = "20260714095000";
+      },
+    },
+    {
+      name: "요청일 이틀 뒤 출발",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=future_service_day",
+      mutate: (payload) => {
+        payload.response.body.items.item[0].depplandtime = "20260717083000";
+        payload.response.body.items.item[0].arrplandtime = "20260717095000";
+      },
+    },
+    {
+      name: "불가능한 달력 날짜",
+      failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=field_contract_mismatch",
+      mutate: (payload) => {
+        payload.response.body.items.item[0].depplandtime = "20260230083000";
+        payload.response.body.items.item[0].arrplandtime = "20260230095000";
       },
     },
   ]) {
@@ -1014,6 +1030,8 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
       assert.equal(artifact.failedOdCount, 1);
       assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
       assert.equal(artifact.failedOds[0].failureContext, scenario.failureContext);
+      assert.deepEqual(Object.keys(artifact.failedOds[0]).sort(), ["arrivalStationId", "departureStationId", "failureContext", "reasonCode", "requestCount"]);
+      assert.doesNotMatch(JSON.stringify(artifact.failedOds[0]), /depplandtime|2026071[467]|serviceKey|http/i);
     });
   }
 });

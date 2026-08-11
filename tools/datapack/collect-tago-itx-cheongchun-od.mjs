@@ -404,7 +404,7 @@ export async function collectTagoItxCheongchunRoster({
       const normalizedItineraries = normalizedRows.flatMap(({ itinerary, calendarDay, serviceDay }, index) => {
         if (serviceDay === serviceDate) return [itinerary];
         if (calendarDay === serviceDate) return [];
-        throw new Error(`TAGO OD row[${index}] departure date mismatch`);
+        throw dateMismatchError(index, calendarDay, serviceDay, serviceDate);
       });
       odOperations.push(operation);
       itineraries.push(...normalizedItineraries);
@@ -682,6 +682,21 @@ function tagoServiceDayPartition(value) {
   return { calendarDay, serviceDay };
 }
 
+function dateMismatchError(index, calendarDay, serviceDay, requestedServiceDay) {
+  const relation = serviceDay < requestedServiceDay
+    ? "previous_service_day"
+    : calendarDay === nextCalendarDay(requestedServiceDay)
+      ? "next_calendar_day_after_cutoff"
+      : "future_service_day";
+  return new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+}
+
+function nextCalendarDay(value) {
+  const date = calendarDate(value);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
 function providerTimestamp(value, label) {
   const text = requiredString(String(value), label);
   if (!/^\d{14}$/.test(text)) throw new Error(`${label} must be YYYYMMDDHHMISS`);
@@ -741,6 +756,13 @@ function operationEvidence({ operation, endpoint, pageCount, requestCount, total
 
 function tagoOdFailure(error) {
   const message = error instanceof Error ? error.message : "";
+  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_service_day|next_calendar_day_after_cutoff|future_service_day)$/.exec(message)?.[1];
+  if (dateMismatch) {
+    return {
+      reasonCode: "PROVIDER_SCHEMA_FAILURE",
+      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=${dateMismatch}`,
+    };
+  }
   const httpStatus = /^TAGO GetStrtpntAlocFndTrainInfo HTTP (\d{3})$/.exec(message)?.[1];
   if (httpStatus) {
     return {
@@ -774,7 +796,7 @@ function tagoOdFailure(error) {
     [/departure date mismatch/, "date_mismatch"],
     [/train grade mismatch/, "train_grade_mismatch"],
     [/arrival must follow departure/, "time_order_mismatch"],
-    [/must be YYYYMMDDHHMISS|is invalid|adultcharge is invalid|invalid train number/, "field_contract_mismatch"],
+    [/must be YYYYMMDDHHMISS|must be a valid calendar date|is invalid|adultcharge is invalid|invalid train number/, "field_contract_mismatch"],
   ]) {
     if (pattern.test(message)) {
       return {
