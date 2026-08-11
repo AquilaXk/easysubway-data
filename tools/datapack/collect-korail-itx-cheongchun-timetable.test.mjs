@@ -1117,6 +1117,27 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     }
   });
 
+  await context.test("departure_only run info mismatch token은 raw provider row 없이 sanitized completeness context로 투영한다", async () => {
+    const rawProviderRow = "RAW_RUN_INFO_ROW_DO_NOT_PERSIST";
+    for (const relation of ["run_info_legacy_daejeon", "run_info_time_order"]) {
+      const artifact = await collectKorailItxCheongchunCompleteness({
+        serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
+        now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
+        collectTimetableImpl: async () => {
+          const error = new Error(`KORAIL_PLAN_MISMATCH: 2052 ${relation}`);
+          error.rawProviderRow = rawProviderRow;
+          throw error;
+        },
+      });
+      assert.equal(artifact.serviceDays[0].failureReasonCode, "KORAIL_PLAN_MISMATCH");
+      assert.equal(
+        artifact.serviceDays[0].failureContext,
+        `reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=${relation}`,
+      );
+      assert.doesNotMatch(JSON.stringify(artifact), /RAW_RUN_INFO_ROW_DO_NOT_PERSIST/);
+    }
+  });
+
   await context.test("KORAIL endpoint relation은 plan-row permutation을 classifier까지 deterministic하게 투영한다", async () => {
     const rawProviderRow = "RAW_PLAN_ROW_DO_NOT_PERSIST";
     const cases = [
@@ -4069,6 +4090,37 @@ test("departure_only KORAIL plan은 날짜 전용 run info 세그먼트로만 �
   assert.doesNotMatch(JSON.stringify(artifact), /RAW-FIRST-CODE|RAW-LAST-CODE|RAW-LAST-NAME|20260713111111/);
 });
 
+test("departure_only run info 세그먼트는 여객 정차만으로 endpoint와 TAGO 구간을 검증한다", async () => {
+  const plans = [
+    planRow("02001", "용산", "춘천", "20260713060000", "20260713080000"),
+    planRow("02002", "춘천", "청량리", "20260713070000", "20260713100000"),
+  ];
+  const collect = (info) => collectKorailItxCheongchunPlan({
+    serviceKey: "key",
+    runDate: "20260713",
+    kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
+    trainNumberEvidence: { ...trainNumberEvidence(), schemaVersion: 2, ...tagoMaterializedFixture() },
+    fetchImpl: async (url) => apiResponse(url.pathname.endsWith("travelerTrainRunPlan2") ? plans : info),
+  });
+  const passengerSegmentWithPassThrough = [
+    infoRow("02002", 1, "140873", "춘천", "-", "20260713070000"),
+    infoRow("02002", 2, "9999", "가평", "20260713080000", "20260713080000", { stop_se_cd: "99", stop_se_nm: "통과" }),
+    infoRow("02002", 3, "0104", "용산", "20260713090000", "20260713090000"),
+    infoRow("02002", 4, "130126", "청량리", "20260713100000", "-"),
+  ];
+  const artifact = await collect(passengerSegmentWithPassThrough);
+  assert.equal(artifact.materialization.status, "SUPPORTED");
+  await assert.rejects(
+    collect([
+      infoRow("02002", 1, "140873", "춘천", "-", "20260713070000"),
+      infoRow("02002", 2, "0104", "용산", "20260713090000", "20260713090000", { stop_se_cd: "99", stop_se_nm: "통과" }),
+      infoRow("02002", 3, "130126", "청량리", "20260713100000", "-"),
+    ]),
+    /KORAIL_PLAN_MISMATCH: 2002 run_info_segment/,
+  );
+});
+
 test("departure_only run info 보강은 endpoint와 TAGO 세그먼트의 모든 불일치를 fail-closed한다", async () => {
   const plans = [
     planRow("02001", "용산", "춘천", "20260713060000", "20260713080000"),
@@ -4079,7 +4131,7 @@ test("departure_only run info 보강은 endpoint와 TAGO 세그먼트의 모든 
     infoRow("02002", 2, "0104", "용산", "20260713090000", "20260713090000"),
     infoRow("02002", 3, "130126", "청량리", "20260713100000", "-"),
   ];
-  const collect = async (candidateInfo) => {
+  const collect = async (candidateInfo, candidatePlans = plans, expectedMismatch = /KORAIL_PLAN_MISMATCH: 2002 run_info_/) => {
     const requestedOperations = [];
     await assert.rejects(collectKorailItxCheongchunPlan({
       serviceKey: "key",
@@ -4090,9 +4142,9 @@ test("departure_only run info 보강은 endpoint와 TAGO 세그먼트의 모든 
       fetchImpl: async (url) => {
         const operation = url.pathname.split("/").at(-1);
         requestedOperations.push(operation);
-        return apiResponse(operation === "travelerTrainRunPlan2" ? plans : candidateInfo);
+        return apiResponse(operation === "travelerTrainRunPlan2" ? candidatePlans : candidateInfo);
       },
-    }), /KORAIL_PLAN_MISMATCH: 2002 run_info_/);
+    }), expectedMismatch);
     assert.deepEqual(requestedOperations, ["travelerTrainRunPlan2", "travelerTrainRunInfo2"]);
   };
 
@@ -4109,6 +4161,16 @@ test("departure_only run info 보강은 endpoint와 TAGO 세그먼트의 모든 
   await collect([...info.slice(0, 2), { ...info[2], trn_arvl_dt: "20260713100100" }]);
   await collect([info[0], { ...info[1], trn_arvl_dt: "20260713090100" }, info[2]]);
   await collect([info[0], info[2]]);
+  await collect(
+    [...info, infoRow("02002", 4, "0000", "대전", "20260713103000", "20260713103000")],
+    plans,
+    /KORAIL_PLAN_MISMATCH: 2002 run_info_legacy_daejeon/,
+  );
+  await collect(
+    [...info.slice(0, 2), { ...info[2], trn_arvl_dt: "20260713083000" }],
+    [plans[0], planRow("02002", "춘천", "청량리", "20260713070000", "20260713083000")],
+    /KORAIL_PLAN_MISMATCH: 2002 run_info_time_order/,
+  );
   await collect([
     info[0],
     { ...info[1], trn_run_sn: 3 },
