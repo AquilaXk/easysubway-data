@@ -23,23 +23,34 @@ export async function fetchKasiPublicHolidayCalendar({
     url.searchParams.set("solYear", String(year));
     url.searchParams.set("solMonth", String(month).padStart(2, "0"));
     let response;
-    try {
-      response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/xml, text/xml" },
-      });
-    } catch (error) {
-      throw transportFailure(error);
+    let attemptCount = 0;
+    for (attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
+      try {
+        response = await fetchImpl(url, {
+          redirect: "error",
+          signal: AbortSignal.timeout(15_000),
+          headers: { accept: "application/xml, text/xml" },
+        });
+        break;
+      } catch (error) {
+        const failure = transportFailure(error, attemptCount);
+        if (failure.failureCategory === "NETWORK_CONNECT_TIMEOUT" && attemptCount === 1) continue;
+        throw failure;
+      }
     }
-    if (!response?.ok) throw new Error(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`);
+    if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
     let xml;
     try {
       xml = await response.text();
     } catch (error) {
-      throw transportFailure(error);
+      throw transportFailure(error, attemptCount);
     }
-    const dates = parseMonth(xml, { year, month });
+    let dates;
+    try {
+      dates = parseMonth(xml, { year, month });
+    } catch (error) {
+      throw kasiFailure(error.message, "KASI_SCHEMA", attemptCount);
+    }
     for (const date of dates) holidays.add(date);
   }
   return holidays;
@@ -92,8 +103,16 @@ function nonnegativeInteger(value) {
   return Number(value);
 }
 
-function transportFailure(error) {
-  return new Error(`KASI public holiday request failed: ${transportCategory(error)}`);
+function transportFailure(error, attemptCount = 1) {
+  const category = transportCategory(error);
+  return kasiFailure(`KASI public holiday request failed: ${category}`, category, attemptCount);
+}
+
+function kasiFailure(message, failureCategory, attemptCount) {
+  const error = new Error(message);
+  error.failureCategory = failureCategory;
+  error.attemptCount = attemptCount;
+  return error;
 }
 
 function transportCategory(error) {

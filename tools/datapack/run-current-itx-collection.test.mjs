@@ -216,22 +216,73 @@ test("current collection wrapper는 symlink 또는 교체된 output parent에 fr
   await assert.rejects(lstat(path.join(`${parent}-replaced`, "freshness.json")));
 });
 
-test("KASI 실패에서는 collector와 freshness·output·completeness 생성이 모두 발생하지 않는다", async () => {
+test("KASI 최종 실패에서는 collector 전에 closed preflight receipt만 생성한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-failure-"));
   const output = path.join(dir, "result.json");
   const completenessOutput = path.join(dir, "completeness.json");
   const freshnessOutput = path.join(dir, "freshness.json");
   let collectorCalls = 0;
+  const rawFailure = new Error("https://apis.data.go.kr/?ServiceKey=secret-key&solYear=2026 raw body");
   await assert.rejects(runCurrentItxCollectionCli({
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
     env: VALID_ENV,
-    fetchPublicHolidays: async () => { throw new Error("KASI public holiday request failed: HTTP_403"); },
+    fetchPublicHolidays: async () => { throw rawFailure; },
     collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
-  }), /KASI public holiday request failed: HTTP_403/);
+  }), (error) => error === rawFailure);
   assert.equal(collectorCalls, 0);
   await assert.rejects(lstat(output));
   await assert.rejects(lstat(completenessOutput));
-  await assert.rejects(lstat(freshnessOutput));
+  const receipt = await readFile(freshnessOutput, "utf8");
+  assert.equal(receipt, `${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: "KASI_FAILURE",
+    attemptCount: 1,
+  }, null, 2)}\n`);
+  assert.doesNotMatch(receipt, /apis\.data\.go\.kr|secret-key|raw body|2026/);
+});
+
+test("KASI 실패 receipt는 output parent 교체 뒤에도 bound directory에만 생성한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-receipt-parent-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-receipt-outside-"));
+  const parent = path.join(root, "output");
+  const originalParent = `${parent}-original`;
+  await mkdir(parent);
+  const freshnessOutput = path.join(parent, "freshness.json");
+  let collectorCalls = 0;
+  const failure = Object.assign(new Error("KASI connect timeout"), {
+    failureCategory: "NETWORK_CONNECT_TIMEOUT",
+    attemptCount: 2,
+  });
+  await assert.rejects(runCurrentItxCollectionCli({
+    argv: [
+      "--output", path.join(parent, "result.json"),
+      "--completeness-output", path.join(parent, "completeness.json"),
+      "--station-catalog-pack", path.join(parent, "station-catalog-pack"),
+      "--freshness-output", freshnessOutput,
+    ],
+    env: VALID_ENV,
+    fetchPublicHolidays: async () => { throw failure; },
+    beforeFailureReceiptWrite: async () => {
+      await rename(parent, originalParent);
+      await symlink(outside, parent);
+    },
+    collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
+  }), (error) => error === failure);
+  assert.equal(collectorCalls, 0);
+  assert.deepEqual(JSON.parse(await readFile(path.join(originalParent, "freshness.json"), "utf8")), {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: "NETWORK_CONNECT_TIMEOUT",
+    attemptCount: 2,
+  });
+  await assert.rejects(lstat(path.join(outside, "freshness.json")));
+  await assert.rejects(lstat(path.join(parent, "result.json")));
+  await assert.rejects(lstat(path.join(parent, "completeness.json")));
 });
 
 test("14일 bounded 창의 모든 토요일이 공휴일이면 day7 evidence 없이 collector 전에 fail closed한다", async () => {
