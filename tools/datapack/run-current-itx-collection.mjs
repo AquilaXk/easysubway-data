@@ -207,7 +207,7 @@ async function writeBoundOutput(parentFd, basename, contents) {
   const helperDirectory = path.dirname(fileURLToPath(import.meta.url));
   await new Promise((resolve, reject) => {
     const failure = () => reject(new Error("current ITX collection secure output write failed"));
-    const child = spawn("python3", ["write-bound-output.py", basename], {
+    const child = spawn("/usr/bin/python3", ["write-bound-output.py", basename], {
       cwd: helperDirectory,
       shell: false,
       stdio: ["pipe", "ignore", "ignore", parentFd],
