@@ -1319,7 +1319,30 @@ export async function collectKorailItxCheongchunPlan({
     key,
     fetchImpl,
   });
-  const selected = validateKorailItxPlans({ plans: plans.rows, materialized, runDate });
+  const selected = validateKorailItxPlans({
+    plans: plans.rows, materialized, runDate, allowDepartureOnly: true,
+  });
+  let runInfo = null;
+  if (selected.departureOnlyPlans.length > 0) {
+    runInfo = await fetchAll({
+      endpoint: `${API_ORIGIN}/B551457/run/v2/travelerTrainRunInfo2`,
+      query: {
+        "cond[run_ymd::GTE]": runDate,
+        "cond[run_ymd::LTE]": runDate,
+      },
+      expectedFields: EXPECTED_FIELDS.info,
+      key,
+      fetchImpl,
+    });
+    const corroboratedDepartureOnlyTrainNumbers = validateKorailItxDepartureOnlySegments({
+      infoRows: runInfo.rows,
+      departureOnlyPlans: selected.departureOnlyPlans,
+      materialized,
+      runDate,
+    });
+    selected.trainNumbers = [...selected.trainNumbers, ...corroboratedDepartureOnlyTrainNumbers].sort(naturalCompare);
+    selected.trainSetHash = sha256(JSON.stringify(selected.trainNumbers));
+  }
   const tagoOdTrainSetHash = sha256(JSON.stringify(materialized.trainNumbers.map(normalizeTrainNumber).sort(naturalCompare)));
   const materializedTrainSetHash = sha256(JSON.stringify(
     materialized.stationSequences.map(({ trainNumber }) => normalizeTrainNumber(trainNumber)).sort(naturalCompare),
@@ -1368,7 +1391,10 @@ export async function collectKorailItxCheongchunPlan({
     legacyDaejeonRowCount: 0,
     legacyYongsanDaejeonTripCount: 0,
     materialization: { status: "SUPPORTED" },
-    operations: [operationEvidence("travelerTrainRunPlan2", plans)],
+    operations: [
+      operationEvidence("travelerTrainRunPlan2", plans),
+      ...(runInfo ? [operationEvidence("travelerTrainRunInfo2", runInfo)] : []),
+    ],
     credentialRedacted: true,
   };
   artifact.evidenceHash = sha256(JSON.stringify(artifact));
@@ -1578,7 +1604,7 @@ export function materializeKorailItxRows({
   return materializeAnalyzedKorailItxRows(analyzed, kricServiceDayCode, runDate);
 }
 
-export function validateKorailItxPlans({ plans, materialized, runDate }) {
+export function validateKorailItxPlans({ plans, materialized, runDate, allowDepartureOnly = false }) {
   if (!Array.isArray(plans)) throw new Error("KORAIL_PLAN_MISMATCH: plans");
   const trainNumbers = (materialized?.trainNumbers ?? []).map(normalizeTrainNumber).sort(naturalCompare);
   if (trainNumbers.length === 0 || new Set(trainNumbers).size !== trainNumbers.length) {
@@ -1588,6 +1614,7 @@ export function validateKorailItxPlans({ plans, materialized, runDate }) {
     [normalizeTrainNumber(sequence.trainNumber), sequence]
   )));
   const selectedPlans = [];
+  const departureOnlyPlans = [];
   const missingTrainNumbers = [];
   for (const trainNumber of trainNumbers) {
     const matches = plans.filter((plan) => normalizeTrainNumber(plan?.trn_no) === trainNumber);
@@ -1620,7 +1647,13 @@ export function validateKorailItxPlans({ plans, materialized, runDate }) {
           : planDeparture === tagoDeparture && planArrival !== tagoArrival
             ? "departure_only"
             : "neither";
-    if (endpointRelation) throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${endpointRelation}`);
+    if (endpointRelation) {
+      if (endpointRelation === "departure_only" && allowDepartureOnly) {
+        departureOnlyPlans.push({ ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no) });
+        continue;
+      }
+      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${endpointRelation}`);
+    }
     let departureSeconds;
     let arrivalSeconds;
     try {
@@ -1648,8 +1681,85 @@ export function validateKorailItxPlans({ plans, materialized, runDate }) {
     trainNumbers: selectedTrainNumbers,
     missingTrainNumbers,
     selectedPlans,
+    departureOnlyPlans,
     trainSetHash: sha256(JSON.stringify(selectedTrainNumbers)),
   };
+}
+
+function validateKorailItxDepartureOnlySegments({ infoRows, departureOnlyPlans, materialized, runDate }) {
+  if (!Array.isArray(infoRows)) throw new Error("KORAIL_PLAN_MISMATCH: run_info_rows");
+  const sequences = new Map((materialized?.stationSequences ?? []).map((sequence) => (
+    [normalizeTrainNumber(sequence.trainNumber), sequence]
+  )));
+  return departureOnlyPlans.map((plan) => {
+    const trainNumber = plan.normalizedTrainNumber;
+    const mismatch = (reason) => new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} run_info_${reason}`);
+    const rows = [];
+    for (const row of infoRows) {
+      let rowTrainNumber;
+      try { rowTrainNumber = normalizeTrainNumber(row?.trn_no); } catch { continue; }
+      if (rowTrainNumber !== trainNumber) continue;
+      if (String(row.run_ymd) !== runDate) throw mismatch("run_date");
+      rows.push(row);
+    }
+    if (rows.length === 0) throw mismatch("missing");
+    const ordered = rows.map((row) => {
+      const sequence = Number(row.trn_run_sn);
+      if (!Number.isInteger(sequence) || sequence <= 0) throw mismatch("trn_run_sn");
+      return { row, sequence };
+    }).sort((left, right) => left.sequence - right.sequence);
+    if (new Set(ordered.map(({ sequence }) => sequence)).size !== ordered.length) throw mismatch("duplicate_trn_run_sn");
+    const first = ordered[0]?.row;
+    const last = ordered.at(-1)?.row;
+    const stationMatches = (row, code, name) => {
+      const rowName = normalizeStationName(requiredString(String(row?.stn_nm ?? ""), "run info station name"));
+      const planName = normalizeStationName(requiredString(String(name ?? ""), "plan station name"));
+      return rowName !== "" && planName !== ""
+        && requiredString(String(row?.stn_cd ?? ""), "run info station code")
+          === requiredString(String(code ?? ""), "plan station code")
+        && rowName === planName;
+    };
+    try {
+      if (!stationMatches(first, plan.dptre_stn_cd, plan.dptre_stn_nm)) throw mismatch("first_station");
+      if (!stationMatches(last, plan.arvl_stn_cd, plan.arvl_stn_nm)) throw mismatch("last_station");
+      const planDeparture = timestampSeconds(plan.trn_plan_dptre_dt, runDate, "plan departure");
+      const planArrival = timestampSeconds(plan.trn_plan_arvl_dt, runDate, "plan arrival");
+      if (timestampSeconds(first.trn_dptre_dt, runDate, "run info first departure") !== planDeparture) {
+        throw mismatch("first_departure_time");
+      }
+      if (timestampSeconds(last.trn_arvl_dt, runDate, "run info last arrival") !== planArrival) {
+        throw mismatch("last_arrival_time");
+      }
+    } catch (error) {
+      if (error.message?.startsWith("KORAIL_PLAN_MISMATCH:")) throw error;
+      throw mismatch("endpoint");
+    }
+    const sequence = sequences.get(trainNumber);
+    const tagoStops = sequence?.stops ?? [];
+    const tagoNames = tagoStops.map(({ nameKo }) => normalizeStationName(nameKo));
+    if (tagoNames.length === 0 || tagoNames.some((name) => name === "")) throw mismatch("tago_sequence");
+    const segmentStarts = [];
+    for (let index = 0; index <= ordered.length - tagoNames.length; index += 1) {
+      if (tagoNames.every((name, offset) => normalizeStationName(ordered[index + offset].row.stn_nm) === name)) {
+        segmentStarts.push(index);
+      }
+    }
+    if (segmentStarts.length !== 1) throw mismatch("segment");
+    const segmentFirst = ordered[segmentStarts[0]].row;
+    const segmentLast = ordered[segmentStarts[0] + tagoNames.length - 1].row;
+    try {
+      if (timestampSeconds(segmentFirst.trn_dptre_dt, runDate, "run info segment departure") !== tagoStops[0].departureSeconds) {
+        throw mismatch("segment_departure_time");
+      }
+      if (timestampSeconds(segmentLast.trn_arvl_dt, runDate, "run info segment arrival") !== tagoStops.at(-1).arrivalSeconds) {
+        throw mismatch("segment_arrival_time");
+      }
+    } catch (error) {
+      if (error.message?.startsWith("KORAIL_PLAN_MISMATCH:")) throw error;
+      throw mismatch("segment_time");
+    }
+    return trainNumber;
+  });
 }
 
 export function analyzeKorailItxRows({
