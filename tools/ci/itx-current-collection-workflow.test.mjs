@@ -207,3 +207,62 @@ test("ITX current collection secret 동기화는 gh 실행 실패를 secret과 �
     );
   }
 });
+
+test("ITX current collection secret 동기화는 SIGTERM을 무시하는 gh child를 15초 뒤 SIGKILL로 종료한다", async () => {
+  const { syncItxCurrentCollectionSecret } = await loadSecretSync();
+  const serviceKey = "synthetic-itx-service-key-2026%2Btimeout";
+  const leakedOutput = "synthetic-gh-output-that-must-not-leak";
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = { end() {} };
+  const killSignals = [];
+  child.kill = (signal) => {
+    killSignals.push(signal);
+    return true;
+  };
+  const timers = [];
+  const clearedTimers = [];
+  const pending = syncItxCurrentCollectionSecret({
+    argv: [],
+    env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+    spawnImpl() {
+      queueMicrotask(() => {
+        child.stdout.emit("data", Buffer.from(leakedOutput));
+        child.stderr.emit("data", Buffer.from(serviceKey));
+      });
+      return child;
+    },
+    setTimeoutImpl(callback, delay) {
+      const timer = { callback, delay };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutImpl(timer) {
+      clearedTimers.push(timer);
+    },
+  });
+  let failureCount = 0;
+  const observedPending = pending.catch((error) => {
+    failureCount += 1;
+    throw error;
+  });
+
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].delay, 15_000);
+  timers[0].callback();
+  await assert.rejects(observedPending, (error) => {
+    assert.doesNotMatch(error.message, /synthetic-itx-service-key-2026%2Btimeout/);
+    assert.doesNotMatch(error.message, /synthetic-gh-output-that-must-not-leak/);
+    return true;
+  });
+  assert.deepEqual(killSignals, ["SIGKILL"]);
+  assert.deepEqual(clearedTimers, [timers[0]]);
+  assert.equal(failureCount, 1);
+
+  child.emit("close", 0, null);
+  await new Promise(queueMicrotask);
+  assert.deepEqual(killSignals, ["SIGKILL"]);
+  assert.deepEqual(clearedTimers, [timers[0]]);
+  assert.equal(failureCount, 1);
+});

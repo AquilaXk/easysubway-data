@@ -26,7 +26,7 @@ function requiredCanonicalServiceKey(env) {
   return serviceKey;
 }
 
-async function setSecretWithGh({ serviceKey, env, spawnImpl }) {
+async function setSecretWithGh({ serviceKey, env, spawnImpl, setTimeoutImpl, clearTimeoutImpl }) {
   const childEnv = Object.fromEntries(
     Object.entries(env).filter(([key]) => key.toUpperCase() !== SECRET_NAME),
   );
@@ -48,17 +48,39 @@ async function setSecretWithGh({ serviceKey, env, spawnImpl }) {
   }
 
   await new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout;
+    const finish = (succeeded) => {
+      if (settled) return;
+      settled = true;
+      if (timeout !== undefined) clearTimeoutImpl(timeout);
+      if (succeeded) resolve();
+      else reject(new Error(FAILURE_MESSAGE));
+    };
     if (child == null || typeof child.once !== "function" || child.stdin == null || typeof child.stdin.end !== "function") {
-      reject(new Error(FAILURE_MESSAGE));
+      finish(false);
       return;
     }
-    const fail = () => reject(new Error(FAILURE_MESSAGE));
+    const fail = () => finish(false);
     child.once("error", fail);
     child.once("close", (code, signal) => {
-      if (code === 0 && signal == null) resolve();
+      if (code === 0 && signal == null) finish(true);
       else fail();
     });
     child.stdin.once?.("error", fail);
+    try {
+      timeout = setTimeoutImpl(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The failure result remains sanitized even when process termination itself fails.
+        }
+        fail();
+      }, TIMEOUT_MS);
+    } catch {
+      fail();
+      return;
+    }
     try {
       child.stdin.end(serviceKey);
     } catch {
@@ -71,10 +93,12 @@ export async function syncItxCurrentCollectionSecret({
   argv = process.argv.slice(2),
   env = process.env,
   spawnImpl = spawn,
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
 } = {}) {
   requireNoArguments(argv);
   const serviceKey = requiredCanonicalServiceKey(env);
-  await setSecretWithGh({ serviceKey, env, spawnImpl });
+  await setSecretWithGh({ serviceKey, env, spawnImpl, setTimeoutImpl, clearTimeoutImpl });
   return {
     secretName: SECRET_NAME,
     repository: REPOSITORY,
