@@ -83,7 +83,8 @@ function failureContextInventory(value) {
   if (typeof value !== "string") invalid("FAILURE_CONTEXT");
   if (value === "operation=travelerTrainRunPlan2,total=0") return ["KORAIL_RUN_PLAN_EMPTY"];
   if (value === "operation=travelerTrainRunInfo2,total=0") return ["KORAIL_RUN_INFO_EMPTY"];
-  if (/^reason=KORAIL_PLAN_(?:MISSING|DUPLICATE|MISMATCH),trainNumber=\d+$/.test(value)) return ["KORAIL_PLAN"];
+  if (/^reason=KORAIL_PLAN_(?:MISSING|DUPLICATE),trainNumber=\d+$/.test(value)) return ["KORAIL_PLAN"];
+  if (/^reason=KORAIL_PLAN_MISMATCH,trainNumber=\d+,relation=(?:run_date|endpoint|timestamp_format|departure_time|arrival_time)$/.test(value)) return ["KORAIL_PLAN"];
   if (/^operation=[A-Za-z0-9]+,reason=schema_mismatch,(?:invalid-json|content-type|body|item|totalCount)(?:,bodyFields=[A-Za-z0-9_,.-]+)?$/.test(value)) return ["TAGO_SCHEMA"];
   if (/^operation=[A-Za-z0-9]+,collected=\d+,total=(?:\d+|UNKNOWN),pages=\d+$/.test(value)) return ["TAGO_PAGINATION"];
   if (/^missingStations=[\p{L}\p{N},._-]+$/u.test(value)) return ["TAGO_REQUIRED_STATION_MAPPING"];
@@ -93,10 +94,10 @@ function failureContextInventory(value) {
   if (suffixIndex > 0) {
     const prefix = value.slice(0, suffixIndex);
     const stationTuple = value.slice(suffixIndex);
-    if (!/^,departureStationId=[A-Za-z0-9._-]+,arrivalStationId=[A-Za-z0-9._-]+$/.test(stationTuple)) invalid("FAILURE_CONTEXT");
+    if (!/^,departureStationId=[A-Za-z0-9._\/+:-]{1,64},arrivalStationId=[A-Za-z0-9._\/+:-]{1,64}$/.test(stationTuple)) invalid("FAILURE_CONTEXT");
     if (prefix === "operation=GetStrtpntAlocFndTrainInfo") return ["TAGO_OD_PROVIDER_FAILURE"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,httpStatus=\d{3}$/.test(prefix)) return ["TAGO_OD_HTTP_FAILURE"];
-    if (/^operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=(?:previous_calendar_day|next_calendar_day|non_adjacent_calendar_day)$/.test(prefix)) return ["TAGO_OD_DATE_MISMATCH"];
+    if (/^operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=(?:previous_calendar_day|next_calendar_day|non_adjacent_calendar_day),queryCalendarOffset=[01]$/.test(prefix)) return ["TAGO_OD_DATE_MISMATCH"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,(?:invalid-json|content-type|body|item|totalCount)(?:,bodyFields=[A-Za-z0-9_,.-]+)?$/.test(prefix)) return ["TAGO_OD_SCHEMA_FAILURE"];
     if (prefix === "operation=GetStrtpntAlocFndTrainInfo,reason=pagination_incomplete") return ["TAGO_OD_PAGINATION_INCOMPLETE"];
     if (/^operation=GetStrtpntAlocFndTrainInfo,reason=(?:station_mismatch|date_mismatch|train_grade_mismatch|time_order_mismatch|field_contract_mismatch)$/.test(prefix)) return ["TAGO_OD_FIELD_CONTRACT_FAILURE"];
