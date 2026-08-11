@@ -13,6 +13,7 @@ const DETAIL_URL = "https://www.data.go.kr/data/15098552/openapi.do";
 const NON_PAGINATED_OPERATIONS = new Set(["GetVhcleKndList", "GetCtyCodeList"]);
 const PAGINATED_OPERATIONS = new Set(["GetCtyAcctoTrainSttnList", "GetStrtpntAlocFndTrainInfo"]);
 const TAGO_DAILY_REQUEST_LIMIT = 10_000;
+export const ITX_ADMISSION_LOOKAHEAD_DAYS = 14;
 const CANONICAL_STATIONS = Object.freeze({
   "청량리": "station-b819702fa7d9",
   "춘천": "station-dd14cfb89cbc",
@@ -25,7 +26,9 @@ export function validateItxServiceDates(serviceDates, { now = new Date(), replay
     const value = requiredString(serviceDates?.[dayCd], `dayCd ${dayCd} date`);
     const date = validateServiceDay(value, dayCd);
     const offset = Math.round((date - today) / 86_400_000);
-    if (!replay && (offset < 0 || offset > 6)) throw new Error("ITX admission dates must be today through 6 days in Asia/Seoul");
+    if (!replay && (offset < 0 || offset >= ITX_ADMISSION_LOOKAHEAD_DAYS)) {
+      throw new Error("ITX admission dates must be today through 13 days in Asia/Seoul");
+    }
     result[dayCd] = value;
   }
   return result;
