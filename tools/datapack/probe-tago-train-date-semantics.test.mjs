@@ -19,6 +19,23 @@ async function temporaryDirectory(prefix) {
   return mkdtemp(path.join(await realpath(os.tmpdir()), prefix));
 }
 
+test("TAGO date semantics probe는 malformed credential에서 provider를 호출하지 않는다", async () => {
+  const directory = await temporaryDirectory("tago-date-invalid-credential-");
+  let calls = 0;
+  try {
+    await assert.rejects(probeTagoTrainDateSemantics({
+      ...TARGET,
+      serviceKey: "invalid%ZZ",
+      outputPath: path.join(directory, "evidence.json"),
+      now: new Date("2026-08-11T00:00:00.000Z"),
+      fetchImpl: async () => { calls += 1; },
+    }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+    assert.equal(calls, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("TAGO date semantics probe는 provider·schema·transport 실패를 sanitized artifact 하나로 닫고 나머지 call을 중단한다", async (context) => {
   const cases = [
     ["HTTP", async () => new Response("sensitive response text", { status: 503 }), "http"],
