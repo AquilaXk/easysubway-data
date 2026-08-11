@@ -4021,6 +4021,45 @@ test("fresh KORAIL admission은 travelerTrainRunPlan2만 호출하고 future inf
   });
 });
 
+test("departure_only KORAIL plan은 날짜 전용 run info 세그먼트로만 보강한다", async () => {
+  const requestedOperations = [];
+  const artifact = await collectKorailItxCheongchunPlan({
+    serviceKey: "key",
+    runDate: "20260713",
+    kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
+    trainNumberEvidence: {
+      ...trainNumberEvidence(),
+      schemaVersion: 2,
+      ...tagoMaterializedFixture(),
+    },
+    fetchImpl: async (url) => {
+      const operation = url.pathname.split("/").at(-1);
+      requestedOperations.push(operation);
+      if (operation === "travelerTrainRunPlan2") {
+        return apiResponse([
+          planRow("02001", "용산", "춘천", "20260713060000", "20260713080000"),
+          planRow("02002", "춘천", "청량리", "20260713070000", "20260713100000"),
+        ]);
+      }
+      assert.equal(url.searchParams.get("cond[mrnt_cd::EQ]"), null);
+      return apiResponse([
+        infoRow("02002", 1, "140873", "춘천", "-", "20260713070000"),
+        infoRow("02002", 2, "0104", "용산", "20260713090000", "20260713090000"),
+        infoRow("02002", 3, "130126", "청량리", "20260713100000", "-"),
+      ]);
+    },
+  });
+
+  assert.deepEqual(requestedOperations, ["travelerTrainRunPlan2", "travelerTrainRunInfo2"]);
+  assert.deepEqual(artifact.trainNumberSets.korailPlan, ["2001", "2002"]);
+  assert.deepEqual(artifact.operations.map(({ operation }) => operation), [
+    "travelerTrainRunPlan2",
+    "travelerTrainRunInfo2",
+  ]);
+  assert.doesNotMatch(JSON.stringify(artifact.operations), /청량리|용산|춘천|0104|130126|140873/);
+});
+
 test("KORAIL plan row 0건은 admission을 뒤집지 않고 warning evidence로 기록한다", async () => {
   const artifact = await collectKorailItxCheongchunPlan({
     serviceKey: "key",
