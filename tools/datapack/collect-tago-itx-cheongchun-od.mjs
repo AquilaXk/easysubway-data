@@ -387,7 +387,7 @@ export async function collectTagoItxCheongchunRoster({
       const operation = await fetchAll("GetStrtpntAlocFndTrainInfo", {
         depPlaceId: depStationId,
         arrPlaceId: arrStationId,
-        depPlandTime: serviceDate,
+        depPlandTime: nextCalendarDay(serviceDate),
         trainGradeCode: gradeId,
       }, key, fetchImpl, requestBudget, waitImpl);
       const normalizedRows = operation.rows.map((row, index) => ({
