@@ -22,7 +22,22 @@ export async function fetchKasiPublicHolidayCalendar({
     url.searchParams.set("numOfRows", "100");
     url.searchParams.set("solYear", String(year));
     url.searchParams.set("solMonth", String(month).padStart(2, "0"));
-    const { response, attemptCount } = await fetchMonth(url, fetchImpl);
+    let response;
+    let attemptCount = 0;
+    for (attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
+      try {
+        response = await fetchImpl(url, {
+          redirect: "error",
+          signal: AbortSignal.timeout(15_000),
+          headers: { accept: "application/xml, text/xml" },
+        });
+        break;
+      } catch (error) {
+        const failure = transportFailure(error, attemptCount);
+        if (failure.failureCategory === "NETWORK_CONNECT_TIMEOUT" && attemptCount === 1) continue;
+        throw failure;
+      }
+    }
     if (!response?.ok) throw kasiFailure(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`, "KASI_HTTP", attemptCount);
     let xml;
     try {
@@ -39,24 +54,6 @@ export async function fetchKasiPublicHolidayCalendar({
     for (const date of dates) holidays.add(date);
   }
   return holidays;
-}
-
-async function fetchMonth(url, fetchImpl) {
-  for (let attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
-    try {
-      const response = await fetchImpl(url, {
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-        headers: { accept: "application/xml, text/xml" },
-      });
-      return { response, attemptCount };
-    } catch (error) {
-      const failure = transportFailure(error, attemptCount);
-      if (failure.failureCategory === "NETWORK_CONNECT_TIMEOUT" && attemptCount === 1) continue;
-      throw failure;
-    }
-  }
-  throw new Error("KASI public holiday request failed");
 }
 
 function parseMonth(xml, { year, month }) {
