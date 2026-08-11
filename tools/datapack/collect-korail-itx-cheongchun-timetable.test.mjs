@@ -1091,7 +1091,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
       serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
       collectTimetableImpl: async () => {
-        const error = new Error("KORAIL_PLAN_MISMATCH: 2052 endpoint");
+        const error = new Error("KORAIL_PLAN_MISMATCH: 2052 both_endpoints");
         Object.assign(error, {
           rawProviderRow,
           rawProviderDate,
@@ -1106,7 +1106,7 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     assert.equal(artifact.serviceDays[0].failureReasonCode, "KORAIL_PLAN_MISMATCH");
     assert.equal(
       artifact.serviceDays[0].failureContext,
-      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=endpoint",
+      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=both_endpoints",
     );
     assert.equal(artifact.serviceDays[0].korailPlanSummary.mismatchCount, 1);
     assert.doesNotMatch(
@@ -4017,18 +4017,30 @@ test("KORAIL plan selection은 sanitized first-mismatch token과 기존 missing 
     { message: "KORAIL_PLAN_MISMATCH: 2001 run_date" },
   );
   assert.throws(
-    () => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "청량리" }])),
-    { message: "KORAIL_PLAN_MISMATCH: 2001 endpoint" },
-  );
-  assert.throws(
-    () => validateKorailItxPlans(input([{ ...valid, arvl_stn_nm: "청량리" }])),
-    { message: "KORAIL_PLAN_MISMATCH: 2001 endpoint" },
+    () => validateKorailItxPlans({
+      plans: [valid],
+      materialized: { ...materialized, stationSequences: [] },
+      runDate: "20260713",
+    }),
+    { message: "KORAIL_PLAN_MISMATCH: 2001 tago_endpoint_missing" },
   );
   assert.throws(
     () => validateKorailItxPlans(input([
       planRow("02001", "용산", "대전", "20260713060000", "20260713080000"),
     ])),
-    { message: "KORAIL_PLAN_MISMATCH: 2001 endpoint" },
+    { message: "KORAIL_PLAN_MISMATCH: 2001 forbidden_daejeon_endpoint" },
+  );
+  assert.throws(
+    () => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "청량리" }])),
+    { message: "KORAIL_PLAN_MISMATCH: 2001 departure_endpoint" },
+  );
+  assert.throws(
+    () => validateKorailItxPlans(input([{ ...valid, arvl_stn_nm: "청량리" }])),
+    { message: "KORAIL_PLAN_MISMATCH: 2001 arrival_endpoint" },
+  );
+  assert.throws(
+    () => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "청량리", arvl_stn_nm: "용산" }])),
+    { message: "KORAIL_PLAN_MISMATCH: 2001 both_endpoints" },
   );
   assert.throws(
     () => validateKorailItxPlans(input([{

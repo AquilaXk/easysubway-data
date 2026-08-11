@@ -135,7 +135,7 @@ test("current producer admission status와 closed TAGO roster failure context를
       ["BOOTSTRAP_REVIEW_REQUIRED", null, []],
       ["CHANGE_REVIEW_REQUIRED", null, []],
       ["REPLAY_ONLY", null, []],
-      ["MISSING", "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_calendar_day,departureStationId=station-secret-a,arrivalStationId=station-secret-b", ["TAGO_OD_DATE_MISMATCH"]],
+      ["MISSING", "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_calendar_day,queryCalendarOffset=1,departureStationId=station-secret-a,arrivalStationId=station-secret-b", ["TAGO_OD_DATE_MISMATCH"]],
       ["MISSING", "operation=GetStrtpntAlocFndTrainInfo,reason=schema_mismatch,body,bodyFields=trainno,departureStationId=station-secret-a,arrivalStationId=station-secret-b", ["TAGO_OD_SCHEMA_FAILURE"]],
       ["MISSING", "operation=GetStrtpntAlocFndTrainInfo,departureStationId=station-secret-a,arrivalStationId=station-secret-b", ["TAGO_OD_PROVIDER_FAILURE"]],
     ];
@@ -161,6 +161,62 @@ test("current producer admission status와 closed TAGO roster failure context를
       assert.equal(inspection.admissionStatus, admissionStatus);
       assert.deepEqual(inspection.failures.at(-1)?.failureContexts ?? [], expectedContexts);
       assert.doesNotMatch(stdout, /station-secret|bodyFields|previous_calendar_day/);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("TAGO 날짜 불일치와 Korail plan 불일치는 producer discriminator만 허용한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-evidence-inspector-discriminator-"));
+  try {
+    const maxLengthStationId = `station:${"x".repeat(56)}`;
+    const tagoContexts = [
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_calendar_day,queryCalendarOffset=1,departureStationId=station+secret,arrivalStationId=station/secret:west",
+      `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day,queryCalendarOffset=0,departureStationId=${maxLengthStationId},arrivalStationId=${maxLengthStationId}`,
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=non_adjacent_calendar_day,queryCalendarOffset=0,departureStationId=station-secret-a,arrivalStationId=station-secret-b",
+    ];
+    for (const [index, failureContext] of tagoContexts.entries()) {
+      const value = evidence();
+      value.serviceDays[0] = {
+        ...value.serviceDays[0], failureStage: "OD_MATERIALIZATION",
+        failureReasonCode: "PROVIDER_SCHEMA_FAILURE", failureContext,
+      };
+      rehash(value);
+      const { stdout } = await invoke(directory, value, `tago-${index}.json`);
+      assert.deepEqual(JSON.parse(stdout).failures.find((failure) => failure.dayCd === "8").failureContexts, ["TAGO_OD_DATE_MISMATCH"]);
+    }
+
+    for (const relation of ["run_date", "endpoint", "timestamp_format", "departure_time", "arrival_time"]) {
+      const value = evidence();
+      value.serviceDays[0] = {
+        ...value.serviceDays[0], failureStage: "PLAN_CORROBORATION",
+        failureReasonCode: "KORAIL_PLAN_MISMATCH",
+        failureContext: `reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=${relation}`,
+      };
+      rehash(value);
+      const { stdout } = await invoke(directory, value, `korail-${relation}.json`);
+      assert.deepEqual(JSON.parse(stdout).failures.find((failure) => failure.dayCd === "8").failureContexts, ["KORAIL_PLAN"]);
+    }
+
+    const invalidContexts = [
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_calendar_day,departureStationId=station-secret-a,arrivalStationId=station-secret-b",
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_calendar_day,queryCalendarOffset=2,departureStationId=station-secret-a,arrivalStationId=station-secret-b",
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=unknown,queryCalendarOffset=0,departureStationId=station-secret-a,arrivalStationId=station-secret-b",
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day,queryCalendarOffset=0,departureStationId=station-secret-a",
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day,queryCalendarOffset=0,extra=1,departureStationId=station-secret-a,arrivalStationId=station-secret-b",
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day,queryCalendarOffset=0,departureStationId=station secret,arrivalStationId=station-secret-b",
+      `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day,queryCalendarOffset=0,departureStationId=station:${"x".repeat(57)},arrivalStationId=station-secret-b`,
+      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2052",
+      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=unknown",
+      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2052,relation=endpoint,extra=1",
+      "reason=KORAIL_PLAN_MISMATCH,trainNumber=not-numeric,relation=endpoint",
+    ];
+    for (const [index, failureContext] of invalidContexts.entries()) {
+      const value = evidence();
+      value.serviceDays[0] = { ...value.serviceDays[0], failureContext };
+      rehash(value);
+      assert.equal(await diagnostic(() => invoke(directory, value, `invalid-${index}.json`)), "FAILURE_CONTEXT");
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
