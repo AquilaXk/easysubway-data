@@ -1073,9 +1073,13 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     const artifact = await collectKorailItxCheongchunCompleteness({
       serviceKey: "key", serviceDates, stationCatalogPackPath: PACK_PATH,
       now: new Date("2026-07-14T00:00:00.000Z"), collectRosterImpl: roster,
-      collectTimetableImpl: async () => { throw new Error("KORAIL_PLAN_MISMATCH: 2041"); },
+      collectTimetableImpl: async () => { throw new Error("KORAIL_PLAN_MISMATCH: 2041,run_date"); },
     });
     assert.equal(artifact.serviceDays[0].failureReasonCode, "KORAIL_PLAN_MISMATCH");
+    assert.equal(
+      artifact.serviceDays[0].failureContext,
+      "reason=KORAIL_PLAN_MISMATCH,trainNumber=2041,mismatch=run_date",
+    );
     assert.equal(artifact.serviceDays[0].korailPlanSummary.duplicateCount, 0);
     assert.equal(artifact.serviceDays[0].korailPlanSummary.mismatchCount, 1);
   });
@@ -3968,7 +3972,7 @@ test("KORAIL plan row 0건은 admission을 뒤집지 않고 warning evidence로 
   });
 });
 
-test("KORAIL plan selection은 missing warning과 duplicate·date·endpoint·time mismatch를 구분한다", () => {
+test("KORAIL plan selection은 missing warning과 raw 값 없는 최초 mismatch token을 구분한다", () => {
   const materialized = tagoMaterializedFixture();
   const valid = planRow("02001", "용산", "춘천", "20260713060000", "20260713080000");
   const input = (plans) => ({ plans, materialized, runDate: "20260713" });
@@ -3977,14 +3981,17 @@ test("KORAIL plan selection은 missing warning과 duplicate·date·endpoint·tim
   assert.deepEqual(missing.trainNumbers, []);
   assert.deepEqual(missing.missingTrainNumbers, ["2001", "2002"]);
   assert.throws(() => validateKorailItxPlans(input([valid, { ...valid }])), /KORAIL_PLAN_DUPLICATE/);
-  assert.throws(() => validateKorailItxPlans(input([{ ...valid, run_ymd: "20260714" }])), /KORAIL_PLAN_MISMATCH/);
-  assert.throws(() => validateKorailItxPlans(input([{ ...valid, dptre_stn_nm: "청량리" }])), /KORAIL_PLAN_MISMATCH/);
-  assert.throws(() => validateKorailItxPlans(input([{ ...valid, trn_plan_dptre_dt: "20260713060100" }])), /KORAIL_PLAN_MISMATCH/);
-  assert.throws(() => validateKorailItxPlans(input([{ ...valid, arvl_stn_nm: "청량리" }])), /KORAIL_PLAN_MISMATCH/);
-  assert.throws(() => validateKorailItxPlans(input([{ ...valid, trn_plan_arvl_dt: "20260713080100" }])), /KORAIL_PLAN_MISMATCH/);
+  assert.throws(() => validateKorailItxPlans(input([
+    { ...valid, run_ymd: "20260714", dptre_stn_nm: "청량리", trn_plan_dptre_dt: "20260713060100" },
+  ])), /KORAIL_PLAN_MISMATCH: 2001,run_date$/);
+  assert.throws(() => validateKorailItxPlans(input([
+    { ...valid, dptre_stn_nm: "청량리", trn_plan_dptre_dt: "20260713060100" },
+  ])), /KORAIL_PLAN_MISMATCH: 2001,endpoint$/);
+  assert.throws(() => validateKorailItxPlans(input([{ ...valid, trn_plan_dptre_dt: "20260713060100" }])), /KORAIL_PLAN_MISMATCH: 2001,departure_time$/);
+  assert.throws(() => validateKorailItxPlans(input([{ ...valid, trn_plan_arvl_dt: "20260713080100" }])), /KORAIL_PLAN_MISMATCH: 2001,arrival_time$/);
   assert.throws(() => validateKorailItxPlans(input([
     planRow("02001", "용산", "대전", "20260713060000", "20260713080000"),
-  ])), /KORAIL_PLAN_MISMATCH/);
+  ])), /KORAIL_PLAN_MISMATCH: 2001,endpoint$/);
 });
 
 test("KORAIL plan 시각은 YYYYMMDDHHMISS와 YYYY-MM-DD HH:MM:SS[.f] 두 포맷만 엄격히 수용한다", () => {
@@ -4019,7 +4026,7 @@ test("KORAIL plan 시각은 YYYYMMDDHHMISS와 YYYY-MM-DD HH:MM:SS[.f] 두 포맷
   // 두 포맷 모두에 해당하지 않는 문자열은 그대로 즉시 fail한다.
   assert.throws(() => validateKorailItxPlans(input([
     planRow("02001", "용산", "춘천", "2026-07-13T06:00:00.0", "2026-07-13 08:00:00.0"),
-  ])), /KORAIL_PLAN_MISMATCH/);
+  ])), /KORAIL_PLAN_MISMATCH: 2001,timestamp_format$/);
   assert.throws(() => validateKorailItxPlans(input([
     planRow("02001", "용산", "춘천", "2026/07/13 06:00:00", "2026-07-13 08:00:00.0"),
   ])), /KORAIL_PLAN_MISMATCH/);
