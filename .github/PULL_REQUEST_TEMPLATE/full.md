@@ -1,71 +1,111 @@
-## 관련 이슈
+<!-- A등급: high-risk source, schema, data, security, artifact, publication, release, CI·contract 변경. -->
 
-<!-- 타 레포 이슈는 `AquilaXk/easysubway#N` 형태로 명기. -->
+## Related issue
 
-close #
+Related #
 
-## 작업 배경
+## Summary
+
+- Problem:
+- Outcome:
+
+## Changes
 
 -
 
-## 작업 내용
+## Scope
+
+### Included
 
 -
 
-## 검증
+### Excluded
 
-- 실행한 명령과 결과:
+-
 
-## 검증 증거
+### Ownership / dependencies
 
-데이터 정확성, 접근성 시설 근거, provenance, 배포 artifact 확인이 필요한 항목은 증거 첨부, 링크, 또는 로컬 evidence 경로(절대 경로·사용자명 등 환경 정보 제외, 레포 상대 경로 권장)를 적습니다. 증거가 필요 없는 항목은 사유를 적습니다.
+- Accountable owner or plan:
+- Required predecessor output:
+- Concurrent work overlap: None
 
-| 항목 | 대상 artifact | 확인 방법 | 증거 | 결과 |
-| --- | --- | --- | --- | --- |
-|  |  |  |  |  |
+## Contract & Compatibility
+
+- Source / API / schema contract:
+- Artifact / provenance identity:
+- Backward compatibility:
+- Migration or cutover:
 
 ## Version impact
 
 - [ ] no version change
 - [ ] datapack release only
 - [ ] route-map artifact change
-- [ ] data contract change (contracts/**, contracts.lock.json)
-- [ ] product gate JSON change (release/product-gates/**)
+- [ ] data contract change
+- [ ] product gate JSON change
 - [ ] CI workflow·계약 테스트 change
 
 ## Product gate impact
 
 - [ ] release/product-gates/** 영향 없음
-- [ ] release/product-gates/** 중 변경한 gate(현재: datapack freshness SLA, production datapack scope, mobility profile policy, train-search 제외 gate)의 근거를 갱신했다.
-- [ ] 검증되지 않은 지원 범위(지역·운영기관·노선) claim을 추가하거나 확대하지 않는다.
+- [ ] 변경한 gate의 근거를 갱신했습니다.
+- [ ] 검증되지 않은 지원 범위 claim을 추가하거나 확대하지 않습니다.
 
 ## Provenance impact
 
 - [ ] source inventory·geometry provenance manifest 영향 없음
-- [ ] tools/datapack/source-inventory.json 또는 tools/route-map/geometry-provenance-manifest.json의 제공처·라이선스·갱신 시점·적용 범위를 갱신했다.
-- [ ] 공식 source로 확인되지 않은 값을 배포 artifact에 추가하지 않는다.
+- [ ] 제공처·라이선스·갱신 시점·적용 범위를 갱신했습니다.
+- [ ] 공식 source로 확인되지 않은 값을 배포 artifact에 추가하지 않습니다.
 
-## Version decision
+### Version decision
 
 - datapack version:
 - data contract:
-- route-map artifact:
-- product gate:
+- route-map artifact / product gate:
 - promotion request id:
 
-## 리뷰어 메모
+## Verification
 
-- 리뷰어가 먼저 봐야 할 지점:
+| Check | Result / Evidence |
+| --- | --- |
+| Focused RED → GREEN | |
+| Affected integration | |
+| Required CI | |
+| Live provider / release | Not required — reason: |
+| Security / data integrity | Not applicable — reason: |
 
-## 리스크
+## Not run
+
+- Check: None
+- Reason:
+- Rerun owner / condition:
+
+## Risk
+
+- Level: High
+- Main risk:
+- Failure behavior:
+- Candidate / admission / publication state on failure:
+- Fallback or degraded-success path introduced: No
+
+## Rollout / Recovery
+
+- Rollout or promotion:
+- Monitoring / success signal:
+- Rollback or recovery:
+- Existing artifact / schema compatibility after rollback:
+
+## Review focus
 
 -
 
-## 체크리스트
+## Checklist
 
-- [ ] PR 본문은 이 템플릿 섹션을 삭제하지 않고 모두 채웠다.
-- [ ] CI 결과를 확인했다.
-- [ ] CodeRabbit 리뷰를 확인했다.
-- [ ] GitHub PR Review 객체가 있는지 확인했다. CodeRabbit status check만으로는 리뷰 완료로 보지 않는다.
-- [ ] CodeRabbit 실행이 불가능하거나 PR Review 객체가 없으면 폴백 리뷰를 단일 PR review로 게시했다.
-- [ ] datapack 배포 영향이 있는 경우 release workflow 상태를 확인했다.
+- [ ] 이슈 범위와 실제 diff가 일치합니다.
+- [ ] 관련 없는 변경이나 다른 owner의 surface를 포함하지 않았습니다.
+- [ ] 위험에 필요한 검증과 미실행 사유를 기록했습니다.
+- [ ] 실패·호환성·promotion·recovery 동작이 명확합니다.
+- [ ] current failure를 이전·stale·alternate 결과의 성공으로 바꾸지 않습니다.
+- [ ] GitHub PR Review 객체가 있는지 확인했습니다. CodeRabbit status check만으로는 리뷰 완료로 보지 않습니다.
+- [ ] CodeRabbit Review 객체가 없으면 지원되는 Codex CLI 폴백 Review를 단일 GitHub PR Review로 게시했습니다.
+- [ ] datapack 배포 영향이 있는 경우 release workflow 상태를 확인했습니다.

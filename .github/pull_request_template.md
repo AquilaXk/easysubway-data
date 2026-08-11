@@ -1,37 +1,64 @@
 <!--
-작업 등급에 맞는 템플릿을 사용하세요.
-- A등급(제품/운영 위험: 데이터 정확성, 접근성 시설 근거, 지원 범위 claim, datapack release, data contract(contracts/**, contracts.lock.json), product gate JSON(release/product-gates/**), CI workflow·계약 테스트, 서명·시크릿·무결성(manifest signing, attestation, workflow secret 취급) 변경): .github/PULL_REQUEST_TEMPLATE/full.md 내용으로 교체합니다.
-- B/C등급(일반 코드 변경·낮은 위험 maintenance): .github/PULL_REQUEST_TEMPLATE/short.md 내용으로 교체합니다(아래 기본형과 동일).
-- 웹 UI에서는 ?template=full.md 또는 ?template=short.md 쿼리를 쓸 수 있습니다. gh CLI는 template 쿼리를 지원하지 않으므로 템플릿 파일 내용을 body로 직접 채웁니다.
-- 이 레포 소유 범위: tools/{datapack,route-map,routes,release,ci,lib}/**, contracts/**, contracts.lock.json, release/product-gates/**, .github/workflows/**.
-- 리뷰·automerge 게이트는 등급과 무관하게 모든 PR 공통입니다. 리뷰 게이트(PR Review 객체 확보)를 마친 뒤에만 `automerge` 라벨을 붙이고, 병합은 `.github/workflows/automerge-queue.yml` 코디네이터가 처리합니다. 세션이 직접 `gh pr merge`를 실행하지 않습니다.
+A등급은 .github/PULL_REQUEST_TEMPLATE/full.md, B/C등급은 .github/PULL_REQUEST_TEMPLATE/short.md를 사용합니다.
+gh CLI는 template 쿼리를 지원하지 않으므로 해당 파일 내용을 PR body로 직접 채웁니다.
+리뷰·automerge 게이트는 등급과 무관하게 모든 PR 공통입니다.
 -->
 
-## 관련 이슈
+## Related issue
 
-<!-- 단일 PR은 `Closes #N`, 스택 중간/umbrella는 `Refs #N`, C등급 issue 생략 시 `이슈 없음(C등급)` 명기. 타 레포 이슈는 `AquilaXk/easysubway#N` 형태로 명기. 빈 칸 금지. -->
+<!-- 이 PR로 이슈를 완전히 종료할 때만 Closes를 사용합니다. -->
+Related #
 
-Refs #
+## Summary
 
-## 작업 내용
+- Problem:
+- Outcome:
+
+## Changes
 
 -
 
-## 검증
+## Scope
 
-- 실행한 명령과 결과:
+### Included
 
-## 영향
+-
 
-- [ ] 제품/운영 위험 없음 (데이터 정확성·접근성 시설 근거·지원 범위 claim 변경 아님)
-- [ ] datapack release 영향 없음
-- [ ] data contract 영향 없음 (contracts/**, contracts.lock.json)
-- [ ] route-map artifact·provenance manifest 영향 없음
-- [ ] CI workflow·계약 테스트·product gate JSON(release/product-gates/**) 변경 없음 (있으면 full.md로 전환)
+### Excluded
 
-## 체크리스트
+-
 
-- [ ] 작업 등급에 맞는 템플릿을 사용했다.
-- [ ] CI 결과를 확인했다.
-- [ ] GitHub PR Review 객체가 있는지 확인했다. CodeRabbit status check만으로는 리뷰 완료로 보지 않는다.
-- [ ] CodeRabbit 실행이 불가능하거나 PR Review 객체가 없으면 폴백 리뷰를 단일 PR review로 게시했다.
+## Verification
+
+| Check | Result / Evidence |
+| --- | --- |
+| Focused test | |
+| Required CI | |
+| Live / release operation | Not required — reason: |
+
+## Not run
+
+<!-- 실행하지 않은 검증이 없으면 None. -->
+- Check: None
+- Reason:
+- Rerun owner / condition:
+
+## Risk
+
+- Level: Low / Medium / High
+- Main risk:
+- Data / artifact / provenance impact: None
+- Failure behavior:
+
+## Rollback / Recovery
+
+- Rollback or recovery:
+- Existing artifact / schema compatibility: Not applicable
+
+## Checklist
+
+- [ ] 이슈 범위와 실제 diff가 일치합니다.
+- [ ] 관련 없는 변경을 포함하지 않았습니다.
+- [ ] 필요한 검증 결과와 미실행 사유를 기록했습니다.
+- [ ] 실패를 이전·stale·alternate 결과의 성공으로 바꾸는 경로를 추가하지 않았습니다.
+- [ ] GitHub PR Review 객체가 있는지 확인했습니다. CodeRabbit status check만으로는 리뷰 완료로 보지 않습니다.
