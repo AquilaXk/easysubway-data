@@ -387,7 +387,7 @@ export async function collectTagoItxCheongchunRoster({
     try {
       const projectedWindows = [];
       let firstWindowError = null;
-      for (const queryDate of [serviceDate, nextCalendarDay(serviceDate)]) {
+      for (const [queryCalendarOffset, queryDate] of [serviceDate, nextCalendarDay(serviceDate)].entries()) {
         try {
           const operation = await fetchAll("GetStrtpntAlocFndTrainInfo", {
             depPlaceId: depStationId,
@@ -399,6 +399,7 @@ export async function collectTagoItxCheongchunRoster({
           projectedWindows.push(projectTagoCalendarDateWindow(operation.rows, {
             serviceDate,
             queryDate,
+            queryCalendarOffset,
             departureStation,
             arrivalStation,
           }));
@@ -688,18 +689,19 @@ function tagoServiceDayPartition(value) {
   return { calendarDay, serviceDay };
 }
 
-function calendarDateMismatchError(index, calendarDay, requestedServiceDay) {
+function calendarDateMismatchError(index, calendarDay, requestedServiceDay, queryCalendarOffset) {
   const relation = calendarDay === previousCalendarDay(requestedServiceDay)
     ? "previous_calendar_day"
     : calendarDay === nextCalendarDay(requestedServiceDay)
       ? "next_calendar_day"
       : "non_adjacent_calendar_day";
-  return new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+  return new Error(`TAGO OD row[${index}] departure date mismatch:${relation}:queryCalendarOffset=${queryCalendarOffset}`);
 }
 
 function projectTagoCalendarDateWindow(rows, {
   serviceDate,
   queryDate,
+  queryCalendarOffset,
   departureStation,
   arrivalStation,
 }) {
@@ -718,7 +720,7 @@ function projectTagoCalendarDateWindow(rows, {
     const calendarDay = String(row.depplandtime).slice(0, 8);
     calendarDate(calendarDay);
     if (!allowedCalendarDays.has(calendarDay)) {
-      throw calendarDateMismatchError(index, calendarDay, serviceDate);
+      throw calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset);
     }
     if (calendarDay !== serviceDate) continue;
     const key = JSON.stringify([
@@ -814,11 +816,11 @@ function operationEvidence({ operation, endpoint, pageCount, requestCount, total
 
 function tagoOdFailure(error) {
   const message = error instanceof Error ? error.message : "";
-  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day)$/.exec(message)?.[1];
+  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day):queryCalendarOffset=([01])$/.exec(message);
   if (dateMismatch) {
     return {
       reasonCode: "PROVIDER_SCHEMA_FAILURE",
-      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=${dateMismatch}`,
+      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=${dateMismatch[1]},queryCalendarOffset=${dateMismatch[2]}`,
     };
   }
   const httpStatus = /^TAGO GetStrtpntAlocFndTrainInfo HTTP (\d{3})$/.exec(message)?.[1];
