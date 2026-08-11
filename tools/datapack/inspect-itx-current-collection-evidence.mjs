@@ -44,7 +44,10 @@ const ADMISSION_STATUSES = new Set([
   "SUPPORTED", "MISSING", "REPLAY_ONLY", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED",
 ]);
 const KORAIL_PLAN_MISMATCH_RELATIONS = new Set([
-  "run_date", "endpoint", "timestamp_format", "departure_time", "arrival_time",
+  "run_date", "endpoint", "tago_endpoint_missing", "forbidden_daejeon_endpoint",
+  "both_endpoints", "departure_endpoint", "arrival_endpoint",
+  "reversed", "departure_only", "arrival_only", "neither",
+  "timestamp_format", "departure_time", "arrival_time",
 ]);
 const TAGO_DATE_MISMATCH_RELATIONS = new Set([
   "previous_calendar_day", "next_calendar_day", "non_adjacent_calendar_day",
