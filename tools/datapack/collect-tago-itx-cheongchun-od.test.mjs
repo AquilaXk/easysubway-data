@@ -128,6 +128,75 @@ test("TAGO ITX roster는 selected service date를 보존하고 모든 OD를 D th
 });
 
 test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corroboration으로 materialize한다", async (context) => {
+  await context.test("offset 0의 D+1 row도 두 창의 sanitized relation inventory를 남긴 채 hard failure로 닫힌다", async () => {
+    const fallback = validFetch();
+    const requestedDates = [];
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+        requestedDates.push(parsed.searchParams.get("depPlandTime"));
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = parsed.searchParams.get("depPlandTime") === "20260715"
+          ? [
+            row,
+            { ...row, trainno: "2035", depplandtime: "20260716030000", arrplandtime: "20260716030500" },
+          ]
+          : [
+            row,
+            { ...row, trainno: "2034", depplandtime: "20260716030000", arrplandtime: "20260716030500" },
+          ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.deepEqual(requestedDates, ["20260715", "20260716"]);
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    assert.equal(
+      artifact.failedOds[0].failureContext,
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day,queryCalendarOffset=0",
+    );
+    assert.deepEqual(artifact.calendarDateWindowInventory, [
+      {
+        queryCalendarOffset: 0,
+        outcome: "REJECTED",
+        relationCounts: { next_calendar_day: 1, same_calendar_day: 1 },
+      },
+      {
+        queryCalendarOffset: 1,
+        outcome: "ACCEPTED",
+        relationCounts: { next_calendar_day: 1, same_calendar_day: 1 },
+      },
+      {
+        queryCalendarOffset: 0,
+        outcome: "ACCEPTED",
+        relationCounts: { same_calendar_day: 1 },
+      },
+      {
+        queryCalendarOffset: 1,
+        outcome: "ACCEPTED",
+        relationCounts: { same_calendar_day: 1 },
+      },
+    ]);
+    const serializedInventory = JSON.stringify(artifact.calendarDateWindowInventory);
+    for (const rawValue of ["fixture-credential-must-not-leak", "20260715", "20260716", "NAT130126", "NAT140873", "2034", "2035"]) {
+      assert.equal(serializedInventory.includes(rawValue), false);
+    }
+  });
+
   await context.test("D then D+1은 같은 non-date query params로 순서대로 조회하고 adjacent observation을 제외한다", async () => {
     const odQueries = [];
     const fallback = validFetch();
@@ -287,32 +356,48 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
   });
 
   await context.test("reverse-order multi-row window도 exact row-set equality면 한 번만 materialize한다", async () => {
-    const fallback = validFetch();
-    const artifact = await collectTagoItxCheongchunRoster({
-      serviceKey: "key",
-      serviceDate: "20260715",
-      kricServiceDayCode: "8",
-      canonicalStations: canonicalRosterStations(),
-      fetchImpl: async (url) => {
-        const parsed = new URL(url);
-        const response = await fallback(url);
-        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
-          || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
-        const payload = await response.json();
-        const row = payload.response.body.items.item[0];
-        const rows = [row, { ...row, trainno: "2003", depplandtime: "20260715100000", arrplandtime: "20260715113000" }];
-        payload.response.body.items.item = parsed.searchParams.get("depPlandTime") === "20260715" ? rows : rows.reverse();
-        payload.response.body.totalCount = 2;
-        return new Response(JSON.stringify(payload), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      },
-    });
+    const collectWithRowOrder = async (reverseRows) => {
+      const fallback = validFetch();
+      return collectTagoItxCheongchunRoster({
+        serviceKey: "key",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        now: new Date("2026-07-14T15:00:00.000Z"),
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          const response = await fallback(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+            || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+          const payload = await response.json();
+          const row = payload.response.body.items.item[0];
+          const rows = [row, { ...row, trainno: "2003", depplandtime: "20260715100000", arrplandtime: "20260715113000" }];
+          payload.response.body.items.item = reverseRows ? rows.reverse() : rows;
+          payload.response.body.totalCount = 2;
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      });
+    };
+    const artifact = await collectWithRowOrder(false);
+    const reverseOrderArtifact = await collectWithRowOrder(true);
     assert.equal(artifact.completedOdCount, 2);
     assert.equal(artifact.failedOdCount, 0);
     assert.deepEqual(artifact.trainNumbers, ["2001", "2002", "2003"]);
     assert.equal(artifact.itineraries.filter(({ trainNumber }) => trainNumber === "2003").length, 1);
+    assert.deepEqual(artifact.calendarDateWindowInventory, [
+      { queryCalendarOffset: 0, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 2 } },
+      { queryCalendarOffset: 1, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 2 } },
+      { queryCalendarOffset: 0, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+      { queryCalendarOffset: 1, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+    ]);
+    assert.deepEqual(reverseOrderArtifact.calendarDateWindowInventory, artifact.calendarDateWindowInventory);
+    assert.equal(
+      sha256(JSON.stringify(reverseOrderArtifact.calendarDateWindowInventory)),
+      sha256(JSON.stringify(artifact.calendarDateWindowInventory)),
+    );
   });
 
   for (const { name, queryDate, timestamp } of [

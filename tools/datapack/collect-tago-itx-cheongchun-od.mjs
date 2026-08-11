@@ -377,6 +377,7 @@ export async function collectTagoItxCheongchunRoster({
   }
   const stationByProviderId = new Map(stations.map((station) => [station.providerStationId, station]));
   const odOperations = [];
+  const calendarDateWindowInventory = [];
   const itineraries = [];
   const failedOds = [];
   let completedOdCount = 0;
@@ -396,14 +397,21 @@ export async function collectTagoItxCheongchunRoster({
             trainGradeCode: gradeId,
           }, key, fetchImpl, requestBudget, waitImpl);
           odOperations.push(operation);
-          projectedWindows.push(projectTagoCalendarDateWindow(operation.rows, {
+          const window = projectTagoCalendarDateWindow(operation.rows, {
             serviceDate,
             queryDate,
             departureStation,
             arrivalStation,
-          }));
+          });
+          calendarDateWindowInventory.push(window.inventory);
+          projectedWindows.push(window.projected);
         } catch (error) {
           if (error instanceof Error && error.message === "TAGO_QUOTA_BUDGET_EXHAUSTED") throw error;
+          calendarDateWindowInventory.push(error?.calendarDateWindowInventory ?? {
+            queryCalendarOffset: queryDate === serviceDate ? 0 : 1,
+            outcome: "REJECTED",
+            relationCounts: {},
+          });
           firstWindowError ??= error;
         }
       }
@@ -449,6 +457,7 @@ export async function collectTagoItxCheongchunRoster({
         contractVersion: "tago-itx-calendar-date-projection-v1",
         queryCalendarOffsets: [0, 1],
       },
+      calendarDateWindowInventory,
       quotaSummary: {
         catalogRequestCount,
         remainingInitialRequestBudget,
@@ -702,6 +711,30 @@ function calendarDateMismatchError(index, calendarDay, requestedServiceDay, quer
   return error;
 }
 
+const CALENDAR_RELATIONS = [
+  "previous_calendar_day",
+  "same_calendar_day",
+  "next_calendar_day",
+  "non_adjacent_calendar_day",
+];
+
+function calendarDayRelation(calendarDay, serviceDate) {
+  if (calendarDay === previousCalendarDay(serviceDate)) return "previous_calendar_day";
+  if (calendarDay === serviceDate) return "same_calendar_day";
+  if (calendarDay === nextCalendarDay(serviceDate)) return "next_calendar_day";
+  return "non_adjacent_calendar_day";
+}
+
+function calendarDateWindowInventory(queryCalendarOffset, outcome, relationCounts) {
+  return {
+    queryCalendarOffset,
+    outcome,
+    relationCounts: Object.fromEntries(CALENDAR_RELATIONS
+      .filter((relation) => relationCounts[relation] > 0)
+      .map((relation) => [relation, relationCounts[relation]])),
+  };
+}
+
 function projectTagoCalendarDateWindow(rows, {
   serviceDate,
   queryDate,
@@ -712,30 +745,45 @@ function projectTagoCalendarDateWindow(rows, {
   if (queryDate === serviceDate) allowedCalendarDays.add(previousCalendarDay(serviceDate));
   const queryCalendarOffset = queryDate === serviceDate ? 0 : 1;
   const projected = new Map();
+  const relationCounts = {};
+  let firstError = null;
   for (const [index, row] of rows.entries()) {
-    const itinerary = {
-      ...normalizeItinerary(row, index, {
-        departureStationName: departureStation.providerStationName,
-        arrivalStationName: arrivalStation.providerStationName,
-      }),
-      departureStationId: departureStation.canonicalStationId,
-      arrivalStationId: arrivalStation.canonicalStationId,
-    };
-    const calendarDay = String(row.depplandtime).slice(0, 8);
-    calendarDate(calendarDay);
-    if (!allowedCalendarDays.has(calendarDay)) {
-      throw calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset);
+    try {
+      const itinerary = {
+        ...normalizeItinerary(row, index, {
+          departureStationName: departureStation.providerStationName,
+          arrivalStationName: arrivalStation.providerStationName,
+        }),
+        departureStationId: departureStation.canonicalStationId,
+        arrivalStationId: arrivalStation.canonicalStationId,
+      };
+      const calendarDay = String(row.depplandtime).slice(0, 8);
+      calendarDate(calendarDay);
+      const relation = calendarDayRelation(calendarDay, serviceDate);
+      relationCounts[relation] = (relationCounts[relation] ?? 0) + 1;
+      if (!allowedCalendarDays.has(calendarDay)) {
+        throw calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset);
+      }
+      if (calendarDay !== serviceDate) continue;
+      const key = JSON.stringify([
+        itinerary.trainNumber,
+        itinerary.departureStationId,
+        itinerary.arrivalStationId,
+      ]);
+      if (projected.has(key)) throw new Error(`TAGO_OD_DUPLICATE: ${itinerary.trainNumber}`);
+      projected.set(key, itinerary);
+    } catch (error) {
+      firstError ??= error;
     }
-    if (calendarDay !== serviceDate) continue;
-    const key = JSON.stringify([
-      itinerary.trainNumber,
-      itinerary.departureStationId,
-      itinerary.arrivalStationId,
-    ]);
-    if (projected.has(key)) throw new Error(`TAGO_OD_DUPLICATE: ${itinerary.trainNumber}`);
-    projected.set(key, itinerary);
   }
-  return projected;
+  if (firstError) {
+    firstError.calendarDateWindowInventory = calendarDateWindowInventory(queryCalendarOffset, "REJECTED", relationCounts);
+    throw firstError;
+  }
+  return {
+    projected,
+    inventory: calendarDateWindowInventory(queryCalendarOffset, "ACCEPTED", relationCounts),
+  };
 }
 
 function corroborateTagoCalendarDateWindows([first, second]) {
