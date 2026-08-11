@@ -64,18 +64,20 @@ test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청
 });
 
 test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed한다", async () => {
-  const nativeFailure = ({ statusCode = 200, requestError, streamError } = {}) => (url, options, onResponse) => {
-    let requestErrorListener;
+  const nativeFailure = ({ statusCode = 200, requestError, streamError, secureConnected = false } = {}) => (url, options, onResponse) => {
+    const requestListeners = new Map();
     const request = {
       once(event, listener) {
-        if (event === "error") requestErrorListener = listener;
+        requestListeners.set(event, listener);
         return request;
       },
       end() {
         queueMicrotask(() => {
-          if (requestError) return requestErrorListener(requestError);
+          if (secureConnected) requestListeners.get("socket")?.({ secureConnecting: false, once() { return this; } });
+          if (requestError) return requestListeners.get("error")(requestError);
           const response = {
             statusCode,
+            resume() {},
             setEncoding() {},
             once(event, listener) {
               if (event === "error" && streamError) queueMicrotask(() => listener(streamError));
@@ -94,7 +96,7 @@ test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed�
     [nativeFailure({ statusCode: 503 }), /HTTP_503$/],
     [nativeFailure({ streamError: Object.assign(new Error("stream"), { code: "ECONNRESET" }) }), /NETWORK_SOCKET$/],
     [nativeFailure({ requestError: Object.assign(new Error("request"), { code: "ENOTFOUND" }) }), /NETWORK_DNS$/],
-    [nativeFailure({ requestError: Object.assign(new Error("abort"), { name: "AbortError" }) }), /NETWORK_REQUEST_TIMEOUT$/],
+    [nativeFailure({ requestError: Object.assign(new Error("abort"), { name: "AbortError" }), secureConnected: true }), /NETWORK_REQUEST_TIMEOUT$/],
   ];
   for (const [httpsRequestImpl, expectation] of cases) {
     await assert.rejects(fetchKasiPublicHolidayCalendar({
@@ -104,6 +106,109 @@ test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed�
       httpsRequestImpl,
     }), expectation);
   }
+});
+
+test("KASI native HTTPS는 TLS secureConnect 전 AbortError만 connect timeout으로 한 번 재시도한다", async () => {
+  let calls = 0;
+  const holidays = await fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: (url, options, onResponse) => {
+      calls += 1;
+      const requestListeners = new Map();
+      const request = {
+        once(event, listener) { requestListeners.set(event, listener); return request; },
+        end() {
+          queueMicrotask(() => {
+            const socket = { secureConnecting: calls !== 2, once() { return socket; } };
+            requestListeners.get("socket")?.(socket);
+            if (calls === 1) {
+              requestListeners.get("error")(Object.assign(new Error("abort"), { name: "AbortError", code: "ABORT_ERR" }));
+              return;
+            }
+            const response = {
+              statusCode: 200,
+              setEncoding() {},
+              once(event, listener) { if (event === "end") queueMicrotask(listener); return response; },
+              on(event, listener) {
+                if (event === "data") queueMicrotask(() => listener(holidayXml([{ date: "20260717", holiday: "Y" }])));
+                return response;
+              },
+            };
+            onResponse(response);
+          });
+        },
+      };
+      return request;
+    },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual([...holidays], ["20260717"]);
+});
+
+test("KASI native HTTPS는 TLS secureConnect 뒤 AbortError를 request timeout으로 fail closed하고 재시도하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: () => {
+      calls += 1;
+      const requestListeners = new Map();
+      const request = {
+        once(event, listener) { requestListeners.set(event, listener); return request; },
+        end() {
+          queueMicrotask(() => {
+            const socket = { secureConnecting: false, once() { return socket; } };
+            requestListeners.get("socket")?.(socket);
+            requestListeners.get("error")(Object.assign(new Error("abort"), { name: "AbortError", code: "ABORT_ERR" }));
+          });
+        },
+      };
+      return request;
+    },
+  }), (error) => {
+    assert.equal(error.failureCategory, "NETWORK_REQUEST_TIMEOUT");
+    assert.equal(error.attemptCount, 1);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test("KASI native HTTPS는 non-2xx 응답을 즉시 KASI_HTTP으로 종료하고 body를 drain한다", async () => {
+  let resumed = 0;
+  let endListenerRegistered = false;
+  let bodyCollected = false;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: (url, options, onResponse) => {
+      const request = {
+        once() { return request; },
+        end() {
+          queueMicrotask(() => onResponse({
+            statusCode: 503,
+            resume() { resumed += 1; },
+            setEncoding() { bodyCollected = true; },
+            once(event, listener) {
+              if (event === "end") {
+                endListenerRegistered = true;
+                queueMicrotask(listener);
+              }
+              return this;
+            },
+            on() { bodyCollected = true; return this; },
+          }));
+        },
+      };
+      return request;
+    },
+  }), /KASI public holiday request failed: HTTP_503$/);
+  assert.equal(resumed, 1);
+  assert.equal(endListenerRegistered, false);
+  assert.equal(bodyCollected, false);
 });
 
 test("KASI 공휴일 달력은 요청 월 전체를 HTTPS 정본에서 가져와 휴일만 반환한다", async () => {

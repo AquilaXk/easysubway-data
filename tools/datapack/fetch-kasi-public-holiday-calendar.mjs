@@ -65,20 +65,48 @@ export async function fetchKasiPublicHolidayCalendar({
 
 function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
   return new Promise((resolve, reject) => {
+    let secureConnected = false;
     const request = httpsRequestImpl(url, { method: "GET", headers, signal }, (response) => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume();
+        resolve({ ok: false, status: response.statusCode });
+        return;
+      }
       const chunks = [];
       response.setEncoding("utf8");
       response.once("error", reject);
       response.on("data", (chunk) => chunks.push(chunk));
       response.once("end", () => resolve({
-        ok: response.statusCode >= 200 && response.statusCode < 300,
+        ok: true,
         status: response.statusCode,
         text: async () => chunks.join(""),
       }));
     });
-    request.once("error", reject);
+    request.once("socket", (socket) => {
+      if (socket.secureConnecting === false) {
+        secureConnected = true;
+        return;
+      }
+      socket.once("secureConnect", () => { secureConnected = true; });
+    });
+    request.once("error", (error) => reject(nativeRequestFailure(error, secureConnected)));
     request.end();
   });
+}
+
+function nativeRequestFailure(error, secureConnected) {
+  if (!secureConnected && isNativeAbortError(error)) {
+    return Object.assign(new Error("KASI native HTTPS connect timed out"), {
+      code: "UND_ERR_CONNECT_TIMEOUT",
+      cause: error,
+    });
+  }
+  return error;
+}
+
+function isNativeAbortError(error) {
+  const details = transportDetails(error);
+  return details !== null && (details.name === "AbortError" || details.code === "ABORT_ERR");
 }
 
 function parseMonth(xml, { year, month }) {
