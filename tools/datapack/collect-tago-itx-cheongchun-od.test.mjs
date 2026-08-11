@@ -95,6 +95,38 @@ test("TAGO ITX roster collector는 serviceDate와 dayCd 요일 불일치를 prov
   }), /dayCd 7 must be a Saturday/);
 });
 
+test("TAGO ITX roster는 selected service date는 보존하고 모든 OD query를 다음 달력일로 보낸다", async () => {
+  for (const { serviceDate, expectedQueryDate } of [
+    { serviceDate: "20260731", expectedQueryDate: "20260801" },
+    { serviceDate: "20261231", expectedQueryDate: "20270101" },
+    { serviceDate: "20280229", expectedQueryDate: "20280301" },
+  ]) {
+    const requestedDates = [];
+    const fallback = validFetch({ responseServiceDate: serviceDate });
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate,
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) {
+          requestedDates.push(parsed.searchParams.get("depPlandTime"));
+        }
+        return fallback(url);
+      },
+    });
+
+    assert.deepEqual(requestedDates, [expectedQueryDate, expectedQueryDate]);
+    assert.equal(artifact.serviceDate, serviceDate);
+    assert.equal(artifact.expectedOdCount, 2);
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.credentialRedacted, true);
+    assert.equal(JSON.stringify(artifact).includes("fixture-credential-must-not-leak"), false);
+  }
+});
+
 test("ITX OD matrix hash는 정렬된 service date·canonical/provider endpoint tuple로 결정된다", () => {
   const matrix = buildItxOdMatrix("20260715", [
     { providerStationId: "B" },
@@ -1145,18 +1177,23 @@ test("TAGO ITX-청춘 probe는 grade 없음·provider failure·역순 시간을 
   await context.test("duplicate train number", async () => {
     await assert.rejects(collectTagoItxCheongchunOd({
       serviceKey: "key", departureDate: "2026-07-14", kricServiceDayCode: "8",
-      fetchImpl: validFetch({ duplicateOd: true }),
+      fetchImpl: validFetch({ duplicateOd: true, useQueryDate: true }),
     }), /duplicate train number/);
   });
   await context.test("arrival before departure", async () => {
     await assert.rejects(collectTagoItxCheongchunOd({
       serviceKey: "key", departureDate: "2026-07-14", kricServiceDayCode: "8",
-      fetchImpl: validFetch({ reverseTime: true }),
+      fetchImpl: validFetch({ reverseTime: true, useQueryDate: true }),
     }), /arrival must follow departure/);
   });
 });
 
-function validFetch({ duplicateOd = false, reverseTime = false } = {}) {
+function validFetch({
+  duplicateOd = false,
+  reverseTime = false,
+  responseServiceDate = "20260715",
+  useQueryDate = false,
+} = {}) {
   return async (url) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("GetVhcleKndList")) {
@@ -1171,7 +1208,9 @@ function validFetch({ duplicateOd = false, reverseTime = false } = {}) {
         : tagoResponse([{ nodeid: "NAT140873", nodename: "춘천" }]);
     }
     const reverse = parsed.searchParams.get("depPlaceId") === "NAT140873";
-    const serviceDate = parsed.searchParams.get("depPlandTime") ?? "20260714";
+    const serviceDate = useQueryDate
+      ? parsed.searchParams.get("depPlandTime") ?? "20260714"
+      : responseServiceDate;
     const row = {
       trainno: reverse ? "2002" : "2001",
       traingradename: "ITX-청춘",
