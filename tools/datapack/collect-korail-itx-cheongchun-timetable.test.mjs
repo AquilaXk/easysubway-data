@@ -1132,9 +1132,13 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
         collectTimetableImpl: async ({ runDate }) => {
           const mismatchPlan = {
             ...planRow("02001", departure, arrival, `${runDate}060000`, `${runDate}080000`),
+            run_ymd: runDate,
             rawProviderRow,
           };
-          const validPlan = planRow("02002", "춘천", "용산", `${runDate}070000`, `${runDate}090000`);
+          const validPlan = {
+            ...planRow("02002", "춘천", "용산", `${runDate}070000`, `${runDate}090000`),
+            run_ymd: runDate,
+          };
           return validateKorailItxPlans({
             plans: reverse ? [validPlan, mismatchPlan] : [mismatchPlan, validPlan],
             materialized: tagoMaterializedFixture(),
