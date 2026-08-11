@@ -2150,7 +2150,7 @@ test("ITX promotion은 freshness·payload sets·current ADMITTED authority를 �
         coverageContractPath: contractPath,
         repositoryRoot: dir,
         now: new Date("2026-07-15T02:00:00.000Z"),
-      }), /ITX admission dates must be today through 6 days/);
+      }), /ITX admission dates must be today through 13 days/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

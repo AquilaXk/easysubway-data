@@ -48,7 +48,7 @@ async function withoutTotalCount(response) {
   });
 }
 
-test("ITX admission 날짜는 KST 오늘~6일과 dayCd 요일을 검증한다", () => {
+test("ITX admission 날짜는 KST 오늘~13일과 dayCd 요일을 검증한다", () => {
   const serviceDates = { "8": "20260715", "7": "20260718", "9": "20260719" };
   assert.deepEqual(validateItxServiceDates(serviceDates, {
     now: new Date("2026-07-14T15:00:00.000Z"),
@@ -57,7 +57,7 @@ test("ITX admission 날짜는 KST 오늘~6일과 dayCd 요일을 검증한다", 
   assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260713" }, {
     now: new Date("2026-07-14T00:00:00.000Z"),
     replay: false,
-  }), /today through 6 days/);
+  }), /today through 13 days/);
   assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260718" }, {
     now: new Date("2026-07-14T00:00:00.000Z"),
     replay: false,
@@ -72,9 +72,17 @@ test("ITX admission 날짜는 KST 오늘~6일과 dayCd 요일을 검증한다", 
   assert.deepEqual(validateItxServiceDates({ "8": "20280229", "7": "20280304", "9": "20280305" }, {
     now: new Date("2028-02-27T15:00:00.000Z"), replay: false,
   }), { "8": "20280229", "7": "20280304", "9": "20280305" });
-  assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260722" }, {
-    now: new Date("2026-07-14T00:00:00.000Z"), replay: false,
-  }), /today through 6 days/);
+  const liveDates = { "8": "20260811", "7": "20260822", "9": "20260816" };
+  assert.deepEqual(validateItxServiceDates(liveDates, {
+    now: new Date("2026-08-11T09:17:00.000Z"), replay: false,
+  }), liveDates);
+  const upperBoundDates = { ...serviceDates, "8": "20260728" };
+  assert.deepEqual(validateItxServiceDates(upperBoundDates, {
+    now: new Date("2026-07-14T15:00:00.000Z"), replay: false,
+  }), upperBoundDates);
+  assert.throws(() => validateItxServiceDates({ ...serviceDates, "8": "20260729" }, {
+    now: new Date("2026-07-14T15:00:00.000Z"), replay: false,
+  }), /today through 13 days/);
 });
 
 test("TAGO ITX roster collector는 serviceDate와 dayCd 요일 불일치를 provider 호출 전에 거부한다", async () => {

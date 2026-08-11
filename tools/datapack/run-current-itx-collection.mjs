@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseArgs } from "./check-timetable-snapshot-freshness.mjs";
+import { ITX_ADMISSION_LOOKAHEAD_DAYS } from "./collect-tago-itx-cheongchun-od.mjs";
 import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
@@ -80,7 +81,7 @@ async function assertBoundOutputParent(binding) {
 function kstWindow(now) {
   const shifted = new Date(now.getTime() + 9 * 3_600_000);
   const base = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
-  return Array.from({ length: 7 }, (_, offset) => {
+  return Array.from({ length: ITX_ADMISSION_LOOKAHEAD_DAYS }, (_, offset) => {
     const candidate = new Date(base + offset * 86_400_000);
     return {
       date: `${candidate.getUTCFullYear()}${String(candidate.getUTCMonth() + 1).padStart(2, "0")}${String(candidate.getUTCDate()).padStart(2, "0")}`,
@@ -94,7 +95,7 @@ function kstWindow(now) {
 function holidayAwareServiceDates(window, holidays) {
   const day8 = window.find(({ date, weekday }) => weekday >= 1 && weekday <= 5 && !holidays.has(date));
   const day7 = window.find(({ date, weekday }) => weekday === 6 && !holidays.has(date));
-  const day9 = window.find(({ date, weekday }) => weekday === 0 || holidays.has(date));
+  const day9 = window.find(({ weekday }) => weekday === 0);
   if (!day8 || !day7 || !day9) throw new Error("no holiday-aware ITX admission date within window");
   return { "8": day8.date, "7": day7.date, "9": day9.date };
 }
