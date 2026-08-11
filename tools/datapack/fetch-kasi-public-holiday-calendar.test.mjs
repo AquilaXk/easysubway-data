@@ -75,6 +75,67 @@ test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일�
   await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "secret-key", year: 2026, months: [7], fetchImpl: async () => { throw new Error("network"); } }), /NETWORK/);
 });
 
+test("KASI transport 오류는 원문을 노출하지 않고 closed category로 분류한다", async () => {
+  const runFetch = (error) => fetchKasiPublicHolidayCalendar({
+    serviceKey: "secret-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => { throw error; },
+  });
+  const runBody = (error) => fetchKasiPublicHolidayCalendar({
+    serviceKey: "secret-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => ({ ok: true, text: async () => { throw error; } }),
+  });
+  const transportError = ({ name = "Error", code, cause } = {}) => Object.assign(new Error("https://apis.data.go.kr/?ServiceKey=secret-key raw diagnostic"), { name, code, cause });
+  const cases = [
+    [{ code: "ENOTFOUND" }, "NETWORK_DNS"],
+    [{ code: "EAI_AGAIN" }, "NETWORK_DNS"],
+    [{ code: "ERR_TLS_CERT_ALTNAME_INVALID" }, "NETWORK_TLS"],
+    [{ code: "CERT_HAS_EXPIRED" }, "NETWORK_TLS"],
+    [{ code: "DEPTH_ZERO_SELF_SIGNED_CERT" }, "NETWORK_TLS"],
+    [{ code: "SELF_SIGNED_CERT_IN_CHAIN" }, "NETWORK_TLS"],
+    [{ code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" }, "NETWORK_TLS"],
+    [{ code: "UNABLE_TO_GET_ISSUER_CERT_LOCALLY" }, "NETWORK_TLS"],
+    [{ code: "ERR_SSL_WRONG_VERSION_NUMBER" }, "NETWORK_TLS"],
+    [{ code: "ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION" }, "NETWORK_TLS"],
+    [{ code: "ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE" }, "NETWORK_TLS"],
+    [{ code: "UND_ERR_CONNECT_TIMEOUT" }, "NETWORK_CONNECT_TIMEOUT"],
+    [{ name: "TimeoutError" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ name: "AbortError" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "ABORT_ERR" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "UND_ERR_HEADERS_TIMEOUT" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "UND_ERR_BODY_TIMEOUT" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "ECONNRESET" }, "NETWORK_SOCKET"],
+    [{ code: "ECONNREFUSED" }, "NETWORK_SOCKET"],
+    [{ code: "EPIPE" }, "NETWORK_SOCKET"],
+    [{ code: "ETIMEDOUT" }, "NETWORK_SOCKET"],
+    [{ code: "UND_ERR_SOCKET" }, "NETWORK_SOCKET"],
+  ];
+  for (const [options, category] of cases) {
+    await assert.rejects(runFetch(transportError(options)), new RegExp(`KASI public holiday request failed: ${category}$`));
+  }
+  await assert.rejects(runBody(transportError({ code: "ECONNRESET" })), /KASI public holiday request failed: NETWORK_SOCKET$/);
+
+  let nested = transportError({ code: "ENOTFOUND" });
+  for (let depth = 1; depth <= 4; depth += 1) {
+    nested = transportError({ cause: nested });
+    await assert.rejects(runFetch(nested), /KASI public holiday request failed: NETWORK_DNS$/);
+  }
+  const tooDeep = transportError({ cause: nested });
+  await assert.rejects(runFetch(tooDeep), /KASI public holiday request failed: NETWORK_UNKNOWN$/);
+  const cyclic = transportError({ code: "ENOTFOUND" });
+  cyclic.cause = cyclic;
+  await assert.rejects(runFetch(cyclic), /KASI public holiday request failed: NETWORK_UNKNOWN$/);
+
+  await assert.rejects(runFetch(transportError({ code: "UNLISTED_RAW_CODE" })), (error) => {
+    assert.equal(error.message, "KASI public holiday request failed: NETWORK_UNKNOWN");
+    assert.doesNotMatch(error.message, /secret-key|apis\.data\.go\.kr|UNLISTED_RAW_CODE|raw diagnostic/);
+    return true;
+  });
+});
+
 test("KASI 공휴일 달력은 totalCount=0의 empty/self-closing items만 유효한 빈 월로 인정한다", async () => {
   const empty = `<?xml version="1.0"?><response><header><resultCode>00</resultCode></header><body><items/><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>0</totalCount></body></response>`;
   assert.deepEqual([...await fetchKasiPublicHolidayCalendar({ serviceKey: "test-key", year: 2026, months: [7], fetchImpl: async () => new Response(empty) })], []);
