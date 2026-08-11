@@ -749,6 +749,16 @@ function projectTagoCalendarDateWindow(rows, {
   let firstError = null;
   for (const [index, row] of rows.entries()) {
     try {
+      const calendarDay = String(row.depplandtime).slice(0, 8);
+      let relation = null;
+      try {
+        providerTimestamp(row.depplandtime, `row[${index}].depplandtime`);
+        calendarDate(calendarDay);
+        relation = calendarDayRelation(calendarDay, serviceDate);
+        relationCounts[relation] = (relationCounts[relation] ?? 0) + 1;
+      } catch {
+        // normalizeItinerary keeps the existing typed validation failure precedence.
+      }
       const itinerary = {
         ...normalizeItinerary(row, index, {
           departureStationName: departureStation.providerStationName,
@@ -757,10 +767,9 @@ function projectTagoCalendarDateWindow(rows, {
         departureStationId: departureStation.canonicalStationId,
         arrivalStationId: arrivalStation.canonicalStationId,
       };
-      const calendarDay = String(row.depplandtime).slice(0, 8);
       calendarDate(calendarDay);
-      const relation = calendarDayRelation(calendarDay, serviceDate);
-      relationCounts[relation] = (relationCounts[relation] ?? 0) + 1;
+      relation ??= calendarDayRelation(calendarDay, serviceDate);
+      if (!(relation in relationCounts)) relationCounts[relation] = 1;
       if (!allowedCalendarDays.has(calendarDay)) {
         throw calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset);
       }

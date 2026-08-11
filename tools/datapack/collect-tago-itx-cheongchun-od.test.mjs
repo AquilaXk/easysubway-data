@@ -197,6 +197,43 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
     }
   });
 
+  await context.test("valid D+1 departure timestamp의 unrelated fare failure도 relation count에 남긴다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260715") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          row,
+          { ...row, trainno: "2035", depplandtime: "20260716030000", arrplandtime: "20260716030500", adultcharge: "invalid-fare" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    assert.equal(artifact.failedOds[0].failureContext, "operation=GetStrtpntAlocFndTrainInfo,reason=field_contract_mismatch");
+    assert.deepEqual(artifact.calendarDateWindowInventory.slice(0, 2), [
+      { queryCalendarOffset: 0, outcome: "REJECTED", relationCounts: { next_calendar_day: 1, same_calendar_day: 1 } },
+      { queryCalendarOffset: 1, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+    ]);
+  });
+
   await context.test("D then D+1은 같은 non-date query params로 순서대로 조회하고 adjacent observation을 제외한다", async () => {
     const odQueries = [];
     const fallback = validFetch();
