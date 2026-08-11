@@ -742,7 +742,10 @@ function projectTagoCalendarDateWindow(rows, {
   arrivalStation,
 }) {
   const allowedCalendarDays = new Set([serviceDate, queryDate]);
-  if (queryDate === serviceDate) allowedCalendarDays.add(previousCalendarDay(serviceDate));
+  if (queryDate === serviceDate) {
+    allowedCalendarDays.add(previousCalendarDay(serviceDate));
+    allowedCalendarDays.add(nextCalendarDay(serviceDate));
+  }
   const queryCalendarOffset = queryDate === serviceDate ? 0 : 1;
   const projected = new Map();
   const relationCounts = {};
