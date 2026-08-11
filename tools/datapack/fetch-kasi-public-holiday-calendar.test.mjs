@@ -12,6 +12,100 @@ test("KASI calendar는 유효한 year·months에서 malformed credential을 requ
 const holidayXml = (items, totalCount = items.length) => `<?xml version="1.0" encoding="UTF-8"?>
 <response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday }) => `<item><locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
 
+test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청을 한 번 종료한다", async () => {
+  const requests = [];
+  const holidays = await fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: (url, options, onResponse) => {
+      const listeners = new Map();
+      const request = {
+        once(event, listener) {
+          listeners.set(event, listener);
+          return request;
+        },
+        end() {
+          requests.push({ url, options, endCount: 1 });
+          queueMicrotask(() => {
+            const response = {
+              statusCode: 200,
+              setEncoding(encoding) { assert.equal(encoding, "utf8"); },
+              once(event, listener) {
+                listeners.set(`response:${event}`, listener);
+                if (event === "end") queueMicrotask(listener);
+                return response;
+              },
+              on(event, listener) {
+                if (event === "data") queueMicrotask(() => listener(holidayXml([{ date: "20260717", holiday: "Y" }])));
+                return response;
+              },
+            };
+            onResponse(response);
+          });
+        },
+      };
+      return request;
+    },
+  });
+
+  assert.deepEqual([...holidays], ["20260717"]);
+  assert.equal(requests.length, 1);
+  const [{ url, options, endCount }] = requests;
+  assert.equal(url.origin, "https://apis.data.go.kr");
+  assert.equal(url.pathname, "/B090041/openapi/service/SpcdeInfoService/getRestDeInfo");
+  assert.equal(url.searchParams.get("ServiceKey"), "test-key");
+  assert.equal(url.searchParams.get("solYear"), "2026");
+  assert.equal(url.searchParams.get("solMonth"), "07");
+  assert.equal(options.method, "GET");
+  assert.equal(options.headers.accept, "application/xml, text/xml");
+  assert.equal(options.signal.aborted, false);
+  assert.equal(endCount, 1);
+});
+
+test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed한다", async () => {
+  const nativeFailure = ({ statusCode = 200, requestError, streamError } = {}) => (url, options, onResponse) => {
+    let requestErrorListener;
+    const request = {
+      once(event, listener) {
+        if (event === "error") requestErrorListener = listener;
+        return request;
+      },
+      end() {
+        queueMicrotask(() => {
+          if (requestError) return requestErrorListener(requestError);
+          const response = {
+            statusCode,
+            setEncoding() {},
+            once(event, listener) {
+              if (event === "error" && streamError) queueMicrotask(() => listener(streamError));
+              if (event === "end" && !streamError) queueMicrotask(listener);
+              return response;
+            },
+            on() { return response; },
+          };
+          onResponse(response);
+        });
+      },
+    };
+    return request;
+  };
+  const cases = [
+    [nativeFailure({ statusCode: 503 }), /HTTP_503$/],
+    [nativeFailure({ streamError: Object.assign(new Error("stream"), { code: "ECONNRESET" }) }), /NETWORK_SOCKET$/],
+    [nativeFailure({ requestError: Object.assign(new Error("request"), { code: "ENOTFOUND" }) }), /NETWORK_DNS$/],
+    [nativeFailure({ requestError: Object.assign(new Error("abort"), { name: "AbortError" }) }), /NETWORK_REQUEST_TIMEOUT$/],
+  ];
+  for (const [httpsRequestImpl, expectation] of cases) {
+    await assert.rejects(fetchKasiPublicHolidayCalendar({
+      serviceKey: "test-key",
+      year: 2026,
+      months: [7],
+      httpsRequestImpl,
+    }), expectation);
+  }
+});
+
 test("KASI 공휴일 달력은 요청 월 전체를 HTTPS 정본에서 가져와 휴일만 반환한다", async () => {
   const requests = [];
   const holidays = await fetchKasiPublicHolidayCalendar({

@@ -1,4 +1,5 @@
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { request as httpsRequest } from "node:https";
 
 const ENDPOINT = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
 
@@ -6,7 +7,8 @@ export async function fetchKasiPublicHolidayCalendar({
   serviceKey,
   year,
   months,
-  fetchImpl = fetch,
+  fetchImpl,
+  httpsRequestImpl = httpsRequest,
 } = {}) {
   const normalizedServiceKey = normalizeDataGoKrServiceKey(serviceKey, { label: "DATA_GO_KR_SERVICE_KEY" });
   if (!Number.isInteger(year) || year < 2000 || year > 9999) throw new Error("KASI public holiday year is invalid");
@@ -26,11 +28,16 @@ export async function fetchKasiPublicHolidayCalendar({
     let attemptCount = 0;
     for (attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
       try {
-        response = await fetchImpl(url, {
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-          headers: { accept: "application/xml, text/xml" },
-        });
+        response = fetchImpl
+          ? await fetchImpl(url, {
+            redirect: "error",
+            signal: AbortSignal.timeout(15_000),
+            headers: { accept: "application/xml, text/xml" },
+          })
+          : await nativeHttpsGet(url, {
+            signal: AbortSignal.timeout(15_000),
+            headers: { accept: "application/xml, text/xml" },
+          }, httpsRequestImpl);
         break;
       } catch (error) {
         const failure = transportFailure(error, attemptCount);
@@ -54,6 +61,24 @@ export async function fetchKasiPublicHolidayCalendar({
     for (const date of dates) holidays.add(date);
   }
   return holidays;
+}
+
+function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequestImpl(url, { method: "GET", headers, signal }, (response) => {
+      const chunks = [];
+      response.setEncoding("utf8");
+      response.once("error", reject);
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.once("end", () => resolve({
+        ok: response.statusCode >= 200 && response.statusCode < 300,
+        status: response.statusCode,
+        text: async () => chunks.join(""),
+      }));
+    });
+    request.once("error", reject);
+    request.end();
+  });
 }
 
 function parseMonth(xml, { year, month }) {
