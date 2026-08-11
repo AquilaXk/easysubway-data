@@ -688,13 +688,18 @@ function tagoServiceDayPartition(value) {
   return { calendarDay, serviceDay };
 }
 
-function calendarDateMismatchError(index, calendarDay, requestedServiceDay) {
+function calendarDateMismatchError(index, calendarDay, requestedServiceDay, queryCalendarOffset) {
+  if (queryCalendarOffset !== 0 && queryCalendarOffset !== 1) {
+    throw new Error("TAGO OD query calendar offset is invalid");
+  }
   const relation = calendarDay === previousCalendarDay(requestedServiceDay)
     ? "previous_calendar_day"
     : calendarDay === nextCalendarDay(requestedServiceDay)
       ? "next_calendar_day"
       : "non_adjacent_calendar_day";
-  return new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+  const error = new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+  error.queryCalendarOffset = queryCalendarOffset;
+  return error;
 }
 
 function projectTagoCalendarDateWindow(rows, {
@@ -705,6 +710,7 @@ function projectTagoCalendarDateWindow(rows, {
 }) {
   const allowedCalendarDays = new Set([serviceDate, queryDate]);
   if (queryDate === serviceDate) allowedCalendarDays.add(previousCalendarDay(serviceDate));
+  const queryCalendarOffset = queryDate === serviceDate ? 0 : 1;
   const projected = new Map();
   for (const [index, row] of rows.entries()) {
     const itinerary = {
@@ -718,7 +724,7 @@ function projectTagoCalendarDateWindow(rows, {
     const calendarDay = String(row.depplandtime).slice(0, 8);
     calendarDate(calendarDay);
     if (!allowedCalendarDays.has(calendarDay)) {
-      throw calendarDateMismatchError(index, calendarDay, serviceDate);
+      throw calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset);
     }
     if (calendarDay !== serviceDate) continue;
     const key = JSON.stringify([
@@ -815,10 +821,11 @@ function operationEvidence({ operation, endpoint, pageCount, requestCount, total
 function tagoOdFailure(error) {
   const message = error instanceof Error ? error.message : "";
   const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day)$/.exec(message)?.[1];
-  if (dateMismatch) {
+  const queryCalendarOffset = error?.queryCalendarOffset;
+  if (dateMismatch && (queryCalendarOffset === 0 || queryCalendarOffset === 1)) {
     return {
       reasonCode: "PROVIDER_SCHEMA_FAILURE",
-      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=${dateMismatch}`,
+      failureContext: `operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=${dateMismatch},queryCalendarOffset=${queryCalendarOffset}`,
     };
   }
   const httpStatus = /^TAGO GetStrtpntAlocFndTrainInfo HTTP (\d{3})$/.exec(message)?.[1];
