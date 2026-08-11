@@ -244,6 +244,47 @@ test("KASI 최종 실패에서는 collector 전에 closed preflight receipt만 �
   assert.doesNotMatch(receipt, /apis\.data\.go\.kr|secret-key|raw body|2026/);
 });
 
+test("KASI 실패 receipt는 output parent 교체 뒤에도 bound directory에만 생성한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-receipt-parent-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-receipt-outside-"));
+  const parent = path.join(root, "output");
+  const originalParent = `${parent}-original`;
+  await mkdir(parent);
+  const freshnessOutput = path.join(parent, "freshness.json");
+  let collectorCalls = 0;
+  const failure = Object.assign(new Error("KASI connect timeout"), {
+    failureCategory: "NETWORK_CONNECT_TIMEOUT",
+    attemptCount: 2,
+  });
+  await assert.rejects(runCurrentItxCollectionCli({
+    argv: [
+      "--output", path.join(parent, "result.json"),
+      "--completeness-output", path.join(parent, "completeness.json"),
+      "--station-catalog-pack", path.join(parent, "station-catalog-pack"),
+      "--freshness-output", freshnessOutput,
+    ],
+    env: VALID_ENV,
+    fetchPublicHolidays: async () => { throw failure; },
+    beforeFailureReceiptWrite: async () => {
+      await rename(parent, originalParent);
+      await symlink(outside, parent);
+    },
+    collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
+  }), (error) => error === failure);
+  assert.equal(collectorCalls, 0);
+  assert.deepEqual(JSON.parse(await readFile(path.join(originalParent, "freshness.json"), "utf8")), {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: "NETWORK_CONNECT_TIMEOUT",
+    attemptCount: 2,
+  });
+  await assert.rejects(lstat(path.join(outside, "freshness.json")));
+  await assert.rejects(lstat(path.join(parent, "result.json")));
+  await assert.rejects(lstat(path.join(parent, "completeness.json")));
+});
+
 test("14일 bounded 창의 모든 토요일이 공휴일이면 day7 evidence 없이 collector 전에 fail closed한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-holiday-saturday-"));
   const output = path.join(dir, "result.json");
