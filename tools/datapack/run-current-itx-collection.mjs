@@ -129,7 +129,13 @@ export async function runCurrentItxCollectionCli({
   normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
   await assertAbsent([args.output, args["completeness-output"], args["freshness-output"]]);
   const outputParent = await bindOutputParent(args.output);
-  const holidayDates = await (fetchPublicHolidays ?? defaultPublicHolidays)({ now, env, fetchHolidayCalendar });
+  let holidayDates;
+  try {
+    holidayDates = await (fetchPublicHolidays ?? defaultPublicHolidays)({ now, env, fetchHolidayCalendar });
+  } catch (error) {
+    await writeKasiFailureReceipt(outputParent, args["freshness-output"], error);
+    throw error;
+  }
   if (!(holidayDates instanceof Set) || [...holidayDates].some((date) => typeof date !== "string" || !/^\d{8}$/.test(date))) {
     throw new Error("KASI public holiday calendar is invalid");
   }
@@ -157,6 +163,37 @@ export async function runCurrentItxCollectionCli({
     repositoryRoot,
   });
   return { ...result, freshnessEvidence, serviceDates };
+}
+
+async function writeKasiFailureReceipt(outputParent, freshnessOutput, error) {
+  const receipt = {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: safeFailureCategory(error?.failureCategory),
+    attemptCount: safeAttemptCount(error?.attemptCount),
+  };
+  await assertBoundOutputParent(outputParent);
+  await writeFile(path.join(outputParent.parent, path.basename(freshnessOutput)), `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o644 });
+}
+
+function safeFailureCategory(value) {
+  const categories = new Set([
+    "NETWORK_DNS",
+    "NETWORK_TLS",
+    "NETWORK_CONNECT_TIMEOUT",
+    "NETWORK_REQUEST_TIMEOUT",
+    "NETWORK_SOCKET",
+    "NETWORK_UNKNOWN",
+    "KASI_HTTP",
+    "KASI_SCHEMA",
+  ]);
+  return categories.has(value) ? value : "KASI_FAILURE";
+}
+
+function safeAttemptCount(value) {
+  return value === 1 || value === 2 ? value : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

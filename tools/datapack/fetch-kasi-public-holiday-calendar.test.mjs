@@ -59,6 +59,61 @@ test("KASI 공휴일 달력은 percent-encoded portal key를 한 번만 decode�
   assert.equal(receivedKey, "abc+def==");
 });
 
+test("KASI calendar는 connect timeout만 즉시 한 번 재시도한다", async () => {
+  let calls = 0;
+  const holidays = await fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+      return new Response(holidayXml([{ date: "20260717", holiday: "Y" }]));
+    },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual([...holidays], ["20260717"]);
+});
+
+test("KASI calendar는 두 번째 connect timeout 후 closed attempt metadata를 유지한다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => {
+      calls += 1;
+      throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+    },
+  }), (error) => {
+    assert.equal(error.failureCategory, "NETWORK_CONNECT_TIMEOUT");
+    assert.equal(error.attemptCount, 2);
+    return true;
+  });
+  assert.equal(calls, 2);
+});
+
+test("KASI calendar는 connect timeout 밖의 HTTP·schema·body failure를 재시도하지 않는다", async () => {
+  const cases = [
+    async () => new Response("denied", { status: 403 }),
+    async () => new Response("not xml"),
+    async () => ({ ok: true, text: async () => { throw Object.assign(new Error("raw body error"), { code: "ECONNRESET" }); } }),
+  ];
+  for (const fetchImpl of cases) {
+    let calls = 0;
+    await assert.rejects(fetchKasiPublicHolidayCalendar({
+      serviceKey: "test-key",
+      year: 2026,
+      months: [7],
+      fetchImpl: async (...args) => {
+        calls += 1;
+        return fetchImpl(...args);
+      },
+    }));
+    assert.equal(calls, 1);
+  }
+});
+
 test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일치를 fail closed한다", async () => {
   const run = (response) => fetchKasiPublicHolidayCalendar({
     serviceKey: "secret-key",
