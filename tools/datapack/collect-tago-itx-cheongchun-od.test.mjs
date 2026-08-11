@@ -968,6 +968,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     {
       name: "요청과 다른 역",
       failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=station_mismatch",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800"],
       mutate: (payload) => {
         payload.response.body.items.item[0].depplacename = "청량리";
       },
@@ -975,6 +976,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     {
       name: "익일 03:00 출발",
       failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=next_calendar_day_after_cutoff",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260716030000", "20260716031000"],
       mutate: (payload) => {
         payload.response.body.items.item[0].depplandtime = "20260716030000";
         payload.response.body.items.item[0].arrplandtime = "20260716031000";
@@ -983,6 +985,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     {
       name: "요청 전일 출발",
       failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_service_day",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260714083000", "20260714095000"],
       mutate: (payload) => {
         payload.response.body.items.item[0].depplandtime = "20260714083000";
         payload.response.body.items.item[0].arrplandtime = "20260714095000";
@@ -991,6 +994,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     {
       name: "요청일 이틀 뒤 출발",
       failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=future_service_day",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260717083000", "20260717095000"],
       mutate: (payload) => {
         payload.response.body.items.item[0].depplandtime = "20260717083000";
         payload.response.body.items.item[0].arrplandtime = "20260717095000";
@@ -999,6 +1003,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     {
       name: "불가능한 달력 날짜",
       failureContext: "operation=GetStrtpntAlocFndTrainInfo,reason=field_contract_mismatch",
+      rawValues: ["fixture-credential-must-not-leak", "20260715", "8", "NAT140873", "NAT130126", "2002", "ITX-청춘", "춘천", "청량리", "9800", "20260230083000", "20260230095000"],
       mutate: (payload) => {
         payload.response.body.items.item[0].depplandtime = "20260230083000";
         payload.response.body.items.item[0].arrplandtime = "20260230095000";
@@ -1008,7 +1013,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     await context.test(scenario.name, async () => {
       const fallback = validFetch();
       const artifact = await collectTagoItxCheongchunRoster({
-        serviceKey: "key",
+        serviceKey: "fixture-credential-must-not-leak",
         serviceDate: "20260715",
         kricServiceDayCode: "8",
         canonicalStations: canonicalRosterStations(),
@@ -1031,7 +1036,11 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
       assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
       assert.equal(artifact.failedOds[0].failureContext, scenario.failureContext);
       assert.deepEqual(Object.keys(artifact.failedOds[0]).sort(), ["arrivalStationId", "departureStationId", "failureContext", "reasonCode", "requestCount"]);
-      assert.doesNotMatch(JSON.stringify(artifact.failedOds[0]), /depplandtime|2026071[467]|serviceKey|http/i);
+      const serializedFailure = JSON.stringify(artifact.failedOds[0]);
+      assert.doesNotMatch(serializedFailure, /depplandtime|arrplandtime|serviceKey|https?:\/\//i);
+      for (const rawValue of scenario.rawValues) {
+        assert.equal(serializedFailure.includes(rawValue), false);
+      }
     });
   }
 });
