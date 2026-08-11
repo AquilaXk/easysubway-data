@@ -29,11 +29,17 @@ export async function fetchKasiPublicHolidayCalendar({
         signal: AbortSignal.timeout(15_000),
         headers: { accept: "application/xml, text/xml" },
       });
-    } catch {
-      throw new Error("KASI public holiday request failed: NETWORK");
+    } catch (error) {
+      throw transportFailure(error);
     }
     if (!response?.ok) throw new Error(`KASI public holiday request failed: HTTP_${safeStatus(response?.status)}`);
-    const dates = parseMonth(await response.text(), { year, month });
+    let xml;
+    try {
+      xml = await response.text();
+    } catch (error) {
+      throw transportFailure(error);
+    }
+    const dates = parseMonth(xml, { year, month });
     for (const date of dates) holidays.add(date);
   }
   return holidays;
@@ -84,6 +90,60 @@ function scalar(xml, tag) {
 function nonnegativeInteger(value) {
   if (!/^\d+$/.test(value)) throw new Error("KASI public holiday response schema is invalid");
   return Number(value);
+}
+
+function transportFailure(error) {
+  return new Error(`KASI public holiday request failed: ${transportCategory(error)}`);
+}
+
+function transportCategory(error) {
+  const seen = new Set();
+  let current = error;
+  let category = "NETWORK_UNKNOWN";
+  for (let depth = 0; depth <= 4; depth += 1) {
+    if ((typeof current !== "object" && typeof current !== "function") || current === null || seen.has(current)) return "NETWORK_UNKNOWN";
+    seen.add(current);
+    const details = transportDetails(current);
+    if (details === null) return "NETWORK_UNKNOWN";
+    category = category === "NETWORK_UNKNOWN" ? categoryFor(details) : category;
+    if (details.cause === undefined || details.cause === null) return category;
+    if (depth === 4) return "NETWORK_UNKNOWN";
+    current = details.cause;
+  }
+  return "NETWORK_UNKNOWN";
+}
+
+function transportDetails(error) {
+  try {
+    return {
+      name: typeof error.name === "string" ? error.name : "",
+      code: typeof error.code === "string" ? error.code : "",
+      cause: error.cause,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function categoryFor({ name, code }) {
+  if (["ENOTFOUND", "EAI_AGAIN"].includes(code)) return "NETWORK_DNS";
+  if ([
+    "ERR_TLS_CERT_ALTNAME_INVALID",
+    "CERT_HAS_EXPIRED",
+    "DEPTH_ZERO_SELF_SIGNED_CERT",
+    "SELF_SIGNED_CERT_IN_CHAIN",
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+    "ERR_SSL_WRONG_VERSION_NUMBER",
+    "ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION",
+    "ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE",
+  ].includes(code)) return "NETWORK_TLS";
+  if (code === "UND_ERR_CONNECT_TIMEOUT") return "NETWORK_CONNECT_TIMEOUT";
+  if (["TimeoutError", "AbortError"].includes(name) || ["ABORT_ERR", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"].includes(code)) {
+    return "NETWORK_REQUEST_TIMEOUT";
+  }
+  if (["ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "UND_ERR_SOCKET"].includes(code)) return "NETWORK_SOCKET";
+  return "NETWORK_UNKNOWN";
 }
 
 function decodeXml(value) { return value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'"); }
