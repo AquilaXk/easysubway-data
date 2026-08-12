@@ -5,8 +5,50 @@ import path from "node:path";
 import test from "node:test";
 
 import { runCurrentItxCollectionCli } from "./run-current-itx-collection.mjs";
+import { parseProviderResponseCapture } from "./provider-response-capture.mjs";
 
 const VALID_ENV = Object.freeze({ DATA_GO_KR_SERVICE_KEY: "test-key" });
+
+test("current wrapper는 provider response를 success와 failure 모두 한 번 capture한다", async () => {
+  for (const collectorFails of [false, true]) {
+    const directory = await mkdtemp(path.join(tmpdir(), `current-itx-provider-capture-${collectorFails}-`));
+    const args = [
+      "--output", path.join(directory, "result.json"),
+      "--completeness-output", path.join(directory, "completeness.json"),
+      "--station-catalog-pack", path.join(directory, "station-catalog-pack"),
+      "--freshness-output", path.join(directory, "freshness.json"),
+    ];
+    let upstreamCalls = 0;
+    const invocation = runCurrentItxCollectionCli({
+      argv: args,
+      env: VALID_ENV,
+      now: new Date("2026-08-12T00:00:00.000Z"),
+      fetchPublicHolidays: async () => new Set(),
+      providerFetchImpl: async () => {
+        upstreamCalls += 1;
+        return new Response('{"response":{"header":{"resultCode":"00"},"body":{"items":{"item":[]}}}}', {
+          status: 200,
+          headers: { "content-type": "application/json", "x-secret": "raw-header" },
+        });
+      },
+      collectImpl: async ({ fetchImpl }) => {
+        const response = await fetchImpl("https://apis.data.go.kr/1613000/TrainInfo/GetVhcleKndList?serviceKey=raw-service-key&_type=json");
+        assert.equal(response.status, 200);
+        if (collectorFails) throw new Error("collector fixture failure");
+        return { exitCode: 0 };
+      },
+    });
+    if (collectorFails) await assert.rejects(invocation, /collector fixture failure/);
+    else await invocation;
+
+    assert.equal(upstreamCalls, 1);
+    const captureBytes = await readFile(path.join(directory, "provider-response-capture.json"));
+    const capture = parseProviderResponseCapture(captureBytes);
+    assert.equal(capture.requestCount, 1);
+    assert.deepEqual(capture.selectedServiceDates, { "7": "20260815", "8": "20260812", "9": "20260816" });
+    assert.doesNotMatch(captureBytes.toString("utf8"), /raw-service-key|raw-header|x-secret|serviceKey/);
+  }
+});
 
 test("current ITX wrapper는 malformed credential로 holiday delegate를 호출하지 않는다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "current-itx-invalid-key-"));

@@ -3302,6 +3302,27 @@ test("ITX CLI replay는 candidate 없이 declared output만 stage publication으
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test("ITX CLI는 주입된 provider fetch를 completeness collector에 그대로 전달한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "itx-cli-provider-fetch-"));
+  const output = path.join(dir, "replay.json");
+  const expected = completenessForCandidate(sourceCandidate());
+  const providerFetch = async () => assert.fail("collector fixture가 직접 검증한다");
+  let receivedFetch;
+  try {
+    await writeCoverageContract(dir, "{}");
+    await runKorailItxCompletenessCli({
+      argv: ["--replay", "--day8-date", "20260716", "--day7-date", "20260718", "--day9-date", "20260719", "--station-catalog-pack", PACK_PATH, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: "key" }, repositoryRoot: dir, now: new Date("2026-07-15T02:00:00.000Z"),
+      fetchImpl: providerFetch,
+      collectImpl: async (options) => {
+        receivedFetch = options.fetchImpl;
+        return structuredClone(expected);
+      },
+    });
+    assert.strictEqual(receivedFetch, providerFetch);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("ITX CLI promotion은 station catalog와 주입된 repository root를 전달한다", async () => {
   const repositoryRoot = "/tmp/itx-alternate-checkout";
   const stationCatalogPackPath = "/tmp/itx-station-catalog-pack";
