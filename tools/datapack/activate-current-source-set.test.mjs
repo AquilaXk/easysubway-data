@@ -62,6 +62,23 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
   assert.equal(source.routeMapAdmissionEvidence.snapshotSha256, sha256(snapshotBytes));
   assert.equal(source.routeMapAdmissionEvidence.positionsSha256, snapshot.positionsSha256);
 
+  const changedEdges = structuredClone(snapshot);
+  changedEdges.edges[0].toStationId = changedEdges.edges[2].toStationId;
+  changedEdges.edgesSha256 = sha256(JSON.stringify(changedEdges.edges));
+  changedEdges.contentSha256 = sha256(JSON.stringify({
+    scope: changedEdges.scope,
+    edges: changedEdges.edges,
+    positions: changedEdges.positions,
+  }));
+  const changedEdgeBytes = Buffer.from(`${JSON.stringify(changedEdges)}\n`);
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot: changedEdges,
+    snapshotBytes: changedEdgeBytes,
+    snapshotPath,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  }), /content changed; re-admission required/);
+
   assert.throws(() => activateIncheonTopologyAdmission({
     sourceInventory,
     snapshot,

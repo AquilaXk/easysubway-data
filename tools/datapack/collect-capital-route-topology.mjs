@@ -471,14 +471,26 @@ export function projectCapitalTopologyOwnership(snapshot) {
   const separated = new Set(SOURCE_SEPARATED_INCHEON_LINE_IDS);
   const lines = structuredClone(snapshot.lines.filter(({ lineId }) => !separated.has(lineId)));
   const topologyGaps = structuredClone(snapshot.topologyGaps);
-  return {
+  const lineCount = lines.length;
+  const totalEdgeCount = lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  const contentSha256 = sha256(JSON.stringify(topologyContentPayload(lines, topologyGaps)));
+  const projected = {
     ...structuredClone(snapshot),
     lines,
-    lineCount: lines.length,
-    totalEdgeCount: lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
-    contentSha256: sha256(JSON.stringify(topologyContentPayload(lines, topologyGaps))),
+    lineCount,
+    totalEdgeCount,
+    contentSha256,
     topologyGaps,
   };
+  if (projected.admission != null) {
+    Object.assign(projected.admission, {
+      contentSha256,
+      lineCount,
+      totalEdgeCount,
+      gapLineIds: topologyGaps.map(({ lineId }) => lineId),
+    });
+  }
+  return projected;
 }
 
 export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {

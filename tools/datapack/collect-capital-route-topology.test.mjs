@@ -104,6 +104,13 @@ test("current capital topology ownership projection은 Incheon 1/2만 별도 sou
     projected.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
   );
   assert.notEqual(projected.contentSha256, snapshot.contentSha256);
+  assert.deepEqual(projected.admission, {
+    ...snapshot.admission,
+    contentSha256: projected.contentSha256,
+    lineCount: projected.lineCount,
+    totalEdgeCount: projected.totalEdgeCount,
+    gapLineIds: projected.topologyGaps.map(({ lineId }) => lineId),
+  });
   assert.equal(snapshot.lines.some(({ lineId }) => separated.has(lineId)), true);
 
   const missing = structuredClone(snapshot);

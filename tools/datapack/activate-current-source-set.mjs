@@ -250,6 +250,9 @@ export function activateIncheonTopologyAdmission({
   const stationCodesSha256 = sha256(Buffer.from(JSON.stringify(
     incheon.scope.map(({ stationCode }) => stationCode),
   )));
+  if (topology.contentSha256 !== incheon.contentSha256) {
+    throw new Error("current Incheon topology content changed; re-admission required");
+  }
   source.observedDataUpdatedAt = incheon.observedDataUpdatedAt;
   source.retrievedAt = incheon.capturedAt.slice(0, 10);
   Object.assign(topology, {
