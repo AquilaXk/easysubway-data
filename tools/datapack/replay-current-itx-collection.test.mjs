@@ -67,7 +67,8 @@ test("current capture를 runtime credential과 network 없이 exact 순서로 re
       "--station-catalog-pack", stationCatalogPack,
       "--output", output,
     ]);
-    assert.equal(received.env.DATA_GO_KR_SERVICE_KEY, "offline-provider-replay-key");
+    assert.deepEqual(received.env, {});
+    assert.equal(received.providerServiceKey, "offline-provider-replay-key");
     assert.equal(received.now.toISOString(), "2026-08-12T00:00:00.000Z");
     assert.equal(typeof received.collectImpl, "function");
     assert.equal(result.candidate, null);

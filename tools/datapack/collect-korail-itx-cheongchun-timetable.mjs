@@ -2701,6 +2701,7 @@ export async function runKorailItxCompletenessCli({
   env = process.env,
   now = new Date(),
   fetchImpl = fetch,
+  providerServiceKey = null,
   collectImpl = collectKorailItxCheongchunCompleteness,
   promoteImpl = promoteItxSourceCandidate,
   repositoryRoot = repoRoot,
@@ -2730,7 +2731,7 @@ export async function runKorailItxCompletenessCli({
     });
     return { promotion, exitCode: 0 };
   }
-  const serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
+  const serviceKey = normalizeDataGoKrServiceKey(providerServiceKey ?? env.DATA_GO_KR_SERVICE_KEY);
   const output = requiredString(args.output, "--output");
   if (!path.isAbsolute(output)) throw new Error("--output must be absolute");
   const completenessOutputArg = args["completeness-output"];
