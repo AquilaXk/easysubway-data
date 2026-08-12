@@ -31,6 +31,7 @@ jobs:
           ref: 39d2c4723d0ff855041c6162825930c7d12ffad3
           path: .external/mobile
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Stage pinned Mobile fixture
         shell: bash
@@ -115,6 +116,15 @@ jobs:
           cmp -- "${backup}" "${source}"
           rm "${backup}"
 
+      - name: Measure migrated Mobile owned test durations
+        run: >-
+          node tools/ci/data-test-discovery.mjs measure
+          --class required-pr
+          --profile mobile-v19
+          --max-workers 1
+          --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
+          --output "${RUNNER_TEMP}/data-test-durations-mobile-v19.json"
+
       - name: Restore pinned Mobile fixture for owned tests
         shell: bash
         run: |
@@ -158,11 +168,21 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-      - name: Measure current owned test durations
+      - name: Measure pristine Mobile owned test durations
         run: >-
           node tools/ci/data-test-discovery.mjs measure
           --class required-pr
+          --default-profile
           --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
+          --output "${RUNNER_TEMP}/data-test-durations-default.json"
+
+      - name: Combine current owned test duration evidence
+        run: >-
+          node tools/ci/data-test-discovery.mjs combine
+          --class required-pr
+          --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
+          --input "${RUNNER_TEMP}/data-test-durations-mobile-v19.json"
+          --input "${RUNNER_TEMP}/data-test-durations-default.json"
           --output "${RUNNER_TEMP}/data-test-durations.json"
 
       - name: Upload current owned test duration evidence
@@ -174,5 +194,5 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Verify and run all owned required tests
-        run: node tools/ci/data-test-discovery.mjs run --class required-pr
+      - name: Verify and run pristine Mobile owned required tests
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile

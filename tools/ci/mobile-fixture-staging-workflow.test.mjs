@@ -45,6 +45,7 @@ function fixtureStep(workflow) {
     assert.match(block, new RegExp(`ref:\\s*${mobileRevision}`));
     assert.match(block, /path:\s*\.external\/mobile/);
     assert.match(block, /persist-credentials:\s*false/);
+    assert.match(block, /fetch-depth:\s*0/);
     assert.match(stage, /git -C \.external\/mobile rev-parse HEAD/);
     assert.match(stage, new RegExp(mobileRevision));
     assert.ok(
@@ -159,7 +160,8 @@ test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤
       && ci.indexOf("Migrate pinned Mobile v18 pack to v19") < ci.indexOf("Verify Data issue 108 bundled-pack regression")
       && ci.indexOf("Verify Data issue 108 bundled-pack regression") < ci.indexOf("Restore tracked topology evidence")
       && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Lint workflows")
-      && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Verify and run all owned required tests"),
+      && ci.indexOf("Restore tracked topology evidence")
+        < ci.indexOf("Measure migrated Mobile owned test durations"),
     "evidence backup/restore는 migration regression과 later contract 사이에 있어야 함",
   );
 });
@@ -177,12 +179,16 @@ test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runn
   assert.match(restore, /sha256sum "\$\{target_capital_gzip\}"/);
   assert.ok(
     ci.indexOf("Verify Data issue 108 bundled-pack regression")
-      < ci.indexOf("Restore pinned Mobile fixture for owned tests")
+      < ci.indexOf("Measure migrated Mobile owned test durations")
+      && ci.indexOf("Measure migrated Mobile owned test durations")
+        < ci.indexOf("Restore pinned Mobile fixture for owned tests")
       && ci.indexOf("Restore pinned Mobile fixture for owned tests")
-        < ci.indexOf("Measure current owned test durations")
+        < ci.indexOf("Measure pristine Mobile owned test durations")
+      && ci.indexOf("Measure pristine Mobile owned test durations")
+        < ci.indexOf("Combine current owned test duration evidence")
       && ci.indexOf("Restore pinned Mobile fixture for owned tests")
-        < ci.indexOf("Verify and run all owned required tests"),
-    "pristine fixture 복원은 contextual #108 뒤, owned measure/run 앞이어야 함",
+        < ci.indexOf("Verify and run pristine Mobile owned required tests"),
+    "migrated profile은 #108 뒤에, pristine profile은 restore 뒤에 측정돼야 함",
   );
 });
 
