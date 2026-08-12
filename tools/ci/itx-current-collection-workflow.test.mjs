@@ -27,7 +27,7 @@ test("ITX current collection은 수동 전용 read-only workflow다", () => {
   assert.doesNotMatch(yml, /^\s+(?:push|pull_request|schedule):/m);
   assert.match(yml, /^permissions:\n\s+contents: read\s*$/m);
   assert.match(yml, /timeout-minutes:\s*60/);
-  assert.match(yml, /collect:\n\s+name: ITX current collection\n\s+runs-on: ubuntu-latest\n\s+environment: itx-current-collection/);
+  assert.match(yml, /collect:\n\s+name: ITX current collection\n\s+runs-on: macos-15\n\s+environment: itx-current-collection/);
   assert.match(yml, /concurrency:[\s\S]*?cancel-in-progress:\s*false/);
   assert.match(yml, /persist-credentials:\s*false/);
   assert.match(yml, /node-version:\s*["']24\.19\.0["']/);

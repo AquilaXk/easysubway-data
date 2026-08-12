@@ -13,7 +13,7 @@ concurrency:
 jobs:
   collect:
     name: ITX current collection
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     environment: itx-current-collection
     timeout-minutes: 60
     steps:
