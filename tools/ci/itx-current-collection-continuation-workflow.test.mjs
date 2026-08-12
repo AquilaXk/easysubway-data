@@ -75,4 +75,6 @@ test("결과·completeness·suffix·receipt만 14일 보존하고 base/raw/secre
 test("Data contracts가 continuation workflow contract를 실행한다", () => {
   const ci = readFileSync(ciPath, "utf8");
   assert.match(ci, /tools\/ci\/itx-current-collection-continuation-workflow\.test\.mjs/);
+  assert.match(ci, /tools\/datapack\/provider-response-capture\.test\.mjs/);
+  assert.match(ci, /tools\/datapack\/continue-current-itx-collection\.test\.mjs/);
 });
