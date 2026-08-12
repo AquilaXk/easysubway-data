@@ -1322,10 +1322,11 @@ export async function collectKorailItxCheongchunPlan({
     fetchImpl,
   });
   const selected = validateKorailItxPlans({
-    plans: plans.rows, materialized, runDate, allowDepartureOnly: true,
+    plans: plans.rows, materialized, runDate, allowDepartureOnly: true, allowArrivalOnly: true,
   });
   let runInfo = null;
-  if (selected.departureOnlyPlans.length > 0) {
+  const partialEndpointPlans = [...selected.departureOnlyPlans, ...selected.arrivalOnlyPlans];
+  if (partialEndpointPlans.length > 0) {
     runInfo = await fetchAll({
       endpoint: `${API_ORIGIN}/B551457/run/v2/travelerTrainRunInfo2`,
       query: {
@@ -1336,13 +1337,13 @@ export async function collectKorailItxCheongchunPlan({
       key,
       fetchImpl,
     });
-    const corroboratedDepartureOnlyTrainNumbers = validateKorailItxDepartureOnlySegments({
+    const corroboratedPartialEndpointTrainNumbers = validateKorailItxDepartureOnlySegments({
       infoRows: runInfo.rows,
-      departureOnlyPlans: selected.departureOnlyPlans,
+      departureOnlyPlans: partialEndpointPlans,
       materialized,
       runDate,
     });
-    selected.trainNumbers = [...selected.trainNumbers, ...corroboratedDepartureOnlyTrainNumbers].sort(naturalCompare);
+    selected.trainNumbers = [...selected.trainNumbers, ...corroboratedPartialEndpointTrainNumbers].sort(naturalCompare);
     selected.trainSetHash = sha256(JSON.stringify(selected.trainNumbers));
   }
   const tagoOdTrainSetHash = sha256(JSON.stringify(materialized.trainNumbers.map(normalizeTrainNumber).sort(naturalCompare)));
@@ -1606,7 +1607,9 @@ export function materializeKorailItxRows({
   return materializeAnalyzedKorailItxRows(analyzed, kricServiceDayCode, runDate);
 }
 
-export function validateKorailItxPlans({ plans, materialized, runDate, allowDepartureOnly = false }) {
+export function validateKorailItxPlans({
+  plans, materialized, runDate, allowDepartureOnly = false, allowArrivalOnly = false,
+}) {
   if (!Array.isArray(plans)) throw new Error("KORAIL_PLAN_MISMATCH: plans");
   const trainNumbers = (materialized?.trainNumbers ?? []).map(normalizeTrainNumber).sort(naturalCompare);
   if (trainNumbers.length === 0 || new Set(trainNumbers).size !== trainNumbers.length) {
@@ -1617,6 +1620,7 @@ export function validateKorailItxPlans({ plans, materialized, runDate, allowDepa
   )));
   const selectedPlans = [];
   const departureOnlyPlans = [];
+  const arrivalOnlyPlans = [];
   const missingTrainNumbers = [];
   for (const trainNumber of trainNumbers) {
     const matches = plans.filter((plan) => normalizeTrainNumber(plan?.trn_no) === trainNumber);
@@ -1654,6 +1658,10 @@ export function validateKorailItxPlans({ plans, materialized, runDate, allowDepa
         departureOnlyPlans.push({ ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no) });
         continue;
       }
+      if (endpointRelation === "arrival_only" && allowArrivalOnly) {
+        arrivalOnlyPlans.push({ ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no) });
+        continue;
+      }
       throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${endpointRelation}`);
     }
     let departureSeconds;
@@ -1684,6 +1692,7 @@ export function validateKorailItxPlans({ plans, materialized, runDate, allowDepa
     missingTrainNumbers,
     selectedPlans,
     departureOnlyPlans,
+    arrivalOnlyPlans,
     trainSetHash: sha256(JSON.stringify(selectedTrainNumbers)),
   };
 }

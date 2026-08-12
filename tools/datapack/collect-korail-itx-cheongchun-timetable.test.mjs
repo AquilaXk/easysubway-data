@@ -4119,6 +4119,44 @@ test("departure_only KORAIL plan은 날짜 전용 run info 세그먼트로만 �
   assert.doesNotMatch(JSON.stringify(artifact), /RAW-FIRST-CODE|RAW-LAST-CODE|RAW-LAST-NAME|20260713111111/);
 });
 
+test("arrival_only KORAIL plan은 full run의 TAGO suffix corridor로만 보강한다", async () => {
+  const requestedOperations = [];
+  const artifact = await collectKorailItxCheongchunPlan({
+    serviceKey: "key",
+    runDate: "20260713",
+    kricServiceDayCode: "8",
+    stationCatalogPackPath: PACK_PATH,
+    trainNumberEvidence: {
+      ...trainNumberEvidence(),
+      schemaVersion: 2,
+      ...tagoMaterializedFixture(),
+    },
+    fetchImpl: async (url) => {
+      const operation = url.pathname.split("/").at(-1);
+      requestedOperations.push(operation);
+      if (operation === "travelerTrainRunPlan2") {
+        return apiResponse([
+          planRow("02001", "용산", "춘천", "20260713060000", "20260713080000"),
+          {
+            ...planRow("02002", "RAW-FIRST-NAME", "용산", "20260713055555", "20260713090000"),
+            dptre_stn_cd: "RAW-FIRST-CODE",
+          },
+        ]);
+      }
+      return apiResponse([
+        infoRow("02002", 1, "RAW-FIRST-CODE", "RAW-FIRST-NAME", "-", "20260713055555"),
+        infoRow("02002", 2, "140873", "춘천", "-", "20260713070000"),
+        infoRow("02002", 3, "0104", "용산", "20260713090000", "-"),
+      ]);
+    },
+  });
+
+  assert.deepEqual(requestedOperations, ["travelerTrainRunPlan2", "travelerTrainRunInfo2"]);
+  assert.deepEqual(artifact.trainNumberSets.korailPlan, ["2001", "2002"]);
+  assert.deepEqual(artifact.selectedPlans.map(({ normalizedTrainNumber }) => normalizedTrainNumber), ["2001"]);
+  assert.doesNotMatch(JSON.stringify(artifact), /RAW-FIRST-CODE|RAW-FIRST-NAME|20260713055555/);
+});
+
 test("departure_only run info 세그먼트는 여객 정차만으로 endpoint와 TAGO 구간을 검증한다", async () => {
   const plans = [
     planRow("02001", "용산", "춘천", "20260713060000", "20260713080000"),
@@ -4215,9 +4253,8 @@ test("departure_only run info 보강은 endpoint와 TAGO 세그먼트의 모든 
   ]);
 });
 
-test("departure_only 이외 KORAIL endpoint relation은 run info 없이 기존 mismatch로 거부한다", async () => {
+test("reversed와 neither KORAIL endpoint relation은 run info 없이 기존 mismatch로 거부한다", async () => {
   for (const [departure, arrival, relation] of [
-    ["청량리", "용산", "arrival_only"],
     ["용산", "춘천", "reversed"],
     ["청량리", "망우", "neither"],
   ]) {
