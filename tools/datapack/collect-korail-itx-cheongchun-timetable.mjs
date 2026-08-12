@@ -1322,10 +1322,13 @@ export async function collectKorailItxCheongchunPlan({
     fetchImpl,
   });
   const selected = validateKorailItxPlans({
-    plans: plans.rows, materialized, runDate, allowDepartureOnly: true, allowArrivalOnly: true,
+    plans: plans.rows, materialized, runDate,
+    allowDepartureOnly: true, allowArrivalOnly: true, allowNeither: true,
   });
   let runInfo = null;
-  const partialEndpointPlans = [...selected.departureOnlyPlans, ...selected.arrivalOnlyPlans];
+  const partialEndpointPlans = [
+    ...selected.departureOnlyPlans, ...selected.arrivalOnlyPlans, ...selected.neitherPlans,
+  ];
   if (partialEndpointPlans.length > 0) {
     runInfo = await fetchAll({
       endpoint: `${API_ORIGIN}/B551457/run/v2/travelerTrainRunInfo2`,
@@ -1626,7 +1629,8 @@ function classifyKorailPlanEndpoint({ plan, sequence, trainNumber }) {
 }
 
 function selectPartialKorailPlan({
-  relation, plan, trainNumber, allowDepartureOnly, allowArrivalOnly, departureOnlyPlans, arrivalOnlyPlans,
+  relation, plan, trainNumber, allowDepartureOnly, allowArrivalOnly, allowNeither,
+  departureOnlyPlans, arrivalOnlyPlans, neitherPlans,
 }) {
   const selected = { ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no), endpointRelation: relation };
   if (relation === "departure_only" && allowDepartureOnly) {
@@ -1635,6 +1639,10 @@ function selectPartialKorailPlan({
   }
   if (relation === "arrival_only" && allowArrivalOnly) {
     arrivalOnlyPlans.push(selected);
+    return;
+  }
+  if (relation === "neither" && allowNeither) {
+    neitherPlans.push(selected);
     return;
   }
   throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${relation}`);
@@ -1662,7 +1670,8 @@ function validateExactKorailPlanTimes({ plan, first, last, runDate, trainNumber 
 }
 
 export function validateKorailItxPlans({
-  plans, materialized, runDate, allowDepartureOnly = false, allowArrivalOnly = false,
+  plans, materialized, runDate,
+  allowDepartureOnly = false, allowArrivalOnly = false, allowNeither = false,
 }) {
   if (!Array.isArray(plans)) throw new Error("KORAIL_PLAN_MISMATCH: plans");
   const trainNumbers = (materialized?.trainNumbers ?? []).map(normalizeTrainNumber).sort(naturalCompare);
@@ -1675,6 +1684,7 @@ export function validateKorailItxPlans({
   const selectedPlans = [];
   const departureOnlyPlans = [];
   const arrivalOnlyPlans = [];
+  const neitherPlans = [];
   const missingTrainNumbers = [];
   for (const trainNumber of trainNumbers) {
     const matches = plans.filter((plan) => normalizeTrainNumber(plan?.trn_no) === trainNumber);
@@ -1697,8 +1707,10 @@ export function validateKorailItxPlans({
         trainNumber,
         allowDepartureOnly,
         allowArrivalOnly,
+        allowNeither,
         departureOnlyPlans,
         arrivalOnlyPlans,
+        neitherPlans,
       });
       continue;
     }
@@ -1714,6 +1726,7 @@ export function validateKorailItxPlans({
     selectedPlans,
     departureOnlyPlans,
     arrivalOnlyPlans,
+    neitherPlans,
     trainSetHash: sha256(JSON.stringify(selectedTrainNumbers)),
   };
 }
@@ -1782,6 +1795,10 @@ function validateKorailItxDepartureOnlySegments({ infoRows, departureOnlyPlans, 
     if (segmentStarts.length !== 1) throw mismatch("segment");
     const segmentStart = segmentStarts[0];
     if (plan.endpointRelation === "arrival_only" && segmentStart + tagoNames.length !== passengerOrdered.length) {
+      throw mismatch("segment_position");
+    }
+    if (plan.endpointRelation === "neither"
+      && (segmentStart === 0 || segmentStart + tagoNames.length === passengerOrdered.length)) {
       throw mismatch("segment_position");
     }
     const segmentFirst = passengerOrdered[segmentStart].row;
