@@ -10,6 +10,7 @@ const workflowPath = path.join(root, ".github/workflows/itx-current-collection.y
 const ciPath = path.join(root, ".github/workflows/ci.yml");
 const secretSyncPath = path.join(root, "tools/ci/sync-itx-current-collection-secret.mjs");
 const ownershipPath = path.join(root, "tools/ci/data-test-ownership.json");
+const budgetGuardPath = path.join(root, "tools/ci/guard-itx-current-collection-budget.mjs");
 
 function workflow() {
   assert.ok(existsSync(workflowPath), "ITX current collection workflow를 찾지 못함");
@@ -26,13 +27,22 @@ test("ITX current collection은 수동 전용 read-only workflow다", () => {
   const yml = workflow();
   assert.match(yml, /^on:\n\s+workflow_dispatch:\s*$/m);
   assert.doesNotMatch(yml, /^\s+(?:push|pull_request|schedule):/m);
-  assert.match(yml, /^permissions:\n\s+contents: read\s*$/m);
+  assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
   assert.match(yml, /timeout-minutes:\s*60/);
   assert.match(yml, /collect:\n\s+name: ITX current collection\n\s+runs-on: macos-15\n\s+environment: itx-current-collection/);
   assert.match(yml, /concurrency:[\s\S]*?cancel-in-progress:\s*false/);
   assert.match(yml, /persist-credentials:\s*false/);
   assert.match(yml, /node-version:\s*["']24\.19\.0["']/);
   assert.doesNotMatch(yml, /workflow_dispatch:[\s\S]*?inputs:/);
+});
+
+test("KST quota guard는 catalog와 provider보다 먼저 exact current run만 허용한다", () => {
+  const yml = workflow();
+  const guard = step(yml, "ITX current collection / Guard KST quota window");
+  assert.match(guard, /GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}/);
+  assert.equal((guard.match(/guard-itx-current-collection-budget\.mjs/g) ?? []).length, 1);
+  assert.ok(yml.indexOf("Guard KST quota window") < yml.indexOf("Emit station catalog pack"));
+  assert.ok(yml.indexOf("Guard KST quota window") < yml.indexOf("Collect ITX current timetable"));
 });
 
 test("tracked catalog·single-clock wrapper가 temp에서 정확한 current 수집을 구성한다", () => {
@@ -64,6 +74,7 @@ test("실패에도 sanitized 증적만 보존하며 raw·secret·catalog·promot
   assert.match(upload, /retention-days:\s*14/);
   assert.match(upload, /freshness\.json/);
   assert.match(upload, /itx-result\.json/);
+  assert.match(upload, /provider-response-capture\.json/);
   assert.doesNotMatch(upload, /station-catalog-pack|DATA_GO_KR_SERVICE_KEY|raw/i);
   assert.doesNotMatch(yml, /(?:git (?:add|commit|push)|gh |promotion|publish|upload-release|fallback|alternate provider)/i);
 });
@@ -110,6 +121,141 @@ async function loadSecretSync() {
   assert.ok(existsSync(secretSyncPath), "ITX current collection secret 동기화 helper를 찾지 못함");
   return import(`${pathToFileURL(secretSyncPath).href}?cacheBust=${Date.now()}`);
 }
+
+async function loadBudgetGuard() {
+  assert.ok(existsSync(budgetGuardPath), "ITX current collection quota guard를 찾지 못함");
+  return import(`${pathToFileURL(budgetGuardPath).href}?cacheBust=${Date.now()}`);
+}
+
+function budgetEnv(overrides = {}) {
+  return {
+    GITHUB_REPOSITORY: "AquilaXk/easysubway-data",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_RUN_ID: "9001",
+    GITHUB_RUN_ATTEMPT: "1",
+    GITHUB_TOKEN: "synthetic-github-token-that-must-not-leak",
+    ...overrides,
+  };
+}
+
+function workflowRun(id, createdAt = "2026-08-12T15:14:00.000Z") {
+  return {
+    id,
+    created_at: createdAt,
+    event: "workflow_dispatch",
+    head_branch: "main",
+    run_attempt: 1,
+    path: ".github/workflows/itx-current-collection.yml",
+  };
+}
+
+function githubResponse(body, { ok = true, status = 200 } = {}) {
+  return {
+    ok,
+    status,
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
+
+test("KST quota guard는 fresh window의 exact current run을 API 1회로 허용한다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const calls = [];
+  const result = await guardItxCurrentCollectionBudget({
+    env: budgetEnv(),
+    now: new Date("2026-08-12T15:15:00.000Z"),
+    async fetchImpl(url, options) {
+      calls.push({ url, options });
+      return githubResponse({ total_count: 1, workflow_runs: [workflowRun(9001)] });
+    },
+  });
+
+  assert.deepEqual(result, {
+    repository: "AquilaXk/easysubway-data",
+    runId: 9001,
+    quotaWindow: "2026-08-13",
+    otherRunCount: 0,
+  });
+  assert.equal(calls.length, 1);
+  const requestUrl = new URL(calls[0].url);
+  assert.equal(requestUrl.origin, "https://api.github.com");
+  assert.equal(requestUrl.pathname, "/repos/AquilaXk/easysubway-data/actions/workflows/itx-current-collection.yml/runs");
+  assert.equal(requestUrl.searchParams.get("event"), "workflow_dispatch");
+  assert.equal(requestUrl.searchParams.get("branch"), "main");
+  assert.equal(requestUrl.searchParams.get("per_page"), "100");
+  assert.equal(requestUrl.searchParams.get("created"), "2026-08-12T15:00:00.000Z..2026-08-13T14:59:59.999Z");
+  assert.equal(calls[0].options.headers.authorization, "Bearer synthetic-github-token-that-must-not-leak");
+  assert.doesNotMatch(calls[0].url, /synthetic-github-token/);
+});
+
+test("KST quota guard는 same-window prior run과 current absent·duplicate·truncated inventory를 거부한다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  const fixtures = [
+    { total_count: 2, workflow_runs: [workflowRun(9000), workflowRun(9001)] },
+    { total_count: 1, workflow_runs: [workflowRun(9000)] },
+    { total_count: 2, workflow_runs: [workflowRun(9001), workflowRun(9001)] },
+    { total_count: 101, workflow_runs: Array.from({ length: 100 }, (_, index) => workflowRun(index + 1)) },
+    {
+      total_count: 1,
+      workflow_runs: [{ ...workflowRun(9001), path: ".github/workflows/itx-current-collection.yml@main" }],
+    },
+  ];
+
+  for (const body of fixtures) {
+    let calls = 0;
+    await assert.rejects(() => guardItxCurrentCollectionBudget({
+      env: budgetEnv(),
+      now: new Date("2026-08-12T15:15:00.000Z"),
+      async fetchImpl() {
+        calls += 1;
+        return githubResponse(body);
+      },
+    }));
+    assert.equal(calls, 1);
+  }
+});
+
+test("KST quota guard는 rerun·wrong context와 API/schema 실패를 provider 전 sanitized 거부한다", async () => {
+  const { guardItxCurrentCollectionBudget } = await loadBudgetGuard();
+  for (const env of [
+    budgetEnv({ GITHUB_RUN_ATTEMPT: "2" }),
+    budgetEnv({ GITHUB_REPOSITORY: "AquilaXk/other" }),
+    budgetEnv({ GITHUB_EVENT_NAME: "push" }),
+    budgetEnv({ GITHUB_REF: "refs/heads/feature" }),
+  ]) {
+    let calls = 0;
+    await assert.rejects(() => guardItxCurrentCollectionBudget({
+      env,
+      now: new Date("2026-08-12T15:15:00.000Z"),
+      async fetchImpl() {
+        calls += 1;
+        return githubResponse({ total_count: 1, workflow_runs: [workflowRun(9001)] });
+      },
+    }));
+    assert.equal(calls, 0);
+  }
+
+  const failures = [
+    async () => githubResponse({}, { ok: false, status: 503 }),
+    async () => githubResponse({ total_count: 1, workflow_runs: [workflowRun(9001, "invalid")] }),
+    async () => { throw new Error("synthetic-github-token-that-must-not-leak raw failure"); },
+  ];
+  for (const fetchImpl of failures) {
+    await assert.rejects(
+      () => guardItxCurrentCollectionBudget({
+        env: budgetEnv(),
+        now: new Date("2026-08-12T15:15:00.000Z"),
+        fetchImpl,
+      }),
+      (error) => {
+        assert.doesNotMatch(error.message, /synthetic-github-token|raw failure|503/);
+        return true;
+      },
+    );
+  }
+});
 
 test("ITX current collection secret 동기화는 stdin으로 gh secret set을 사용한다", async () => {
   const { syncItxCurrentCollectionSecret } = await loadSecretSync();

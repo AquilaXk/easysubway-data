@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -26,6 +27,11 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "24.19.0"
+
+      - name: ITX current collection / Guard KST quota window
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/ci/guard-itx-current-collection-budget.mjs
 
       - name: ITX current collection / Prepare temp output
         env:
@@ -72,5 +78,6 @@ jobs:
             ${{ runner.temp }}/itx-current-collection/freshness.json
             ${{ runner.temp }}/itx-current-collection/itx-result.json
             ${{ runner.temp }}/itx-current-collection/itx-completeness.json
+            ${{ runner.temp }}/itx-current-collection/provider-response-capture.json
           if-no-files-found: error
           retention-days: 14

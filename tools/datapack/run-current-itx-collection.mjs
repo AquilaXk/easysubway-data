@@ -10,6 +10,9 @@ import { ITX_ADMISSION_LOOKAHEAD_DAYS } from "./collect-tago-itx-cheongchun-od.m
 import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
+import { createProviderResponseRecorder, providerResponseCaptureBytes } from "./provider-response-capture.mjs";
+
+const PROVIDER_CAPTURE_BASENAME = "provider-response-capture.json";
 
 function currentCollectionArgs(argv) {
   const args = parseArgs(argv);
@@ -34,7 +37,12 @@ function currentCollectionArgs(argv) {
     throw new Error("current ITX collection output paths must share one parent");
   }
   const resolvedStationCatalogPack = path.resolve(stationCatalogPack);
-  if (path.dirname(resolvedStationCatalogPack) !== parent || resolvedStationCatalogPack === parent) {
+  const providerCaptureOutput = path.join(parent, PROVIDER_CAPTURE_BASENAME);
+  if (resolvedOutputs.includes(providerCaptureOutput)) {
+    throw new Error("current ITX collection output paths must not use the reserved provider capture path");
+  }
+  if (path.dirname(resolvedStationCatalogPack) !== parent || resolvedStationCatalogPack === parent
+    || resolvedStationCatalogPack === providerCaptureOutput) {
     throw new Error("station catalog pack must be a separate child of the output parent");
   }
   return {
@@ -43,6 +51,7 @@ function currentCollectionArgs(argv) {
     "completeness-output": resolvedOutputs[1],
     "freshness-output": resolvedOutputs[2],
     "station-catalog-pack": resolvedStationCatalogPack,
+    providerCaptureOutput,
   };
 }
 
@@ -143,10 +152,13 @@ export async function runCurrentItxCollectionCli({
   beforeFreshnessWrite = async () => {},
   beforeFailureReceiptWrite = async () => {},
   collectImpl = runKorailItxCompletenessCli,
+  providerFetchImpl = fetch,
 } = {}) {
   const args = currentCollectionArgs(argv);
   normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
-  await assertAbsent([args.output, args["completeness-output"], args["freshness-output"]]);
+  await assertAbsent([
+    args.output, args["completeness-output"], args["freshness-output"], args.providerCaptureOutput,
+  ]);
   const outputParent = await bindOutputParent(args.output);
   const receiptParent = await openBoundOutputParent(outputParent);
   let holidayDates;
@@ -175,19 +187,42 @@ export async function runCurrentItxCollectionCli({
   await beforeFreshnessWrite();
   await assertBoundOutputParent(outputParent);
   await writeFile(path.join(outputParent.parent, path.basename(args["freshness-output"])), `${JSON.stringify(freshnessEvidence, null, 2)}\n`, { flag: "wx", mode: 0o644 });
-  const result = await collectImpl({
-    argv: [
-      "--output", args.output,
-      "--completeness-output", args["completeness-output"],
-      "--station-catalog-pack", args["station-catalog-pack"],
-      "--day8-date", serviceDates["8"],
-      "--day7-date", serviceDates["7"],
-      "--day9-date", serviceDates["9"],
-    ],
-    env,
-    now,
-    repositoryRoot,
-  });
+  const captureParent = await openBoundOutputParent(outputParent);
+  let recorder;
+  let result;
+  try {
+    recorder = createProviderResponseRecorder({
+      fetchImpl: providerFetchImpl,
+      observedAt: now.toISOString(),
+      selectedServiceDates: serviceDates,
+    });
+    result = await collectImpl({
+      argv: [
+        "--output", args.output,
+        "--completeness-output", args["completeness-output"],
+        "--station-catalog-pack", args["station-catalog-pack"],
+        "--day8-date", serviceDates["8"],
+        "--day7-date", serviceDates["7"],
+        "--day9-date", serviceDates["9"],
+      ],
+      env,
+      now,
+      repositoryRoot,
+      fetchImpl: recorder.fetchImpl,
+    });
+  } finally {
+    try {
+      if (recorder) {
+        await writeBoundOutput(
+          captureParent.handle.fd,
+          PROVIDER_CAPTURE_BASENAME,
+          providerResponseCaptureBytes(recorder.captureArtifact()),
+        );
+      }
+    } finally {
+      await captureParent.handle.close();
+    }
+  }
   return { ...result, freshnessEvidence, serviceDates };
 }
 

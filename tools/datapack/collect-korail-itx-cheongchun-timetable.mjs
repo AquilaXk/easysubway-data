@@ -74,7 +74,8 @@ export async function collectKorailItxCheongchunCompleteness({
   const collectTimetable = collectTimetableImpl ?? (replay
     ? collectKorailItxCheongchunTimetable
     : collectKorailItxCheongchunPlan);
-  const usingDefaultAdmissionCollector = collectTimetableImpl === null && !replay;
+  const usingDefaultAdmissionCollector = (collectTimetableImpl === null && !replay)
+    || collectTimetableImpl === collectKorailItxCheongchunPlan;
   requiredString(stationCatalogPackPath, "stationCatalogPackPath");
   const catalog = stationCatalogSnapshot ?? snapshotStationCatalog(stationCatalogPackPath);
   const canonical = catalog.canonical;
@@ -1321,10 +1322,14 @@ export async function collectKorailItxCheongchunPlan({
     fetchImpl,
   });
   const selected = validateKorailItxPlans({
-    plans: plans.rows, materialized, runDate, allowDepartureOnly: true,
+    plans: plans.rows, materialized, runDate,
+    allowDepartureOnly: true, allowArrivalOnly: true, allowNeither: true,
   });
   let runInfo = null;
-  if (selected.departureOnlyPlans.length > 0) {
+  const partialEndpointPlans = [
+    ...selected.departureOnlyPlans, ...selected.arrivalOnlyPlans, ...selected.neitherPlans,
+  ];
+  if (partialEndpointPlans.length > 0) {
     runInfo = await fetchAll({
       endpoint: `${API_ORIGIN}/B551457/run/v2/travelerTrainRunInfo2`,
       query: {
@@ -1335,13 +1340,13 @@ export async function collectKorailItxCheongchunPlan({
       key,
       fetchImpl,
     });
-    const corroboratedDepartureOnlyTrainNumbers = validateKorailItxDepartureOnlySegments({
+    const corroboratedPartialEndpointTrainNumbers = validateKorailItxDepartureOnlySegments({
       infoRows: runInfo.rows,
-      departureOnlyPlans: selected.departureOnlyPlans,
+      departureOnlyPlans: partialEndpointPlans,
       materialized,
       runDate,
     });
-    selected.trainNumbers = [...selected.trainNumbers, ...corroboratedDepartureOnlyTrainNumbers].sort(naturalCompare);
+    selected.trainNumbers = [...selected.trainNumbers, ...corroboratedPartialEndpointTrainNumbers].sort(naturalCompare);
     selected.trainSetHash = sha256(JSON.stringify(selected.trainNumbers));
   }
   const tagoOdTrainSetHash = sha256(JSON.stringify(materialized.trainNumbers.map(normalizeTrainNumber).sort(naturalCompare)));
@@ -1605,7 +1610,69 @@ export function materializeKorailItxRows({
   return materializeAnalyzedKorailItxRows(analyzed, kricServiceDayCode, runDate);
 }
 
-export function validateKorailItxPlans({ plans, materialized, runDate, allowDepartureOnly = false }) {
+function classifyKorailPlanEndpoint({ plan, sequence, trainNumber }) {
+  const first = sequence?.stops?.[0];
+  const last = sequence?.stops?.at(-1);
+  if (!first || !last) throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} tago_endpoint_missing`);
+  if ([plan.dptre_stn_nm, plan.arvl_stn_nm].some((name) => normalizeStationName(name) === normalizeStationName("대전"))) {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} forbidden_daejeon_endpoint`);
+  }
+  const planDeparture = normalizeStationName(plan.dptre_stn_nm);
+  const planArrival = normalizeStationName(plan.arvl_stn_nm);
+  const tagoDeparture = normalizeStationName(first.nameKo);
+  const tagoArrival = normalizeStationName(last.nameKo);
+  if (planDeparture === tagoDeparture && planArrival === tagoArrival) return { relation: null, first, last };
+  if (planDeparture === tagoArrival && planArrival === tagoDeparture) return { relation: "reversed", first, last };
+  if (planArrival === tagoArrival) return { relation: "arrival_only", first, last };
+  if (planDeparture === tagoDeparture) return { relation: "departure_only", first, last };
+  return { relation: "neither", first, last };
+}
+
+function selectPartialKorailPlan({
+  relation, plan, trainNumber, allowDepartureOnly, allowArrivalOnly, allowNeither,
+  departureOnlyPlans, arrivalOnlyPlans, neitherPlans,
+}) {
+  const selected = { ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no), endpointRelation: relation };
+  if (relation === "departure_only" && allowDepartureOnly) {
+    departureOnlyPlans.push(selected);
+    return;
+  }
+  if (relation === "arrival_only" && allowArrivalOnly) {
+    arrivalOnlyPlans.push(selected);
+    return;
+  }
+  if (relation === "neither" && allowNeither) {
+    neitherPlans.push(selected);
+    return;
+  }
+  throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${relation}`);
+}
+
+function validateExactKorailPlanTimes({ plan, first, last, runDate, trainNumber }) {
+  let departureSeconds;
+  let arrivalSeconds;
+  try {
+    departureSeconds = timestampSeconds(
+      plan.trn_plan_dptre_dt, runDate, `plan departure[${safeToken(trainNumber)}]`,
+    );
+    arrivalSeconds = timestampSeconds(
+      plan.trn_plan_arvl_dt, runDate, `plan arrival[${safeToken(trainNumber)}]`,
+    );
+  } catch {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} timestamp_format`);
+  }
+  if (departureSeconds !== first.departureSeconds) {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} departure_time`);
+  }
+  if (arrivalSeconds !== last.arrivalSeconds) {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} arrival_time`);
+  }
+}
+
+export function validateKorailItxPlans({
+  plans, materialized, runDate,
+  allowDepartureOnly = false, allowArrivalOnly = false, allowNeither = false,
+}) {
   if (!Array.isArray(plans)) throw new Error("KORAIL_PLAN_MISMATCH: plans");
   const trainNumbers = (materialized?.trainNumbers ?? []).map(normalizeTrainNumber).sort(naturalCompare);
   if (trainNumbers.length === 0 || new Set(trainNumbers).size !== trainNumbers.length) {
@@ -1616,6 +1683,8 @@ export function validateKorailItxPlans({ plans, materialized, runDate, allowDepa
   )));
   const selectedPlans = [];
   const departureOnlyPlans = [];
+  const arrivalOnlyPlans = [];
+  const neitherPlans = [];
   const missingTrainNumbers = [];
   for (const trainNumber of trainNumbers) {
     const matches = plans.filter((plan) => normalizeTrainNumber(plan?.trn_no) === trainNumber);
@@ -1625,54 +1694,27 @@ export function validateKorailItxPlans({ plans, materialized, runDate, allowDepa
     }
     if (matches.length > 1) throw new Error(`KORAIL_PLAN_DUPLICATE: ${safeToken(trainNumber)}`);
     const plan = matches[0];
-    const sequence = stationSequences.get(trainNumber);
-    const first = sequence?.stops?.[0];
-    const last = sequence?.stops?.at(-1);
     if (String(plan.run_ymd) !== runDate) {
       throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} run_date`);
     }
-    if (!first || !last) throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} tago_endpoint_missing`);
-    if ([plan.dptre_stn_nm, plan.arvl_stn_nm].some((name) => normalizeStationName(name) === normalizeStationName("대전"))) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} forbidden_daejeon_endpoint`);
+    const endpoint = classifyKorailPlanEndpoint({
+      plan, sequence: stationSequences.get(trainNumber), trainNumber,
+    });
+    if (endpoint.relation) {
+      selectPartialKorailPlan({
+        relation: endpoint.relation,
+        plan,
+        trainNumber,
+        allowDepartureOnly,
+        allowArrivalOnly,
+        allowNeither,
+        departureOnlyPlans,
+        arrivalOnlyPlans,
+        neitherPlans,
+      });
+      continue;
     }
-    const planDeparture = normalizeStationName(plan.dptre_stn_nm);
-    const planArrival = normalizeStationName(plan.arvl_stn_nm);
-    const tagoDeparture = normalizeStationName(first.nameKo);
-    const tagoArrival = normalizeStationName(last.nameKo);
-    const endpointRelation = planDeparture === tagoDeparture && planArrival === tagoArrival
-      ? null
-      : planDeparture === tagoArrival && planArrival === tagoDeparture
-        ? "reversed"
-        : planDeparture !== tagoDeparture && planArrival === tagoArrival
-          ? "arrival_only"
-          : planDeparture === tagoDeparture && planArrival !== tagoArrival
-            ? "departure_only"
-            : "neither";
-    if (endpointRelation) {
-      if (endpointRelation === "departure_only" && allowDepartureOnly) {
-        departureOnlyPlans.push({ ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no) });
-        continue;
-      }
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} ${endpointRelation}`);
-    }
-    let departureSeconds;
-    let arrivalSeconds;
-    try {
-      departureSeconds = timestampSeconds(
-        plan.trn_plan_dptre_dt, runDate, `plan departure[${safeToken(trainNumber)}]`,
-      );
-      arrivalSeconds = timestampSeconds(
-        plan.trn_plan_arvl_dt, runDate, `plan arrival[${safeToken(trainNumber)}]`,
-      );
-    } catch {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} timestamp_format`);
-    }
-    if (departureSeconds !== first.departureSeconds) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} departure_time`);
-    }
-    if (arrivalSeconds !== last.arrivalSeconds) {
-      throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} arrival_time`);
-    }
+    validateExactKorailPlanTimes({ plan, ...endpoint, runDate, trainNumber });
     selectedPlans.push({ ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no) });
   }
   const selectedTrainNumbers = selectedPlans
@@ -1683,6 +1725,8 @@ export function validateKorailItxPlans({ plans, materialized, runDate, allowDepa
     missingTrainNumbers,
     selectedPlans,
     departureOnlyPlans,
+    arrivalOnlyPlans,
+    neitherPlans,
     trainSetHash: sha256(JSON.stringify(selectedTrainNumbers)),
   };
 }
@@ -1749,8 +1793,16 @@ function validateKorailItxDepartureOnlySegments({ infoRows, departureOnlyPlans, 
       }
     }
     if (segmentStarts.length !== 1) throw mismatch("segment");
-    const segmentFirst = passengerOrdered[segmentStarts[0]].row;
-    const segmentLast = passengerOrdered[segmentStarts[0] + tagoNames.length - 1].row;
+    const segmentStart = segmentStarts[0];
+    if (plan.endpointRelation === "arrival_only" && segmentStart + tagoNames.length !== passengerOrdered.length) {
+      throw mismatch("segment_position");
+    }
+    if (plan.endpointRelation === "neither"
+      && (segmentStart === 0 || segmentStart + tagoNames.length === passengerOrdered.length)) {
+      throw mismatch("segment_position");
+    }
+    const segmentFirst = passengerOrdered[segmentStart].row;
+    const segmentLast = passengerOrdered[segmentStart + tagoNames.length - 1].row;
     try {
       const planDeparture = timestampSeconds(plan.trn_plan_dptre_dt, runDate, "plan departure");
       const planArrival = timestampSeconds(plan.trn_plan_arvl_dt, runDate, "plan arrival");
@@ -2699,6 +2751,8 @@ export async function runKorailItxCompletenessCli({
   argv = process.argv.slice(2),
   env = process.env,
   now = new Date(),
+  fetchImpl = fetch,
+  providerServiceKey = null,
   collectImpl = collectKorailItxCheongchunCompleteness,
   promoteImpl = promoteItxSourceCandidate,
   repositoryRoot = repoRoot,
@@ -2728,7 +2782,7 @@ export async function runKorailItxCompletenessCli({
     });
     return { promotion, exitCode: 0 };
   }
-  const serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
+  const serviceKey = normalizeDataGoKrServiceKey(providerServiceKey ?? env.DATA_GO_KR_SERVICE_KEY);
   const output = requiredString(args.output, "--output");
   if (!path.isAbsolute(output)) throw new Error("--output must be absolute");
   const completenessOutputArg = args["completeness-output"];
@@ -2766,7 +2820,8 @@ export async function runKorailItxCompletenessCli({
   let artifact;
   try {
     artifact = await collectImpl({
-      serviceKey, serviceDates, stationCatalogPackPath, stationCatalogSnapshot, now, replay, previousAdmittedArtifact,
+      serviceKey, serviceDates, stationCatalogPackPath, stationCatalogSnapshot, fetchImpl, now, replay,
+      previousAdmittedArtifact,
     });
     completenessCatalogSnapshots.set(artifact, stationCatalogSnapshot);
   } catch (error) {
