@@ -14,7 +14,7 @@ export function createProviderResponseRecorder({
   const normalizedObservedAt = requiredIsoInstant(observedAt, "observedAt");
   const normalizedServiceDates = requiredServiceDates(selectedServiceDates);
   requiredLimit(maxRecords, DEFAULT_MAX_RECORDS, "maxRecords");
-  requiredLimit(maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes");
+  requiredNonnegativeLimit(maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes");
   if (typeof fetchImpl !== "function") throw new Error("fetchImpl must be a function");
 
   const records = [];
@@ -95,6 +95,108 @@ export function createProviderResponseReplay({ captureBytes } = {}) {
     assertExhausted() {
       const remaining = capture.records.length - index;
       if (remaining !== 0) throw new Error(`provider replay has ${remaining} unconsumed record${remaining === 1 ? "" : "s"}`);
+    },
+  };
+}
+
+export function createProviderResponseContinuation({
+  captureBytes,
+  fetchImpl = fetch,
+  observedAt,
+  allowLiveRequest,
+  maxLiveRequests = 18,
+  maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+} = {}) {
+  const capture = parseProviderResponseCapture(captureBytes);
+  const normalizedObservedAt = requiredIsoInstant(observedAt, "observedAt");
+  const selectedServiceDates = requiredServiceDates(capture.selectedServiceDates);
+  requiredLimit(maxLiveRequests, DEFAULT_MAX_RECORDS, "maxLiveRequests");
+  requiredNonnegativeLimit(maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes");
+  if (capture.requestCount + maxLiveRequests > DEFAULT_MAX_RECORDS) {
+    throw new Error("provider continuation record limit exceeded");
+  }
+  if (capture.bodyBytes > maxBodyBytes) throw new Error("provider continuation body limit exceeded");
+  if (typeof fetchImpl !== "function") throw new Error("fetchImpl must be a function");
+  if (typeof allowLiveRequest !== "function") throw new Error("allowLiveRequest must be a function");
+
+  const baseQueues = new Map();
+  const baseIdentityKeys = new Set();
+  for (const record of capture.records) {
+    const key = JSON.stringify(record.request);
+    baseIdentityKeys.add(key);
+    if (!baseQueues.has(key)) baseQueues.set(key, []);
+    baseQueues.get(key).push(record.index);
+  }
+  const consumedBase = new Set();
+  let invalidReason = null;
+  let liveRequestCount = 0;
+  const liveRecorder = createProviderResponseRecorder({
+    fetchImpl,
+    observedAt: normalizedObservedAt,
+    selectedServiceDates,
+    maxRecords: maxLiveRequests,
+    maxBodyBytes: maxBodyBytes - capture.bodyBytes,
+  });
+
+  const invalidate = (message) => {
+    invalidReason ??= message;
+    throw new Error(message);
+  };
+
+  return {
+    baseContentSha256: capture.contentSha256,
+    baseRequestCount: capture.requestCount,
+    selectedServiceDates,
+    get liveRequestCount() {
+      return liveRequestCount;
+    },
+    async fetchImpl(input, init = {}) {
+      if (invalidReason !== null) throw new Error(invalidReason);
+      const identity = providerRequest(input, init).identity;
+      const key = JSON.stringify(identity);
+      const queue = baseQueues.get(key);
+      if (queue?.length > 0) {
+        const index = queue.shift();
+        consumedBase.add(index);
+        const record = capture.records[index];
+        if (record.outcome.kind === "TRANSPORT_FAILURE") {
+          throw new Error("provider continuation base transport failure");
+        }
+        return responseFromRecord(record.outcome.response);
+      }
+      if (baseIdentityKeys.has(key)) invalidate("provider continuation base request overconsumed");
+
+      let allowed = false;
+      try {
+        allowed = allowLiveRequest(structuredClone(identity)) === true;
+      } catch {
+        invalidate("provider continuation live request is not allowed");
+      }
+      if (!allowed) invalidate("provider continuation live request is not allowed");
+      if (liveRequestCount >= maxLiveRequests) invalidate("provider continuation live request limit exceeded");
+      liveRequestCount += 1;
+      return liveRecorder.fetchImpl(input, init);
+    },
+    captureArtifact() {
+      if (invalidReason !== null) throw new Error(invalidReason);
+      const remaining = capture.requestCount - consumedBase.size;
+      if (remaining !== 0) {
+        throw new Error(`provider continuation has ${remaining} unconsumed base record${remaining === 1 ? "" : "s"}`);
+      }
+      const liveCapture = liveRecorder.captureArtifact();
+      const records = [...capture.records, ...liveCapture.records].map((record, index) => ({
+        ...structuredClone(record),
+        index,
+      }));
+      return captureWithDigest({
+        schemaVersion: 1,
+        artifactKind: "provider-response-capture",
+        observedAt: normalizedObservedAt,
+        selectedServiceDates,
+        requestCount: records.length,
+        bodyBytes: capture.bodyBytes + liveCapture.bodyBytes,
+        records,
+      });
     },
   };
 }
@@ -270,6 +372,10 @@ function requiredIsoInstant(value, label) {
 
 function requiredLimit(value, maximum, label) {
   if (!Number.isInteger(value) || value < 1 || value > maximum) throw new Error(`${label} is invalid`);
+}
+
+function requiredNonnegativeLimit(value, maximum, label) {
+  if (!Number.isInteger(value) || value < 0 || value > maximum) throw new Error(`${label} is invalid`);
 }
 
 function exactKeys(value, expected, label) {
