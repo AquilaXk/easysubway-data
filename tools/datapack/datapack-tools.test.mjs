@@ -2146,6 +2146,7 @@ test("데이터팩 생성기는 일반 fixture 입력으로 production channel�
     "utf8",
   ));
   makeProductionSourceFixtureExplicitlyUnavailable(fixture);
+  for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
   const fixturePath = path.join(workspace, "fixture.json");
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
 

@@ -194,6 +194,7 @@ export function validateOwnership({
   requireFixtureStates = true,
   requireDurations = true,
   durationClass = null,
+  executionProfile = null,
 }) {
   const issues = [];
   if (!manifest || manifest.version !== 1) {
@@ -206,6 +207,10 @@ export function validateOwnership({
     manifest?.workflows && typeof manifest.workflows === 'object' ? manifest.workflows : {};
   const fixtures =
     manifest?.fixtures && typeof manifest.fixtures === 'object' ? manifest.fixtures : {};
+  const executionProfiles =
+    manifest?.executionProfiles && typeof manifest.executionProfiles === 'object'
+      ? manifest.executionProfiles
+      : {};
   const manifestTests = Array.isArray(manifest?.tests) ? manifest.tests : [];
   const tracked = Array.isArray(trackedEntries) ? trackedEntries : [];
 
@@ -281,6 +286,12 @@ export function validateOwnership({
     ) {
       issue(issues, 'INVALID_DURATION', path, String(entry.durationMs));
     }
+    if (
+      entry.executionProfile !== undefined &&
+      (typeof entry.executionProfile !== 'string' || !executionProfiles[entry.executionProfile])
+    ) {
+      issue(issues, 'UNKNOWN_EXECUTION_PROFILE', path, String(entry.executionProfile));
+    }
     const source = sources?.[path];
     if (typeof source !== 'string') {
       issue(issues, 'TEST_SOURCE_MISSING', path, 'test source could not be read');
@@ -323,6 +334,22 @@ export function validateOwnership({
       if (!isSafeRepositoryPath(requiredFile.path) || !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '')) {
         issue(issues, 'INVALID_FIXTURE_FILE', fixtureName, String(requiredFile.path));
       }
+      const profileSha256 = requiredFile.profileSha256;
+      if (
+        profileSha256 !== undefined &&
+        (!profileSha256 || typeof profileSha256 !== 'object' || Array.isArray(profileSha256))
+      ) {
+        issue(issues, 'INVALID_FIXTURE_PROFILE_HASHES', fixtureName, String(requiredFile.path));
+      }
+      for (const [profileName, profileHash] of Object.entries(
+        profileSha256 && typeof profileSha256 === 'object' && !Array.isArray(profileSha256)
+          ? profileSha256
+          : {},
+      )) {
+        if (!executionProfiles[profileName] || !/^[a-f0-9]{64}$/.test(profileHash)) {
+          issue(issues, 'INVALID_FIXTURE_PROFILE_HASH', fixtureName, `${requiredFile.path}:${profileName}`);
+        }
+      }
     }
     if (requireFixtureStates) {
       const state = fixtureStates[fixtureName];
@@ -335,7 +362,8 @@ export function validateOwnership({
       }
       for (const requiredFile of fixture.requiredFiles ?? []) {
         const actualHash = state.files?.[requiredFile.path];
-        if (actualHash !== requiredFile.sha256) {
+        const expectedHash = requiredFile.profileSha256?.[executionProfile] ?? requiredFile.sha256;
+        if (actualHash !== expectedHash) {
           issue(
             issues,
             'FIXTURE_HASH_MISMATCH',
@@ -393,6 +421,30 @@ export function validateOwnership({
     }
     if (/continue-on-error:\s*true/.test(workflowStepContaining(source, workflow.invocation))) {
       issue(issues, 'WORKFLOW_WARNING_ONLY', workflow.file, 'owned-test invocation cannot continue on error');
+    }
+    const rawProfileInvocations = workflow.profileInvocations;
+    const profileInvocations = Array.isArray(rawProfileInvocations) ? rawProfileInvocations : [];
+    if (rawProfileInvocations !== undefined && !Array.isArray(rawProfileInvocations)) {
+      issue(issues, 'INVALID_PROFILE_INVOCATIONS', workflow.file, className);
+    }
+    const uniqueProfileInvocations = new Set(profileInvocations);
+    if (uniqueProfileInvocations.size !== profileInvocations.length) {
+      issue(issues, 'DUPLICATE_PROFILE_INVOCATION', workflow.file, className);
+    }
+    for (const invocation of uniqueProfileInvocations) {
+      if (
+        typeof invocation !== 'string' ||
+        !invocation.startsWith(`node tools/ci/data-test-discovery.mjs run --class ${className} --profile `)
+      ) {
+        issue(issues, 'INVALID_PROFILE_INVOCATION', workflow.file, String(invocation));
+        continue;
+      }
+      if (countOccurrences(source, invocation) !== 1) {
+        issue(issues, 'PROFILE_INVOCATION_MISMATCH', workflow.file, invocation);
+      }
+      if (/continue-on-error:\s*true/.test(workflowStepContaining(source, invocation))) {
+        issue(issues, 'WORKFLOW_WARNING_ONLY', workflow.file, invocation);
+      }
     }
     for (const fixtureName of workflow.fixtures ?? []) {
       const fixture = fixtures[fixtureName];
@@ -459,11 +511,12 @@ export function validateOwnership({
   if (issues.length > 0) throw new OwnershipValidationError(issues);
 
   const normalized = [...manifestByPath.values()]
-    .map(({ path, semanticOwner, classes, durationMs }) => ({
+    .map(({ path, semanticOwner, classes, durationMs, executionProfile: profile }) => ({
       path,
       semanticOwner,
       classes: [...classes].sort(),
       durationMs: durationMs ?? null,
+      executionProfile: profile ?? null,
     }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const classCounts = {};
@@ -480,7 +533,14 @@ export function validateOwnership({
   };
 }
 
-function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass, requireFixtureStates) {
+function repositoryInputs(
+  repoRoot,
+  manifestPath,
+  requireDurations,
+  durationClass,
+  requireFixtureStates,
+  executionProfile,
+) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const rawIndex = execFileSync('git', ['ls-files', '--stage', '-z'], {
     cwd: repoRoot,
@@ -547,6 +607,7 @@ function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClas
     requireFixtureStates,
     requireDurations,
     durationClass,
+    executionProfile,
   };
 }
 
@@ -556,9 +617,30 @@ export function verifyRepository({
   requireFixtureStates = true,
   requireDurations = true,
   durationClass = null,
+  executionProfile = null,
 }) {
   return validateOwnership(
-    repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass, requireFixtureStates),
+    repositoryInputs(
+      repoRoot,
+      manifestPath,
+      requireDurations,
+      durationClass,
+      requireFixtureStates,
+      executionProfile,
+    ),
+  );
+}
+
+export function selectExecutionTests(tests, className, executionProfile, defaultProfile) {
+  if (executionProfile !== null && defaultProfile) {
+    throw new Error('--profile and --default-profile are mutually exclusive');
+  }
+  return tests.filter(
+    ({ classes, executionProfile: entryProfile }) =>
+      classes.includes(className) &&
+      (executionProfile !== null
+        ? entryProfile === executionProfile
+        : !defaultProfile || entryProfile === null),
   );
 }
 
@@ -605,9 +687,21 @@ async function measureClass({
   outputPath,
   maxWorkers,
   expectedHead,
+  executionProfile,
+  defaultProfile,
 }) {
-  const verification = verifyRepository({ repoRoot, manifestPath, requireDurations: false });
-  const selected = verification.tests.filter(({ classes }) => classes.includes(className));
+  const verification = verifyRepository({
+    repoRoot,
+    manifestPath,
+    requireDurations: false,
+    executionProfile,
+  });
+  const selected = selectExecutionTests(
+    verification.tests,
+    className,
+    executionProfile,
+    defaultProfile,
+  );
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
   const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
   if (!/^[a-f0-9]{40}$/.test(expectedHead ?? '') || headSha !== expectedHead) {
@@ -624,6 +718,7 @@ async function measureClass({
     headSha,
     inventoryDigest: verification.inventoryDigest,
     className,
+    executionProfile,
     maxWorkers,
     wallDurationMs: Math.max(1, Date.now() - startedAt),
     tests: results,
@@ -635,14 +730,27 @@ async function measureClass({
   return output;
 }
 
-async function runOwnedClass({ repoRoot, manifestPath, className, maxWorkers }) {
+async function runOwnedClass({
+  repoRoot,
+  manifestPath,
+  className,
+  maxWorkers,
+  executionProfile,
+  defaultProfile,
+}) {
   const verification = verifyRepository({
     repoRoot,
     manifestPath,
     requireDurations: maxWorkers > 1,
     durationClass: className,
+    executionProfile,
   });
-  const selected = verification.tests.filter(({ classes }) => classes.includes(className));
+  const selected = selectExecutionTests(
+    verification.tests,
+    className,
+    executionProfile,
+    defaultProfile,
+  );
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
   const shardCount = Math.min(maxWorkers, selected.length);
   const shards =
@@ -666,6 +774,7 @@ async function runOwnedClass({ repoRoot, manifestPath, className, maxWorkers }) 
     `${JSON.stringify({
       event: 'data-test-owned-run',
       className,
+      executionProfile,
       inventoryDigest: verification.inventoryDigest,
       total: selected.length,
       shards: results.map(({ index, tests, estimatedDurationMs, durationMs, ok, code, signal }) => ({
@@ -682,11 +791,75 @@ async function runOwnedClass({ repoRoot, manifestPath, className, maxWorkers }) 
   if (failed.length > 0) throw new Error(`${failed.length} owned-test shard(s) failed`);
 }
 
+export function combineDurationEvidence({ verification, evidence, expectedHead, className }) {
+  if (!/^[a-f0-9]{40}$/.test(expectedHead ?? '')) {
+    throw new Error('combined duration evidence requires an exact expected head');
+  }
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    throw new Error('combined duration evidence requires at least one input');
+  }
+  const expected = verification.tests.filter(({ classes }) => classes.includes(className));
+  const expectedByPath = new Map(expected.map((entry) => [entry.path, entry]));
+  const combined = [];
+  const seen = new Set();
+  for (const document of evidence) {
+    if (
+      document?.version !== 1 ||
+      document.headSha !== expectedHead ||
+      document.inventoryDigest !== verification.inventoryDigest ||
+      document.className !== className ||
+      !Array.isArray(document.tests)
+    ) {
+      throw new Error('duration evidence identity mismatch');
+    }
+    const profile = document.executionProfile ?? null;
+    for (const result of document.tests) {
+      const entry = expectedByPath.get(result?.path);
+      if (!entry || entry.executionProfile !== profile) {
+        throw new Error(`duration evidence profile mismatch: ${String(result?.path)}`);
+      }
+      if (seen.has(result.path)) throw new Error(`duplicate duration evidence: ${result.path}`);
+      if (
+        result.ok !== true ||
+        result.code !== 0 ||
+        result.signal !== null ||
+        !Number.isInteger(result.durationMs) ||
+        result.durationMs < 1
+      ) {
+        throw new Error(`unsuccessful duration evidence: ${result.path}`);
+      }
+      seen.add(result.path);
+      combined.push(result);
+    }
+  }
+  const missing = [...expectedByPath.keys()].filter((path) => !seen.has(path));
+  if (missing.length > 0) throw new Error(`missing duration evidence: ${missing.join(',')}`);
+  return {
+    version: 1,
+    headSha: expectedHead,
+    inventoryDigest: verification.inventoryDigest,
+    className,
+    maxWorkers: Math.max(...evidence.map(({ maxWorkers }) => maxWorkers ?? 0)),
+    wallDurationMs: evidence.reduce((total, { wallDurationMs }) => total + wallDurationMs, 0),
+    tests: combined.sort((left, right) => left.path.localeCompare(right.path)),
+  };
+}
+
 function optionValue(args, option, fallback) {
   const index = args.indexOf(option);
   if (index === -1) return fallback;
   if (index + 1 >= args.length) throw new Error(`missing value for ${option}`);
   return args[index + 1];
+}
+
+function optionValues(args, option) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== option) continue;
+    if (index + 1 >= args.length) throw new Error(`missing value for ${option}`);
+    values.push(args[index + 1]);
+  }
+  return values;
 }
 
 async function main() {
@@ -707,6 +880,11 @@ async function main() {
   }
 
   const className = optionValue(args, '--class', 'required-pr');
+  const executionProfile = optionValue(args, '--profile', null);
+  const defaultProfile = args.includes('--default-profile');
+  if (executionProfile !== null && defaultProfile) {
+    throw new Error('--profile and --default-profile are mutually exclusive');
+  }
   const maxWorkers = Number.parseInt(optionValue(args, '--max-workers', '2'), 10);
   if (!Number.isInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 2) {
     throw new Error('--max-workers must be 1 or 2');
@@ -723,14 +901,40 @@ async function main() {
       outputPath,
       maxWorkers,
       expectedHead,
+      executionProfile,
+      defaultProfile,
     });
     return;
   }
   if (command === 'run') {
-    await runOwnedClass({ repoRoot, manifestPath, className, maxWorkers });
+    await runOwnedClass({
+      repoRoot,
+      manifestPath,
+      className,
+      maxWorkers,
+      executionProfile,
+      defaultProfile,
+    });
     return;
   }
-  throw new Error('usage: data-test-discovery.mjs <verify|measure|run> [options]');
+  if (command === 'combine') {
+    const outputPath = optionValue(args, '--output');
+    if (!outputPath) throw new Error('combine requires --output');
+    const expectedHead = optionValue(args, '--expected-head');
+    if (!expectedHead) throw new Error('combine requires --expected-head');
+    const inputPaths = optionValues(args, '--input');
+    const verification = verifyRepository({
+      repoRoot,
+      manifestPath,
+      requireFixtureStates: false,
+      requireDurations: false,
+    });
+    const evidence = inputPaths.map((inputPath) => JSON.parse(readFileSync(inputPath, 'utf8')));
+    const combined = combineDurationEvidence({ verification, evidence, expectedHead, className });
+    writeFileSync(outputPath, `${JSON.stringify(combined, null, 2)}\n`, { flag: 'wx' });
+    return;
+  }
+  throw new Error('usage: data-test-discovery.mjs <verify|measure|combine|run> [options]');
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

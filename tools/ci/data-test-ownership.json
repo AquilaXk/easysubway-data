@@ -1,6 +1,9 @@
 {
   "version": 1,
   "executionOwner": "data25",
+  "executionProfiles": {
+    "mobile-v19": {}
+  },
   "roots": [
     "tools/ci",
     "tools/datapack",
@@ -83,7 +86,7 @@
       "file": ".github/workflows/ci.yml",
       "jobId": "contracts",
       "checkName": "Data contracts",
-      "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr",
+      "invocation": "node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile",
       "required": true,
       "fixtures": [
         "mobile"
@@ -93,6 +96,7 @@
           "source=\".external/mobile/apps/mobile\"",
           "expected_revision=\"39d2c4723d0ff855041c6162825930c7d12ffad3\"",
           "expected_sha256=\"f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3\"",
+          "fetch-depth: 0",
           "cp -a \"${source}\" apps/mobile",
           "rm -r -- \"${target}\"",
           "cp -a \"${source}\" \"${target}\""
@@ -194,7 +198,7 @@
     {"path":"tools/datapack/collect-seoul9-route-map-positions.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/collect-tago-itx-cheongchun-od.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/contract-producer.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
-    {"path":"tools/datapack/datapack-tools.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":null},
+    {"path":"tools/datapack/datapack-tools.test.mjs","semanticOwner":"data38","classes":["required-pr"],"executionProfile":"mobile-v19","durationMs":null},
     {"path":"tools/datapack/decide-datapack-release.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/emit-artifact-components.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":null},
     {"path":"tools/datapack/emit-station-catalog-from-bundled-pack.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":null},
@@ -339,7 +343,10 @@
       "requiredFiles": [
         {
           "path": "assets/datapacks/capital.sqlite.gz",
-          "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+          "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+          "profileSha256": {
+            "mobile-v19": "28de8771a22dd5188cd4c62662faba8dcf46f6c3370386bc2f5598334acf0cc2"
+          }
         },
         {
           "path": "assets/datapacks/metro_map_pack/basemap/labels.json",

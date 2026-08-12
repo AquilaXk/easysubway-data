@@ -3,12 +3,16 @@ import test from 'node:test';
 
 import {
   buildDurationShards,
+  combineDurationEvidence,
   parseGitIndex,
+  selectExecutionTests,
   validateOwnership,
 } from './data-test-discovery.mjs';
 
 const requiredInvocation =
-  'node tools/ci/data-test-discovery.mjs run --class required-pr';
+  'node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile';
+const profileInvocation =
+  'node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1';
 const releaseInvocation =
   'node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1';
 
@@ -31,6 +35,9 @@ function fixture() {
     manifest: {
       version: 1,
       executionOwner: 'data25',
+      executionProfiles: {
+        'mobile-v19': {},
+      },
       roots: [
         'tools/ci',
         'tools/datapack',
@@ -59,6 +66,9 @@ function fixture() {
             {
               path: 'pubspec.yaml',
               sha256: '23826001737d93cb613711e7c4bb5692cbce6864e345110fbf0af37294595324',
+              profileSha256: {
+                'mobile-v19': '1'.repeat(64),
+              },
             },
           ],
         },
@@ -75,6 +85,7 @@ function fixture() {
             mobile: ['cp -a .external/mobile/apps/mobile apps/mobile'],
           },
           contextInvocations: [],
+          profileInvocations: [profileInvocation],
         },
         'deterministic-release': {
           file: '.github/workflows/datapack-release.yml',
@@ -89,7 +100,7 @@ function fixture() {
     trackedEntries: tests.map(({ path }) => ({ path, mode: '100644' })),
     sources: Object.fromEntries(tests.map(({ path }) => [path, "import test from 'node:test';\ntest('ok', () => {});\n"])),
     workflowSources: {
-      '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          ref: \${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: .external/mobile\n          persist-credentials: false\n      - run: cp -a .external/mobile/apps/mobile apps/mobile\n      - run: ${requiredInvocation}\n`,
+      '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          ref: \${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: .external/mobile\n          persist-credentials: false\n      - run: cp -a .external/mobile/apps/mobile apps/mobile\n      - run: ${profileInvocation}\n      - run: ${requiredInvocation}\n`,
       '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - run: ${releaseInvocation}\n`,
     },
     fixtureStates: {
@@ -194,6 +205,30 @@ test('external fixture identity and exact PR-head checkout fail closed on drift'
   staticOnly.fixtureStates = {};
   staticOnly.requireFixtureStates = false;
   assert.doesNotThrow(() => validateOwnership(staticOnly));
+});
+
+test('execution profiles bind manifest membership and fixture hashes', () => {
+  const profiled = fixture();
+  profiled.manifest.tests[0].executionProfile = 'mobile-v19';
+  profiled.executionProfile = 'mobile-v19';
+  profiled.fixtureStates.mobile.files['pubspec.yaml'] = '1'.repeat(64);
+  const result = validateOwnership(profiled);
+  assert.deepEqual(
+    selectExecutionTests(result.tests, 'required-pr', 'mobile-v19', false).map(({ path }) => path),
+    ['tools/ci/alpha.test.mjs'],
+  );
+  assert.deepEqual(
+    selectExecutionTests(result.tests, 'required-pr', null, true).map(({ path }) => path),
+    ['tools/datapack/release.test.mjs'],
+  );
+
+  const unknown = fixture();
+  unknown.manifest.tests[0].executionProfile = 'missing';
+  assert.ok(errorCodes(() => validateOwnership(unknown)).includes('UNKNOWN_EXECUTION_PROFILE'));
+
+  const badHash = fixture();
+  badHash.manifest.fixtures.mobile.requiredFiles[0].profileSha256['mobile-v19'] = 'mutable';
+  assert.ok(errorCodes(() => validateOwnership(badHash)).includes('INVALID_FIXTURE_PROFILE_HASH'));
 });
 
 test('release-only ownership is valid but required workflow cannot become advisory', () => {
@@ -306,4 +341,75 @@ test('duration-based shards are deterministic and never duplicate or drop tests'
   );
   assert.deepEqual(first.map(({ estimatedDurationMs }) => estimatedDurationMs), [110, 110]);
   assert.throws(() => buildDurationShards(entries, 5), /empty shard/);
+});
+
+test('profile duration evidence combines only an exact successful disjoint union', () => {
+  const value = fixture();
+  value.manifest.tests[0].executionProfile = 'mobile-v19';
+  const verification = validateOwnership(value);
+  const expectedHead = 'a'.repeat(40);
+  const profile = {
+    version: 1,
+    headSha: expectedHead,
+    inventoryDigest: verification.inventoryDigest,
+    className: 'required-pr',
+    executionProfile: 'mobile-v19',
+    maxWorkers: 1,
+    wallDurationMs: 10,
+    tests: [
+      {
+        path: 'tools/ci/alpha.test.mjs',
+        ok: true,
+        code: 0,
+        signal: null,
+        durationMs: 10,
+      },
+    ],
+  };
+  const defaultProfile = {
+    ...profile,
+    executionProfile: null,
+    tests: [
+      {
+        path: 'tools/datapack/release.test.mjs',
+        ok: true,
+        code: 0,
+        signal: null,
+        durationMs: 8,
+      },
+    ],
+  };
+  const combined = combineDurationEvidence({
+    verification,
+    evidence: [profile, defaultProfile],
+    expectedHead,
+    className: 'required-pr',
+  });
+  assert.deepEqual(combined.tests.map(({ path }) => path), [
+    'tools/ci/alpha.test.mjs',
+    'tools/datapack/release.test.mjs',
+  ]);
+
+  assert.throws(
+    () => combineDurationEvidence({ verification, evidence: [profile], expectedHead, className: 'required-pr' }),
+    /missing duration evidence/,
+  );
+  assert.throws(
+    () => combineDurationEvidence({
+      verification,
+      evidence: [profile, { ...defaultProfile, tests: profile.tests }],
+      expectedHead,
+      className: 'required-pr',
+    }),
+    /profile mismatch/,
+  );
+  assert.throws(
+    () => combineDurationEvidence({
+      verification,
+      evidence: [profile, { ...defaultProfile, tests: [{ ...defaultProfile.tests[0], ok: false }] }],
+      expectedHead,
+      className: 'required-pr',
+    }),
+    /unsuccessful duration evidence/,
+  );
 });
