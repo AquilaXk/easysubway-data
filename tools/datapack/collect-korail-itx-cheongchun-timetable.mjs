@@ -74,7 +74,8 @@ export async function collectKorailItxCheongchunCompleteness({
   const collectTimetable = collectTimetableImpl ?? (replay
     ? collectKorailItxCheongchunTimetable
     : collectKorailItxCheongchunPlan);
-  const usingDefaultAdmissionCollector = collectTimetableImpl === null && !replay;
+  const usingDefaultAdmissionCollector = (collectTimetableImpl === null && !replay)
+    || collectTimetableImpl === collectKorailItxCheongchunPlan;
   requiredString(stationCatalogPackPath, "stationCatalogPackPath");
   const catalog = stationCatalogSnapshot ?? snapshotStationCatalog(stationCatalogPackPath);
   const canonical = catalog.canonical;
@@ -2699,6 +2700,8 @@ export async function runKorailItxCompletenessCli({
   argv = process.argv.slice(2),
   env = process.env,
   now = new Date(),
+  fetchImpl = fetch,
+  providerServiceKey = null,
   collectImpl = collectKorailItxCheongchunCompleteness,
   promoteImpl = promoteItxSourceCandidate,
   repositoryRoot = repoRoot,
@@ -2728,7 +2731,7 @@ export async function runKorailItxCompletenessCli({
     });
     return { promotion, exitCode: 0 };
   }
-  const serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
+  const serviceKey = normalizeDataGoKrServiceKey(providerServiceKey ?? env.DATA_GO_KR_SERVICE_KEY);
   const output = requiredString(args.output, "--output");
   if (!path.isAbsolute(output)) throw new Error("--output must be absolute");
   const completenessOutputArg = args["completeness-output"];
@@ -2766,7 +2769,8 @@ export async function runKorailItxCompletenessCli({
   let artifact;
   try {
     artifact = await collectImpl({
-      serviceKey, serviceDates, stationCatalogPackPath, stationCatalogSnapshot, now, replay, previousAdmittedArtifact,
+      serviceKey, serviceDates, stationCatalogPackPath, stationCatalogSnapshot, fetchImpl, now, replay,
+      previousAdmittedArtifact,
     });
     completenessCatalogSnapshots.set(artifact, stationCatalogSnapshot);
   } catch (error) {

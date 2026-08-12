@@ -72,5 +72,6 @@ jobs:
             ${{ runner.temp }}/itx-current-collection/freshness.json
             ${{ runner.temp }}/itx-current-collection/itx-result.json
             ${{ runner.temp }}/itx-current-collection/itx-completeness.json
+            ${{ runner.temp }}/itx-current-collection/provider-response-capture.json
           if-no-files-found: error
           retention-days: 14

@@ -63,6 +63,7 @@ test("실패에도 sanitized 증적만 보존하며 raw·secret·catalog·promot
   assert.match(upload, /retention-days:\s*14/);
   assert.match(upload, /freshness\.json/);
   assert.match(upload, /itx-result\.json/);
+  assert.match(upload, /provider-response-capture\.json/);
   assert.doesNotMatch(upload, /station-catalog-pack|DATA_GO_KR_SERVICE_KEY|raw/i);
   assert.doesNotMatch(yml, /(?:git (?:add|commit|push)|gh |promotion|publish|upload-release|fallback|alternate provider)/i);
 });
