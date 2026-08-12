@@ -196,6 +196,20 @@ test('external fixture identity and exact PR-head checkout fail closed on drift'
   assert.doesNotThrow(() => validateOwnership(staticOnly));
 });
 
+test('runtime-derived fixture files validate against their runtime hash', () => {
+  const derived = fixture();
+  derived.manifest.fixtures.mobile.requiredFiles[0].runtimeSha256 = '1'.repeat(64);
+  derived.fixtureStates.mobile.files['pubspec.yaml'] = '1'.repeat(64);
+  assert.doesNotThrow(() => validateOwnership(derived));
+
+  derived.fixtureStates.mobile.files['pubspec.yaml'] =
+    derived.manifest.fixtures.mobile.requiredFiles[0].sha256;
+  assert.ok(errorCodes(() => validateOwnership(derived)).includes('FIXTURE_HASH_MISMATCH'));
+
+  derived.manifest.fixtures.mobile.requiredFiles[0].runtimeSha256 = 'mutable';
+  assert.ok(errorCodes(() => validateOwnership(derived)).includes('INVALID_FIXTURE_FILE'));
+});
+
 test('release-only ownership is valid but required workflow cannot become advisory', () => {
   const releaseOnly = fixture();
   releaseOnly.manifest.tests[0].classes = ['deterministic-release'];

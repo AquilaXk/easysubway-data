@@ -337,7 +337,8 @@
       "requiredFiles": [
         {
           "path": "assets/datapacks/capital.sqlite.gz",
-          "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3"
+          "sha256": "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+          "runtimeSha256": "28de8771a22dd5188cd4c62662faba8dcf46f6c3370386bc2f5598334acf0cc2"
         },
         {
           "path": "assets/datapacks/metro_map_pack/basemap/labels.json",
