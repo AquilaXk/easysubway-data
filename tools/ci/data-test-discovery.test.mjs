@@ -186,6 +186,28 @@ test('unknown owner, class, workflow and missing duration fail closed', () => {
   const duration = fixture();
   duration.manifest.tests[0].durationMs = null;
   assert.ok(errorCodes(() => validateOwnership(duration)).includes('INVALID_DURATION'));
+
+  const inheritedOwner = fixture();
+  inheritedOwner.manifest.tests[0].semanticOwner = 'toString';
+  assert.ok(errorCodes(() => validateOwnership(inheritedOwner)).includes('UNKNOWN_OWNER'));
+
+  const inheritedClass = fixture();
+  inheritedClass.manifest.tests[0].classes = ['constructor'];
+  assert.ok(
+    errorCodes(() => validateOwnership(inheritedClass)).includes('UNKNOWN_EXECUTION_CLASS'),
+  );
+
+  const inheritedProfile = fixture();
+  inheritedProfile.manifest.tests[0].executionProfile = 'valueOf';
+  assert.ok(
+    errorCodes(() => validateOwnership(inheritedProfile)).includes('UNKNOWN_EXECUTION_PROFILE'),
+  );
+
+  const inheritedFixture = fixture();
+  inheritedFixture.manifest.workflows['required-pr'].fixtures = ['toString'];
+  assert.ok(
+    errorCodes(() => validateOwnership(inheritedFixture)).includes('UNKNOWN_WORKFLOW_FIXTURE'),
+  );
 });
 
 test('external fixture identity and exact PR-head checkout fail closed on drift', () => {
@@ -242,6 +264,11 @@ test('release-only ownership is valid but required workflow cannot become adviso
   releaseOnly.manifest.tests[0].classes = ['deterministic-release'];
   assert.doesNotThrow(() => validateOwnership(releaseOnly));
 
+  const releaseWithoutFixture = fixture();
+  releaseWithoutFixture.fixtureStates = {};
+  releaseWithoutFixture.requiredFixtureNames = [];
+  assert.doesNotThrow(() => validateOwnership(releaseWithoutFixture));
+
   const advisory = fixture();
   advisory.manifest.workflows['required-pr'].required = false;
   assert.ok(errorCodes(() => validateOwnership(advisory)).includes('REQUIRED_WORKFLOW_ADVISORY'));
@@ -258,15 +285,26 @@ test('skip and only markers in tracked tests fail closed', () => {
     value.sources['tools/ci/alpha.test.mjs'] = marker;
     assert.ok(errorCodes(() => validateOwnership(value)).includes('FORBIDDEN_TEST_SELECTION'));
   }
+
+  const afterRegexLiteral = fixture();
+  afterRegexLiteral.sources['tools/ci/alpha.test.mjs'] = `
+    const quote = /'/;
+    test.only('focused after regex', () => quote.test("'"));
+  `;
+  assert.ok(
+    errorCodes(() => validateOwnership(afterRegexLiteral)).includes('FORBIDDEN_TEST_SELECTION'),
+  );
 });
 
 test('selection-like text inside strings and comments is not executable selection', () => {
   const value = fixture();
   value.sources['tools/ci/alpha.test.mjs'] = `
     const examples = ["test.skip('later')", 'describe.only("focused")'];
+    const selectionPattern = /test\\.only\\(/;
+    const quotePattern = /'/;
     // test.only('commented', () => {});
     /* test('commented', { skip: true }, () => {}); */
-    test('real', () => examples.length);
+    test('real', () => examples.length + Number(selectionPattern.test('')) + Number(quotePattern.test('')));
   `;
   assert.doesNotThrow(() => validateOwnership(value));
 });

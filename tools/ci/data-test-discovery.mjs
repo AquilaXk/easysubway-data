@@ -10,6 +10,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const TEST_PATH_PATTERN = /\.test\.[^/]+$/;
 const SUPPORTED_TEST_PATTERN = /\.test\.mjs$/;
 const GIT_EXECUTABLE = '/usr/bin/git';
+const REGEX_PREFIX_KEYWORDS = new Set([
+  'await',
+  'case',
+  'delete',
+  'else',
+  'in',
+  'instanceof',
+  'of',
+  'return',
+  'throw',
+  'typeof',
+  'void',
+  'yield',
+]);
 
 function compareStrings(left, right) {
   if (left < right) return -1;
@@ -67,10 +81,19 @@ function workflowStepContaining(source, invocation) {
   return lines.slice(start, end).join('\n');
 }
 
+function startsRegexLiteral(output) {
+  const prefix = output.trimEnd();
+  if (prefix.length === 0) return true;
+  if ('([{:;,=!?&|+-*%^~<>/'.includes(prefix.at(-1))) return true;
+  const previousWord = /([A-Za-z_$][A-Za-z0-9_$]*)$/u.exec(prefix)?.[1];
+  return REGEX_PREFIX_KEYWORDS.has(previousWord);
+}
+
 function executableJavaScript(source) {
   let output = '';
   let state = 'code';
   let escaped = false;
+  let regexCharacterClass = false;
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
     const next = source[index + 1];
@@ -83,6 +106,11 @@ function executableJavaScript(source) {
         state = 'block-comment';
         output += '  ';
         index += 1;
+      } else if (character === '/' && startsRegexLiteral(output)) {
+        state = 'regex';
+        escaped = false;
+        regexCharacterClass = false;
+        output += ' ';
       } else if (character === "'") {
         state = 'single-quote';
         escaped = false;
@@ -97,6 +125,24 @@ function executableJavaScript(source) {
         output += ' ';
       } else {
         output += character;
+      }
+      continue;
+    }
+
+    if (state === 'regex') {
+      output += character === '\n' ? '\n' : ' ';
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '[') {
+        regexCharacterClass = true;
+      } else if (character === ']') {
+        regexCharacterClass = false;
+      } else if (character === '/' && !regexCharacterClass) {
+        state = 'code';
+      } else if (character === '\n') {
+        state = 'code';
       }
       continue;
     }
@@ -199,6 +245,7 @@ export function validateOwnership({
   workflowSources,
   fixtureStates = {},
   requireFixtureStates = true,
+  requiredFixtureNames = null,
   requireDurations = true,
   durationClass = null,
   executionProfile = null,
@@ -220,15 +267,20 @@ export function validateOwnership({
       : {};
   const manifestTests = Array.isArray(manifest?.tests) ? manifest.tests : [];
   const tracked = Array.isArray(trackedEntries) ? trackedEntries : [];
+  const requiredFixtureSet =
+    requiredFixtureNames === null ? null : new Set(requiredFixtureNames);
 
-  if (!owners[manifest?.executionOwner]) {
+  if (!Object.hasOwn(owners, String(manifest?.executionOwner))) {
     issue(issues, 'UNKNOWN_EXECUTION_OWNER', 'manifest', String(manifest?.executionOwner));
   }
-  if (workflows['required-pr']?.required !== true) {
+  const requiredWorkflow = Object.hasOwn(workflows, 'required-pr')
+    ? workflows['required-pr']
+    : null;
+  if (requiredWorkflow?.required !== true) {
     issue(
       issues,
       'REQUIRED_WORKFLOW_ADVISORY',
-      workflows['required-pr']?.file ?? 'required-pr',
+      requiredWorkflow?.file ?? 'required-pr',
       'required-pr workflow must be required',
     );
   }
@@ -270,7 +322,7 @@ export function validateOwnership({
     }
     manifestByPath.set(path, entry);
 
-    if (!owners[entry.semanticOwner]) {
+    if (!Object.hasOwn(owners, String(entry.semanticOwner))) {
       issue(issues, 'UNKNOWN_OWNER', path, String(entry.semanticOwner));
     }
     if (!Array.isArray(entry.classes) || entry.classes.length === 0) {
@@ -281,7 +333,7 @@ export function validateOwnership({
         issue(issues, 'DUPLICATE_EXECUTION_CLASS', path, 'duplicate execution class');
       }
       for (const className of uniqueClasses) {
-        if (!workflows[className]) {
+        if (!Object.hasOwn(workflows, String(className))) {
           issue(issues, 'UNKNOWN_EXECUTION_CLASS', path, String(className));
         }
       }
@@ -295,7 +347,8 @@ export function validateOwnership({
     }
     if (
       entry.executionProfile !== undefined &&
-      (typeof entry.executionProfile !== 'string' || !executionProfiles[entry.executionProfile])
+      (typeof entry.executionProfile !== 'string' ||
+        !Object.hasOwn(executionProfiles, entry.executionProfile))
     ) {
       issue(issues, 'UNKNOWN_EXECUTION_PROFILE', path, String(entry.executionProfile));
     }
@@ -353,14 +406,20 @@ export function validateOwnership({
           ? profileSha256
           : {},
       )) {
-        if (!executionProfiles[profileName] || !/^[a-f0-9]{64}$/.test(profileHash)) {
+        if (
+          !Object.hasOwn(executionProfiles, profileName) ||
+          !/^[a-f0-9]{64}$/.test(profileHash)
+        ) {
           issue(issues, 'INVALID_FIXTURE_PROFILE_HASH', fixtureName, `${requiredFile.path}:${profileName}`);
         }
       }
     }
-    if (requireFixtureStates) {
-      const state = fixtureStates[fixtureName];
-      if (!state || state.error) {
+    if (
+      requireFixtureStates &&
+      (requiredFixtureSet === null || requiredFixtureSet.has(fixtureName))
+    ) {
+      const state = Object.hasOwn(fixtureStates, fixtureName) ? fixtureStates[fixtureName] : null;
+      if (state === null || state.error) {
         issue(issues, 'EXTERNAL_FIXTURE_MISSING', fixtureName, fixture.path);
         continue;
       }
@@ -454,8 +513,8 @@ export function validateOwnership({
       }
     }
     for (const fixtureName of workflow.fixtures ?? []) {
-      const fixture = fixtures[fixtureName];
-      if (!fixture) {
+      const fixture = Object.hasOwn(fixtures, fixtureName) ? fixtures[fixtureName] : null;
+      if (fixture === null) {
         issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE', workflow.file, fixtureName);
         continue;
       }
@@ -540,15 +599,32 @@ export function validateOwnership({
   };
 }
 
-function repositoryInputs(
+function repositoryInputs({
   repoRoot,
   manifestPath,
   requireDurations,
   durationClass,
   requireFixtureStates,
   executionProfile,
-) {
+  fixtureClass,
+}) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const manifestFixtures = manifest.fixtures ?? {};
+  const selectedWorkflow =
+    fixtureClass !== null && Object.hasOwn(manifest.workflows ?? {}, fixtureClass)
+      ? manifest.workflows[fixtureClass]
+      : null;
+  const requiredFixtureNames =
+    fixtureClass === null
+      ? null
+      : Array.isArray(selectedWorkflow?.fixtures)
+        ? selectedWorkflow.fixtures
+        : [];
+  const fixtureEntries = requireFixtureStates
+    ? (requiredFixtureNames ?? Object.keys(manifestFixtures))
+        .filter((fixtureName) => Object.hasOwn(manifestFixtures, fixtureName))
+        .map((fixtureName) => [fixtureName, manifestFixtures[fixtureName]])
+    : [];
   const rawIndex = execFileSync(GIT_EXECUTABLE, ['ls-files', '--stage', '-z'], {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -571,7 +647,7 @@ function repositoryInputs(
     workflowSources[workflow.file] = readFileSync(resolve(repoRoot, workflow.file), 'utf8');
   }
   const fixtureStates = {};
-  for (const [fixtureName, fixture] of requireFixtureStates ? Object.entries(manifest.fixtures ?? {}) : []) {
+  for (const [fixtureName, fixture] of fixtureEntries) {
     const checkoutRoot = resolve(repoRoot, fixture.checkoutPath);
     const fixtureRoot = resolve(repoRoot, fixture.path);
     try {
@@ -612,6 +688,7 @@ function repositoryInputs(
     workflowSources,
     fixtureStates,
     requireFixtureStates,
+    requiredFixtureNames,
     requireDurations,
     durationClass,
     executionProfile,
@@ -625,16 +702,18 @@ export function verifyRepository({
   requireDurations = true,
   durationClass = null,
   executionProfile = null,
+  fixtureClass = null,
 }) {
   return validateOwnership(
-    repositoryInputs(
+    repositoryInputs({
       repoRoot,
       manifestPath,
       requireDurations,
       durationClass,
       requireFixtureStates,
       executionProfile,
-    ),
+      fixtureClass,
+    }),
   );
 }
 
@@ -702,6 +781,7 @@ async function measureClass({
     manifestPath,
     requireDurations: false,
     executionProfile,
+    fixtureClass: className,
   });
   const selected = selectExecutionTests(
     verification.tests,
@@ -754,6 +834,7 @@ async function runOwnedClass({
     requireDurations: maxWorkers > 1,
     durationClass: className,
     executionProfile,
+    fixtureClass: className,
   });
   const selected = selectExecutionTests(
     verification.tests,

@@ -29,6 +29,20 @@ function assertRequiredOwned(paths) {
   }
 }
 
+function assertWorkflowStepOrder(yml, names) {
+  const positions = names.map((name) => {
+    const position = yml.indexOf(name);
+    assert.ok(position >= 0, `${name} 단계를 찾지 못함`);
+    return position;
+  });
+  for (let index = 1; index < positions.length; index += 1) {
+    assert.ok(
+      positions[index - 1] < positions[index],
+      `${names[index - 1]}는 ${names[index]}보다 앞서야 함`,
+    );
+  }
+}
+
 function fixtureStep(workflow) {
   const yml = readFileSync(path.join(root, workflow), "utf8");
   const block = yml.match(/- name: [^\n]*Checkout pinned Mobile fixture[\s\S]*?\n\s+- name:/)?.[0];
@@ -155,15 +169,14 @@ test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤
   assert.match(backup, /\.external\/itx-cheongchun-topology-evidence\.json/);
   assert.match(restore, /\.external\/itx-cheongchun-topology-evidence\.json/);
   assert.match(restore, /tools\/datapack\/itx-cheongchun-topology-evidence\.json/);
-  assert.ok(
-    ci.indexOf("Backup tracked topology evidence") < ci.indexOf("Migrate pinned Mobile v18 pack to v19")
-      && ci.indexOf("Migrate pinned Mobile v18 pack to v19") < ci.indexOf("Verify Data issue 108 bundled-pack regression")
-      && ci.indexOf("Verify Data issue 108 bundled-pack regression") < ci.indexOf("Restore tracked topology evidence")
-      && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Lint workflows")
-      && ci.indexOf("Restore tracked topology evidence")
-        < ci.indexOf("Verify and run migrated Mobile owned required tests"),
-    "evidence backup/restore는 migration regression과 later contract 사이에 있어야 함",
-  );
+  assertWorkflowStepOrder(ci, [
+    "Backup tracked topology evidence",
+    "Migrate pinned Mobile v18 pack to v19",
+    "Verify Data issue 108 bundled-pack regression",
+    "Restore tracked topology evidence",
+    "Verify and run migrated Mobile owned required tests",
+  ]);
+  assertWorkflowStepOrder(ci, ["Restore tracked topology evidence", "Lint workflows"]);
 });
 
 test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runner 전에 복원한다", () => {
@@ -177,15 +190,18 @@ test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runn
   assert.match(restore, /cp -a "\$\{source\}" "\$\{target\}"/);
   assert.match(restore, /find "\$\{target\}" -type l/);
   assert.match(restore, /sha256sum "\$\{target_capital_gzip\}"/);
-  assert.ok(
-    ci.indexOf("Verify Data issue 108 bundled-pack regression")
-      < ci.indexOf("Verify and run migrated Mobile owned required tests")
-      && ci.indexOf("Verify and run migrated Mobile owned required tests")
-        < ci.indexOf("Restore pinned Mobile fixture for owned tests")
-      && ci.indexOf("Restore pinned Mobile fixture for owned tests")
-        < ci.indexOf("Verify and run pristine Mobile owned required tests"),
-    "migrated profile은 #108 뒤에, pristine profile은 restore 뒤에 실행돼야 함",
+  const withoutIssue108 = ci.replace(
+    "Verify Data issue 108 bundled-pack regression",
+    "Removed Data issue 108 bundled-pack regression",
   );
+  const executionOrder = [
+    "Verify Data issue 108 bundled-pack regression",
+    "Verify and run migrated Mobile owned required tests",
+    "Restore pinned Mobile fixture for owned tests",
+    "Verify and run pristine Mobile owned required tests",
+  ];
+  assert.throws(() => assertWorkflowStepOrder(withoutIssue108, executionOrder), /단계를 찾지 못함/);
+  assertWorkflowStepOrder(ci, executionOrder);
 });
 
 test("Data Pack Release는 Mobile fixture checkout 또는 stage를 포함하지 않는다", () => {
