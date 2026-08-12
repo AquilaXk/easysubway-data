@@ -137,7 +137,7 @@ function workflowRun(id, createdAt = "2026-08-12T15:14:00.000Z") {
     event: "workflow_dispatch",
     head_branch: "main",
     run_attempt: 1,
-    path: ".github/workflows/itx-current-collection.yml@main",
+    path: ".github/workflows/itx-current-collection.yml",
   };
 }
 
@@ -188,6 +188,10 @@ test("KST quota guard는 same-window prior run과 current absent·duplicate·tru
     { total_count: 1, workflow_runs: [workflowRun(9000)] },
     { total_count: 2, workflow_runs: [workflowRun(9001), workflowRun(9001)] },
     { total_count: 101, workflow_runs: Array.from({ length: 100 }, (_, index) => workflowRun(index + 1)) },
+    {
+      total_count: 1,
+      workflow_runs: [{ ...workflowRun(9001), path: ".github/workflows/itx-current-collection.yml@main" }],
+    },
   ];
 
   for (const body of fixtures) {

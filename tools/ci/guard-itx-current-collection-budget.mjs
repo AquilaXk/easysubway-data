@@ -52,8 +52,7 @@ function validateRun(run, window) {
   if (!Number.isSafeInteger(run.id) || run.id <= 0) throw failure();
   if (run.event !== EXPECTED_EVENT || run.head_branch !== EXPECTED_BRANCH) throw failure();
   if (!Number.isSafeInteger(run.run_attempt) || run.run_attempt <= 0) throw failure();
-  if (typeof run.path !== "string"
-    || !run.path.startsWith(`.github/workflows/${WORKFLOW_FILE}@`)) throw failure();
+  if (run.path !== `.github/workflows/${WORKFLOW_FILE}`) throw failure();
   const createdAt = Date.parse(run.created_at);
   if (!Number.isFinite(createdAt) || createdAt < window.startMillis || createdAt > window.endMillis) {
     throw failure();
