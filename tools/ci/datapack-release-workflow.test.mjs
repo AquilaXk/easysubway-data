@@ -681,13 +681,5 @@ test("production-publish는 attested candidate를 no-rebuild로 소비한다", (
   assert.ok(yml.indexOf("Data Pack Release / Build data packs") < yml.indexOf("Data Pack Release / Stage candidate provenance"));
   assert.ok(yml.indexOf("Data Pack Release / Stage candidate provenance") < yml.indexOf("Data Pack Release / Validate release evidence bundle"));
 
-  const mobileCheckout = step("Data Pack Release / Checkout pinned Mobile fixture");
-  assert.match(mobileCheckout, /repository:\s*AquilaXk\/easysubway-mobile/);
-  assert.match(mobileCheckout, /ref:\s*d85742f14cbf97c526a6b94dd55bbf863e1d1346/);
-  assert.match(mobileCheckout, /path:\s*\.external\/mobile/);
-  assert.match(mobileCheckout, /persist-credentials:\s*false/);
-
-  const mobileStage = step("Data Pack Release / Stage pinned Mobile app fixture");
-  assert.match(mobileStage, /test ! -e apps\/mobile/);
-  assert.match(mobileStage, /cp -a \.external\/mobile\/apps\/mobile apps\/mobile/);
+  assert.doesNotMatch(yml, /apps\/mobile/);
 });
