@@ -247,3 +247,32 @@ test("unconsumed base, denied identity, suffix 0/19와 path collision은 final o
     }
   });
 });
+
+test("세 publication output은 provider 실행 전에 같은 parent로 닫는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-parent-"));
+  const otherDirectory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-other-"));
+  const paths = cliPaths(directory);
+  paths.completenessOutput = path.join(otherDirectory, "completeness.json");
+  await writeFile(paths.capture, await baseCaptureBytes());
+  let upstreamCalls = 0;
+  try {
+    await assert.rejects(runContinueCurrentItxCollectionCli({
+      argv: cliArgv(paths),
+      env: { DATA_GO_KR_SERVICE_KEY: "runtime-secret" },
+      now: NOW,
+      repositoryRoot: directory,
+      providerFetchImpl: async () => {
+        upstreamCalls += 1;
+        return new Response("unexpected");
+      },
+      runCompletenessImpl: async () => { throw new Error("collector must not run"); },
+    }), /publication outputs must share one parent/);
+    assert.equal(upstreamCalls, 0);
+    await absent(paths.output);
+    await absent(paths.completenessOutput);
+    await absent(paths.extendedCaptureOutput);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(otherDirectory, { recursive: true, force: true });
+  }
+});

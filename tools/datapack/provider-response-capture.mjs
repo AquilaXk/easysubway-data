@@ -4,6 +4,8 @@ const DEFAULT_MAX_RECORDS = 2_000;
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024 * 1024;
 const ALLOWED_ORIGIN = "https://apis.data.go.kr";
 
+class ProviderCaptureIntegrityError extends Error {}
+
 export function createProviderResponseRecorder({
   fetchImpl = fetch,
   observedAt,
@@ -19,22 +21,27 @@ export function createProviderResponseRecorder({
 
   const records = [];
   let bodyBytes = 0;
+  let integrityFailure = false;
 
   const captureFetch = async (input, init = {}) => {
     const { identity: request, credentials } = providerRequest(input, init);
-    if (records.length >= maxRecords) throw new Error("provider capture record limit exceeded");
+    if (records.length >= maxRecords) {
+      throw new ProviderCaptureIntegrityError("provider capture record limit exceeded");
+    }
     const index = records.length;
     const record = { index, request, outcome: { kind: "PENDING" } };
     records.push(record);
     try {
       const response = await fetchImpl(input, init);
-      if (!(response instanceof Response)) throw new Error("provider fetch must return a Response");
+      if (!(response instanceof Response)) throw new ProviderCaptureIntegrityError("provider fetch must return a Response");
 
       const body = Buffer.from(await response.arrayBuffer());
       const contentType = response.headers.get("content-type");
       const retryAfter = response.headers.get("retry-after");
       rejectCredentialEcho(credentials, [body.toString("utf8"), contentType, retryAfter]);
-      if (bodyBytes + body.length > maxBodyBytes) throw new Error("provider capture body limit exceeded");
+      if (bodyBytes + body.length > maxBodyBytes) {
+        throw new ProviderCaptureIntegrityError("provider capture body limit exceeded");
+      }
       bodyBytes += body.length;
       record.outcome = {
         kind: "RESPONSE",
@@ -51,6 +58,7 @@ export function createProviderResponseRecorder({
       return responseFromRecord(record.outcome.response);
     } catch (error) {
       record.outcome = { kind: "TRANSPORT_FAILURE" };
+      if (error instanceof ProviderCaptureIntegrityError) integrityFailure = true;
       throw error;
     }
   };
@@ -61,6 +69,7 @@ export function createProviderResponseRecorder({
       if (records.some(({ outcome }) => outcome.kind === "PENDING")) {
         throw new Error("provider capture has pending requests");
       }
+      if (integrityFailure) throw new Error("provider capture integrity failure");
       return captureWithDigest({
         schemaVersion: 1,
         artifactKind: "provider-response-capture",
@@ -128,6 +137,7 @@ export function createProviderResponseContinuation({
     baseQueues.get(key).push(record.index);
   }
   const consumedBase = new Set();
+  const consumptionOrder = [];
   let invalidReason = null;
   let liveRequestCount = 0;
   const liveRecorder = createProviderResponseRecorder({
@@ -158,6 +168,7 @@ export function createProviderResponseContinuation({
       if (queue?.length > 0) {
         const index = queue.shift();
         consumedBase.add(index);
+        consumptionOrder.push({ kind: "BASE", index });
         const record = capture.records[index];
         if (record.outcome.kind === "TRANSPORT_FAILURE") {
           throw new Error("provider continuation base transport failure");
@@ -174,8 +185,17 @@ export function createProviderResponseContinuation({
       }
       if (!allowed) invalidate("provider continuation live request is not allowed");
       if (liveRequestCount >= maxLiveRequests) invalidate("provider continuation live request limit exceeded");
+      const liveIndex = liveRequestCount;
       liveRequestCount += 1;
-      return liveRecorder.fetchImpl(input, init);
+      consumptionOrder.push({ kind: "LIVE", index: liveIndex });
+      try {
+        return await liveRecorder.fetchImpl(input, init);
+      } catch (error) {
+        if (error instanceof ProviderCaptureIntegrityError) {
+          invalidReason = "provider continuation live capture integrity failed";
+        }
+        throw error;
+      }
     },
     captureArtifact() {
       if (invalidReason !== null) throw new Error(invalidReason);
@@ -184,8 +204,8 @@ export function createProviderResponseContinuation({
         throw new Error(`provider continuation has ${remaining} unconsumed base record${remaining === 1 ? "" : "s"}`);
       }
       const liveCapture = liveRecorder.captureArtifact();
-      const records = [...capture.records, ...liveCapture.records].map((record, index) => ({
-        ...structuredClone(record),
+      const records = consumptionOrder.map(({ kind, index: sourceIndex }, index) => ({
+        ...structuredClone(kind === "BASE" ? capture.records[sourceIndex] : liveCapture.records[sourceIndex]),
         index,
       }));
       return captureWithDigest({
@@ -322,7 +342,7 @@ function rejectCredentialEcho(credentials, values) {
   const representations = new Set(credentials.flatMap((credential) => [credential, encodeURIComponent(credential)]));
   for (const value of values) {
     if (typeof value === "string" && [...representations].some((credential) => credential !== "" && value.includes(credential))) {
-      throw new Error("provider capture credential echo rejected");
+      throw new ProviderCaptureIntegrityError("provider capture credential echo rejected");
     }
   }
 }

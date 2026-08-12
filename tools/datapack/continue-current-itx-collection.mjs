@@ -125,6 +125,11 @@ function continuationArgs(argv) {
   if (new Set(Object.values(normalized)).size !== expected.length) {
     throw new Error("provider continuation paths must differ");
   }
+  const outputParent = path.dirname(normalized.output);
+  if ([normalized["completeness-output"], normalized["extended-capture-output"]]
+    .some((target) => path.dirname(target) !== outputParent)) {
+    throw new Error("provider continuation publication outputs must share one parent");
+  }
   return normalized;
 }
 
