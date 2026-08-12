@@ -116,14 +116,8 @@ jobs:
           cmp -- "${backup}" "${source}"
           rm "${backup}"
 
-      - name: Measure migrated Mobile owned test durations
-        run: >-
-          node tools/ci/data-test-discovery.mjs measure
-          --class required-pr
-          --profile mobile-v19
-          --max-workers 1
-          --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
-          --output "${RUNNER_TEMP}/data-test-durations-mobile-v19.json"
+      - name: Verify and run migrated Mobile owned required tests
+        run: node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1
 
       - name: Restore pinned Mobile fixture for owned tests
         shell: bash
@@ -167,32 +161,6 @@ jobs:
           # 잡히지 않는다. 이미지는 다른 pin과 같은 규칙으로 digest 고정한다.
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-
-      - name: Measure pristine Mobile owned test durations
-        run: >-
-          node tools/ci/data-test-discovery.mjs measure
-          --class required-pr
-          --default-profile
-          --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
-          --output "${RUNNER_TEMP}/data-test-durations-default.json"
-
-      - name: Combine current owned test duration evidence
-        run: >-
-          node tools/ci/data-test-discovery.mjs combine
-          --class required-pr
-          --expected-head "${{ github.event.pull_request.head.sha || github.sha }}"
-          --input "${RUNNER_TEMP}/data-test-durations-mobile-v19.json"
-          --input "${RUNNER_TEMP}/data-test-durations-default.json"
-          --output "${RUNNER_TEMP}/data-test-durations.json"
-
-      - name: Upload current owned test duration evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: data-test-duration-evidence
-          path: ${{ runner.temp }}/data-test-durations.json
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Verify and run pristine Mobile owned required tests
         run: node tools/ci/data-test-discovery.mjs run --class required-pr --default-profile
