@@ -26,6 +26,7 @@ export async function fetchKasiPublicHolidayCalendar({
     url.searchParams.set("solMonth", String(month).padStart(2, "0"));
     let response;
     let attemptCount = 0;
+    const transportAttempts = [];
     for (attemptCount = 1; attemptCount <= 2; attemptCount += 1) {
       try {
         response = fetchImpl
@@ -40,7 +41,9 @@ export async function fetchKasiPublicHolidayCalendar({
           }, httpsRequestImpl);
         break;
       } catch (error) {
-        const failure = transportFailure(error, attemptCount);
+        const transportAttempt = closedTransportAttempt(error, attemptCount);
+        if (transportAttempt !== null) transportAttempts.push(transportAttempt);
+        const failure = transportFailure(error, attemptCount, transportAttempts);
         if (failure.failureCategory === "NETWORK_CONNECT_TIMEOUT" && attemptCount === 1) continue;
         throw failure;
       }
@@ -66,7 +69,13 @@ export async function fetchKasiPublicHolidayCalendar({
 function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
   return new Promise((resolve, reject) => {
     let secureConnected = false;
+    const diagnostic = {
+      failurePhase: "UNKNOWN",
+      ipv4AttemptCount: 0,
+      ipv6AttemptCount: 0,
+    };
     const request = httpsRequestImpl(url, { method: "GET", headers, signal }, (response) => {
+      diagnostic.failurePhase = "RESPONSE_HEADERS";
       if (response.statusCode < 200 || response.statusCode >= 300) {
         response.resume();
         resolve({ ok: false, status: response.statusCode });
@@ -85,23 +94,57 @@ function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
     request.once("socket", (socket) => {
       if (socket.secureConnecting === false) {
         secureConnected = true;
+        diagnostic.failurePhase = "RESPONSE_HEADERS";
         return;
       }
-      socket.once("secureConnect", () => { secureConnected = true; });
+      diagnostic.failurePhase = "DNS_LOOKUP";
+      socket.once("lookup", (error) => {
+        if (error === null || error === undefined) diagnostic.failurePhase = "TCP_CONNECT";
+      });
+      if (typeof socket.on === "function") {
+        socket.on("connectionAttempt", (_ip, _port, family) => {
+          diagnostic.failurePhase = "TCP_CONNECT";
+          if (family === 4) diagnostic.ipv4AttemptCount += 1;
+          if (family === 6) diagnostic.ipv6AttemptCount += 1;
+        });
+      }
+      socket.once("connect", () => { diagnostic.failurePhase = "TLS_HANDSHAKE"; });
+      socket.once("secureConnect", () => {
+        secureConnected = true;
+        diagnostic.failurePhase = "RESPONSE_HEADERS";
+      });
     });
-    request.once("error", (error) => reject(nativeRequestFailure(error, secureConnected)));
+    request.once("error", (error) => reject(nativeRequestFailure(error, secureConnected, diagnostic)));
     request.end();
   });
 }
 
-function nativeRequestFailure(error, secureConnected) {
-  if (!secureConnected && isNativeAbortError(error)) {
-    return Object.assign(new Error("KASI native HTTPS connect timed out"), {
-      code: "UND_ERR_CONNECT_TIMEOUT",
-      cause: error,
-    });
-  }
-  return error;
+function nativeRequestFailure(error, secureConnected, diagnostic) {
+  if (!isNativeAbortError(error)) return error;
+  const failure = new Error(secureConnected
+    ? "KASI native HTTPS request timed out"
+    : "KASI native HTTPS connect timed out");
+  failure.name = secureConnected ? "AbortError" : "Error";
+  failure.code = secureConnected ? "ABORT_ERR" : "UND_ERR_CONNECT_TIMEOUT";
+  failure.cause = error;
+  failure.transportDiagnostic = Object.freeze({ ...diagnostic });
+  return failure;
+}
+
+function closedTransportAttempt(error, attemptCount) {
+  const diagnostic = error?.transportDiagnostic;
+  if (diagnostic === null || typeof diagnostic !== "object") return null;
+  const phases = new Set(["DNS_LOOKUP", "TCP_CONNECT", "TLS_HANDSHAKE", "RESPONSE_HEADERS", "UNKNOWN"]);
+  return Object.freeze({
+    attemptCount,
+    failurePhase: phases.has(diagnostic.failurePhase) ? diagnostic.failurePhase : "UNKNOWN",
+    ipv4AttemptCount: safeFamilyAttemptCount(diagnostic.ipv4AttemptCount),
+    ipv6AttemptCount: safeFamilyAttemptCount(diagnostic.ipv6AttemptCount),
+  });
+}
+
+function safeFamilyAttemptCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 255 ? value : 0;
 }
 
 function isNativeAbortError(error) {
@@ -156,15 +199,16 @@ function nonnegativeInteger(value) {
   return Number(value);
 }
 
-function transportFailure(error, attemptCount = 1) {
+function transportFailure(error, attemptCount = 1, transportAttempts = []) {
   const category = transportCategory(error);
-  return kasiFailure(`KASI public holiday request failed: ${category}`, category, attemptCount);
+  return kasiFailure(`KASI public holiday request failed: ${category}`, category, attemptCount, transportAttempts);
 }
 
-function kasiFailure(message, failureCategory, attemptCount) {
+function kasiFailure(message, failureCategory, attemptCount, transportAttempts = []) {
   const error = new Error(message);
   error.failureCategory = failureCategory;
   error.attemptCount = attemptCount;
+  if (transportAttempts.length > 0) error.transportAttempts = transportAttempts.map((attempt) => ({ ...attempt }));
   return error;
 }
 
