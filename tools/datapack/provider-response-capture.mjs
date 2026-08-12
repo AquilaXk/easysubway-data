@@ -14,7 +14,7 @@ export function createProviderResponseRecorder({
   const normalizedObservedAt = requiredIsoInstant(observedAt, "observedAt");
   const normalizedServiceDates = requiredServiceDates(selectedServiceDates);
   requiredLimit(maxRecords, DEFAULT_MAX_RECORDS, "maxRecords");
-  requiredLimit(maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes");
+  requiredNonnegativeLimit(maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes");
   if (typeof fetchImpl !== "function") throw new Error("fetchImpl must be a function");
 
   const records = [];
@@ -105,13 +105,17 @@ export function createProviderResponseContinuation({
   observedAt,
   allowLiveRequest,
   maxLiveRequests = 18,
+  maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
 } = {}) {
   const capture = parseProviderResponseCapture(captureBytes);
   const normalizedObservedAt = requiredIsoInstant(observedAt, "observedAt");
+  const selectedServiceDates = requiredServiceDates(capture.selectedServiceDates);
   requiredLimit(maxLiveRequests, DEFAULT_MAX_RECORDS, "maxLiveRequests");
+  requiredNonnegativeLimit(maxBodyBytes, DEFAULT_MAX_BODY_BYTES, "maxBodyBytes");
   if (capture.requestCount + maxLiveRequests > DEFAULT_MAX_RECORDS) {
     throw new Error("provider continuation record limit exceeded");
   }
+  if (capture.bodyBytes > maxBodyBytes) throw new Error("provider continuation body limit exceeded");
   if (typeof fetchImpl !== "function") throw new Error("fetchImpl must be a function");
   if (typeof allowLiveRequest !== "function") throw new Error("allowLiveRequest must be a function");
 
@@ -129,9 +133,9 @@ export function createProviderResponseContinuation({
   const liveRecorder = createProviderResponseRecorder({
     fetchImpl,
     observedAt: normalizedObservedAt,
-    selectedServiceDates: capture.selectedServiceDates,
+    selectedServiceDates,
     maxRecords: maxLiveRequests,
-    maxBodyBytes: Math.max(1, DEFAULT_MAX_BODY_BYTES - capture.bodyBytes),
+    maxBodyBytes: maxBodyBytes - capture.bodyBytes,
   });
 
   const invalidate = (message) => {
@@ -142,7 +146,7 @@ export function createProviderResponseContinuation({
   return {
     baseContentSha256: capture.contentSha256,
     baseRequestCount: capture.requestCount,
-    selectedServiceDates: capture.selectedServiceDates,
+    selectedServiceDates,
     get liveRequestCount() {
       return liveRequestCount;
     },
@@ -188,7 +192,7 @@ export function createProviderResponseContinuation({
         schemaVersion: 1,
         artifactKind: "provider-response-capture",
         observedAt: normalizedObservedAt,
-        selectedServiceDates: capture.selectedServiceDates,
+        selectedServiceDates,
         requestCount: records.length,
         bodyBytes: capture.bodyBytes + liveCapture.bodyBytes,
         records,
@@ -368,6 +372,10 @@ function requiredIsoInstant(value, label) {
 
 function requiredLimit(value, maximum, label) {
   if (!Number.isInteger(value) || value < 1 || value > maximum) throw new Error(`${label} is invalid`);
+}
+
+function requiredNonnegativeLimit(value, maximum, label) {
+  if (!Number.isInteger(value) || value < 0 || value > maximum) throw new Error(`${label} is invalid`);
 }
 
 function exactKeys(value, expected, label) {

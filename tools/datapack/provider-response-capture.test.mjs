@@ -301,3 +301,55 @@ test("continuation은 unconsumed base, 거부 identity와 live 상한 초과를 
   );
   assert.throws(() => bounded.captureArtifact(), /continuation live request limit exceeded/);
 });
+
+test("continuation은 selected service dates를 immutable provenance로 고정한다", async () => {
+  const recorder = createProviderResponseRecorder({
+    observedAt: OBSERVED_AT,
+    selectedServiceDates: SERVICE_DATES,
+    fetchImpl: async () => new Response("base"),
+  });
+  await recorder.fetchImpl(request("GetVhcleKndList"));
+  const continuation = createProviderResponseContinuation({
+    captureBytes: providerResponseCaptureBytes(recorder.captureArtifact()),
+    observedAt: OBSERVED_AT,
+    allowLiveRequest: () => true,
+    fetchImpl: async () => new Response("suffix"),
+  });
+
+  assert.throws(() => { continuation.selectedServiceDates["8"] = "20260813"; }, TypeError);
+  await continuation.fetchImpl(request("GetVhcleKndList"));
+  assert.deepEqual(continuation.captureArtifact().selectedServiceDates, SERVICE_DATES);
+});
+
+test("continuation은 aggregate body budget 0을 정확히 유지한다", async () => {
+  const recorder = createProviderResponseRecorder({
+    observedAt: OBSERVED_AT,
+    selectedServiceDates: SERVICE_DATES,
+    fetchImpl: async () => new Response("base"),
+  });
+  await recorder.fetchImpl(request("GetVhcleKndList"));
+  const captureBytes = providerResponseCaptureBytes(recorder.captureArtifact());
+  const liveRequest = "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2?serviceKey=key&pageNo=1";
+
+  const empty = createProviderResponseContinuation({
+    captureBytes,
+    observedAt: OBSERVED_AT,
+    maxBodyBytes: 4,
+    allowLiveRequest: () => true,
+    fetchImpl: async () => new Response(null, { status: 204 }),
+  });
+  await empty.fetchImpl(request("GetVhcleKndList"));
+  assert.equal((await empty.fetchImpl(liveRequest)).status, 204);
+  assert.equal(empty.captureArtifact().bodyBytes, 4);
+
+  const nonempty = createProviderResponseContinuation({
+    captureBytes,
+    observedAt: OBSERVED_AT,
+    maxBodyBytes: 4,
+    allowLiveRequest: () => true,
+    fetchImpl: async () => new Response("x"),
+  });
+  await nonempty.fetchImpl(request("GetVhcleKndList"));
+  await assert.rejects(nonempty.fetchImpl(liveRequest), /provider capture body limit exceeded/);
+  assert.equal(nonempty.captureArtifact().bodyBytes, 4);
+});
