@@ -55,9 +55,16 @@ function cliPaths(directory) {
   };
 }
 
+async function writeBaseCapture(paths) {
+  const bytes = await baseCaptureBytes();
+  await writeFile(paths.capture, bytes);
+  paths.expectedCaptureContentSha256 = parseProviderResponseCapture(bytes).contentSha256;
+}
+
 function cliArgv(paths) {
   return [
     "--capture", paths.capture,
+    "--expected-capture-content-sha256", paths.expectedCaptureContentSha256,
     "--station-catalog-pack", paths.stationCatalogPack,
     "--output", paths.output,
     "--completeness-output", paths.completenessOutput,
@@ -72,7 +79,7 @@ async function absent(target) {
 test("preserved TAGO records를 interleaved exact-once replay하고 Korail suffix만 live capture한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-"));
   const paths = cliPaths(directory);
-  await writeFile(paths.capture, await baseCaptureBytes());
+  await writeBaseCapture(paths);
   const livePaths = [];
   try {
     const result = await runContinueCurrentItxCollectionCli({
@@ -124,7 +131,7 @@ test("preserved TAGO records를 interleaved exact-once replay하고 Korail suffi
 test("allowed suffix transport failure는 sanitized result와 extended capture만 보존한다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-failure-"));
   const paths = cliPaths(directory);
-  await writeFile(paths.capture, await baseCaptureBytes());
+  await writeBaseCapture(paths);
   try {
     const result = await runContinueCurrentItxCollectionCli({
       argv: cliArgv(paths),
@@ -167,7 +174,7 @@ test("unconsumed base, denied identity, suffix 0/19와 path collision은 final o
     await context.test(name, async () => {
       const directory = await mkdtemp(path.join(tmpdir(), `itx-capture-continuation-${name}-`));
       const paths = cliPaths(directory);
-      await writeFile(paths.capture, await baseCaptureBytes());
+      await writeBaseCapture(paths);
       let upstreamCalls = 0;
       try {
         await assert.rejects(runContinueCurrentItxCollectionCli({
@@ -230,7 +237,7 @@ test("unconsumed base, denied identity, suffix 0/19와 path collision은 final o
   await context.test("path-collision", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-collision-"));
     const paths = cliPaths(directory);
-    await writeFile(paths.capture, await baseCaptureBytes());
+    await writeBaseCapture(paths);
     await writeFile(paths.output, "outside\n");
     try {
       await assert.rejects(runContinueCurrentItxCollectionCli({
@@ -241,6 +248,70 @@ test("unconsumed base, denied identity, suffix 0/19와 path collision은 final o
         runCompletenessImpl: async () => { throw new Error("must not run"); },
       }), /absent/);
       assert.equal(await readFile(paths.output, "utf8"), "outside\n");
+      await absent(paths.extendedCaptureOutput);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  await context.test("outputs-different-parent", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-parent-"));
+    const otherDirectory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-other-"));
+    const paths = cliPaths(directory);
+    paths.completenessOutput = path.join(otherDirectory, "completeness.json");
+    await writeBaseCapture(paths);
+    let calls = 0;
+    try {
+      await assert.rejects(runContinueCurrentItxCollectionCli({
+        argv: cliArgv(paths),
+        providerFetchImpl: async () => {
+          calls += 1;
+          return new Response("must not run");
+        },
+        runCompletenessImpl: async () => {
+          calls += 1;
+          throw new Error("must not run");
+        },
+      }), /outputs must share one parent/);
+      assert.equal(calls, 0);
+      await absent(paths.output);
+      await absent(paths.completenessOutput);
+      await absent(paths.extendedCaptureOutput);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await rm(otherDirectory, { recursive: true, force: true });
+    }
+  });
+
+  await context.test("local-integrity-failure", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-integrity-"));
+    const paths = cliPaths(directory);
+    await writeBaseCapture(paths);
+    try {
+      await assert.rejects(runContinueCurrentItxCollectionCli({
+        argv: cliArgv(paths),
+        env: { DATA_GO_KR_SERVICE_KEY: "runtime-secret" },
+        now: NOW,
+        repositoryRoot: directory,
+        providerFetchImpl: async () => new Response("runtime-secret"),
+        runCompletenessImpl: async (options) => {
+          await options.fetchImpl(tagoRequest("GetVhcleKndList", "runtime-secret"));
+          await options.fetchImpl(tagoRequest("GetCtyCodeList", "runtime-secret"));
+          await assert.rejects(
+            options.fetchImpl(korailRequest("travelerTrainRunPlan2", SERVICE_DATES["8"])),
+            /credential echo rejected/,
+          );
+          const output = options.argv[options.argv.indexOf("--output") + 1];
+          await writeFile(output, "must not publish\n");
+          return {
+            artifact: { validationMode: "ADMISSION", validationStatus: "MISSING", selectedServiceDates: SERVICE_DATES },
+            candidate: null,
+            exitCode: 1,
+          };
+        },
+      }), /pending requests/);
+      await absent(paths.output);
+      await absent(paths.completenessOutput);
       await absent(paths.extendedCaptureOutput);
     } finally {
       await rm(directory, { recursive: true, force: true });

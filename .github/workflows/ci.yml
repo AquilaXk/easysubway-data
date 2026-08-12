@@ -157,6 +157,9 @@ jobs:
           tools/ci/public-sensitivity-owner-receipt-caller.test.mjs
           tools/ci/mobile-fixture-staging-workflow.test.mjs
           tools/ci/itx-current-collection-workflow.test.mjs
+          tools/ci/itx-current-collection-continuation-workflow.test.mjs
+          tools/datapack/continue-current-itx-collection.test.mjs
+          tools/datapack/provider-response-capture.test.mjs
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
           tools/datapack/collect-kric-source-candidate-evidence.test.mjs
