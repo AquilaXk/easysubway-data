@@ -440,6 +440,59 @@ function topologyContentPayload(lines, topologyGaps) {
   };
 }
 
+const SOURCE_SEPARATED_INCHEON_LINE_IDS = Object.freeze([
+  "line-42b5805f3b5a",
+  "line-98718184f016",
+]);
+
+export function projectCapitalTopologyOwnership(snapshot) {
+  if (snapshot?.schemaVersion !== 1
+    || snapshot.artifactKind !== ARTIFACT_KIND
+    || snapshot.sourceId !== SOURCE_ID
+    || !Array.isArray(snapshot.lines)
+    || !Array.isArray(snapshot.topologyGaps)) {
+    throw new Error("capital topology ownership input is invalid");
+  }
+  const lineIds = snapshot.lines.map(({ lineId }) => lineId);
+  const requiredLineIds = new Set(CAPITAL_MAP_LINE_IDS);
+  if (new Set(lineIds).size !== requiredLineIds.size
+    || lineIds.some((lineId) => !requiredLineIds.has(lineId))
+    || SOURCE_SEPARATED_INCHEON_LINE_IDS.some((lineId) => !lineIds.includes(lineId))) {
+    throw new Error("Incheon topology ownership input is invalid");
+  }
+  for (const line of snapshot.lines) verifiedLineContentSha256(line, "ownership input");
+  const inputPayload = topologyContentPayload(snapshot.lines, snapshot.topologyGaps);
+  if (snapshot.lineCount !== snapshot.lines.length
+    || snapshot.totalEdgeCount !== snapshot.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0)
+    || snapshot.contentSha256 !== sha256(JSON.stringify(inputPayload))
+    || snapshot.topologyGaps.some(({ lineId }) => SOURCE_SEPARATED_INCHEON_LINE_IDS.includes(lineId))) {
+    throw new Error("capital topology ownership input identity mismatch");
+  }
+  const separated = new Set(SOURCE_SEPARATED_INCHEON_LINE_IDS);
+  const lines = structuredClone(snapshot.lines.filter(({ lineId }) => !separated.has(lineId)));
+  const topologyGaps = structuredClone(snapshot.topologyGaps);
+  const lineCount = lines.length;
+  const totalEdgeCount = lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  const contentSha256 = sha256(JSON.stringify(topologyContentPayload(lines, topologyGaps)));
+  const projected = {
+    ...structuredClone(snapshot),
+    lines,
+    lineCount,
+    totalEdgeCount,
+    contentSha256,
+    topologyGaps,
+  };
+  if (projected.admission != null) {
+    Object.assign(projected.admission, {
+      contentSha256,
+      lineCount,
+      totalEdgeCount,
+      gapLineIds: topologyGaps.map(({ lineId }) => lineId),
+    });
+  }
+  return projected;
+}
+
 export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {
   const comparison = compareCapitalRouteTopologies(baseline, candidate);
   if (comparison.changes.length !== 0
@@ -1519,14 +1572,18 @@ async function main() {
     path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
   );
   const download = process.argv.includes("--download");
+  if (download && !path.isAbsolute(output)) {
+    throw new Error("--download requires an absolute --output path");
+  }
   const capturedAt = option("--captured-at")
     ?? (download ? new Date().toISOString() : "2026-07-24T08:20:00.000Z");
-  const snapshot = await collectCapitalRouteTopology({
+  const collected = await collectCapitalRouteTopology({
     root,
     now: new Date(capturedAt),
     useLocalFiles: !download,
   });
-  await writeFile(output, `${JSON.stringify(snapshot)}\n`);
+  const snapshot = download ? projectCapitalTopologyOwnership(collected) : collected;
+  await writeFile(output, `${JSON.stringify(snapshot)}\n`, { flag: "wx" });
   process.stdout.write(
     `capital route topology snapshot ready: lines=${snapshot.lineCount} `
     + `edges=${snapshot.totalEdgeCount} gaps=${snapshot.topologyGaps.length} `

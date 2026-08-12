@@ -8,8 +8,9 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
-import { buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
-  requireCleanBuilder } from "./activate-current-source-set.mjs";
+import { activateIncheonTopologyAdmission, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
+  parseCurrentSourceActivationArgs, requireCleanBuilder } from "./activate-current-source-set.mjs";
+import { projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -17,7 +18,84 @@ const root = path.resolve(import.meta.dirname, "../..");
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
 
-test("primary source set은 current KRIC·7-source·topology identity를 한 번에 활성화한다", () => {
+test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한다", () => {
+  assert.deepEqual(parseCurrentSourceActivationArgs([
+    "--capital-topology", "tools/datapack/sources/capital-route-topology-20260811.json",
+    "--incheon-topology", "tools/datapack/sources/incheon-transit-station-info-20260811.json",
+    "--builder-git-sha", "a".repeat(40),
+    "--build-now", "2026-08-11T00:00:00.000Z",
+  ]), {
+    check: false,
+    capital_topology: "tools/datapack/sources/capital-route-topology-20260811.json",
+    incheon_topology: "tools/datapack/sources/incheon-transit-station-info-20260811.json",
+    builder_git_sha: "a".repeat(40),
+    build_now: "2026-08-11T00:00:00.000Z",
+  });
+  assert.throws(() => parseCurrentSourceActivationArgs([
+    "--hub-repository", "/tmp/hub",
+    "--builder-git-sha", "a".repeat(40),
+    "--build-now", "2026-08-11T00:00:00.000Z",
+  ]), /unknown activation argument/);
+});
+
+test("current Incheon topology admission은 exact snapshot bytes와 fresh source identity에 결속된다", async () => {
+  const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260724.json";
+  const [sourceInventory, snapshotBytes] = await Promise.all([
+    readJson("tools/datapack/source-inventory.json"),
+    readFile(path.join(root, snapshotPath)),
+  ]);
+  const snapshot = JSON.parse(snapshotBytes);
+  const activated = activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot,
+    snapshotBytes,
+    snapshotPath,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  });
+  const source = activated.sources.find(({ id }) => id === "incheon-transit-station-info");
+
+  assert.equal(source.requiredForProductionPack, false);
+  assert.equal(source.productionUseAllowed, true);
+  assert.equal(source.topologyAdmissionEvidence.snapshotId, "incheon-transit-station-info-20260724");
+  assert.equal(source.topologyAdmissionEvidence.contentSha256, snapshot.contentSha256);
+  assert.equal(source.membershipAdmissionEvidence.membershipSourceSnapshotSha256, snapshot.scopeSha256);
+  assert.equal(source.routeMapAdmissionEvidence.snapshotSha256, sha256(snapshotBytes));
+  assert.equal(source.routeMapAdmissionEvidence.positionsSha256, snapshot.positionsSha256);
+
+  const changedEdges = structuredClone(snapshot);
+  changedEdges.edges[0].toStationId = changedEdges.edges[2].toStationId;
+  changedEdges.edgesSha256 = sha256(JSON.stringify(changedEdges.edges));
+  changedEdges.contentSha256 = sha256(JSON.stringify({
+    scope: changedEdges.scope,
+    edges: changedEdges.edges,
+    positions: changedEdges.positions,
+  }));
+  const changedEdgeBytes = Buffer.from(`${JSON.stringify(changedEdges)}\n`);
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot: changedEdges,
+    snapshotBytes: changedEdgeBytes,
+    snapshotPath,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  }), /content changed; re-admission required/);
+
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot,
+    snapshotBytes: Buffer.concat([snapshotBytes, Buffer.from(" ")]),
+    snapshotPath,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  }), /snapshot byte identity mismatch/);
+  assert.throws(() => activateIncheonTopologyAdmission({
+    sourceInventory,
+    snapshot,
+    snapshotBytes,
+    snapshotPath,
+    now: new Date("2026-07-25T06:00:00.000Z"),
+  }), /snapshot is stale/);
+});
+
+test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
   const rawArtifactBytes = Buffer.from('{"artifact":"current"}\n');
   const previousSnapshot = {
     schemaVersion: 1, artifactKind: "official-source-snapshot",
@@ -66,10 +144,25 @@ test("primary source set은 current KRIC·7-source·topology identity를 한 번
     rowCount: 466, coverageCount: 1, freshnessExpiresAt: "2026-09-08T12:04:20.479Z",
     rawRetentionExpiresAt: "2026-11-07T12:04:20.479Z", redactedRequestFingerprint: "bb6302775c0afecf0b5e6d3c7e4bf89cdec4a2cfef01fbb80d2ea5ace234f0f7",
     schemaFingerprint: "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff", governancePolicyVersion: "2026-07-15",
-    governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70", topologySnapshotId: "capital-route-topology-20260809",
-    topologyFileSha256: "a".repeat(64),
-    topologyContentSha256: "b".repeat(64),
+    governancePolicySha256: "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70",
   };
+  const [baselineTopology, fullCapitalTopology, incheonTopologyInput] = await Promise.all([
+    readJson("tools/datapack/sources/capital-route-topology-20260724.json"),
+    readJson("tools/datapack/sources/capital-route-topology-20260804.json"),
+    readJson("tools/datapack/sources/incheon-transit-station-info-20260724.json"),
+  ]);
+  const currentTopology = {
+    ...projectCapitalTopologyOwnership(fullCapitalTopology),
+    capturedAt: "2026-08-10T20:21:15.000Z",
+    freshUntil: "2026-08-11T20:21:15.000Z",
+  };
+  const currentTopologyBytes = Buffer.from(`${JSON.stringify(currentTopology)}\n`);
+  const currentIncheonTopology = {
+    ...incheonTopologyInput,
+    capturedAt: "2026-08-10T20:21:15.000Z",
+    freshUntil: "2026-08-11T20:21:15.000Z",
+  };
+  const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
   const result = buildCurrentSourcePrimaryOutputs({
     handoff,
     rawArtifact: { collectedAt: handoff.collectedAt },
@@ -78,8 +171,14 @@ test("primary source set은 current KRIC·7-source·topology identity를 한 번
     sourceInventory: inventory,
     productionInput: { sourceIds: sourceIds.slice(0, 6) },
     officialOdFareQuotes,
-    baselineTopology: { id: "baseline" },
-    currentTopology: { id: "current", capturedAt: handoff.collectedAt },
+    baselineTopology,
+    currentTopology,
+    currentTopologyBytes,
+    currentTopologyPath: "tools/datapack/sources/capital-route-topology-20260810.json",
+    currentIncheonTopology,
+    currentIncheonTopologyBytes,
+    currentIncheonTopologyPath: "tools/datapack/sources/incheon-transit-station-info-20260810.json",
+    buildNow: "2026-08-10T21:00:00.000Z",
     snapshotBytesByPath: new Map(),
     applyScheduleImpl(input) {
       return {
@@ -97,12 +196,16 @@ test("primary source set은 current KRIC·7-source·topology identity를 한 번
       };
     },
     rebindTopologyAdmissionsImpl({ inventory: value, topologySnapshotId }) {
-      assert.equal(topologySnapshotId, handoff.topologySnapshotId);
+      assert.equal(topologySnapshotId, "capital-route-topology-20260810");
       return { ...value, topologyAdmissionsRebound: true };
     },
+    activateIncheonTopologyAdmissionImpl({ sourceInventory: value, snapshotPath }) {
+      assert.equal(snapshotPath, "tools/datapack/sources/incheon-transit-station-info-20260810.json");
+      return { ...value, incheonAdmissionsRebound: true };
+    },
     buildTopologyReverificationImpl(baseline, current) {
-      assert.equal(baseline.id, "baseline");
-      assert.equal(current.id, "current");
+      assert.equal(baseline.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
+      assert.equal(current.lines.some(({ lineId }) => lineId === "line-98718184f016"), false);
       return { artifactKind: "capital-topology-reverification-evidence" };
     },
   });
@@ -124,6 +227,7 @@ test("primary source set은 current KRIC·7-source·topology identity를 한 번
   assert.equal(convenience.requiredForProductionPack, true);
   assert.equal(convenience.productionUseAllowed, true);
   assert.equal(result.sourceInventory.topologyAdmissionsRebound, true);
+  assert.equal(result.sourceInventory.incheonAdmissionsRebound, true);
   assert.deepEqual(result.productionInput.sourceIds, sourceIds);
   assert.deepEqual(result.productionInput.officialOdFareQuotes, officialOdFareQuotes);
   assert.deepEqual(result.productionInput.routeServiceArtifactEvidence, []);

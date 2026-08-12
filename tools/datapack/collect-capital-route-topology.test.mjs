@@ -17,6 +17,7 @@ import {
   MOLIT_FULL_ROUTE_DETAIL_URL,
   parseLineSource,
   parseSeohaeMerged,
+  projectCapitalTopologyOwnership,
   resolveDataGoDownloadUrl,
 } from "./collect-capital-route-topology.mjs";
 
@@ -86,6 +87,35 @@ test("capital topology 비교는 같은 edge에 변경을 보고하지 않는다
     { contentSha256: "after", lines: [topologyLine("line-1", ["가", "나"], [{ ...edge }])] },
   );
   assert.deepEqual(comparison.changes, []);
+});
+
+test("current capital topology ownership projection은 Incheon 1/2만 별도 source로 분리한다", async () => {
+  const snapshot = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260724.json",
+    "utf8",
+  ));
+  const projected = projectCapitalTopologyOwnership(snapshot);
+  const separated = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+
+  assert.equal(projected.lineCount, snapshot.lineCount - separated.size);
+  assert.equal(projected.lines.some(({ lineId }) => separated.has(lineId)), false);
+  assert.equal(
+    projected.totalEdgeCount,
+    projected.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
+  );
+  assert.notEqual(projected.contentSha256, snapshot.contentSha256);
+  assert.deepEqual(projected.admission, {
+    ...snapshot.admission,
+    contentSha256: projected.contentSha256,
+    lineCount: projected.lineCount,
+    totalEdgeCount: projected.totalEdgeCount,
+    gapLineIds: projected.topologyGaps.map(({ lineId }) => lineId),
+  });
+  assert.equal(snapshot.lines.some(({ lineId }) => separated.has(lineId)), true);
+
+  const missing = structuredClone(snapshot);
+  missing.lines = missing.lines.filter(({ lineId }) => lineId !== "line-42b5805f3b5a");
+  assert.throws(() => projectCapitalTopologyOwnership(missing), /Incheon topology ownership input/);
 });
 
 test("capital topology 비교는 유효한 line hash에서 edge 추가 삭제 수정을 감지한다", () => {

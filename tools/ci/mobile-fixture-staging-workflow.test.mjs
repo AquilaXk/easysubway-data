@@ -91,6 +91,19 @@ test("CI는 EXIT path admission contract를 standalone contracts에서 실행한
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
 });
 
+test("CI는 current source-separated topology contracts를 standalone contracts에서 실행한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
+  for (const testPath of [
+    "tools/datapack/collect-capital-route-topology.test.mjs",
+    "tools/datapack/collect-incheon-station-info.test.mjs",
+    "tools/datapack/activate-current-source-set.test.mjs",
+    "tools/datapack/build-datapack-current-admission.test.mjs",
+  ]) {
+    assert.match(standalone, new RegExp(testPath.replaceAll("/", "\\/")));
+  }
+});
+
 test("CI는 fixture stage 뒤에 #108 bundled-pack 회귀 검증을 직렬 실행한다", () => {
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const verification = ci.match(/- name: Verify Data issue 108 bundled-pack regression[\s\S]*?\n\s+- name:/)?.[0];

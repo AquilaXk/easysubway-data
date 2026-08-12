@@ -1,14 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
+  admittedIncheonTopologyEvidence,
+  admittedItxNetworkEdgeEvidence,
   candidateNetworkEdgeEvidence,
+  materializeIncheonNetworkEdges,
+  validateTrackedItxTopologyEvidence,
+  validateSourceSeparatedCurrentTopology,
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
 } from "./build-datapack.mjs";
+import { buildCapitalTopologyReverificationEvidence } from "./collect-capital-route-topology.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -60,6 +67,116 @@ function networkEdgeEvidenceFixture() {
   };
 }
 
+function capitalTopologyWithoutIncheon(topology) {
+  const incheonLineIds = new Set(["line-98718184f016", "line-42b5805f3b5a"]);
+  const lines = topology.lines.filter(({ lineId }) => !incheonLineIds.has(lineId));
+  const topologyGaps = topology.topologyGaps ?? [];
+  return {
+    ...structuredClone(topology),
+    lines,
+    lineCount: lines.length,
+    totalEdgeCount: lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
+    contentSha256: sha256(Buffer.from(JSON.stringify({
+      lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
+        lineId,
+        edgeCount,
+        stationCount,
+        contentSha256,
+        rawSha256,
+        datasetId,
+      })),
+      topologyGaps,
+    }))),
+  };
+}
+
+test("source-separated current topology는 capital과 Incheon 1/2 line ownership을 겹치지 않는다", async () => {
+  const [capital, incheon] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
+      .then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const projectedCapital = capitalTopologyWithoutIncheon(capital);
+
+  assert.deepEqual(
+    validateSourceSeparatedCurrentTopology({ capitalTopology: projectedCapital, incheonSnapshot: incheon }),
+    {
+      capitalLineCount: projectedCapital.lineCount,
+      incheonLineIds: ["line-42b5805f3b5a", "line-98718184f016"],
+      incheonEdgeCount: 116,
+    },
+  );
+  assert.throws(
+    () => validateSourceSeparatedCurrentTopology({ capitalTopology: capital, incheonSnapshot: incheon }),
+    /topology line ownership overlap/,
+  );
+  const missingCapitalLine = structuredClone(projectedCapital);
+  missingCapitalLine.lines = missingCapitalLine.lines.slice(1);
+  missingCapitalLine.lineCount = missingCapitalLine.lines.length;
+  missingCapitalLine.totalEdgeCount = missingCapitalLine.lines
+    .reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  missingCapitalLine.contentSha256 = sha256(Buffer.from(JSON.stringify({
+    lines: missingCapitalLine.lines.map(({
+      lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+    }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+    topologyGaps: missingCapitalLine.topologyGaps,
+  })));
+  assert.throws(
+    () => validateSourceSeparatedCurrentTopology({
+      capitalTopology: missingCapitalLine,
+      incheonSnapshot: incheon,
+    }),
+    /capital topology ownership is invalid/,
+  );
+});
+
+test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
+  const [inventory, snapshotBytes, fixture] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json")),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const snapshot = JSON.parse(snapshotBytes);
+  const admission = admittedIncheonTopologyEvidence({
+    sourceInventory: inventory,
+    snapshot,
+    snapshotBytes,
+    now: new Date("2026-07-24T07:00:00.000Z"),
+  });
+  const pack = structuredClone(fixture.packs[0]);
+  const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
+  const unrelatedBefore = pack.networkEdges.filter(({ fromNodeId }) => (
+    !incheonLineIds.has(fromNodeId.split(":").at(-1))
+  ));
+
+  assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
+    snapshotId: "incheon-transit-station-info-20260724",
+    edgeCount: 116,
+  });
+  const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
+    incheonLineIds.has(fromNodeId.split(":").at(-1))
+  ));
+  assert.equal(incheonEdges.length, 116);
+  assert.equal(incheonEdges.every(({ sourceId }) => sourceId === "incheon-transit-station-info"), true);
+  assert.deepEqual(
+    pack.networkEdges.filter(({ fromNodeId }) => !incheonLineIds.has(fromNodeId.split(":").at(-1))),
+    unrelatedBefore,
+  );
+  for (const stationId of ["station-62fe7e203078", "station-b78008d08d1f", "station-996efa447ecf"]) {
+    assert.equal(incheonEdges.some(({ fromNodeId }) => (
+      fromNodeId === `${stationId}:line-98718184f016`
+    )), true);
+  }
+  assert.throws(() => admittedIncheonTopologyEvidence({
+    sourceInventory: inventory,
+    snapshot,
+    snapshotBytes,
+    now: new Date("2026-07-25T06:00:00.000Z"),
+  }), /Incheon topology admission is stale/);
+});
+
 test("networkEdgeEvidence는 activation 뒤 current ITX admission을 필수로 수용한다", () => {
   const legacy = networkEdgeEvidenceFixture();
   assert.throws(
@@ -106,6 +223,38 @@ test("capital topology reverification은 historical baseline과 current admitted
     reverification,
     baseline,
     candidate,
+    admission,
+    admission.snapshotId,
+    "capital-route-topology-20260724",
+  ));
+});
+
+test("source-separated reverification은 historical baseline도 동일 ownership으로 투영한다", async () => {
+  const [baseline, candidate] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
+      .then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260804.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const projectedBaseline = capitalTopologyWithoutIncheon(baseline);
+  const projectedCandidate = capitalTopologyWithoutIncheon(candidate);
+  const evidence = buildCapitalTopologyReverificationEvidence(projectedBaseline, projectedCandidate);
+  const admission = {
+    schemaVersion: 1,
+    artifactKind: "capital-network-edge-admission",
+    issue: 2649,
+    status: "ADMITTED",
+    snapshotId: "capital-route-topology-20260804",
+    contentSha256: projectedCandidate.contentSha256,
+    reviewedAt: projectedCandidate.capturedAt,
+    reverifiedAt: projectedCandidate.capturedAt,
+    freshUntil: projectedCandidate.freshUntil,
+  };
+
+  assert.doesNotThrow(() => validateCapitalTopologyReverification(
+    evidence,
+    baseline,
+    projectedCandidate,
     admission,
     admission.snapshotId,
     "capital-route-topology-20260724",
@@ -164,4 +313,146 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
     source,
     new Date("2026-02-28T01:00:00.000Z"),
   ), /serviceDate is invalid/);
+});
+
+test("tracked migrated v19 ITX evidence는 exact v18 lineage와 두 route-service domain을 유지한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "build-current-migrated-itx-"));
+  const evidencePath = path.join(directory, "itx-topology-evidence.json");
+  const stationIdentity = {
+    artifactKind: "station-catalog-pack",
+    manifestVersion: 1,
+    catalogPackId: "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1",
+    stationSetSha256: "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17",
+    payloadSha256: "3f7cfe2ae30133239665e8b0cb7c2cb7030d59c3fcf6a2574491f070a880ce89",
+    manifestSha256: "73b626004f9de99f1431604dbbda41893ee7b37c39957cbfd980864207a7029f",
+  };
+  const evidence = {
+    schemaVersion: 1,
+    artifactKind: "itx-cheongchun-mobile-topology-evidence",
+    serviceId: "ITX_CHEONGCHUN",
+    sourceIssue: 2135,
+    sourceArtifact: {
+      id: "itx-cheongchun-source-timetable-20260719230524758",
+      sha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+      completenessEvidenceSha256: "4".repeat(64),
+      freshUntil: "2026-07-27T00:00:00+09:00",
+    },
+    topology: {
+      stationMembershipCount: 18,
+      servedStationCount: 14,
+      edgeCount: 48,
+      directions: ["up", "down"],
+      connectedComponentCount: 1,
+      isolatedServedStationCount: 0,
+      sha256: "5".repeat(64),
+      durationSecondsEmbedded: false,
+      fareEmbedded: false,
+    },
+    migration: {
+      fromCatalogVersion: 18,
+      toCatalogVersion: 19,
+      inputPack: {
+        id: "capital",
+        sha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+        sqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+        byteSize: 1463745,
+      },
+    },
+    routeServiceEvidence: {
+      artifactEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        timetableArtifactId: "itx-cheongchun-source-timetable-20260719230524758",
+        timetableArtifactSha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+        canonicalPackId: "capital",
+        canonicalPackSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+        canonicalPackSqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+        admissionStatus: "ADMITTED",
+        admissionEligible: 1,
+        freshUntil: "2026-07-27T00:00:00+09:00",
+        sourceIssue: 2135,
+      },
+      stationCatalogEvidence: {
+        serviceClass: "ITX_CHEONGCHUN",
+        stationCatalogArtifactKind: stationIdentity.artifactKind,
+        stationCatalogManifestVersion: stationIdentity.manifestVersion,
+        stationCatalogPackId: stationIdentity.catalogPackId,
+        stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
+        stationCatalogPayloadSha256: stationIdentity.payloadSha256,
+        stationCatalogManifestSha256: stationIdentity.manifestSha256,
+        admissionStatus: "ADMITTED",
+        admissionEligible: 1,
+        freshUntil: "2026-07-27T00:00:00+09:00",
+        sourceIssue: 2649,
+      },
+    },
+    pack: {
+      id: "capital",
+      inputSha256: "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3",
+      inputSqliteSha256: "a581c5d2a78f765b859e7e7b7d62d3bf0d9b573bcebd246ab4c6f0cd62fddfc5",
+      inputByteSize: 1463745,
+      outputSha256: "6".repeat(64),
+      outputSqliteSha256: "7".repeat(64),
+      byteSize: 393974,
+      byteSizeDelta: -1069771,
+    },
+  };
+  const fixture = {
+    packs: [{
+      transitTrips: [],
+      networkEdges: [{ serviceClass: "ITX_CHEONGCHUN" }],
+    }],
+  };
+  try {
+    const evidenceBytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`);
+    await writeFile(evidencePath, evidenceBytes);
+    const validated = await validateTrackedItxTopologyEvidence({
+      itxTopologyEvidencePath: evidencePath,
+      itxTopologyEvidenceSha256: sha256(evidenceBytes),
+    }, fixture);
+    assert.equal(validated.migratedCurrentV18, true);
+    assert.deepEqual(validated.stationCatalogPackIdentity, stationIdentity);
+    const [contract, currentAdmission] = await Promise.all([
+      readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8")
+        .then(JSON.parse),
+      readFile(path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"), "utf8")
+        .then(JSON.parse),
+    ]);
+    const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = currentNow.toISOString();
+    let admitted;
+    try {
+      admitted = await admittedItxNetworkEdgeEvidence(contract, validated, currentAdmission);
+    } finally {
+      if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+      else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+    }
+    assert.equal(admitted.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
+    assert.deepEqual(admitted.routeServiceArtifactEvidence.stationCatalogEvidence, {
+      serviceClass: "ITX_CHEONGCHUN",
+      stationCatalogArtifactKind: stationIdentity.artifactKind,
+      stationCatalogManifestVersion: stationIdentity.manifestVersion,
+      stationCatalogPackId: stationIdentity.catalogPackId,
+      stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
+      stationCatalogPayloadSha256: stationIdentity.payloadSha256,
+      stationCatalogManifestSha256: stationIdentity.manifestSha256,
+      admissionStatus: "ADMITTED",
+      admissionEligible: true,
+      freshUntil: currentAdmission.freshUntil,
+      sourceIssue: 2649,
+    });
+
+    const forged = structuredClone(evidence);
+    forged.migration.inputPack.sha256 = "0".repeat(64);
+    const forgedBytes = Buffer.from(`${JSON.stringify(forged, null, 2)}\n`);
+    await writeFile(evidencePath, forgedBytes);
+    await assert.rejects(
+      validateTrackedItxTopologyEvidence({
+        itxTopologyEvidencePath: evidencePath,
+        itxTopologyEvidenceSha256: sha256(forgedBytes),
+      }, fixture),
+      /migration input pack identity mismatch/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
