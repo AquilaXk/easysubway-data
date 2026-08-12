@@ -848,6 +848,112 @@ test("TAGO ITX roster는 일시적 HTTP 응답을 OD 실패 확정 전에 최대
   assert.equal(artifact.failedOdCount, 0);
 });
 
+test("TAGO 429는 server Retry-After를 operation 전체에서 정확히 한 번 따른다", async () => {
+  const fallback = validFetch();
+  const delays = [];
+  let odRequestCount = 0;
+  const artifact = await collectTagoItxCheongchunRoster({
+    serviceKey: "fixture-key-must-not-leak",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return fallback(url);
+      odRequestCount += 1;
+      if (odRequestCount === 1) {
+        return new Response("raw-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      return fallback(url);
+    },
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(odRequestCount, 5);
+  assert.equal(artifact.completedOdCount, 2);
+  assert.equal(artifact.failedOdCount, 0);
+  const serialized = JSON.stringify(artifact);
+  assert.equal(serialized.includes("fixture-key-must-not-leak"), false);
+  assert.equal(serialized.includes("raw-provider-body-must-not-leak"), false);
+});
+
+test("TAGO 429가 cooldown 뒤 반복되면 later window와 OD를 호출하지 않는다", async () => {
+  const fallback = validFetch();
+  const delays = [];
+  let odRequestCount = 0;
+  let captured;
+  await assert.rejects(collectTagoItxCheongchunRoster({
+    serviceKey: "fixture-key-must-not-leak",
+    serviceDate: "20260715",
+    kricServiceDayCode: "8",
+    canonicalStations: canonicalRosterStations(),
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return fallback(url);
+      odRequestCount += 1;
+      return new Response("raw-provider-body-must-not-leak", {
+        status: 429,
+        headers: { "retry-after": "1" },
+      });
+    },
+  }), (error) => {
+    captured = error;
+    return error?.name === "TagoRateLimitedError"
+      && error.message === "TAGO GetStrtpntAlocFndTrainInfo HTTP 429"
+      && error.attemptCount === 2
+      && error.cooldownUsed === true;
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(odRequestCount, 2);
+  const serialized = JSON.stringify(captured);
+  assert.equal(serialized.includes("fixture-key-must-not-leak"), false);
+  assert.equal(serialized.includes("raw-provider-body-must-not-leak"), false);
+});
+
+test("TAGO 429의 absent·invalid·out-of-range Retry-After는 대기나 later OD 없이 닫힌다", async (context) => {
+  for (const retryAfter of [null, "not-a-number", "0", "61"]) {
+    await context.test(retryAfter ?? "absent", async () => {
+      const fallback = validFetch();
+      const delays = [];
+      let odRequestCount = 0;
+      let captured;
+      await assert.rejects(collectTagoItxCheongchunRoster({
+        serviceKey: "fixture-key-must-not-leak",
+        serviceDate: "20260715",
+        kricServiceDayCode: "8",
+        canonicalStations: canonicalRosterStations(),
+        waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+        fetchImpl: async (url) => {
+          const parsed = new URL(url);
+          if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")) return fallback(url);
+          odRequestCount += 1;
+          const headers = retryAfter === null ? undefined : { "retry-after": retryAfter };
+          return new Response("raw-provider-body-must-not-leak", { status: 429, headers });
+        },
+      }), (error) => {
+        captured = error;
+        return error?.name === "TagoRateLimitedError"
+          && error.message === "TAGO GetStrtpntAlocFndTrainInfo HTTP 429"
+          && error.attemptCount === 1
+          && error.cooldownUsed === false;
+      });
+
+      assert.deepEqual(delays, []);
+      assert.equal(odRequestCount, 1);
+      const serialized = JSON.stringify(captured);
+      assert.equal(serialized.includes("fixture-key-must-not-leak"), false);
+      assert.equal(serialized.includes("raw-provider-body-must-not-leak"), false);
+      assert.equal(serialized.includes(retryAfter ?? "retry-after"), false);
+    });
+  }
+});
+
 test("TAGO retry는 최종 503 body를 정리하고 3회에서 종료한다", async () => {
   let attempts = 0;
   let cancellations = 0;
@@ -1551,6 +1657,55 @@ test("TAGO ITX-청춘 probe는 grade·station·OD를 연결하고 secret을 제�
   assert.equal(artifact.itineraries[0].adultFareWon, 9800);
   assert.equal(artifact.pickupDropoff.status, "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE");
   assert.doesNotMatch(JSON.stringify(artifact), new RegExp(secret));
+});
+
+test("TAGO ITX-청춘 probe도 catalog와 OD 전체에서 cooldown을 한 번만 사용한다", async () => {
+  const fallback = validFetch({ useQueryDate: true });
+  const delays = [];
+  const operations = [];
+  let gradeCalls = 0;
+  let captured;
+  await assert.rejects(collectTagoItxCheongchunOd({
+    serviceKey: "fixture-key-must-not-leak",
+    departureDate: "2026-07-14",
+    kricServiceDayCode: "8",
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      const operation = parsed.pathname.split("/").at(-1);
+      operations.push(operation);
+      if (parsed.pathname.endsWith("GetVhcleKndList") && gradeCalls++ === 0) {
+        return new Response("first-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return new Response("second-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      return fallback(url);
+    },
+  }), (error) => {
+    captured = error;
+    return error?.name === "TagoRateLimitedError"
+      && error.message === "TAGO GetCtyCodeList HTTP 429"
+      && error.attemptCount === 1
+      && error.cooldownUsed === true;
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.deepEqual(operations, ["GetVhcleKndList", "GetVhcleKndList", "GetCtyCodeList"]);
+  const serialized = JSON.stringify(captured);
+  for (const rawValue of [
+    "fixture-key-must-not-leak",
+    "first-provider-body-must-not-leak",
+    "second-provider-body-must-not-leak",
+  ]) {
+    assert.equal(serialized.includes(rawValue), false);
+  }
 });
 
 function od(trainNumber, departureStationId, arrivalStationId, departureAt, arrivalAt) {
