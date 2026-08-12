@@ -124,8 +124,6 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
-      # Data #25 초기 Draft PR에서만 file별 current duration을 측정한다. 결과를 검토해
-      # manifest에 반영한 뒤 이 두 measurement step은 최종 workflow에서 제거한다.
       - name: Measure current owned test durations
         run: >-
           node tools/ci/data-test-discovery.mjs measure

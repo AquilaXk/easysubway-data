@@ -191,6 +191,7 @@ export function validateOwnership({
   sources,
   workflowSources,
   fixtureStates = {},
+  requireFixtureStates = true,
   requireDurations = true,
   durationClass = null,
 }) {
@@ -318,27 +319,30 @@ export function validateOwnership({
     if (!Array.isArray(fixture.requiredFiles) || fixture.requiredFiles.length === 0) {
       issue(issues, 'FIXTURE_REQUIRED_FILES_MISSING', fixtureName, 'requiredFiles must be non-empty');
     }
-    const state = fixtureStates[fixtureName];
-    if (!state || state.error) {
-      issue(issues, 'EXTERNAL_FIXTURE_MISSING', fixtureName, fixture.path);
-      continue;
-    }
-    if (state.headSha !== fixture.commit) {
-      issue(issues, 'FIXTURE_HEAD_MISMATCH', fixtureName, String(state.headSha));
-    }
     for (const requiredFile of fixture.requiredFiles ?? []) {
       if (!isSafeRepositoryPath(requiredFile.path) || !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '')) {
         issue(issues, 'INVALID_FIXTURE_FILE', fixtureName, String(requiredFile.path));
+      }
+    }
+    if (requireFixtureStates) {
+      const state = fixtureStates[fixtureName];
+      if (!state || state.error) {
+        issue(issues, 'EXTERNAL_FIXTURE_MISSING', fixtureName, fixture.path);
         continue;
       }
-      const actualHash = state.files?.[requiredFile.path];
-      if (actualHash !== requiredFile.sha256) {
-        issue(
-          issues,
-          'FIXTURE_HASH_MISMATCH',
-          `${fixtureName}:${requiredFile.path}`,
-          String(actualHash),
-        );
+      if (state.headSha !== fixture.commit) {
+        issue(issues, 'FIXTURE_HEAD_MISMATCH', fixtureName, String(state.headSha));
+      }
+      for (const requiredFile of fixture.requiredFiles ?? []) {
+        const actualHash = state.files?.[requiredFile.path];
+        if (actualHash !== requiredFile.sha256) {
+          issue(
+            issues,
+            'FIXTURE_HASH_MISMATCH',
+            `${fixtureName}:${requiredFile.path}`,
+            String(actualHash),
+          );
+        }
       }
     }
   }
@@ -356,7 +360,35 @@ export function validateOwnership({
     if (countOccurrences(source, workflow.invocation) !== 1) {
       issue(issues, 'WORKFLOW_INVOCATION_MISSING', workflow.file, workflow.invocation);
     }
-    if (/node\s+--test[\s\S]{0,500}?\.test\.mjs/.test(source)) {
+    const rawContextInvocations = workflow.contextInvocations;
+    const contextInvocations = Array.isArray(rawContextInvocations) ? rawContextInvocations : [];
+    if (rawContextInvocations !== undefined && !Array.isArray(rawContextInvocations)) {
+      issue(issues, 'INVALID_CONTEXT_INVOCATIONS', workflow.file, 'contextInvocations must be an array');
+    }
+    const uniqueContextInvocations = new Set(contextInvocations);
+    if (uniqueContextInvocations.size !== contextInvocations.length) {
+      issue(issues, 'DUPLICATE_CONTEXT_INVOCATION', workflow.file, className);
+    }
+    let sourceWithoutContextInvocations = source;
+    for (const invocation of uniqueContextInvocations) {
+      if (
+        typeof invocation !== 'string' ||
+        !/^node --test(?: --test-name-pattern='[^'\n]+')? [A-Za-z0-9._/-]+\.test\.mjs$/u.test(invocation)
+      ) {
+        issue(issues, 'INVALID_CONTEXT_INVOCATION', workflow.file, String(invocation));
+        continue;
+      }
+      if (countOccurrences(source, invocation) !== 1) {
+        issue(issues, 'CONTEXT_INVOCATION_MISMATCH', workflow.file, invocation);
+      }
+      const testPath = invocation.split(/\s+/u).at(-1);
+      const entry = manifestByPath.get(testPath);
+      if (!entry || !entry.classes?.includes(className)) {
+        issue(issues, 'CONTEXT_TEST_NOT_OWNED', testPath, className);
+      }
+      sourceWithoutContextInvocations = sourceWithoutContextInvocations.split(invocation).join('');
+    }
+    if (/node\s+--test[\s\S]{0,500}?\.test\.mjs/.test(sourceWithoutContextInvocations)) {
       issue(issues, 'WORKFLOW_HAND_LIST', workflow.file, 'direct test file list is forbidden');
     }
     if (/continue-on-error:\s*true/.test(workflowStepContaining(source, workflow.invocation))) {
@@ -368,16 +400,47 @@ export function validateOwnership({
         issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE', workflow.file, fixtureName);
         continue;
       }
+      const stageContracts = workflow.fixtureStageContracts?.[fixtureName];
+      if (!Array.isArray(stageContracts) || stageContracts.length === 0) {
+        issue(issues, 'WORKFLOW_FIXTURE_STAGE_CONTRACT_MISSING', workflow.file, fixtureName);
+      }
+      const uniqueStageContracts = new Set(Array.isArray(stageContracts) ? stageContracts : []);
+      if (Array.isArray(stageContracts) && uniqueStageContracts.size !== stageContracts.length) {
+        issue(issues, 'DUPLICATE_WORKFLOW_FIXTURE_STAGE_CONTRACT', workflow.file, fixtureName);
+      }
+      for (const contract of uniqueStageContracts) {
+        if (typeof contract !== 'string' || contract.length === 0) {
+          issue(issues, 'INVALID_WORKFLOW_FIXTURE_STAGE_CONTRACT', workflow.file, String(contract));
+        }
+      }
       for (const contract of [
         `repository: ${fixture.repository}`,
         `ref: ${fixture.commit}`,
         `path: ${fixture.checkoutPath}`,
         'persist-credentials: false',
-        `cp -a ${fixture.checkoutPath}/${fixture.sourcePath} ${fixture.path}`,
+        ...[...uniqueStageContracts].filter((entry) => typeof entry === 'string' && entry.length > 0),
       ]) {
         if (!source.includes(contract)) {
           issue(issues, 'WORKFLOW_FIXTURE_CHECKOUT_MISSING', workflow.file, contract);
         }
+      }
+    }
+    const rawFixtureStageContracts = workflow.fixtureStageContracts;
+    if (
+      rawFixtureStageContracts !== undefined &&
+      (!rawFixtureStageContracts ||
+        typeof rawFixtureStageContracts !== 'object' ||
+        Array.isArray(rawFixtureStageContracts))
+    ) {
+      issue(issues, 'INVALID_WORKFLOW_FIXTURE_STAGE_CONTRACTS', workflow.file, className);
+    }
+    for (const fixtureName of Object.keys(
+      rawFixtureStageContracts && typeof rawFixtureStageContracts === 'object' && !Array.isArray(rawFixtureStageContracts)
+        ? rawFixtureStageContracts
+        : {},
+    )) {
+      if (!(workflow.fixtures ?? []).includes(fixtureName)) {
+        issue(issues, 'UNKNOWN_WORKFLOW_FIXTURE_STAGE_CONTRACT', workflow.file, fixtureName);
       }
     }
     if (
@@ -417,7 +480,7 @@ export function validateOwnership({
   };
 }
 
-function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass) {
+function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass, requireFixtureStates) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const rawIndex = execFileSync('git', ['ls-files', '--stage', '-z'], {
     cwd: repoRoot,
@@ -441,7 +504,7 @@ function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClas
     workflowSources[workflow.file] = readFileSync(resolve(repoRoot, workflow.file), 'utf8');
   }
   const fixtureStates = {};
-  for (const [fixtureName, fixture] of Object.entries(manifest.fixtures ?? {})) {
+  for (const [fixtureName, fixture] of requireFixtureStates ? Object.entries(manifest.fixtures ?? {}) : []) {
     const checkoutRoot = resolve(repoRoot, fixture.checkoutPath);
     const fixtureRoot = resolve(repoRoot, fixture.path);
     try {
@@ -481,6 +544,7 @@ function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClas
     sources,
     workflowSources,
     fixtureStates,
+    requireFixtureStates,
     requireDurations,
     durationClass,
   };
@@ -489,11 +553,12 @@ function repositoryInputs(repoRoot, manifestPath, requireDurations, durationClas
 export function verifyRepository({
   repoRoot,
   manifestPath,
+  requireFixtureStates = true,
   requireDurations = true,
   durationClass = null,
 }) {
   return validateOwnership(
-    repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass),
+    repositoryInputs(repoRoot, manifestPath, requireDurations, durationClass, requireFixtureStates),
   );
 }
 
@@ -631,7 +696,12 @@ async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'verify') {
     const className = optionValue(args, '--class', 'required-pr');
-    const result = verifyRepository({ repoRoot, manifestPath, durationClass: className });
+    const result = verifyRepository({
+      repoRoot,
+      manifestPath,
+      durationClass: className,
+      requireFixtureStates: false,
+    });
     process.stdout.write(`${JSON.stringify({ event: 'data-test-owned-verify', ...result })}\n`);
     return;
   }

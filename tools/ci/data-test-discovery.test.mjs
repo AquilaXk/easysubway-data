@@ -71,6 +71,10 @@ function fixture() {
           invocation: requiredInvocation,
           required: true,
           fixtures: ['mobile'],
+          fixtureStageContracts: {
+            mobile: ['cp -a .external/mobile/apps/mobile apps/mobile'],
+          },
+          contextInvocations: [],
         },
         'deterministic-release': {
           file: '.github/workflows/datapack-release.yml',
@@ -78,7 +82,6 @@ function fixture() {
           checkName: 'Data Pack Release',
           invocation: releaseInvocation,
           required: false,
-          fixtures: ['mobile'],
         },
       },
       tests,
@@ -87,7 +90,7 @@ function fixture() {
     sources: Object.fromEntries(tests.map(({ path }) => [path, "import test from 'node:test';\ntest('ok', () => {});\n"])),
     workflowSources: {
       '.github/workflows/ci.yml': `jobs:\n  contracts:\n    name: Data contracts\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          ref: \${{ github.event.pull_request.head.sha || github.sha }}\n          persist-credentials: false\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: .external/mobile\n          persist-credentials: false\n      - run: cp -a .external/mobile/apps/mobile apps/mobile\n      - run: ${requiredInvocation}\n`,
-      '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - uses: actions/checkout@immutable\n        with:\n          repository: AquilaXk/easysubway-mobile\n          ref: d85742f14cbf97c526a6b94dd55bbf863e1d1346\n          path: .external/mobile\n          persist-credentials: false\n      - run: cp -a .external/mobile/apps/mobile apps/mobile\n      - run: ${releaseInvocation}\n`,
+      '.github/workflows/datapack-release.yml': `jobs:\n  data-pack-release:\n    name: Data Pack Release\n    steps:\n      - run: ${releaseInvocation}\n`,
     },
     fixtureStates: {
       mobile: {
@@ -186,6 +189,11 @@ test('external fixture identity and exact PR-head checkout fail closed on drift'
     '.github/workflows/ci.yml'
   ].replace('ref: ${{ github.event.pull_request.head.sha || github.sha }}\n', '');
   assert.ok(errorCodes(() => validateOwnership(mergeCheckout)).includes('PR_HEAD_CHECKOUT_MISSING'));
+
+  const staticOnly = fixture();
+  staticOnly.fixtureStates = {};
+  staticOnly.requireFixtureStates = false;
+  assert.doesNotThrow(() => validateOwnership(staticOnly));
 });
 
 test('release-only ownership is valid but required workflow cannot become advisory', () => {
@@ -227,6 +235,34 @@ test('workflow hand lists, missing invocation and warning wrappers fail closed',
   handList.workflowSources['.github/workflows/ci.yml'] +=
     '      - run: node --test tools/ci/alpha.test.mjs\n';
   assert.ok(errorCodes(() => validateOwnership(handList)).includes('WORKFLOW_HAND_LIST'));
+
+  const declaredContext = fixture();
+  const contextInvocation = 'node --test tools/ci/alpha.test.mjs';
+  declaredContext.manifest.workflows['required-pr'].contextInvocations = [contextInvocation];
+  declaredContext.workflowSources['.github/workflows/ci.yml'] += `      - run: ${contextInvocation}\n`;
+  assert.doesNotThrow(() => validateOwnership(declaredContext));
+
+  const contextDrift = structuredClone(declaredContext);
+  contextDrift.workflowSources['.github/workflows/ci.yml'] = contextDrift.workflowSources[
+    '.github/workflows/ci.yml'
+  ].replace(contextInvocation, 'node --test tools/ci/beta.test.mjs');
+  const contextDriftCodes = errorCodes(() => validateOwnership(contextDrift));
+  assert.ok(contextDriftCodes.includes('CONTEXT_INVOCATION_MISMATCH'));
+  assert.ok(contextDriftCodes.includes('WORKFLOW_HAND_LIST'));
+
+  const malformedContext = fixture();
+  malformedContext.manifest.workflows['required-pr'].contextInvocations = 'node --test tools/ci/alpha.test.mjs';
+  assert.ok(
+    errorCodes(() => validateOwnership(malformedContext)).includes('INVALID_CONTEXT_INVOCATIONS'),
+  );
+
+  const malformedStage = fixture();
+  malformedStage.manifest.workflows['required-pr'].fixtureStageContracts.mobile = [123];
+  assert.ok(
+    errorCodes(() => validateOwnership(malformedStage)).includes(
+      'INVALID_WORKFLOW_FIXTURE_STAGE_CONTRACT',
+    ),
+  );
 
   const missing = fixture();
   missing.workflowSources['.github/workflows/ci.yml'] = missing.workflowSources[
