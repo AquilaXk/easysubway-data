@@ -1628,7 +1628,7 @@ function classifyKorailPlanEndpoint({ plan, sequence, trainNumber }) {
 function selectPartialKorailPlan({
   relation, plan, trainNumber, allowDepartureOnly, allowArrivalOnly, departureOnlyPlans, arrivalOnlyPlans,
 }) {
-  const selected = { ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no) };
+  const selected = { ...plan, normalizedTrainNumber: normalizeTrainNumber(plan.trn_no), endpointRelation: relation };
   if (relation === "departure_only" && allowDepartureOnly) {
     departureOnlyPlans.push(selected);
     return;
@@ -1780,8 +1780,12 @@ function validateKorailItxDepartureOnlySegments({ infoRows, departureOnlyPlans, 
       }
     }
     if (segmentStarts.length !== 1) throw mismatch("segment");
-    const segmentFirst = passengerOrdered[segmentStarts[0]].row;
-    const segmentLast = passengerOrdered[segmentStarts[0] + tagoNames.length - 1].row;
+    const segmentStart = segmentStarts[0];
+    if (plan.endpointRelation === "arrival_only" && segmentStart + tagoNames.length !== passengerOrdered.length) {
+      throw mismatch("segment_position");
+    }
+    const segmentFirst = passengerOrdered[segmentStart].row;
+    const segmentLast = passengerOrdered[segmentStart + tagoNames.length - 1].row;
     try {
       const planDeparture = timestampSeconds(plan.trn_plan_dptre_dt, runDate, "plan departure");
       const planArrival = timestampSeconds(plan.trn_plan_arvl_dt, runDate, "plan arrival");

@@ -4121,7 +4121,7 @@ test("departure_only KORAIL plan은 날짜 전용 run info 세그먼트로만 �
 
 test("arrival_only KORAIL plan은 full run의 TAGO suffix corridor로만 보강한다", async () => {
   const requestedOperations = [];
-  const artifact = await collectKorailItxCheongchunPlan({
+  const collect = (planArrivalAt, infoRows) => collectKorailItxCheongchunPlan({
     serviceKey: "key",
     runDate: "20260713",
     kricServiceDayCode: "8",
@@ -4138,24 +4138,35 @@ test("arrival_only KORAIL plan은 full run의 TAGO suffix corridor로만 보강�
         return apiResponse([
           planRow("02001", "용산", "춘천", "20260713060000", "20260713080000"),
           {
-            ...planRow("02002", "RAW-FIRST-NAME", "용산", "20260713055555", "20260713090000"),
+            ...planRow("02002", "RAW-FIRST-NAME", "용산", "20260713055555", planArrivalAt),
             dptre_stn_cd: "RAW-FIRST-CODE",
             arvl_stn_cd: "0104",
           },
         ]);
       }
-      return apiResponse([
-        infoRow("02002", 1, "RAW-FIRST-CODE", "RAW-FIRST-NAME", "-", "20260713055555"),
-        infoRow("02002", 2, "140873", "춘천", "-", "20260713070000"),
-        infoRow("02002", 3, "0104", "용산", "20260713090000", "-"),
-      ]);
+      return apiResponse(infoRows);
     },
   });
+  const artifact = await collect("20260713090000", [
+    infoRow("02002", 1, "RAW-FIRST-CODE", "RAW-FIRST-NAME", "-", "20260713055555"),
+    infoRow("02002", 2, "140873", "춘천", "-", "20260713070000"),
+    infoRow("02002", 3, "0104", "용산", "20260713090000", "-"),
+  ]);
 
   assert.deepEqual(requestedOperations, ["travelerTrainRunPlan2", "travelerTrainRunInfo2"]);
   assert.deepEqual(artifact.trainNumberSets.korailPlan, ["2001", "2002"]);
   assert.deepEqual(artifact.selectedPlans.map(({ normalizedTrainNumber }) => normalizedTrainNumber), ["2001"]);
   assert.doesNotMatch(JSON.stringify(artifact), /RAW-FIRST-CODE|RAW-FIRST-NAME|20260713055555/);
+
+  requestedOperations.length = 0;
+  await assert.rejects(collect("20260713100000", [
+    infoRow("02002", 1, "RAW-FIRST-CODE", "RAW-FIRST-NAME", "-", "20260713055555"),
+    infoRow("02002", 2, "140873", "춘천", "-", "20260713070000"),
+    infoRow("02002", 3, "0104", "용산", "20260713090000", "20260713090000"),
+    infoRow("02002", 4, "130126", "청량리", "20260713093000", "20260713093000"),
+    infoRow("02002", 5, "0104", "용산", "20260713100000", "-"),
+  ]), /KORAIL_PLAN_MISMATCH: 2002 run_info_segment_position/);
+  assert.deepEqual(requestedOperations, ["travelerTrainRunPlan2", "travelerTrainRunInfo2"]);
 });
 
 test("departure_only run info 세그먼트는 여객 정차만으로 endpoint와 TAGO 구간을 검증한다", async () => {
