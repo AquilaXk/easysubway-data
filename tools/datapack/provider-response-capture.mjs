@@ -99,6 +99,64 @@ export function createProviderResponseReplay({ captureBytes } = {}) {
   };
 }
 
+export function createProviderResponseContinuation({
+  captureBytes,
+  liveFetchImpl = fetch,
+  allowLiveRequest,
+} = {}) {
+  const capture = parseProviderResponseCapture(captureBytes);
+  if (typeof liveFetchImpl !== "function" || typeof allowLiveRequest !== "function") {
+    throw new Error("provider continuation configuration is invalid");
+  }
+  const recordsByRequest = new Map();
+  for (const record of capture.records) {
+    const key = JSON.stringify(record.request);
+    const records = recordsByRequest.get(key) ?? [];
+    records.push(record);
+    recordsByRequest.set(key, records);
+  }
+  let remaining = capture.records.length;
+  let replayedRequestCount = 0;
+  let liveRequestCount = 0;
+
+  return {
+    capture,
+    async fetchImpl(input, init = {}) {
+      const actual = providerRequest(input, init).identity;
+      const key = JSON.stringify(actual);
+      const records = recordsByRequest.get(key);
+      if (records) {
+        if (records.length === 0) throw new Error("provider continuation captured request over-consumed");
+        const record = records.shift();
+        remaining -= 1;
+        replayedRequestCount += 1;
+        if (record.outcome.kind === "TRANSPORT_FAILURE") {
+          throw new Error("provider continuation replayed transport failure");
+        }
+        return responseFromRecord(record.outcome.response);
+      }
+      if (allowLiveRequest(actual) !== true) {
+        throw new Error("provider continuation uncaptured request is not allowed");
+      }
+      liveRequestCount += 1;
+      return liveFetchImpl(input, init);
+    },
+    assertExhausted() {
+      if (remaining !== 0) {
+        throw new Error(`provider continuation has ${remaining} unconsumed base record${remaining === 1 ? "" : "s"}`);
+      }
+    },
+    summary() {
+      return {
+        baseContentSha256: capture.contentSha256,
+        baseRequestCount: capture.requestCount,
+        replayedRequestCount,
+        liveRequestCount,
+      };
+    },
+  };
+}
+
 export function providerResponseCaptureBytes(capture) {
   const validated = validateCapture(structuredClone(capture));
   return Buffer.from(`${JSON.stringify(validated, null, 2)}\n`);
