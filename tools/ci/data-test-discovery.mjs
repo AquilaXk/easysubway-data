@@ -9,6 +9,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const TEST_PATH_PATTERN = /\.test\.[^/]+$/;
 const SUPPORTED_TEST_PATTERN = /\.test\.mjs$/;
+const GIT_EXECUTABLE = '/usr/bin/git';
+
+function compareStrings(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
 
 class OwnershipValidationError extends Error {
   constructor(issues) {
@@ -181,7 +188,7 @@ export function buildDurationShards(entries, shardCount) {
     target.estimatedDurationMs += entry.durationMs;
   }
 
-  for (const shard of shards) shard.tests.sort();
+  for (const shard of shards) shard.tests.sort(compareStrings);
   return shards;
 }
 
@@ -514,7 +521,7 @@ export function validateOwnership({
     .map(({ path, semanticOwner, classes, durationMs, executionProfile: profile }) => ({
       path,
       semanticOwner,
-      classes: [...classes].sort(),
+      classes: [...classes].sort(compareStrings),
       durationMs: durationMs ?? null,
       executionProfile: profile ?? null,
     }))
@@ -542,7 +549,7 @@ function repositoryInputs(
   executionProfile,
 ) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const rawIndex = execFileSync('git', ['ls-files', '--stage', '-z'], {
+  const rawIndex = execFileSync(GIT_EXECUTABLE, ['ls-files', '--stage', '-z'], {
     cwd: repoRoot,
     encoding: 'utf8',
   });
@@ -576,7 +583,7 @@ function repositoryInputs(
       if (!stagedStat.isDirectory() || stagedStat.isSymbolicLink()) {
         throw new Error('staged fixture is not a real directory');
       }
-      const headSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      const headSha = execFileSync(GIT_EXECUTABLE, ['rev-parse', 'HEAD'], {
         cwd: checkoutRoot,
         encoding: 'utf8',
       }).trim();
@@ -703,7 +710,10 @@ async function measureClass({
     defaultProfile,
   );
   if (selected.length === 0) throw new Error(`execution class has no tests: ${className}`);
-  const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+  const headSha = execFileSync(GIT_EXECUTABLE, ['rev-parse', 'HEAD'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).trim();
   if (!/^[a-f0-9]{40}$/.test(expectedHead ?? '') || headSha !== expectedHead) {
     throw new Error(`measurement head mismatch: expected=${expectedHead} actual=${headSha}`);
   }
@@ -759,7 +769,7 @@ async function runOwnedClass({
           {
             index: 1,
             estimatedDurationMs: null,
-            tests: selected.map(({ path }) => path).sort(),
+            tests: selected.map(({ path }) => path).sort(compareStrings),
           },
         ]
       : buildDurationShards(selected, shardCount);

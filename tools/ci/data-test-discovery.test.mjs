@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildDurationShards,
@@ -15,6 +17,10 @@ const profileInvocation =
   'node tools/ci/data-test-discovery.mjs run --class required-pr --profile mobile-v19 --max-workers 1';
 const releaseInvocation =
   'node tools/ci/data-test-discovery.mjs run --class deterministic-release --max-workers 1';
+const discoverySource = readFileSync(
+  fileURLToPath(new URL('./data-test-discovery.mjs', import.meta.url)),
+  'utf8',
+);
 
 function fixture() {
   const tests = [
@@ -322,6 +328,12 @@ test('Git index parser rejects malformed records and preserves modes', () => {
     { path: 'tools/ci/link.test.mjs', mode: '120000' },
   ]);
   assert.throws(() => parseGitIndex('broken\0'), /malformed Git index record/);
+});
+
+test('discovery runtime uses explicit sorting and a fixed Git executable', () => {
+  assert.doesNotMatch(discoverySource, /\.sort\(\)/);
+  assert.doesNotMatch(discoverySource, /execFileSync\(['"]git['"]/);
+  assert.match(discoverySource, /const GIT_EXECUTABLE = '\/usr\/bin\/git';/);
 });
 
 test('duration-based shards are deterministic and never duplicate or drop tests', () => {
