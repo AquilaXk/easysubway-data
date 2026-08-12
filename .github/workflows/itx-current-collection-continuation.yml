@@ -62,8 +62,7 @@ jobs:
             --station-catalog-pack "${{ runner.temp }}/itx-continuation-output/station-catalog-pack" \
             --output "${{ runner.temp }}/itx-continuation-output/itx-result.json" \
             --completeness-output "${{ runner.temp }}/itx-continuation-output/itx-completeness.json" \
-            --suffix-capture-output "${{ runner.temp }}/itx-continuation-output/provider-response-suffix-capture.json" \
-            --continuation-receipt-output "${{ runner.temp }}/itx-continuation-output/continuation-receipt.json"
+            --extended-capture-output "${{ runner.temp }}/itx-continuation-output/provider-response-extended-capture.json"
 
       - name: ITX continuation / Upload sanitized continuation evidence
         if: ${{ always() }}
@@ -73,7 +72,6 @@ jobs:
           path: |
             ${{ runner.temp }}/itx-continuation-output/itx-result.json
             ${{ runner.temp }}/itx-continuation-output/itx-completeness.json
-            ${{ runner.temp }}/itx-continuation-output/provider-response-suffix-capture.json
-            ${{ runner.temp }}/itx-continuation-output/continuation-receipt.json
+            ${{ runner.temp }}/itx-continuation-output/provider-response-extended-capture.json
           if-no-files-found: warn
           retention-days: 14

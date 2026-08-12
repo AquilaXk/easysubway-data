@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { lstatSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -39,6 +40,9 @@ export async function runContinueCurrentItxCollectionCli({
       return isAllowedKorailRequest(identity, serviceDates);
     },
   });
+  if (continuation.baseContentSha256 !== args["expected-capture-content-sha256"]) {
+    throw new Error("provider continuation base capture digest mismatch");
+  }
   serviceDates = Object.freeze({ ...continuation.selectedServiceDates });
 
   const stage = await mkdtemp(path.join(path.dirname(args.output), ".provider-continuation-"));
@@ -115,17 +119,41 @@ function isAllowedKorailRequest(identity, serviceDates) {
 
 function continuationArgs(argv) {
   const args = parseArgs(argv);
-  const expected = ["capture", "completeness-output", "extended-capture-output", "output", "station-catalog-pack"];
+  const expected = [
+    "capture", "completeness-output", "expected-capture-content-sha256",
+    "extended-capture-output", "output", "station-catalog-pack",
+  ];
   const actual = Object.keys(args).sort(codepointCompare);
   if (JSON.stringify(actual) !== JSON.stringify(expected)
-    || expected.some((name) => typeof args[name] !== "string" || !path.isAbsolute(args[name]))) {
-    throw new Error("provider continuation requires exactly five absolute paths");
+    || expected.some((name) => typeof args[name] !== "string")
+    || !/^[0-9a-f]{64}$/.test(args["expected-capture-content-sha256"])) {
+    throw new Error("provider continuation arguments are invalid");
   }
-  const normalized = Object.fromEntries(expected.map((name) => [name, path.resolve(args[name])]));
-  if (new Set(Object.values(normalized)).size !== expected.length) {
+  const pathNames = expected.filter((name) => name !== "expected-capture-content-sha256");
+  if (pathNames.some((name) => !path.isAbsolute(args[name]))) {
+    throw new Error("provider continuation paths must be absolute");
+  }
+  const normalized = Object.fromEntries(pathNames.map((name) => [name, path.resolve(args[name])]));
+  if (new Set(Object.values(normalized)).size !== pathNames.length) {
     throw new Error("provider continuation paths must differ");
   }
-  return normalized;
+  const outputParents = new Set([
+    normalized.output,
+    normalized["completeness-output"],
+    normalized["extended-capture-output"],
+  ].map((target) => path.dirname(target)));
+  if (outputParents.size !== 1) {
+    throw new Error("provider continuation outputs must share one parent");
+  }
+  const outputParent = outputParents.values().next().value;
+  const outputParentStat = lstatSync(outputParent);
+  if (!outputParentStat.isDirectory() || outputParentStat.isSymbolicLink()) {
+    throw new Error("provider continuation output parent is invalid");
+  }
+  return {
+    ...normalized,
+    "expected-capture-content-sha256": args["expected-capture-content-sha256"],
+  };
 }
 
 async function assertOutputsAbsent(targets) {

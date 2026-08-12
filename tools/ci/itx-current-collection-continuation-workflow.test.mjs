@@ -53,12 +53,12 @@ test("tracked station catalog과 exact base SHA로 continuation CLI를 한 번�
   assert.match(run, /--expected-capture-content-sha256 "9fc8c38fc0f73f56c82359d86d1700b049032de8610b671120266db72390b4e4"/);
   for (const flag of [
     "--station-catalog-pack", "--output", "--completeness-output",
-    "--suffix-capture-output", "--continuation-receipt-output",
+    "--extended-capture-output",
   ]) assert.match(run, new RegExp(flag));
   assert.doesNotMatch(run, /run-current-itx-collection|replay-current-itx-collection|promote-candidate|previous-admitted/);
 });
 
-test("결과·completeness·suffix·receipt만 14일 보존하고 base/raw/secret은 업로드하지 않는다", () => {
+test("결과·completeness·extended capture만 14일 보존하고 base/raw/secret은 업로드하지 않는다", () => {
   const yml = workflow();
   const upload = step(yml, "ITX continuation / Upload sanitized continuation evidence");
   assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
@@ -66,7 +66,7 @@ test("결과·completeness·suffix·receipt만 14일 보존하고 base/raw/secre
   assert.match(upload, /retention-days:\s*14/);
   for (const name of [
     "itx-result.json", "itx-completeness.json",
-    "provider-response-suffix-capture.json", "continuation-receipt.json",
+    "provider-response-extended-capture.json",
   ]) assert.match(upload, new RegExp(name.replaceAll(".", "\\.")));
   assert.doesNotMatch(upload, /itx-continuation-base|station-catalog-pack|DATA_GO_KR_SERVICE_KEY|provider-response-capture\.json/);
   assert.doesNotMatch(yml, /(?:git (?:add|commit|push)|gh |promotion|publish|fallback|alternate provider)/i);

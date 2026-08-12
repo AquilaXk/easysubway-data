@@ -55,56 +55,6 @@ test("provider response를 한 번 기록하고 exact 순서로 network 0 replay
   assert.equal(upstreamCalls, 1);
 });
 
-test("continuation은 capture를 identity별 exact-once replay하고 uncaptured Korail만 live 허용한다", async () => {
-  const recorder = createProviderResponseRecorder({
-    observedAt: OBSERVED_AT,
-    selectedServiceDates: SERVICE_DATES,
-    fetchImpl: async (url) => new Response(new URL(url).pathname.split("/").at(-1)),
-  });
-  await recorder.fetchImpl(request("GetVhcleKndList"));
-  await recorder.fetchImpl(request("GetCtyCodeList"));
-  await recorder.fetchImpl(request("GetVhcleKndList"));
-
-  let liveCalls = 0;
-  const continuation = createProviderResponseContinuation({
-    captureBytes: providerResponseCaptureBytes(recorder.captureArtifact()),
-    allowLiveRequest: ({ path: requestPath }) => [
-      "/B551457/run/v2/codes2",
-      "/B551457/run/v2/travelerTrainRunPlan2",
-      "/B551457/run/v2/travelerTrainRunInfo2",
-    ].includes(requestPath),
-    liveFetchImpl: async (url) => {
-      liveCalls += 1;
-      return new Response(`live:${new URL(url).pathname}`);
-    },
-  });
-
-  assert.equal(await (await continuation.fetchImpl(request("GetCtyCodeList", "runtime-key"))).text(), "GetCtyCodeList");
-  assert.equal(await (await continuation.fetchImpl(request("GetVhcleKndList", "runtime-key"))).text(), "GetVhcleKndList");
-  assert.equal(await (await continuation.fetchImpl(request("GetVhcleKndList", "runtime-key"))).text(), "GetVhcleKndList");
-  await assert.rejects(
-    continuation.fetchImpl(request("GetVhcleKndList", "runtime-key")),
-    /captured request over-consumed/,
-  );
-  assert.equal(liveCalls, 0);
-
-  const korailUrl = "https://apis.data.go.kr/B551457/run/v2/codes2?serviceKey=runtime-key&returnType=JSON";
-  assert.equal(await (await continuation.fetchImpl(korailUrl)).text(), "live:/B551457/run/v2/codes2");
-  assert.equal(liveCalls, 1);
-  await assert.rejects(
-    continuation.fetchImpl(request("GetStrtpntAlocFndTrainInfo", "runtime-key")),
-    /uncaptured request is not allowed/,
-  );
-  assert.equal(liveCalls, 1);
-  continuation.assertExhausted();
-  assert.deepEqual(continuation.summary(), {
-    baseContentSha256: recorder.captureArtifact().contentSha256,
-    baseRequestCount: 3,
-    replayedRequestCount: 3,
-    liveRequestCount: 1,
-  });
-});
-
 test("replay는 reordered, missing, extra request와 capture tamper를 fail closed한다", async () => {
   const recorder = createProviderResponseRecorder({
     observedAt: OBSERVED_AT,
@@ -168,8 +118,7 @@ test("recorder는 official GET와 bounded record/body만 허용한다", async ()
     fetchImpl: async () => new Response("12345678", { status: 200, headers: { "content-type": "text/plain" } }),
   });
   await assert.rejects(oversized.fetchImpl(request("GetVhcleKndList")), /provider capture body limit exceeded/);
-  assert.equal(oversized.captureArtifact().bodyBytes, 0);
-  assert.equal(oversized.captureArtifact().records[0].outcome.kind, "TRANSPORT_FAILURE");
+  assert.throws(() => oversized.captureArtifact(), /pending requests/);
 
   const credentialEcho = createProviderResponseRecorder({
     observedAt: OBSERVED_AT,
@@ -183,9 +132,7 @@ test("recorder는 official GET와 bounded record/body만 허용한다", async ()
     credentialEcho.fetchImpl(request("GetVhcleKndList")),
     /provider capture credential echo rejected/,
   );
-  const rejectedCapture = credentialEcho.captureArtifact();
-  assert.equal(rejectedCapture.bodyBytes, 0);
-  assert.equal(rejectedCapture.records[0].outcome.kind, "TRANSPORT_FAILURE");
+  assert.throws(() => credentialEcho.captureArtifact(), /pending requests/);
 });
 
 test("recorder는 credential header를 upstream 전에 거부한다", async () => {
@@ -293,10 +240,17 @@ test("continuation은 request identity별 base occurrence를 exact-once replay�
   assert.equal(continuation.baseRequestCount, 2);
   assert.equal(continuation.liveRequestCount, 1);
   assert.deepEqual(extended.records.map(({ request: value }) => value.path), [
-    "/1613000/TrainInfo/GetVhcleKndList",
     "/1613000/TrainInfo/GetCtyCodeList",
     "/B551457/run/v2/travelerTrainRunPlan2",
+    "/1613000/TrainInfo/GetVhcleKndList",
   ]);
+  const sequential = createProviderResponseReplay({ captureBytes: providerResponseCaptureBytes(extended) });
+  await sequential.fetchImpl(request("GetCtyCodeList", "next-runtime-key"));
+  await sequential.fetchImpl(
+    "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunPlan2?serviceKey=next-runtime-key&pageNo=1",
+  );
+  await sequential.fetchImpl(request("GetVhcleKndList", "next-runtime-key"));
+  sequential.assertExhausted();
   assert.equal(extended.observedAt, "2026-08-13T00:00:00.000Z");
 });
 
@@ -401,5 +355,5 @@ test("continuation은 aggregate body budget 0을 정확히 유지한다", async 
   });
   await nonempty.fetchImpl(request("GetVhcleKndList"));
   await assert.rejects(nonempty.fetchImpl(liveRequest), /provider capture body limit exceeded/);
-  assert.equal(nonempty.captureArtifact().bodyBytes, 4);
+  assert.throws(() => nonempty.captureArtifact(), /pending requests/);
 });
