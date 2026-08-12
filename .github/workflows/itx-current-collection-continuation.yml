@@ -1,0 +1,79 @@
+name: ITX Current Collection Continuation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: itx-current-collection-continuation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  continue:
+    name: ITX current collection continuation
+    runs-on: macos-15
+    environment: itx-current-collection
+    timeout-minutes: 60
+    steps:
+      - name: ITX continuation / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: ITX continuation / Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: ITX continuation / Download retained provider capture
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: AquilaXk/easysubway-data
+          run-id: 31609927895
+          name: itx-current-collection-31609927895
+          path: ${{ runner.temp }}/itx-continuation-base
+          github-token: ${{ github.token }}
+
+      - name: ITX continuation / Prepare temp output
+        run: mkdir -p "${{ runner.temp }}/itx-continuation-output"
+
+      - name: ITX continuation / Emit station catalog pack
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-pack.mjs \
+            --output "${{ runner.temp }}/itx-continuation-output/station-catalog-pack" \
+            --catalog-pack-id "itx-current-station-catalog-v1"
+
+      - name: ITX continuation / Continue current collection
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATA_GO_KR_SERVICE_KEY:-}" || "${DATA_GO_KR_SERVICE_KEY}" == *$'\n'* || "${DATA_GO_KR_SERVICE_KEY}" == *$'\r'* ]]; then
+            echo "DATA_GO_KR_SERVICE_KEY must be a nonempty single line" >&2
+            exit 1
+          fi
+          node tools/datapack/continue-current-itx-collection.mjs \
+            --capture "${{ runner.temp }}/itx-continuation-base/provider-response-capture.json" \
+            --expected-capture-content-sha256 "9fc8c38fc0f73f56c82359d86d1700b049032de8610b671120266db72390b4e4" \
+            --station-catalog-pack "${{ runner.temp }}/itx-continuation-output/station-catalog-pack" \
+            --output "${{ runner.temp }}/itx-continuation-output/itx-result.json" \
+            --completeness-output "${{ runner.temp }}/itx-continuation-output/itx-completeness.json" \
+            --suffix-capture-output "${{ runner.temp }}/itx-continuation-output/provider-response-suffix-capture.json" \
+            --continuation-receipt-output "${{ runner.temp }}/itx-continuation-output/continuation-receipt.json"
+
+      - name: ITX continuation / Upload sanitized continuation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: itx-current-collection-continuation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/itx-continuation-output/itx-result.json
+            ${{ runner.temp }}/itx-continuation-output/itx-completeness.json
+            ${{ runner.temp }}/itx-continuation-output/provider-response-suffix-capture.json
+            ${{ runner.temp }}/itx-continuation-output/continuation-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
