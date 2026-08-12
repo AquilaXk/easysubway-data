@@ -26,11 +26,19 @@ test("offline replay는 exact retained artifact를 쓰는 no-input no-secret wor
   assert.doesNotMatch(yml, /workflow_dispatch:[\s\S]*?inputs:/);
   assert.match(yml, /^permissions:\n\s+actions: read\n\s+contents: read\s*$/m);
   assert.match(yml, /runs-on: macos-15/);
+  assert.match(yml, /replay:\n\s+if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
   assert.match(yml, /timeout-minutes:\s*60/);
   assert.match(yml, /cancel-in-progress:\s*false/);
   assert.match(yml, /persist-credentials:\s*false/);
   assert.match(yml, /node-version:\s*["']24\.19\.0["']/);
-  assert.doesNotMatch(yml, /(?:environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/);
+  assert.doesNotMatch(yml, /(?:^\s*env:|environment:|secrets\.|DATA_GO_KR_SERVICE_KEY)/m);
+
+  const checkout = step(yml, "ITX offline replay / Checkout repository");
+  assert.match(checkout, /ref:\s*main/);
+
+  const actionRefs = [...yml.matchAll(/^\s+uses:\s*([^\s]+)\s*$/gm)].map((match) => match[1]);
+  assert.ok(actionRefs.length > 0);
+  for (const actionRef of actionRefs) assert.match(actionRef, /@[0-9a-f]{40}$/);
 
   const download = step(yml, "ITX offline replay / Download retained extended capture");
   assert.match(download, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
@@ -57,6 +65,7 @@ test("current-main station catalog과 extended capture로 replay CLI를 한 번�
 test("sanitized replay output 하나만 14일 보존한다", () => {
   const yml = workflow();
   const upload = step(yml, "ITX offline replay / Upload sanitized replay evidence");
+  assert.match(upload, /if:\s*\$\{\{ always\(\) \}\}/);
   assert.match(upload, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
   assert.match(upload, /path:\s*\$\{\{ runner\.temp \}\}\/itx-offline-replay-output\/itx-replay\.json/);
   assert.match(upload, /if-no-files-found:\s*error/);

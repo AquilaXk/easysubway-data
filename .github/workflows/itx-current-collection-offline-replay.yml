@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   replay:
+    if: ${{ github.ref == 'refs/heads/main' }}
     name: ITX current collection offline replay
     runs-on: macos-15
     timeout-minutes: 60
@@ -20,6 +21,7 @@ jobs:
       - name: ITX offline replay / Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: main
           persist-credentials: false
 
       - name: ITX offline replay / Set up Node.js
@@ -55,6 +57,7 @@ jobs:
             --station-catalog-pack "${{ runner.temp }}/itx-offline-replay-output/station-catalog-pack"
 
       - name: ITX offline replay / Upload sanitized replay evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: itx-current-collection-offline-replay-${{ github.run_id }}
