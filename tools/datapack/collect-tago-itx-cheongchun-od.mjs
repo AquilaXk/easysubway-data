@@ -500,32 +500,37 @@ export async function collectTagoItxCheongchunOd({
   kricServiceDayCode,
   fetchImpl = fetch,
   now = new Date(),
+  waitImpl = wait,
 } = {}) {
   const key = normalizeDataGoKrServiceKey(serviceKey);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(departureDate ?? "")) throw new Error("departureDate must be YYYY-MM-DD");
   if (!["7", "8", "9"].includes(kricServiceDayCode)) {
     throw new Error("kricServiceDayCode must be 7, 8, or 9");
   }
-  const trainGrades = await fetchAll("GetVhcleKndList", {}, key, fetchImpl);
+  const rateLimitState = tagoRateLimitState(null);
+  const fetchOperation = (operation, query) => fetchAll(
+    operation, query, key, fetchImpl, null, waitImpl, rateLimitState,
+  );
+  const trainGrades = await fetchOperation("GetVhcleKndList", {});
   const gradeRows = trainGrades.rows.filter((row) => normalize(row.vehiclekndnm) === "itx청춘");
   if (gradeRows.length !== 1) throw new Error("TAGO ITX-청춘 train grade is missing or ambiguous");
   const grade = gradeRows[0];
 
-  const cities = await fetchAll("GetCtyCodeList", {}, key, fetchImpl);
+  const cities = await fetchOperation("GetCtyCodeList", {});
   const stationRows = [];
   for (const city of cities.rows) {
     const cityCode = requiredString(city.citycode, "citycode");
-    const stations = await fetchAll("GetCtyAcctoTrainSttnList", { cityCode }, key, fetchImpl);
+    const stations = await fetchOperation("GetCtyAcctoTrainSttnList", { cityCode });
     stationRows.push(...stations.rows);
   }
   const departure = uniqueStation(stationRows, "청량리");
   const arrival = uniqueStation(stationRows, "춘천");
-  const od = await fetchAll("GetStrtpntAlocFndTrainInfo", {
+  const od = await fetchOperation("GetStrtpntAlocFndTrainInfo", {
     depPlaceId: departure.nodeid,
     arrPlaceId: arrival.nodeid,
     depPlandTime: departureDate.replaceAll("-", ""),
     trainGradeCode: grade.vehiclekndid,
-  }, key, fetchImpl);
+  });
   const itineraries = od.rows.map((row, index) => normalizeItinerary(row, index));
   const trainNumbers = [...new Set(itineraries.map(({ trainNumber }) => trainNumber))].sort(naturalCompare);
   if (itineraries.length === 0) throw new Error("TAGO ITX-청춘 OD returned zero rows");
@@ -558,14 +563,21 @@ export async function collectTagoItxCheongchunOd({
   };
 }
 
-async function fetchAll(operation, query, key, fetchImpl, requestBudget = null, waitImpl = wait) {
+async function fetchAll(
+  operation,
+  query,
+  key,
+  fetchImpl,
+  requestBudget = null,
+  waitImpl = wait,
+  rateLimitState = tagoRateLimitState(requestBudget),
+) {
   const paginated = PAGINATED_OPERATIONS.has(operation);
   if (!paginated && !NON_PAGINATED_OPERATIONS.has(operation)) {
     throw new Error(`TAGO operation is unsupported: ${safeCode(operation)}`);
   }
   const all = [];
   const rawHashes = [];
-  const rateLimitState = tagoRateLimitState(requestBudget);
   if (rateLimitState.stopped) throw rateLimitError(rateLimitState);
   let requestCount = 0;
   let totalCount = null;

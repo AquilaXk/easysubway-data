@@ -1659,6 +1659,55 @@ test("TAGO ITX-청춘 probe는 grade·station·OD를 연결하고 secret을 제�
   assert.doesNotMatch(JSON.stringify(artifact), new RegExp(secret));
 });
 
+test("TAGO ITX-청춘 probe도 catalog와 OD 전체에서 cooldown을 한 번만 사용한다", async () => {
+  const fallback = validFetch({ useQueryDate: true });
+  const delays = [];
+  const operations = [];
+  let gradeCalls = 0;
+  let captured;
+  await assert.rejects(collectTagoItxCheongchunOd({
+    serviceKey: "fixture-key-must-not-leak",
+    departureDate: "2026-07-14",
+    kricServiceDayCode: "8",
+    waitImpl: async (milliseconds) => { delays.push(milliseconds); },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      const operation = parsed.pathname.split("/").at(-1);
+      operations.push(operation);
+      if (parsed.pathname.endsWith("GetVhcleKndList") && gradeCalls++ === 0) {
+        return new Response("first-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      if (parsed.pathname.endsWith("GetCtyCodeList")) {
+        return new Response("second-provider-body-must-not-leak", {
+          status: 429,
+          headers: { "retry-after": "1" },
+        });
+      }
+      return fallback(url);
+    },
+  }), (error) => {
+    captured = error;
+    return error?.name === "TagoRateLimitedError"
+      && error.message === "TAGO GetCtyCodeList HTTP 429"
+      && error.attemptCount === 1
+      && error.cooldownUsed === true;
+  });
+
+  assert.deepEqual(delays, [1_000]);
+  assert.deepEqual(operations, ["GetVhcleKndList", "GetVhcleKndList", "GetCtyCodeList"]);
+  const serialized = JSON.stringify(captured);
+  for (const rawValue of [
+    "fixture-key-must-not-leak",
+    "first-provider-body-must-not-leak",
+    "second-provider-body-must-not-leak",
+  ]) {
+    assert.equal(serialized.includes(rawValue), false);
+  }
+});
+
 function od(trainNumber, departureStationId, arrivalStationId, departureAt, arrivalAt) {
   return { trainNumber, departureStationId, arrivalStationId, departureAt, arrivalAt };
 }
