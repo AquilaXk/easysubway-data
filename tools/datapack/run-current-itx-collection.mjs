@@ -244,6 +244,9 @@ function safeAttemptCount(value) {
 
 function safeTransportAttempts(value) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 2) return [];
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) return [];
+  }
   const phases = new Set(["DNS_LOOKUP", "TCP_CONNECT", "TLS_HANDSHAKE", "RESPONSE_HEADERS", "UNKNOWN"]);
   return value.map((attempt, index) => ({
     attemptCount: attempt?.attemptCount === index + 1 ? attempt.attemptCount : index + 1,

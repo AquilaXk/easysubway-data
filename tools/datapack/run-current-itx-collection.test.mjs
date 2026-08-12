@@ -223,6 +223,7 @@ test("KASI 최종 실패에서는 collector 전에 closed preflight receipt만 �
   const freshnessOutput = path.join(dir, "freshness.json");
   let collectorCalls = 0;
   const rawFailure = new Error("https://apis.data.go.kr/?ServiceKey=secret-key&solYear=2026 raw body");
+  rawFailure.transportAttempts = new Array(2);
   await assert.rejects(runCurrentItxCollectionCli({
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
     env: VALID_ENV,

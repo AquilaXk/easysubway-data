@@ -120,14 +120,20 @@ function nativeHttpsGet(url, { signal, headers }, httpsRequestImpl) {
 }
 
 function nativeRequestFailure(error, secureConnected, diagnostic) {
-  if (!isNativeAbortError(error)) return error;
+  const transportDiagnostic = Object.freeze({ ...diagnostic });
+  if (!isNativeAbortError(error)) {
+    return Object.assign(new Error("KASI native HTTPS request failed"), {
+      cause: error,
+      transportDiagnostic,
+    });
+  }
   const failure = new Error(secureConnected
     ? "KASI native HTTPS request timed out"
     : "KASI native HTTPS connect timed out");
   failure.name = secureConnected ? "AbortError" : "Error";
   failure.code = secureConnected ? "ABORT_ERR" : "UND_ERR_CONNECT_TIMEOUT";
   failure.cause = error;
-  failure.transportDiagnostic = Object.freeze({ ...diagnostic });
+  failure.transportDiagnostic = transportDiagnostic;
   return failure;
 }
 

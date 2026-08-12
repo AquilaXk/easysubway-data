@@ -108,6 +108,62 @@ test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed�
   }
 });
 
+test("KASI native HTTPS의 explicit DNS·TLS 오류도 closed phase와 family count를 보존한다", async () => {
+  const cases = [
+    {
+      error: Object.assign(new Error("raw dns provider.invalid"), { code: "ENOTFOUND" }),
+      beforeError() {},
+      failureCategory: "NETWORK_DNS",
+      transportAttempt: { attemptCount: 1, failurePhase: "DNS_LOOKUP", ipv4AttemptCount: 0, ipv6AttemptCount: 0 },
+    },
+    {
+      error: Object.assign(new Error("raw tls provider.invalid"), { code: "CERT_HAS_EXPIRED" }),
+      beforeError(socketListeners) {
+        socketListeners.get("lookup")?.(null, "198.51.100.9", 4, "provider.invalid");
+        socketListeners.get("connectionAttempt")?.("198.51.100.9", 443, 4);
+        socketListeners.get("connect")?.();
+      },
+      failureCategory: "NETWORK_TLS",
+      transportAttempt: { attemptCount: 1, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0 },
+    },
+  ];
+  for (const { error, beforeError, failureCategory, transportAttempt } of cases) {
+    let calls = 0;
+    await assert.rejects(fetchKasiPublicHolidayCalendar({
+      serviceKey: "test-key",
+      year: 2026,
+      months: [7],
+      httpsRequestImpl: () => {
+        calls += 1;
+        const requestListeners = new Map();
+        const socketListeners = new Map();
+        const request = {
+          once(event, listener) { requestListeners.set(event, listener); return request; },
+          end() {
+            queueMicrotask(() => {
+              const socket = {
+                secureConnecting: true,
+                once(event, listener) { socketListeners.set(event, listener); return socket; },
+                on(event, listener) { socketListeners.set(event, listener); return socket; },
+              };
+              requestListeners.get("socket")?.(socket);
+              beforeError(socketListeners);
+              requestListeners.get("error")?.(error);
+            });
+          },
+        };
+        return request;
+      },
+    }), (failure) => {
+      assert.equal(failure.failureCategory, failureCategory);
+      assert.deepEqual(failure.transportAttempts, [transportAttempt]);
+      assert.doesNotMatch(JSON.stringify(failure.transportAttempts), /198\.51\.100|provider\.invalid|raw/);
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
+});
+
 test("KASI native HTTPS는 TLS secureConnect 전 AbortError만 connect timeout으로 한 번 재시도한다", async () => {
   let calls = 0;
   const holidays = await fetchKasiPublicHolidayCalendar({
