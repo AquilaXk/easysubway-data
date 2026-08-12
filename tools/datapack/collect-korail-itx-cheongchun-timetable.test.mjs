@@ -4140,6 +4140,7 @@ test("arrival_only KORAIL plan은 full run의 TAGO suffix corridor로만 보강�
           {
             ...planRow("02002", "RAW-FIRST-NAME", "용산", "20260713055555", "20260713090000"),
             dptre_stn_cd: "RAW-FIRST-CODE",
+            arvl_stn_cd: "0104",
           },
         ]);
       }
