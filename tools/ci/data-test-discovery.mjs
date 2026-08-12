@@ -320,12 +320,7 @@ export function validateOwnership({
       issue(issues, 'FIXTURE_REQUIRED_FILES_MISSING', fixtureName, 'requiredFiles must be non-empty');
     }
     for (const requiredFile of fixture.requiredFiles ?? []) {
-      if (
-        !isSafeRepositoryPath(requiredFile.path) ||
-        !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '') ||
-        (requiredFile.runtimeSha256 !== undefined &&
-          !/^[a-f0-9]{64}$/.test(requiredFile.runtimeSha256))
-      ) {
+      if (!isSafeRepositoryPath(requiredFile.path) || !/^[a-f0-9]{64}$/.test(requiredFile.sha256 ?? '')) {
         issue(issues, 'INVALID_FIXTURE_FILE', fixtureName, String(requiredFile.path));
       }
     }
@@ -340,7 +335,7 @@ export function validateOwnership({
       }
       for (const requiredFile of fixture.requiredFiles ?? []) {
         const actualHash = state.files?.[requiredFile.path];
-        if (actualHash !== (requiredFile.runtimeSha256 ?? requiredFile.sha256)) {
+        if (actualHash !== requiredFile.sha256) {
           issue(
             issues,
             'FIXTURE_HASH_MISMATCH',

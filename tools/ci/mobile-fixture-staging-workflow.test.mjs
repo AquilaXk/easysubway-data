@@ -10,7 +10,7 @@ const ownership = JSON.parse(
   readFileSync(path.join(root, "tools/ci/data-test-ownership.json"), "utf8"),
 );
 const mobileRepository = "AquilaXk/easysubway-mobile";
-const mobileRevision = "d85742f14cbf97c526a6b94dd55bbf863e1d1346";
+const mobileRevision = "39d2c4723d0ff855041c6162825930c7d12ffad3";
 const capitalGzipSha256 = "f328fbedff014be18a0e8341e0bdbfe9b0dd774fa7e9ae7692aa869e831707b3";
 
 function namedWorkflowStep(yml, name) {
@@ -70,13 +70,13 @@ function fixtureStep(workflow) {
     assert.match(stage, /if \[\[ -e apps \|\| -L apps \]\]; then/);
     assert.match(stage, /\[\[ -d apps && ! -L apps \]\]/);
     assert.match(stage, /else\s+mkdir apps\s+fi/);
-    assert.match(stage, /mv "\$\{source\}" apps\/mobile/);
+    assert.match(stage, /cp -a "\$\{source\}" apps\/mobile/);
     assert.ok(
-      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("mv "),
+      stage.indexOf('[[ "${actual_sha256}" == "${expected_sha256}" ]]') < stage.indexOf("cp -a "),
       `${workflow}: digest 검증은 destination stage보다 앞서야 함`,
     );
     assert.ok(
-      stage.indexOf("mkdir apps") < stage.indexOf("mv "),
+      stage.indexOf("mkdir apps") < stage.indexOf("cp -a "),
       `${workflow}: 검증된 parent 생성은 fixture stage보다 앞서야 함`,
     );
   });
@@ -165,6 +165,28 @@ test("CI는 migration이 쓰는 tracked topology evidence를 #108 regression 뒤
       && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Lint workflows")
       && ci.indexOf("Restore tracked topology evidence") < ci.indexOf("Verify and run all owned required tests"),
     "evidence backup/restore는 migration regression과 later contract 사이에 있어야 함",
+  );
+});
+
+test("CI는 #108 derived pack을 버리고 pristine Mobile fixture를 owned runner 전에 복원한다", () => {
+  const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  const restore = namedWorkflowStep(ci, "Restore pinned Mobile fixture for owned tests");
+  assert.match(restore, /source="\.external\/mobile\/apps\/mobile"/);
+  assert.match(restore, /target="apps\/mobile"/);
+  assert.match(restore, new RegExp(mobileRevision));
+  assert.match(restore, new RegExp(capitalGzipSha256));
+  assert.match(restore, /rm -r -- "\$\{target\}"/);
+  assert.match(restore, /cp -a "\$\{source\}" "\$\{target\}"/);
+  assert.match(restore, /find "\$\{target\}" -type l/);
+  assert.match(restore, /sha256sum "\$\{target_capital_gzip\}"/);
+  assert.ok(
+    ci.indexOf("Verify Data issue 108 bundled-pack regression")
+      < ci.indexOf("Restore pinned Mobile fixture for owned tests")
+      && ci.indexOf("Restore pinned Mobile fixture for owned tests")
+        < ci.indexOf("Measure current owned test durations")
+      && ci.indexOf("Restore pinned Mobile fixture for owned tests")
+        < ci.indexOf("Verify and run all owned required tests"),
+    "pristine fixture 복원은 contextual #108 뒤, owned measure/run 앞이어야 함",
   );
 });
 
