@@ -2,7 +2,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  assertExactObjectKeys as assertKeys,
+  canonicalJsonObject as canonicalObject,
   prepareServerRouteBundlePublication,
+  runServerRouteBundlePublicationCli,
   validateServerRouteBundlePublicationFacts,
 } from "./build-server-route-bundle-consumer-handoff.mjs";
 import {
@@ -77,69 +80,11 @@ export function canonicalServerRouteBundlePublicationDescriptorJson(value) {
   return canonicalJson(validateServerRouteBundlePublicationDescriptor(value));
 }
 
-function assertKeys(value, expected, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
-  }
-  const actual = Object.keys(value);
-  const wanted = new Set(expected);
-  if (actual.length !== wanted.size || actual.some((key) => !wanted.has(key))) {
-    throw new Error(`${label} mismatch`);
-  }
-}
-
-function canonicalObject(value) {
-  return JSON.parse(canonicalJson(value));
-}
-
-function parseArgs(argv) {
-  const result = {};
-  const allowed = new Set([
-    "artifact-root",
-    "final",
-    "output",
-    "promotion-request",
-    "publication-receipt",
-    "repository-git-sha",
-  ]);
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
-    if (!key?.startsWith("--") || value === undefined || value.startsWith("--")) {
-      throw new Error(`invalid argument near ${key ?? "end"}`);
-    }
-    const name = key.slice(2);
-    if (!allowed.delete(name)) throw new Error(`unknown or duplicate argument --${name}`);
-    result[name] = value;
-  }
-  return result;
-}
-
-function requiredArg(args, name) {
-  const value = args[name];
-  if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value.includes("\0")) {
-    throw new Error(`--${name} must be a non-empty exact string`);
-  }
-  return value;
-}
-
-async function main(argv) {
-  const args = parseArgs(argv);
-  const descriptor = await buildServerRouteBundlePublicationDescriptor({
-    repositoryRoot: process.cwd(),
-    repositoryGitSha: requiredArg(args, "repository-git-sha"),
-    artifactRoot: requiredArg(args, "artifact-root"),
-    finalPath: requiredArg(args, "final"),
-    publicationReceiptPath: requiredArg(args, "publication-receipt"),
-    promotionRequestPath: requiredArg(args, "promotion-request"),
-    output: requiredArg(args, "output"),
-  });
-  process.stdout.write(`DESCRIPTOR ${descriptor.descriptorSha256}\n`);
-}
-
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`build-server-route-bundle-publication-descriptor: ${error.message}\n`);
-    process.exitCode = 1;
+  await runServerRouteBundlePublicationCli(process.argv.slice(2), {
+    build: buildServerRouteBundlePublicationDescriptor,
+    digestKey: "descriptorSha256",
+    errorPrefix: "build-server-route-bundle-publication-descriptor",
+    successLabel: "DESCRIPTOR",
   });
 }

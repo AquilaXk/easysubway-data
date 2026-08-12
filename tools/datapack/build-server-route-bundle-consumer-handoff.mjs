@@ -618,23 +618,35 @@ function requiredArg(args, name) {
   return requiredRaw(args[name], `--${name}`);
 }
 
-async function main(argv) {
-  const args = parseArgs(argv);
-  const handoff = await buildServerRouteBundleConsumerHandoff({
-    repositoryRoot: process.cwd(),
-    repositoryGitSha: requiredArg(args, "repository-git-sha"),
-    artifactRoot: requiredArg(args, "artifact-root"),
-    finalPath: requiredArg(args, "final"),
-    publicationReceiptPath: requiredArg(args, "publication-receipt"),
-    promotionRequestPath: requiredArg(args, "promotion-request"),
-    output: requiredArg(args, "output"),
-  });
-  process.stdout.write(`HANDOFF ${handoff.handoffSha256}\n`);
+export async function runServerRouteBundlePublicationCli(argv, config) {
+  try {
+    const args = parseArgs(argv);
+    const result = await config.build({
+      repositoryRoot: process.cwd(),
+      repositoryGitSha: requiredArg(args, "repository-git-sha"),
+      artifactRoot: requiredArg(args, "artifact-root"),
+      finalPath: requiredArg(args, "final"),
+      publicationReceiptPath: requiredArg(args, "publication-receipt"),
+      promotionRequestPath: requiredArg(args, "promotion-request"),
+      output: requiredArg(args, "output"),
+    });
+    process.stdout.write(`${config.successLabel} ${result[config.digestKey]}\n`);
+  } catch (error) {
+    process.stderr.write(`${config.errorPrefix}: ${error.message}\n`);
+    process.exitCode = 1;
+  }
 }
 
+export {
+  assertKeys as assertExactObjectKeys,
+  canonicalObject as canonicalJsonObject,
+};
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`build-server-route-bundle-consumer-handoff: ${error.message}\n`);
-    process.exitCode = 1;
+  await runServerRouteBundlePublicationCli(process.argv.slice(2), {
+    build: buildServerRouteBundleConsumerHandoff,
+    digestKey: "handoffSha256",
+    errorPrefix: "build-server-route-bundle-consumer-handoff",
+    successLabel: "HANDOFF",
   });
 }
