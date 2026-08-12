@@ -8,11 +8,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
-  buildServerRouteBundleConsumerHandoff,
-  canonicalServerRouteBundleConsumerHandoffJson,
-  validateServerRouteBundleConsumerHandoff,
-} from "./build-server-route-bundle-consumer-handoff.mjs";
-import {
   buildServerRouteBundlePublicationDescriptor,
   canonicalServerRouteBundlePublicationDescriptorJson,
   validateServerRouteBundlePublicationDescriptor,
@@ -27,8 +22,7 @@ import {
 } from "./lib/server-route-bundle-final.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const SCRIPT = path.join(REPOSITORY_ROOT, "tools/datapack/build-server-route-bundle-consumer-handoff.mjs");
-const DESCRIPTOR_SCRIPT = path.join(
+const SCRIPT = path.join(
   REPOSITORY_ROOT,
   "tools/datapack/build-server-route-bundle-publication-descriptor.mjs",
 );
@@ -55,7 +49,23 @@ const SIGNED_PATHS = [
 ].sort(bytewise);
 let rejectedSequence = 0;
 
-test("malformed handoff CLI는 stack trace 없이 fail closed한다", () => {
+test("v1 consumer handoff production reachability가 없다", async () => {
+  await assert.rejects(
+    readFile(path.join(REPOSITORY_ROOT, "tools/datapack/build-server-route-bundle-consumer-handoff.mjs")),
+    { code: "ENOENT" },
+  );
+  await assert.rejects(
+    readFile(path.join(REPOSITORY_ROOT, "contracts/datapack/server-route-bundle-consumer-handoff.schema.json")),
+    { code: "ENOENT" },
+  );
+  const descriptorSource = await readFile(SCRIPT, "utf8");
+  assert.doesNotMatch(descriptorSource, /build-server-route-bundle-consumer-handoff/);
+  const ciSource = await readFile(path.join(REPOSITORY_ROOT, ".github/workflows/ci.yml"), "utf8");
+  assert.match(ciSource, /build-server-route-bundle-publication-descriptor\.test\.mjs/);
+  assert.doesNotMatch(ciSource, /build-server-route-bundle-consumer-handoff\.test\.mjs/);
+});
+
+test("malformed descriptor CLI는 stack trace 없이 fail closed한다", () => {
   const result = spawnSync(process.execPath, [SCRIPT, "--artifact-root"], {
     cwd: REPOSITORY_ROOT,
     encoding: "utf8",
@@ -64,104 +74,14 @@ test("malformed handoff CLI는 stack trace 없이 fail closed한다", () => {
   assert.equal(result.stdout, "");
   assert.equal(
     result.stderr,
-    "build-server-route-bundle-consumer-handoff: invalid argument near --artifact-root\n",
+    "build-server-route-bundle-publication-descriptor: invalid argument near --artifact-root\n",
   );
 });
 
-test("GO FINAL과 OCI receipt를 closed Backend/Platform handoff로 결속한다", async (t) => {
+test("producer-neutral v2 descriptor는 producer facts를 결속하고 consumer projection을 제외한다", async (t) => {
   const fixture = await createFixture(t);
-  const firstOutput = path.join(fixture.root, "handoff-first.json");
-  const secondOutput = path.join(fixture.root, "handoff-second.json");
-
-  const handoff = await buildServerRouteBundleConsumerHandoff({
-    ...fixture.input,
-    output: firstOutput,
-    clock: () => NOW,
-  });
-  await buildServerRouteBundleConsumerHandoff({
-    ...fixture.input,
-    output: secondOutput,
-    clock: () => NOW,
-  });
-
-  assert.equal(handoff.schemaVersion, 1);
-  assert.equal(handoff.artifactKind, "server-route-bundle-consumer-handoff");
-  assert.deepEqual(handoff.manifest, fixture.manifest);
-  assert.equal(handoff.sourceSnapshotSetHash, fixture.final.candidate.sourceSnapshotSetHash);
-  assert.deepEqual(handoff.publicationReceipt, fixture.receipt);
-  assert.deepEqual(handoff.release, {
-    finalRawSha256: sha256(fixture.finalBytes),
-    finalSha256: fixture.final.finalSha256,
-    promotionEvidenceSha256: sha256(fixture.promotionRequestBytes),
-    publicationReceiptRawSha256: sha256(fixture.receiptBytes),
-    publicationReceiptSha256: fixture.receipt.receiptSha256,
-    result: "GO",
-  });
-  assert.deepEqual(handoff.backendAdmission, {
-    finalEvidenceReference: `sha256:${sha256(fixture.finalBytes)}`,
-    immutablePublicationReceiptIdentity: `sha256:${sha256(fixture.receiptBytes)}`,
-    manifestSha256: sha256(fixture.manifestBytes),
-    promotionEvidenceReference: `sha256:${sha256(fixture.promotionRequestBytes)}`,
-  });
-  assert.deepEqual(handoff.platformRelease, {
-    serverRouteBundleDigest: `sha256:${sha256(fixture.manifestBytes)}`,
-  });
-  assert.match(handoff.handoffSha256, /^[a-f0-9]{64}$/);
-  assert.deepEqual(validateServerRouteBundleConsumerHandoff(handoff), handoff);
-  assert.equal(await readFile(firstOutput, "utf8"), canonicalServerRouteBundleConsumerHandoffJson(handoff));
-  assert.deepEqual(await readFile(firstOutput), await readFile(secondOutput));
-
-  const cliOutput = path.join(fixture.root, "handoff-cli.json");
-  const cli = spawnSync(process.execPath, [
-    SCRIPT,
-    "--artifact-root", fixture.artifactRoot,
-    "--final", fixture.finalPath,
-    "--publication-receipt", fixture.publicationReceiptPath,
-    "--promotion-request", fixture.promotionRequestPath,
-    "--repository-git-sha", REPOSITORY_GIT_SHA,
-    "--output", cliOutput,
-  ], { cwd: REPOSITORY_ROOT, encoding: "utf8" });
-  assert.equal(cli.status, 0, cli.stderr);
-  assert.equal(cli.stderr, "");
-  assert.equal(cli.stdout, `HANDOFF ${handoff.handoffSha256}\n`);
-  assert.deepEqual(await readFile(cliOutput), await readFile(firstOutput));
-
-  const schema = JSON.parse(await readFile(
-    path.join(REPOSITORY_ROOT, "contracts/datapack/server-route-bundle-consumer-handoff.schema.json"),
-    "utf8",
-  ));
-  assert.equal(schema.additionalProperties, false);
-  assert.deepEqual(schema.required, [
-    "schemaVersion",
-    "artifactKind",
-    "manifest",
-    "sourceSnapshotSetHash",
-    "publicationReceipt",
-    "release",
-    "backendAdmission",
-    "platformRelease",
-    "handoffSha256",
-  ]);
-  assert.deepEqual(schema.properties.backendAdmission.required, [
-    "manifestSha256",
-    "finalEvidenceReference",
-    "promotionEvidenceReference",
-    "immutablePublicationReceiptIdentity",
-  ]);
-  assert.equal(Object.hasOwn(schema.properties.backendAdmission.properties, "activationRequestIdentity"), false);
-  assert.deepEqual(schema.properties.platformRelease.required, ["serverRouteBundleDigest"]);
-});
-
-test("producer-neutral v2 descriptor는 v1 producer facts를 보존하고 consumer projection을 제외한다", async (t) => {
-  const fixture = await createFixture(t);
-  const v1Output = path.join(fixture.root, "handoff-v1.json");
   const firstOutput = path.join(fixture.root, "descriptor-v2-first.json");
   const secondOutput = path.join(fixture.root, "descriptor-v2-second.json");
-  const handoff = await buildServerRouteBundleConsumerHandoff({
-    ...fixture.input,
-    output: v1Output,
-    clock: () => NOW,
-  });
   const descriptor = await buildServerRouteBundlePublicationDescriptor({
     ...fixture.input,
     output: firstOutput,
@@ -176,15 +96,22 @@ test("producer-neutral v2 descriptor는 v1 producer facts를 보존하고 consum
   assert.deepEqual(descriptor, {
     artifactKind: "server-route-bundle-publication-descriptor",
     descriptorSha256: descriptor.descriptorSha256,
-    manifest: handoff.manifest,
+    manifest: fixture.manifest,
     producer: {
       gitSha: fixture.receipt.repository.gitSha,
       repository: fixture.receipt.repository.name,
     },
-    publicationReceipt: handoff.publicationReceipt,
-    release: handoff.release,
+    publicationReceipt: fixture.receipt,
+    release: {
+      finalRawSha256: sha256(fixture.finalBytes),
+      finalSha256: fixture.final.finalSha256,
+      promotionEvidenceSha256: sha256(fixture.promotionRequestBytes),
+      publicationReceiptRawSha256: sha256(fixture.receiptBytes),
+      publicationReceiptSha256: fixture.receipt.receiptSha256,
+      result: "GO",
+    },
     schemaVersion: 2,
-    sourceSnapshotSetHash: handoff.sourceSnapshotSetHash,
+    sourceSnapshotSetHash: fixture.final.candidate.sourceSnapshotSetHash,
   });
   assert.match(descriptor.descriptorSha256, /^[a-f0-9]{64}$/);
   assert.equal(Object.hasOwn(descriptor, "backendAdmission"), false);
@@ -198,7 +125,7 @@ test("producer-neutral v2 descriptor는 v1 producer facts를 보존하고 consum
 
   const cliOutput = path.join(fixture.root, "descriptor-v2-cli.json");
   const cli = spawnSync(process.execPath, [
-    DESCRIPTOR_SCRIPT,
+    SCRIPT,
     "--artifact-root", fixture.artifactRoot,
     "--final", fixture.finalPath,
     "--publication-receipt", fixture.publicationReceiptPath,
@@ -273,7 +200,7 @@ test("v2 descriptor는 extra consumer field와 identity drift를 fail closed한�
   await assertMissing(rejectedOutput);
 });
 
-test("identity drift와 non-GO FINAL은 handoff output 없이 fail closed한다", async (t) => {
+test("identity drift와 non-GO FINAL은 descriptor output 없이 fail closed한다", async (t) => {
   await t.test("signed artifact byte drift", async (t) => {
     const fixture = await createFixture(t);
     await writeFile(path.join(fixture.artifactRoot, "compatibility.json"), "drift");
@@ -363,7 +290,7 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
   await t.test("..-prefixed artifact child output", async (t) => {
     const fixture = await createFixture(t);
     const output = path.join(fixture.artifactRoot, "..handoff.json");
-    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+    await assert.rejects(() => buildServerRouteBundlePublicationDescriptor({
       ...fixture.input,
       output,
       clock: () => NOW,
@@ -376,7 +303,7 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
     const aliasRoot = path.join(fixture.root, "artifact-parent-alias");
     await symlink(fixture.root, aliasRoot);
     const output = path.join(fixture.artifactRoot, "alias-handoff.json");
-    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+    await assert.rejects(() => buildServerRouteBundlePublicationDescriptor({
       ...fixture.input,
       artifactRoot: path.join(aliasRoot, "signed"),
       output,
@@ -399,7 +326,7 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
     const fixture = await createFixture(t);
     const output = path.join(fixture.root, "occupied.json");
     await writeFile(output, "owner bytes");
-    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+    await assert.rejects(() => buildServerRouteBundlePublicationDescriptor({
       ...fixture.input,
       output,
       clock: () => NOW,
@@ -410,14 +337,14 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
   await t.test("input mutation before output", async (t) => {
     const fixture = await createFixture(t);
     const output = path.join(fixture.root, "mutated.json");
-    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+    await assert.rejects(() => buildServerRouteBundlePublicationDescriptor({
       ...fixture.input,
       output,
       clock: () => NOW,
       beforeOutput: async () => {
         await writeFile(fixture.promotionRequestPath, "mutated after snapshot");
       },
-    }), /promotion request changed during handoff build/);
+    }), /promotion request changed during descriptor build/);
     await assertMissing(output);
   });
 
@@ -425,8 +352,8 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
     const fixture = await createFixture(t);
     const output = path.join(fixture.root, "post-link-failure.json");
     const residueBefore = (await readdir(fixture.root))
-      .filter((entry) => entry.startsWith(".server-route-handoff-"));
-    await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+      .filter((entry) => entry.startsWith(".server-route-descriptor-"));
+    await assert.rejects(() => buildServerRouteBundlePublicationDescriptor({
       ...fixture.input,
       output,
       clock: () => NOW,
@@ -434,44 +361,41 @@ test("symlink·occupied output·input mutation을 거부하고 activation identi
     }), /output bytes mismatch after create/);
     await assertMissing(output);
     assert.deepEqual(
-      (await readdir(fixture.root)).filter((entry) => entry.startsWith(".server-route-handoff-")),
+      (await readdir(fixture.root)).filter((entry) => entry.startsWith(".server-route-descriptor-")),
       residueBefore,
     );
   });
-
-  const fixture = await createFixture(t);
-  const output = path.join(fixture.root, "valid.json");
-  const handoff = await buildServerRouteBundleConsumerHandoff({ ...fixture.input, output, clock: () => NOW });
-  const invalid = structuredClone(handoff);
-  invalid.backendAdmission.activationRequestIdentity = "platform-owned";
-  assert.throws(() => validateServerRouteBundleConsumerHandoff(invalid), /backendAdmission keys mismatch/);
 });
 
 test("standalone validator는 receipt의 signing-input·metadata를 manifest와 교차 결속한다", async (t) => {
   const fixture = await createFixture(t);
   const output = path.join(fixture.root, "valid-for-validator.json");
-  const handoff = await buildServerRouteBundleConsumerHandoff({ ...fixture.input, output, clock: () => NOW });
+  const descriptor = await buildServerRouteBundlePublicationDescriptor({
+    ...fixture.input,
+    output,
+    clock: () => NOW,
+  });
 
-  const signingInputDrift = rebindReceipt(handoff, (receipt) => {
+  const signingInputDrift = rebindReceipt(descriptor, (receipt) => {
     receipt.candidate.signingInputSha256 = "f".repeat(64);
     receipt.objects.find((entry) => entry.path === "manifest.signing-input.json").sha256 = "f".repeat(64);
   });
   assert.throws(
-    () => validateServerRouteBundleConsumerHandoff(signingInputDrift),
+    () => validateServerRouteBundlePublicationDescriptor(signingInputDrift),
     /publication receipt and manifest signing input identity mismatch/,
   );
 
-  const compatibilityDrift = rebindReceipt(handoff, (receipt) => {
+  const compatibilityDrift = rebindReceipt(descriptor, (receipt) => {
     receipt.objects.find((entry) => entry.path === "compatibility.json").sha256 = "f".repeat(64);
   });
   assert.throws(
-    () => validateServerRouteBundleConsumerHandoff(compatibilityDrift),
+    () => validateServerRouteBundlePublicationDescriptor(compatibilityDrift),
     /publication receipt and manifest compatibility identity mismatch/,
   );
 });
 
 async function createFixture(t, options = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "server-route-consumer-handoff-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "server-route-publication-descriptor-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const artifactRoot = path.join(root, "signed");
   await mkdir(path.join(artifactRoot, "payload"), { recursive: true });
@@ -645,7 +569,7 @@ async function createFixture(t, options = {}) {
 async function assertNoOutput(fixture, pattern, now = NOW) {
   rejectedSequence += 1;
   const output = path.join(fixture.root, `rejected-${rejectedSequence}.json`);
-  await assert.rejects(() => buildServerRouteBundleConsumerHandoff({
+  await assert.rejects(() => buildServerRouteBundlePublicationDescriptor({
     ...fixture.input,
     output,
     clock: () => now,
@@ -657,19 +581,17 @@ async function assertMissing(target) {
   await assert.rejects(() => readFile(target), { code: "ENOENT" });
 }
 
-function rebindReceipt(handoff, mutate) {
-  const rebound = structuredClone(handoff);
+function rebindReceipt(descriptor, mutate) {
+  const rebound = structuredClone(descriptor);
   mutate(rebound.publicationReceipt);
   const receiptPayload = structuredClone(rebound.publicationReceipt);
   delete receiptPayload.receiptSha256;
   rebound.publicationReceipt.receiptSha256 = sha256(Buffer.from(canonicalJson(receiptPayload)));
   rebound.release.publicationReceiptSha256 = rebound.publicationReceipt.receiptSha256;
   rebound.release.publicationReceiptRawSha256 = sha256(Buffer.from(canonicalJson(rebound.publicationReceipt)));
-  rebound.backendAdmission.immutablePublicationReceiptIdentity =
-    `sha256:${rebound.release.publicationReceiptRawSha256}`;
   const payload = structuredClone(rebound);
-  delete payload.handoffSha256;
-  rebound.handoffSha256 = sha256(Buffer.from(canonicalJson(payload)));
+  delete payload.descriptorSha256;
+  rebound.descriptorSha256 = sha256(Buffer.from(canonicalJson(payload)));
   return rebound;
 }
 
