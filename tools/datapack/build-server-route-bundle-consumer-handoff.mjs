@@ -80,6 +80,43 @@ const RECEIPT_CANDIDATE_KEYS = [
 ];
 
 export async function buildServerRouteBundleConsumerHandoff(input) {
+  const prepared = await prepareServerRouteBundlePublication(input, "handoff");
+  const {
+    manifest,
+    manifestSha256,
+    publicationReceipt,
+    release,
+    sourceSnapshotSetHash,
+  } = prepared;
+  const payload = canonicalObject({
+    schemaVersion: 1,
+    artifactKind: "server-route-bundle-consumer-handoff",
+    manifest,
+    sourceSnapshotSetHash,
+    publicationReceipt,
+    release,
+    backendAdmission: {
+      manifestSha256,
+      finalEvidenceReference: sha256Reference(release.finalRawSha256),
+      promotionEvidenceReference: sha256Reference(release.promotionEvidenceSha256),
+      immutablePublicationReceiptIdentity: sha256Reference(release.publicationReceiptRawSha256),
+    },
+    platformRelease: {
+      serverRouteBundleDigest: sha256Reference(manifestSha256),
+    },
+  });
+  const handoff = validateServerRouteBundleConsumerHandoff(canonicalObject({
+    ...payload,
+    handoffSha256: sha256(Buffer.from(canonicalJson(payload))),
+  }));
+  await prepared.persist(Buffer.from(canonicalJson(handoff)));
+  return handoff;
+}
+
+export async function prepareServerRouteBundlePublication(input, outputKind) {
+  if (outputKind !== "handoff" && outputKind !== "descriptor") {
+    throw new Error("output kind must be handoff or descriptor");
+  }
   if (input.beforeOutput !== undefined && typeof input.beforeOutput !== "function") {
     throw new Error("beforeOutput must be a function");
   }
@@ -109,7 +146,7 @@ export async function buildServerRouteBundleConsumerHandoff(input) {
     promotionRequest: path.resolve(requiredRaw(input.promotionRequestPath, "promotionRequestPath")),
   };
   if (new Set([...Object.values(evidencePaths), output]).size !== 4) {
-    throw new Error("handoff input and output paths must be distinct");
+    throw new Error(`${outputKind} input and output paths must be distinct`);
   }
   const repositoryGitSha = requiredGitSha(input.repositoryGitSha);
   await verifyRepositoryHead(repositoryRoot, repositoryGitSha);
@@ -167,9 +204,11 @@ export async function buildServerRouteBundleConsumerHandoff(input) {
 
   const manifestSha256 = sha256(manifestBytes);
   const finalRawSha256 = sha256(finalBytes);
-  const payload = canonicalObject({
-    schemaVersion: 1,
-    artifactKind: "server-route-bundle-consumer-handoff",
+  const publication = canonicalObject({
+    producer: {
+      repository: receipt.repository.name,
+      gitSha: repositoryGitSha,
+    },
     manifest,
     sourceSnapshotSetHash: final.candidate.sourceSnapshotSetHash,
     publicationReceipt: receipt,
@@ -181,28 +220,18 @@ export async function buildServerRouteBundleConsumerHandoff(input) {
       publicationReceiptRawSha256: receiptRawSha256,
       promotionEvidenceSha256,
     },
-    backendAdmission: {
-      manifestSha256,
-      finalEvidenceReference: sha256Reference(finalRawSha256),
-      promotionEvidenceReference: sha256Reference(promotionEvidenceSha256),
-      immutablePublicationReceiptIdentity: sha256Reference(receiptRawSha256),
-    },
-    platformRelease: {
-      serverRouteBundleDigest: sha256Reference(manifestSha256),
-    },
   });
-  const handoff = validateServerRouteBundleConsumerHandoff(canonicalObject({
-    ...payload,
-    handoffSha256: sha256(Buffer.from(canonicalJson(payload))),
-  }));
-  const handoffBytes = Buffer.from(canonicalJson(handoff));
-
-  await input.beforeOutput?.();
-  await assertInputsUnchanged(snapshots);
-  await assertDirectoryEntries(artifactRoot, ROOT_ENTRIES, "signed artifact root entries");
-  await assertDirectoryEntries(payloadRoot, PAYLOAD_ENTRIES, "signed artifact payload entries");
-  await persistNewOutput(outputParent, output, handoffBytes, input.afterOutputLink);
-  return handoff;
+  return {
+    ...publication,
+    manifestSha256,
+    persist: async (bytes) => {
+      await input.beforeOutput?.();
+      await assertInputsUnchanged(snapshots, `${outputKind} build`);
+      await assertDirectoryEntries(artifactRoot, ROOT_ENTRIES, "signed artifact root entries");
+      await assertDirectoryEntries(payloadRoot, PAYLOAD_ENTRIES, "signed artifact payload entries");
+      await persistNewOutput(outputParent, output, bytes, input.afterOutputLink);
+    },
+  };
 }
 
 export function validateServerRouteBundleConsumerHandoff(value) {
@@ -211,27 +240,12 @@ export function validateServerRouteBundleConsumerHandoff(value) {
   if (value.artifactKind !== "server-route-bundle-consumer-handoff") {
     throw new Error("handoff artifactKind mismatch");
   }
-  const manifest = canonicalObject(value.manifest);
-  validateArtifactComponentManifest(manifest);
-  if (manifest.artifactKind !== "server-route-bundle") throw new Error("handoff manifest artifactKind mismatch");
-  const sourceSnapshotSetHash = sha(value.sourceSnapshotSetHash, "sourceSnapshotSetHash");
-  const receipt = validatePublicationReceipt(value.publicationReceipt);
-  const release = value.release;
-  assertKeys(release, RELEASE_KEYS, "release keys");
-  if (release.result !== "GO") throw new Error("release result must be GO");
-  for (const key of RELEASE_KEYS.filter((key) => key !== "result")) sha(release[key], `release ${key}`);
-  if (release.publicationReceiptSha256 !== receipt.receiptSha256) {
-    throw new Error("release publication receipt identity mismatch");
-  }
-  if (release.publicationReceiptRawSha256 !== sha256(Buffer.from(canonicalJson(receipt)))) {
-    throw new Error("release publication receipt raw digest mismatch");
-  }
-  if (sourceSnapshotSetHash !== receipt.candidate.sourceSnapshotSetHash) {
-    throw new Error("source snapshot set identity mismatch");
-  }
-
-  const manifestSha256 = sha256(Buffer.from(canonicalJson(manifest)));
-  assertReceiptManifestBindings(receipt, manifest, manifestSha256);
+  const { manifestSha256, release } = validateServerRouteBundlePublicationFacts({
+    manifest: value.manifest,
+    sourceSnapshotSetHash: value.sourceSnapshotSetHash,
+    publicationReceipt: value.publicationReceipt,
+    release: value.release,
+  }, "handoff");
   const backendAdmission = value.backendAdmission;
   assertKeys(backendAdmission, BACKEND_KEYS, "backendAdmission keys");
   sha(backendAdmission.manifestSha256, "backendAdmission manifestSha256");
@@ -259,6 +273,45 @@ export function validateServerRouteBundleConsumerHandoff(value) {
 
 export function canonicalServerRouteBundleConsumerHandoffJson(value) {
   return canonicalJson(validateServerRouteBundleConsumerHandoff(value));
+}
+
+export function validateServerRouteBundlePublicationFacts(value, context = "publication") {
+  assertKeys(value, [
+    "manifest",
+    "sourceSnapshotSetHash",
+    "publicationReceipt",
+    "release",
+  ], "publication facts keys");
+  const manifest = canonicalObject(value.manifest);
+  validateArtifactComponentManifest(manifest);
+  if (manifest.artifactKind !== "server-route-bundle") {
+    throw new Error(`${context} manifest artifactKind mismatch`);
+  }
+  const sourceSnapshotSetHash = sha(value.sourceSnapshotSetHash, "sourceSnapshotSetHash");
+  const publicationReceipt = validatePublicationReceipt(value.publicationReceipt);
+  const release = value.release;
+  assertKeys(release, RELEASE_KEYS, "release keys");
+  if (release.result !== "GO") throw new Error("release result must be GO");
+  for (const key of RELEASE_KEYS.filter((key) => key !== "result")) sha(release[key], `release ${key}`);
+  if (release.publicationReceiptSha256 !== publicationReceipt.receiptSha256) {
+    throw new Error("release publication receipt identity mismatch");
+  }
+  if (release.publicationReceiptRawSha256
+    !== sha256(Buffer.from(canonicalJson(publicationReceipt)))) {
+    throw new Error("release publication receipt raw digest mismatch");
+  }
+  if (sourceSnapshotSetHash !== publicationReceipt.candidate.sourceSnapshotSetHash) {
+    throw new Error("source snapshot set identity mismatch");
+  }
+  const manifestSha256 = sha256(Buffer.from(canonicalJson(manifest)));
+  assertReceiptManifestBindings(publicationReceipt, manifest, manifestSha256);
+  return {
+    manifest,
+    manifestSha256,
+    publicationReceipt,
+    release: canonicalObject(release),
+    sourceSnapshotSetHash,
+  };
 }
 
 function assertReleaseFinal(final, now) {
@@ -386,10 +439,10 @@ function assertInspectedArtifactMatchesSnapshot(inspectedArtifact, artifactFiles
   }
 }
 
-async function assertInputsUnchanged(snapshots) {
+async function assertInputsUnchanged(snapshots, operation) {
   for (const snapshot of snapshots) {
     const current = await readNonEmptyRegular(snapshot.path, snapshot.label);
-    if (!current.equals(snapshot.bytes)) throw new Error(`${snapshot.label} changed during handoff build`);
+    if (!current.equals(snapshot.bytes)) throw new Error(`${snapshot.label} changed during ${operation}`);
   }
 }
 
