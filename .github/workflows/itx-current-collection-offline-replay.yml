@@ -1,0 +1,63 @@
+name: ITX Current Collection Offline Replay
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: itx-current-collection-offline-replay-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    name: ITX current collection offline replay
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: ITX offline replay / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: ITX offline replay / Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: ITX offline replay / Download retained extended capture
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: AquilaXk/easysubway-data
+          run-id: 31620004435
+          name: itx-current-collection-continuation-31620004435
+          path: ${{ runner.temp }}/itx-offline-replay-input
+          github-token: ${{ github.token }}
+
+      - name: ITX offline replay / Prepare temp output
+        run: mkdir -p "${{ runner.temp }}/itx-offline-replay-output"
+
+      - name: ITX offline replay / Emit station catalog pack
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-pack.mjs \
+            --output "${{ runner.temp }}/itx-offline-replay-output/station-catalog-pack" \
+            --catalog-pack-id "itx-current-station-catalog-v1"
+
+      - name: ITX offline replay / Replay retained capture
+        run: |
+          set -euo pipefail
+          node tools/datapack/replay-current-itx-collection.mjs \
+            --capture "${{ runner.temp }}/itx-offline-replay-input/provider-response-extended-capture.json" \
+            --output "${{ runner.temp }}/itx-offline-replay-output/itx-replay.json" \
+            --station-catalog-pack "${{ runner.temp }}/itx-offline-replay-output/station-catalog-pack"
+
+      - name: ITX offline replay / Upload sanitized replay evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: itx-current-collection-offline-replay-${{ github.run_id }}
+          path: ${{ runner.temp }}/itx-offline-replay-output/itx-replay.json
+          if-no-files-found: error
+          retention-days: 14
