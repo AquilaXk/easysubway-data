@@ -2201,6 +2201,10 @@ function completenessFailureReason(error) {
 
 function completenessFailureContext(error) {
   const message = error instanceof Error ? error.message : "";
+  const tagoHttpStatus = /^TAGO GetStrtpntAlocFndTrainInfo HTTP ([0-9]{3})$/.exec(message)?.[1];
+  if (tagoHttpStatus) {
+    return `operation=GetStrtpntAlocFndTrainInfo,httpStatus=${tagoHttpStatus}`;
+  }
   const station = /station mapping is missing or ambiguous: (.+)$/.exec(message)?.[1];
   if (station) return safeLabel(station);
   const requiredStations = /^TAGO required station mapping is incomplete: ([\p{L}\p{N},._-]+)$/u.exec(message)?.[1];

@@ -952,7 +952,11 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
       now: new Date("2026-07-14T00:00:00.000Z"),
       collectRosterImpl: async ({ serviceDate }) => {
         attemptedDates.push(serviceDate);
-        throw new Error("TAGO GetStrtpntAlocFndTrainInfo HTTP 503");
+        const error = new Error("TAGO GetStrtpntAlocFndTrainInfo HTTP 503");
+        error.rawBody = "raw-provider-body";
+        error.headers = { "Retry-After": "raw-header" };
+        error.serviceKey = "raw-service-key";
+        throw error;
       },
       collectTimetableImpl: async () => assert.fail("must not run"),
     });
@@ -962,7 +966,11 @@ test("ITX completeness는 partial day·replay·provider 오류를 admission하�
     assert.equal(artifact.serviceDays[0].failureReasonCode, "PROVIDER_HTTP_FAILURE");
     assert.deepEqual(attemptedDates, ["20260715", "20260718", "20260719"]);
     assert.equal(artifact.serviceDays.length, 3);
-    assert.doesNotMatch(JSON.stringify(artifact), /503/);
+    assert.deepEqual(
+      artifact.serviceDays.map(({ failureContext }) => failureContext),
+      Array(3).fill("operation=GetStrtpntAlocFndTrainInfo,httpStatus=503"),
+    );
+    assert.doesNotMatch(JSON.stringify(artifact), /raw-provider-body|raw-header|raw-service-key|Retry-After/);
   });
 
   await context.test("OD 일부 실패", async () => {
