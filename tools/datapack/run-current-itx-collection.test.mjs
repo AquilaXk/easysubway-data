@@ -223,6 +223,7 @@ test("KASI 최종 실패에서는 collector 전에 closed preflight receipt만 �
   const freshnessOutput = path.join(dir, "freshness.json");
   let collectorCalls = 0;
   const rawFailure = new Error("https://apis.data.go.kr/?ServiceKey=secret-key&solYear=2026 raw body");
+  rawFailure.transportAttempts = new Array(2);
   await assert.rejects(runCurrentItxCollectionCli({
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
     env: VALID_ENV,
@@ -255,6 +256,10 @@ test("KASI 실패 receipt는 output parent 교체 뒤에도 bound directory에�
   const failure = Object.assign(new Error("KASI connect timeout"), {
     failureCategory: "NETWORK_CONNECT_TIMEOUT",
     attemptCount: 2,
+    transportAttempts: [
+      { attemptCount: 99, failurePhase: "raw provider.invalid", ipv4AttemptCount: -1, ipv6AttemptCount: "secret-key", address: "198.51.100.7" },
+      { attemptCount: 2, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0, rawError: "secret-key provider.invalid" },
+    ],
   });
   await assert.rejects(runCurrentItxCollectionCli({
     argv: [
@@ -279,7 +284,12 @@ test("KASI 실패 receipt는 output parent 교체 뒤에도 bound directory에�
     operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
     failureCategory: "NETWORK_CONNECT_TIMEOUT",
     attemptCount: 2,
+    transportAttempts: [
+      { attemptCount: 1, failurePhase: "UNKNOWN", ipv4AttemptCount: 0, ipv6AttemptCount: 0 },
+      { attemptCount: 2, failurePhase: "TLS_HANDSHAKE", ipv4AttemptCount: 1, ipv6AttemptCount: 0 },
+    ],
   });
+  assert.doesNotMatch(await readFile(path.join(originalParent, "freshness.json"), "utf8"), /198\.51\.100|provider\.invalid|secret-key|rawError|address/);
   await assert.rejects(lstat(path.join(outside, "freshness.json")));
   await assert.rejects(lstat(path.join(parent, "result.json")));
   await assert.rejects(lstat(path.join(parent, "completeness.json")));

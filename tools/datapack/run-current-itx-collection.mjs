@@ -192,6 +192,7 @@ export async function runCurrentItxCollectionCli({
 }
 
 async function writeKasiFailureReceipt(receiptParent, freshnessOutput, error) {
+  const transportAttempts = safeTransportAttempts(error?.transportAttempts);
   const receipt = {
     schemaVersion: 1,
     artifactKind: "itx-current-collection-preflight",
@@ -199,6 +200,7 @@ async function writeKasiFailureReceipt(receiptParent, freshnessOutput, error) {
     operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
     failureCategory: safeFailureCategory(error?.failureCategory),
     attemptCount: safeAttemptCount(error?.attemptCount),
+    ...(transportAttempts.length > 0 ? { transportAttempts } : {}),
   };
   await writeBoundOutput(receiptParent.handle.fd, path.basename(freshnessOutput), `${JSON.stringify(receipt, null, 2)}\n`);
 }
@@ -238,6 +240,24 @@ function safeFailureCategory(value) {
 
 function safeAttemptCount(value) {
   return value === 1 || value === 2 ? value : 1;
+}
+
+function safeTransportAttempts(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) return [];
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) return [];
+  }
+  const phases = new Set(["DNS_LOOKUP", "TCP_CONNECT", "TLS_HANDSHAKE", "RESPONSE_HEADERS", "UNKNOWN"]);
+  return value.map((attempt, index) => ({
+    attemptCount: attempt?.attemptCount === index + 1 ? attempt.attemptCount : index + 1,
+    failurePhase: phases.has(attempt?.failurePhase) ? attempt.failurePhase : "UNKNOWN",
+    ipv4AttemptCount: safeFamilyAttemptCount(attempt?.ipv4AttemptCount),
+    ipv6AttemptCount: safeFamilyAttemptCount(attempt?.ipv6AttemptCount),
+  }));
+}
+
+function safeFamilyAttemptCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 255 ? value : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
