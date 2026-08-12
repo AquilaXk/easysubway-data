@@ -127,7 +127,48 @@ test("TAGO ITX roster는 selected service date를 보존하고 모든 OD를 D th
   }
 });
 
-test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corroboration으로 materialize한다", async (context) => {
+test("TAGO ITX roster는 two-window row를 03:00 service day로 union materialize한다", async (context) => {
+  await context.test("live incident의 D+1 next-service rows는 제외하고 D target rows는 보존한다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        const row = payload.response.body.items.item[0];
+        payload.response.body.items.item = [
+          { ...row, trainno: "2035", depplandtime: "20260716083000", arrplandtime: "20260716095000" },
+          { ...row, trainno: "2036", depplandtime: "20260717025900", arrplandtime: "20260717030400" },
+        ];
+        payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.deepEqual(artifact.trainNumbers, ["2001", "2002"]);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => ["2035", "2036"].includes(trainNumber)), false);
+    assert.deepEqual(artifact.calendarDateWindowInventory.slice(0, 2), [
+      { queryCalendarOffset: 0, outcome: "ACCEPTED", relationCounts: { same_calendar_day: 1 } },
+      {
+        queryCalendarOffset: 1,
+        outcome: "ACCEPTED",
+        relationCounts: { next_calendar_day: 1, non_adjacent_calendar_day: 1 },
+      },
+    ]);
+  });
+
   await context.test("offset 0의 유효한 D+1 row는 두 창의 exact D target set corroboration에서 제외한다", async () => {
     const fallback = validFetch();
     const requestedDates = [];
@@ -280,14 +321,14 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
     assert.equal(artifact.quotaSummary.odRequestCount, 4);
     assert.equal(artifact.operations.filter(({ operation }) => operation === "GetStrtpntAlocFndTrainInfo").length, 4);
     assert.deepEqual(artifact.calendarDateProjection, {
-      contractVersion: "tago-itx-calendar-date-projection-v1",
+      contractVersion: "tago-itx-calendar-date-projection-v2",
       queryCalendarOffsets: [0, 1],
     });
     assert.deepEqual(artifact.trainNumbers, ["2001", "2002"]);
     assert.equal(artifact.itineraries.some(({ trainNumber }) => ["2034", "2035"].includes(trainNumber)), false);
   });
 
-  await context.test("D+1 02:59 row는 service-day 추론으로 target에 들어가지 않고 pair failure로 닫힌다", async () => {
+  await context.test("D+1 02:59 row는 requested service day target으로 union한다", async () => {
     const fallback = validFetch();
     const artifact = await collectTagoItxCheongchunRoster({
       serviceKey: "key",
@@ -301,8 +342,9 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
           || parsed.searchParams.get("depPlaceId") !== "NAT130126"
           || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
         const payload = await response.json();
+        payload.response.body.items.item[0].trainno = "2035";
         payload.response.body.items.item[0].depplandtime = "20260716025900";
-        payload.response.body.items.item[0].arrplandtime = "20260716030400";
+        payload.response.body.items.item[0].arrplandtime = "20260716025930";
         return new Response(JSON.stringify(payload), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -310,29 +352,41 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
       },
     });
 
-    assert.equal(artifact.completedOdCount, 1);
-    assert.equal(artifact.failedOdCount, 1);
-    assert.equal(artifact.transitTrips, undefined);
-    assert.equal(artifact.itineraries.some(({ departureAt }) => departureAt === "2026-07-16T02:59:00+09:00"), false);
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.transitTrips.some(({ trainNo }) => trainNo === "2035"), true);
+    assert.equal(artifact.itineraries.some(({ departureAt }) => departureAt === "2026-07-16T02:59:00+09:00"), true);
   });
 
-  for (const scenario of [
-    {
-      name: "cross-window extra target row",
-      mutate: (payload) => {
+  await context.test("cross-window extra target row는 deterministic union에 포함한다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "key",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
         const row = payload.response.body.items.item[0];
         payload.response.body.items.item = [row, { ...row, trainno: "2035" }];
         payload.response.body.totalCount = 2;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       },
-    },
-    {
-      name: "cross-window target value conflict",
-      mutate: (payload) => {
-        payload.response.body.items.item[0].arrplandtime = "20260715095500";
-      },
-    },
-  ]) {
-    await context.test(`${scenario.name}는 partial pair failure로 닫힌다`, async () => {
+    });
+    assert.equal(artifact.completedOdCount, 2);
+    assert.equal(artifact.failedOdCount, 0);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => trainNumber === "2035"), true);
+  });
+
+  await context.test("cross-window target value conflict는 partial pair failure로 닫힌다", async () => {
       const fallback = validFetch();
       const artifact = await collectTagoItxCheongchunRoster({
         serviceKey: "key",
@@ -346,7 +400,7 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
             || parsed.searchParams.get("depPlaceId") !== "NAT130126"
             || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
           const payload = await response.json();
-          scenario.mutate(payload);
+          payload.response.body.items.item[0].arrplandtime = "20260715095500";
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json" },
@@ -356,8 +410,7 @@ test("TAGO ITX roster는 two-window raw calendar-date projection을 exact corrob
       assert.equal(artifact.completedOdCount, 1);
       assert.equal(artifact.failedOdCount, 1);
       assert.equal(artifact.transitTrips, undefined);
-    });
-  }
+  });
 
   await context.test("first-window validation failure도 D then D+1 attempt를 모두 기록하고 first failure로 pair를 닫는다", async () => {
     const odDates = [];
@@ -1314,7 +1367,7 @@ test("TAGO paginated schema mismatch는 값 없이 정렬된 body field만 진�
 });
 
 test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 않는다", async (context) => {
-  await context.test("요청일 raw calendar date의 02:59와 03:00은 모두 target projection에 포함", async () => {
+  await context.test("요청일 02:59는 이전 service day로 제외하고 03:00은 target에 포함", async () => {
     const fallback = validFetch();
     const artifact = await collectTagoItxCheongchunRoster({
       serviceKey: "key",
@@ -1325,7 +1378,8 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
         const parsed = new URL(url);
         const response = await fallback(url);
         if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
-          || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
+          || parsed.searchParams.get("depPlaceId") !== "NAT130126"
+          || parsed.searchParams.get("depPlandTime") !== "20260715") return response;
         const payload = await response.json();
         const row = payload.response.body.items.item[0];
         payload.response.body.items.item = [
@@ -1339,7 +1393,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
         });
       },
     });
-    assert.equal(artifact.trainNumbers.includes("2034"), true);
+    assert.equal(artifact.trainNumbers.includes("2034"), false);
     assert.equal(artifact.trainNumbers.includes("2035"), true);
   });
 
@@ -1375,7 +1429,7 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     );
   });
 
-  await context.test("익일 02:59 추가 row는 service-day 추론으로 target projection에 들어가지 않는다", async () => {
+  await context.test("익일 02:59 추가 row는 requested service day target에 포함한다", async () => {
     const fallback = validFetch();
     const artifact = await collectTagoItxCheongchunRoster({
       serviceKey: "key",
@@ -1402,10 +1456,10 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     });
     assert.equal(artifact.completedOdCount, 2);
     assert.equal(artifact.failedOdCount, 0);
-    assert.equal(artifact.itineraries.some(({ trainNumber }) => trainNumber === "2035"), false);
+    assert.equal(artifact.itineraries.some(({ trainNumber }) => trainNumber === "2035"), true);
   });
 
-  await context.test("열차 2035의 raw calendar date D occurrence만 target projection에 포함", async () => {
+  await context.test("raw calendar date보다 derived service day가 target projection을 결정", async () => {
     const fallback = validFetch();
     const artifact = await collectTagoItxCheongchunRoster({
       serviceKey: "key",
@@ -1419,13 +1473,10 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
           || parsed.searchParams.get("depPlaceId") !== "NAT130126") return response;
         const payload = await response.json();
         const row = payload.response.body.items.item[0];
-        payload.response.body.items.item = [
-          { ...row, trainno: "2035", depplandtime: "20260715000100", arrplandtime: "20260715000400" },
-          parsed.searchParams.get("depPlandTime") === "20260715"
-            ? { ...row, trainno: "2034", depplandtime: "20260714000100", arrplandtime: "20260714000400" }
-            : { ...row, trainno: "2034", depplandtime: "20260716000100", arrplandtime: "20260716000400" },
-        ];
-        payload.response.body.totalCount = 2;
+        payload.response.body.items.item = [parsed.searchParams.get("depPlandTime") === "20260715"
+          ? { ...row, trainno: "2035", depplandtime: "20260715000100", arrplandtime: "20260715000400" }
+          : { ...row, trainno: "2034", depplandtime: "20260716000100", arrplandtime: "20260716000400" }];
+        payload.response.body.totalCount = 1;
         return new Response(JSON.stringify(payload), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -1433,10 +1484,10 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
       },
     });
     assert.equal(artifact.failedOdCount, 0);
-    assert.equal(artifact.itineraries.filter(({ trainNumber }) => trainNumber === "2035").length, 1);
+    assert.equal(artifact.itineraries.filter(({ trainNumber }) => trainNumber === "2035").length, 0);
     assert.equal(
-      artifact.itineraries.find(({ trainNumber }) => trainNumber === "2035")?.departureAt,
-      "2026-07-15T00:01:00+09:00",
+      artifact.itineraries.find(({ trainNumber }) => trainNumber === "2034")?.departureAt,
+      "2026-07-16T00:01:00+09:00",
     );
   });
 
@@ -1457,8 +1508,8 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
         const row = {
           ...payload.response.body.items.item[0],
           trainno: "2035",
-          depplandtime: "20260715000100",
-          arrplandtime: "20260715000400",
+          depplandtime: "20260715083000",
+          arrplandtime: "20260715095000",
         };
         payload.response.body.items.item = [row, { ...row }];
         payload.response.body.totalCount = 2;
