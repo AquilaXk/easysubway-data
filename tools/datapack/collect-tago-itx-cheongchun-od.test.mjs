@@ -1613,6 +1613,44 @@ test("TAGO ITX roster는 요청과 다른 OD·날짜 응답을 완료로 세지 
     });
   }
 
+  await context.test("D+1 query의 요청일 03:00 이전 행은 previous service day로 닫힌다", async () => {
+    const fallback = validFetch();
+    const artifact = await collectTagoItxCheongchunRoster({
+      serviceKey: "fixture-credential-must-not-leak",
+      serviceDate: "20260715",
+      kricServiceDayCode: "8",
+      canonicalStations: canonicalRosterStations(),
+      fetchImpl: async (url) => {
+        const parsed = new URL(url);
+        const response = await fallback(url);
+        if (!parsed.pathname.endsWith("GetStrtpntAlocFndTrainInfo")
+          || parsed.searchParams.get("depPlaceId") !== "NAT140873"
+          || parsed.searchParams.get("depPlandTime") !== "20260716") return response;
+        const payload = await response.json();
+        payload.response.body.items.item[0].depplandtime = "20260715020000";
+        payload.response.body.items.item[0].arrplandtime = "20260715021000";
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    assert.equal(artifact.completedOdCount, 1);
+    assert.equal(artifact.failedOdCount, 1);
+    assert.equal(artifact.failedOds[0].reasonCode, "PROVIDER_SCHEMA_FAILURE");
+    assert.equal(
+      artifact.failedOds[0].failureContext,
+      "operation=GetStrtpntAlocFndTrainInfo,reason=date_mismatch,relation=previous_service_day,queryCalendarOffset=1",
+    );
+    assert.equal(artifact.failedOds[0].requestCount, 2);
+    const serializedFailure = JSON.stringify(artifact.failedOds[0]);
+    assert.doesNotMatch(serializedFailure, /depplandtime|arrplandtime|serviceKey|https?:\/\//i);
+    for (const rawValue of ["fixture-credential-must-not-leak", "20260715", "20260715020000", "20260715021000", "NAT140873", "NAT130126"]) {
+      assert.equal(serializedFailure.includes(rawValue), false);
+    }
+  });
+
   await context.test("D+1 query date mismatch는 sanitized queryCalendarOffset=1로 닫힌다", async () => {
     const fallback = validFetch();
     const artifact = await collectTagoItxCheongchunRoster({

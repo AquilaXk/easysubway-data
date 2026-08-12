@@ -783,6 +783,17 @@ function calendarDateMismatchError(index, calendarDay, requestedServiceDay, quer
   return error;
 }
 
+function serviceDayMismatchError(index, serviceDay, requestedServiceDay, queryCalendarOffset) {
+  const relation = serviceDay === previousCalendarDay(requestedServiceDay)
+    ? "previous_service_day"
+    : serviceDay === nextCalendarDay(requestedServiceDay)
+      ? "next_service_day"
+      : "non_adjacent_service_day";
+  const error = new Error(`TAGO OD row[${index}] departure date mismatch:${relation}`);
+  error.queryCalendarOffset = queryCalendarOffset;
+  return error;
+}
+
 const CALENDAR_RELATIONS = [
   "previous_calendar_day",
   "same_calendar_day",
@@ -845,7 +856,9 @@ function projectTagoCalendarDateWindow(rows, {
         ? [previousCalendarDay(serviceDate), serviceDate, nextCalendarDay(serviceDate)].includes(calendarDay)
         : calendarDay === queryDate || serviceDay === queryDate;
       if (serviceDay !== serviceDate && !validNonTarget) {
-        throw calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset);
+        throw serviceDay === calendarDay
+          ? calendarDateMismatchError(index, calendarDay, serviceDate, queryCalendarOffset)
+          : serviceDayMismatchError(index, serviceDay, serviceDate, queryCalendarOffset);
       }
       if (serviceDay !== serviceDate) continue;
       const key = JSON.stringify([
@@ -956,7 +969,7 @@ function operationEvidence({ operation, endpoint, pageCount, requestCount, total
 
 function tagoOdFailure(error) {
   const message = error instanceof Error ? error.message : "";
-  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day)$/.exec(message)?.[1];
+  const dateMismatch = /^TAGO OD row\[\d+\] departure date mismatch:(previous_calendar_day|next_calendar_day|non_adjacent_calendar_day|previous_service_day|next_service_day|non_adjacent_service_day)$/.exec(message)?.[1];
   const queryCalendarOffset = error?.queryCalendarOffset;
   if (dateMismatch && (queryCalendarOffset === 0 || queryCalendarOffset === 1)) {
     return {
