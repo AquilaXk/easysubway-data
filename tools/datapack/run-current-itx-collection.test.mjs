@@ -223,6 +223,26 @@ test("current collection wrapper는 output root·부재·station child 경계를
   await rejects(args({ freshnessOutput: output }), "output paths must differ");
   await rejects(args({ stationCatalogPack: path.join(path.dirname(dir), "outside-catalog") }), "station catalog pack must be a separate child");
 
+  let collectorCalls = 0;
+  let providerCalls = 0;
+  const reservedCapture = path.join(dir, "provider-response-capture.json");
+  for (const override of [
+    { output: reservedCapture },
+    { completenessOutput: reservedCapture },
+    { freshnessOutput: reservedCapture },
+  ]) {
+    await assert.rejects(runCurrentItxCollectionCli({
+      argv: args(override),
+      env: VALID_ENV,
+      fetchPublicHolidays: async () => new Set(),
+      collectImpl: async () => { collectorCalls += 1; },
+      providerFetchImpl: async () => { providerCalls += 1; },
+    }), /reserved provider capture path/);
+  }
+  assert.equal(collectorCalls, 0);
+  assert.equal(providerCalls, 0);
+  await assert.rejects(lstat(reservedCapture), /ENOENT/);
+
   await writeFile(freshnessOutput, "already exists\n");
   await rejects(args(), "output paths must be absent");
 });

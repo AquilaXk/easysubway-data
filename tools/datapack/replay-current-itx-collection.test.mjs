@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -49,7 +49,7 @@ test("current capture를 runtime credential과 network 없이 exact 순서로 re
           assert.match(await response.text(), new RegExp(operation));
           replayCalls += 1;
         }
-        await writeFile(output, `${JSON.stringify({ validationMode: "REPLAY" })}\n`);
+        await writeFile(options.argv.at(-1), `${JSON.stringify({ validationMode: "REPLAY" })}\n`);
         return {
           artifact: { validationMode: "REPLAY", selectedServiceDates: SERVICE_DATES },
           candidate: null,
@@ -65,13 +65,17 @@ test("current capture를 runtime credential과 network 없이 exact 순서로 re
       "--day7-date", SERVICE_DATES["7"],
       "--day9-date", SERVICE_DATES["9"],
       "--station-catalog-pack", stationCatalogPack,
-      "--output", output,
+      "--output", received.argv.at(-1),
     ]);
     assert.deepEqual(received.env, {});
+    assert.notEqual(received.argv.at(-1), output);
+    assert.equal(path.dirname(path.dirname(received.argv.at(-1))), directory);
     assert.equal(received.providerServiceKey, "offline-provider-replay-key");
     assert.equal(received.now.toISOString(), "2026-08-12T00:00:00.000Z");
     assert.equal(typeof received.collectImpl, "function");
     assert.equal(result.candidate, null);
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), { validationMode: "REPLAY" });
+    assert.deepEqual((await readdir(directory)).filter((name) => name.startsWith(".provider-replay-")), []);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -86,13 +90,40 @@ test("replay가 capture record를 덜 소비하면 output을 보존하지 않는
     await assert.rejects(runReplayCurrentItxCollectionCli({
       argv: ["--capture", capture, "--output", output, "--station-catalog-pack", path.join(directory, "station-catalog-pack")],
       repositoryRoot: directory,
-      runCompletenessImpl: async ({ fetchImpl }) => {
+      runCompletenessImpl: async ({ argv: receivedArgv, fetchImpl }) => {
         await fetchImpl(request("GetVhcleKndList"));
-        await writeFile(output, "partial\n");
+        await writeFile(receivedArgv.at(-1), "partial\n");
         return { artifact: { validationMode: "REPLAY", selectedServiceDates: SERVICE_DATES }, candidate: null, exitCode: 1 };
       },
     }), /provider replay has 1 unconsumed record/);
     await assert.rejects(readFile(output), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("replay는 다른 process가 생성한 requested output을 삭제하지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-provider-replay-replacement-"));
+  const capture = path.join(directory, "capture.json");
+  const output = path.join(directory, "replay.json");
+  await writeFile(capture, await capturedBytes());
+  try {
+    await assert.rejects(runReplayCurrentItxCollectionCli({
+      argv: ["--capture", capture, "--output", output, "--station-catalog-pack", path.join(directory, "station-catalog-pack")],
+      repositoryRoot: directory,
+      runCompletenessImpl: async ({ argv: receivedArgv, fetchImpl }) => {
+        for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) await fetchImpl(request(operation));
+        await writeFile(receivedArgv.at(-1), "owned staging output\n");
+        await writeFile(output, "outside replacement\n", { flag: "wx" });
+        return {
+          artifact: { validationMode: "REPLAY", selectedServiceDates: SERVICE_DATES },
+          candidate: null,
+          exitCode: 0,
+        };
+      },
+    }), /EEXIST/);
+    assert.equal(await readFile(output, "utf8"), "outside replacement\n");
+    assert.deepEqual((await readdir(directory)).filter((name) => name.startsWith(".provider-replay-")), []);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

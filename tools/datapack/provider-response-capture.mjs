@@ -23,26 +23,20 @@ export function createProviderResponseRecorder({
   const captureFetch = async (input, init = {}) => {
     const { identity: request, credentials } = providerRequest(input, init);
     if (records.length >= maxRecords) throw new Error("provider capture record limit exceeded");
-
-    let response;
+    const index = records.length;
+    const record = { index, request, outcome: { kind: "PENDING" } };
+    records.push(record);
     try {
-      response = await fetchImpl(input, init);
-    } catch (error) {
-      records.push({ index: records.length, request, outcome: { kind: "TRANSPORT_FAILURE" } });
-      throw error;
-    }
-    if (!(response instanceof Response)) throw new Error("provider fetch must return a Response");
+      const response = await fetchImpl(input, init);
+      if (!(response instanceof Response)) throw new Error("provider fetch must return a Response");
 
-    const body = Buffer.from(await response.arrayBuffer());
-    if (bodyBytes + body.length > maxBodyBytes) throw new Error("provider capture body limit exceeded");
-    bodyBytes += body.length;
-    const contentType = response.headers.get("content-type");
-    const retryAfter = response.headers.get("retry-after");
-    rejectCredentialEcho(credentials, [body.toString("utf8"), contentType, retryAfter]);
-    records.push({
-      index: records.length,
-      request,
-      outcome: {
+      const body = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get("content-type");
+      const retryAfter = response.headers.get("retry-after");
+      rejectCredentialEcho(credentials, [body.toString("utf8"), contentType, retryAfter]);
+      if (bodyBytes + body.length > maxBodyBytes) throw new Error("provider capture body limit exceeded");
+      bodyBytes += body.length;
+      record.outcome = {
         kind: "RESPONSE",
         response: {
           status: response.status,
@@ -53,15 +47,20 @@ export function createProviderResponseRecorder({
           bodyBase64: body.toString("base64"),
           bodySha256: sha256(body),
         },
-      },
-    });
-
-    return responseFromRecord(records.at(-1).outcome.response);
+      };
+      return responseFromRecord(record.outcome.response);
+    } catch (error) {
+      record.outcome = { kind: "TRANSPORT_FAILURE" };
+      throw error;
+    }
   };
 
   return {
     fetchImpl: captureFetch,
     captureArtifact() {
+      if (records.some(({ outcome }) => outcome.kind === "PENDING")) {
+        throw new Error("provider capture has pending requests");
+      }
       return captureWithDigest({
         schemaVersion: 1,
         artifactKind: "provider-response-capture",
@@ -189,6 +188,12 @@ function providerRequest(input, init) {
   if (url.origin !== ALLOWED_ORIGIN || url.username !== "" || url.password !== "" || url.hash !== "") {
     throw new Error("provider request origin is not allowed");
   }
+  const headers = init?.headers === undefined && input instanceof Request
+    ? input.headers
+    : new Headers(init?.headers);
+  if ([...headers.keys()].some(isCredentialHeaderName)) {
+    throw new Error("provider request credential header is not allowed");
+  }
   const entries = [...url.searchParams.entries()];
   const credentials = entries
     .filter(([name]) => name.toLowerCase() === "servicekey")
@@ -202,6 +207,13 @@ function providerRequest(input, init) {
   const identity = { method, origin: ALLOWED_ORIGIN, path: url.pathname, query };
   validateRequestIdentity(identity);
   return { identity, credentials };
+}
+
+function isCredentialHeaderName(name) {
+  const normalized = name.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+  return normalized === "authorization" || normalized === "proxyauthorization"
+    || ["apikey", "accesstoken", "refreshtoken", "clientsecret", "credential", "password", "privatekey", "secret", "signature", "token"]
+      .some((suffix) => normalized.endsWith(suffix));
 }
 
 function rejectCredentialEcho(credentials, values) {

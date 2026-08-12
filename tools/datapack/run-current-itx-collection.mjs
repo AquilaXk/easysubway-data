@@ -38,6 +38,9 @@ function currentCollectionArgs(argv) {
   }
   const resolvedStationCatalogPack = path.resolve(stationCatalogPack);
   const providerCaptureOutput = path.join(parent, PROVIDER_CAPTURE_BASENAME);
+  if (resolvedOutputs.includes(providerCaptureOutput)) {
+    throw new Error("current ITX collection output paths must not use the reserved provider capture path");
+  }
   if (path.dirname(resolvedStationCatalogPack) !== parent || resolvedStationCatalogPack === parent
     || resolvedStationCatalogPack === providerCaptureOutput) {
     throw new Error("station catalog pack must be a separate child of the output parent");

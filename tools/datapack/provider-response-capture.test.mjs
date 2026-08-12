@@ -33,7 +33,7 @@ test("provider response를 한 번 기록하고 exact 순서로 network 0 replay
 
   const liveResponse = await recorder.fetchImpl(request("GetStrtpntAlocFndTrainInfo"), {
     method: "GET",
-    headers: { authorization: "Bearer raw-secret" },
+    headers: { "x-client-mode": "capture" },
   });
   assert.equal(liveResponse.status, 200);
   assert.match(await liveResponse.text(), /2001/);
@@ -116,6 +116,8 @@ test("recorder는 official GET와 bounded record/body만 허용한다", async ()
     fetchImpl: async () => new Response("12345678", { status: 200, headers: { "content-type": "text/plain" } }),
   });
   await assert.rejects(oversized.fetchImpl(request("GetVhcleKndList")), /provider capture body limit exceeded/);
+  assert.equal(oversized.captureArtifact().bodyBytes, 0);
+  assert.equal(oversized.captureArtifact().records[0].outcome.kind, "TRANSPORT_FAILURE");
 
   const credentialEcho = createProviderResponseRecorder({
     observedAt: OBSERVED_AT,
@@ -129,4 +131,74 @@ test("recorder는 official GET와 bounded record/body만 허용한다", async ()
     credentialEcho.fetchImpl(request("GetVhcleKndList")),
     /provider capture credential echo rejected/,
   );
+  const rejectedCapture = credentialEcho.captureArtifact();
+  assert.equal(rejectedCapture.bodyBytes, 0);
+  assert.equal(rejectedCapture.records[0].outcome.kind, "TRANSPORT_FAILURE");
+});
+
+test("recorder는 credential header를 upstream 전에 거부한다", async () => {
+  let upstreamCalls = 0;
+  const recorder = createProviderResponseRecorder({
+    observedAt: OBSERVED_AT,
+    selectedServiceDates: SERVICE_DATES,
+    fetchImpl: async () => {
+      upstreamCalls += 1;
+      return new Response("Bearer raw-header-secret");
+    },
+  });
+
+  await assert.rejects(
+    recorder.fetchImpl(request("GetVhcleKndList"), { headers: { authorization: "Bearer raw-header-secret" } }),
+    /provider request credential header is not allowed/,
+  );
+  assert.equal(upstreamCalls, 0);
+  const capture = recorder.captureArtifact();
+  assert.equal(capture.requestCount, 0);
+  assert.doesNotMatch(providerResponseCaptureBytes(capture).toString("utf8"), /raw-header-secret|authorization/i);
+});
+
+test("concurrent capture는 invocation order로 slot을 예약하고 record limit을 지킨다", async () => {
+  const completions = [];
+  const recorder = createProviderResponseRecorder({
+    observedAt: OBSERVED_AT,
+    selectedServiceDates: SERVICE_DATES,
+    maxRecords: 2,
+    fetchImpl: async () => new Promise((resolve) => completions.push(resolve)),
+  });
+
+  const first = recorder.fetchImpl(request("GetVhcleKndList"));
+  const second = recorder.fetchImpl(request("GetCtyCodeList"));
+  await assert.rejects(recorder.fetchImpl(request("GetStrtpntAlocFndTrainInfo")), /provider capture record limit exceeded/);
+  completions[1](new Response("second"));
+  await second;
+  completions[0](new Response("first"));
+  await first;
+
+  const capture = recorder.captureArtifact();
+  assert.deepEqual(capture.records.map(({ request: value }) => value.path.split("/").at(-1)), [
+    "GetVhcleKndList",
+    "GetCtyCodeList",
+  ]);
+  const replay = createProviderResponseReplay({ captureBytes: providerResponseCaptureBytes(capture) });
+  assert.equal(await (await replay.fetchImpl(request("GetVhcleKndList"))).text(), "first");
+  assert.equal(await (await replay.fetchImpl(request("GetCtyCodeList"))).text(), "second");
+  replay.assertExhausted();
+});
+
+test("response body stream 실패도 sanitized transport failure로 capture한다", async () => {
+  const recorder = createProviderResponseRecorder({
+    observedAt: OBSERVED_AT,
+    selectedServiceDates: SERVICE_DATES,
+    fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.error(new Error("provider body stream failed"));
+      },
+    })),
+  });
+
+  await assert.rejects(recorder.fetchImpl(request("GetVhcleKndList")), /provider body stream failed/);
+  const capture = recorder.captureArtifact();
+  assert.equal(capture.requestCount, 1);
+  assert.equal(capture.bodyBytes, 0);
+  assert.deepEqual(capture.records[0].outcome, { kind: "TRANSPORT_FAILURE" });
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { lstat, readFile, unlink } from "node:fs/promises";
+import { link, lstat, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -24,6 +24,9 @@ export async function runReplayCurrentItxCollectionCli({
   const captureBytes = await readFile(args.capture);
   const replay = createProviderResponseReplay({ captureBytes });
   const serviceDates = replay.capture.selectedServiceDates;
+  const stage = await mkdtemp(path.join(path.dirname(args.output), ".provider-replay-"));
+  const stageIdentity = await lstat(stage);
+  const stagedOutput = path.join(stage, "replay.json");
   let result;
   try {
     result = await runCompletenessImpl({
@@ -33,7 +36,7 @@ export async function runReplayCurrentItxCollectionCli({
         "--day7-date", serviceDates["7"],
         "--day9-date", serviceDates["9"],
         "--station-catalog-pack", args["station-catalog-pack"],
-        "--output", args.output,
+        "--output", stagedOutput,
       ],
       env: {},
       providerServiceKey: OFFLINE_PROVIDER_KEY,
@@ -50,14 +53,27 @@ export async function runReplayCurrentItxCollectionCli({
       || JSON.stringify(result.artifact.selectedServiceDates) !== JSON.stringify(serviceDates)) {
       throw new Error("provider replay result identity is invalid");
     }
-    const outputStat = await lstat(args.output);
+    const outputStat = await lstat(stagedOutput);
     if (!outputStat.isFile() || outputStat.isSymbolicLink()) throw new Error("provider replay output is invalid");
+    await link(stagedOutput, args.output);
     return result;
+  } finally {
+    await removeOwnedStage(stage, stageIdentity, stagedOutput).catch(() => {});
+  }
+}
+
+async function removeOwnedStage(stage, identity, stagedOutput) {
+  try {
+    const current = await lstat(stage);
+    if (current.isDirectory() && !current.isSymbolicLink()
+      && current.dev === identity.dev && current.ino === identity.ino) {
+      await unlink(stagedOutput).catch((error) => {
+        if (error?.code !== "ENOENT") throw error;
+      });
+      await rmdir(stage);
+    }
   } catch (error) {
-    await unlink(args.output).catch((cleanupError) => {
-      if (cleanupError?.code !== "ENOENT") throw cleanupError;
-    });
-    throw error;
+    if (error?.code !== "ENOENT") throw error;
   }
 }
 
