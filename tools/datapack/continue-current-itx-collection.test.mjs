@@ -181,3 +181,29 @@ test("uncaptured TAGO와 unconsumed base capture는 live call·output 없이 닫
     }
   }
 });
+
+test("malformed DATA_GO_KR_SERVICE_KEY는 collector와 provider 전에 거부한다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-capture-continuation-credential-"));
+  const capturePath = path.join(directory, "provider-response-capture.json");
+  const captureBytes = await baseCapture();
+  const capture = parseProviderResponseCapture(captureBytes);
+  await writeFile(capturePath, captureBytes);
+  let calls = 0;
+  try {
+    await assert.rejects(runContinueCurrentItxCollectionCli({
+      argv: args(directory, capturePath, capture.contentSha256),
+      env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" },
+      liveFetchImpl: async () => {
+        calls += 1;
+        return new Response("must-not-run");
+      },
+      runCompletenessImpl: async () => {
+        calls += 1;
+        throw new Error("must-not-run");
+      },
+    }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+    assert.equal(calls, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
