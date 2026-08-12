@@ -60,9 +60,22 @@ test("v1 consumer handoff production reachability가 없다", async () => {
   );
   const descriptorSource = await readFile(SCRIPT, "utf8");
   assert.doesNotMatch(descriptorSource, /build-server-route-bundle-consumer-handoff/);
-  const ciSource = await readFile(path.join(REPOSITORY_ROOT, ".github/workflows/ci.yml"), "utf8");
-  assert.match(ciSource, /build-server-route-bundle-publication-descriptor\.test\.mjs/);
-  assert.doesNotMatch(ciSource, /build-server-route-bundle-consumer-handoff\.test\.mjs/);
+  const ownership = JSON.parse(await readFile(
+    path.join(REPOSITORY_ROOT, "tools/ci/data-test-ownership.json"),
+    "utf8",
+  ));
+  const publicationTests = ownership.tests.filter(
+    ({ path: testPath }) => testPath === "tools/datapack/build-server-route-bundle-publication-descriptor.test.mjs",
+  );
+  assert.equal(publicationTests.length, 1);
+  assert.equal(publicationTests[0].semanticOwner, "data7");
+  assert.ok(publicationTests[0].classes.includes("required-pr"));
+  assert.equal(
+    ownership.tests.some(
+      ({ path: testPath }) => testPath === "tools/datapack/build-server-route-bundle-consumer-handoff.test.mjs",
+    ),
+    false,
+  );
 });
 
 test("malformed descriptor CLI는 stack trace 없이 fail closed한다", () => {
