@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-import { lstat, realpath, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { constants } from "node:fs";
+import { lstat, open, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { parseArgs } from "./check-timetable-snapshot-freshness.mjs";
+import { ITX_ADMISSION_LOOKAHEAD_DAYS } from "./collect-tago-itx-cheongchun-od.mjs";
 import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { fetchKasiPublicHolidayCalendar } from "./fetch-kasi-public-holiday-calendar.mjs";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
@@ -77,10 +80,26 @@ async function assertBoundOutputParent(binding) {
   }
 }
 
+async function openBoundOutputParent(binding) {
+  if (!Number.isInteger(constants.O_DIRECTORY) || !Number.isInteger(constants.O_NOFOLLOW)) {
+    throw new Error("current ITX collection secure output is unsupported");
+  }
+  let handle;
+  try {
+    handle = await open(binding.parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    const stat = await handle.stat();
+    if (!stat.isDirectory() || stat.dev !== binding.identity.dev || stat.ino !== binding.identity.ino) throw new Error();
+    return { handle };
+  } catch {
+    await handle?.close();
+    throw new Error("current ITX collection output parent was replaced");
+  }
+}
+
 function kstWindow(now) {
   const shifted = new Date(now.getTime() + 9 * 3_600_000);
   const base = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
-  return Array.from({ length: 7 }, (_, offset) => {
+  return Array.from({ length: ITX_ADMISSION_LOOKAHEAD_DAYS }, (_, offset) => {
     const candidate = new Date(base + offset * 86_400_000);
     return {
       date: `${candidate.getUTCFullYear()}${String(candidate.getUTCMonth() + 1).padStart(2, "0")}${String(candidate.getUTCDate()).padStart(2, "0")}`,
@@ -94,7 +113,7 @@ function kstWindow(now) {
 function holidayAwareServiceDates(window, holidays) {
   const day8 = window.find(({ date, weekday }) => weekday >= 1 && weekday <= 5 && !holidays.has(date));
   const day7 = window.find(({ date, weekday }) => weekday === 6 && !holidays.has(date));
-  const day9 = window.find(({ date, weekday }) => weekday === 0 || holidays.has(date));
+  const day9 = window.find(({ weekday }) => weekday === 0);
   if (!day8 || !day7 || !day9) throw new Error("no holiday-aware ITX admission date within window");
   return { "8": day8.date, "7": day7.date, "9": day9.date };
 }
@@ -122,13 +141,27 @@ export async function runCurrentItxCollectionCli({
   fetchPublicHolidays,
   fetchHolidayCalendar = fetchKasiPublicHolidayCalendar,
   beforeFreshnessWrite = async () => {},
+  beforeFailureReceiptWrite = async () => {},
   collectImpl = runKorailItxCompletenessCli,
 } = {}) {
   const args = currentCollectionArgs(argv);
   normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
   await assertAbsent([args.output, args["completeness-output"], args["freshness-output"]]);
   const outputParent = await bindOutputParent(args.output);
-  const holidayDates = await (fetchPublicHolidays ?? defaultPublicHolidays)({ now, env, fetchHolidayCalendar });
+  const receiptParent = await openBoundOutputParent(outputParent);
+  let holidayDates;
+  try {
+    holidayDates = await (fetchPublicHolidays ?? defaultPublicHolidays)({ now, env, fetchHolidayCalendar });
+  } catch (error) {
+    try {
+      await beforeFailureReceiptWrite();
+      await writeKasiFailureReceipt(receiptParent, args["freshness-output"], error);
+    } finally {
+      await receiptParent.handle.close();
+    }
+    throw error;
+  }
+  await receiptParent.handle.close();
   if (!(holidayDates instanceof Set) || [...holidayDates].some((date) => typeof date !== "string" || !/^\d{8}$/.test(date))) {
     throw new Error("KASI public holiday calendar is invalid");
   }
@@ -156,6 +189,55 @@ export async function runCurrentItxCollectionCli({
     repositoryRoot,
   });
   return { ...result, freshnessEvidence, serviceDates };
+}
+
+async function writeKasiFailureReceipt(receiptParent, freshnessOutput, error) {
+  const receipt = {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: safeFailureCategory(error?.failureCategory),
+    attemptCount: safeAttemptCount(error?.attemptCount),
+  };
+  await writeBoundOutput(receiptParent.handle.fd, path.basename(freshnessOutput), `${JSON.stringify(receipt, null, 2)}\n`);
+}
+
+async function writeBoundOutput(parentFd, basename, contents) {
+  const helperDirectory = path.dirname(fileURLToPath(import.meta.url));
+  await new Promise((resolve, reject) => {
+    const failure = () => reject(new Error("current ITX collection secure output write failed"));
+    const child = spawn("/usr/bin/python3", ["write-bound-output.py", basename], {
+      cwd: helperDirectory,
+      shell: false,
+      stdio: ["pipe", "ignore", "ignore", parentFd],
+    });
+    child.once("error", failure);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else failure();
+    });
+    child.stdin.once("error", failure);
+    child.stdin.end(contents);
+  });
+}
+
+function safeFailureCategory(value) {
+  const categories = new Set([
+    "NETWORK_DNS",
+    "NETWORK_TLS",
+    "NETWORK_CONNECT_TIMEOUT",
+    "NETWORK_REQUEST_TIMEOUT",
+    "NETWORK_SOCKET",
+    "NETWORK_UNKNOWN",
+    "KASI_HTTP",
+    "KASI_SCHEMA",
+  ]);
+  return categories.has(value) ? value : "KASI_FAILURE";
+}
+
+function safeAttemptCount(value) {
+  return value === 1 || value === 2 ? value : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

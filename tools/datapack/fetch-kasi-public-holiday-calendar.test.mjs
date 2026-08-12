@@ -12,6 +12,205 @@ test("KASI calendar는 유효한 year·months에서 malformed credential을 requ
 const holidayXml = (items, totalCount = items.length) => `<?xml version="1.0" encoding="UTF-8"?>
 <response><header><resultCode>00</resultCode><resultMsg>OK</resultMsg></header><body><items>${items.map(({ date, holiday }) => `<item><locdate>${date}</locdate><isHoliday>${holiday}</isHoliday></item>`).join("")}</items><numOfRows>100</numOfRows><pageNo>1</pageNo><totalCount>${totalCount}</totalCount></body></response>`;
 
+test("KASI 기본 전송은 내장 HTTPS request seam으로 정확한 GET 요청을 한 번 종료한다", async () => {
+  const requests = [];
+  const holidays = await fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: (url, options, onResponse) => {
+      const listeners = new Map();
+      const request = {
+        once(event, listener) {
+          listeners.set(event, listener);
+          return request;
+        },
+        end() {
+          requests.push({ url, options, endCount: 1 });
+          queueMicrotask(() => {
+            const response = {
+              statusCode: 200,
+              setEncoding(encoding) { assert.equal(encoding, "utf8"); },
+              once(event, listener) {
+                listeners.set(`response:${event}`, listener);
+                if (event === "end") queueMicrotask(listener);
+                return response;
+              },
+              on(event, listener) {
+                if (event === "data") queueMicrotask(() => listener(holidayXml([{ date: "20260717", holiday: "Y" }])));
+                return response;
+              },
+            };
+            onResponse(response);
+          });
+        },
+      };
+      return request;
+    },
+  });
+
+  assert.deepEqual([...holidays], ["20260717"]);
+  assert.equal(requests.length, 1);
+  const [{ url, options, endCount }] = requests;
+  assert.equal(url.origin, "https://apis.data.go.kr");
+  assert.equal(url.pathname, "/B090041/openapi/service/SpcdeInfoService/getRestDeInfo");
+  assert.equal(url.searchParams.get("ServiceKey"), "test-key");
+  assert.equal(url.searchParams.get("solYear"), "2026");
+  assert.equal(url.searchParams.get("solMonth"), "07");
+  assert.equal(options.method, "GET");
+  assert.equal(options.headers.accept, "application/xml, text/xml");
+  assert.equal(options.signal.aborted, false);
+  assert.equal(endCount, 1);
+});
+
+test("KASI native HTTPS non-2xx·stream·request·abort failure는 fail closed한다", async () => {
+  const nativeFailure = ({ statusCode = 200, requestError, streamError, secureConnected = false } = {}) => (url, options, onResponse) => {
+    const requestListeners = new Map();
+    const request = {
+      once(event, listener) {
+        requestListeners.set(event, listener);
+        return request;
+      },
+      end() {
+        queueMicrotask(() => {
+          if (secureConnected) requestListeners.get("socket")?.({ secureConnecting: false, once() { return this; } });
+          if (requestError) return requestListeners.get("error")(requestError);
+          const response = {
+            statusCode,
+            resume() {},
+            setEncoding() {},
+            once(event, listener) {
+              if (event === "error" && streamError) queueMicrotask(() => listener(streamError));
+              if (event === "end" && !streamError) queueMicrotask(listener);
+              return response;
+            },
+            on() { return response; },
+          };
+          onResponse(response);
+        });
+      },
+    };
+    return request;
+  };
+  const cases = [
+    [nativeFailure({ statusCode: 503 }), /HTTP_503$/],
+    [nativeFailure({ streamError: Object.assign(new Error("stream"), { code: "ECONNRESET" }) }), /NETWORK_SOCKET$/],
+    [nativeFailure({ requestError: Object.assign(new Error("request"), { code: "ENOTFOUND" }) }), /NETWORK_DNS$/],
+    [nativeFailure({ requestError: Object.assign(new Error("abort"), { name: "AbortError" }), secureConnected: true }), /NETWORK_REQUEST_TIMEOUT$/],
+  ];
+  for (const [httpsRequestImpl, expectation] of cases) {
+    await assert.rejects(fetchKasiPublicHolidayCalendar({
+      serviceKey: "test-key",
+      year: 2026,
+      months: [7],
+      httpsRequestImpl,
+    }), expectation);
+  }
+});
+
+test("KASI native HTTPS는 TLS secureConnect 전 AbortError만 connect timeout으로 한 번 재시도한다", async () => {
+  let calls = 0;
+  const holidays = await fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: (url, options, onResponse) => {
+      calls += 1;
+      const requestListeners = new Map();
+      const request = {
+        once(event, listener) { requestListeners.set(event, listener); return request; },
+        end() {
+          queueMicrotask(() => {
+            const socket = { secureConnecting: calls !== 2, once() { return socket; } };
+            requestListeners.get("socket")?.(socket);
+            if (calls === 1) {
+              requestListeners.get("error")(Object.assign(new Error("abort"), { name: "AbortError", code: "ABORT_ERR" }));
+              return;
+            }
+            const response = {
+              statusCode: 200,
+              setEncoding() {},
+              once(event, listener) { if (event === "end") queueMicrotask(listener); return response; },
+              on(event, listener) {
+                if (event === "data") queueMicrotask(() => listener(holidayXml([{ date: "20260717", holiday: "Y" }])));
+                return response;
+              },
+            };
+            onResponse(response);
+          });
+        },
+      };
+      return request;
+    },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual([...holidays], ["20260717"]);
+});
+
+test("KASI native HTTPS는 TLS secureConnect 뒤 AbortError를 request timeout으로 fail closed하고 재시도하지 않는다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: () => {
+      calls += 1;
+      const requestListeners = new Map();
+      const request = {
+        once(event, listener) { requestListeners.set(event, listener); return request; },
+        end() {
+          queueMicrotask(() => {
+            const socket = { secureConnecting: false, once() { return socket; } };
+            requestListeners.get("socket")?.(socket);
+            requestListeners.get("error")(Object.assign(new Error("abort"), { name: "AbortError", code: "ABORT_ERR" }));
+          });
+        },
+      };
+      return request;
+    },
+  }), (error) => {
+    assert.equal(error.failureCategory, "NETWORK_REQUEST_TIMEOUT");
+    assert.equal(error.attemptCount, 1);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test("KASI native HTTPS는 non-2xx 응답을 즉시 KASI_HTTP으로 종료하고 body를 drain한다", async () => {
+  let resumed = 0;
+  let endListenerRegistered = false;
+  let bodyCollected = false;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    httpsRequestImpl: (url, options, onResponse) => {
+      const request = {
+        once() { return request; },
+        end() {
+          queueMicrotask(() => onResponse({
+            statusCode: 503,
+            resume() { resumed += 1; },
+            setEncoding() { bodyCollected = true; },
+            once(event, listener) {
+              if (event === "end") {
+                endListenerRegistered = true;
+                queueMicrotask(listener);
+              }
+              return this;
+            },
+            on() { bodyCollected = true; return this; },
+          }));
+        },
+      };
+      return request;
+    },
+  }), /KASI public holiday request failed: HTTP_503$/);
+  assert.equal(resumed, 1);
+  assert.equal(endListenerRegistered, false);
+  assert.equal(bodyCollected, false);
+});
+
 test("KASI 공휴일 달력은 요청 월 전체를 HTTPS 정본에서 가져와 휴일만 반환한다", async () => {
   const requests = [];
   const holidays = await fetchKasiPublicHolidayCalendar({
@@ -59,6 +258,61 @@ test("KASI 공휴일 달력은 percent-encoded portal key를 한 번만 decode�
   assert.equal(receivedKey, "abc+def==");
 });
 
+test("KASI calendar는 connect timeout만 즉시 한 번 재시도한다", async () => {
+  let calls = 0;
+  const holidays = await fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+      return new Response(holidayXml([{ date: "20260717", holiday: "Y" }]));
+    },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual([...holidays], ["20260717"]);
+});
+
+test("KASI calendar는 두 번째 connect timeout 후 closed attempt metadata를 유지한다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchKasiPublicHolidayCalendar({
+    serviceKey: "test-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => {
+      calls += 1;
+      throw Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+    },
+  }), (error) => {
+    assert.equal(error.failureCategory, "NETWORK_CONNECT_TIMEOUT");
+    assert.equal(error.attemptCount, 2);
+    return true;
+  });
+  assert.equal(calls, 2);
+});
+
+test("KASI calendar는 connect timeout 밖의 HTTP·schema·body failure를 재시도하지 않는다", async () => {
+  const cases = [
+    async () => new Response("denied", { status: 403 }),
+    async () => new Response("not xml"),
+    async () => ({ ok: true, text: async () => { throw Object.assign(new Error("raw body error"), { code: "ECONNRESET" }); } }),
+  ];
+  for (const fetchImpl of cases) {
+    let calls = 0;
+    await assert.rejects(fetchKasiPublicHolidayCalendar({
+      serviceKey: "test-key",
+      year: 2026,
+      months: [7],
+      fetchImpl: async (...args) => {
+        calls += 1;
+        return fetchImpl(...args);
+      },
+    }));
+    assert.equal(calls, 1);
+  }
+});
+
 test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일치를 fail closed한다", async () => {
   const run = (response) => fetchKasiPublicHolidayCalendar({
     serviceKey: "secret-key",
@@ -73,6 +327,67 @@ test("KASI 공휴일 달력은 권한·HTTP·XML·resultCode·월 범위 불일�
   await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
   await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "one\nline", year: 2026, months: [7] }), /DATA_GO_KR_SERVICE_KEY/);
   await assert.rejects(fetchKasiPublicHolidayCalendar({ serviceKey: "secret-key", year: 2026, months: [7], fetchImpl: async () => { throw new Error("network"); } }), /NETWORK/);
+});
+
+test("KASI transport 오류는 원문을 노출하지 않고 closed category로 분류한다", async () => {
+  const runFetch = (error) => fetchKasiPublicHolidayCalendar({
+    serviceKey: "secret-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => { throw error; },
+  });
+  const runBody = (error) => fetchKasiPublicHolidayCalendar({
+    serviceKey: "secret-key",
+    year: 2026,
+    months: [7],
+    fetchImpl: async () => ({ ok: true, text: async () => { throw error; } }),
+  });
+  const transportError = ({ name = "Error", code, cause } = {}) => Object.assign(new Error("https://apis.data.go.kr/?ServiceKey=secret-key raw diagnostic"), { name, code, cause });
+  const cases = [
+    [{ code: "ENOTFOUND" }, "NETWORK_DNS"],
+    [{ code: "EAI_AGAIN" }, "NETWORK_DNS"],
+    [{ code: "ERR_TLS_CERT_ALTNAME_INVALID" }, "NETWORK_TLS"],
+    [{ code: "CERT_HAS_EXPIRED" }, "NETWORK_TLS"],
+    [{ code: "DEPTH_ZERO_SELF_SIGNED_CERT" }, "NETWORK_TLS"],
+    [{ code: "SELF_SIGNED_CERT_IN_CHAIN" }, "NETWORK_TLS"],
+    [{ code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" }, "NETWORK_TLS"],
+    [{ code: "UNABLE_TO_GET_ISSUER_CERT_LOCALLY" }, "NETWORK_TLS"],
+    [{ code: "ERR_SSL_WRONG_VERSION_NUMBER" }, "NETWORK_TLS"],
+    [{ code: "ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION" }, "NETWORK_TLS"],
+    [{ code: "ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE" }, "NETWORK_TLS"],
+    [{ code: "UND_ERR_CONNECT_TIMEOUT" }, "NETWORK_CONNECT_TIMEOUT"],
+    [{ name: "TimeoutError" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ name: "AbortError" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "ABORT_ERR" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "UND_ERR_HEADERS_TIMEOUT" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "UND_ERR_BODY_TIMEOUT" }, "NETWORK_REQUEST_TIMEOUT"],
+    [{ code: "ECONNRESET" }, "NETWORK_SOCKET"],
+    [{ code: "ECONNREFUSED" }, "NETWORK_SOCKET"],
+    [{ code: "EPIPE" }, "NETWORK_SOCKET"],
+    [{ code: "ETIMEDOUT" }, "NETWORK_SOCKET"],
+    [{ code: "UND_ERR_SOCKET" }, "NETWORK_SOCKET"],
+  ];
+  for (const [options, category] of cases) {
+    await assert.rejects(runFetch(transportError(options)), new RegExp(`KASI public holiday request failed: ${category}$`));
+  }
+  await assert.rejects(runBody(transportError({ code: "ECONNRESET" })), /KASI public holiday request failed: NETWORK_SOCKET$/);
+
+  let nested = transportError({ code: "ENOTFOUND" });
+  for (let depth = 1; depth <= 4; depth += 1) {
+    nested = transportError({ cause: nested });
+    await assert.rejects(runFetch(nested), /KASI public holiday request failed: NETWORK_DNS$/);
+  }
+  const tooDeep = transportError({ cause: nested });
+  await assert.rejects(runFetch(tooDeep), /KASI public holiday request failed: NETWORK_UNKNOWN$/);
+  const cyclic = transportError({ code: "ENOTFOUND" });
+  cyclic.cause = cyclic;
+  await assert.rejects(runFetch(cyclic), /KASI public holiday request failed: NETWORK_UNKNOWN$/);
+
+  await assert.rejects(runFetch(transportError({ code: "UNLISTED_RAW_CODE" })), (error) => {
+    assert.equal(error.message, "KASI public holiday request failed: NETWORK_UNKNOWN");
+    assert.doesNotMatch(error.message, /secret-key|apis\.data\.go\.kr|UNLISTED_RAW_CODE|raw diagnostic/);
+    return true;
+  });
 });
 
 test("KASI 공휴일 달력은 totalCount=0의 empty/self-closing items만 유효한 빈 월로 인정한다", async () => {

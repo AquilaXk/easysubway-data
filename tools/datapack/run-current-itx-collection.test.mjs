@@ -72,7 +72,7 @@ test("KST 자정 양쪽에서도 주입된 단일 now를 날짜 계산과 collec
   }
 });
 
-test("current collection wrapper는 연말 7일 창의 각 연도 KASI 월을 모두 조회한다", async () => {
+test("current collection wrapper는 연말 14일 창의 각 연도 KASI 월을 모두 조회한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-year-boundary-"));
   const requests = [];
   await runCurrentItxCollectionCli({
@@ -83,7 +83,7 @@ test("current collection wrapper는 연말 7일 창의 각 연도 KASI 월을 �
       "--freshness-output", path.join(dir, "freshness.json"),
     ],
     env: { DATA_GO_KR_SERVICE_KEY: "test-key" },
-    now: new Date("2026-12-30T15:00:00.000Z"),
+    now: new Date("2026-12-23T15:00:00.000Z"),
     fetchHolidayCalendar: async ({ year, months }) => {
       requests.push({ year, months: [...months].sort((left, right) => left - right) });
       return new Set();
@@ -93,7 +93,7 @@ test("current collection wrapper는 연말 7일 창의 각 연도 KASI 월을 �
   assert.deepEqual(requests, [{ year: 2026, months: [12] }, { year: 2027, months: [1] }]);
 });
 
-test("current collection wrapper는 평일 공휴일과 대체공휴일을 day9로 분류하고 평일 비휴일만 day8로 수집한다", async () => {
+test("current collection wrapper는 공휴일을 day8/day7에서 제외하고 canonical Sunday를 day9로 수집한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-holiday-"));
   let collectorArgv;
   await runCurrentItxCollectionCli({
@@ -105,13 +105,42 @@ test("current collection wrapper는 평일 공휴일과 대체공휴일을 day9�
     ],
     env: VALID_ENV,
     now: new Date("2026-08-16T15:00:00.000Z"),
-    fetchPublicHolidays: async () => new Set(["20260817"]),
+    fetchPublicHolidays: async () => new Set(["20260817", "20260823"]),
     collectImpl: async ({ argv }) => {
       collectorArgv = argv;
       return { exitCode: 0 };
     },
   });
-  assert.deepEqual(collectorArgv.slice(-6), ["--day8-date", "20260818", "--day7-date", "20260822", "--day9-date", "20260817"]);
+  assert.deepEqual(collectorArgv.slice(-6), ["--day8-date", "20260818", "--day7-date", "20260822", "--day9-date", "20260823"]);
+});
+
+test("current collection wrapper는 공휴일 토요일 다음의 비공휴일 토요일까지 bounded forward scan한다", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-live-holiday-saturday-"));
+  const freshnessOutput = path.join(dir, "freshness.json");
+  let collectorCalls = 0;
+  let collectorArgv;
+  const result = await runCurrentItxCollectionCli({
+    argv: [
+      "--output", path.join(dir, "result.json"),
+      "--completeness-output", path.join(dir, "completeness.json"),
+      "--station-catalog-pack", path.join(dir, "station-catalog-pack"),
+      "--freshness-output", freshnessOutput,
+    ],
+    env: VALID_ENV,
+    now: new Date("2026-08-11T09:17:00.000Z"),
+    fetchPublicHolidays: async () => new Set(["20260815", "20260817"]),
+    collectImpl: async ({ argv }) => {
+      collectorCalls += 1;
+      collectorArgv = argv;
+      return { exitCode: 0 };
+    },
+  });
+  const expected = { "8": "20260811", "7": "20260822", "9": "20260816" };
+  assert.equal(collectorCalls, 1);
+  assert.deepEqual(result.serviceDates, expected);
+  assert.deepEqual(collectorArgv.slice(-6), ["--day8-date", expected["8"], "--day7-date", expected["7"], "--day9-date", expected["9"]]);
+  assert.deepEqual(JSON.parse(await readFile(freshnessOutput, "utf8")).serviceDates, expected);
+  assert.ok(Object.values(expected).every((date) => date >= "20260811"));
 });
 
 test("current collection wrapper는 exact allowlist 밖의 date override·replay·fallback을 거부한다", async () => {
@@ -187,25 +216,76 @@ test("current collection wrapper는 symlink 또는 교체된 output parent에 fr
   await assert.rejects(lstat(path.join(`${parent}-replaced`, "freshness.json")));
 });
 
-test("KASI 실패에서는 collector와 freshness·output·completeness 생성이 모두 발생하지 않는다", async () => {
+test("KASI 최종 실패에서는 collector 전에 closed preflight receipt만 생성한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-failure-"));
   const output = path.join(dir, "result.json");
   const completenessOutput = path.join(dir, "completeness.json");
   const freshnessOutput = path.join(dir, "freshness.json");
   let collectorCalls = 0;
+  const rawFailure = new Error("https://apis.data.go.kr/?ServiceKey=secret-key&solYear=2026 raw body");
   await assert.rejects(runCurrentItxCollectionCli({
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
     env: VALID_ENV,
-    fetchPublicHolidays: async () => { throw new Error("KASI public holiday request failed: HTTP_403"); },
+    fetchPublicHolidays: async () => { throw rawFailure; },
     collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
-  }), /KASI public holiday request failed: HTTP_403/);
+  }), (error) => error === rawFailure);
   assert.equal(collectorCalls, 0);
   await assert.rejects(lstat(output));
   await assert.rejects(lstat(completenessOutput));
-  await assert.rejects(lstat(freshnessOutput));
+  const receipt = await readFile(freshnessOutput, "utf8");
+  assert.equal(receipt, `${JSON.stringify({
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: "KASI_FAILURE",
+    attemptCount: 1,
+  }, null, 2)}\n`);
+  assert.doesNotMatch(receipt, /apis\.data\.go\.kr|secret-key|raw body|2026/);
 });
 
-test("공휴일 토요일만 있는 7일 창은 day7 evidence 없이 collector 전에 fail closed한다", async () => {
+test("KASI 실패 receipt는 output parent 교체 뒤에도 bound directory에만 생성한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-receipt-parent-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "current-itx-collection-kasi-receipt-outside-"));
+  const parent = path.join(root, "output");
+  const originalParent = `${parent}-original`;
+  await mkdir(parent);
+  const freshnessOutput = path.join(parent, "freshness.json");
+  let collectorCalls = 0;
+  const failure = Object.assign(new Error("KASI connect timeout"), {
+    failureCategory: "NETWORK_CONNECT_TIMEOUT",
+    attemptCount: 2,
+  });
+  await assert.rejects(runCurrentItxCollectionCli({
+    argv: [
+      "--output", path.join(parent, "result.json"),
+      "--completeness-output", path.join(parent, "completeness.json"),
+      "--station-catalog-pack", path.join(parent, "station-catalog-pack"),
+      "--freshness-output", freshnessOutput,
+    ],
+    env: VALID_ENV,
+    fetchPublicHolidays: async () => { throw failure; },
+    beforeFailureReceiptWrite: async () => {
+      await rename(parent, originalParent);
+      await symlink(outside, parent);
+    },
+    collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
+  }), (error) => error === failure);
+  assert.equal(collectorCalls, 0);
+  assert.deepEqual(JSON.parse(await readFile(path.join(originalParent, "freshness.json"), "utf8")), {
+    schemaVersion: 1,
+    artifactKind: "itx-current-collection-preflight",
+    status: "FAILED",
+    operation: "KASI_PUBLIC_HOLIDAY_CALENDAR",
+    failureCategory: "NETWORK_CONNECT_TIMEOUT",
+    attemptCount: 2,
+  });
+  await assert.rejects(lstat(path.join(outside, "freshness.json")));
+  await assert.rejects(lstat(path.join(parent, "result.json")));
+  await assert.rejects(lstat(path.join(parent, "completeness.json")));
+});
+
+test("14일 bounded 창의 모든 토요일이 공휴일이면 day7 evidence 없이 collector 전에 fail closed한다", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "current-itx-collection-holiday-saturday-"));
   const output = path.join(dir, "result.json");
   const completenessOutput = path.join(dir, "completeness.json");
@@ -215,7 +295,7 @@ test("공휴일 토요일만 있는 7일 창은 day7 evidence 없이 collector �
     argv: ["--output", output, "--completeness-output", completenessOutput, "--station-catalog-pack", path.join(dir, "station-catalog-pack"), "--freshness-output", freshnessOutput],
     env: VALID_ENV,
     now: new Date("2026-08-15T15:00:00.000Z"),
-    fetchPublicHolidays: async () => new Set(["20260822"]),
+    fetchPublicHolidays: async () => new Set(["20260822", "20260829"]),
     collectImpl: async () => { collectorCalls += 1; return { exitCode: 0 }; },
   }), /no holiday-aware ITX admission date within window/);
   assert.equal(collectorCalls, 0);
