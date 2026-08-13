@@ -206,14 +206,25 @@ function requiredSingleLine(value, label) {
   return value;
 }
 
-async function responseBytes(response) {
-  if (!response?.ok || response.status !== 200
-    || response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
-    fail("HTTP");
+async function responseBytes(response, source) {
+  if (!response || response.status !== 200 || !response.ok) {
+    const status = Number.isSafeInteger(response?.status) ? response.status : "INVALID";
+    fail(`${source}_HTTP_${status}`);
   }
+  if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase()
+    !== "application/json") fail(`${source}_CONTENT_TYPE`);
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > 1024 * 1024) fail("HTTP");
+  if (bytes.length === 0 || bytes.length > 1024 * 1024) fail(`${source}_BODY_SIZE`);
   return bytes;
+}
+
+async function fetchSourceResponse({ source, url, init, fetchImpl }) {
+  try {
+    return await responseBytes(await fetchImpl(url, init), source);
+  } catch (error) {
+    if (error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")) throw error;
+    fail(`${source}_TRANSPORT`);
+  }
 }
 
 export async function fetchCurrentStaticSourceResponses({
@@ -228,24 +239,29 @@ export async function fetchCurrentStaticSourceResponses({
   const seoulUrl = new URL(
     `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("4호선")}`,
   );
-  try {
-    const molit = await responseBytes(await fetchImpl(molitUrl, {
+  const molit = await fetchSourceResponse({
+    source: "MOLIT",
+    url: molitUrl,
+    fetchImpl,
+    init: {
       method: "GET",
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
       headers: { accept: "application/json", Authorization: `Infuser ${dataKey}` },
-    }));
-    const seoul = await responseBytes(await fetchImpl(seoulUrl, {
+    },
+  });
+  const seoul = await fetchSourceResponse({
+    source: "SEOUL",
+    url: seoulUrl,
+    fetchImpl,
+    init: {
       method: "GET",
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
       headers: { accept: "application/json" },
-    }));
-    return { molit, seoul };
-  } catch (error) {
-    if (error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")) throw error;
-    fail("TRANSPORT");
-  }
+    },
+  });
+  return { molit, seoul };
 }
 
 function serializedOutputs(result) {
