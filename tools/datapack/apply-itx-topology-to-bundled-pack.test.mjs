@@ -1237,6 +1237,34 @@ test("completeness top-level admission metadata는 source와 exact 결속한다"
   }
 });
 
+test("source와 completeness observedAt은 각각 exact UTC instant여야 한다", async (context) => {
+  const cases = [
+    ["both-missing", (documents) => {
+      delete documents.source.observedAt;
+      delete documents.completeness.observedAt;
+    }],
+    ["same-malformed", (documents) => {
+      documents.source.observedAt = "2026-08-12";
+      documents.completeness.observedAt = documents.source.observedAt;
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const documents = await trackedLegacyDocuments();
+      mutate(documents);
+      rebindAdmissionDocuments(documents);
+      assert.throws(() => validateAdmittedSourceDocuments(
+        documents.contract,
+        documents.reference,
+        documents.source,
+        documents.completeness,
+        sha256(documents.sourceBytes),
+        sha256(documents.completenessBytes),
+      ), /source identity is invalid/);
+    });
+  }
+});
+
 test("reversed down direction, missing U/D, incomplete stops, disconnected components를 거부한다", async (context) => {
   const cases = [
     ["reversed-down", (source) => {
