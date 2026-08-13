@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   buildCurrentStaticSourceRevalidation,
   fetchCurrentStaticSourceResponses,
+  runCurrentStaticSourceRevalidation,
   writeCurrentStaticSourceRevalidation,
 } from "./revalidate-current-static-network-sources.mjs";
 
@@ -350,4 +351,106 @@ test("validated four-file output은 absent directory에 한 번만 publish한다
     /output directory must be absent/,
   );
   assert.deepEqual(await readdir(existingEmpty), []);
+});
+
+test("content change는 source별 closed 상태와 task-local raw capture만 남기고 계속 실패한다", async (context) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-change-capture-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+  const outputDirectory = path.join(parent, "revalidation-output");
+  const changeOutputDirectory = path.join(parent, "change-capture");
+  const responses = responseBytes();
+  responses.molit = Buffer.from(responses.molit);
+  let selectedSequence = -1;
+  let searchFrom = 0;
+  while ((selectedSequence = responses.molit.indexOf(Buffer.from(",30,"), searchFrom)) !== -1) {
+    responses.molit[selectedSequence + 2] = 0x35;
+    searchFrom = selectedSequence + 4;
+  }
+  assert.notEqual(searchFrom, 0);
+
+  await assert.rejects(runCurrentStaticSourceRevalidation({
+    sourceSnapshots: previousSnapshots(),
+    observedAt,
+    responseBytesBySource: responses,
+    outputDirectory,
+    changeOutputDirectory,
+  }), /STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED/);
+
+  await assert.rejects(lstat(outputDirectory), { code: "ENOENT" });
+  const names = (await readdir(changeOutputDirectory)).sort();
+  assert.deepEqual(names, [
+    "change-evidence.json",
+    "molit-response.bin",
+    "seoul-response.json",
+  ]);
+  const evidence = JSON.parse(await readFile(
+    path.join(changeOutputDirectory, "change-evidence.json"),
+    "utf8",
+  ));
+  assert.deepEqual(evidence, {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-capture",
+    observedAt,
+    outcome: "CHANGE_REVIEW_REQUIRED",
+    sources: [
+      {
+        sourceId: "molit-urban-rail-full-route",
+        operation: "molit-urban-rail-full-route-file-five-records",
+        status: "CONTENT_CHANGED",
+        responseSha256: sha256(responses.molit),
+        responseByteSize: responses.molit.length,
+        rawFile: "molit-response.bin",
+      },
+      {
+        sourceId: "seoulmetro-station-line-info",
+        operation: "seoulmetro-line4-stations-one-to-five",
+        status: "UNCHANGED",
+        responseSha256: sha256(responses.seoul),
+        responseByteSize: responses.seoul.length,
+        rawFile: "seoul-response.json",
+      },
+    ],
+    credentialRedacted: true,
+  });
+  assert.equal((await readFile(path.join(changeOutputDirectory, "molit-response.bin")))
+    .equals(responses.molit), true);
+  assert.equal((await readFile(path.join(changeOutputDirectory, "seoul-response.json")))
+    .equals(responses.seoul), true);
+  assert.doesNotMatch(JSON.stringify(evidence), /seoul-key|serviceKey|https?:/iu);
+  for (const name of names) {
+    const metadata = await lstat(path.join(changeOutputDirectory, name));
+    assert.equal(metadata.isFile(), true);
+    assert.equal(metadata.mode & 0o777, 0o600);
+  }
+
+  await assert.rejects(runCurrentStaticSourceRevalidation({
+    sourceSnapshots: previousSnapshots(),
+    observedAt,
+    responseBytesBySource: responses,
+    outputDirectory,
+    changeOutputDirectory,
+  }), /output directory must be absent/);
+  assert.equal((await readFile(path.join(changeOutputDirectory, "molit-response.bin")))
+    .equals(responses.molit), true);
+
+  const seoulResponses = responseBytes();
+  const seoulPayload = JSON.parse(seoulResponses.seoul);
+  seoulPayload.SearchSTNBySubwayLineInfo.row[0].STATION_NM = "changed-station";
+  seoulResponses.seoul = Buffer.from(JSON.stringify(seoulPayload));
+  const seoulCaptureDirectory = path.join(parent, "seoul-change-capture");
+  await assert.rejects(runCurrentStaticSourceRevalidation({
+    sourceSnapshots: previousSnapshots(),
+    observedAt,
+    responseBytesBySource: seoulResponses,
+    outputDirectory: path.join(parent, "seoul-revalidation-output"),
+    changeOutputDirectory: seoulCaptureDirectory,
+  }), /STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED/);
+  const seoulEvidence = JSON.parse(await readFile(
+    path.join(seoulCaptureDirectory, "change-evidence.json"),
+    "utf8",
+  ));
+  assert.deepEqual(seoulEvidence.sources.map(({ status }) => status), [
+    "UNCHANGED",
+    "CONTENT_CHANGED",
+  ]);
 });
