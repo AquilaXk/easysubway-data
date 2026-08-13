@@ -11,7 +11,8 @@ import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   parseCurrentSourceActivationArgs, requireCleanBuilder,
-  stageValidationItxTopologyEvidence } from "./activate-current-source-set.mjs";
+  stageValidationItxTopologyEvidence,
+  verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
 import { projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -356,7 +357,8 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
-    canonicalPackSha256: sha256(canonicalPackBytes),
+    canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
+    canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
   });
@@ -386,7 +388,8 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
       sourceSnapshots: previous,
       sourceInventory,
       revalidations: tampered,
-      canonicalPackSha256: sha256(canonicalPackBytes),
+      canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
+      canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
       buildNow: "2026-08-13T10:30:01.000Z",
       observationDate: "20260813",
     }), /static revalidation evidence identity mismatch/);
@@ -401,9 +404,59 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: unbound,
+    canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
   }), /static revalidation evidence identity mismatch/);
+
+  assert.throws(() => activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations,
+    canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
+    canonicalMembershipSha256: "f".repeat(64),
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260813",
+  }), /static revalidation evidence identity mismatch/);
+});
+
+test("current canonical pack은 admitted Seoul five-record membership을 그대로 보존한다", async () => {
+  const [canonicalPackBytes, snapshot, evidence] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json")),
+    readJson("tools/datapack/sources/current-static-revalidation-20260813/seoulmetro-station-line-info-snapshot.json"),
+    readJson("tools/datapack/sources/current-static-revalidation-20260813/seoulmetro-station-line-info-revalidation-evidence.json"),
+  ]);
+
+  assert.equal(
+    verifyCurrentSeoulCanonicalMembership(canonicalPackBytes, snapshot),
+    evidence.canonicalMembershipSha256,
+  );
+
+  const duplicatedHash = structuredClone(snapshot);
+  duplicatedHash.providerRecordHashes[1] = duplicatedHash.providerRecordHashes[0];
+  assert.throws(
+    () => verifyCurrentSeoulCanonicalMembership(canonicalPackBytes, duplicatedHash),
+    /current Seoul canonical membership mismatch/,
+  );
+
+  const wrongRawIdentity = structuredClone(snapshot);
+  wrongRawIdentity.rawSha256 = "f".repeat(64);
+  assert.throws(
+    () => verifyCurrentSeoulCanonicalMembership(canonicalPackBytes, wrongRawIdentity),
+    /current Seoul canonical membership mismatch/,
+  );
+
+  const missingPreimagePack = JSON.parse(canonicalPackBytes.toString("utf8"));
+  const sadang = missingPreimagePack.packs[0].stations.find(({ id }) => id === "station-sadang");
+  assert.ok(sadang);
+  sadang.nameKo = "변조된 사당";
+  assert.throws(
+    () => verifyCurrentSeoulCanonicalMembership(
+      Buffer.from(JSON.stringify(missingPreimagePack)),
+      snapshot,
+    ),
+    /current Seoul canonical membership mismatch/,
+  );
 });
 
 test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
