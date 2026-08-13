@@ -4098,7 +4098,7 @@ test("current/future partial KORAIL plan은 runInfo 없이 TAGO corridor를 stri
       error: /KORAIL_PLAN_MISMATCH: 2002 departure_time/,
     },
   ];
-  const collect = async (candidate) => {
+  const collect = async (candidate, materialized = tagoMaterializedFixture()) => {
     const requestedOperations = [];
     const result = await collectKorailItxCheongchunPlan({
       serviceKey: "key",
@@ -4109,7 +4109,7 @@ test("current/future partial KORAIL plan은 runInfo 없이 TAGO corridor를 stri
         ...trainNumberEvidence(),
         schemaVersion: 2,
         serviceDate: runDate,
-        ...tagoMaterializedFixture(),
+        ...materialized,
       },
       now,
       fetchImpl: async (url) => {
@@ -4141,6 +4141,29 @@ test("current/future partial KORAIL plan은 runInfo 없이 TAGO corridor를 stri
     assert.deepEqual(result.operations.map(({ operation }) => operation), ["travelerTrainRunPlan2"], relation);
     assert.doesNotMatch(JSON.stringify(result), /RAW-OUTER-(?:DEPARTURE|ARRIVAL)/, relation);
     await assert.rejects(collect(invalid), error);
+  }
+
+  await assert.rejects(
+    collect({ departure: " ", arrival: "RAW-OUTER-ARRIVAL", start: "060000", end: "100000" }),
+    /KORAIL_PLAN_MISMATCH: 2002 endpoint/,
+  );
+  for (const invalidBoundary of [undefined, "not-a-time"]) {
+    const materialized = structuredClone(tagoMaterializedFixture());
+    const first = materialized.stationSequences.find(({ trainNumber }) => trainNumber === "2002").stops[0];
+    const firstRow = materialized.transitStopTimes.find(({ tripId, stopSequence }) => (
+      tripId.includes("-2002-") && stopSequence === 1
+    ));
+    if (invalidBoundary === undefined) {
+      delete first.departureSeconds;
+      delete firstRow.departureSeconds;
+    } else {
+      first.departureSeconds = invalidBoundary;
+      firstRow.departureSeconds = invalidBoundary;
+    }
+    await assert.rejects(
+      collect(cases[2].valid, materialized),
+      /KORAIL_PLAN_MISMATCH: 2002 timestamp_format/,
+    );
   }
 });
 
