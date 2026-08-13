@@ -195,6 +195,19 @@ test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 creden
   });
 });
 
+test("malformed DATA_GO credential은 provider 호출 전에 거부한다", async () => {
+  let calls = 0;
+  await assert.rejects(fetchCurrentStaticSourceResponses({
+    dataGoKrServiceKey: "invalid%ZZ",
+    seoulOpenApiKey: "seoul-key",
+    fetchImpl: async () => {
+      calls += 1;
+      throw new Error("provider must not be called");
+    },
+  }), /DATA_GO_KR_SERVICE_KEY is invalid/);
+  assert.equal(calls, 0);
+});
+
 test("validated four-file output은 absent directory에 한 번만 publish한다", async (context) => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-revalidation-"));
   context.after(() => rm(parent, { recursive: true, force: true }));
