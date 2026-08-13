@@ -276,6 +276,8 @@ export function validateAdmittedSourceDocuments(
     || completeness?.validationMode !== "ADMISSION"
     || completeness?.validationStatus !== "SUPPORTED"
     || completeness?.materialization?.status !== "SUPPORTED"
+    || completeness?.admissionStatus !== source.promotionStatus
+    || completeness?.observedAt !== source.observedAt
     || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
     || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
       .includes(source.promotionStatus)
