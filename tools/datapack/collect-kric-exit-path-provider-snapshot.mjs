@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { classifyKricTransportFailure } from "./collect-kric-accessibility-snapshots.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
 
 const QUERY_KEYS = [
@@ -183,8 +184,8 @@ async function requestProviderBytes({ fetchImpl, queryId, requestTimeoutMs, url 
       signal: AbortSignal.timeout(requestTimeoutMs),
       headers: { accept: "application/json" },
     });
-  } catch {
-    throw new Error(`KRIC EXIT request failed: ${queryId}`);
+  } catch (error) {
+    throw new Error(`KRIC EXIT request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${queryId}`);
   }
   if (!response?.ok) {
     const status = Number.isInteger(response?.status) ? response.status : "unknown";
@@ -193,8 +194,8 @@ async function requestProviderBytes({ fetchImpl, queryId, requestTimeoutMs, url 
   let bytes;
   try {
     bytes = Buffer.from(await response.arrayBuffer());
-  } catch {
-    throw new Error(`KRIC EXIT response read failed: ${queryId}`);
+  } catch (error) {
+    throw new Error(`KRIC EXIT request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${queryId}`);
   }
   if (bytes.length === 0 || bytes.length > MAX_RESPONSE_BYTES) {
     throw new Error(`KRIC EXIT response size invalid: ${queryId}`);

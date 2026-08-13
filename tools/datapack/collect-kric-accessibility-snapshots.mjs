@@ -690,14 +690,14 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
   } catch (error) {
-    throw new Error(`KRIC accessibility request failed: ${classifyTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
+    throw new Error(`KRIC accessibility request failed: ${classifyKricTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
   }
   if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
   let payload;
   try {
     payload = await response.json();
   } catch (error) {
-    const transportFailure = classifyTransportFailure(error);
+    const transportFailure = classifyKricTransportFailure(error);
     if (transportFailure != null) {
       throw new Error(`KRIC accessibility request failed: ${transportFailure}: ${requestIdentity}`);
     }
@@ -746,7 +746,7 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   };
 }
 
-function classifyTransportFailure(error) {
+export function classifyKricTransportFailure(error) {
   const dnsCodes = new Set(["EAI_AGAIN", "ENOTFOUND"]);
   const timeoutCodes = new Set([
     "ETIMEDOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT",
