@@ -9,12 +9,15 @@ import { gzipSync } from "node:zlib";
 
 import {
   buildKricAccessibilityRoster,
+  collectKricStandardAccessibilityObservation,
   collectKricAccessibilitySnapshots,
   KRIC_ACCESSIBILITY_OPERATIONS,
   KRIC_APPROVED_ACCESSIBILITY_OPERATIONS,
   loadCanonicalStationLinesFromBundledIndex,
+  validateKricAccessibilityRawCollection,
   validateKricAccessibilitySnapshotIdentity,
   validateKricAccessibilityProviderGapEvidence,
+  writeKricStandardAccessibilityObservation,
 } from "./collect-kric-accessibility-snapshots.mjs";
 
 const operation = {
@@ -370,6 +373,8 @@ test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero
     fetchImpl: async (url) => {
       seen.push(url.searchParams.get("stinCd"));
       const tuple = Object.fromEntries(url.searchParams);
+      delete tuple.serviceKey;
+      delete tuple.format;
       return response(200, tuple.stinCd === "101" ? [{ ...tuple, dtlLoc: "승강장" }] : []);
     },
   });
@@ -604,6 +609,91 @@ test("transport 실패는 한 번 요청 후 fail closed다", async () => {
     message: "KRIC accessibility request failed: kric-station-elevator/S1/2/202",
   });
   assert.equal(calls, 1);
+});
+
+test("standard observation은 snapshot과 canonical raw inventory를 absent directory에 함께 게시한다", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-observation-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const outputRoot = path.join(directory, "observation");
+  const tuple = {
+    ...roster[0],
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: roster[0].stationId, lineId: roster[0].lineId }],
+  };
+  const observation = await collectKricStandardAccessibilityObservation({
+    roster: [tuple],
+    serviceKey: "must-not-appear",
+    now: new Date("2026-08-14T00:00:00.000Z"),
+    fetchImpl: async () => response(200, [{
+      dtlLoc: "대합실", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
+    }]),
+  });
+
+  assert.equal(observation.snapshot.sourceId, "kric-station-convenience-standard");
+  assert.equal(observation.rawArtifact.requestCount, 1);
+  assert.equal(observation.rawArtifact.snapshotId, observation.snapshot.snapshotId);
+  assert.equal(observation.rawArtifact.snapshotRawSha256, observation.snapshot.rawSha256);
+  assert.equal(observation.rawArtifact.responses[0].rawResponseSha256, observation.snapshot.queries[0].rawResponseSha256);
+  const mismatched = structuredClone(observation);
+  const rawResponseRecord = mismatched.rawArtifact.responses[0];
+  const payload = JSON.parse(Buffer.from(rawResponseRecord.bodyBase64, "base64"));
+  payload.header.resultMsg = "changed but still provider-valid";
+  const changedBytes = Buffer.from(JSON.stringify(payload));
+  rawResponseRecord.bodyBase64 = changedBytes.toString("base64");
+  rawResponseRecord.byteSize = changedBytes.length;
+  rawResponseRecord.rawResponseSha256 = createHash("sha256").update(changedBytes).digest("hex");
+  mismatched.rawArtifact.inventorySha256 = hashForTest(mismatched.rawArtifact.responses.map((item) => {
+    const { bodyBase64: _, ...identity } = item;
+    return identity;
+  }));
+  assert.throws(
+    () => validateKricAccessibilityRawCollection(mismatched.rawArtifact, mismatched.snapshot),
+    /raw collection/u,
+  );
+  assert.doesNotMatch(JSON.stringify(observation), /must-not-appear|serviceKey/u);
+
+  await assert.rejects(
+    collectKricStandardAccessibilityObservation({
+      roster: [tuple],
+      serviceKey: "reflected-secret",
+      fetchImpl: async () => response(200, [{
+        dtlLoc: "reflected-secret", grndDvCd: "1", gubun: "EV", imgPath: "", mlFmlDvCd: "", stinFlor: 1, trfcWeakDvCd: "01",
+      }]),
+    }),
+    /credential reflection rejected/u,
+  );
+
+  const embeddedOutputRoot = path.join(directory, "embedded-observation");
+  await assert.rejects(
+    (async () => {
+      const embedded = await collectKricStandardAccessibilityObservation({
+        roster: [tuple],
+        serviceKey: "reflected-secret",
+        fetchImpl: async () => response(200, [{
+          dtlLoc: "url-prefix-reflected-secret-suffix",
+          grndDvCd: "1",
+          gubun: "EV",
+          imgPath: "",
+          mlFmlDvCd: "",
+          stinFlor: 1,
+          trfcWeakDvCd: "01",
+          "diagnostic-reflected-secret-key": "redacted",
+        }]),
+      });
+      await writeKricStandardAccessibilityObservation({ outputRoot: embeddedOutputRoot, observation: embedded });
+    })(),
+    /credential reflection rejected/u,
+  );
+  await assert.rejects(readFile(path.join(embeddedOutputRoot, "observation.json")), { code: "ENOENT" });
+
+  await writeKricStandardAccessibilityObservation({ outputRoot, observation });
+  const manifest = JSON.parse(await readFile(path.join(outputRoot, "observation.json"), "utf8"));
+  assert.equal(manifest.snapshotId, observation.snapshot.snapshotId);
+  assert.equal(manifest.snapshotRawSha256, observation.snapshot.rawSha256);
+  assert.equal(manifest.credentialRedacted, true);
+  await assert.rejects(
+    writeKricStandardAccessibilityObservation({ outputRoot, observation }),
+    /output root already exists/u,
+  );
 });
 
 function response(status, body, resultCode = "00") {

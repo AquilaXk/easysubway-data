@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { isMainModule } from "../lib/is-main-module.mjs";
 import { validateKricLine4PilotCollectionArtifact } from "./apply-kric-line4-pilot-schedule.mjs";
+import {
+  publishImmutableKricRawObject,
+  requiredAccount,
+  requiredText,
+  requiredUtcInstant,
+  writeKricRawReceipt,
+} from "./lib/kric-raw-object-storage.mjs";
 
 const execFileAsync = promisify(execFileCallback);
 const BUCKET = "easysubway-datapack-sources";
@@ -32,40 +39,19 @@ export async function publishKricTimetableRawArtifact({
   const checksumSha256 = createHash("sha256").update(bytes).digest("base64");
   const dateToken = artifact.capturedAt.replaceAll("-", "");
   const objectKey = `${SOURCE_ID}/${dateToken}/${rawObjectSha256}.json`;
-  const trustedBucketOwner = requiredAccount(expectedBucketOwner, "expectedBucketOwner");
-  const caller = await callerAccount(execFileImpl);
-  if (caller !== trustedBucketOwner) throw new Error("AWS caller account does not match expected bucket owner");
-  const common = [
-    "--bucket", BUCKET,
-    "--key", objectKey,
-    "--expected-bucket-owner", trustedBucketOwner,
-    "--output", "json",
-    "--no-cli-pager",
-  ];
-
-  let idempotentExistingObject = false;
-  try {
-    await runAws(execFileImpl, "upload", [
-      "s3api", "put-object",
-      ...common,
-      "--body", resolvedInput,
-      "--content-type", "application/json",
-      "--checksum-sha256", checksumSha256,
-      "--metadata", `artifact-kind=${ARTIFACT_KIND},source-id=${SOURCE_ID},sha256=${rawObjectSha256}`,
-      "--if-none-match", "*",
-    ]);
-  } catch (error) {
-    if (error?.awsFailureCode !== "PreconditionFailed" && error?.awsFailureCode !== "412") throw error;
-    idempotentExistingObject = true;
-  }
-
-  const { stdout } = await runAws(execFileImpl, "head verification", [
-    "s3api", "head-object",
-    ...common,
-    "--checksum-mode", "ENABLED",
-  ]);
-  const head = JSON.parse(stdout);
-  validateHead(head, { byteSize: bytes.length, checksumSha256, rawObjectSha256 });
+  const { head, trustedBucketOwner, idempotentExistingObject } = await publishImmutableKricRawObject({
+    execFileImpl,
+    errorPrefix: "KRIC raw object",
+    bucket: BUCKET,
+    objectKey,
+    expectedBucketOwner,
+    bodyPath: resolvedInput,
+    checksumSha256,
+    byteSize: bytes.length,
+    rawObjectSha256,
+    artifactKind: ARTIFACT_KIND,
+    sourceId: SOURCE_ID,
+  });
 
   const receipt = {
     schemaVersion: 1,
@@ -84,68 +70,8 @@ export async function publishKricTimetableRawArtifact({
     storedAt: requiredUtcInstant(head.LastModified, "S3 LastModified"),
     idempotentExistingObject,
   };
-  await writeReceipt(resolvedReceipt, receipt);
+  await writeKricRawReceipt(resolvedReceipt, receipt);
   return receipt;
-}
-
-function safeAwsFailureCode(error) {
-  const text = String(error?.stderr ?? error?.message ?? "");
-  return text.match(/\(([A-Za-z][A-Za-z0-9_-]*)\) when calling/)?.[1]
-    ?? text.match(/\b([45]\d\d)\b/)?.[1]
-    ?? "UNKNOWN";
-}
-
-async function callerAccount(execFileImpl) {
-  const { stdout } = await runAws(execFileImpl, "caller identity", [
-    "sts", "get-caller-identity", "--query", "Account", "--output", "text", "--no-cli-pager",
-  ]);
-  const account = stdout.trim();
-  if (!/^\d{12}$/.test(account)) throw new Error("AWS caller account is invalid");
-  return account;
-}
-
-async function runAws(execFileImpl, context, args) {
-  try {
-    return await execFileImpl("aws", args, { maxBuffer: 1024 * 1024 });
-  } catch (error) {
-    const failureCode = safeAwsFailureCode(error);
-    const sanitized = new Error(`KRIC raw object ${context} failed: ${failureCode}`);
-    sanitized.awsFailureCode = failureCode;
-    throw sanitized;
-  }
-}
-
-function validateHead(head, expected) {
-  if (head?.ContentLength !== expected.byteSize
-    || head.ChecksumSHA256 !== expected.checksumSha256
-    || head.Metadata?.sha256 !== expected.rawObjectSha256
-    || head.Metadata?.["artifact-kind"] !== ARTIFACT_KIND
-    || head.Metadata?.["source-id"] !== SOURCE_ID) {
-    throw new Error("S3 object identity mismatch");
-  }
-}
-
-async function writeReceipt(receiptPath, receipt) {
-  await mkdir(path.dirname(receiptPath), { recursive: true });
-  const body = `${JSON.stringify(receipt, null, 2)}\n`;
-  try {
-    await writeFile(receiptPath, body, { flag: "wx" });
-  } catch (error) {
-    if (error?.code !== "EEXIST") throw error;
-    const existing = await readFile(receiptPath, "utf8");
-    if (existing !== body) throw new Error("raw receipt already exists with different bytes");
-  }
-}
-
-function requiredText(value, label) {
-  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
-  return value.trim();
-}
-
-function requiredAccount(value, label) {
-  const text = requiredText(value, label);
-  if (!/^\d{12}$/.test(text)) throw new Error(`${label} is invalid`);
-  return text;
 }
 
 function requiredSha256(value, label) {
@@ -162,13 +88,6 @@ function requiredPositiveInteger(value, label) {
 
 function requireEqual(actual, expected, label) {
   if (actual !== expected) throw new Error(`KRIC ${label} mismatch`);
-}
-
-function requiredUtcInstant(value, label) {
-  const text = requiredText(value, label);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(text)
-    || Number.isNaN(Date.parse(text))) throw new Error(`${label} must be a UTC instant`);
-  return text;
 }
 
 function parseArgs(argv) {
