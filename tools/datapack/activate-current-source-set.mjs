@@ -1243,22 +1243,22 @@ function validationBuildSpec(spec, temporaryRoot) {
   return next;
 }
 
-async function validatePreparedCandidate({ temporaryRoot, spec, buildNow }) {
+export async function validatePreparedCandidate({
+  temporaryRoot,
+  spec,
+  buildNow,
+  runNodeImpl = runNode,
+}) {
   const validationSpecPath = await writeTempFile(
     temporaryRoot,
     "validation/candidate-build-spec.json",
     jsonBytes(validationBuildSpec(spec, temporaryRoot)),
   );
   const outputPath = path.join(temporaryRoot, "validation/output");
-  await runNode("tools/datapack/build-datapack.mjs", [
+  await runNodeImpl("tools/datapack/build-datapack.mjs", [
     "--build-spec", validationSpecPath,
     "--output", outputPath,
   ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
-  await runNode("tools/datapack/validate-datapack.mjs", [
-    "--manifest", path.join(outputPath, "current.json"),
-    "--root", outputPath,
-    "--require-production",
-  ]);
 }
 
 function validateBuildNow(buildNow, handoff) {

@@ -13,6 +13,7 @@ import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
   stageValidationItxTopologyEvidence,
+  validatePreparedCandidate,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
 import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 
@@ -21,6 +22,38 @@ const root = path.resolve(import.meta.dirname, "../..");
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
+
+test("prepared current candidate 검증은 build를 수행하고 final release eligibility를 선점하지 않는다", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "prepared-current-candidate-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const calls = [];
+  await validatePreparedCandidate({
+    temporaryRoot,
+    buildNow: "2026-08-13T16:46:31Z",
+    spec: {
+      fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+      itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
+      itxTopologyEvidenceSha256: "a".repeat(64),
+      networkEdgeEvidence: {
+        sourceInventory: { path: "tools/datapack/source-inventory.json" },
+        capitalTopology: { path: "tools/datapack/sources/capital-route-topology-20260724.json" },
+        capitalTopologyCandidate: { path: "tools/datapack/sources/capital-route-topology-20260813.json" },
+        capitalTopologyReverification: {
+          path: "tools/datapack/release/capital-topology-reverification-20260813.json",
+        },
+        itxCoverageContract: { path: "tools/datapack/itx-cheongchun-coverage-contract.json" },
+      },
+    },
+    async runNodeImpl(script, args, options) {
+      calls.push({ script, args, options });
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].script, "tools/datapack/build-datapack.mjs");
+  assert.deepEqual(calls[0].args.slice(-2), ["--output", path.join(temporaryRoot, "validation/output")]);
+  assert.equal(calls[0].options.env.EASYSUBWAY_DATAPACK_BUILD_NOW, "2026-08-13T16:46:31Z");
+});
 
 test("activation loader는 historical binding과 서울 공식 current topology position bytes를 함께 로드한다", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-position-snapshots-"));
