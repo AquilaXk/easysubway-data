@@ -33,6 +33,13 @@ const STATIC_REVALIDATION_EVIDENCE_KEYS = Object.freeze([
   "providerRecordHashesSha256", "responseSha256", "outcome", "credentialRedacted",
   "evidenceSha256",
 ]);
+const STATIC_CHANGE_ADMISSION_EVIDENCE_KEYS = Object.freeze([
+  "schemaVersion", "artifactKind", "contractVersion", "sourceId", "previousSnapshotId",
+  "observedAt", "operation", "rowCount", "canonicalRawSha256", "schemaFingerprint",
+  "redactedRequestFingerprint", "providerRecordHashesSha256", "responseSha256",
+  "canonicalPackSha256", "canonicalMembershipSha256", "rawObjectUri", "outcome",
+  "credentialRedacted", "evidenceSha256",
+]);
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -203,7 +210,86 @@ function exactObjectKeys(value, expected) {
     && Object.keys(value).every((key, index) => key === expected[index]);
 }
 
-function validateStaticRevalidation(previous, snapshot, evidence, sourceId) {
+function validateStaticSourceChangeAdmission(
+  previous,
+  snapshot,
+  evidence,
+  sourceId,
+  canonicalPackSha256,
+) {
+  if (!exactObjectKeys(evidence, STATIC_CHANGE_ADMISSION_EVIDENCE_KEYS)) {
+    throw new Error("static revalidation evidence shape mismatch");
+  }
+  const { evidenceSha256, ...payload } = evidence;
+  const observedMillis = requiredUtcInstant(evidence.observedAt, "static revalidation observedAt");
+  const expectedDate = evidence.observedAt.slice(0, 10).replaceAll("-", "");
+  const expectedRawObjectUri =
+    `oci://easysubway-datapacks/source-raw/${sourceId}/${expectedDate}/${snapshot.rawSha256}.json`;
+  const expectedDiff = buildSnapshotDiff(previous, snapshot);
+  if (sourceId !== "seoulmetro-station-line-info"
+    || evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "current-static-source-change-admission-evidence"
+    || evidence.contractVersion !== "1.0.0"
+    || evidence.sourceId !== sourceId
+    || evidence.previousSnapshotId !== previous.snapshotId
+    || evidence.observedAt !== snapshot.retrievedAt
+    || evidence.operation !== "seoulmetro-line4-stations-one-to-five"
+    || evidence.rowCount !== 5
+    || evidence.canonicalRawSha256 !== snapshot.rawSha256
+    || evidence.schemaFingerprint !== snapshot.schemaFingerprint
+    || evidence.redactedRequestFingerprint !== snapshot.redactedRequestFingerprint
+    || evidence.providerRecordHashesSha256 !== sha256(JSON.stringify(snapshot.providerRecordHashes))
+    || !SHA256.test(evidence.responseSha256 ?? "")
+    || evidence.canonicalPackSha256 !== canonicalPackSha256
+    || !SHA256.test(evidence.canonicalMembershipSha256 ?? "")
+    || evidence.rawObjectUri !== snapshot.rawObjectUri
+    || evidence.outcome !== "CONTENT_CHANGE_ADMITTED"
+    || evidence.credentialRedacted !== true
+    || evidenceSha256 !== sha256(JSON.stringify(payload))
+    || snapshot.sourceId !== sourceId
+    || snapshot.snapshotId !== `${sourceId}-change-admitted-${expectedDate}`
+    || snapshot.previousSnapshotId !== previous.snapshotId
+    || snapshot.rawObjectUri !== expectedRawObjectUri
+    || snapshot.provider !== previous.provider
+    || snapshot.sourceUpdatedAt !== previous.sourceUpdatedAt
+    || snapshot.rowCount !== previous.rowCount
+    || snapshot.coverageCount !== (previous.coverageCount ?? previous.rowCount)
+    || snapshot.schemaFingerprint !== previous.schemaFingerprint
+    || snapshot.rawSha256 === previous.rawSha256
+    || snapshot.redactedRequestFingerprint === previous.redactedRequestFingerprint
+    || !Array.isArray(snapshot.providerRecordHashes)
+    || snapshot.providerRecordHashes.length !== 5
+    || snapshot.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
+    || snapshot.freshnessExpiresAt
+      !== new Date(observedMillis + 30 * 24 * 60 * 60 * 1000).toISOString()
+    || snapshot.rawRetentionExpiresAt
+      !== new Date(observedMillis + 90 * 24 * 60 * 60 * 1000).toISOString()
+    || snapshot.revalidationEvidenceSha256 !== evidenceSha256
+    || JSON.stringify(snapshot.diffSummary) !== JSON.stringify(expectedDiff)
+    || JSON.stringify(expectedDiff) !== JSON.stringify({
+      status: "CHANGED",
+      rawHashChanged: true,
+      schemaHashChanged: false,
+      requestHashChanged: true,
+      sourceUpdatedAtChanged: false,
+      rowDelta: 0,
+      coverageDelta: 0,
+    })) {
+    throw new Error("static revalidation evidence identity mismatch");
+  }
+}
+
+function validateStaticRevalidation(previous, snapshot, evidence, sourceId, canonicalPackSha256) {
+  if (evidence?.artifactKind === "current-static-source-change-admission-evidence") {
+    validateStaticSourceChangeAdmission(
+      previous,
+      snapshot,
+      evidence,
+      sourceId,
+      canonicalPackSha256,
+    );
+    return;
+  }
   if (!exactObjectKeys(evidence, STATIC_REVALIDATION_EVIDENCE_KEYS)) {
     throw new Error("static revalidation evidence shape mismatch");
   }
@@ -246,6 +332,7 @@ export function activateStaticSourceRevalidations({
   sourceSnapshots,
   sourceInventory,
   revalidations,
+  canonicalPackSha256 = null,
   buildNow,
   observationDate,
 }) {
@@ -274,7 +361,13 @@ export function activateStaticSourceRevalidations({
       ({ snapshotId }) => snapshotId === heads[sourceId],
       `static revalidation previous ${sourceId}`,
     );
-    validateStaticRevalidation(previous, revalidation.snapshot, revalidation.evidence, sourceId);
+    validateStaticRevalidation(
+      previous,
+      revalidation.snapshot,
+      revalidation.evidence,
+      sourceId,
+      canonicalPackSha256,
+    );
     const observedMillis = requiredUtcInstant(
       revalidation.snapshot.retrievedAt,
       "static revalidation retrievedAt",
@@ -299,6 +392,11 @@ export function activateStaticSourceRevalidations({
     source.admissionEvidence.revalidationEvidenceSha256 = revalidation.evidence.evidenceSha256;
     source.admissionEvidence.revalidationResponseSha256 = revalidation.evidence.responseSha256;
     source.admissionEvidence.revalidatedAt = revalidation.snapshot.retrievedAt;
+    if (revalidation.evidence.outcome === "CONTENT_CHANGE_ADMITTED") {
+      source.admissionEvidence.rawSha256 = revalidation.snapshot.rawSha256;
+      source.admissionEvidence.schemaFingerprint = revalidation.snapshot.schemaFingerprint;
+      source.admissionEvidence.rawObjectUri = revalidation.snapshot.rawObjectUri;
+    }
   }
   validateLineage(nextSnapshots);
   return { sourceSnapshots: nextSnapshots, sourceInventory: nextInventory };
@@ -463,6 +561,7 @@ export function buildCurrentSourcePrimaryOutputs({
   sourceInventory,
   staticRevalidations,
   staticRevalidationDate,
+  canonicalPackBytes = null,
   productionInput,
   officialOdFareQuotes,
   baselineTopology,
@@ -487,6 +586,7 @@ export function buildCurrentSourcePrimaryOutputs({
       sourceSnapshots,
       sourceInventory,
       revalidations: staticRevalidations,
+      canonicalPackSha256: canonicalPackBytes == null ? null : sha256(canonicalPackBytes),
       buildNow,
       observationDate: staticRevalidationDate,
     });
@@ -1172,6 +1272,7 @@ export async function generateCurrentSourceActivation({
           evidence: parseJson(seoulRevalidationEvidenceBytes, "Seoul revalidation evidence"),
         },
       ],
+      canonicalPackBytes: canonicalBytes,
       productionInput: parseJson(productionInputBytes, "production input"),
       officialOdFareQuotes,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
