@@ -24,8 +24,7 @@
     "seoulmetro-cyberstation-route-map",
     "kric-subway-timetable",
     "seoul-metro-accessibility",
-    "kric-station-convenience-standard",
-    "seoul-metro-official-od-fares"
+    "kric-station-convenience-standard"
   ],
   "supportedV1Scope": {
     "scopeId": "capital_pilot_android_v1",
@@ -96,15 +95,6 @@
         "kric-subway-timetable"
       ],
       "evidence": "KRIC subwayTimetableExp 4호선 상록수-사당 pilot 수집 및 trip/stop sequence 재구성 evidence"
-    },
-    {
-      "regionId": "capital",
-      "operatorId": "seoul-metro",
-      "sourceDomain": "official_od_fares",
-      "sourceIds": [
-        "seoul-metro-official-od-fares"
-      ],
-      "evidence": "승인된 서울교통공사 양방향 OD fare snapshot"
     }
   ],
   "retiredStationIds": [
@@ -261,7 +251,7 @@
       "stationCode": "433",
       "lineSequence": 28,
       "platformInfo": "당고개 방면 / 오이도 방면",
-      "lastVerifiedAt": "2026-08-09T12:04:20.479Z",
+      "lastVerifiedAt": "2026-07-09T00:00:00.000Z",
       "providerStationId": "MTRS14433"
     },
     {
@@ -277,7 +267,7 @@
       "stationCode": "448",
       "lineSequence": 43,
       "platformInfo": "당고개 방면 / 오이도 방면",
-      "lastVerifiedAt": "2026-08-09T12:04:20.479Z",
+      "lastVerifiedAt": "2026-07-09T00:00:00.000Z",
       "providerStationId": "MTRKR4448"
     }
   ],
@@ -709,10 +699,10 @@
   "representativeRouteRegressions": [],
   "scheduleProvenance": {
     "sourceId": "kric-subway-timetable",
-    "sourceSnapshotId": "kric-subway-timetable-line4-pilot-20260809",
-    "providerRecordHash": "d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064",
-    "evidenceHash": "4eb89e17e2aea7bdfdcd888dcec2152de85adfbefb3e727f7e228f46a72311ce",
-    "retrievedAt": "2026-08-09T12:04:20.479Z"
+    "sourceSnapshotId": "kric-subway-timetable-line4-pilot-20260709",
+    "providerRecordHash": "f05cf6faa53ef451e87e0836c8b414a1c7a1dac2d9bae67da499972aa843a30e",
+    "evidenceHash": "1a3c86070f7e59ebffbfde2b01ce2faa10d84e86759533793dafbed0a77a4ba9",
+    "retrievedAt": "2026-07-09T00:00:00.000Z"
   },
   "serviceCalendars": [
     {
@@ -12090,34 +12080,5 @@
       "date": "20261225",
       "exceptionType": 2
     }
-  ],
-  "officialOdFareQuotes": [
-    {
-      "originStationId": "station-sangnoksu",
-      "destinationStationId": "station-sadang",
-      "sourceId": "seoul-metro-official-od-fares",
-      "snapshotId": "seoul-metro-official-od-fares-20260712",
-      "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
-      "gnrlCardFare": 1950,
-      "gnrlCashFare": 2050,
-      "yungCardFare": 1220,
-      "yungCashFare": 2050,
-      "childCardFare": 750,
-      "childCashFare": 750
-    },
-    {
-      "originStationId": "station-sadang",
-      "destinationStationId": "station-sangnoksu",
-      "sourceId": "seoul-metro-official-od-fares",
-      "snapshotId": "seoul-metro-official-od-fares-20260712",
-      "mappingLedgerHash": "4a487cf9eaacf211a38549f33035555917010b7e6fb0ba6e9a92c30dae50661a",
-      "gnrlCardFare": 1950,
-      "gnrlCashFare": 2050,
-      "yungCardFare": 1220,
-      "yungCashFare": 2050,
-      "childCardFare": 750,
-      "childCashFare": 750
-    }
-  ],
-  "routeServiceArtifactEvidence": []
+  ]
 }
