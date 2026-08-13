@@ -68,6 +68,7 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
   "tools/datapack/probe-korail-train-operation-api.mjs": "tools/datapack/probe-korail-train-operation-api.test.mjs",
   "tools/datapack/probe-seoul-fare-api.mjs": "tools/datapack/probe-seoul-fare-api.test.mjs",
   "tools/datapack/probe-tago-train-date-semantics.mjs": "tools/datapack/probe-tago-train-date-semantics.test.mjs",
+  "tools/datapack/revalidate-current-static-network-sources.mjs": "tools/datapack/revalidate-current-static-network-sources.test.mjs",
   "tools/datapack/run-current-itx-collection.mjs": "tools/datapack/run-current-itx-collection.test.mjs",
   "tools/datapack/validate-tago-schedule-sample.mjs": "tools/datapack/plan-tago-schedule-collection.test.mjs",
 });

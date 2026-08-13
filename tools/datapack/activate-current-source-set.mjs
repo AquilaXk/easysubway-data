@@ -23,6 +23,16 @@ import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
+const STATIC_REVALIDATION_SOURCE_IDS = Object.freeze([
+  "molit-urban-rail-full-route",
+  "seoulmetro-station-line-info",
+]);
+const STATIC_REVALIDATION_EVIDENCE_KEYS = Object.freeze([
+  "schemaVersion", "artifactKind", "contractVersion", "sourceId", "previousSnapshotId",
+  "observedAt", "operation", "rowCount", "canonicalRawSha256", "schemaFingerprint",
+  "providerRecordHashesSha256", "responseSha256", "outcome", "credentialRedacted",
+  "evidenceSha256",
+]);
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -187,6 +197,113 @@ function activateInventory(sourceInventory, handoff) {
   return next;
 }
 
+function exactObjectKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === expected.length
+    && Object.keys(value).every((key, index) => key === expected[index]);
+}
+
+function validateStaticRevalidation(previous, snapshot, evidence, sourceId) {
+  if (!exactObjectKeys(evidence, STATIC_REVALIDATION_EVIDENCE_KEYS)) {
+    throw new Error("static revalidation evidence shape mismatch");
+  }
+  const { evidenceSha256, ...payload } = evidence;
+  const observedMillis = requiredUtcInstant(evidence.observedAt, "static revalidation observedAt");
+  const expectedDate = evidence.observedAt.slice(0, 10).replaceAll("-", "");
+  const expectedOperation = sourceId === "molit-urban-rail-full-route"
+    ? "molit-urban-rail-full-route-page-1-five-rows"
+    : "seoulmetro-line4-stations-one-to-five";
+  if (evidence.schemaVersion !== 1
+    || evidence.artifactKind !== "current-static-source-revalidation-evidence"
+    || evidence.contractVersion !== "1.0.0"
+    || evidence.sourceId !== sourceId
+    || evidence.previousSnapshotId !== previous.snapshotId
+    || evidence.observedAt !== snapshot.retrievedAt
+    || evidence.operation !== expectedOperation
+    || evidence.rowCount !== 5
+    || evidence.canonicalRawSha256 !== snapshot.rawSha256
+    || evidence.schemaFingerprint !== snapshot.schemaFingerprint
+    || evidence.providerRecordHashesSha256 !== sha256(JSON.stringify(snapshot.providerRecordHashes))
+    || !SHA256.test(evidence.responseSha256 ?? "")
+    || evidence.outcome !== "NO_CHANGE_REVALIDATED"
+    || evidence.credentialRedacted !== true
+    || evidenceSha256 !== sha256(JSON.stringify(payload))
+    || snapshot.sourceId !== sourceId
+    || snapshot.snapshotId !== `${sourceId}-revalidated-${expectedDate}`
+    || snapshot.previousSnapshotId !== previous.snapshotId
+    || snapshot.rawObjectUri !== previous.rawObjectUri
+    || snapshot.provider !== previous.provider
+    || JSON.stringify(snapshot.providerRecordHashes) !== JSON.stringify(previous.providerRecordHashes)
+    || snapshot.freshnessExpiresAt !== new Date(observedMillis + 30 * 24 * 60 * 60 * 1000).toISOString()
+    || snapshot.rawRetentionExpiresAt !== new Date(observedMillis + 90 * 24 * 60 * 60 * 1000).toISOString()
+    || snapshot.revalidationEvidenceSha256 !== evidenceSha256
+    || snapshot.diffSummary?.status !== "NO_CHANGE") {
+    throw new Error("static revalidation evidence identity mismatch");
+  }
+}
+
+export function activateStaticSourceRevalidations({
+  sourceSnapshots,
+  sourceInventory,
+  revalidations,
+  buildNow,
+  observationDate,
+}) {
+  if (!Array.isArray(sourceSnapshots)
+    || !Array.isArray(revalidations)
+    || revalidations.length !== STATIC_REVALIDATION_SOURCE_IDS.length
+    || sourceInventory?.schemaVersion !== 1
+    || sourceInventory.artifactKind !== "production-source-inventory"
+    || !Array.isArray(sourceInventory.sources)) {
+    throw new Error("static revalidation inputs are invalid");
+  }
+  const buildMillis = requiredUtcInstant(buildNow, "static revalidation buildNow");
+  if (!/^[0-9]{8}$/u.test(observationDate ?? "")) {
+    throw new Error("static revalidation observation date mismatch");
+  }
+  const heads = validateLineage(sourceSnapshots).headsBySource;
+  const nextSnapshots = structuredClone(sourceSnapshots);
+  const nextInventory = structuredClone(sourceInventory);
+  for (const [index, sourceId] of STATIC_REVALIDATION_SOURCE_IDS.entries()) {
+    const revalidation = revalidations[index];
+    if (revalidation?.snapshot?.sourceId !== sourceId || revalidation?.evidence?.sourceId !== sourceId) {
+      throw new Error("static revalidation source order mismatch");
+    }
+    const previous = requireOne(
+      sourceSnapshots,
+      ({ snapshotId }) => snapshotId === heads[sourceId],
+      `static revalidation previous ${sourceId}`,
+    );
+    validateStaticRevalidation(previous, revalidation.snapshot, revalidation.evidence, sourceId);
+    const observedMillis = requiredUtcInstant(
+      revalidation.snapshot.retrievedAt,
+      "static revalidation retrievedAt",
+    );
+    const freshnessMillis = requiredUtcInstant(
+      revalidation.snapshot.freshnessExpiresAt,
+      "static revalidation freshnessExpiresAt",
+    );
+    if (revalidation.snapshot.retrievedAt.slice(0, 10).replaceAll("-", "") !== observationDate) {
+      throw new Error("static revalidation observation date mismatch");
+    }
+    if (observedMillis > buildMillis || buildMillis >= freshnessMillis) {
+      throw new Error("static revalidation is outside build time");
+    }
+    nextSnapshots.push(structuredClone(revalidation.snapshot));
+    const source = requireOne(nextInventory.sources, ({ id }) => id === sourceId, sourceId);
+    if (!source.admissionEvidence || typeof source.admissionEvidence !== "object") {
+      throw new Error("static revalidation inventory admission evidence is missing");
+    }
+    source.retrievedAt = revalidation.snapshot.retrievedAt.slice(0, 10);
+    source.admissionEvidence.snapshotId = revalidation.snapshot.snapshotId;
+    source.admissionEvidence.revalidationEvidenceSha256 = revalidation.evidence.evidenceSha256;
+    source.admissionEvidence.revalidationResponseSha256 = revalidation.evidence.responseSha256;
+    source.admissionEvidence.revalidatedAt = revalidation.snapshot.retrievedAt;
+  }
+  validateLineage(nextSnapshots);
+  return { sourceSnapshots: nextSnapshots, sourceInventory: nextInventory };
+}
+
 export function activateIncheonTopologyAdmission({
   sourceInventory,
   snapshot,
@@ -344,6 +461,8 @@ export function buildCurrentSourcePrimaryOutputs({
   rawArtifactBytes,
   sourceSnapshots,
   sourceInventory,
+  staticRevalidations,
+  staticRevalidationDate,
   productionInput,
   officialOdFareQuotes,
   baselineTopology,
@@ -362,15 +481,24 @@ export function buildCurrentSourcePrimaryOutputs({
 }) {
   validateHandoff(handoff, rawArtifact, rawArtifactBytes);
   if (!Array.isArray(sourceSnapshots)) throw new Error("current source snapshots are required");
+  const staticSources = staticRevalidations == null
+    ? { sourceSnapshots: structuredClone(sourceSnapshots), sourceInventory: structuredClone(sourceInventory) }
+    : activateStaticSourceRevalidations({
+      sourceSnapshots,
+      sourceInventory,
+      revalidations: staticRevalidations,
+      buildNow,
+      observationDate: staticRevalidationDate,
+    });
   const previous = requireOne(
-    sourceSnapshots,
+    staticSources.sourceSnapshots,
     ({ snapshotId }) => snapshotId === handoff.previousSnapshotId,
     "previous KRIC source snapshot",
   );
-  if (sourceSnapshots.some(({ snapshotId }) => snapshotId === handoff.snapshotId)) {
+  if (staticSources.sourceSnapshots.some(({ snapshotId }) => snapshotId === handoff.snapshotId)) {
     throw new Error("current KRIC source snapshot is already present");
   }
-  const nextSnapshots = [...structuredClone(sourceSnapshots), currentKricSnapshot(previous, handoff)];
+  const nextSnapshots = [...staticSources.sourceSnapshots, currentKricSnapshot(previous, handoff)];
   validateLineage(nextSnapshots);
 
   const capital = loadCapitalRouteTopologySnapshot(currentTopology);
@@ -396,7 +524,7 @@ export function buildCurrentSourcePrimaryOutputs({
     throw new Error("current capital topology snapshot is not active at buildNow");
   }
 
-  const inventory = activateInventory(sourceInventory, handoff);
+  const inventory = activateInventory(staticSources.sourceInventory, handoff);
   const capitalInventory = rebindTopologyAdmissionsImpl({
     inventory,
     topology: capital,
@@ -957,6 +1085,10 @@ export async function requireCleanBuilder(builderGitSha, {
 export async function generateCurrentSourceActivation({
   capitalTopologyPath,
   incheonTopologyPath,
+  molitRevalidationSnapshotPath,
+  molitRevalidationEvidencePath,
+  seoulRevalidationSnapshotPath,
+  seoulRevalidationEvidencePath,
   builderGitSha,
   buildNow,
   check = false,
@@ -969,6 +1101,24 @@ export async function generateCurrentSourceActivation({
       .test(incheonTopologyPath ?? "")) {
     throw new Error("current topology inputs must be tracked source snapshot paths");
   }
+  const revalidationPaths = [
+    [molitRevalidationSnapshotPath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/molit-urban-rail-full-route-snapshot\.json$/u],
+    [molitRevalidationEvidencePath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/molit-urban-rail-full-route-revalidation-evidence\.json$/u],
+    [seoulRevalidationSnapshotPath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/seoulmetro-station-line-info-snapshot\.json$/u],
+    [seoulRevalidationEvidencePath, /^tools\/datapack\/sources\/current-static-revalidation-[0-9]{8}\/seoulmetro-station-line-info-revalidation-evidence\.json$/u],
+  ];
+  if (revalidationPaths.some(([value, pattern]) => !pattern.test(value ?? ""))) {
+    throw new Error("current static revalidation inputs must be tracked source evidence paths");
+  }
+  const revalidationDirectories = new Set(revalidationPaths.map(([value]) => path.dirname(value)));
+  if (revalidationDirectories.size !== 1) {
+    throw new Error("current static revalidation inputs must share one observation directory");
+  }
+  const revalidationDateMatch = /current-static-revalidation-([0-9]{8})$/u
+    .exec([...revalidationDirectories][0]);
+  if (revalidationDateMatch == null) {
+    throw new Error("current static revalidation observation directory is invalid");
+  }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
   await requireCleanBuilder(builderGitSha, {
@@ -980,7 +1130,9 @@ export async function generateCurrentSourceActivation({
   try {
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
-      canonicalBytes, itxCurrentTopologyAdmissionBytes] = await Promise.all([
+      canonicalBytes, itxCurrentTopologyAdmissionBytes,
+      molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
+      seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
@@ -992,6 +1144,10 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/release/candidate-build-spec.json"),
       readRegularBytes(root, "tools/datapack/release/capital-production-canonical-pack.json"),
       readRegularBytes(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
+      readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
+      readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
+      readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
+      readRegularBytes(root, seoulRevalidationEvidencePath, "Seoul revalidation evidence"),
     ]);
     const sourceInventory = parseJson(sourceInventoryBytes, "source inventory");
     const quoteBundle = parseJson(quoteBundleBytes, "official OD fare quote bundle");
@@ -1005,6 +1161,17 @@ export async function generateCurrentSourceActivation({
       rawArtifactBytes: rawArtifact.bytes,
       sourceSnapshots: parseJson(sourceSnapshotBytes, "source snapshots"),
       sourceInventory,
+      staticRevalidationDate: revalidationDateMatch[1],
+      staticRevalidations: [
+        {
+          snapshot: parseJson(molitRevalidationSnapshotBytes, "MOLIT revalidation snapshot"),
+          evidence: parseJson(molitRevalidationEvidenceBytes, "MOLIT revalidation evidence"),
+        },
+        {
+          snapshot: parseJson(seoulRevalidationSnapshotBytes, "Seoul revalidation snapshot"),
+          evidence: parseJson(seoulRevalidationEvidenceBytes, "Seoul revalidation evidence"),
+        },
+      ],
       productionInput: parseJson(productionInputBytes, "production input"),
       officialOdFareQuotes,
       baselineTopology: parseJson(baselineTopologyBytes, "baseline capital topology"),
@@ -1121,7 +1288,10 @@ export function parseCurrentSourceActivationArgs(argv) {
       args.check = true;
       continue;
     }
-    if (!["--capital-topology", "--incheon-topology", "--builder-git-sha", "--build-now"].includes(flag)) {
+    if (!["--capital-topology", "--incheon-topology",
+      "--molit-revalidation-snapshot", "--molit-revalidation-evidence",
+      "--seoul-revalidation-snapshot", "--seoul-revalidation-evidence",
+      "--builder-git-sha", "--build-now"].includes(flag)) {
       throw new Error(`unknown activation argument: ${flag ?? ""}`);
     }
     const value = argv[index + 1];
@@ -1131,7 +1301,10 @@ export function parseCurrentSourceActivationArgs(argv) {
     args[key] = value;
     index += 1;
   }
-  for (const key of ["capital_topology", "incheon_topology", "builder_git_sha", "build_now"]) {
+  for (const key of ["capital_topology", "incheon_topology",
+    "molit_revalidation_snapshot", "molit_revalidation_evidence",
+    "seoul_revalidation_snapshot", "seoul_revalidation_evidence",
+    "builder_git_sha", "build_now"]) {
     if (!args[key]) throw new Error(`--${key.replaceAll("_", "-")} is required`);
   }
   return args;
@@ -1142,6 +1315,10 @@ async function main() {
   const result = await generateCurrentSourceActivation({
     capitalTopologyPath: args.capital_topology,
     incheonTopologyPath: args.incheon_topology,
+    molitRevalidationSnapshotPath: args.molit_revalidation_snapshot,
+    molitRevalidationEvidencePath: args.molit_revalidation_evidence,
+    seoulRevalidationSnapshotPath: args.seoul_revalidation_snapshot,
+    seoulRevalidationEvidencePath: args.seoul_revalidation_evidence,
     builderGitSha: args.builder_git_sha,
     buildNow: args.build_now,
     check: args.check,
