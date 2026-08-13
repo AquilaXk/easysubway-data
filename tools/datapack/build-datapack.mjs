@@ -1543,6 +1543,7 @@ export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission
     || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== expectedTopologySourceSha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
+  if (currentAdmission == null) validateCurrentItxApprovalIdentity(reference);
   if (contract.coverageStates?.schedule_timetable !== "MISSING"
     || contract.claimGate?.currentStatus !== "NO_GO"
     || contract.claimGate?.supportClaimAllowed !== false) {
@@ -1730,6 +1731,16 @@ export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission
       },
     },
   };
+}
+
+function validateCurrentItxApprovalIdentity(reference) {
+  const promotion = reference?.promotion;
+  if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway\/issues\/2135#issuecomment-[1-9][0-9]*$/u
+      .test(promotion.approvalUrl ?? "")
+    || promotion.approvedArtifactSha256 !== reference.sha256) {
+    throw new Error("ITX network edge approval identity is invalid");
+  }
 }
 
 function applyItxNetworkEdgeEvidence(pack, admission) {

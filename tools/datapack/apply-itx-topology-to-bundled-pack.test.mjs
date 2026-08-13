@@ -18,6 +18,7 @@ import {
   assertStoredTopology,
   deriveTopology,
   parseAuthenticatedAdmittedSourceDocuments,
+  projectItxTopologyIntoCanonicalFixture,
   validateAdmittedSourceDocuments,
   validateTopologyEvidence,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
@@ -98,6 +99,8 @@ async function admittedDocuments() {
   source.completenessEvidenceSha256 = contract.sourceTimetableArtifact.completenessEvidenceSha256;
   const sourceBytes = Buffer.from(JSON.stringify(source));
   contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
+  contract.sourceTimetableArtifact.promotion.approvedArtifactSha256 =
+    contract.sourceTimetableArtifact.sha256;
   const reference = contract.sourceTimetableArtifact;
   return {
     contract,
@@ -120,6 +123,7 @@ function rebindAdmissionDocuments(documents) {
   documents.source.evidenceHash = sha256(JSON.stringify(sourceWithoutEvidenceHash));
   documents.sourceBytes = Buffer.from(`${JSON.stringify(documents.source, null, 2)}\n`);
   documents.reference.sha256 = sha256(documents.sourceBytes);
+  documents.reference.promotion.approvedArtifactSha256 = documents.reference.sha256;
   return documents;
 }
 
@@ -651,7 +655,7 @@ test("custom contract는 legacy tracked source를 승인하지 않고 sentinel �
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--contract", contractPath,
     "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
   ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } }),
-  /legacy admission is forbidden/);
+  /approval identity is invalid/);
   assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
 });
 
@@ -997,6 +1001,29 @@ test("OWNER-approved current source는 exact static topology input에 결속된�
   }, admittedTopologyInputs.get(reference.sha256));
 });
 
+test("OWNER-approved current source는 approval URL·approved SHA·mode를 exact 결속한다", async (context) => {
+  const cases = [
+    ["missing-url", (reference) => { reference.promotion.approvalUrl = ""; }],
+    ["wrong-approved-sha", (reference) => { reference.promotion.approvedArtifactSha256 = "0".repeat(64); }],
+    ["wrong-mode", (reference) => { reference.promotion.mode = "UNCHANGED_AUTO"; }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
+        await trackedLegacyDocuments();
+      mutate(reference);
+      assert.throws(() => validateAdmittedSourceDocuments(
+        contract,
+        reference,
+        source,
+        completeness,
+        sha256(sourceBytes),
+        sha256(completenessBytes),
+      ), /approval identity|legacy admission/);
+    });
+  }
+});
+
 test("OWNER-approved current source topology는 실제 directed stop pattern을 보존한다", async () => {
   const { source } = await trackedLegacyDocuments();
   const topology = deriveTopology(source);
@@ -1008,6 +1035,40 @@ test("OWNER-approved current source topology는 실제 directed stop pattern을 
   assert.equal(topology.edges.length, 84);
   assert.equal(unpairedCount, 18);
   assert.equal(topology.servedStations.length, 14);
+});
+
+test("production canonical fixture는 current source 84 directed edge를 exact 투영한다", async () => {
+  const [{ source }, fixture] = await Promise.all([
+    trackedLegacyDocuments(),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const expected = deriveTopology(source).edges
+    .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
+    .sort();
+  const actual = fixture.packs.find(({ id }) => id === "capital").networkEdges
+    .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+    .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
+    .sort();
+  assert.equal(actual.length, 84);
+  assert.deepEqual(actual, expected);
+});
+
+test("canonical fixture projection은 current source 84 edge를 결정적으로 교체한다", async () => {
+  const [{ source }, fixture] = await Promise.all([
+    trackedLegacyDocuments(),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const topology = deriveTopology(source);
+  const first = structuredClone(fixture);
+  const second = structuredClone(fixture);
+  assert.deepEqual(projectItxTopologyIntoCanonicalFixture(first, topology), {
+    edgeCount: 84,
+    topologySha256: topology.sha256,
+  });
+  projectItxTopologyIntoCanonicalFixture(second, topology);
+  assert.deepEqual(first, second);
 });
 
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
@@ -1143,6 +1204,7 @@ test("source와 completeness evidence exact binding을 요구한다", async () =
   source.completenessEvidenceSha256 = "0".repeat(64);
   const sourceBytes = Buffer.from(JSON.stringify(source));
   reference.sha256 = sha256(sourceBytes);
+  reference.promotion.approvedArtifactSha256 = reference.sha256;
   withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
     documents.contract, reference, source, documents.completeness,
     sha256(sourceBytes), sha256(documents.completenessBytes),

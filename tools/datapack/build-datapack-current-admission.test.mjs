@@ -321,15 +321,18 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
 });
 
 test("tracked current source topology evidence는 expired overlay 없이 exact admission을 만든다", async () => {
-  const [buildSpec, contract] = await Promise.all([
+  const [buildSpec, contract, fixture] = await Promise.all([
     readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
     readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
   ]);
   assert.equal(Object.hasOwn(buildSpec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
-  const fixture = {
-    packs: [{ transitTrips: [], networkEdges: [{ serviceClass: "ITX_CHEONGCHUN" }] }],
-  };
   const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  assert.equal(
+    fixture.packs.find(({ id }) => id === "capital").networkEdges
+      .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length,
+    84,
+  );
   const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
   process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-13T00:00:00.000Z";
   try {
@@ -338,6 +341,37 @@ test("tracked current source topology evidence는 expired overlay 없이 exact a
     assert.equal(admitted.pairHashes.size, 84);
     assert.equal(admitted.routeServiceArtifactEvidence.artifactEvidence.admissionStatus, "ADMITTED");
     assert.equal(admitted.routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus, "ADMITTED");
+  } finally {
+    if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+  }
+});
+
+test("tracked current source admission은 review-required approval identity mutation을 거부한다", async (context) => {
+  const [buildSpec, contract, fixture] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8").then(JSON.parse),
+  ]);
+  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const cases = [
+    ["missing-url", (reference) => { reference.promotion.approvalUrl = ""; }],
+    ["wrong-approved-sha", (reference) => { reference.promotion.approvedArtifactSha256 = "0".repeat(64); }],
+    ["wrong-mode", (reference) => { reference.promotion.mode = "UNCHANGED_AUTO"; }],
+  ];
+  const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-13T00:00:00.000Z";
+  try {
+    for (const [name, mutate] of cases) {
+      await context.test(name, async () => {
+        const candidate = structuredClone(contract);
+        mutate(candidate.sourceTimetableArtifact);
+        await assert.rejects(
+          admittedItxNetworkEdgeEvidence(candidate, topology),
+          /approval identity|topology is not admitted/,
+        );
+      });
+    }
   } finally {
     if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
     else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
