@@ -242,6 +242,18 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     now: incheonTimetableNow,
   }), /inventory evidence|topology lineage/);
 
+  const badActiveTopology = {
+    ...values.topologySnapshot,
+    snapshotId: "incheon-transit-station-info-20260724",
+  };
+  assert.throws(() => materializeIncheonTimetable({
+    baseFixture: values.accessibilityFixture,
+    topologySnapshot: badActiveTopology,
+    timetableSnapshots: values.timetableSnapshots,
+    inventory: values.inventory,
+    now: incheonTimetableNow,
+  }), /active topology identity/);
+
   const admitted = materializeIncheonTimetable({
     baseFixture: values.accessibilityFixture,
     topologySnapshot: values.topologySnapshot,

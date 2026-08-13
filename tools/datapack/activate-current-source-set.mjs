@@ -575,10 +575,17 @@ export function activateIncheonTopologyAdmission({
     ({ id }) => id === "incheon-transit-accessibility",
     "current Incheon accessibility source",
   );
+  const timetableSources = ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]
+    .map((sourceId) => requireOne(
+      next.sources,
+      ({ id }) => id === sourceId,
+      `current ${sourceId} source`,
+    ));
   const topology = source.topologyAdmissionEvidence;
   const membership = source.membershipAdmissionEvidence;
   const routeMap = source.routeMapAdmissionEvidence;
   const accessibility = accessibilitySource.accessibilityAdmissionEvidence;
+  const schedules = timetableSources.map(({ scheduleAdmissionEvidence }) => scheduleAdmissionEvidence);
   if (source.requiredForProductionPack !== false
     || source.productionUseAllowed !== true
     || source.license?.redistributionAllowed !== true
@@ -618,6 +625,13 @@ export function activateIncheonTopologyAdmission({
         || lineage.contentSha256 !== incheon.contentSha256
     ))) {
     throw new Error("current Incheon accessibility lineage contract is invalid");
+  }
+  if (schedules.some((schedule) => (
+    schedule?.topologySourceId !== source.id
+      || !/^incheon-transit-station-info-\d{8}$/u.test(schedule.topologySnapshotId ?? "")
+      || schedule.topologyContentSha256 !== incheon.contentSha256
+  ))) {
+    throw new Error("current Incheon timetable lineage contract is invalid");
   }
   source.observedDataUpdatedAt = incheon.observedDataUpdatedAt;
   source.retrievedAt = incheon.capturedAt.slice(0, 10);
@@ -667,6 +681,7 @@ export function activateIncheonTopologyAdmission({
   for (const lineage of [...accessibility.topologyLineages, ...accessibility.membershipLineages]) {
     lineage.snapshotId = snapshotId;
   }
+  for (const schedule of schedules) schedule.topologySnapshotId = snapshotId;
   return next;
 }
 

@@ -8,6 +8,7 @@ import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-in
 
 const SOURCE_ID = "incheon-transit-accessibility";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
+const CAPTURED_TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
 const OPERATOR_ID = "incheon-transit";
 const PACK_ID = "nationwide-incheon-accessibility";
 const LINE1 = "line-98718184f016";
@@ -290,14 +291,12 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
 
 function validateCapturedSnapshotLineage(snapshot, topologySnapshot) {
   const lineages = [...snapshot.topologyLineages, ...snapshot.membershipLineages];
-  const snapshotIds = new Set(lineages.map(({ snapshotId }) => snapshotId));
-  if (snapshotIds.size !== 1
-    || lineages.some((lineage) => (
+  if (lineages.some((lineage) => (
       lineage.sourceId !== TOPOLOGY_SOURCE_ID
-        || !/^incheon-transit-station-info-\d{8}$/u.test(lineage.snapshotId ?? "")
+        || lineage.snapshotId !== CAPTURED_TOPOLOGY_SNAPSHOT_ID
         || lineage.contentSha256 !== topologySnapshot.contentSha256
         || !LINE_IDS.includes(lineage.lineId)
-    ))) {
+  ))) {
     throw new Error("Incheon accessibility captured topology lineage mismatch");
   }
 }
@@ -307,8 +306,11 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
     ?.topologyAdmissionEvidence;
   const topologySnapshotId = topologyEvidence?.snapshotId;
+  const expectedSnapshotId = activeTopologySnapshotId(topologySnapshot);
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
     || !/^incheon-transit-station-info-\d{8}$/u.test(topologySnapshotId ?? "")
+    || topologySnapshotId !== expectedSnapshotId
+    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${expectedSnapshotId}.json`
     || evidence.topologySnapshotId !== topologySnapshotId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
@@ -326,6 +328,18 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
     ))) {
     throw new Error("Incheon accessibility topology lineage mismatch");
   }
+}
+
+function activeTopologySnapshotId(snapshot) {
+  const capturedDate = /^\d{4}-\d{2}-\d{2}T/u.test(snapshot?.capturedAt ?? "")
+    ? snapshot.capturedAt.slice(0, 10).replaceAll("-", "")
+    : "";
+  const expected = `${TOPOLOGY_SOURCE_ID}-${capturedDate}`;
+  if (capturedDate.length !== 8
+    || (snapshot.snapshotId != null && snapshot.snapshotId !== expected)) {
+    throw new Error("Incheon accessibility active topology identity mismatch");
+  }
+  return expected;
 }
 
 function validateMembershipLineage(evidence, topologySnapshot, topologySnapshotId) {

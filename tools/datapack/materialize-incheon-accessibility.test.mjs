@@ -269,6 +269,29 @@ test("인천 accessibility admission은 freshness·hash·scope·중복을 fail c
     now: accessibilityNow,
   }), /inventory evidence|topology lineage/);
 
+  const badCapturedLineage = structuredClone(accessibilitySnapshot);
+  badCapturedLineage.topologyLineages[0].snapshotId =
+    "incheon-transit-station-info-20260813";
+  assert.throws(() => materializeIncheonAccessibility({
+    baseFixture: incheonFixture,
+    accessibilitySnapshot: badCapturedLineage,
+    topologySnapshot,
+    inventory,
+    now: accessibilityNow,
+  }), /captured topology lineage/);
+
+  const badActiveLineage = structuredClone(inventory);
+  badActiveLineage.sources.find(({ id }) => id === "incheon-transit-station-info")
+    .topologyAdmissionEvidence.snapshotPath =
+      "tools/datapack/sources/incheon-transit-station-info-20260724.json";
+  assert.throws(() => materializeIncheonAccessibility({
+    baseFixture: incheonFixture,
+    accessibilitySnapshot,
+    topologySnapshot,
+    inventory: badActiveLineage,
+    now: accessibilityNow,
+  }), /topology lineage/);
+
   const admitted = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,

@@ -303,6 +303,10 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
   const source = activated.sources.find(({ id }) => id === "incheon-transit-station-info");
   const accessibility = activated.sources.find(({ id }) => id === "incheon-transit-accessibility")
     .accessibilityAdmissionEvidence;
+  const scheduleTopologySnapshotIds = [
+    "incheon-line1-train-timetable", "incheon-line2-train-timetable",
+  ].map((sourceId) => activated.sources.find(({ id }) => id === sourceId)
+    .scheduleAdmissionEvidence.topologySnapshotId);
 
   assert.equal(source.requiredForProductionPack, false);
   assert.equal(source.productionUseAllowed, true);
@@ -318,6 +322,10 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     [...accessibility.topologyLineages, ...accessibility.membershipLineages]
       .map(({ snapshotId }) => snapshotId),
     Array(3).fill("incheon-transit-station-info-20260813"),
+  );
+  assert.deepEqual(
+    scheduleTopologySnapshotIds,
+    Array(2).fill("incheon-transit-station-info-20260813"),
   );
 
   const changedEdges = structuredClone(snapshot);
