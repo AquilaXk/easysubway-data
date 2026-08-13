@@ -25,6 +25,16 @@ const SEOUL_PROVIDER_FIELDS = Object.freeze([
   "STATION_NM_ENG", "STATION_NM_JPN",
 ]);
 const SEOUL_FIELDS = Object.freeze(["line", "station_code", "station_name"]);
+const SEOUL_LINE_ID = "seoul-4";
+const SEOUL_REDACTED_REQUEST = Object.freeze({
+  method: "GET",
+  operation: "SearchSTNBySubwayLineInfo",
+  startIndex: 1,
+  endIndex: 5,
+  stationCode: " ",
+  stationName: " ",
+  lineNumber: "4호선",
+});
 const SHA256 = /^[0-9a-f]{64}$/u;
 
 function sha256(bytes) {
@@ -145,7 +155,7 @@ function projectSeoul(bytes) {
   if (envelope.RESULT.CODE !== "INFO-000"
     || !Number.isSafeInteger(envelope.list_total_count) || envelope.list_total_count < 5
     || !Array.isArray(envelope.row) || envelope.row.length !== 5) fail("PROVIDER");
-  return envelope.row.map((row) => {
+  const records = envelope.row.map((row) => {
     const provider = canonicalRecord(row, SEOUL_PROVIDER_FIELDS);
     if (provider.LINE_NUM !== "04호선") fail("PROVIDER");
     return canonicalRecord({
@@ -154,6 +164,21 @@ function projectSeoul(bytes) {
       station_name: provider.STATION_NM,
     }, SEOUL_FIELDS);
   });
+  const stationCodes = new Set();
+  const stationNames = new Set();
+  for (const record of records) {
+    if (typeof record.station_code !== "string"
+      || !/^[0-9]+$/u.test(record.station_code)
+      || stationCodes.has(record.station_code)
+      || typeof record.station_name !== "string"
+      || record.station_name.trim() === ""
+      || record.station_name !== record.station_name.trim()
+      || /[\u0000-\u001f\u007f]/u.test(record.station_name)
+      || stationNames.has(record.station_name)) fail("PROVIDER");
+    stationCodes.add(record.station_code);
+    stationNames.add(record.station_name);
+  }
+  return records;
 }
 
 function requiredObservedAt(value) {
@@ -190,7 +215,7 @@ function requiredPrevious(previous, sourceId, fields) {
     || previous.providerRecordHashes.length !== 5
     || previous.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
     || typeof previous.rawObjectUri !== "string"
-    || !/^s3:\/\/[^/?#]+\/.+\.json$/u.test(previous.rawObjectUri)) fail("PREVIOUS_IDENTITY");
+    || !/^(?:s3|oci):\/\/[^/?#]+\/.+\.json$/u.test(previous.rawObjectUri)) fail("PREVIOUS_IDENTITY");
 }
 
 function evidencePayload({ sourceId, previous, observedAt, responseBytes, records }) {
@@ -254,6 +279,189 @@ function buildOne({ sourceId, previous, observedAt, observedMillis, responseByte
   snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
   if (snapshot.diffSummary.status !== "NO_CHANGE") fail("CONTENT_CHANGED");
   return { sourceId, evidence, snapshot };
+}
+
+function parseCanonicalPack(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > 64 * 1024 * 1024) {
+    fail("CANONICAL_PACK");
+  }
+  let document;
+  try {
+    document = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    fail("CANONICAL_PACK");
+  }
+  const packs = document?.packs;
+  const matches = Array.isArray(packs) ? packs.filter(({ id }) => id === "capital") : [];
+  if (matches.length !== 1
+    || !Array.isArray(matches[0].lines)
+    || matches[0].lines.filter(({ id }) => id === SEOUL_LINE_ID).length !== 1
+    || !Array.isArray(matches[0].stations)
+    || !Array.isArray(matches[0].stationLines)) fail("CANONICAL_PACK");
+  return matches[0];
+}
+
+function canonicalMembershipSha256(canonicalPackBytes, records) {
+  const pack = parseCanonicalPack(canonicalPackBytes);
+  const stations = new Map();
+  for (const station of pack.stations) {
+    if (typeof station?.id !== "string" || station.id === "" || stations.has(station.id)) {
+      fail("CANONICAL_PACK");
+    }
+    stations.set(station.id, station);
+  }
+  const lineStationsByName = new Map();
+  for (const membership of pack.stationLines.filter(({ lineId }) => lineId === SEOUL_LINE_ID)) {
+    const station = stations.get(membership.stationId);
+    if (!station || typeof station.nameKo !== "string" || station.nameKo.trim() === "") {
+      fail("CANONICAL_PACK");
+    }
+    const matches = lineStationsByName.get(station.nameKo) ?? [];
+    matches.push(station.id);
+    lineStationsByName.set(station.nameKo, matches);
+  }
+  const memberships = records.map((record) => {
+    const stationIds = lineStationsByName.get(record.station_name);
+    if (stationIds?.length !== 1) fail("CANONICAL_MEMBERSHIP");
+    return {
+      stationCode: record.station_code,
+      stationName: record.station_name,
+      canonicalStationId: stationIds[0],
+      canonicalLineId: SEOUL_LINE_ID,
+    };
+  });
+  return sha256(JSON.stringify(memberships));
+}
+
+function buildSeoulChangeAdmission({
+  previous,
+  observedAt,
+  observedMillis,
+  responseBytes,
+  records,
+  canonicalPackBytes,
+}) {
+  requiredPrevious(previous, SEOUL_SOURCE_ID, SEOUL_FIELDS);
+  const canonicalRaw = Buffer.from(`${JSON.stringify(records)}\n`);
+  const rawSha256 = sha256(canonicalRaw);
+  const providerRecordHashes = records.map((record) => sha256(JSON.stringify(record)));
+  const redactedRequestFingerprint = sha256(JSON.stringify(SEOUL_REDACTED_REQUEST));
+  const date = observedAt.slice(0, 10).replaceAll("-", "");
+  const rawObjectUri =
+    `oci://easysubway-datapacks/source-raw/${SEOUL_SOURCE_ID}/${date}/${rawSha256}.json`;
+  const canonicalMembershipHash = canonicalMembershipSha256(canonicalPackBytes, records);
+  const canonicalPackHash = sha256(canonicalPackBytes);
+  const payload = {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-admission-evidence",
+    contractVersion: "1.0.0",
+    sourceId: SEOUL_SOURCE_ID,
+    previousSnapshotId: previous.snapshotId,
+    observedAt,
+    operation: operationForSource(SEOUL_SOURCE_ID),
+    rowCount: records.length,
+    canonicalRawSha256: rawSha256,
+    schemaFingerprint: sha256(JSON.stringify([...SEOUL_FIELDS].sort(codepointCompare))),
+    redactedRequestFingerprint,
+    providerRecordHashesSha256: sha256(JSON.stringify(providerRecordHashes)),
+    responseSha256: sha256(responseBytes),
+    canonicalPackSha256: canonicalPackHash,
+    canonicalMembershipSha256: canonicalMembershipHash,
+    rawObjectUri,
+    outcome: "CONTENT_CHANGE_ADMITTED",
+    credentialRedacted: true,
+  };
+  if (payload.schemaFingerprint !== previous.schemaFingerprint
+    || rawSha256 === previous.rawSha256
+    || redactedRequestFingerprint === previous.redactedRequestFingerprint) fail("CHANGE_IDENTITY");
+  const evidence = { ...payload, evidenceSha256: sha256(JSON.stringify(payload)) };
+  const snapshot = {
+    ...structuredClone(previous),
+    snapshotId: `${SEOUL_SOURCE_ID}-change-admitted-${date}`,
+    retrievedAt: observedAt,
+    coverageCount: previous.coverageCount ?? previous.rowCount,
+    rawSha256,
+    rawObjectUri,
+    redactedRequestFingerprint,
+    providerRecordHashes,
+    previousSnapshotId: previous.snapshotId,
+    diffSummary: null,
+    freshnessExpiresAt: plusDays(observedMillis, 30),
+    rawRetentionExpiresAt: plusDays(observedMillis, 90),
+    revalidationEvidenceSha256: evidence.evidenceSha256,
+  };
+  snapshot.diffSummary = buildSnapshotDiff(previous, snapshot);
+  if (JSON.stringify(snapshot.diffSummary) !== JSON.stringify({
+    status: "CHANGED",
+    rawHashChanged: true,
+    schemaHashChanged: false,
+    requestHashChanged: true,
+    sourceUpdatedAtChanged: false,
+    rowDelta: 0,
+    coverageDelta: 0,
+  })) fail("CHANGE_IDENTITY");
+  return { sourceId: SEOUL_SOURCE_ID, evidence, snapshot, canonicalRaw };
+}
+
+function sourceRawPublishPlan(snapshot, canonicalRaw) {
+  const objectKey = new URL(snapshot.rawObjectUri).pathname.slice(1);
+  const identity = {
+    objectKey,
+    sha256: snapshot.rawSha256,
+    sizeBytes: canonicalRaw.length,
+    immutable: true,
+  };
+  return {
+    schemaVersion: 2,
+    mode: "object-storage-preflight",
+    steps: [
+      {
+        type: "put-source-raw-object",
+        sourcePath: "seoulmetro-station-line-info-raw.json",
+        ...identity,
+      },
+      { type: "verify-source-raw-object", ...identity },
+    ],
+  };
+}
+
+export function buildCurrentStaticSourceChangeAdmission({
+  sourceSnapshots,
+  capture,
+  responseBytesBySource,
+  canonicalPackBytes,
+}) {
+  if (!Array.isArray(sourceSnapshots) || !responseBytesBySource) fail("ARGUMENT");
+  serializedChangeCapture(capture, responseBytesBySource);
+  if (capture.sources[0].status !== "UNCHANGED"
+    || capture.sources[1].status !== "CONTENT_CHANGED") fail("CAPTURE_STATUS");
+  const observedMillis = requiredObservedAt(capture.observedAt);
+  const molitPrevious = previousHead(sourceSnapshots, MOLIT_SOURCE_ID);
+  const seoulPrevious = previousHead(sourceSnapshots, SEOUL_SOURCE_ID);
+  const molit = buildOne({
+    sourceId: MOLIT_SOURCE_ID,
+    previous: molitPrevious,
+    observedAt: capture.observedAt,
+    observedMillis,
+    responseBytes: responseBytesBySource.molit,
+    records: projectMolit(responseBytesBySource.molit, molitPrevious),
+    fields: MOLIT_FIELDS,
+  });
+  const seoul = buildSeoulChangeAdmission({
+    previous: seoulPrevious,
+    observedAt: capture.observedAt,
+    observedMillis,
+    responseBytes: responseBytesBySource.seoul,
+    records: projectSeoul(responseBytesBySource.seoul),
+    canonicalPackBytes,
+  });
+  const revalidations = [molit, { sourceId: seoul.sourceId, evidence: seoul.evidence, snapshot: seoul.snapshot }];
+  validateLineage([...structuredClone(sourceSnapshots), ...revalidations.map(({ snapshot }) => snapshot)]);
+  return {
+    revalidations,
+    seoulRawBytes: seoul.canonicalRaw,
+    sourceRawPublishPlan: sourceRawPublishPlan(seoul.snapshot, seoul.canonicalRaw),
+  };
 }
 
 export function buildCurrentStaticSourceRevalidation({
@@ -500,6 +708,37 @@ export async function writeCurrentStaticSourceChangeCapture({
   });
 }
 
+function serializedChangeAdmission(admission) {
+  assertExactKeys(admission, ["revalidations", "seoulRawBytes", "sourceRawPublishPlan"], "ARGUMENT");
+  if (!Array.isArray(admission.revalidations) || admission.revalidations.length !== 2
+    || admission.revalidations.some(({ sourceId }, index) => sourceId !== SOURCE_IDS[index])
+    || admission.revalidations[0].evidence?.outcome !== "NO_CHANGE_REVALIDATED"
+    || admission.revalidations[1].evidence?.outcome !== "CONTENT_CHANGE_ADMITTED"
+    || !Buffer.isBuffer(admission.seoulRawBytes)
+    || sha256(admission.seoulRawBytes) !== admission.revalidations[1].snapshot.rawSha256
+    || JSON.stringify(admission.sourceRawPublishPlan)
+      !== JSON.stringify(sourceRawPublishPlan(
+        admission.revalidations[1].snapshot,
+        admission.seoulRawBytes,
+      ))) fail("ARGUMENT");
+  const entries = admission.revalidations.flatMap(({ sourceId, evidence, snapshot }) => [
+    [`${sourceId}-revalidation-evidence.json`, Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`)],
+    [`${sourceId}-snapshot.json`, Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`)],
+  ]);
+  entries.push(
+    ["seoulmetro-station-line-info-raw.json", admission.seoulRawBytes],
+    [
+      "seoulmetro-station-line-info-source-raw-publish-plan.json",
+      Buffer.from(`${JSON.stringify(admission.sourceRawPublishPlan, null, 2)}\n`),
+    ],
+  );
+  return entries;
+}
+
+export async function writeCurrentStaticSourceChangeAdmission({ outputDirectory, admission }) {
+  return writeAbsentDirectory({ outputDirectory, entries: serializedChangeAdmission(admission) });
+}
+
 export async function runCurrentStaticSourceRevalidation({
   sourceSnapshots,
   observedAt,
@@ -539,14 +778,27 @@ function parseArgs(argv) {
     const flag = argv[index];
     if (!new Set([
       "--source-snapshots", "--observed-at", "--output-directory", "--change-output-directory",
+      "--change-capture-directory", "--canonical-pack",
     ]).has(flag)) fail("ARGUMENT");
     const value = argv[index + 1];
     if (!value || value.startsWith("--") || args[flag]) fail("ARGUMENT");
     args[flag] = value;
   }
-  if (!["--source-snapshots", "--observed-at", "--output-directory"]
-    .every((flag) => args[flag] != null)
-    || ![3, 4].includes(Object.keys(args).length)) fail("ARGUMENT");
+  const offline = args["--change-capture-directory"] != null;
+  if (offline) {
+    const required = [
+      "--source-snapshots", "--change-capture-directory", "--canonical-pack", "--output-directory",
+    ];
+    if (Object.keys(args).length !== required.length
+      || !required.every((flag) => args[flag] != null)) fail("ARGUMENT");
+  } else {
+    const required = ["--source-snapshots", "--observed-at", "--output-directory"];
+    if (!required.every((flag) => args[flag] != null)
+      || ![3, 4].includes(Object.keys(args).length)
+      || Object.keys(args).length === 4 && args["--change-output-directory"] == null) {
+      fail("ARGUMENT");
+    }
+  }
   if (args["--change-output-directory"] != null
     && !path.isAbsolute(args["--change-output-directory"])) fail("ARGUMENT");
   return args;
@@ -555,6 +807,30 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const sourceSnapshots = JSON.parse(await readFile(path.resolve(args["--source-snapshots"]), "utf8"));
+  if (args["--change-capture-directory"] != null) {
+    const captureDirectory = path.resolve(args["--change-capture-directory"]);
+    const [capture, molit, seoul, canonicalPackBytes] = await Promise.all([
+      readFile(path.join(captureDirectory, "change-evidence.json"), "utf8").then(JSON.parse),
+      readFile(path.join(captureDirectory, "molit-response.bin")),
+      readFile(path.join(captureDirectory, "seoul-response.json")),
+      readFile(path.resolve(args["--canonical-pack"])),
+    ]);
+    const admission = buildCurrentStaticSourceChangeAdmission({
+      sourceSnapshots,
+      capture,
+      responseBytesBySource: { molit, seoul },
+      canonicalPackBytes,
+    });
+    await writeCurrentStaticSourceChangeAdmission({
+      outputDirectory: path.resolve(args["--output-directory"]),
+      admission,
+    });
+    process.stdout.write(`${JSON.stringify({
+      outcome: "CONTENT_CHANGE_ADMITTED",
+      sourceCount: admission.revalidations.length,
+    })}\n`);
+    return;
+  }
   const responses = await fetchCurrentStaticSourceResponses({
     seoulOpenApiKey: process.env.SEOUL_OPENAPI_KEY,
   });

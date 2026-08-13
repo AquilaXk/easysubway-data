@@ -86,6 +86,58 @@ function staticRevalidation(previous, observedAt = "2026-08-13T10:30:00.000Z") {
   return { evidence, snapshot };
 }
 
+function staticChangeAdmission(previous, canonicalPackBytes,
+  observedAt = "2026-08-13T10:30:00.000Z") {
+  const observedMillis = Date.parse(observedAt);
+  const date = observedAt.slice(0, 10).replaceAll("-", "");
+  const providerRecordHashes = Array.from(
+    { length: 5 }, (_, index) => sha256(`changed:${previous.sourceId}:${index}`),
+  );
+  const rawSha256 = sha256(`changed-raw:${previous.sourceId}`);
+  const rawObjectUri =
+    `oci://easysubway-datapacks/source-raw/${previous.sourceId}/${date}/${rawSha256}.json`;
+  const redactedRequestFingerprint = sha256("current Seoul request contract");
+  const evidencePayload = {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-admission-evidence",
+    contractVersion: "1.0.0",
+    sourceId: previous.sourceId,
+    previousSnapshotId: previous.snapshotId,
+    observedAt,
+    operation: "seoulmetro-line4-stations-one-to-five",
+    rowCount: 5,
+    canonicalRawSha256: rawSha256,
+    schemaFingerprint: previous.schemaFingerprint,
+    redactedRequestFingerprint,
+    providerRecordHashesSha256: sha256(JSON.stringify(providerRecordHashes)),
+    responseSha256: sha256("current Seoul response"),
+    canonicalPackSha256: sha256(canonicalPackBytes),
+    canonicalMembershipSha256: sha256("current canonical memberships"),
+    rawObjectUri,
+    outcome: "CONTENT_CHANGE_ADMITTED",
+    credentialRedacted: true,
+  };
+  const evidence = { ...evidencePayload, evidenceSha256: sha256(JSON.stringify(evidencePayload)) };
+  const snapshot = {
+    ...structuredClone(previous),
+    snapshotId: `${previous.sourceId}-change-admitted-${date}`,
+    retrievedAt: observedAt,
+    rawSha256,
+    rawObjectUri,
+    redactedRequestFingerprint,
+    providerRecordHashes,
+    previousSnapshotId: previous.snapshotId,
+    diffSummary: {
+      status: "CHANGED", rawHashChanged: true, schemaHashChanged: false,
+      requestHashChanged: true, sourceUpdatedAtChanged: false, rowDelta: 0, coverageDelta: 0,
+    },
+    freshnessExpiresAt: new Date(observedMillis + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    rawRetentionExpiresAt: new Date(observedMillis + 90 * 24 * 60 * 60 * 1000).toISOString(),
+    revalidationEvidenceSha256: evidence.evidenceSha256,
+  };
+  return { evidence, snapshot };
+}
+
 test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한다", () => {
   assert.deepEqual(parseCurrentSourceActivationArgs([
     "--capital-topology", "tools/datapack/sources/capital-route-topology-20260811.json",
@@ -235,6 +287,85 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260812",
   }), /static revalidation observation date mismatch/);
+});
+
+test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact mixed pair만 수용한다", () => {
+  const canonicalPackBytes = Buffer.from('{"packs":[{"id":"capital"}]}');
+  const previous = [
+    staticRoot("molit-urban-rail-full-route"),
+    staticRoot("seoulmetro-station-line-info"),
+  ];
+  const revalidations = [
+    staticRevalidation(previous[0]),
+    staticChangeAdmission(previous[1], canonicalPackBytes),
+  ];
+  const sourceInventory = {
+    schemaVersion: 1,
+    artifactKind: "production-source-inventory",
+    sources: previous.map(({ sourceId, snapshotId }) => ({
+      id: sourceId,
+      retrievedAt: "2026-07-12",
+      observedDataUpdatedAt: "2026-06-22",
+      admissionEvidence: {
+        snapshotId,
+        rawSha256: sha256(`old-inventory:${sourceId}`),
+        schemaFingerprint: sha256(`old-schema:${sourceId}`),
+      },
+    })),
+  };
+
+  const activated = activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations,
+    canonicalPackSha256: sha256(canonicalPackBytes),
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260813",
+  });
+  const seoul = activated.sourceInventory.sources.find(
+    ({ id }) => id === "seoulmetro-station-line-info",
+  );
+  assert.equal(seoul.admissionEvidence.snapshotId, revalidations[1].snapshot.snapshotId);
+  assert.equal(seoul.admissionEvidence.rawSha256, revalidations[1].snapshot.rawSha256);
+  assert.equal(seoul.admissionEvidence.schemaFingerprint,
+    revalidations[1].snapshot.schemaFingerprint);
+  assert.equal(seoul.admissionEvidence.rawObjectUri, revalidations[1].snapshot.rawObjectUri);
+  assert.equal(seoul.admissionEvidence.revalidationEvidenceSha256,
+    revalidations[1].evidence.evidenceSha256);
+  assert.equal(seoul.observedDataUpdatedAt, "2026-06-22");
+
+  const mutations = [
+    (value) => { value[1].evidence.canonicalPackSha256 = "f".repeat(64); },
+    (value) => { value[1].evidence.rawObjectUri = value[1].evidence.rawObjectUri.replace("oci:", "s3:"); },
+    (value) => { value[1].snapshot.providerRecordHashes.reverse(); },
+    (value) => { value[1].snapshot.diffSummary.requestHashChanged = false; },
+    (value) => { value[1].evidence.outcome = "NO_CHANGE_REVALIDATED"; },
+  ];
+  for (const mutate of mutations) {
+    const tampered = structuredClone(revalidations);
+    mutate(tampered);
+    assert.throws(() => activateStaticSourceRevalidations({
+      sourceSnapshots: previous,
+      sourceInventory,
+      revalidations: tampered,
+      canonicalPackSha256: sha256(canonicalPackBytes),
+      buildNow: "2026-08-13T10:30:01.000Z",
+      observationDate: "20260813",
+    }), /static revalidation evidence identity mismatch/);
+  }
+
+  const unbound = structuredClone(revalidations);
+  unbound[1].evidence.canonicalPackSha256 = null;
+  const { evidenceSha256: _staleEvidenceSha256, ...unboundPayload } = unbound[1].evidence;
+  unbound[1].evidence.evidenceSha256 = sha256(JSON.stringify(unboundPayload));
+  unbound[1].snapshot.revalidationEvidenceSha256 = unbound[1].evidence.evidenceSha256;
+  assert.throws(() => activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations: unbound,
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260813",
+  }), /static revalidation evidence identity mismatch/);
 });
 
 test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
