@@ -238,6 +238,7 @@ export async function fetchCurrentStaticSourceResponses({
     "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf",
   );
   molitUrl.search = new URLSearchParams({ page: "1", perPage: "5" });
+  molitUrl.searchParams.set("serviceKey", dataKey);
   const seoulUrl = new URL(
     `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("4호선")}`,
   );
@@ -249,7 +250,7 @@ export async function fetchCurrentStaticSourceResponses({
       method: "GET",
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
-      headers: { accept: "application/json", Authorization: `Infuser ${dataKey}` },
+      headers: { accept: "application/json" },
     },
   });
   const seoul = await fetchSourceResponse({
