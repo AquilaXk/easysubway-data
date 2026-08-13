@@ -579,6 +579,35 @@ test("fresh Seoul observation은 snapshot·raw pages·manifest를 한 create-onl
   );
 });
 
+test("raw observation은 URL·JSON escape로 반사된 service key도 보존 전에 거부한다", async () => {
+  const decodedKey = "abcdefghijklmnop+qr/stuvwxyz";
+  const encodedKey = encodeURIComponent(decodedKey);
+  const baseBody = JSON.stringify({
+    response: {
+      header: { resultCode: "00", credentialEcho: "REFLECTED_KEY" },
+      body: {
+        totalCount: 1,
+        items: { item: [{ lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" }] },
+      },
+    },
+  });
+  for (const reflected of [encodedKey, decodedKey.replaceAll("+", "\\u002b").replaceAll("/", "\\/")]) {
+    await assert.rejects(
+      collectSeoulAccessibilityObservation({
+        endpoint: "https://apis.data.go.kr/example",
+        serviceKey: encodedKey,
+        retrievedAt: "2026-08-14T00:00:00.000Z",
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => baseBody.replace("REFLECTED_KEY", reflected),
+        }),
+      }),
+      /Seoul accessibility API response invalid/,
+    );
+  }
+});
+
 test("Seoul observation CLI output은 canonical temp root 아래 safe name으로만 구성한다", async () => {
   const output = await seoulObservationOutputRoot("capture-20260814T000000Z");
   assert.equal(output.startsWith(`${await realpath(tmpdir())}/easysubway-seoul-accessibility-`), true);

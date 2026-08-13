@@ -241,10 +241,11 @@ export async function collectSeoulAccessibility({
     let raw;
     try {
       raw = await response.text();
-      if (normalizedServiceKey.length >= 16 && raw.includes(normalizedServiceKey)) {
+      payload = JSON.parse(raw);
+      if (normalizedServiceKey.length >= 16
+        && containsCredentialRepresentation(payload, normalizedServiceKey)) {
         throw new Error(INVALID_RESPONSE);
       }
-      payload = JSON.parse(raw);
     } catch {
       throw new Error(INVALID_RESPONSE);
     }
@@ -637,6 +638,27 @@ function hash(value) {
 
 function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function containsCredentialRepresentation(payload, credential) {
+  const encoded = encodeURIComponent(credential);
+  const pending = [payload];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      if (value.includes(credential) || value.includes(encoded)) return true;
+      try {
+        if (decodeURIComponent(value).includes(credential)) return true;
+      } catch {
+        // An unrelated malformed percent escape is not a credential representation.
+      }
+    } else if (Array.isArray(value)) {
+      pending.push(...value);
+    } else if (value != null && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) pending.push(key, child);
+    }
+  }
+  return false;
 }
 
 function hashBytes(value) {
