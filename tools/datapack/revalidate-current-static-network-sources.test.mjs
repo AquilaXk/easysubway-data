@@ -12,6 +12,17 @@ import {
 } from "./revalidate-current-static-network-sources.mjs";
 
 const observedAt = "2026-08-13T10:30:00.000Z";
+const molitCsvBytes = await readFile(new URL(
+  "./sources/molit-urban-rail-full-route-20251211.csv",
+  import.meta.url,
+));
+const trackedSnapshots = JSON.parse(await readFile(new URL(
+  "./release/source-snapshots.json",
+  import.meta.url,
+), "utf8"));
+const trackedMolitSnapshot = trackedSnapshots.find(
+  ({ sourceId }) => sourceId === "molit-urban-rail-full-route",
+);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -19,12 +30,18 @@ function sha256(bytes) {
 
 function projectedRows() {
   return {
-    molit: Array.from({ length: 5 }, (_, index) => ({
+    molit: [
+      ["선바위", "30"],
+      ["경마공원", "31"],
+      ["대공원", "32"],
+      ["과천", "33"],
+      ["정부과천청사", "34"],
+    ].map(([stationName, sequence]) => ({
       line_name: "4호선",
-      operator_name: "서울교통공사",
+      operator_name: "코레일",
       region: "수도권",
-      station_name: `역-${index + 1}`,
-      station_sequence: index + 1,
+      station_name: stationName,
+      station_sequence: sequence,
     })),
     seoul: Array.from({ length: 5 }, (_, index) => ({
       line: "04호선",
@@ -36,14 +53,7 @@ function projectedRows() {
 
 function responseBytes(rows = projectedRows()) {
   return {
-    molit: Buffer.from(JSON.stringify({
-      currentCount: 5,
-      data: rows.molit,
-      matchCount: 5,
-      page: 1,
-      perPage: 5,
-      totalCount: 5,
-    })),
+    molit: Buffer.from(molitCsvBytes),
     seoul: Buffer.from(JSON.stringify({
       SearchSTNBySubwayLineInfo: {
         list_total_count: 5,
@@ -63,7 +73,7 @@ function responseBytes(rows = projectedRows()) {
 }
 
 function previousSnapshots(rows = projectedRows()) {
-  return Object.entries(rows).map(([kind, records]) => {
+  const synthetic = Object.entries(rows).map(([kind, records]) => {
     const sourceId = kind === "molit"
       ? "molit-urban-rail-full-route"
       : "seoulmetro-station-line-info";
@@ -95,6 +105,9 @@ function previousSnapshots(rows = projectedRows()) {
       providerRecordHashes: records.map((record) => sha256(JSON.stringify(record))),
     };
   });
+  return [structuredClone(trackedMolitSnapshot), synthetic.find(({ sourceId }) => (
+    sourceId === "seoulmetro-station-line-info"
+  ))];
 }
 
 test("current static responses가 unchanged면 exact child snapshots와 sanitized evidence를 만든다", () => {
@@ -123,6 +136,9 @@ test("current static responses가 unchanged면 exact child snapshots와 sanitize
     assert.equal(snapshot.rawRetentionExpiresAt, "2026-11-11T10:30:00.000Z");
     assert.equal(snapshot.revalidationEvidenceSha256, evidence.evidenceSha256);
     assert.equal(evidence.outcome, "NO_CHANGE_REVALIDATED");
+    assert.equal(evidence.operation, evidence.sourceId === "molit-urban-rail-full-route"
+      ? "molit-urban-rail-full-route-file-five-records"
+      : "seoulmetro-line4-stations-one-to-five");
     assert.match(evidence.responseSha256, /^[0-9a-f]{64}$/);
     assert.equal(evidence.credentialRedacted, true);
     assert.doesNotMatch(JSON.stringify(evidence), /Station-04|站-04|駅-04|s3:|serviceKey/);
@@ -131,11 +147,18 @@ test("current static responses가 unchanged면 exact child snapshots와 sanitize
 
 test("row order/value/field/provider/schema mismatch는 child output을 만들지 않는다", () => {
   const cases = [
-    (responses) => responses.molit = Buffer.from(JSON.stringify({ ...JSON.parse(responses.molit), currentCount: 4 })),
     (responses) => {
-      const value = JSON.parse(responses.molit);
-      value.data.reverse();
-      responses.molit = Buffer.from(JSON.stringify(value));
+      responses.molit = Buffer.from(responses.molit);
+      responses.molit[0] = 0x58;
+    },
+    (responses) => {
+      const firstSequence = responses.molit.indexOf(Buffer.from(",1,"));
+      assert.notEqual(firstSequence, -1);
+      responses.molit = Buffer.from(responses.molit);
+      responses.molit[firstSequence + 1] = 0x30;
+    },
+    (responses) => {
+      responses.molit = Buffer.concat([responses.molit, Buffer.from([0x81])]);
     },
     (responses) => {
       const value = JSON.parse(responses.seoul);
@@ -163,34 +186,35 @@ test("row order/value/field/provider/schema mismatch는 child output을 만들�
   }
 });
 
-test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 credential을 반사하지 않는다", async () => {
+test("tracked provider boundary는 public MOLIT CSV와 Seoul을 exact one-call한다", async () => {
   const requested = [];
   const responses = responseBytes();
   const result = await fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "encoded%2Bkey",
     seoulOpenApiKey: "seoul-key",
     fetchImpl: async (url, init) => {
       requested.push({ url: String(url), init });
       const body = requested.length === 1 ? responses.molit : responses.seoul;
-      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": requested.length === 1 ? "application/octet-stream" : "application/json" },
+      });
     },
   });
 
   assert.equal(requested.length, 2);
   assert.equal(requested[0].url,
-    "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf?page=1&perPage=5&serviceKey=encoded%2Bkey");
-  assert.doesNotMatch(requested[0].url, /uddi:urban-rail-full-route/u);
-  assert.equal(new URL(requested[0].url).searchParams.get("serviceKey"), "encoded+key");
+    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N");
+  assert.doesNotMatch(requested[0].url, /api\.odcloud|serviceKey|uddi:/u);
   assert.equal(Object.hasOwn(requested[0].init.headers, "Authorization"), false);
+  assert.deepEqual(requested[0].init.headers, { accept: "application/octet-stream" });
   assert.match(decodeURI(new URL(requested[1].url).pathname),
     /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/4호선$/);
   assert.equal(result.molit.equals(responses.molit), true);
   assert.equal(result.seoul.equals(responses.seoul), true);
 
   await assert.rejects(fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "encoded-key",
     seoulOpenApiKey: "seoul-key",
-    fetchImpl: async () => { throw new Error("encoded-key seoul-key raw-secret-sentinel"); },
+    fetchImpl: async () => { throw new Error("seoul-key raw-secret-sentinel"); },
   }), (error) => {
     assert.equal(error.message, "STATIC_SOURCE_REVALIDATION_MOLIT_TRANSPORT");
     return true;
@@ -208,14 +232,14 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
     {
       expected: "STATIC_SOURCE_REVALIDATION_SEOUL_CONTENT_TYPE",
       fetchImpl: async (_url, _init, call) => call === 1
-        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/json" } })
+        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/octet-stream" } })
         : new Response("raw-secret-sentinel", { status: 200, headers: { "content-type": "text/plain" } }),
       calls: 2,
     },
     {
       expected: "STATIC_SOURCE_REVALIDATION_SEOUL_BODY_SIZE",
       fetchImpl: async (_url, _init, call) => call === 1
-        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/json" } })
+        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/octet-stream" } })
         : new Response(Buffer.alloc(1024 * 1024 + 1), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -228,7 +252,7 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
         if (call === 1) {
           return new Response(responses.molit, {
             status: 200,
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/octet-stream" },
           });
         }
         throw new Error("raw-secret-sentinel seoul-key encoded-key");
@@ -240,7 +264,6 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
   for (const scenario of cases) {
     let calls = 0;
     await assert.rejects(fetchCurrentStaticSourceResponses({
-      dataGoKrServiceKey: "encoded-key",
       seoulOpenApiKey: "seoul-key",
       fetchImpl: (url, init) => {
         calls += 1;
@@ -248,24 +271,11 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
       },
     }), (error) => {
       assert.equal(error.message, scenario.expected);
-      assert.doesNotMatch(error.message, /raw-secret|seoul-key|encoded-key|https?:/iu);
+      assert.doesNotMatch(error.message, /raw-secret|seoul-key|https?:/iu);
       return true;
     });
     assert.equal(calls, scenario.calls);
   }
-});
-
-test("malformed DATA_GO credential은 provider 호출 전에 거부한다", async () => {
-  let calls = 0;
-  await assert.rejects(fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "invalid%ZZ",
-    seoulOpenApiKey: "seoul-key",
-    fetchImpl: async () => {
-      calls += 1;
-      throw new Error("provider must not be called");
-    },
-  }), /DATA_GO_KR_SERVICE_KEY is invalid/);
-  assert.equal(calls, 0);
 });
 
 test("validated four-file output은 absent directory에 한 번만 publish한다", async (context) => {
