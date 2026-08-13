@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -89,7 +89,11 @@ export function validateKricAccessibilityProviderGapEvidence(evidence) {
   };
 }
 
-export async function collectKricAccessibilitySnapshots({
+export async function collectKricAccessibilitySnapshots(options = {}) {
+  return (await collectKricAccessibilitySnapshotResults(options)).snapshots;
+}
+
+async function collectKricAccessibilitySnapshotResults({
   roster,
   operations = KRIC_ACCESSIBILITY_OPERATIONS,
   serviceKey,
@@ -98,6 +102,7 @@ export async function collectKricAccessibilitySnapshots({
   requestTimeoutMs = 30_000,
   requestIntervalMs = 0,
   delayImpl = delay,
+  retainRawResponses = false,
 } = {}) {
   if (typeof serviceKey !== "string" || serviceKey === "") throw new Error("KRIC_SERVICE_KEY is required");
   if (!Number.isInteger(requestIntervalMs) || requestIntervalMs < 0 || requestIntervalMs > 60_000) {
@@ -107,6 +112,7 @@ export async function collectKricAccessibilitySnapshots({
   const capturedAt = now.toISOString();
   const freshUntil = new Date(now.getTime() + 86_400_000).toISOString();
   const snapshots = [];
+  const rawCollections = [];
   let requestCount = 0;
   const paceRequest = async () => {
     if (requestCount > 0 && requestIntervalMs > 0) await delayImpl(requestIntervalMs);
@@ -115,15 +121,18 @@ export async function collectKricAccessibilitySnapshots({
   for (const operation of operations) {
     validateOperation(operation);
     const queries = [];
+    const rawResponses = [];
     const providerGaps = [];
     const responsesByProviderTuple = new Map();
     for (const tuple of tuples) {
       const providerKey = [tuple.railOprIsttCd, tuple.lnCd, tuple.stinCd].join("\0");
       if (!responsesByProviderTuple.has(providerKey)) {
         try {
-          responsesByProviderTuple.set(providerKey, await requestRows({
+          const requested = await requestRows({
             operation, tuple, serviceKey, fetchImpl, requestTimeoutMs, paceRequest,
-          }));
+          });
+          responsesByProviderTuple.set(providerKey, requested);
+          if (retainRawResponses) rawResponses.push(requested.rawResponse);
         } catch (error) {
           if (error?.kricResultCode !== "03") throw error;
           providerGaps.push(`${error.kricRequestIdentity}/${error.kricResultCode}`);
@@ -173,8 +182,141 @@ export async function collectKricAccessibilitySnapshots({
       }),
       queries,
     });
+    if (retainRawResponses) rawCollections.push({ sourceId: operation.sourceId, responses: rawResponses });
   }
-  return snapshots;
+  return { snapshots, rawCollections };
+}
+
+export async function collectKricStandardAccessibilityObservation(options = {}) {
+  const { snapshots, rawCollections } = await collectKricAccessibilitySnapshotResults({
+    ...options,
+    operations: KRIC_ACCESSIBILITY_OPERATIONS,
+    retainRawResponses: true,
+  });
+  if (snapshots.length !== 1 || rawCollections.length !== 1) {
+    throw new Error("KRIC standard accessibility observation is invalid");
+  }
+  const snapshot = validateKricAccessibilitySnapshotIdentity(snapshots[0]);
+  const responses = rawCollections[0].responses;
+  const rawArtifact = validateKricAccessibilityRawCollection({
+    schemaVersion: 1,
+    artifactKind: "kric-accessibility-raw-collection",
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    capturedAt: snapshot.capturedAt,
+    snapshotRawSha256: snapshot.rawSha256,
+    credentialRedacted: true,
+    requestCount: responses.length,
+    inventorySha256: hash(responses.map(({ bodyBase64: _, ...response }) => response)),
+    responses,
+  }, snapshot);
+  return { snapshot, rawArtifact };
+}
+
+export function validateKricAccessibilityRawCollection(rawArtifact, snapshotValue) {
+  const snapshot = validateKricAccessibilitySnapshotIdentity(snapshotValue);
+  const expectedKeys = [
+    "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "snapshotRawSha256",
+    "credentialRedacted", "requestCount", "inventorySha256", "responses",
+  ];
+  if (!rawArtifact || !exactKeys(rawArtifact, expectedKeys)
+    || rawArtifact.schemaVersion !== 1
+    || rawArtifact.artifactKind !== "kric-accessibility-raw-collection"
+    || rawArtifact.sourceId !== snapshot.sourceId
+    || rawArtifact.snapshotId !== snapshot.snapshotId
+    || rawArtifact.capturedAt !== snapshot.capturedAt
+    || rawArtifact.snapshotRawSha256 !== snapshot.rawSha256
+    || rawArtifact.credentialRedacted !== true
+    || !Array.isArray(rawArtifact.responses)
+    || rawArtifact.requestCount !== rawArtifact.responses.length
+    || !/^[0-9a-f]{64}$/.test(rawArtifact.inventorySha256 ?? "")) {
+    throw new Error("KRIC accessibility raw collection is invalid");
+  }
+  const seen = new Set();
+  for (const response of rawArtifact.responses) {
+    if (!exactKeys(response, [
+      "railOprIsttCd", "lnCd", "stinCd", "providerResultCode", "rawResponseSha256", "byteSize", "bodyBase64",
+    ]) || !["railOprIsttCd", "lnCd", "stinCd"].every((field) => typeof response[field] === "string" && response[field] !== "")
+      || response.providerResultCode !== "00"
+      || !/^[0-9a-f]{64}$/.test(response.rawResponseSha256 ?? "")
+      || !Number.isSafeInteger(response.byteSize) || response.byteSize < 1
+      || typeof response.bodyBase64 !== "string" || response.bodyBase64 === "") {
+      throw new Error("KRIC accessibility raw collection is invalid");
+    }
+    const bytes = Buffer.from(response.bodyBase64, "base64");
+    if (bytes.toString("base64") !== response.bodyBase64 || bytes.length !== response.byteSize
+      || hashBytes(bytes) !== response.rawResponseSha256) {
+      throw new Error("KRIC accessibility raw collection is invalid");
+    }
+    let payload;
+    try { payload = JSON.parse(bytes); } catch { throw new Error("KRIC accessibility raw collection is invalid"); }
+    if (payload?.header?.resultCode !== "00" || !Array.isArray(payload?.body)) {
+      throw new Error("KRIC accessibility raw collection is invalid");
+    }
+    const key = [response.railOprIsttCd, response.lnCd, response.stinCd].join("\0");
+    if (seen.has(key)) throw new Error("KRIC accessibility raw collection is invalid");
+    seen.add(key);
+  }
+  const queryKeys = new Set(snapshot.queries.map(({ railOprIsttCd, lnCd, stinCd }) => [railOprIsttCd, lnCd, stinCd].join("\0")));
+  const responseHashes = new Map(rawArtifact.responses.map((response) => [[
+    response.railOprIsttCd, response.lnCd, response.stinCd,
+  ].join("\0"), response.rawResponseSha256]));
+  if (seen.size !== queryKeys.size || [...queryKeys].some((key) => !seen.has(key))
+    || snapshot.queries.some((query) => responseHashes.get([
+      query.railOprIsttCd, query.lnCd, query.stinCd,
+    ].join("\0")) !== query.rawResponseSha256)
+    || rawArtifact.inventorySha256 !== hash(rawArtifact.responses.map(({ bodyBase64: _, ...response }) => response))) {
+    throw new Error("KRIC accessibility raw collection is invalid");
+  }
+  return rawArtifact;
+}
+
+export async function writeKricStandardAccessibilityObservation({ outputRoot, observation } = {}) {
+  if (typeof outputRoot !== "string" || !path.isAbsolute(outputRoot)) {
+    throw new Error("KRIC observation output root must be absolute");
+  }
+  try {
+    await lstat(outputRoot);
+    throw new Error("KRIC observation output root already exists");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const { snapshot, rawArtifact } = observation ?? {};
+  validateKricAccessibilityRawCollection(rawArtifact, snapshot);
+  const snapshotFile = `${snapshot.snapshotId}.json`;
+  const rawArtifactFile = `${snapshot.snapshotId}.raw.json`;
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const rawArtifactBytes = Buffer.from(`${JSON.stringify(rawArtifact, null, 2)}\n`);
+  const manifest = {
+    schemaVersion: 1,
+    artifactKind: "kric-standard-accessibility-observation",
+    sourceId: snapshot.sourceId,
+    capturedAt: snapshot.capturedAt,
+    snapshotId: snapshot.snapshotId,
+    snapshotRawSha256: snapshot.rawSha256,
+    snapshotFile,
+    snapshotFileSha256: hashBytes(snapshotBytes),
+    rawArtifactFile,
+    rawObjectSha256: hashBytes(rawArtifactBytes),
+    rawObjectChecksumSha256: createHash("sha256").update(rawArtifactBytes).digest("base64"),
+    rawObjectByteSize: rawArtifactBytes.length,
+    credentialRedacted: true,
+  };
+  await mkdir(path.dirname(outputRoot), { recursive: true });
+  const temporary = path.join(path.dirname(outputRoot), `.${path.basename(outputRoot)}.${randomUUID()}.tmp`);
+  await mkdir(temporary, { mode: 0o700 });
+  try {
+    await Promise.all([
+      writeFile(path.join(temporary, snapshotFile), snapshotBytes, { flag: "wx", mode: 0o600 }),
+      writeFile(path.join(temporary, rawArtifactFile), rawArtifactBytes, { flag: "wx", mode: 0o600 }),
+      writeFile(path.join(temporary, "observation.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 }),
+    ]);
+    await rename(temporary, outputRoot);
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
+  return manifest;
 }
 
 export async function collectKricAccessibilityProviderTupleEvidence({
@@ -428,11 +570,31 @@ export function buildKricAccessibilityRoster({ activeLineScopes, fixture, canoni
 }
 
 export async function loadCanonicalStationLinesFromBundledIndex({ bundledIndex, bundledRoot }) {
+  if (typeof bundledRoot !== "string" || !path.isAbsolute(bundledRoot)) {
+    throw new Error("bundled root is invalid");
+  }
+  const resolvedPacks = (bundledIndex?.packs ?? []).map((pack, index) => {
+    const packUrl = pack?.url;
+    const packPath = typeof packUrl === "string" ? path.resolve(bundledRoot, packUrl) : "";
+    const relativePackPath = packPath === "" ? "" : path.relative(bundledRoot, packPath);
+    if (typeof packUrl !== "string"
+      || packUrl === ""
+      || path.isAbsolute(packUrl)
+      || packUrl.includes("\\")
+      || !packUrl.endsWith(".sqlite.gz")
+      || relativePackPath === ""
+      || relativePackPath === ".."
+      || relativePackPath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePackPath)) {
+      throw new Error(`${pack?.id ?? "unknown"}: pack url is invalid`);
+    }
+    return { index, pack, packPath };
+  });
   const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-accessibility-roster-"));
   try {
     const memberships = new Map();
-    for (const [index, pack] of (bundledIndex?.packs ?? []).entries()) {
-      const sqliteBytes = gunzipSync(await readFile(path.resolve(bundledRoot, pack.asset)));
+    for (const { index, pack, packPath } of resolvedPacks) {
+      const sqliteBytes = gunzipSync(await readFile(packPath));
       if (hashBytes(sqliteBytes) !== pack.sqliteSha256) throw new Error(`${pack.id}:SQLITE_SHA256_MISMATCH`);
       const sqlitePath = path.join(temporaryDirectory, `${index}.sqlite`);
       await writeFile(sqlitePath, sqliteBytes);
@@ -527,17 +689,25 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   await paceRequest();
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
-  } catch {
-    throw new Error(`KRIC accessibility request failed: ${requestIdentity}`);
+  } catch (error) {
+    throw new Error(`KRIC accessibility request failed: ${classifyTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
   }
   if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
   let payload;
   try {
     payload = await response.json();
-  } catch {
+  } catch (error) {
+    const transportFailure = classifyTransportFailure(error);
+    if (transportFailure != null) {
+      throw new Error(`KRIC accessibility request failed: ${transportFailure}: ${requestIdentity}`);
+    }
     throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
   }
-  const rawResponseSha256 = hash(payload);
+  const rawResponseBytes = Buffer.from(JSON.stringify(payload));
+  if (containsStringValue(payload, serviceKey)) {
+    throw new Error(`KRIC accessibility credential reflection rejected: ${requestIdentity}`);
+  }
+  const rawResponseSha256 = hashBytes(rawResponseBytes);
   const resultCode = payload?.header?.resultCode;
   if (resultCode === "00" && Array.isArray(payload?.body)) {
     payload = payload.body;
@@ -564,7 +734,55 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
       operation.responseFields.map((field) => [field, row[field]]),
     )),
     rawResponseSha256,
+    rawResponse: {
+      railOprIsttCd: tuple.railOprIsttCd,
+      lnCd: tuple.lnCd,
+      stinCd: tuple.stinCd,
+      providerResultCode: "00",
+      rawResponseSha256,
+      byteSize: rawResponseBytes.length,
+      bodyBase64: rawResponseBytes.toString("base64"),
+    },
   };
+}
+
+function classifyTransportFailure(error) {
+  const dnsCodes = new Set(["EAI_AGAIN", "ENOTFOUND"]);
+  const timeoutCodes = new Set([
+    "ETIMEDOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT",
+  ]);
+  const socketCodes = new Set([
+    "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EPIPE", "UND_ERR_SOCKET",
+  ]);
+  const seen = new Set();
+  let current = error;
+  for (let depth = 0; current != null && depth < 8 && !seen.has(current); depth += 1) {
+    seen.add(current);
+    let code;
+    let name;
+    let cause;
+    try {
+      code = typeof current.code === "string" ? current.code : "";
+      name = typeof current.name === "string" ? current.name : "";
+      cause = current.cause;
+    } catch {
+      return null;
+    }
+    if (dnsCodes.has(code)) return "NETWORK_DNS";
+    if (code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_") || code.startsWith("CERT_")
+      || [
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      ].includes(code)) {
+      return "NETWORK_TLS";
+    }
+    if (timeoutCodes.has(code) || name === "AbortError" || name === "TimeoutError") return "NETWORK_TIMEOUT";
+    if (socketCodes.has(code)) return "NETWORK_SOCKET";
+    current = cause;
+  }
+  return null;
 }
 
 function tupleKey(tuple) {
@@ -585,6 +803,19 @@ function hash(value) {
 
 function hashBytes(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function exactKeys(value, expected) {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === expected.length
+    && expected.every((key, index) => Object.keys(value)[index] === key);
+}
+
+function containsStringValue(value, expected) {
+  if (typeof value === "string") return value.includes(expected);
+  if (Array.isArray(value)) return value.some((item) => containsStringValue(item, expected));
+  return value != null && typeof value === "object"
+    && Object.entries(value).some(([key, item]) => key.includes(expected) || containsStringValue(item, expected));
 }
 
 function tableExists(database, table) {
@@ -626,7 +857,7 @@ async function main(argv) {
   ]);
   const canonicalStationLines = await loadCanonicalStationLinesFromBundledIndex({
     bundledIndex,
-    bundledRoot: path.resolve(path.dirname(args["bundled-index"]), "../.."),
+    bundledRoot: args["bundled-root"],
   });
   const roster = buildKricAccessibilityRoster({
     activeLineScopes: targets.activeLineScopes,
@@ -638,20 +869,13 @@ async function main(argv) {
     process.stdout.write(`validated KRIC accessibility roster: tuples=${roster.length}\n`);
     return;
   }
-  const snapshots = await collectKricAccessibilitySnapshots({
+  const observation = await collectKricStandardAccessibilityObservation({
     roster,
     serviceKey: process.env.KRIC_SERVICE_KEY,
     requestIntervalMs: Number(args["request-interval-ms"] ?? 0),
   });
-  await mkdir(args["output-root"], { recursive: true });
-  for (const snapshot of snapshots) {
-    await writeFile(
-      path.join(args["output-root"], `${snapshot.snapshotId}.json`),
-      `${JSON.stringify(snapshot, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-  }
-  process.stdout.write(`sanitized KRIC accessibility snapshots ready: tuples=${roster.length} sources=${snapshots.length}\n`);
+  await writeKricStandardAccessibilityObservation({ outputRoot: args["output-root"], observation });
+  process.stdout.write(`sanitized KRIC accessibility observation ready: tuples=${roster.length} sources=1\n`);
 }
 
 function parseArgs(argv) {
@@ -666,9 +890,10 @@ function parseArgs(argv) {
     args[argv[index].slice(2)] = argv[index + 1];
     index += 2;
   }
-  for (const name of ["bundled-index", "targets", "fixture", "route-rosters", "output-root"]) {
+  for (const name of ["bundled-index", "bundled-root", "targets", "fixture", "route-rosters", "output-root"]) {
     if (!args[name]) throw new Error(`missing --${name}`);
   }
+  if (!path.isAbsolute(args["bundled-root"])) throw new Error("--bundled-root must be absolute");
   if (!path.isAbsolute(args["output-root"])) throw new Error("--output-root must be absolute");
   return args;
 }

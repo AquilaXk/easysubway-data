@@ -22,6 +22,9 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
+const CURRENT_ACTIVE_FROM = "2026-08-14T09:00:00.000+09:00";
+const CURRENT_FRESH_UNTIL = "2026-08-15T00:00:00.000+09:00";
+const CURRENT_EVALUATION_AT = "2026-08-14T00:00:00.000Z";
 
 test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "artifact-emitter-"));
@@ -33,7 +36,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
   db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
   db.close();
-  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-03T15:00:00.000Z" };
+  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-14T15:00:00.000Z" };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
   const buildSpec = JSON.parse(spec);
@@ -44,7 +47,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: hash(Buffer.from(canonicalJson(current))), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
   const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
   const routeEdgeInput = completeRouteEdgeInput(buildSpec.sourceSnapshotSetHash);
-  const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: "2026-08-03T00:00:00.000+09:00", freshUntil: "2026-08-04T00:00:00.000+09:00", builtAt: "2026-08-03T00:00:00.000Z", keyId: "test-key", evaluationAt: "2026-08-03T00:00:00.000Z", stationLineInput, routeEdgeInput, ...values });
+  const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL, builtAt: CURRENT_EVALUATION_AT, keyId: "test-key", evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput, ...values });
   const applySourceSql = (sql) => { const mutation = new DatabaseSync(source); mutation.exec(sql); mutation.close(); };
   await run("one"); await run("two"); await run("three");
   const paths = await emittedPaths(path.join(temp, "one"));
@@ -106,11 +109,11 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     "--catalog-pack-id", "catalog-v1",
     "--bundle-id", "bundle-v1",
     "--release-sequence", "1",
-    "--active-from", "2026-08-03T00:00:00.000+09:00",
-    "--fresh-until", "2026-08-04T00:00:00.000+09:00",
-    "--built-at", "2026-08-03T00:00:00.000Z",
+    "--active-from", CURRENT_ACTIVE_FROM,
+    "--fresh-until", CURRENT_FRESH_UNTIL,
+    "--built-at", CURRENT_EVALUATION_AT,
     "--key-id", "test-key",
-    "--evaluation-at", "2026-08-03T00:00:00.000Z",
+    "--evaluation-at", CURRENT_EVALUATION_AT,
     "--station-line-input", stationLineInputPath,
     "--route-edge-input", routeEdgeInputPath,
   ], { cwd: fixtureRoot, encoding: "utf8" });
@@ -170,11 +173,11 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
       assert.deepEqual(groupedForeignKeys(componentDb, table), groupedForeignKeys(sourceDb, table));
     }
     if (component === "accessibility") {
-      const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: "2026-08-03T00:00:00.000Z" });
+      const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: CURRENT_EVALUATION_AT });
       const evaluation = evaluateRouteAccessibilityEdges({
         ...routeEdgeInput,
         candidate: { ...routeEdgeInput.candidate, topologySha256: signingInput.topologySha256 },
-        evaluationAt: "2026-08-03T00:00:00.000Z",
+        evaluationAt: CURRENT_EVALUATION_AT,
         materialization,
       }, routePolicy);
       assert.deepEqual(componentDb.prepare("PRAGMA table_info(station_line_accessibility_evidence)").all().map((column) => column.name), ["materialization_digest", "canonical_json"]);
@@ -214,10 +217,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   }
   await writeBindings(temp, source, current, spec);
 
-  await assert.rejects(() => run("late", { freshUntil: "2026-08-04T00:00:00.001+09:00" }), /source freshness/);
+  await assert.rejects(() => run("late", { freshUntil: "2026-08-15T00:00:00.001+09:00" }), /source freshness/);
   assert.equal(await exists(path.join(temp, "late")), false);
 
-  const timezoneLessCurrent = { ...current, expiresAt: "2026-08-03T15:00:00.000" };
+  const timezoneLessCurrent = { ...current, expiresAt: "2026-08-14T15:00:00.000" };
   await writeBindings(temp, source, timezoneLessCurrent, spec);
   await assert.rejects(() => run("timezone-less-current"), /current\.json\.expiresAt must be an RFC 3339 UTC timestamp/);
   assert.equal(await exists(path.join(temp, "timezone-less-current")), false);
@@ -327,8 +330,8 @@ function completeStationLineInput(sourceSetSha256) {
     sourceSnapshotId: "fixture-snapshot",
     evidenceRawSha256: "a".repeat(64),
     providerRecordHash: "b".repeat(64),
-    capturedAt: "2026-08-02T00:00:00.000Z",
-    freshUntil: "2026-08-04T00:00:00.000Z",
+    capturedAt: "2026-08-13T15:06:46.000Z",
+    freshUntil: "2026-08-14T15:06:46.000Z",
     provenanceId: "fixture-provenance",
     licenseId: "fixture-license",
     mappingContractVersion: candidate.mappingContractVersion,

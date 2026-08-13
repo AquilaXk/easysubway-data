@@ -11,9 +11,13 @@ import { replaceFileAtomically } from "./refresh-route-map-admission-freshness.m
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
 const STATION_ALIASES = Object.freeze({
+  당고개: "불암산",
   능길: "신길온천",
   김포공항역: "김포공항",
   부천종합운동장역: "부천종합운동장",
+  서울: "서울역",
+  뚝섬유원지: "자양",
+  하남검단산: "하남검단산역",
 });
 
 function sha256(bytes) {
@@ -73,6 +77,38 @@ function topologyStationsByLine(topology) {
   return result;
 }
 
+function currentCapitalTopologyBinding(source, evidence, topologySourceId) {
+  if (evidence?.topologySourceId === topologySourceId) return "historical";
+  if (source.id !== "seoul-metro-route-map-positions") return null;
+  if (source.productionUseAllowed !== true
+    || source.license?.redistributionAllowed !== true
+    || evidence?.issue !== 2470
+    || evidence.admissionKind !== "official-file-latlon"
+    || evidence.materializer !== "tools/datapack/materialize-seoul-route-map-positions.mjs"
+    || evidence.verificationTest !== "tools/datapack/materialize-seoul-route-map-positions.test.mjs"
+    || [
+      evidence.topologySourceId,
+      evidence.topologySnapshotId,
+      evidence.topologyContentSha256,
+      evidence.topologyLineages,
+      evidence.currentTopologyAdmission,
+    ].some((value) => value !== undefined)) {
+    throw new Error("Seoul route-map position source contract is invalid");
+  }
+  return "current-official";
+}
+
+export function requiresCurrentCapitalTopologyAdmission(
+  source,
+  topologySourceId = "capital-route-topology",
+) {
+  return currentCapitalTopologyBinding(
+    source,
+    source?.routeMapAdmissionEvidence,
+    topologySourceId,
+  ) != null;
+}
+
 export function withCurrentCapitalTopologyAdmissions({
   inventory,
   topology,
@@ -103,7 +139,8 @@ export function withCurrentCapitalTopologyAdmissions({
   let admissionCount = 0;
   for (const source of next.sources) {
     const evidence = source.routeMapAdmissionEvidence;
-    if (evidence?.topologySourceId !== topology.sourceId) continue;
+    const binding = currentCapitalTopologyBinding(source, evidence, topology.sourceId);
+    if (binding == null) continue;
     const snapshotBytes = snapshotBytesByPath.get(evidence.snapshotPath);
     if (snapshotBytes == null
       || sha256(snapshotBytes) !== requiredSha256(evidence.snapshotSha256, `${source.id} snapshotSha256`)) {
@@ -111,15 +148,28 @@ export function withCurrentCapitalTopologyAdmissions({
     }
     const snapshot = parseSnapshot(snapshotBytes, `${source.id} position snapshot`);
     if (snapshot.sourceId !== source.id
-      || snapshot.topologySourceId !== evidence.topologySourceId
-      || snapshot.topologySnapshotId !== evidence.topologySnapshotId
-      || snapshot.topologyContentSha256 !== evidence.topologyContentSha256
-      || !same(snapshot.topologyLineages, evidence.topologyLineages)
       || !same(snapshot.lineIds, evidence.lineIds)
       || snapshot.stationCount !== evidence.stationCount
       || !Array.isArray(snapshot.positions)
       || snapshot.positions.length !== evidence.stationCount) {
       throw new Error(`${source.id} historical position admission mismatch`);
+    }
+    if (binding === "historical") {
+      if (snapshot.topologySourceId !== evidence.topologySourceId
+        || snapshot.topologySnapshotId !== evidence.topologySnapshotId
+        || snapshot.topologyContentSha256 !== evidence.topologyContentSha256
+        || !same(snapshot.topologyLineages, evidence.topologyLineages)) {
+        throw new Error(`${source.id} historical position admission mismatch`);
+      }
+    } else if (snapshot.positionsSha256 !== evidence.positionsSha256
+      || snapshot.rawSha256 !== evidence.rawSha256
+      || [
+        snapshot.topologySourceId,
+        snapshot.topologySnapshotId,
+        snapshot.topologyContentSha256,
+        snapshot.topologyLineages,
+      ].some((value) => value !== undefined)) {
+      throw new Error("Seoul route-map position snapshot identity is invalid");
     }
     if (new Set(evidence.lineIds).size !== evidence.lineIds.length || evidence.lineIds.length === 0) {
       throw new Error(`${source.id} admitted line set is invalid`);
@@ -145,6 +195,7 @@ export function withCurrentCapitalTopologyAdmissions({
     if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
       throw new Error(`${source.id} position line coverage mismatch`);
     }
+    if (binding === "current-official") evidence.topologySourceId = topology.sourceId;
     evidence.currentTopologyAdmission = {
       schemaVersion: 1,
       artifactKind: "capital-route-map-current-topology-admission",

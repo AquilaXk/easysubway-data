@@ -12,9 +12,11 @@ import {
   collectCapitalRouteTopology,
   collectMolitFullRouteCsv,
   compareCapitalRouteTopologies,
+  repairCapitalTopologyBranchCoverage,
   LINE_SOURCES,
   mergeOfficialDistanceEvidence,
   MOLIT_FULL_ROUTE_DETAIL_URL,
+  normalizeStationName,
   parseLineSource,
   parseSeohaeMerged,
   projectCapitalTopologyOwnership,
@@ -30,6 +32,37 @@ function topologyLine(lineId, scope, edges) {
     edges,
     contentSha256: createHash("sha256").update(JSON.stringify({ scope, edges })).digest("hex"),
   };
+}
+
+function hashJson(value) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function refreshSnapshotIdentity(snapshot) {
+  for (const line of snapshot.lines) {
+    line.stationCount = line.scope.length;
+    line.edgeCount = line.edges.length;
+    line.scopeSha256 = hashJson(line.scope);
+    line.edgesSha256 = hashJson(line.edges);
+    line.contentSha256 = hashJson({ scope: line.scope, edges: line.edges });
+  }
+  snapshot.lineCount = snapshot.lines.length;
+  snapshot.totalEdgeCount = snapshot.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  snapshot.contentSha256 = hashJson({
+    lines: snapshot.lines.map(({
+      lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId,
+    }) => ({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId })),
+    topologyGaps: snapshot.topologyGaps,
+  });
+  if (snapshot.admission != null) {
+    Object.assign(snapshot.admission, {
+      contentSha256: snapshot.contentSha256,
+      lineCount: snapshot.lineCount,
+      totalEdgeCount: snapshot.totalEdgeCount,
+      gapLineIds: snapshot.topologyGaps.map(({ lineId }) => lineId),
+    });
+  }
+  return snapshot;
 }
 
 test("MOLIT 전체노선 collector는 공개 FILE 링크의 CSV만 수집한다", async () => {
@@ -94,6 +127,10 @@ test("current capital topology ownership projection은 Incheon 1/2만 별도 sou
     "tools/datapack/sources/capital-route-topology-20260724.json",
     "utf8",
   ));
+  const current = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
   const projected = projectCapitalTopologyOwnership(snapshot);
   const separated = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
 
@@ -112,6 +149,14 @@ test("current capital topology ownership projection은 Incheon 1/2만 별도 sou
     gapLineIds: projected.topologyGaps.map(({ lineId }) => lineId),
   });
   assert.equal(snapshot.lines.some(({ lineId }) => separated.has(lineId)), true);
+
+  const reverification = buildCapitalTopologyReverificationEvidence(projected, current);
+  assert.deepEqual(reverification.comparison, {
+    changedLineCount: 0,
+    addedEdgeCount: 0,
+    removedEdgeCount: 0,
+    modifiedEdgeCount: 0,
+  });
 
   const missing = structuredClone(snapshot);
   missing.lines = missing.lines.filter(({ lineId }) => lineId !== "line-42b5805f3b5a");
@@ -363,6 +408,139 @@ test("상충하는 official 거리는 선택하지 않고 conflict evidence를 �
     { distanceMeters: 0, distanceConflictMeters: [1700, 2100] },
   );
   assert.deepEqual(mergeOfficialDistanceEvidence({ distanceMeters: 0 }, 600), { distanceMeters: 600 });
+});
+
+test("official branch의 종착 거리 누락은 연결 자체를 버리지 않는다", () => {
+  const line = parseLineSource({
+    kind: "csv",
+    slug: "terminal-distance",
+    lineId: "line-terminal-distance",
+    datasetId: "dataset-terminal-distance",
+    detailUrl: "https://example.invalid/detail",
+    downloadUrl: "https://example.invalid/download",
+  }, Buffer.from([
+    "철도운영기관명,선명,역명,역간거리(km)",
+    "운영사,테스트선,가,0",
+    "운영사,테스트선,나,1.5",
+    "운영사,테스트선,다,",
+  ].join("\n")), {
+    capturedAt: new Date("2026-08-13T15:06:46.000Z"),
+  });
+
+  assert.equal(line.stationCount, 3);
+  assert.equal(line.edgeCount, 4);
+  assert.deepEqual(
+    line.edges.filter(({ fromStationName, toStationName }) => (
+      (fromStationName === "나" && toStationName === "다")
+      || (fromStationName === "다" && toStationName === "나")
+    )),
+    [
+      {
+        fromStationName: "나",
+        toStationName: "다",
+        distanceMeters: 0,
+        durationSeconds: 0,
+        branchNames: ["테스트선"],
+      },
+      {
+        fromStationName: "다",
+        toStationName: "나",
+        distanceMeters: 0,
+        durationSeconds: 0,
+        branchNames: ["테스트선"],
+      },
+    ],
+  );
+});
+
+test("current capital snapshot repair는 branch 종착 4구간만 결정적으로 복구한다", async () => {
+  const repaired = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
+  const repairedPairs = new Map([
+    ["line-30886152e4f8", { pair: "보문|신설동", missing: "신설동" }],
+    ["line-558d0bd8312d", { pair: "왕십리|청량리", missing: "청량리" }],
+    ["line-828f04afc588", { pair: "둔전|전대.에버랜드", missing: "전대.에버랜드" }],
+    ["seoul-4", { pair: "오이도|정왕", missing: "오이도" }],
+  ]);
+  const expectedPairs = new Set([...repairedPairs].map(([lineId, { pair }]) => `${lineId}|${pair}`));
+
+  assert.equal(repaired.totalEdgeCount, 1438);
+  for (const line of repaired.lines) {
+    const scope = new Set(line.scope.map(({ stationName }) => stationName));
+    const incident = new Set(line.edges.flatMap(({ fromStationName, toStationName }) => [
+      fromStationName,
+      toStationName,
+    ]));
+    for (const branch of line.branchSequences) {
+      for (const stationName of branch.stationNames) {
+        const normalized = normalizeStationName(stationName);
+        assert.equal(scope.has(normalized), true, `${line.lineId}:${normalized} scope`);
+        assert.equal(incident.has(normalized), true, `${line.lineId}:${normalized} edge`);
+      }
+    }
+    for (const edge of line.edges.filter(({ distanceMeters }) => distanceMeters === 0)) {
+      const pair = [edge.fromStationName, edge.toStationName].sort().join("|");
+      const key = `${line.lineId}|${pair}`;
+      if (expectedPairs.has(key)) expectedPairs.delete(key);
+    }
+  }
+  assert.deepEqual([...expectedPairs], []);
+  assert.deepEqual(repairCapitalTopologyBranchCoverage(repaired), repaired);
+
+  const stale = structuredClone(repaired);
+  for (const line of stale.lines) {
+    const target = repairedPairs.get(line.lineId);
+    if (target == null) continue;
+    line.edges = line.edges.filter(({ fromStationName, toStationName }) => (
+      [fromStationName, toStationName].sort().join("|") !== target.pair
+    ));
+    line.scope = line.scope
+      .filter(({ stationName }) => stationName !== target.missing)
+      .map(({ stationName }, index) => ({ stationName, sequence: index + 1 }));
+  }
+  refreshSnapshotIdentity(stale);
+  assert.equal(stale.totalEdgeCount, repaired.totalEdgeCount - 8);
+  assert.deepEqual(repairCapitalTopologyBranchCoverage(stale), repaired);
+});
+
+test("8호선 별내선 repair는 official station order와 canonical adjacency를 복구한다", async () => {
+  const input = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
+  const repaired = repairCapitalTopologyBranchCoverage(input);
+  const line = repaired.lines.find(({ lineId }) => lineId === "line-2b2d9eaa53d0");
+  assert.ok(line);
+  const branch = line.branchSequences.find(({ branchName }) => branchName === "8호선");
+  assert.deepEqual(branch?.stationNames.slice(0, 7), [
+    "별내", "다산", "동구릉", "구리", "장자호수공원", "암사역사공원", "암사",
+  ]);
+
+  const directedPairs = new Set(line.edges.map(
+    ({ fromStationName, toStationName }) => `${fromStationName}|${toStationName}`,
+  ));
+  for (const [left, right] of [
+    ["다산", "동구릉"],
+    ["장자호수공원", "암사역사공원"],
+  ]) {
+    for (const [from, to] of [[left, right], [right, left]]) {
+      const edge = line.edges.find(
+        ({ fromStationName, toStationName }) => fromStationName === from
+          && toStationName === to,
+      );
+      assert.equal(edge?.distanceMeters, 0);
+      assert.equal(edge?.durationSeconds, 0);
+    }
+  }
+  for (const key of [
+    "다산|암사역사공원", "암사역사공원|다산",
+    "별내|장자호수공원", "장자호수공원|별내",
+  ]) {
+    assert.equal(directedPairs.has(key), false, key);
+  }
+  assert.equal(repaired.totalEdgeCount, input.totalEdgeCount);
 });
 
 test("서해선 official file이 다른 노선을 함께 반환해도 서해선 branch만 수용한다", () => {

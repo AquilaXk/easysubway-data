@@ -33,24 +33,13 @@ const missingItxEvidence = () => ({
   sourceIssue: 2116,
 });
 
-test("historical reviewed pack은 legacy MISSING audit bytes만 보존하고 current ITX row를 포함하지 않는다", async () => {
+test("current reviewed pack은 legacy admission input과 current ITX row를 포함하지 않는다", async () => {
   const production = JSON.parse(await readFile(
     new URL("./release/capital-production-reviewed-pack.json", import.meta.url),
     "utf8",
   ));
   const pack = production.packs.find(({ id }) => id === "capital");
-  assert.deepEqual(pack.routeServiceArtifactEvidence, [{
-    serviceClass: "ITX_CHEONGCHUN",
-    timetableArtifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
-    timetableArtifactSha256: "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
-    canonicalPackId: "capital",
-    canonicalPackSha256: "580814a58ce8d94b174de1ca8753ef7f350ce806dd793f6a7f43e07e7aa155b9",
-    canonicalPackSqliteSha256: "72b85f941a8cb3a905218287a3e2ff4ce38561397ed5c22d77816576529ffe03",
-    admissionStatus: "MISSING",
-    admissionEligible: false,
-    freshUntil: "2026-07-20T00:00:00.000Z",
-    sourceIssue: 2116,
-  }]);
+  assert.deepEqual(pack.routeServiceArtifactEvidence, []);
   assert.equal((pack.transitTrips ?? []).filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length, 0);
   assert.equal((pack.networkEdges ?? []).filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN").length, 0);
 });

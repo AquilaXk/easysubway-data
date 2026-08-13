@@ -60,7 +60,6 @@
         "tools/datapack/probe-korail-train-operation-api.mjs",
         "tools/datapack/probe-seoul-fare-api.mjs",
         "tools/datapack/probe-tago-train-date-semantics.mjs",
-        "tools/datapack/revalidate-current-static-network-sources.mjs",
         "tools/datapack/run-current-itx-collection.mjs",
         "tools/datapack/validate-tago-schedule-sample.mjs"
       ]
@@ -5811,19 +5810,19 @@
       "domain": "station_line_membership",
       "displayName": "국토교통부_도시철도 전체노선",
       "detailUrl": "https://www.data.go.kr/data/15122916/fileData.do",
-      "requestUrl": "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route",
+      "requestUrl": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "admitted_to_production_inventory",
-      "serviceKeyHandling": "offline_import_secret_only",
+      "serviceKeyHandling": "not_required",
       "mobileEmbeddingAllowed": false,
       "evidence": {
         "detailPageUrl": "https://www.data.go.kr/data/15122916/fileData.do",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route",
+        "endpoint": "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
-          "JSON"
+          "CSV"
         ],
         "outputFields": [
           "line_name",
@@ -7071,7 +7070,7 @@
         "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
         "retrievedAt": "2026-06-21",
         "endpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
-        "sampleUrl": "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5///4호선",
+        "sampleUrl": "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5/%20/%20/4호선",
         "usePermissionRange": "공공누리 1유형",
         "formats": [
           "JSON"

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "current-static-source-revalidation-evidence",
+  "contractVersion": "1.0.0",
+  "sourceId": "molit-urban-rail-full-route",
+  "previousSnapshotId": "molit-urban-rail-full-route-capital-admission-20260712",
+  "observedAt": "2026-08-13T14:02:45.000Z",
+  "operation": "molit-urban-rail-full-route-file-five-records",
+  "rowCount": 5,
+  "canonicalRawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
+  "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+  "providerRecordHashesSha256": "c049f6805e797e0066ab29e40909485b20c7cf8cfe116d45cd2118a6d3c60be6",
+  "responseSha256": "8a60490ea582a62ce859877380e4b96b34416c536d96b1dcb1a869426bedc363",
+  "outcome": "NO_CHANGE_REVALIDATED",
+  "credentialRedacted": true,
+  "evidenceSha256": "c6b3a0fe0dab4657877c9ab6c648ec497b107c76bc8dcc6042368907af92e9f4"
+}

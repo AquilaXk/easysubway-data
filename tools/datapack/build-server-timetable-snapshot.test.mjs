@@ -216,6 +216,9 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   const second = buildServerTimetableSnapshot({ ...value, buildNow });
   const contract = JSON.parse(value.contractBytes);
   const source = JSON.parse(value.sourceBytes);
+  const selectedServiceDates = Object.values(source.selectedServiceDates).sort();
+  const serviceDateStart = selectedServiceDates.at(0);
+  const serviceDateEnd = selectedServiceDates.at(-1);
 
   assert.deepEqual(second, first);
   assert.equal(gunzipSync(first.gzipBytes).toString("utf8"), first.sql);
@@ -283,9 +286,9 @@ test("#2135 ADMITTED source와 subway seed를 deterministic complete server snap
   assert.equal((first.sql.match(/INSERT INTO transit_feed_info/g) ?? []).length, 1);
   assert.equal((first.sql.match(/VALUES \('weekday-kric'/g) ?? []).length, 1);
   assert.equal((first.sql.match(/VALUES \('holiday-kric'/g) ?? []).length, 1);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-weekday-kric', '20260727', '20260802', 'Asia\/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE\)/);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-saturday-kric', '20260727', '20260802', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE\)/);
-  assert.match(first.sql, /VALUES \('itx-cheongchun-holiday-kric', '20260727', '20260802', 'Asia\/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE\)/);
+  assert.ok(first.sql.includes(`VALUES ('itx-cheongchun-weekday-kric', '${serviceDateStart}', '${serviceDateEnd}', 'Asia/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE)`));
+  assert.ok(first.sql.includes(`VALUES ('itx-cheongchun-saturday-kric', '${serviceDateStart}', '${serviceDateEnd}', 'Asia/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE)`));
+  assert.ok(first.sql.includes(`VALUES ('itx-cheongchun-holiday-kric', '${serviceDateStart}', '${serviceDateEnd}', 'Asia/Seoul', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE)`));
   for (const [sourceServiceId, namespacedServiceId] of [
     ["weekday-kric", "itx-cheongchun-weekday-kric"],
     ["saturday-kric", "itx-cheongchun-saturday-kric"],
@@ -504,7 +507,7 @@ test("complete snapshot은 source·completeness identity와 freshness를 fail cl
   assert.throws(
     () => buildServerTimetableSnapshot({
       ...value,
-      buildNow: new Date("2026-08-02T15:00:00.000Z"),
+      buildNow: new Date(source.freshUntil),
     }),
     /source artifact is stale/,
   );

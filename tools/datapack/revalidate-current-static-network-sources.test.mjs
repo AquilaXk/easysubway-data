@@ -1,17 +1,34 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import {
+  buildCurrentStaticSourceChangeAdmission,
   buildCurrentStaticSourceRevalidation,
   fetchCurrentStaticSourceResponses,
+  runCurrentStaticSourceRevalidation,
+  writeCurrentStaticSourceChangeAdmission,
   writeCurrentStaticSourceRevalidation,
 } from "./revalidate-current-static-network-sources.mjs";
 
 const observedAt = "2026-08-13T10:30:00.000Z";
+const execFileAsync = promisify(execFile);
+const molitCsvBytes = await readFile(new URL(
+  "./sources/molit-urban-rail-full-route-20251211.csv",
+  import.meta.url,
+));
+const trackedSnapshots = JSON.parse(await readFile(new URL(
+  "./release/source-snapshots.json",
+  import.meta.url,
+), "utf8"));
+const trackedMolitSnapshot = trackedSnapshots.find(
+  ({ sourceId }) => sourceId === "molit-urban-rail-full-route",
+);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -19,12 +36,18 @@ function sha256(bytes) {
 
 function projectedRows() {
   return {
-    molit: Array.from({ length: 5 }, (_, index) => ({
+    molit: [
+      ["선바위", "30"],
+      ["경마공원", "31"],
+      ["대공원", "32"],
+      ["과천", "33"],
+      ["정부과천청사", "34"],
+    ].map(([stationName, sequence]) => ({
       line_name: "4호선",
-      operator_name: "서울교통공사",
+      operator_name: "코레일",
       region: "수도권",
-      station_name: `역-${index + 1}`,
-      station_sequence: index + 1,
+      station_name: stationName,
+      station_sequence: sequence,
     })),
     seoul: Array.from({ length: 5 }, (_, index) => ({
       line: "04호선",
@@ -36,14 +59,7 @@ function projectedRows() {
 
 function responseBytes(rows = projectedRows()) {
   return {
-    molit: Buffer.from(JSON.stringify({
-      currentCount: 5,
-      data: rows.molit,
-      matchCount: 5,
-      page: 1,
-      perPage: 5,
-      totalCount: 5,
-    })),
+    molit: Buffer.from(molitCsvBytes),
     seoul: Buffer.from(JSON.stringify({
       SearchSTNBySubwayLineInfo: {
         list_total_count: 5,
@@ -63,7 +79,7 @@ function responseBytes(rows = projectedRows()) {
 }
 
 function previousSnapshots(rows = projectedRows()) {
-  return Object.entries(rows).map(([kind, records]) => {
+  const synthetic = Object.entries(rows).map(([kind, records]) => {
     const sourceId = kind === "molit"
       ? "molit-urban-rail-full-route"
       : "seoulmetro-station-line-info";
@@ -95,6 +111,64 @@ function previousSnapshots(rows = projectedRows()) {
       providerRecordHashes: records.map((record) => sha256(JSON.stringify(record))),
     };
   });
+  return [structuredClone(trackedMolitSnapshot), synthetic.find(({ sourceId }) => (
+    sourceId === "seoulmetro-station-line-info"
+  ))];
+}
+
+function previousSnapshotsBeforeSeoulChange() {
+  const rows = projectedRows();
+  rows.seoul = rows.seoul.map((record, index) => ({
+    ...record,
+    station_code: `old-${index + 1}`,
+    station_name: `이전역-${index + 1}`,
+  }));
+  return previousSnapshots(rows);
+}
+
+function canonicalPackBytes(rows = projectedRows().seoul) {
+  return Buffer.from(JSON.stringify({
+    manifest: { manifestVersion: 2 },
+    packs: [{
+      id: "capital",
+      lines: [{ id: "seoul-4", nameKo: "수도권 4호선" }],
+      stations: rows.map((row, index) => ({ id: `station-${index + 1}`, nameKo: row.station_name })),
+      stationLines: rows.map((_row, index) => ({
+        stationId: `station-${index + 1}`,
+        lineId: "seoul-4",
+        stationCode: `${index + 1}`,
+        lineSequence: index + 1,
+      })),
+    }],
+  }));
+}
+
+function changeCapture(responses) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-capture",
+    observedAt,
+    outcome: "CHANGE_REVIEW_REQUIRED",
+    sources: [
+      {
+        sourceId: "molit-urban-rail-full-route",
+        operation: "molit-urban-rail-full-route-file-five-records",
+        status: "UNCHANGED",
+        responseSha256: sha256(responses.molit),
+        responseByteSize: responses.molit.length,
+        rawFile: "molit-response.bin",
+      },
+      {
+        sourceId: "seoulmetro-station-line-info",
+        operation: "seoulmetro-line4-stations-one-to-five",
+        status: "CONTENT_CHANGED",
+        responseSha256: sha256(responses.seoul),
+        responseByteSize: responses.seoul.length,
+        rawFile: "seoul-response.json",
+      },
+    ],
+    credentialRedacted: true,
+  };
 }
 
 test("current static responses가 unchanged면 exact child snapshots와 sanitized evidence를 만든다", () => {
@@ -123,6 +197,9 @@ test("current static responses가 unchanged면 exact child snapshots와 sanitize
     assert.equal(snapshot.rawRetentionExpiresAt, "2026-11-11T10:30:00.000Z");
     assert.equal(snapshot.revalidationEvidenceSha256, evidence.evidenceSha256);
     assert.equal(evidence.outcome, "NO_CHANGE_REVALIDATED");
+    assert.equal(evidence.operation, evidence.sourceId === "molit-urban-rail-full-route"
+      ? "molit-urban-rail-full-route-file-five-records"
+      : "seoulmetro-line4-stations-one-to-five");
     assert.match(evidence.responseSha256, /^[0-9a-f]{64}$/);
     assert.equal(evidence.credentialRedacted, true);
     assert.doesNotMatch(JSON.stringify(evidence), /Station-04|站-04|駅-04|s3:|serviceKey/);
@@ -131,11 +208,30 @@ test("current static responses가 unchanged면 exact child snapshots와 sanitize
 
 test("row order/value/field/provider/schema mismatch는 child output을 만들지 않는다", () => {
   const cases = [
-    (responses) => responses.molit = Buffer.from(JSON.stringify({ ...JSON.parse(responses.molit), currentCount: 4 })),
     (responses) => {
-      const value = JSON.parse(responses.molit);
-      value.data.reverse();
-      responses.molit = Buffer.from(JSON.stringify(value));
+      responses.molit = Buffer.from(responses.molit);
+      responses.molit[0] = 0x58;
+    },
+    (responses) => {
+      const firstSequence = responses.molit.indexOf(Buffer.from(",1,"));
+      assert.notEqual(firstSequence, -1);
+      responses.molit = Buffer.from(responses.molit);
+      responses.molit[firstSequence + 1] = 0x30;
+    },
+    (responses) => {
+      const selectedSequence = responses.molit.indexOf(Buffer.from(",30,"));
+      assert.notEqual(selectedSequence, -1);
+      const stationStart = selectedSequence + 4;
+      responses.molit = Buffer.concat([
+        responses.molit.subarray(0, stationStart + 2),
+        Buffer.from('"'),
+        responses.molit.subarray(stationStart + 2, stationStart + 4),
+        Buffer.from('"'),
+        responses.molit.subarray(stationStart + 4),
+      ]);
+    },
+    (responses) => {
+      responses.molit = Buffer.concat([responses.molit, Buffer.from([0x81])]);
     },
     (responses) => {
       const value = JSON.parse(responses.seoul);
@@ -163,32 +259,55 @@ test("row order/value/field/provider/schema mismatch는 child output을 만들�
   }
 });
 
-test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 credential을 반사하지 않는다", async () => {
+test("Seoul 4호선 projection은 provider exact 04호선 token만 허용한다", () => {
+  for (const lineTokens of [
+    Array(5).fill("01호선"),
+    ["04호선", "04호선", "01호선", "04호선", "04호선"],
+  ]) {
+    const responses = responseBytes();
+    const document = JSON.parse(responses.seoul);
+    document.SearchSTNBySubwayLineInfo.row.forEach((row, index) => {
+      row.LINE_NUM = lineTokens[index];
+    });
+    responses.seoul = Buffer.from(JSON.stringify(document));
+
+    assert.throws(() => buildCurrentStaticSourceRevalidation({
+      sourceSnapshots: previousSnapshots(),
+      observedAt,
+      responseBytesBySource: responses,
+    }), /STATIC_SOURCE_REVALIDATION_PROVIDER/);
+  }
+});
+
+test("tracked provider boundary는 public MOLIT CSV와 Seoul을 exact one-call한다", async () => {
   const requested = [];
   const responses = responseBytes();
   const result = await fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "encoded-key",
     seoulOpenApiKey: "seoul-key",
     fetchImpl: async (url, init) => {
       requested.push({ url: String(url), init });
       const body = requested.length === 1 ? responses.molit : responses.seoul;
-      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": requested.length === 1 ? "application/octet-stream" : "application/json" },
+      });
     },
   });
 
   assert.equal(requested.length, 2);
   assert.equal(requested[0].url,
-    "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route?page=1&perPage=5");
-  assert.equal(requested[0].init.headers.Authorization, "Infuser encoded-key");
+    "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N");
+  assert.doesNotMatch(requested[0].url, /api\.odcloud|serviceKey|uddi:/u);
+  assert.equal(Object.hasOwn(requested[0].init.headers, "Authorization"), false);
+  assert.deepEqual(requested[0].init.headers, { accept: "application/octet-stream" });
   assert.match(decodeURI(new URL(requested[1].url).pathname),
-    /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/4호선$/);
+    /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/ \/ \/4호선$/);
   assert.equal(result.molit.equals(responses.molit), true);
   assert.equal(result.seoul.equals(responses.seoul), true);
 
   await assert.rejects(fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "encoded-key",
     seoulOpenApiKey: "seoul-key",
-    fetchImpl: async () => { throw new Error("encoded-key seoul-key raw-secret-sentinel"); },
+    fetchImpl: async () => { throw new Error("seoul-key raw-secret-sentinel"); },
   }), (error) => {
     assert.equal(error.message, "STATIC_SOURCE_REVALIDATION_MOLIT_TRANSPORT");
     return true;
@@ -206,14 +325,14 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
     {
       expected: "STATIC_SOURCE_REVALIDATION_SEOUL_CONTENT_TYPE",
       fetchImpl: async (_url, _init, call) => call === 1
-        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/json" } })
+        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/octet-stream" } })
         : new Response("raw-secret-sentinel", { status: 200, headers: { "content-type": "text/plain" } }),
       calls: 2,
     },
     {
       expected: "STATIC_SOURCE_REVALIDATION_SEOUL_BODY_SIZE",
       fetchImpl: async (_url, _init, call) => call === 1
-        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/json" } })
+        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/octet-stream" } })
         : new Response(Buffer.alloc(1024 * 1024 + 1), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -226,7 +345,7 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
         if (call === 1) {
           return new Response(responses.molit, {
             status: 200,
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/octet-stream" },
           });
         }
         throw new Error("raw-secret-sentinel seoul-key encoded-key");
@@ -238,7 +357,6 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
   for (const scenario of cases) {
     let calls = 0;
     await assert.rejects(fetchCurrentStaticSourceResponses({
-      dataGoKrServiceKey: "encoded-key",
       seoulOpenApiKey: "seoul-key",
       fetchImpl: (url, init) => {
         calls += 1;
@@ -246,24 +364,41 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
       },
     }), (error) => {
       assert.equal(error.message, scenario.expected);
-      assert.doesNotMatch(error.message, /raw-secret|seoul-key|encoded-key|https?:/iu);
+      assert.doesNotMatch(error.message, /raw-secret|seoul-key|https?:/iu);
       return true;
     });
     assert.equal(calls, scenario.calls);
   }
 });
 
-test("malformed DATA_GO credential은 provider 호출 전에 거부한다", async () => {
-  let calls = 0;
-  await assert.rejects(fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "invalid%ZZ",
-    seoulOpenApiKey: "seoul-key",
-    fetchImpl: async () => {
-      calls += 1;
-      throw new Error("provider must not be called");
+test("oversized response stream은 1 MiB 직후 취소하고 전체 body를 적재하지 않는다", async () => {
+  let reads = 0;
+  let cancelled = false;
+  const response = {
+    status: 200,
+    ok: true,
+    headers: new Headers({ "content-type": "application/octet-stream" }),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            reads += 1;
+            return { done: false, value: Buffer.alloc(600 * 1024) };
+          },
+          async cancel() { cancelled = true; },
+          releaseLock() {},
+        };
+      },
     },
-  }), /DATA_GO_KR_SERVICE_KEY is invalid/);
-  assert.equal(calls, 0);
+    async arrayBuffer() { throw new Error("whole body must not be buffered"); },
+  };
+
+  await assert.rejects(fetchCurrentStaticSourceResponses({
+    seoulOpenApiKey: "seoul-key",
+    fetchImpl: async () => response,
+  }), /STATIC_SOURCE_REVALIDATION_MOLIT_BODY_SIZE/);
+  assert.equal(reads, 2);
+  assert.equal(cancelled, true);
 });
 
 test("validated four-file output은 absent directory에 한 번만 publish한다", async (context) => {
@@ -296,4 +431,269 @@ test("validated four-file output은 absent directory에 한 번만 publish한다
     /output directory must be absent/,
   );
   assert.deepEqual(await readdir(existingEmpty), []);
+});
+
+test("content change는 source별 closed 상태와 task-local raw capture만 남기고 계속 실패한다", async (context) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-change-capture-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+  const outputDirectory = path.join(parent, "revalidation-output");
+  const changeOutputDirectory = path.join(parent, "change-capture");
+  const responses = responseBytes();
+  responses.molit = Buffer.from(responses.molit);
+  let selectedSequence = -1;
+  let searchFrom = 0;
+  while ((selectedSequence = responses.molit.indexOf(Buffer.from(",30,"), searchFrom)) !== -1) {
+    responses.molit[selectedSequence + 2] = 0x35;
+    searchFrom = selectedSequence + 4;
+  }
+  assert.notEqual(searchFrom, 0);
+
+  await assert.rejects(runCurrentStaticSourceRevalidation({
+    sourceSnapshots: previousSnapshots(),
+    observedAt,
+    responseBytesBySource: responses,
+    outputDirectory,
+    changeOutputDirectory,
+  }), /STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED/);
+
+  await assert.rejects(lstat(outputDirectory), { code: "ENOENT" });
+  const names = (await readdir(changeOutputDirectory)).sort();
+  assert.deepEqual(names, [
+    "change-evidence.json",
+    "molit-response.bin",
+    "seoul-response.json",
+  ]);
+  const evidence = JSON.parse(await readFile(
+    path.join(changeOutputDirectory, "change-evidence.json"),
+    "utf8",
+  ));
+  assert.deepEqual(evidence, {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-capture",
+    observedAt,
+    outcome: "CHANGE_REVIEW_REQUIRED",
+    sources: [
+      {
+        sourceId: "molit-urban-rail-full-route",
+        operation: "molit-urban-rail-full-route-file-five-records",
+        status: "CONTENT_CHANGED",
+        responseSha256: sha256(responses.molit),
+        responseByteSize: responses.molit.length,
+        rawFile: "molit-response.bin",
+      },
+      {
+        sourceId: "seoulmetro-station-line-info",
+        operation: "seoulmetro-line4-stations-one-to-five",
+        status: "UNCHANGED",
+        responseSha256: sha256(responses.seoul),
+        responseByteSize: responses.seoul.length,
+        rawFile: "seoul-response.json",
+      },
+    ],
+    credentialRedacted: true,
+  });
+  assert.equal((await readFile(path.join(changeOutputDirectory, "molit-response.bin")))
+    .equals(responses.molit), true);
+  assert.equal((await readFile(path.join(changeOutputDirectory, "seoul-response.json")))
+    .equals(responses.seoul), true);
+  assert.doesNotMatch(JSON.stringify(evidence), /seoul-key|serviceKey|https?:/iu);
+  for (const name of names) {
+    const metadata = await lstat(path.join(changeOutputDirectory, name));
+    assert.equal(metadata.isFile(), true);
+    assert.equal(metadata.mode & 0o777, 0o600);
+  }
+
+  await assert.rejects(runCurrentStaticSourceRevalidation({
+    sourceSnapshots: previousSnapshots(),
+    observedAt,
+    responseBytesBySource: responses,
+    outputDirectory,
+    changeOutputDirectory,
+  }), /output directory must be absent/);
+  assert.equal((await readFile(path.join(changeOutputDirectory, "molit-response.bin")))
+    .equals(responses.molit), true);
+
+  const seoulResponses = responseBytes();
+  const seoulPayload = JSON.parse(seoulResponses.seoul);
+  seoulPayload.SearchSTNBySubwayLineInfo.row[0].STATION_NM = "changed-station";
+  seoulResponses.seoul = Buffer.from(JSON.stringify(seoulPayload));
+  const seoulCaptureDirectory = path.join(parent, "seoul-change-capture");
+  await assert.rejects(runCurrentStaticSourceRevalidation({
+    sourceSnapshots: previousSnapshots(),
+    observedAt,
+    responseBytesBySource: seoulResponses,
+    outputDirectory: path.join(parent, "seoul-revalidation-output"),
+    changeOutputDirectory: seoulCaptureDirectory,
+  }), /STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED/);
+  const seoulEvidence = JSON.parse(await readFile(
+    path.join(seoulCaptureDirectory, "change-evidence.json"),
+    "utf8",
+  ));
+  assert.deepEqual(seoulEvidence.sources.map(({ status }) => status), [
+    "UNCHANGED",
+    "CONTENT_CHANGED",
+  ]);
+});
+
+test("preserved Seoul change capture는 canonical membership에 결속된 mixed admission을 만든다", async (context) => {
+  const responses = responseBytes();
+  const previous = previousSnapshotsBeforeSeoulChange();
+  const packBytes = canonicalPackBytes();
+  const first = buildCurrentStaticSourceChangeAdmission({
+    sourceSnapshots: previous,
+    capture: changeCapture(responses),
+    responseBytesBySource: responses,
+    canonicalPackBytes: packBytes,
+  });
+  const second = buildCurrentStaticSourceChangeAdmission({
+    sourceSnapshots: previous,
+    capture: changeCapture(responses),
+    responseBytesBySource: responses,
+    canonicalPackBytes: packBytes,
+  });
+
+  assert.deepEqual(second, first);
+  assert.deepEqual(first.revalidations.map(({ evidence }) => evidence.outcome), [
+    "NO_CHANGE_REVALIDATED",
+    "CONTENT_CHANGE_ADMITTED",
+  ]);
+  const seoul = first.revalidations[1];
+  assert.equal(seoul.snapshot.previousSnapshotId,
+    "seoulmetro-station-line-info-capital-admission-20260712");
+  assert.deepEqual(seoul.snapshot.diffSummary, {
+    status: "CHANGED",
+    rawHashChanged: true,
+    schemaHashChanged: false,
+    requestHashChanged: true,
+    sourceUpdatedAtChanged: false,
+    rowDelta: 0,
+    coverageDelta: 0,
+  });
+  assert.equal(seoul.snapshot.sourceUpdatedAt, "2026-06-22T00:00:00.000Z");
+  assert.equal(seoul.snapshot.rawSha256, sha256(first.seoulRawBytes));
+  assert.equal(seoul.evidence.canonicalPackSha256, sha256(packBytes));
+  assert.equal(seoul.evidence.rawObjectUri, seoul.snapshot.rawObjectUri);
+  assert.match(seoul.snapshot.rawObjectUri,
+    /^oci:\/\/easysubway-datapacks\/source-raw\/seoulmetro-station-line-info\/20260813\/[0-9a-f]{64}\.json$/u);
+  assert.deepEqual(first.sourceRawPublishPlan, {
+    schemaVersion: 2,
+    mode: "object-storage-preflight",
+    steps: [
+      {
+        type: "put-source-raw-object",
+        sourcePath: "seoulmetro-station-line-info-raw.json",
+        objectKey: new URL(seoul.snapshot.rawObjectUri).pathname.slice(1),
+        sha256: seoul.snapshot.rawSha256,
+        sizeBytes: first.seoulRawBytes.length,
+        immutable: true,
+      },
+      {
+        type: "verify-source-raw-object",
+        objectKey: new URL(seoul.snapshot.rawObjectUri).pathname.slice(1),
+        sha256: seoul.snapshot.rawSha256,
+        sizeBytes: first.seoulRawBytes.length,
+        immutable: true,
+      },
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(first), /Station-04[0-9]|站-04|駅-04|serviceKey|seoul-key/iu);
+
+  const next = buildCurrentStaticSourceRevalidation({
+    sourceSnapshots: [
+      ...previous,
+      ...first.revalidations.map(({ snapshot }) => snapshot),
+    ],
+    observedAt: "2026-08-14T10:30:00.000Z",
+    responseBytesBySource: responses,
+  });
+  assert.equal(next[1].snapshot.rawObjectUri, seoul.snapshot.rawObjectUri);
+  assert.equal(next[1].snapshot.diffSummary.status, "NO_CHANGE");
+
+  const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-change-admission-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+  const outputDirectory = path.join(parent, "current-static-revalidation-20260813");
+  const outputs = await writeCurrentStaticSourceChangeAdmission({ outputDirectory, admission: first });
+  assert.equal(outputs.length, 6);
+  assert.deepEqual((await readdir(outputDirectory)).sort(), [
+    "molit-urban-rail-full-route-revalidation-evidence.json",
+    "molit-urban-rail-full-route-snapshot.json",
+    "seoulmetro-station-line-info-raw.json",
+    "seoulmetro-station-line-info-revalidation-evidence.json",
+    "seoulmetro-station-line-info-snapshot.json",
+    "seoulmetro-station-line-info-source-raw-publish-plan.json",
+  ]);
+  await assert.rejects(
+    writeCurrentStaticSourceChangeAdmission({ outputDirectory, admission: first }),
+    /output directory must be absent/,
+  );
+});
+
+test("change capture, provider row, canonical membership drift는 admission output 0으로 거부한다", () => {
+  const cases = [
+    ["source order", ({ capture }) => { capture.sources.reverse(); }],
+    ["capture size", ({ capture }) => { capture.sources[1].responseByteSize += 1; }],
+    ["status pair", ({ capture }) => { capture.sources[0].status = "CONTENT_CHANGED"; }],
+    ["duplicate provider code", ({ responses }) => {
+      const document = JSON.parse(responses.seoul);
+      document.SearchSTNBySubwayLineInfo.row[1].STATION_CD =
+        document.SearchSTNBySubwayLineInfo.row[0].STATION_CD;
+      responses.seoul = Buffer.from(JSON.stringify(document));
+    }, true],
+    ["duplicate provider name", ({ responses }) => {
+      const document = JSON.parse(responses.seoul);
+      document.SearchSTNBySubwayLineInfo.row[1].STATION_NM =
+        document.SearchSTNBySubwayLineInfo.row[0].STATION_NM;
+      responses.seoul = Buffer.from(JSON.stringify(document));
+    }, true],
+    ["missing canonical membership", ({ pack }) => { pack.packs[0].stationLines.pop(); }],
+    ["duplicate canonical membership", ({ pack }) => {
+      pack.packs[0].stationLines.push({ ...pack.packs[0].stationLines[0] });
+    }],
+  ];
+  for (const [label, mutate, rebindResponse = false] of cases) {
+    const responses = responseBytes();
+    const capture = changeCapture(responses);
+    const pack = JSON.parse(canonicalPackBytes());
+    mutate({ responses, capture, pack });
+    if (rebindResponse && capture.sources[1]?.sourceId === "seoulmetro-station-line-info") {
+      capture.sources[1].responseSha256 = sha256(responses.seoul);
+      capture.sources[1].responseByteSize = responses.seoul.length;
+    }
+    assert.throws(() => buildCurrentStaticSourceChangeAdmission({
+      sourceSnapshots: previousSnapshotsBeforeSeoulChange(),
+      capture,
+      responseBytesBySource: responses,
+      canonicalPackBytes: Buffer.from(JSON.stringify(pack)),
+    }), /STATIC_SOURCE_REVALIDATION_/, label);
+  }
+});
+
+test("offline CLI는 provider env/network 없이 preserved capture만 materialize한다", async (context) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-change-cli-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+  const captureDirectory = path.join(parent, "capture");
+  const outputDirectory = path.join(parent, "current-static-revalidation-20260813");
+  await mkdir(captureDirectory);
+  const responses = responseBytes();
+  await Promise.all([
+    writeFile(path.join(parent, "source-snapshots.json"),
+      JSON.stringify(previousSnapshotsBeforeSeoulChange())),
+    writeFile(path.join(parent, "canonical-pack.json"), canonicalPackBytes()),
+    writeFile(path.join(captureDirectory, "change-evidence.json"),
+      JSON.stringify(changeCapture(responses))),
+    writeFile(path.join(captureDirectory, "molit-response.bin"), responses.molit),
+    writeFile(path.join(captureDirectory, "seoul-response.json"), responses.seoul),
+  ]);
+
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    path.join(import.meta.dirname, "revalidate-current-static-network-sources.mjs"),
+    "--source-snapshots", path.join(parent, "source-snapshots.json"),
+    "--change-capture-directory", captureDirectory,
+    "--canonical-pack", path.join(parent, "canonical-pack.json"),
+    "--output-directory", outputDirectory,
+  ], { env: {} });
+  assert.equal(stderr, "");
+  assert.equal(stdout,
+    '{"outcome":"CONTENT_CHANGE_ADMITTED","sourceCount":2}\n');
+  assert.equal((await readdir(outputDirectory)).length, 6);
 });
