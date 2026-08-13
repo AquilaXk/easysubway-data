@@ -96,6 +96,13 @@ test("regional projection rejects embedded ITX tokens and mutated legacy evidenc
     /must match the exact known contract/,
   );
 
+  const duplicateEvidence = fixture();
+  duplicateEvidence.packs[0].routeServiceArtifactEvidence.push(structuredClone(legacyEvidence));
+  assert.throws(
+    () => projectRegionalMaterializeFixture(duplicateEvidence),
+    /zero current or exactly one legacy routeServiceArtifactEvidence/,
+  );
+
   const manifestItx = fixture();
   manifestItx.manifest.note = "ITX_CHEONGCHUN";
   assert.throws(
@@ -108,7 +115,7 @@ test("regional projection rejects embedded ITX tokens and mutated legacy evidenc
   assert.throws(() => projectRegionalMaterializeFixture(rootSibling));
 });
 
-test("regional projection preserves the tracked fixture except its sole legacy evidence", async () => {
+test("regional projection preserves the tracked current fixture with empty evidence", async () => {
   const fixturePath = path.join(root, "tools/datapack/release/capital-production-reviewed-pack.json");
   const bytes = await readFile(fixturePath);
   const input = JSON.parse(bytes);
@@ -117,7 +124,5 @@ test("regional projection preserves the tracked fixture except its sole legacy e
   assert.deepEqual(await readFile(fixturePath), bytes);
   assert.deepEqual(input, original);
   assert.deepEqual(projected.manifest, original.manifest);
-  const expectedPack = structuredClone(original.packs[0]);
-  delete expectedPack.routeServiceArtifactEvidence;
-  assert.deepEqual(projected.packs[0], expectedPack);
+  assert.deepEqual(projected.packs[0], original.packs[0]);
 });
