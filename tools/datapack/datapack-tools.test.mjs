@@ -11550,7 +11550,6 @@ test("공식 source ingest adapter는 provenance 전용 source를 production row
     "kric-station-elevator",
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
-    "kric-station-convenience-standard",
   ]) {
     const outputDir = path.join(tmpdir(), `easysubway-source-ingest-provenance-only-${sourceId}-${Date.now()}`);
     const input = JSON.parse(await readFile(
@@ -15710,18 +15709,22 @@ async function capitalPilotProductionSourceInput() {
   return withTestProductionAccessibility(input);
 }
 
-test("공식 source ingest adapter는 provenance 전용 source와 test-only projection을 격리한다", async () => {
+test("공식 source ingest adapter는 current convenience source와 provenance 전용 source의 test-only projection을 격리한다", async () => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-test-only-accessibility-isolation-"));
   const raw = JSON.parse(await readFile(
     path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "utf8",
   ));
   const trackedInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  assert.equal(trackedInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").productionUseAllowed, false);
+  assert.equal(trackedInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").productionUseAllowed, true);
   assert.equal(trackedInventory.sources.some(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE), false);
-  await assert.rejects(
-    importOfficialSourceInput(path.join(outputDir, "raw"), raw),
-    /kric-station-convenience-standard source inventory is provenance-only/,
-  );
+  const current = await importOfficialSourceInput(path.join(outputDir, "raw"), raw);
+  assert.equal(current.packs[0].artifactKind, "production");
+  assert.ok(current.packs[0].sourceInventory.some(
+    ({ id }) => id === "kric-station-convenience-standard",
+  ));
+  assert.ok(current.packs[0].facilities.some(
+    ({ sourceId }) => sourceId === "kric-station-convenience-standard",
+  ));
   const rawBeforeProjection = structuredClone(raw);
   const projected = withTestProductionAccessibility(raw);
   assert.deepEqual(raw, rawBeforeProjection);
