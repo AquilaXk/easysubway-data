@@ -415,13 +415,18 @@ function controlOperationSucceeded(raw, format, expectedSuccess) {
 }
 
 // 같은 실행·같은 키로 카탈로그가 지정한 대조군을 호출한다. 실패는 어떤 이유든 "failed"로 닫는다.
-export async function runProviderControlOperation({ controlOperation, serviceKey, fetchImpl = fetch }) {
+export async function runProviderControlOperation({
+  controlOperation,
+  serviceKey,
+  fetchImpl = fetch,
+  requestTimeoutMs = 30_000,
+}) {
   try {
     const url = new URL(controlOperation.sampleUrl);
     url.searchParams.set("serviceKey", serviceKey);
     const response = await fetchImpl(url, {
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(requestTimeoutMs),
       headers: {
         accept: controlOperation.format === "json" ? "application/json" : "application/xml,text/xml",
       },

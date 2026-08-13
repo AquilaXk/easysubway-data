@@ -20,19 +20,26 @@ test("correlated diagnostic은 control과 exact target을 각각 한 번 호출�
     const queryId = plan.queryPlan[0].queryId;
     const calls = [];
     const logs = [];
-    const receipt = await main(cliArgs(planPath, queryId), {
+    const receipt = await main(cliArgs(planPath, queryId, "12345"), {
       candidatesDocument: candidatesDocument(),
       env: { KRIC_SERVICE_KEY: SERVICE_KEY },
-      controlProbeImpl: async () => { calls.push("control"); return "succeeded"; },
-      targetProbeImpl: async (input) => probeKricExitPathProviderQuery({
-        ...input,
-        fetchImpl: async (url, options) => {
-          calls.push("target");
-          assert.equal(new URL(url).origin, "https://openapi.kric.go.kr");
-          assert.ok(options.signal instanceof AbortSignal);
-          return new Response(JSON.stringify({ header: { resultCode: "00" }, body: [] }), { status: 200 });
-        },
-      }),
+      controlProbeImpl: async (input) => {
+        calls.push("control");
+        assert.equal(input.requestTimeoutMs, 12_345);
+        return "succeeded";
+      },
+      targetProbeImpl: async (input) => {
+        assert.equal(input.requestTimeoutMs, 12_345);
+        return probeKricExitPathProviderQuery({
+          ...input,
+          fetchImpl: async (url, options) => {
+            calls.push("target");
+            assert.equal(new URL(url).origin, "https://openapi.kric.go.kr");
+            assert.ok(options.signal instanceof AbortSignal);
+            return new Response(JSON.stringify({ header: { resultCode: "00" }, body: [] }), { status: 200 });
+          },
+        });
+      },
       log: (message) => logs.push(message),
     });
 
@@ -138,12 +145,12 @@ async function withPlan(callback) {
   }
 }
 
-function cliArgs(planPath, queryId) {
+function cliArgs(planPath, queryId, requestTimeoutMs = "30000") {
   return [
     "--collection-plan", planPath,
     "--source-id", SOURCE_ID,
     "--query-id", queryId,
-    "--request-timeout-ms", "30000",
+    "--request-timeout-ms", requestTimeoutMs,
   ];
 }
 

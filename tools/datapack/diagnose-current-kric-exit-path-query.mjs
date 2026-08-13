@@ -57,7 +57,11 @@ export async function main(argv, {
 
   let controlStatus = "FAILED";
   try {
-    const status = await controlProbeImpl({ controlOperation, serviceKey });
+    const status = await controlProbeImpl({
+      controlOperation,
+      serviceKey,
+      requestTimeoutMs: args.requestTimeoutMs,
+    });
     controlStatus = status === "succeeded" ? "SUCCEEDED" : "FAILED";
   } catch {
     controlStatus = "FAILED";
