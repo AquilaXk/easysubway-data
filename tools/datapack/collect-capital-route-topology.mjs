@@ -440,6 +440,142 @@ function topologyContentPayload(lines, topologyGaps) {
   };
 }
 
+function verifiedLineTopologyIdentity(line, label) {
+  if (!Array.isArray(line?.scope)
+    || !Array.isArray(line.edges)
+    || !Array.isArray(line.branchSequences)
+    || line.stationCount !== line.scope.length
+    || line.edgeCount !== line.edges.length
+    || line.scopeSha256 !== sha256(JSON.stringify(line.scope))
+    || line.edgesSha256 !== sha256(JSON.stringify(line.edges))
+    || line.contentSha256 !== sha256(JSON.stringify({ scope: line.scope, edges: line.edges }))) {
+    throw new Error(`capital topology ${label} line identity mismatch`);
+  }
+}
+
+function directedEdgeKey(fromStationName, toStationName) {
+  return `${fromStationName}\u0000${toStationName}`;
+}
+
+/** Restore official branch-sequence adjacency without inventing distance evidence. */
+export function repairCapitalTopologyBranchCoverage(snapshot) {
+  if (snapshot?.schemaVersion !== 1
+    || snapshot.artifactKind !== ARTIFACT_KIND
+    || snapshot.sourceId !== SOURCE_ID
+    || !Array.isArray(snapshot.lines)
+    || !Array.isArray(snapshot.topologyGaps)) {
+    throw new Error("capital topology branch coverage input is invalid");
+  }
+  for (const line of snapshot.lines) verifiedLineTopologyIdentity(line, "branch coverage input");
+  if (snapshot.lineCount !== snapshot.lines.length
+    || snapshot.totalEdgeCount !== snapshot.lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0)
+    || snapshot.contentSha256 !== sha256(JSON.stringify(
+      topologyContentPayload(snapshot.lines, snapshot.topologyGaps),
+    ))) {
+    throw new Error("capital topology branch coverage input identity mismatch");
+  }
+
+  const lines = snapshot.lines.map((inputLine) => {
+    const line = structuredClone(inputLine);
+    const edgesByDirection = new Map();
+    const incidentStationNames = new Set();
+    for (const edge of line.edges) {
+      const key = directedEdgeKey(edge.fromStationName, edge.toStationName);
+      if (edgesByDirection.has(key)) {
+        throw new Error(`capital topology duplicate directed edge: ${line.lineId}`);
+      }
+      edgesByDirection.set(key, edge);
+      incidentStationNames.add(edge.fromStationName);
+      incidentStationNames.add(edge.toStationName);
+    }
+    for (const branch of line.branchSequences) {
+      if (typeof branch?.branchName !== "string"
+        || branch.branchName.length === 0
+        || !Array.isArray(branch.stationNames)
+        || branch.stationNames.length < 1) {
+        throw new Error(`capital topology branch sequence is invalid: ${line.lineId}`);
+      }
+      const stationNames = branch.stationNames.map((stationName) => normalizeStationName(stationName));
+      for (let index = 1; index < stationNames.length; index += 1) {
+        const fromStationName = stationNames[index - 1];
+        const toStationName = stationNames[index];
+        if (fromStationName.length === 0 || toStationName.length === 0 || fromStationName === toStationName) {
+          throw new Error(`capital topology branch station is invalid: ${line.lineId}`);
+        }
+        const forwardKey = directedEdgeKey(fromStationName, toStationName);
+        const reverseKey = directedEdgeKey(toStationName, fromStationName);
+        const hasForward = edgesByDirection.has(forwardKey);
+        const hasReverse = edgesByDirection.has(reverseKey);
+        if (hasForward !== hasReverse) {
+          throw new Error(`capital topology branch edge is asymmetric: ${line.lineId}`);
+        }
+        if (hasForward) continue;
+        if (incidentStationNames.has(fromStationName) && incidentStationNames.has(toStationName)) {
+          continue;
+        }
+        const branchNames = [branch.branchName];
+        const forward = {
+          fromStationName,
+          toStationName,
+          distanceMeters: 0,
+          durationSeconds: 0,
+          branchNames,
+        };
+        const reverse = {
+          ...forward,
+          fromStationName: toStationName,
+          toStationName: fromStationName,
+        };
+        line.edges.push(forward, reverse);
+        edgesByDirection.set(forwardKey, forward);
+        edgesByDirection.set(reverseKey, reverse);
+        incidentStationNames.add(fromStationName);
+        incidentStationNames.add(toStationName);
+      }
+    }
+    for (const branch of line.branchSequences) {
+      for (const stationName of branch.stationNames.map(normalizeStationName)) {
+        if (!incidentStationNames.has(stationName)) {
+          throw new Error(`capital topology branch station is disconnected: ${line.lineId}`);
+        }
+      }
+    }
+    line.edges.sort((left, right) => codepointCompare(left.fromStationName, right.fromStationName)
+      || codepointCompare(left.toStationName, right.toStationName));
+    const stationNames = [...new Set(line.edges.flatMap(({ fromStationName, toStationName }) => [
+      fromStationName,
+      toStationName,
+    ]))].sort(codepointCompare);
+    line.scope = stationNames.map((stationName, index) => ({ stationName, sequence: index + 1 }));
+    line.stationCount = line.scope.length;
+    line.edgeCount = line.edges.length;
+    line.scopeSha256 = sha256(JSON.stringify(line.scope));
+    line.edgesSha256 = sha256(JSON.stringify(line.edges));
+    line.contentSha256 = sha256(JSON.stringify({ scope: line.scope, edges: line.edges }));
+    verifiedLineTopologyIdentity(line, "branch coverage output");
+    return line;
+  });
+  const lineCount = lines.length;
+  const totalEdgeCount = lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0);
+  const contentSha256 = sha256(JSON.stringify(topologyContentPayload(lines, snapshot.topologyGaps)));
+  const repaired = {
+    ...structuredClone(snapshot),
+    lineCount,
+    totalEdgeCount,
+    lines,
+    contentSha256,
+  };
+  if (repaired.admission != null) {
+    Object.assign(repaired.admission, {
+      contentSha256,
+      lineCount,
+      totalEdgeCount,
+      gapLineIds: repaired.topologyGaps.map(({ lineId }) => lineId),
+    });
+  }
+  return repaired;
+}
+
 const SOURCE_SEPARATED_INCHEON_LINE_IDS = Object.freeze([
   "line-42b5805f3b5a",
   "line-98718184f016",
@@ -786,12 +922,11 @@ function addConsecutiveEdges(undirected, segment, branchName, source) {
     if ((km == null || km <= 0) && from.trailingDistanceKilometers != null && from.trailingDistanceKilometers > 0) {
       km = from.trailingDistanceKilometers;
     }
-    if (km == null || km <= 0) continue;
     upsertUndirected(
       undirected,
       normalizeStationName(from.stationName),
       normalizeStationName(to.stationName),
-      kilometersToMeters(km),
+      km == null || km <= 0 ? 0 : kilometersToMeters(km),
       branchName,
     );
   }

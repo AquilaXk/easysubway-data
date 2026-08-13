@@ -10,7 +10,8 @@ import test from "node:test";
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
-  parseCurrentSourceActivationArgs, requireCleanBuilder } from "./activate-current-source-set.mjs";
+  parseCurrentSourceActivationArgs, requireCleanBuilder,
+  stageValidationItxTopologyEvidence } from "./activate-current-source-set.mjs";
 import { projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -164,6 +165,43 @@ test("activation CLI는 Data-owned capital/Incheon snapshot paths만 수용한�
     "--builder-git-sha", "a".repeat(40),
     "--build-now", "2026-08-11T00:00:00.000Z",
   ]), /unknown activation argument/);
+});
+
+test("prepared candidate validation은 spec-selected current ITX evidence bytes만 stage한다", async (context) => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "current-itx-validation-evidence-"));
+  context.after(() => rm(workspace, { recursive: true, force: true }));
+  const repositoryRoot = path.join(workspace, "repository");
+  const temporaryRoot = path.join(workspace, "validation");
+  const evidencePath =
+    "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json";
+  const evidenceBytes = Buffer.from('{"artifactKind":"itx-cheongchun-mobile-topology-evidence"}\n');
+  await mkdir(path.dirname(path.join(repositoryRoot, evidencePath)), { recursive: true });
+  await mkdir(temporaryRoot, { recursive: true });
+  await writeFile(path.join(repositoryRoot, evidencePath), evidenceBytes);
+  const spec = {
+    itxTopologyEvidencePath: evidencePath,
+    itxTopologyEvidenceSha256: sha256(evidenceBytes),
+  };
+
+  assert.equal(await stageValidationItxTopologyEvidence({
+    spec, repositoryRoot, temporaryRoot,
+  }), evidencePath);
+  assert.deepEqual(await readFile(path.join(temporaryRoot, evidencePath)), evidenceBytes);
+  await assert.rejects(
+    readFile(path.join(temporaryRoot, "tools/datapack/itx-cheongchun-topology-evidence.json")),
+    /ENOENT/,
+  );
+
+  await assert.rejects(stageValidationItxTopologyEvidence({
+    spec: { ...spec, itxTopologyEvidenceSha256: "f".repeat(64) },
+    repositoryRoot,
+    temporaryRoot: path.join(workspace, "wrong-sha"),
+  }), /ITX topology evidence identity mismatch/);
+  await assert.rejects(stageValidationItxTopologyEvidence({
+    spec: { ...spec, itxTopologyEvidencePath: "../outside.json" },
+    repositoryRoot,
+    temporaryRoot: path.join(workspace, "unsafe"),
+  }), /ITX topology evidence path is invalid/);
 });
 
 test("current Incheon topology admission은 exact snapshot bytes와 fresh source identity에 결속된다", async () => {
