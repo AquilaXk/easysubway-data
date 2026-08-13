@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "artifactKind": "datapack-build-spec-hash-evidence",
   "issue": 1996,
-  "builderGitSha": "6492e35ba435925a219b0de232f977395344afe6",
-  "builderVersion": "build-datapack.mjs@23",
+  "builderGitSha": "e03e341c855a2caf0da01c048c423914ca1da674",
+  "builderVersion": "build-datapack.mjs@26",
   "productionScopeId": "capital_pilot_android_v1",
   "truthfulnessRule": "모든 값은 tracked canonical fixture·inventory·official snapshot에서 결정적으로 재산출한다. 2026-07-28 신규 KRIC standard·서울 snapshot을 소비 claim에 결속하고 route 가용성은 추론하지 않는다.",
   "ledgerHashes": {
@@ -150,7 +150,7 @@
     ]
   },
   "buildDryRun": {
-    "result": "PASS — #2609 candidate-build-spec로 capital@1을 생성했다. searchable station 947, facility 4, station evidence 8이며 gzip sha256=1f73c48d5602e9ff96d2ffad648104405920521b8a4f5692fd942f780f173c37, sqlite sha256=bfde80b874709844abbbd31bf3401540d6e7679a75ff56bc7a236dec74e3ff24, expiresAt=2026-08-02T15:00:00.000Z다.",
+    "result": "PASS — #244 candidate-build-spec로 capital@1을 생성했다. searchable station 947, facility 4, station evidence 8이며 gzip sha256=095937768fe9aeed9297b7f02848d3237f2cb9e00cf447a29adeefa96d1a26ac, sqlite sha256=d3d8e0fc226b2e5dcc3ffad8119138d056f544b17c790d23911df4f63ec5430f, expiresAt=2026-08-14T15:06:46.000Z다.",
     "gateResolution": "KRIC stationCnvFacl standard snapshot은 2개 역의 elevator 4건과 ES/WCLF 명시적 부재를 증명하고, 서울교통공사 full snapshot은 2개 상태 probe를 제공한다. ENTRY/EXIT route availability는 추론하지 않으며 route-relevant edge 평가는 #2611에서 수행한다."
   }
 }
