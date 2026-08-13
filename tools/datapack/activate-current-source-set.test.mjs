@@ -12,6 +12,7 @@ import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
+  readBuilderBaselineBytes,
   stageValidationItxTopologyEvidence,
   validatePreparedCandidate,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
@@ -803,9 +804,9 @@ test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence�
   convenienceSource.productionUseAllowed = true;
 
   const fareSourceId = "seoul-metro-official-od-fares";
-  input.sourceIds = [...input.sourceIds, fareSourceId];
+  input.sourceIds = [...new Set([...input.sourceIds, fareSourceId])];
   input.coverageEvidence = [
-    ...input.coverageEvidence,
+    ...input.coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "official_od_fares"),
     {
       regionId: "capital",
       operatorId: "seoul-metro",
@@ -953,19 +954,25 @@ test("check mode는 builder code가 같은 output-only descendant만 수용한�
   await runGit("config", "user.name", "EasySubway Test");
   await runGit("config", "user.email", "test@example.invalid");
   await writeFile(path.join(repositoryRoot, "generator.mjs"), "export const version = 1;\n");
-  await runGit("add", "generator.mjs");
+  await writeFile(path.join(repositoryRoot, "baseline.json"), "{\"version\":0}\n");
+  await runGit("add", "generator.mjs", "baseline.json");
   await runGit("-c", "commit.gpgsign=false", "commit", "-qm", "builder");
   const { stdout: builderShaOutput } = await runGit("rev-parse", "HEAD");
   const builderSha = builderShaOutput.trim();
   await writeFile(path.join(repositoryRoot, "generated.json"), "{\"version\":1}\n");
-  await runGit("add", "generated.json");
+  await writeFile(path.join(repositoryRoot, "baseline.json"), "{\"version\":1}\n");
+  await runGit("add", "generated.json", "baseline.json");
   await runGit("-c", "commit.gpgsign=false", "commit", "-qm", "generated output");
 
   await requireCleanBuilder(builderSha, {
     check: true,
     repositoryRoot,
-    allowedDescendantPaths: ["generated.json"],
+    allowedDescendantPaths: ["generated.json", "baseline.json"],
   });
+  assert.deepEqual(
+    await readBuilderBaselineBytes(builderSha, "baseline.json", repositoryRoot),
+    Buffer.from('{"version":0}\n'),
+  );
 
   await writeFile(path.join(repositoryRoot, "generator.mjs"), "export const version = 2;\n");
   await runGit("add", "generator.mjs");
@@ -974,7 +981,7 @@ test("check mode는 builder code가 같은 output-only descendant만 수용한�
     requireCleanBuilder(builderSha, {
       check: true,
       repositoryRoot,
-      allowedDescendantPaths: ["generated.json"],
+      allowedDescendantPaths: ["generated.json", "baseline.json"],
     }),
     /builder source|builder identity/,
   );

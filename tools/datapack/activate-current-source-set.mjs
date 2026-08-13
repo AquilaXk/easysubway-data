@@ -1314,6 +1314,25 @@ export async function requireCleanBuilder(builderGitSha, {
   }
 }
 
+export async function readBuilderBaselineBytes(
+  builderGitSha,
+  relativePath,
+  repositoryRoot = root,
+) {
+  if (!/^[0-9a-f]{40}$/u.test(builderGitSha ?? "")
+    || !/^[A-Za-z0-9._/-]+$/u.test(relativePath ?? "")
+    || path.isAbsolute(relativePath)
+    || relativePath.split("/").includes("..")) {
+    throw new Error("builder baseline path identity is invalid");
+  }
+  const { stdout } = await execFileAsync(
+    "git",
+    ["show", `${builderGitSha}:${relativePath}`],
+    { cwd: path.resolve(repositoryRoot), encoding: "buffer", maxBuffer: MAX_BUFFER },
+  );
+  return Buffer.from(stdout);
+}
+
 export async function generateCurrentSourceActivation({
   capitalTopologyPath,
   incheonTopologyPath,
@@ -1360,6 +1379,9 @@ export async function generateCurrentSourceActivation({
   validateBuildNow(buildNow, handoff);
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-source-activation-"));
   try {
+    const readMutableInput = (relativePath) => check
+      ? readBuilderBaselineBytes(builderGitSha, relativePath)
+      : readRegularBytes(root, relativePath);
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
       canonicalBytes,
@@ -1369,12 +1391,12 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
       readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
-      readRegularBytes(root, "tools/datapack/release/source-snapshots.json"),
-      readRegularBytes(root, "tools/datapack/source-inventory.json"),
-      readRegularBytes(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"),
+      readMutableInput("tools/datapack/release/source-snapshots.json"),
+      readMutableInput("tools/datapack/source-inventory.json"),
+      readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
       readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
-      readRegularBytes(root, "tools/datapack/release/candidate-build-spec.json"),
-      readRegularBytes(root, "tools/datapack/release/capital-production-canonical-pack.json"),
+      readMutableInput("tools/datapack/release/candidate-build-spec.json"),
+      readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
       readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
