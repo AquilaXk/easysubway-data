@@ -17,11 +17,14 @@ function request(operation, key = "capture-key") {
   return `https://apis.data.go.kr/1613000/TrainInfo/${operation}?serviceKey=${key}&_type=json`;
 }
 
-async function capturedBytes(serviceDates = SERVICE_DATES) {
+async function capturedBytes(serviceDates = SERVICE_DATES, responseMarker = "exact") {
   const recorder = createProviderResponseRecorder({
     observedAt: "2026-08-13T00:00:00.000Z",
     selectedServiceDates: serviceDates,
-    fetchImpl: async (url) => new Response(JSON.stringify({ operation: new URL(url).pathname.split("/").at(-1) }), {
+    fetchImpl: async (url) => new Response(JSON.stringify({
+      operation: new URL(url).pathname.split("/").at(-1),
+      responseMarker,
+    }), {
       status: 200,
       headers: { "content-type": "application/json" },
     }),
@@ -99,9 +102,21 @@ async function fixture() {
     candidate: path.join(directory, "candidate.json"),
     completeness: path.join(directory, "completeness.json"),
   };
-  await writeFile(values.capture, await capturedBytes());
-  await writeFile(values.replayEvidence, `${JSON.stringify(replayEvidence(), null, 2)}\n`);
+  const captureBytes = await capturedBytes();
+  const replayBytes = Buffer.from(`${JSON.stringify(replayEvidence(), null, 2)}\n`);
+  await writeFile(values.capture, captureBytes);
+  await writeFile(values.replayEvidence, replayBytes);
+  values.captureBytesSha256 = createHash("sha256").update(captureBytes).digest("hex");
+  values.replayBytesSha256 = createHash("sha256").update(replayBytes).digest("hex");
   return values;
+}
+
+function pins(values, overrides = {}) {
+  return {
+    expectedCaptureBytesSha256: values.captureBytesSha256,
+    expectedReplayEvidenceBytesSha256: values.replayBytesSha256,
+    ...overrides,
+  };
 }
 
 function argv(values) {
@@ -121,6 +136,7 @@ test("successful replay identity를 network 없이 existing ADMISSION candidate 
     const result = await materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
+      ...pins(values),
       collectCompletenessImpl: async (options) => {
         for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
           const response = await options.fetchImpl(request(operation, "different-runtime-key"));
@@ -185,10 +201,14 @@ test("replay evidence/capture identity drift와 unconsumed record는 output 0으
   const values = await fixture();
   let calls = 0;
   try {
-    await writeFile(values.capture, await capturedBytes({ ...SERVICE_DATES, "8": "20260814" }));
+    const driftedCapture = await capturedBytes({ ...SERVICE_DATES, "8": "20260814" });
+    await writeFile(values.capture, driftedCapture);
     await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
+      ...pins(values, {
+        expectedCaptureBytesSha256: createHash("sha256").update(driftedCapture).digest("hex"),
+      }),
       runCompletenessImpl: async () => { calls += 1; },
     }), /replay evidence and capture service dates differ/);
     assert.equal(calls, 0);
@@ -199,6 +219,7 @@ test("replay evidence/capture identity drift와 unconsumed record는 output 0으
     await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
+      ...pins(values),
       collectCompletenessImpl: async (options) => {
         await options.fetchImpl(request("GetVhcleKndList"));
         return admissionEvidence();
@@ -222,6 +243,7 @@ test("capture-derived projection drift는 publication 전에 output 0으로 거�
     await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
+      ...pins(values),
       collectCompletenessImpl: async (options) => {
         for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
           await options.fetchImpl(request(operation));
@@ -233,12 +255,51 @@ test("capture-derived projection drift는 publication 전에 output 0으로 거�
         return artifact;
       },
       runCompletenessImpl: async (options) => {
-        await options.collectImpl({ fetchImpl: options.fetchImpl });
-        publicationStarted = true;
+        try {
+          await options.collectImpl({ fetchImpl: options.fetchImpl });
+        } catch {
+          // The production completeness CLI converts collection failure to MISSING before publication.
+        }
         await options.onPublicationEvent({ event: "before-stage-created" });
+        publicationStarted = true;
+        await writeFile(valueAfter(options.argv, "--output"), "unexpected missing artifact\n");
+        return { artifact: { validationStatus: "MISSING" }, exitCode: 1 };
       },
     }), /capture-derived admission projection differs/);
     assert.equal(publicationStarted, false);
+    await assert.rejects(readFile(values.candidate), /ENOENT/);
+    await assert.rejects(readFile(values.completeness), /ENOENT/);
+  } finally {
+    await rm(values.directory, { recursive: true, force: true });
+  }
+});
+
+test("retained capture와 replay evidence의 exact member bytes가 아니면 collector 전에 거부한다", async () => {
+  const values = await fixture();
+  let calls = 0;
+  try {
+    await writeFile(values.capture, await capturedBytes(SERVICE_DATES, "alternate"));
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      ...pins(values),
+      runCompletenessImpl: async () => { calls += 1; },
+    }), /retained capture bytes differ/);
+    assert.equal(calls, 0);
+    await assert.rejects(readFile(values.candidate), /ENOENT/);
+    await assert.rejects(readFile(values.completeness), /ENOENT/);
+
+    await writeFile(values.capture, await capturedBytes());
+    await writeFile(values.replayEvidence, `${JSON.stringify(replayEvidence({
+      allowedConsumerIssues: ["#219"],
+    }), null, 2)}\n`);
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      ...pins(values),
+      runCompletenessImpl: async () => { calls += 1; },
+    }), /retained replay evidence bytes differ/);
+    assert.equal(calls, 0);
     await assert.rejects(readFile(values.candidate), /ENOENT/);
     await assert.rejects(readFile(values.completeness), /ENOENT/);
   } finally {
@@ -252,10 +313,14 @@ test("tampered replay evidence hash는 collector 호출 전에 거부한다", as
   try {
     const tampered = replayEvidence();
     tampered.evidenceHash = "0".repeat(64);
-    await writeFile(values.replayEvidence, `${JSON.stringify(tampered, null, 2)}\n`);
+    const tamperedBytes = Buffer.from(`${JSON.stringify(tampered, null, 2)}\n`);
+    await writeFile(values.replayEvidence, tamperedBytes);
     await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
+      ...pins(values, {
+        expectedReplayEvidenceBytesSha256: createHash("sha256").update(tamperedBytes).digest("hex"),
+      }),
       runCompletenessImpl: async () => { calls += 1; },
     }), /successful replay evidence bytes are invalid/);
     assert.equal(calls, 0);

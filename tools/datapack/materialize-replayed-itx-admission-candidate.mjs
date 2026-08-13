@@ -16,6 +16,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const OFFLINE_PROVIDER_KEY = "offline-provider-replay-key";
 const EXPECTED_SERVICE_DATES = Object.freeze({ "7": "20260822", "8": "20260813", "9": "20260816" });
 const EXPECTED_AGGREGATE = Object.freeze({ expectedOdCount: 918, completedOdCount: 918, failedOdCount: 0 });
+const EXPECTED_CAPTURE_BYTES_SHA256 = "3dc2b1f68dc32e8a47cb442483a04762103d6cf55d97db96f35017a6f4b2ee94";
+const EXPECTED_REPLAY_EVIDENCE_BYTES_SHA256 = "68440e73376ee9825ff7f2d4898ffee4399676616a7773e0f5f7fd066cba10be";
 const CAPTURE_PROVENANCE = Object.freeze({
   workflowRunId: "31620004435",
   artifactId: "9150832350",
@@ -32,9 +34,14 @@ export async function materializeReplayedItxAdmissionCandidateCli({
   repositoryRoot = repoRoot,
   runCompletenessImpl = runKorailItxCompletenessCli,
   collectCompletenessImpl = collectKorailItxCheongchunCompleteness,
+  expectedCaptureBytesSha256 = EXPECTED_CAPTURE_BYTES_SHA256,
+  expectedReplayEvidenceBytesSha256 = EXPECTED_REPLAY_EVIDENCE_BYTES_SHA256,
 } = {}) {
   const args = candidateArgs(argv);
   const replayEvidenceBytes = await readFile(args["replay-evidence"]);
+  if (sha256(replayEvidenceBytes) !== expectedReplayEvidenceBytesSha256) {
+    throw new Error("retained replay evidence bytes differ");
+  }
   const replayEvidence = parseReplayEvidence(replayEvidenceBytes);
   const inspection = await inspectItxCurrentCollectionEvidenceCli({
     argv: ["--evidence", args["replay-evidence"]],
@@ -42,12 +49,16 @@ export async function materializeReplayedItxAdmissionCandidateCli({
   validateInspection(inspection);
 
   const captureBytes = await readFile(args.capture);
+  if (sha256(captureBytes) !== expectedCaptureBytesSha256) {
+    throw new Error("retained capture bytes differ");
+  }
   const replay = createProviderResponseReplay({ captureBytes });
   if (JSON.stringify(replay.capture.selectedServiceDates) !== JSON.stringify(inspection.selectedServiceDates)) {
     throw new Error("replay evidence and capture service dates differ");
   }
 
   let exhaustionChecked = false;
+  let deferredCollectionFailure = null;
   const result = await runCompletenessImpl({
     argv: [
       "--day8-date", EXPECTED_SERVICE_DATES["8"],
@@ -63,17 +74,23 @@ export async function materializeReplayedItxAdmissionCandidateCli({
     repositoryRoot,
     fetchImpl: replay.fetchImpl,
     collectImpl: async (options) => {
-      const artifact = await collectCompletenessImpl(options);
-      assertReplayProjection(artifact, replayEvidence);
-      artifact.sourceTimetableArtifact.replayAdmissionProvenance = replayAdmissionProvenance({
-        capture: replay.capture,
-        replayEvidence,
-      });
-      artifact.evidenceHash = evidenceHash(artifact);
-      return artifact;
+      try {
+        const artifact = await collectCompletenessImpl(options);
+        assertReplayProjection(artifact, replayEvidence);
+        artifact.sourceTimetableArtifact.replayAdmissionProvenance = replayAdmissionProvenance({
+          capture: replay.capture,
+          replayEvidence,
+        });
+        artifact.evidenceHash = evidenceHash(artifact);
+        return artifact;
+      } catch (error) {
+        deferredCollectionFailure ??= error;
+        return { validationStatus: "MISSING" };
+      }
     },
     onPublicationEvent: async ({ event }) => {
       if (event === "before-stage-created") {
+        if (deferredCollectionFailure !== null) throw deferredCollectionFailure;
         replay.assertExhausted();
         exhaustionChecked = true;
       }
@@ -144,6 +161,10 @@ function replayAdmissionProvenance({ capture, replayEvidence }) {
 function evidenceHash(value) {
   const { evidenceHash: _ignored, ...withoutHash } = value ?? {};
   return createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function candidateArgs(argv) {
