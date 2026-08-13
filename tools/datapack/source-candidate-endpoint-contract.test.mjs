@@ -244,6 +244,15 @@ test("카탈로그의 endpoint·detail URL은 형식적으로 유효하고 crede
   }
 });
 
+test("MOLIT 도시철도 전체노선은 official current 20251211 operation UUID만 쓴다", () => {
+  const candidate = document.candidates.find(({ id }) => id === "molit-urban-rail-full-route");
+  assert.ok(candidate);
+  const expected = "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf";
+  assert.equal(candidate.requestUrl, expected);
+  assert.equal(candidate.evidence.endpoint, expected);
+  assert.doesNotMatch(JSON.stringify(candidate), /uddi:urban-rail-full-route/u);
+});
+
 test("evidence.endpoint는 requestUrl과 같은 provider host를 가리킨다", () => {
   const foreignHosts = document.candidates
     .filter((candidate) => candidate.evidence?.endpoint != null && candidate.requestUrl != null)

@@ -234,7 +234,9 @@ export async function fetchCurrentStaticSourceResponses({
 }) {
   const dataKey = normalizeDataGoKrServiceKey(dataGoKrServiceKey);
   const seoulKey = requiredSingleLine(seoulOpenApiKey, "SEOUL_OPENAPI_KEY");
-  const molitUrl = new URL("https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route");
+  const molitUrl = new URL(
+    "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf",
+  );
   molitUrl.search = new URLSearchParams({ page: "1", perPage: "5" });
   const seoulUrl = new URL(
     `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("4호선")}`,
