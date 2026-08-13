@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +9,7 @@ import {
   materializeIncheonNetworkEdges,
 } from "./build-datapack.mjs";
 import { buildKricAccessibilityRoster } from "./collect-kric-accessibility-snapshots.mjs";
+import { canonicalJson, sha256 } from "./lib/manifest-validation.mjs";
 import {
   canonicalKricExitPathCollectionPlanJson,
   planKricExitPathCollection,
@@ -340,16 +340,8 @@ function requiredString(value, label) {
   return value;
 }
 
-function canonicalJson(value) {
-  return JSON.stringify(canonicalObject(value));
-}
-
 function canonicalObject(value) {
-  if (Array.isArray(value)) return value.map(canonicalObject);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, canonicalObject(value[key])]));
-  }
-  return value;
+  return JSON.parse(canonicalJson(value));
 }
 
 function compareStationLines(left, right) {
@@ -368,10 +360,6 @@ function compareRouteEdges(left, right) {
 
 function compareBytes(left, right) {
   return Buffer.compare(Buffer.from(left), Buffer.from(right));
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function parseArgs(argv) {
