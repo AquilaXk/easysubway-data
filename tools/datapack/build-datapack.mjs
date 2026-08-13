@@ -1359,9 +1359,13 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
         ...reviewedEdge,
         serviceClass: reviewedEdge.serviceClass ?? "SUBWAY",
       };
-      if (reviewedEdge == null
-        || Object.entries(core).some(([key, value]) => materializedReviewedEdge[key] !== value)) {
-        throw new Error(`capital topology reviewed edge mismatch: ${core.id}`);
+      const mismatchedCoreFields = reviewedEdge == null ? ["missing"] : Object.entries(core)
+        .filter(([key, value]) => materializedReviewedEdge[key] !== value)
+        .map(([key]) => key);
+      if (mismatchedCoreFields.length !== 0) {
+        throw new Error(
+          `capital topology reviewed edge mismatch: ${core.id} (${mismatchedCoreFields.join(",")})`,
+        );
       }
       const fromMembership = stationLineByNode.get(core.fromNodeId);
       const toMembership = stationLineByNode.get(core.toNodeId);
