@@ -1070,16 +1070,40 @@ async function fetchCurrentRawArtifact(temporaryRoot, handoff) {
   return { bytes, value: parseJson(bytes, "current KRIC raw artifact") };
 }
 
-async function prepareReleaseEvidenceRoot(temporaryRoot) {
+function requiredItxTopologyEvidencePath(spec) {
+  const relativePath = spec?.itxTopologyEvidencePath;
+  if (!/^tools\/datapack\/itx-cheongchun-topology-evidence(?:-[0-9]{17})?\.json$/u
+    .test(relativePath ?? "")
+    || !SHA256.test(spec?.itxTopologyEvidenceSha256 ?? "")) {
+    throw new Error("ITX topology evidence path is invalid");
+  }
+  return relativePath;
+}
+
+export async function stageValidationItxTopologyEvidence({
+  spec,
+  temporaryRoot,
+  repositoryRoot = root,
+}) {
+  const relativePath = requiredItxTopologyEvidencePath(spec);
+  const bytes = await readRegularBytes(repositoryRoot, relativePath, "ITX topology evidence");
+  if (sha256(bytes) !== spec.itxTopologyEvidenceSha256) {
+    throw new Error("ITX topology evidence identity mismatch");
+  }
+  await writeTempFile(temporaryRoot, relativePath, bytes);
+  return relativePath;
+}
+
+async function prepareReleaseEvidenceRoot(temporaryRoot, spec) {
   for (const relativePath of [
     "tools/datapack/release/release-request.json",
     "tools/datapack/release/hash-evidence.json",
     "tools/datapack/source-governance-policy.json",
     "release/product-gates/datapack-freshness-sla.json",
-    "tools/datapack/itx-cheongchun-topology-evidence.json",
   ]) {
     await writeTempFile(temporaryRoot, relativePath, await readRegularBytes(root, relativePath));
   }
+  await stageValidationItxTopologyEvidence({ spec, temporaryRoot });
 }
 
 function validationBuildSpec(spec, temporaryRoot) {
@@ -1090,7 +1114,7 @@ function validationBuildSpec(spec, temporaryRoot) {
   );
   next.itxTopologyEvidencePath = path.join(
     temporaryRoot,
-    "tools/datapack/itx-cheongchun-topology-evidence.json",
+    requiredItxTopologyEvidencePath(spec),
   );
   Object.assign(next.networkEdgeEvidence.sourceInventory, {
     path: path.join(temporaryRoot, "tools/datapack/source-inventory.json"),
@@ -1329,7 +1353,7 @@ export async function generateCurrentSourceActivation({
       itxCurrentTopologyAdmissionBytes,
     });
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], jsonBytes(nextSpec));
-    await prepareReleaseEvidenceRoot(temporaryRoot);
+    await prepareReleaseEvidenceRoot(temporaryRoot, nextSpec);
     await runNode("tools/datapack/apply-accessibility-evidence-to-bundled-pack.mjs", [
       "--release-evidence-only",
       "--release-root", temporaryRoot,
