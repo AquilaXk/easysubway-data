@@ -147,7 +147,7 @@ test("기본 다섯 operation 중간 실패는 부분 snapshot 없이 즉시 거
       const operationForRequest = KRIC_APPROVED_ACCESSIBILITY_OPERATIONS.find(({ sourceId: id }) => id === sourceId);
       return response(200, [Object.fromEntries(operationForRequest.responseFields.map((field) => [field, tuple[field] ?? field]))]);
     },
-  }), /KRIC accessibility request failed: kric-station-escalator\/S1\/2\/202/);
+  }), /KRIC accessibility request failed: NETWORK_UNKNOWN: kric-station-escalator\/S1\/2\/202/);
   assert.deepEqual(seen, [
     "kric-station-elevator",
     "kric-station-escalator",
@@ -606,9 +606,38 @@ test("transport 실패는 한 번 요청 후 fail closed다", async () => {
     fetchImpl: async () => { calls += 1; throw new Error("timeout"); },
   }), {
     name: "Error",
-    message: "KRIC accessibility request failed: kric-station-elevator/S1/2/202",
+    message: "KRIC accessibility request failed: NETWORK_UNKNOWN: kric-station-elevator/S1/2/202",
   });
   assert.equal(calls, 1);
+});
+
+test("transport 실패는 bounded cause에서 비밀 없는 closed 원인만 분류한다", async () => {
+  const secret = "must-not-reflect-provider-credential";
+  const cases = [
+    [new Error(secret, { cause: { code: "ENOTFOUND" } }), "NETWORK_DNS"],
+    [Object.assign(new Error(secret), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }), "NETWORK_TLS"],
+    [new Error(secret, { cause: { name: "TimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" } }), "NETWORK_TIMEOUT"],
+    [new Error(secret, { cause: new Error(secret, { cause: { code: "ECONNRESET" } }) }), "NETWORK_SOCKET"],
+    [new Error(secret), "NETWORK_UNKNOWN"],
+  ];
+
+  for (const [failure, classification] of cases) {
+    let calls = 0;
+    await assert.rejects(() => collectKricAccessibilitySnapshots({
+      roster: roster.slice(0, 1),
+      operations: [operation],
+      serviceKey: secret,
+      fetchImpl: async () => { calls += 1; throw failure; },
+    }), (error) => {
+      assert.equal(
+        error.message,
+        `KRIC accessibility request failed: ${classification}: kric-station-elevator/S1/2/202`,
+      );
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
 });
 
 test("standard observation은 snapshot과 canonical raw inventory를 absent directory에 함께 게시한다", async (t) => {
