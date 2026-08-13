@@ -689,14 +689,18 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   await paceRequest();
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
-  } catch {
-    throw new Error(`KRIC accessibility request failed: ${requestIdentity}`);
+  } catch (error) {
+    throw new Error(`KRIC accessibility request failed: ${classifyTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
   }
   if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
   let payload;
   try {
     payload = await response.json();
-  } catch {
+  } catch (error) {
+    const transportFailure = classifyTransportFailure(error);
+    if (transportFailure != null) {
+      throw new Error(`KRIC accessibility request failed: ${transportFailure}: ${requestIdentity}`);
+    }
     throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
   }
   const rawResponseBytes = Buffer.from(JSON.stringify(payload));
@@ -740,6 +744,45 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
       bodyBase64: rawResponseBytes.toString("base64"),
     },
   };
+}
+
+function classifyTransportFailure(error) {
+  const dnsCodes = new Set(["EAI_AGAIN", "ENOTFOUND"]);
+  const timeoutCodes = new Set([
+    "ETIMEDOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT",
+  ]);
+  const socketCodes = new Set([
+    "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EPIPE", "UND_ERR_SOCKET",
+  ]);
+  const seen = new Set();
+  let current = error;
+  for (let depth = 0; current != null && depth < 8 && !seen.has(current); depth += 1) {
+    seen.add(current);
+    let code;
+    let name;
+    let cause;
+    try {
+      code = typeof current.code === "string" ? current.code : "";
+      name = typeof current.name === "string" ? current.name : "";
+      cause = current.cause;
+    } catch {
+      return null;
+    }
+    if (dnsCodes.has(code)) return "NETWORK_DNS";
+    if (code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_") || code.startsWith("CERT_")
+      || [
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      ].includes(code)) {
+      return "NETWORK_TLS";
+    }
+    if (timeoutCodes.has(code) || name === "AbortError" || name === "TimeoutError") return "NETWORK_TIMEOUT";
+    if (socketCodes.has(code)) return "NETWORK_SOCKET";
+    current = cause;
+  }
+  return null;
 }
 
 function tupleKey(tuple) {
