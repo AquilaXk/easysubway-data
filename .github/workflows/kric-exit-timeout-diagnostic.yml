@@ -1,0 +1,48 @@
+name: KRIC EXIT Timeout Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kric-exit-timeout-diagnostic-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Diagnose KRIC EXIT timeout
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: Build current KRIC EXIT plan
+        run: |
+          node tools/datapack/build-current-kric-exit-collection-plan.mjs \
+            --canonical-pack "${GITHUB_WORKSPACE}/tools/datapack/release/capital-production-canonical-pack.json" \
+            --coverage-targets "${GITHUB_WORKSPACE}/tools/datapack/nationwide-coverage-targets.json" \
+            --provider-code-catalog "${GITHUB_WORKSPACE}/tools/datapack/sources/kric-provider-code-catalog-20260228.json" \
+            --route-rosters "${GITHUB_WORKSPACE}/tools/datapack/sources/kric-nationwide-route-rosters-20260730T203926676Z.json" \
+            --source-inventory "${GITHUB_WORKSPACE}/tools/datapack/source-inventory.json" \
+            --incheon-topology "${GITHUB_WORKSPACE}/tools/datapack/sources/incheon-transit-station-info-20260813.json" \
+            --output "${RUNNER_TEMP}/current-kric-exit-plan.json"
+
+      - name: Diagnose fixed KRIC EXIT query
+        env:
+          KRIC_SERVICE_KEY: ${{ secrets.KRIC_SERVICE_KEY }}
+        run: |
+          node tools/datapack/diagnose-current-kric-exit-path-query.mjs \
+            --collection-plan "${RUNNER_TEMP}/current-kric-exit-plan.json" \
+            --source-id kric-station-movement-standard \
+            --query-id dd25f07bd2351a43024b0aae0cd6a8f6075c565b43606fb84771e0f3ca20868c \
+            --request-timeout-ms 30000
