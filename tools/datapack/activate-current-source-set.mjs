@@ -570,9 +570,15 @@ export function activateIncheonTopologyAdmission({
     ({ id }) => id === "incheon-transit-station-info",
     "current Incheon topology source",
   );
+  const accessibilitySource = requireOne(
+    next.sources,
+    ({ id }) => id === "incheon-transit-accessibility",
+    "current Incheon accessibility source",
+  );
   const topology = source.topologyAdmissionEvidence;
   const membership = source.membershipAdmissionEvidence;
   const routeMap = source.routeMapAdmissionEvidence;
+  const accessibility = accessibilitySource.accessibilityAdmissionEvidence;
   if (source.requiredForProductionPack !== false
     || source.productionUseAllowed !== true
     || source.license?.redistributionAllowed !== true
@@ -599,6 +605,19 @@ export function activateIncheonTopologyAdmission({
   )));
   if (topology.contentSha256 !== incheon.contentSha256) {
     throw new Error("current Incheon topology content changed; re-admission required");
+  }
+  if (accessibility?.topologySourceId !== source.id
+    || accessibility.topologyContentSha256 !== incheon.contentSha256
+    || !Array.isArray(accessibility.topologyLineages)
+    || accessibility.topologyLineages.length !== 2
+    || !Array.isArray(accessibility.membershipLineages)
+    || accessibility.membershipLineages.length !== 1
+    || [...accessibility.topologyLineages, ...accessibility.membershipLineages].some((lineage) => (
+      lineage.sourceId !== source.id
+        || lineage.snapshotId !== accessibility.topologySnapshotId
+        || lineage.contentSha256 !== incheon.contentSha256
+    ))) {
+    throw new Error("current Incheon accessibility lineage contract is invalid");
   }
   source.observedDataUpdatedAt = incheon.observedDataUpdatedAt;
   source.retrievedAt = incheon.capturedAt.slice(0, 10);
@@ -644,6 +663,10 @@ export function activateIncheonTopologyAdmission({
     topologyContentSha256: incheon.contentSha256,
     freshUntil: new Date(addCadence(capturedAt, ROUTE_MAP_REVERIFICATION_CADENCE)).toISOString(),
   });
+  accessibility.topologySnapshotId = snapshotId;
+  for (const lineage of [...accessibility.topologyLineages, ...accessibility.membershipLineages]) {
+    lineage.snapshotId = snapshotId;
+  }
   return next;
 }
 

@@ -370,6 +370,7 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 
     "busan:busan-transportation:line-eb7b47920390:route_graph_topology",
     "busan:busan-transportation:line-eb7b47920390:schedule_timetable",
     "busan:busan-transportation:line-eb7b47920390:station_line_membership",
+    "capital:seoul-metro:seoul-4:route_map_positions",
     "daejeon:daejeon-transportation:line-7051a9c2525c:route_graph_topology",
     "daejeon:daejeon-transportation:line-7051a9c2525c:schedule_timetable",
     "daejeon:daejeon-transportation:line-7051a9c2525c:station_line_membership",
