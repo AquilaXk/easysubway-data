@@ -583,12 +583,13 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
   const eungam = stationId("line-3f41718e0833", "응암");
   const branchEdgeId = `edge-line-3f41718e0833-${gusan}-${eungam}`;
   const branchEdge = pack.networkEdges.find(({ id }) => id === branchEdgeId);
-  assert.equal(branchEdge?.evidenceHash,
-    topology.lines.find(({ lineId }) => lineId === "line-3f41718e0833")?.contentSha256);
-  assert.equal(branchEdge?.sourceId, topology.sourceId);
-  assert.equal(branchEdge?.sourceSnapshotId, topologySnapshotId);
-  assert.equal(branchEdge?.provenanceKind, "OFFICIAL_SOURCE");
-  assert.equal(branchEdge?.verificationStatus, "VERIFIED");
+  assert.equal(branchEdge?.sourceId, undefined);
+  assert.equal(branchEdge?.sourceSnapshotId, undefined);
+  assert.equal(branchEdge?.providerRecordHash, undefined);
+  assert.equal(branchEdge?.evidenceHash, undefined);
+  assert.equal(branchEdge?.fieldProvenance, undefined);
+  assert.equal(branchEdge?.provenanceKind, undefined);
+  assert.equal(branchEdge?.verificationStatus, undefined);
   const unboundAdmissions = new Map(admissions);
   unboundAdmissions.delete("line-3f41718e0833");
   assert.throws(

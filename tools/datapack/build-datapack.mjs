@@ -1363,21 +1363,6 @@ export function projectCapitalTopologyIntoCanonicalFixture(
         accessibilityStatus: "UNKNOWN",
         reliabilityScore: 100,
         facilityId: null,
-        sourceId: topology.sourceId,
-        sourceSnapshotId: topologySnapshotId,
-        providerRecordHash: sha256(Buffer.from(canonicalJson({ lineId: line.lineId, ...sourceEdge }))),
-        provenanceKind: "OFFICIAL_SOURCE",
-        verificationStatus: "VERIFIED",
-        lastVerifiedAt: admission.verifiedAt,
-        evidenceHash: line.contentSha256,
-        fieldProvenance: {
-          ...(topology.fieldsProvided.includes("duration_seconds") ? {} : {
-            duration_seconds: { derivationKind: "GENERATED" },
-          }),
-          ...(sourceEdge.distanceMeters === 0 ? {
-            distance_meters: { derivationKind: "GENERATED" },
-          } : {}),
-        },
       });
     }
   }
