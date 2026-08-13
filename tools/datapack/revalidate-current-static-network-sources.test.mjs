@@ -1,18 +1,23 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import {
+  buildCurrentStaticSourceChangeAdmission,
   buildCurrentStaticSourceRevalidation,
   fetchCurrentStaticSourceResponses,
   runCurrentStaticSourceRevalidation,
+  writeCurrentStaticSourceChangeAdmission,
   writeCurrentStaticSourceRevalidation,
 } from "./revalidate-current-static-network-sources.mjs";
 
 const observedAt = "2026-08-13T10:30:00.000Z";
+const execFileAsync = promisify(execFile);
 const molitCsvBytes = await readFile(new URL(
   "./sources/molit-urban-rail-full-route-20251211.csv",
   import.meta.url,
@@ -109,6 +114,61 @@ function previousSnapshots(rows = projectedRows()) {
   return [structuredClone(trackedMolitSnapshot), synthetic.find(({ sourceId }) => (
     sourceId === "seoulmetro-station-line-info"
   ))];
+}
+
+function previousSnapshotsBeforeSeoulChange() {
+  const rows = projectedRows();
+  rows.seoul = rows.seoul.map((record, index) => ({
+    ...record,
+    station_code: `old-${index + 1}`,
+    station_name: `이전역-${index + 1}`,
+  }));
+  return previousSnapshots(rows);
+}
+
+function canonicalPackBytes(rows = projectedRows().seoul) {
+  return Buffer.from(JSON.stringify({
+    manifest: { manifestVersion: 2 },
+    packs: [{
+      id: "capital",
+      lines: [{ id: "seoul-4", nameKo: "수도권 4호선" }],
+      stations: rows.map((row, index) => ({ id: `station-${index + 1}`, nameKo: row.station_name })),
+      stationLines: rows.map((_row, index) => ({
+        stationId: `station-${index + 1}`,
+        lineId: "seoul-4",
+        stationCode: `${index + 1}`,
+        lineSequence: index + 1,
+      })),
+    }],
+  }));
+}
+
+function changeCapture(responses) {
+  return {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-capture",
+    observedAt,
+    outcome: "CHANGE_REVIEW_REQUIRED",
+    sources: [
+      {
+        sourceId: "molit-urban-rail-full-route",
+        operation: "molit-urban-rail-full-route-file-five-records",
+        status: "UNCHANGED",
+        responseSha256: sha256(responses.molit),
+        responseByteSize: responses.molit.length,
+        rawFile: "molit-response.bin",
+      },
+      {
+        sourceId: "seoulmetro-station-line-info",
+        operation: "seoulmetro-line4-stations-one-to-five",
+        status: "CONTENT_CHANGED",
+        responseSha256: sha256(responses.seoul),
+        responseByteSize: responses.seoul.length,
+        rawFile: "seoul-response.json",
+      },
+    ],
+    credentialRedacted: true,
+  };
 }
 
 test("current static responses가 unchanged면 exact child snapshots와 sanitized evidence를 만든다", () => {
@@ -473,4 +533,167 @@ test("content change는 source별 closed 상태와 task-local raw capture만 남
     "UNCHANGED",
     "CONTENT_CHANGED",
   ]);
+});
+
+test("preserved Seoul change capture는 canonical membership에 결속된 mixed admission을 만든다", async (context) => {
+  const responses = responseBytes();
+  const previous = previousSnapshotsBeforeSeoulChange();
+  const packBytes = canonicalPackBytes();
+  const first = buildCurrentStaticSourceChangeAdmission({
+    sourceSnapshots: previous,
+    capture: changeCapture(responses),
+    responseBytesBySource: responses,
+    canonicalPackBytes: packBytes,
+  });
+  const second = buildCurrentStaticSourceChangeAdmission({
+    sourceSnapshots: previous,
+    capture: changeCapture(responses),
+    responseBytesBySource: responses,
+    canonicalPackBytes: packBytes,
+  });
+
+  assert.deepEqual(second, first);
+  assert.deepEqual(first.revalidations.map(({ evidence }) => evidence.outcome), [
+    "NO_CHANGE_REVALIDATED",
+    "CONTENT_CHANGE_ADMITTED",
+  ]);
+  const seoul = first.revalidations[1];
+  assert.equal(seoul.snapshot.previousSnapshotId,
+    "seoulmetro-station-line-info-capital-admission-20260712");
+  assert.deepEqual(seoul.snapshot.diffSummary, {
+    status: "CHANGED",
+    rawHashChanged: true,
+    schemaHashChanged: false,
+    requestHashChanged: true,
+    sourceUpdatedAtChanged: false,
+    rowDelta: 0,
+    coverageDelta: 0,
+  });
+  assert.equal(seoul.snapshot.sourceUpdatedAt, "2026-06-22T00:00:00.000Z");
+  assert.equal(seoul.snapshot.rawSha256, sha256(first.seoulRawBytes));
+  assert.equal(seoul.evidence.canonicalPackSha256, sha256(packBytes));
+  assert.equal(seoul.evidence.rawObjectUri, seoul.snapshot.rawObjectUri);
+  assert.match(seoul.snapshot.rawObjectUri,
+    /^oci:\/\/easysubway-datapacks\/source-raw\/seoulmetro-station-line-info\/20260813\/[0-9a-f]{64}\.json$/u);
+  assert.deepEqual(first.sourceRawPublishPlan, {
+    schemaVersion: 2,
+    mode: "object-storage-preflight",
+    steps: [
+      {
+        type: "put-source-raw-object",
+        sourcePath: "seoulmetro-station-line-info-raw.json",
+        objectKey: new URL(seoul.snapshot.rawObjectUri).pathname.slice(1),
+        sha256: seoul.snapshot.rawSha256,
+        sizeBytes: first.seoulRawBytes.length,
+        immutable: true,
+      },
+      {
+        type: "verify-source-raw-object",
+        objectKey: new URL(seoul.snapshot.rawObjectUri).pathname.slice(1),
+        sha256: seoul.snapshot.rawSha256,
+        sizeBytes: first.seoulRawBytes.length,
+        immutable: true,
+      },
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(first), /Station-04[0-9]|站-04|駅-04|serviceKey|seoul-key/iu);
+
+  const next = buildCurrentStaticSourceRevalidation({
+    sourceSnapshots: [
+      ...previous,
+      ...first.revalidations.map(({ snapshot }) => snapshot),
+    ],
+    observedAt: "2026-08-14T10:30:00.000Z",
+    responseBytesBySource: responses,
+  });
+  assert.equal(next[1].snapshot.rawObjectUri, seoul.snapshot.rawObjectUri);
+  assert.equal(next[1].snapshot.diffSummary.status, "NO_CHANGE");
+
+  const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-change-admission-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+  const outputDirectory = path.join(parent, "current-static-revalidation-20260813");
+  const outputs = await writeCurrentStaticSourceChangeAdmission({ outputDirectory, admission: first });
+  assert.equal(outputs.length, 6);
+  assert.deepEqual((await readdir(outputDirectory)).sort(), [
+    "molit-urban-rail-full-route-revalidation-evidence.json",
+    "molit-urban-rail-full-route-snapshot.json",
+    "seoulmetro-station-line-info-raw.json",
+    "seoulmetro-station-line-info-revalidation-evidence.json",
+    "seoulmetro-station-line-info-snapshot.json",
+    "seoulmetro-station-line-info-source-raw-publish-plan.json",
+  ]);
+  await assert.rejects(
+    writeCurrentStaticSourceChangeAdmission({ outputDirectory, admission: first }),
+    /output directory must be absent/,
+  );
+});
+
+test("change capture, provider row, canonical membership drift는 admission output 0으로 거부한다", () => {
+  const cases = [
+    ["source order", ({ capture }) => { capture.sources.reverse(); }],
+    ["capture size", ({ capture }) => { capture.sources[1].responseByteSize += 1; }],
+    ["status pair", ({ capture }) => { capture.sources[0].status = "CONTENT_CHANGED"; }],
+    ["duplicate provider code", ({ responses }) => {
+      const document = JSON.parse(responses.seoul);
+      document.SearchSTNBySubwayLineInfo.row[1].STATION_CD =
+        document.SearchSTNBySubwayLineInfo.row[0].STATION_CD;
+      responses.seoul = Buffer.from(JSON.stringify(document));
+    }, true],
+    ["duplicate provider name", ({ responses }) => {
+      const document = JSON.parse(responses.seoul);
+      document.SearchSTNBySubwayLineInfo.row[1].STATION_NM =
+        document.SearchSTNBySubwayLineInfo.row[0].STATION_NM;
+      responses.seoul = Buffer.from(JSON.stringify(document));
+    }, true],
+    ["missing canonical membership", ({ pack }) => { pack.packs[0].stationLines.pop(); }],
+    ["duplicate canonical membership", ({ pack }) => {
+      pack.packs[0].stationLines.push({ ...pack.packs[0].stationLines[0] });
+    }],
+  ];
+  for (const [label, mutate, rebindResponse = false] of cases) {
+    const responses = responseBytes();
+    const capture = changeCapture(responses);
+    const pack = JSON.parse(canonicalPackBytes());
+    mutate({ responses, capture, pack });
+    if (rebindResponse && capture.sources[1]?.sourceId === "seoulmetro-station-line-info") {
+      capture.sources[1].responseSha256 = sha256(responses.seoul);
+      capture.sources[1].responseByteSize = responses.seoul.length;
+    }
+    assert.throws(() => buildCurrentStaticSourceChangeAdmission({
+      sourceSnapshots: previousSnapshotsBeforeSeoulChange(),
+      capture,
+      responseBytesBySource: responses,
+      canonicalPackBytes: Buffer.from(JSON.stringify(pack)),
+    }), /STATIC_SOURCE_REVALIDATION_/, label);
+  }
+});
+
+test("offline CLI는 provider env/network 없이 preserved capture만 materialize한다", async (context) => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), "static-source-change-cli-"));
+  context.after(() => rm(parent, { recursive: true, force: true }));
+  const captureDirectory = path.join(parent, "capture");
+  const outputDirectory = path.join(parent, "current-static-revalidation-20260813");
+  await mkdir(captureDirectory);
+  const responses = responseBytes();
+  await Promise.all([
+    writeFile(path.join(parent, "source-snapshots.json"),
+      JSON.stringify(previousSnapshotsBeforeSeoulChange())),
+    writeFile(path.join(parent, "canonical-pack.json"), canonicalPackBytes()),
+    writeFile(path.join(captureDirectory, "change-evidence.json"),
+      JSON.stringify(changeCapture(responses))),
+    writeFile(path.join(captureDirectory, "molit-response.bin"), responses.molit),
+    writeFile(path.join(captureDirectory, "seoul-response.json"), responses.seoul),
+  ]);
+
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    path.join(import.meta.dirname, "revalidate-current-static-network-sources.mjs"),
+    "--source-snapshots", path.join(parent, "source-snapshots.json"),
+    "--change-capture-directory", captureDirectory,
+    "--canonical-pack", path.join(parent, "canonical-pack.json"),
+    "--output-directory", outputDirectory,
+  ], { env: {} });
+  assert.equal(stderr, "");
+  assert.equal(stdout,
+    '{"outcome":"CONTENT_CHANGE_ADMITTED","sourceCount":2}\n');
+  assert.equal((await readdir(outputDirectory)).length, 6);
 });
