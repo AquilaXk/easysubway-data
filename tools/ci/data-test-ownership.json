@@ -79,6 +79,10 @@
     "data118": {
       "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/118",
       "title": "[Security][CI][P1] Data D20 owner receipt caller와 immutable handoff"
+    },
+    "data251": {
+      "issueUrl": "https://github.com/AquilaXk/easysubway-data/issues/251",
+      "title": "[Data][KRIC][P0] fresh Seoul companion receipt·dual registration bridge"
     }
   },
   "workflows": {
@@ -272,6 +276,7 @@
     {"path":"tools/datapack/publish-kric-accessibility-raw.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":20},
     {"path":"tools/datapack/publish-kric-timetable-raw.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":458},
     {"path":"tools/datapack/publish-object-storage.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":1336},
+    {"path":"tools/datapack/publish-seoul-accessibility-raw.test.mjs","semanticOwner":"data251","classes":["required-pr"],"durationMs":51},
     {"path":"tools/datapack/publish-server-route-bundle.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":940},
     {"path":"tools/datapack/purge-expired-source-raw.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":3184},
     {"path":"tools/datapack/readmit-bundled-pack-identity.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":7711},
