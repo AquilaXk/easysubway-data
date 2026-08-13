@@ -10,7 +10,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
-import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
+import {
+  normalizeUnverifiedNetworkEdgeStates,
+  projectCapitalTopologyIntoCanonicalFixture,
+} from "./build-datapack.mjs";
 // 정준 직렬화는 검증 대상 구현을 그대로 쓴다. 테스트가 규칙을 복제하면 3언어
 // 분열(이슈 #2528)을 구조적으로 검출할 수 없다.
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
@@ -18259,6 +18262,8 @@ async function writeCurrentItxReleaseInputs(
       candidateTopology,
     ),
   )}\n`);
+  projectCapitalTopologyIntoCanonicalFixture(fixture, candidateTopology);
+  await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   await Promise.all([
     writeFile(baselineTopologyPath, baselineTopologyBytes),
     writeFile(candidateTopologyPath, candidateTopologyBytes),
