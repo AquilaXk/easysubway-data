@@ -127,6 +127,10 @@ test("current capital topology ownership projection은 Incheon 1/2만 별도 sou
     "tools/datapack/sources/capital-route-topology-20260724.json",
     "utf8",
   ));
+  const current = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
   const projected = projectCapitalTopologyOwnership(snapshot);
   const separated = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
 
@@ -145,6 +149,14 @@ test("current capital topology ownership projection은 Incheon 1/2만 별도 sou
     gapLineIds: projected.topologyGaps.map(({ lineId }) => lineId),
   });
   assert.equal(snapshot.lines.some(({ lineId }) => separated.has(lineId)), true);
+
+  const reverification = buildCapitalTopologyReverificationEvidence(projected, current);
+  assert.deepEqual(reverification.comparison, {
+    changedLineCount: 0,
+    addedEdgeCount: 0,
+    removedEdgeCount: 0,
+    modifiedEdgeCount: 0,
+  });
 
   const missing = structuredClone(snapshot);
   missing.lines = missing.lines.filter(({ lineId }) => lineId !== "line-42b5805f3b5a");

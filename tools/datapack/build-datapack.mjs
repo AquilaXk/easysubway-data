@@ -702,15 +702,12 @@ const currentNetworkEdgeEvidenceKeys = Object.freeze([
   "capitalTopologyCandidate",
   "capitalTopologyReverification",
   "itxCoverageContract",
-  "itxCurrentTopologyAdmission",
 ]);
 
 function exactNetworkEdgeEvidenceKeys(evidence) {
-  if (!Object.hasOwn(evidence ?? {}, "itxCurrentTopologyAdmission")
-    || evidence.itxCurrentTopologyAdmission == null) {
-    throw new Error("buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission is required");
-  }
-  return currentNetworkEdgeEvidenceKeys;
+  return evidence?.itxCurrentTopologyAdmission == null
+    ? currentNetworkEdgeEvidenceKeys
+    : [...currentNetworkEdgeEvidenceKeys, "itxCurrentTopologyAdmission"];
 }
 
 export function candidateNetworkEdgeEvidence(evidence) {
@@ -738,10 +735,12 @@ export function candidateNetworkEdgeEvidence(evidence) {
     "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
     ["path", "sha256", "snapshotId"],
   );
-  const itxCurrentTopologyAdmission = pinnedBuildInput(
-    evidence.itxCurrentTopologyAdmission,
-    "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
-  );
+  const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
+    ? null
+    : pinnedBuildInput(
+        evidence.itxCurrentTopologyAdmission,
+        "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+      );
   return {
     sourceInventorySha256: sourceInventory.sha256,
     capitalTopologySnapshotId: capitalTopology.snapshotId,
@@ -751,7 +750,9 @@ export function candidateNetworkEdgeEvidence(evidence) {
     capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
     capitalTopologyAdmission: candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
     itxCoverageContractSha256: itxCoverageContract.sha256,
-    itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256,
+    ...(itxCurrentTopologyAdmission == null
+      ? {}
+      : { itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256 }),
   };
 }
 
@@ -1289,6 +1290,75 @@ function requiredCapitalStationId(stationIds, lineId, stationName) {
   return ids[0];
 }
 
+function capitalTopologyCoreEdge(stationIds, lineId, sourceEdge) {
+  const fromStationId = requiredCapitalStationId(
+    stationIds,
+    lineId,
+    sourceEdge.fromStationName,
+  );
+  const toStationId = requiredCapitalStationId(
+    stationIds,
+    lineId,
+    sourceEdge.toStationName,
+  );
+  return {
+    id: `edge-${lineId}-${fromStationId}-${toStationId}`,
+    fromNodeId: `${fromStationId}:${lineId}`,
+    toNodeId: `${toStationId}:${lineId}`,
+    durationSeconds: sourceEdge.durationSeconds,
+    distanceMeters: sourceEdge.distanceMeters,
+    edgeType: "RIDE",
+    servicePattern: "LOCAL",
+    serviceClass: "SUBWAY",
+  };
+}
+
+export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  if (fixture?.manifest?.channel !== "production"
+    || packs.length !== 1
+    || packs[0].artifactKind !== "production"
+    || !Array.isArray(packs[0].networkEdges)
+    || !Array.isArray(packs[0].stations)
+    || !Array.isArray(packs[0].stationLines)
+    || !Array.isArray(topology?.lines)) {
+    throw new Error("capital topology canonical fixture is invalid");
+  }
+  const pack = packs[0];
+  const stationIds = capitalStationIdsByLine(pack);
+  const lineIds = new Set(topology.lines.map(({ lineId }) => lineId));
+  const projected = [];
+  const projectedIds = new Set();
+  for (const line of topology.lines) {
+    if (typeof line?.lineId !== "string" || line.lineId.length === 0
+      || !Array.isArray(line.edges) || line.edgeCount !== line.edges.length) {
+      throw new Error("capital topology canonical fixture projection is invalid");
+    }
+    for (const sourceEdge of line.edges) {
+      const core = capitalTopologyCoreEdge(stationIds, line.lineId, sourceEdge);
+      if (projectedIds.has(core.id)) {
+        throw new Error(`capital topology duplicate fixture edge: ${core.id}`);
+      }
+      projectedIds.add(core.id);
+      projected.push({
+        ...core,
+        includesStairs: false,
+        stairAccessState: "UNKNOWN",
+        accessibilityStatus: "UNKNOWN",
+        reliabilityScore: 100,
+        facilityId: null,
+      });
+    }
+  }
+  const retained = pack.networkEdges.filter((edge) => !(edge.edgeType === "RIDE"
+    && edge.servicePattern === "LOCAL"
+    && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+    && lineIdsForNodes([edge.fromNodeId, edge.toNodeId]).some((lineId) => lineIds.has(lineId))));
+  pack.networkEdges = [...retained, ...projected]
+    .sort((left, right) => compareStrings(left.id, right.id));
+  return { edgeCount: projected.length, contentSha256: topology.contentSha256 };
+}
+
 function applyCapitalNetworkEdgeEvidence(pack, topology, snapshotId, admissions) {
   const stationIds = capitalStationIdsByLine(pack);
   const edges = new Map((pack.networkEdges ?? []).map((edge) => [edge.id, edge]));
@@ -1298,18 +1368,7 @@ function applyCapitalNetworkEdgeEvidence(pack, topology, snapshotId, admissions)
     const admission = admissions.get(line.lineId);
     if (line.edgeCount !== line.edges.length) throw new Error(`capital topology edge count mismatch: ${line.lineId}`);
     for (const sourceEdge of line.edges) {
-      const fromStationId = requiredCapitalStationId(stationIds, line.lineId, sourceEdge.fromStationName);
-      const toStationId = requiredCapitalStationId(stationIds, line.lineId, sourceEdge.toStationName);
-      const expected = {
-        id: `edge-${line.lineId}-${fromStationId}-${toStationId}`,
-        fromNodeId: `${fromStationId}:${line.lineId}`,
-        toNodeId: `${toStationId}:${line.lineId}`,
-        durationSeconds: sourceEdge.durationSeconds,
-        distanceMeters: sourceEdge.distanceMeters,
-        edgeType: "RIDE",
-        servicePattern: "LOCAL",
-        serviceClass: "SUBWAY",
-      };
+      const expected = capitalTopologyCoreEdge(stationIds, line.lineId, sourceEdge);
       expectedEdgeIds.add(expected.id);
       const edge = edges.get(expected.id);
       if (edge == null || Object.entries(expected).some(([key, value]) => edge[key] !== value)) {
@@ -1542,6 +1601,7 @@ export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission
     || topologyAdmission?.evidence?.sourceArtifact?.sha256 !== expectedTopologySourceSha256) {
     throw new Error("ITX network edge topology is not admitted for #2649");
   }
+  if (currentAdmission == null) validateCurrentItxApprovalIdentity(reference);
   if (contract.coverageStates?.schedule_timetable !== "MISSING"
     || contract.claimGate?.currentStatus !== "NO_GO"
     || contract.claimGate?.supportClaimAllowed !== false) {
@@ -1577,10 +1637,12 @@ export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission
     || completeness.serviceId !== "ITX_CHEONGCHUN"
     || completeness.validationMode !== "ADMISSION"
     || completeness.validationStatus !== "SUPPORTED"
-    || completeness.admissionStatus !== "SUPPORTED"
+    || completeness.admissionStatus !== source.promotionStatus
     || completeness.materialization?.status !== "SUPPORTED"
     || completeness.observedAt !== source.observedAt
-    || completeness.sourceTimetableArtifact?.status !== "SUPPORTED"
+    || completeness.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
     || completeness.sourceTimetableArtifact?.artifactId !== reference.artifactId
     || completeness.sourceTimetableArtifact?.policyVersion !== source.policyVersion
     || completeness.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
@@ -1727,6 +1789,16 @@ export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission
       },
     },
   };
+}
+
+function validateCurrentItxApprovalIdentity(reference) {
+  const promotion = reference?.promotion;
+  if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway\/issues\/2135#issuecomment-[1-9][0-9]*$/u
+      .test(promotion.approvalUrl ?? "")
+    || promotion.approvedArtifactSha256 !== reference.sha256) {
+    throw new Error("ITX network edge approval identity is invalid");
+  }
 }
 
 function applyItxNetworkEdgeEvidence(pack, admission) {

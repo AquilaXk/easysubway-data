@@ -4,8 +4,8 @@
   "candidateId": "capital-pilot-candidate-20260712",
   "productionScopeId": "capital_pilot_android_v1",
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
-  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence.json",
-  "itxTopologyEvidenceSha256": "f91e62cc925c579d9e90d38ed38128cf8910c70d08b97cd6132020325187a6df",
+  "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
+  "itxTopologyEvidenceSha256": "4b2a1cd58f85642a6ba5d0d6e5caedb09ea8b7b282c1cc6427e34956204f0579",
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
@@ -38,7 +38,7 @@
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
-      "sha256": "8e45ce12b513c5e16109141314d8c5c0390f6621875b18ddd440cc26e8f3a1d5"
+      "sha256": "7ca895820bafad79a5ee423f2dcbf85a8f0bdb8ff23e521ab3230c3be3c7985b"
     }
   },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",

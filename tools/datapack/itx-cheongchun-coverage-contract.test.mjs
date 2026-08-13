@@ -174,7 +174,7 @@ test("ITX-청춘 admission contract는 날짜·OD matrix·양방향 completeness
   });
 });
 
-test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그대로 보존한다", async () => {
+test("ITX-청춘 current source artifact는 OWNER-approved admission bytes를 그대로 보존한다", async () => {
   const reference = contract.sourceTimetableArtifact;
   assert.equal(reference.status, "ADMITTED");
   assert.equal(reference.admissionEligible, true);
@@ -187,11 +187,11 @@ test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그
   );
   assert.match(reference.completenessEvidenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(reference.promotion, {
-    mode: "UNCHANGED_AUTO",
-    previousArtifactSha256: "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
-    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260719230524758.json",
-    approvalUrl: null,
-    approvedArtifactSha256: null,
+    mode: "CURRENT_CANDIDATE_OWNER_APPROVED",
+    previousArtifactSha256: "71b70844a0ce93f2c137610a6472e7c824434e6ef97a38bf02a414146b1de6a0",
+    previousArtifactPath: "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886.json",
+    approvalUrl: "https://github.com/AquilaXk/easysubway/issues/2135#issuecomment-5278127592",
+    approvedArtifactSha256: "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
   });
 
   const previousBytes = await readFile(new URL(`../../${reference.promotion.previousArtifactPath}`, import.meta.url));
@@ -215,8 +215,8 @@ test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그
   assert.deepEqual(completeness.selectedServiceDates, artifact.selectedServiceDates);
   assert.equal(artifact.artifactId, reference.artifactId);
   assert.equal(artifact.artifactKind, "itx-cheongchun-source-timetable");
-  assert.equal(artifact.promotionStatus, "SUPPORTED");
-  assert.equal(artifact.snapshotDiff.status, "SUPPORTED");
+  assert.equal(artifact.promotionStatus, "CHANGE_REVIEW_REQUIRED");
+  assert.equal(artifact.snapshotDiff.status, "CHANGE_REVIEW_REQUIRED");
   assert.equal(artifact.snapshotDiff.previousArtifactSha256, reference.promotion.previousArtifactSha256);
   const diffByDay = new Map(artifact.snapshotDiff.serviceDays.map((day) => [day.dayCd, day]));
   const expectedDayCds = Object.keys(artifact.selectedServiceDates).sort();
@@ -225,11 +225,9 @@ test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그
   const setNames = ["stationSet", "odSet", "trainSet", "stopSequenceSet", "timetableTupleSet"];
   for (const { dayCd, sets } of artifact.normalizedSnapshotSets) {
     const diff = diffByDay.get(dayCd);
-    assert.equal(diff.blocked, false);
+    assert.equal(diff.blocked, true);
     for (const name of setNames) {
       const values = sets[name].map((value) => JSON.stringify(value)).sort().map(JSON.parse);
-      assert.deepEqual(diff.sets[name].added, []);
-      assert.deepEqual(diff.sets[name].removed, []);
       assert.equal(diff.sets[name].count, values.length);
       assert.equal(
         diff.sets[name].sha256,
@@ -238,7 +236,7 @@ test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그
     }
   }
   assert.equal(artifact.credentialRedacted, true);
-  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260727", "7": "20260801", "9": "20260802" });
+  assert.deepEqual(artifact.selectedServiceDates, { "8": "20260813", "7": "20260822", "9": "20260816" });
   for (const dayCd of ["8", "7", "9"]) {
     assert.deepEqual(
       [...new Set(artifact.stationSequences.filter((row) => row.dayCd === dayCd).map((row) => row.directionId))].sort(),
@@ -256,18 +254,18 @@ test("ITX-청춘 historical source artifact는 UNCHANGED_AUTO audit bytes를 그
   );
 });
 
-test("ITX-청춘 historical admission evidence는 세 service day 관측 결과를 credential 없이 고정한다", () => {
+test("ITX-청춘 admission evidence는 historical 관측과 current pack identities를 credential 없이 고정한다", () => {
   assert.deepEqual(contract.officialEvidence.korailCompletenessAdmission, {
     provider: "TAGO + 한국철도공사",
     officialSourceUrl: "https://www.data.go.kr/data/15125762/openapi.do",
     endpoint: "https://apis.data.go.kr/B551457/run/v2/travelerTrainRunInfo2",
     observedAt: "2026-07-14T08:35:44.292Z",
     artifactId: "itx-cheongchun-completeness-admission-20260714T083544292Z",
-    canonicalPackIdentity: {
+    topologyInputPackIdentity: {
       id: "capital",
-      sourceIssue: 2097,
-      sha256: "f91ccbba0dda86809355dc6b2eb686faaa6a72e88c06825be3ffe64a43139673",
-      sqliteSha256: "b550b351daa17c5ddc3172bc4229f06a8834a92b3d4835ceb06d2ebaf748bce7",
+      sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+      byteSize: 359319,
     },
     selectedServiceDates: { "8": "20260715", "7": "20260718", "9": "20260719" },
     admissionStatus: "MISSING",
@@ -303,6 +301,14 @@ test("ITX-청춘 historical admission evidence는 세 service day 관측 결과�
     ],
     artifactEvidenceHash: "347aec507ec951dde65c10a1c4bff9f94454f762d76a5a74064a40662008336c",
     credentialRedacted: true,
+    stationCatalogPackIdentity: {
+      artifactKind: "station-catalog-pack",
+      manifestVersion: 1,
+      catalogPackId: "itx-current-station-catalog-v1",
+      stationSetSha256: "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17",
+      payloadSha256: "985ca74e86ad218b504d7f091c1a13dd3ca89d536d664271706a98a87c8a344d",
+      manifestSha256: "777c69d8b01494b0de2cb6e0d42a0c9be48481c7053d6d9cc2a46f013896a17c",
+    },
   });
   const korailCandidate = sourceCandidates.candidates.find(({ id }) => id === "korail-traveler-train-run-info");
   assert.deepEqual(korailCandidate.evidence.currentCompletenessAdmission, {

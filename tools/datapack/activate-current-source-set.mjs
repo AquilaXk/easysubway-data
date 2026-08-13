@@ -17,9 +17,13 @@ import {
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
+import {
+  requiresCurrentCapitalTopologyAdmission,
+  withCurrentCapitalTopologyAdmissions,
+} from "./rebind-capital-route-map-admissions.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -210,12 +214,102 @@ function exactObjectKeys(value, expected) {
     && Object.keys(value).every((key, index) => key === expected[index]);
 }
 
+export function verifyCurrentSeoulCanonicalMembership(canonicalPackBytes, snapshot) {
+  if (!Buffer.isBuffer(canonicalPackBytes) || canonicalPackBytes.length === 0
+    || !snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)
+    || !SHA256.test(snapshot.rawSha256 ?? "")
+    || !Array.isArray(snapshot.providerRecordHashes)
+    || snapshot.providerRecordHashes.length !== 5
+    || new Set(snapshot.providerRecordHashes).size !== snapshot.providerRecordHashes.length
+    || snapshot.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))) {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+
+  let document;
+  try {
+    document = JSON.parse(canonicalPackBytes.toString("utf8"));
+  } catch {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+  if (!Array.isArray(document?.packs)) {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+  const capitalPacks = document.packs.filter(({ id }) => id === "capital");
+  if (capitalPacks.length !== 1
+    || !Array.isArray(capitalPacks[0].stations)
+    || !Array.isArray(capitalPacks[0].stationLines)) {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+
+  const capital = capitalPacks[0];
+  const stationsById = new Map();
+  for (const station of capital.stations) {
+    if (typeof station?.id !== "string" || station.id.length === 0
+      || typeof station.nameKo !== "string" || station.nameKo.length === 0
+      || stationsById.has(station.id)) {
+      throw new Error("current Seoul canonical membership mismatch");
+    }
+    stationsById.set(station.id, station);
+  }
+
+  const lineStationIds = [];
+  const seenLineStationIds = new Set();
+  for (const stationLine of capital.stationLines) {
+    if (stationLine?.lineId !== "seoul-4") continue;
+    if (typeof stationLine.stationId !== "string"
+      || seenLineStationIds.has(stationLine.stationId)
+      || !stationsById.has(stationLine.stationId)) {
+      throw new Error("current Seoul canonical membership mismatch");
+    }
+    seenLineStationIds.add(stationLine.stationId);
+    lineStationIds.push(stationLine.stationId);
+  }
+  if (lineStationIds.length === 0) {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+
+  const targetHashes = new Set(snapshot.providerRecordHashes);
+  const matches = new Map();
+  for (const stationId of lineStationIds) {
+    const station = stationsById.get(stationId);
+    for (let code = 0; code <= 9_999; code += 1) {
+      const record = {
+        line: "04호선",
+        station_code: String(code).padStart(4, "0"),
+        station_name: station.nameKo,
+      };
+      const recordHash = sha256(JSON.stringify(record));
+      if (!targetHashes.has(recordHash)) continue;
+      if (matches.has(recordHash)) {
+        throw new Error("current Seoul canonical membership mismatch");
+      }
+      matches.set(recordHash, { record, stationId });
+    }
+  }
+  if (matches.size !== snapshot.providerRecordHashes.length) {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+
+  const orderedMatches = snapshot.providerRecordHashes.map((recordHash) => matches.get(recordHash));
+  const records = orderedMatches.map(({ record }) => record);
+  if (sha256(Buffer.from(`${JSON.stringify(records)}\n`)) !== snapshot.rawSha256) {
+    throw new Error("current Seoul canonical membership mismatch");
+  }
+  return sha256(JSON.stringify(orderedMatches.map(({ record, stationId }) => ({
+    stationCode: record.station_code,
+    stationName: record.station_name,
+    canonicalStationId: stationId,
+    canonicalLineId: "seoul-4",
+  }))));
+}
+
 function validateStaticSourceChangeAdmission(
   previous,
   snapshot,
   evidence,
   sourceId,
   canonicalPackSha256,
+  canonicalMembershipSha256,
 ) {
   if (!exactObjectKeys(evidence, STATIC_CHANGE_ADMISSION_EVIDENCE_KEYS)) {
     throw new Error("static revalidation evidence shape mismatch");
@@ -242,8 +336,9 @@ function validateStaticSourceChangeAdmission(
     || !SHA256.test(evidence.responseSha256 ?? "")
     || !SHA256.test(evidence.canonicalPackSha256 ?? "")
     || !SHA256.test(canonicalPackSha256 ?? "")
-    || evidence.canonicalPackSha256 !== canonicalPackSha256
     || !SHA256.test(evidence.canonicalMembershipSha256 ?? "")
+    || !SHA256.test(canonicalMembershipSha256 ?? "")
+    || evidence.canonicalMembershipSha256 !== canonicalMembershipSha256
     || evidence.rawObjectUri !== snapshot.rawObjectUri
     || evidence.outcome !== "CONTENT_CHANGE_ADMITTED"
     || evidence.credentialRedacted !== true
@@ -281,7 +376,14 @@ function validateStaticSourceChangeAdmission(
   }
 }
 
-function validateStaticRevalidation(previous, snapshot, evidence, sourceId, canonicalPackSha256) {
+function validateStaticRevalidation(
+  previous,
+  snapshot,
+  evidence,
+  sourceId,
+  canonicalPackSha256,
+  canonicalMembershipSha256,
+) {
   if (evidence?.artifactKind === "current-static-source-change-admission-evidence") {
     validateStaticSourceChangeAdmission(
       previous,
@@ -289,6 +391,7 @@ function validateStaticRevalidation(previous, snapshot, evidence, sourceId, cano
       evidence,
       sourceId,
       canonicalPackSha256,
+      canonicalMembershipSha256,
     );
     return;
   }
@@ -335,6 +438,7 @@ export function activateStaticSourceRevalidations({
   sourceInventory,
   revalidations,
   canonicalPackSha256 = null,
+  canonicalMembershipSha256 = null,
   buildNow,
   observationDate,
 }) {
@@ -369,6 +473,7 @@ export function activateStaticSourceRevalidations({
       revalidation.evidence,
       sourceId,
       canonicalPackSha256,
+      canonicalMembershipSha256,
     );
     const observedMillis = requiredUtcInstant(
       revalidation.snapshot.retrievedAt,
@@ -582,6 +687,12 @@ export function buildCurrentSourcePrimaryOutputs({
 }) {
   validateHandoff(handoff, rawArtifact, rawArtifactBytes);
   if (!Array.isArray(sourceSnapshots)) throw new Error("current source snapshots are required");
+  const changeAdmission = staticRevalidations?.find(
+    ({ evidence }) => evidence?.artifactKind === "current-static-source-change-admission-evidence",
+  );
+  const canonicalMembershipSha256 = changeAdmission == null || canonicalPackBytes == null
+    ? null
+    : verifyCurrentSeoulCanonicalMembership(canonicalPackBytes, changeAdmission.snapshot);
   const staticSources = staticRevalidations == null
     ? { sourceSnapshots: structuredClone(sourceSnapshots), sourceInventory: structuredClone(sourceInventory) }
     : activateStaticSourceRevalidations({
@@ -589,6 +700,7 @@ export function buildCurrentSourcePrimaryOutputs({
       sourceInventory,
       revalidations: staticRevalidations,
       canonicalPackSha256: canonicalPackBytes == null ? null : sha256(canonicalPackBytes),
+      canonicalMembershipSha256,
       buildNow,
       observationDate: staticRevalidationDate,
     });
@@ -696,7 +808,6 @@ export function buildCurrentCandidateSpec({
   currentTopologyBytes,
   currentTopologyPath,
   topologyReverificationBytes,
-  itxCurrentTopologyAdmissionBytes,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
@@ -705,8 +816,7 @@ export function buildCurrentCandidateSpec({
   }
   if (!Buffer.isBuffer(sourceInventoryBytes)
     || !Buffer.isBuffer(currentTopologyBytes)
-    || !Buffer.isBuffer(topologyReverificationBytes)
-    || !Buffer.isBuffer(itxCurrentTopologyAdmissionBytes)) {
+    || !Buffer.isBuffer(topologyReverificationBytes)) {
     throw new Error("current capital topology candidate identity is invalid");
   }
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
@@ -752,10 +862,6 @@ export function buildCurrentCandidateSpec({
       reviewedAt: currentTopology.capturedAt,
       reverifiedAt: currentTopology.capturedAt,
       freshUntil: currentTopology.freshUntil,
-    },
-    itxCurrentTopologyAdmission: {
-      path: "tools/datapack/itx-current-network-edge-admission-20260810.json",
-      sha256: sha256(itxCurrentTopologyAdmissionBytes),
     },
   };
   return spec;
@@ -1025,17 +1131,17 @@ export async function commitCurrentSourceActivation({
   }
 }
 
-async function collectPositionSnapshotBytes(sourceInventory) {
+export async function collectPositionSnapshotBytes(sourceInventory, repositoryRoot = root) {
   const snapshotBytesByPath = new Map();
   for (const source of sourceInventory.sources ?? []) {
     const evidence = source.routeMapAdmissionEvidence;
-    if (evidence?.topologySourceId !== "capital-route-topology") continue;
+    if (!requiresCurrentCapitalTopologyAdmission(source)) continue;
     if (snapshotBytesByPath.has(evidence.snapshotPath)) {
       throw new Error(`duplicate capital position snapshot path: ${evidence.snapshotPath}`);
     }
     snapshotBytesByPath.set(
       evidence.snapshotPath,
-      await readRegularBytes(root, evidence.snapshotPath, `${source.id} position snapshot`),
+      await readRegularBytes(repositoryRoot, evidence.snapshotPath, `${source.id} position snapshot`),
     );
   }
   if (snapshotBytesByPath.size === 0) throw new Error("capital position snapshots are missing");
@@ -1130,9 +1236,6 @@ function validationBuildSpec(spec, temporaryRoot) {
   });
   Object.assign(next.networkEdgeEvidence.itxCoverageContract, {
     path: path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
-  });
-  Object.assign(next.networkEdgeEvidence.itxCurrentTopologyAdmission, {
-    path: path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
   });
   return next;
 }
@@ -1256,7 +1359,7 @@ export async function generateCurrentSourceActivation({
   try {
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
-      canonicalBytes, itxCurrentTopologyAdmissionBytes,
+      canonicalBytes,
       molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
       seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
@@ -1269,7 +1372,6 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
       readRegularBytes(root, "tools/datapack/release/candidate-build-spec.json"),
       readRegularBytes(root, "tools/datapack/release/capital-production-canonical-pack.json"),
-      readRegularBytes(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
       readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
@@ -1339,6 +1441,7 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
+    projectCapitalTopologyIntoCanonicalFixture(canonical, capitalTopology);
     const nextCanonicalBytes = jsonBytes(canonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
@@ -1350,7 +1453,6 @@ export async function generateCurrentSourceActivation({
       currentTopologyBytes: capitalTopologyBytes,
       currentTopologyPath: capitalTopologyPath,
       topologyReverificationBytes: primaryBytes.reverification,
-      itxCurrentTopologyAdmissionBytes,
     });
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], jsonBytes(nextSpec));
     await prepareReleaseEvidenceRoot(temporaryRoot, nextSpec);

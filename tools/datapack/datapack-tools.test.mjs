@@ -10,7 +10,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { sortJson } from "./run-source-admission-pipeline.mjs";
-import { normalizeUnverifiedNetworkEdgeStates } from "./build-datapack.mjs";
+import {
+  normalizeUnverifiedNetworkEdgeStates,
+  projectCapitalTopologyIntoCanonicalFixture,
+} from "./build-datapack.mjs";
 // 정준 직렬화는 검증 대상 구현을 그대로 쓴다. 테스트가 규칙을 복제하면 3언어
 // 분열(이슈 #2528)을 구조적으로 검출할 수 없다.
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
@@ -22,6 +25,10 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import {
+  deriveTopology as deriveItxTopology,
+  projectItxTopologyIntoCanonicalFixture,
+} from "./apply-itx-topology-to-bundled-pack.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -18149,7 +18156,6 @@ async function writeCurrentItxReleaseInputs(
   const freshUntil = "2026-08-10T00:00:00+09:00";
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
-  mutateFixture?.(fixture);
 
   const completeness = JSON.parse(await readFile(
     "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886-completeness-evidence.json",
@@ -18178,6 +18184,8 @@ async function writeCurrentItxReleaseInputs(
   source.completenessEvidenceSha256 = sha256(completenessBytes);
   const { evidenceHash: _sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
   source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)));
+  projectItxTopologyIntoCanonicalFixture(fixture, deriveItxTopology(source));
+  mutateFixture?.(fixture);
   const sourcePath = path.join(workspace, "itx-source.json");
   const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
@@ -18206,11 +18214,13 @@ async function writeCurrentItxReleaseInputs(
     byteSize: topologyEvidence.pack.inputByteSize,
   };
   Object.assign(contract.sourceTimetableArtifact, {
+    artifactId: source.artifactId,
     artifactPath: sourcePath,
     sha256: sha256(sourceBytes),
     completenessEvidencePath: completenessPath,
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil,
+    policyVersion: source.policyVersion,
     promotion: {
       mode: "UNCHANGED_AUTO",
       previousArtifactSha256: topologyEvidence.sourceArtifact.sha256,
@@ -18252,6 +18262,8 @@ async function writeCurrentItxReleaseInputs(
       candidateTopology,
     ),
   )}\n`);
+  projectCapitalTopologyIntoCanonicalFixture(fixture, candidateTopology);
+  await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   await Promise.all([
     writeFile(baselineTopologyPath, baselineTopologyBytes),
     writeFile(candidateTopologyPath, candidateTopologyBytes),

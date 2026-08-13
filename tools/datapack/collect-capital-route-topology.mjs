@@ -626,7 +626,7 @@ export function projectCapitalTopologyOwnership(snapshot) {
       gapLineIds: topologyGaps.map(({ lineId }) => lineId),
     });
   }
-  return projected;
+  return repairCapitalTopologyBranchCoverage(projected);
 }
 
 export function buildCapitalTopologyReverificationEvidence(baseline, candidate) {

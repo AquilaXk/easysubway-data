@@ -11,7 +11,6 @@ import { emitStationCatalogFromBundledPack } from "./emit-station-catalog-from-b
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
-const EXPECTED_EDGE_COUNT = 48;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
 const CURRENT_V18_STATION_CATALOG_PACK_ID =
   "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1";
@@ -33,6 +32,14 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
   ],
   [
     "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+    {
+      gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+      byteSize: 359319,
+    },
+  ],
+  [
+    "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
     {
       gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
       sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
@@ -195,6 +202,17 @@ function validateAdmittedSourceReference(contract, reference) {
     || !/^[a-f0-9]{64}$/.test(reference.completenessEvidenceSha256 ?? "")) {
     throw new Error("ITX topology requires #2135 ADMITTED source contract");
   }
+  validateCurrentApprovalIdentity(reference);
+}
+
+function validateCurrentApprovalIdentity(reference) {
+  const promotion = reference?.promotion;
+  if (promotion?.mode !== "CURRENT_CANDIDATE_OWNER_APPROVED"
+    || !/^https:\/\/github\.com\/AquilaXk\/easysubway\/issues\/2135#issuecomment-[1-9][0-9]*$/u
+      .test(promotion.approvalUrl ?? "")
+    || promotion.approvedArtifactSha256 !== reference.sha256) {
+    throw new Error("ITX topology approval identity is invalid");
+  }
 }
 
 export function parseAuthenticatedAdmittedSourceDocuments(reference, sourceBytes, completenessBytes) {
@@ -258,7 +276,9 @@ export function validateAdmittedSourceDocuments(
     || completeness?.validationMode !== "ADMISSION"
     || completeness?.validationStatus !== "SUPPORTED"
     || completeness?.materialization?.status !== "SUPPORTED"
-    || completeness?.sourceTimetableArtifact?.status !== "SUPPORTED"
+    || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
     || completeness?.sourceTimetableArtifact?.artifactId !== reference.artifactId
     || completeness?.sourceTimetableArtifact?.policyVersion !== source.policyVersion
     || completeness?.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
@@ -746,14 +766,6 @@ export function deriveTopology(source) {
   if (visited.size !== expectedServedStationKeys.size) {
     throw new Error("ITX topology service stop graph must be connected");
   }
-  const edgeKeys = new Set(edges.keys());
-  if (edgeKeys.size !== EXPECTED_EDGE_COUNT
-    || [...edgeKeys].some((key) => {
-      const [from, to] = key.split("->");
-      return !edgeKeys.has(`${to}->${from}`);
-    })) {
-    throw new Error(`ITX topology requires ${EXPECTED_EDGE_COUNT} paired directed edges`);
-  }
   const topology = {
     stations: [...stations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)
       || codepointCompare(left.lineId, right.lineId)),
@@ -763,6 +775,39 @@ export function deriveTopology(source) {
   };
   const normalizedBytes = Buffer.from(`${JSON.stringify(topology)}\n`);
   return { ...topology, normalizedBytes, sha256: sha256(normalizedBytes) };
+}
+
+export function projectItxTopologyIntoCanonicalFixture(fixture, topology) {
+  const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
+  if (fixture?.manifest?.channel !== "production"
+    || packs.length !== 1
+    || packs[0].artifactKind !== "production"
+    || !Array.isArray(packs[0].networkEdges)
+    || !Array.isArray(packs[0].stationLines)) {
+    throw new Error("ITX topology canonical fixture is invalid");
+  }
+  const pack = packs[0];
+  const memberships = new Set(pack.stationLines.map(({ stationId, lineId }) => `${stationId}\0${lineId}`));
+  const projected = topology.edges.map((edge) => {
+    const [fromStationId, fromLineId] = String(edge.fromNodeId).split(":");
+    const [toStationId, toLineId] = String(edge.toNodeId).split(":");
+    if (!memberships.has(`${fromStationId}\0${fromLineId}`)
+      || !memberships.has(`${toStationId}\0${toLineId}`)) {
+      throw new Error("ITX topology canonical fixture station membership is missing");
+    }
+    return {
+      ...edge,
+      includesStairs: false,
+      stairAccessState: "UNKNOWN",
+      accessibilityStatus: "UNKNOWN",
+      reliabilityScore: 100,
+      facilityId: null,
+    };
+  });
+  const retained = pack.networkEdges.filter(({ serviceClass }) => serviceClass !== "ITX_CHEONGCHUN");
+  pack.networkEdges = [...retained, ...projected]
+    .sort((left, right) => codepointCompare(left.id, right.id));
+  return { edgeCount: projected.length, topologySha256: topology.sha256 };
 }
 
 function hasColumn(database, table, column) {
@@ -1201,10 +1246,11 @@ async function main() {
   const contractPath = path.resolve(root, option("--contract", "tools/datapack/itx-cheongchun-coverage-contract.json"));
   const evidencePath = path.resolve(root, option("--evidence", "tools/datapack/itx-cheongchun-topology-evidence.json"));
   const stationCatalogPackPath = option("--station-catalog-pack", null);
+  const fixtureProjectionPath = option("--project-fixture", null);
   const check = process.argv.includes("--check");
   const migrateCurrentV18Requested = process.argv.includes("--migrate-current-v18");
-  if (check && migrateCurrentV18Requested) {
-    throw new Error("--check and --migrate-current-v18 are mutually exclusive");
+  if ([check, migrateCurrentV18Requested, fixtureProjectionPath != null].filter(Boolean).length > 1) {
+    throw new Error("--check, --migrate-current-v18 and --project-fixture are mutually exclusive");
   }
   if (migrateCurrentV18Requested) {
     if (stationCatalogPackPath == null) throw new Error("--migrate-current-v18 requires --station-catalog-pack");
@@ -1221,6 +1267,13 @@ async function main() {
   const { contract, reference, source, sourceBytes } = await admittedSource(contractPath);
   const topologySource = await admittedTopologySource(reference, source);
   const topology = deriveTopology(source);
+  if (fixtureProjectionPath != null) {
+    const fixturePath = path.resolve(root, fixtureProjectionPath);
+    const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+    projectItxTopologyIntoCanonicalFixture(fixture, topology);
+    await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
+    return;
+  }
   const admittedInputPack = topologyInputPackIdentity(
     contract?.officialEvidence?.korailCompletenessAdmission?.topologyInputPackIdentity,
     "ITX topology input pack identity",

@@ -76,6 +76,38 @@ function rebind(values, snapshotBytes = values.snapshotBytes) {
   });
 }
 
+function seoulOfficialFixture() {
+  const values = fixture();
+  const source = values.inventory.sources[0];
+  const evidence = source.routeMapAdmissionEvidence;
+  const snapshot = JSON.parse(values.snapshotBytes);
+  source.id = "seoul-metro-route-map-positions";
+  source.productionUseAllowed = true;
+  source.license = { redistributionAllowed: true };
+  Object.assign(evidence, {
+    issue: 2470,
+    admissionKind: "official-file-latlon",
+    materializer: "tools/datapack/materialize-seoul-route-map-positions.mjs",
+    verificationTest: "tools/datapack/materialize-seoul-route-map-positions.test.mjs",
+    positionsSha256: "2".repeat(64),
+    rawSha256: "3".repeat(64),
+  });
+  delete evidence.topologySourceId;
+  delete evidence.topologySnapshotId;
+  delete evidence.topologyContentSha256;
+  delete evidence.topologyLineages;
+  snapshot.sourceId = source.id;
+  snapshot.positionsSha256 = evidence.positionsSha256;
+  snapshot.rawSha256 = evidence.rawSha256;
+  delete snapshot.topologySourceId;
+  delete snapshot.topologySnapshotId;
+  delete snapshot.topologyContentSha256;
+  delete snapshot.topologyLineages;
+  values.snapshotBytes = Buffer.from(JSON.stringify(snapshot));
+  evidence.snapshotSha256 = sha256(values.snapshotBytes);
+  return values;
+}
+
 test("historical route-map snapshot은 current capital topology membership 검증 후 별도 admission으로 결속된다", () => {
   const values = fixture();
   const result = rebind(values);
@@ -114,6 +146,68 @@ test("rebound current admission은 production line admission으로 사용된다"
   const stale = structuredClone(inventory);
   stale.sources[0].routeMapAdmissionEvidence.currentTopologyAdmission.freshUntil = "2026-08-09T13:00:00.000Z";
   assert.throws(() => admit(stale), /current topology admission is stale/);
+});
+
+test("서울 공식 1~8호선 position snapshot은 current capital topology admission으로 결속된다", () => {
+  const values = seoulOfficialFixture();
+  const inventory = rebind(values);
+  const evidence = inventory.sources[0].routeMapAdmissionEvidence;
+
+  assert.equal(evidence.topologySourceId, "capital-route-topology");
+  assert.equal(evidence.topologySnapshotId, undefined);
+  assert.deepEqual(
+    admittedCapitalLineEvidence(
+      inventory,
+      values.topology,
+      topologySnapshotId,
+      reviewedAt,
+      new Date("2026-08-10T00:00:00.000Z"),
+    ).get(values.lineId),
+    { verifiedAt: reviewedAt, freshUntil: values.topology.freshUntil },
+  );
+
+  const invalid = seoulOfficialFixture();
+  invalid.inventory.sources[0].routeMapAdmissionEvidence.issue = 2471;
+  assert.throws(() => rebind(invalid), /Seoul route-map position source contract is invalid/);
+});
+
+test("tracked 서울 공식 position snapshot의 exact renamed-station aliases는 current 22-line admission을 완성한다", async () => {
+  const [inventory, topology] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260813.json"), "utf8").then(JSON.parse),
+  ]);
+  const snapshotBytesByPath = new Map();
+  for (const source of inventory.sources) {
+    if (source.routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology"
+      || source.id === "seoul-metro-route-map-positions") {
+      snapshotBytesByPath.set(
+        source.routeMapAdmissionEvidence.snapshotPath,
+        await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath)),
+      );
+    }
+  }
+  const rebound = withCurrentCapitalTopologyAdmissions({
+    inventory,
+    topology,
+    topologySnapshotId: "capital-route-topology-20260813",
+    reviewedAt: topology.capturedAt,
+    snapshotBytesByPath,
+  });
+  const admissions = admittedCapitalLineEvidence(
+    rebound,
+    topology,
+    "capital-route-topology-20260813",
+    topology.capturedAt,
+    new Date("2026-08-13T16:19:47.000Z"),
+  );
+
+  assert.equal(admissions.size, 22);
+  for (const lineId of [
+    "line-472a81add377", "seoul-4", "line-80fc4d5350d4",
+    "line-15b3b8a93259", "line-2b2d9eaa53d0",
+  ]) {
+    assert.equal(admissions.has(lineId), true, lineId);
+  }
 });
 
 test("current topology에 없는 station은 input을 변경하지 않고 거부한다", () => {

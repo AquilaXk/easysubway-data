@@ -18,6 +18,7 @@ import {
   assertStoredTopology,
   deriveTopology,
   parseAuthenticatedAdmittedSourceDocuments,
+  projectItxTopologyIntoCanonicalFixture,
   validateAdmittedSourceDocuments,
   validateTopologyEvidence,
 } from "./apply-itx-topology-to-bundled-pack.mjs";
@@ -54,6 +55,12 @@ const admittedTopologyInputs = new Map([
     sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
     byteSize: 359319,
   }],
+  ["2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26", {
+    id: "capital",
+    sha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+    sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+    byteSize: 359319,
+  }],
 ]);
 
 async function trackedLegacyDocuments() {
@@ -75,7 +82,7 @@ async function trackedLegacyDocuments() {
 async function admittedDocuments() {
   const { contract, source, completeness } = await trackedLegacyDocuments();
   const topologyInputPackIdentity = admittedTopologyInputs.get(
-    contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+    contract.sourceTimetableArtifact.sha256,
   );
   assert.ok(topologyInputPackIdentity, "fixture predecessor must have an exact static topology input admission");
   delete contract.officialEvidence.korailCompletenessAdmission.canonicalPackIdentity;
@@ -92,6 +99,8 @@ async function admittedDocuments() {
   source.completenessEvidenceSha256 = contract.sourceTimetableArtifact.completenessEvidenceSha256;
   const sourceBytes = Buffer.from(JSON.stringify(source));
   contract.sourceTimetableArtifact.sha256 = sha256(sourceBytes);
+  contract.sourceTimetableArtifact.promotion.approvedArtifactSha256 =
+    contract.sourceTimetableArtifact.sha256;
   const reference = contract.sourceTimetableArtifact;
   return {
     contract,
@@ -114,6 +123,7 @@ function rebindAdmissionDocuments(documents) {
   documents.source.evidenceHash = sha256(JSON.stringify(sourceWithoutEvidenceHash));
   documents.sourceBytes = Buffer.from(`${JSON.stringify(documents.source, null, 2)}\n`);
   documents.reference.sha256 = sha256(documents.sourceBytes);
+  documents.reference.promotion.approvedArtifactSha256 = documents.reference.sha256;
   return documents;
 }
 
@@ -631,6 +641,7 @@ test("custom contract는 legacy tracked source를 승인하지 않고 sentinel �
   const directory = await mkdtemp(path.join(os.tmpdir(), "itx-current-admission-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
   const { contract } = await trackedLegacyDocuments();
+  contract.sourceTimetableArtifact.promotion.mode = "UNCHANGED_AUTO";
   const contractPath = path.join(directory, "contract.json");
   const packPath = path.join(directory, "capital.sqlite.gz");
   const indexPath = path.join(directory, "index.json");
@@ -644,7 +655,7 @@ test("custom contract는 legacy tracked source를 승인하지 않고 sentinel �
     "tools/datapack/apply-itx-topology-to-bundled-pack.mjs", "--contract", contractPath,
     "--pack", packPath, "--index", indexPath, "--evidence", evidencePath,
   ], { cwd: root, env: { ...process.env, EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } }),
-  /legacy admission is forbidden/);
+  /approval identity is invalid/);
   assert.deepEqual(await Promise.all([readFile(packPath), readFile(indexPath), readFile(evidencePath)]), before);
 });
 
@@ -684,7 +695,7 @@ test("topology direct seam은 shape, FK, admission evidence를 materialize하고
   applyTopology(second.sqlitePath, second.topology, evidence);
   assertStoredTopology(first.sqlitePath, first.topology, evidence);
   assert.deepEqual(canonicalRows(first.sqlitePath), canonicalRows(second.sqlitePath));
-  assert.equal(canonicalRows(first.sqlitePath).length, 48);
+  assert.equal(canonicalRows(first.sqlitePath).length, first.topology.edges.length);
 });
 
 test("topology evidence seam은 self-consistent fixture를 통과하고 파생 count 변조를 거부한다", async (context) => {
@@ -960,7 +971,7 @@ test("serialization-only readmission 없는 64 KiB 초과 gzip은 evidence seam�
 
 test("current source static admission은 exact topology input tuple을 반환한다", async () => {
   const { reference, source } = await admittedDocuments();
-  reference.sha256 = reference.promotion.previousArtifactSha256;
+  reference.sha256 = "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e";
   const admitted = await admittedTopologySource(reference, source);
   assert.deepEqual({
     id: "capital",
@@ -968,6 +979,96 @@ test("current source static admission은 exact topology input tuple을 반환한
     sqliteSha256: admitted.sqliteSha256,
     byteSize: admitted.byteSize,
   }, admittedTopologyInputs.get(reference.sha256));
+});
+
+test("OWNER-approved current source는 exact static topology input에 결속된다", async () => {
+  const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
+    await trackedLegacyDocuments();
+  assert.doesNotThrow(() => validateAdmittedSourceDocuments(
+    contract,
+    reference,
+    source,
+    completeness,
+    sha256(sourceBytes),
+    sha256(completenessBytes),
+  ));
+  const admitted = await admittedTopologySource(reference, source);
+  assert.deepEqual({
+    id: "capital",
+    sha256: admitted.gzipSha256,
+    sqliteSha256: admitted.sqliteSha256,
+    byteSize: admitted.byteSize,
+  }, admittedTopologyInputs.get(reference.sha256));
+});
+
+test("OWNER-approved current source는 approval URL·approved SHA·mode를 exact 결속한다", async (context) => {
+  const cases = [
+    ["missing-url", (reference) => { reference.promotion.approvalUrl = ""; }],
+    ["wrong-approved-sha", (reference) => { reference.promotion.approvedArtifactSha256 = "0".repeat(64); }],
+    ["wrong-mode", (reference) => { reference.promotion.mode = "UNCHANGED_AUTO"; }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const { contract, reference, source, completeness, sourceBytes, completenessBytes } =
+        await trackedLegacyDocuments();
+      mutate(reference);
+      assert.throws(() => validateAdmittedSourceDocuments(
+        contract,
+        reference,
+        source,
+        completeness,
+        sha256(sourceBytes),
+        sha256(completenessBytes),
+      ), /approval identity|legacy admission/);
+    });
+  }
+});
+
+test("OWNER-approved current source topology는 실제 directed stop pattern을 보존한다", async () => {
+  const { source } = await trackedLegacyDocuments();
+  const topology = deriveTopology(source);
+  const directedPairs = new Set(topology.edges.map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`));
+  const unpairedCount = [...directedPairs].filter((key) => {
+    const [from, to] = key.split("->");
+    return !directedPairs.has(`${to}->${from}`);
+  }).length;
+  assert.equal(topology.edges.length, 84);
+  assert.equal(unpairedCount, 18);
+  assert.equal(topology.servedStations.length, 14);
+});
+
+test("production canonical fixture는 current source 84 directed edge를 exact 투영한다", async () => {
+  const [{ source }, fixture] = await Promise.all([
+    trackedLegacyDocuments(),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const expected = deriveTopology(source).edges
+    .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
+    .sort();
+  const actual = fixture.packs.find(({ id }) => id === "capital").networkEdges
+    .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+    .map(({ fromNodeId, toNodeId }) => `${fromNodeId}->${toNodeId}`)
+    .sort();
+  assert.equal(actual.length, 84);
+  assert.deepEqual(actual, expected);
+});
+
+test("canonical fixture projection은 current source 84 edge를 결정적으로 교체한다", async () => {
+  const [{ source }, fixture] = await Promise.all([
+    trackedLegacyDocuments(),
+    readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
+      .then(JSON.parse),
+  ]);
+  const topology = deriveTopology(source);
+  const first = structuredClone(fixture);
+  const second = structuredClone(fixture);
+  assert.deepEqual(projectItxTopologyIntoCanonicalFixture(first, topology), {
+    edgeCount: 84,
+    topologySha256: topology.sha256,
+  });
+  projectItxTopologyIntoCanonicalFixture(second, topology);
+  assert.deepEqual(first, second);
 });
 
 test("assertStoredTopology는 foreign-key 손상을 거부한다", async (context) => {
@@ -1103,6 +1204,7 @@ test("source와 completeness evidence exact binding을 요구한다", async () =
   source.completenessEvidenceSha256 = "0".repeat(64);
   const sourceBytes = Buffer.from(JSON.stringify(source));
   reference.sha256 = sha256(sourceBytes);
+  reference.promotion.approvedArtifactSha256 = reference.sha256;
   withBuildNow(() => assert.throws(() => validateAdmittedSourceDocuments(
     documents.contract, reference, source, documents.completeness,
     sha256(sourceBytes), sha256(documents.completenessBytes),
