@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
 import { validateKricAccessibilitySnapshotIdentity } from "./collect-kric-accessibility-snapshots.mjs";
+import { validateSeoulAccessibilitySnapshotIdentity } from "./collect-seoul-accessibility-evidence.mjs";
 import { deriveFreshnessExpiresAt } from "./freshness-policy.mjs";
 import { materializeAccessibilitySourceInput } from "./materialize-accessibility-source-input.mjs";
 import { deriveRawRetentionExpiresAt, validateSourceGovernancePolicy } from "./source-governance-policy.mjs";
@@ -72,7 +73,8 @@ async function recoverJournalRecord({ entry, record, root, directory, seen, atom
     throw new Error("journal");
   }
   seen.add(record.target);
-  if (!allowed.has(record.target) && !/^tools\/datapack\/sources\/kric-station-convenience-standard-[A-Za-z0-9]+\.json$/.test(record.target)) {
+  if (!allowed.has(record.target)
+    && !/^tools\/datapack\/sources\/(?:kric-station-convenience-standard|seoul-metro-accessibility)-[A-Za-z0-9]+\.json$/.test(record.target)) {
     throw new Error("journal");
   }
   const target = contained(root, record.target);
@@ -234,6 +236,16 @@ function readStagedSnapshot(bytes, expectedSha256) {
   return validateKricAccessibilitySnapshotIdentity(snapshot);
 }
 
+function readStagedSeoulSnapshot(bytes, expectedSha256) {
+  requiredSha256(expectedSha256, "Seoul snapshot file SHA-256");
+  if (sha256(bytes) !== expectedSha256) throw new Error("Seoul snapshot file SHA-256 mismatch");
+  try {
+    return validateSeoulAccessibilitySnapshotIdentity(JSON.parse(bytes));
+  } catch {
+    throw new Error("Seoul snapshot file is invalid");
+  }
+}
+
 function validateReceipt(snapshot, receipt, now) {
   const capturedAt = Date.parse(snapshot.capturedAt);
   const freshUntil = Date.parse(snapshot.freshUntil);
@@ -391,7 +403,86 @@ function validateKricAccessibilityCoverage(snapshot, input) {
   return roster;
 }
 
-function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster, freshnessExpiresAt, governancePolicySha256, governancePolicyVersion, now }) {
+function ledgerRawReceipt(receipt) {
+  return {
+    sourceId: receipt.sourceId,
+    snapshotId: receipt.snapshotId,
+    snapshotRawSha256: receipt.snapshotRawSha256,
+    capturedAt: receipt.capturedAt,
+    snapshotFileSha256: receipt.snapshotFileSha256,
+    rawObjectSha256: receipt.rawObjectSha256,
+    byteSize: receipt.byteSize,
+    storedAt: receipt.storedAt,
+  };
+}
+
+function buildSeoulRegistration({
+  inventory, snapshots, snapshot, snapshotPath, snapshotFileSha256, rawReceipt,
+  freshnessExpiresAt, governancePolicySha256, governancePolicyVersion,
+}) {
+  const source = inventory?.sources?.find(({ id }) => id === SEOUL_SOURCE_ID);
+  if (!source) throw new Error("Seoul production source inventory entry is missing");
+  const previousId = validateLineage(snapshots).headsBySource[SEOUL_SOURCE_ID];
+  const previous = snapshots.find(({ snapshotId }) => snapshotId === previousId);
+  if (!previous || snapshot.previousSnapshotId !== previous.snapshotId) {
+    throw new Error("Seoul snapshot lineage is invalid");
+  }
+  const nextLedger = {
+    schemaVersion: 1,
+    artifactKind: "official-source-snapshot",
+    snapshotId: snapshot.snapshotId,
+    sourceId: SEOUL_SOURCE_ID,
+    provider: source.provider,
+    retrievedAt: snapshot.capturedAt,
+    sourceUpdatedAt: snapshot.observedAt,
+    rowCount: snapshot.stations.length,
+    coverageCount: snapshot.stations.length,
+    rawSha256: rawReceipt.rawObjectSha256,
+    rawObjectUri: rawReceipt.rawObjectUri,
+    rawReceipt: ledgerRawReceipt(rawReceipt),
+    contentSha256: snapshot.contentSha256,
+    redactedRequestFingerprint: previous.redactedRequestFingerprint,
+    schemaFingerprint: snapshot.schemaFingerprint,
+    snapshotStatus: "LOCKED",
+    schemaStatus: "PASS",
+    licenseStatus: "PASS",
+    fetchStatus: "SUCCESS",
+    redistributionAllowed: true,
+    credentialRedacted: true,
+    previousSnapshotId: previous.snapshotId,
+    freshnessExpiresAt,
+    rawRetentionExpiresAt: rawReceipt.rawRetentionExpiresAt,
+    providerRecordHashes: snapshot.stations.map((station) => sha256(JSON.stringify(station))),
+    governancePolicyVersion,
+    governancePolicySha256,
+  };
+  nextLedger.diffSummary = buildSnapshotDiff(previous, nextLedger);
+  const nextSource = inventory.sources.find(({ id }) => id === SEOUL_SOURCE_ID);
+  nextSource.productionUseAllowed = true;
+  nextSource.retrievedAt = snapshot.capturedAt.slice(0, 10);
+  nextSource.observedDataUpdatedAt = snapshot.observedAt.slice(0, 10);
+  nextSource.accessibilityAdmissionEvidence = {
+    ...nextSource.accessibilityAdmissionEvidence,
+    productionUseAllowed: true,
+    snapshotId: snapshot.snapshotId,
+    snapshotPath,
+    capturedAt: snapshot.capturedAt,
+    observedAt: snapshot.observedAt,
+    freshUntil: snapshot.freshUntil,
+    absenceEvidenceMode: snapshot.absenceEvidenceMode,
+    rawSha256: snapshot.rawSha256,
+    contentSha256: snapshot.contentSha256,
+    schemaFingerprint: snapshot.schemaFingerprint,
+    snapshotFileSha256,
+  };
+  nextSource.admissionEvidence = {
+    ...nextSource.admissionEvidence,
+    productionUseNoteKo: `fresh Seoul accessibility snapshot ${snapshot.snapshotId} registration verified.`,
+  };
+  return nextLedger;
+}
+
+function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, seoulRegistration, kricAccessibilityRoster, freshnessExpiresAt, governancePolicySha256, governancePolicyVersion, now }) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   if (!source) throw new Error("production source inventory entry is missing");
   const previousId = validateLineage(snapshots).headsBySource[SOURCE_ID];
@@ -409,16 +500,7 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     coverageCount: snapshot.queryCount,
     rawSha256: rawReceipt.rawObjectSha256,
     rawObjectUri: rawReceipt.rawObjectUri,
-    rawReceipt: {
-      sourceId: rawReceipt.sourceId,
-      snapshotId: rawReceipt.snapshotId,
-      snapshotRawSha256: rawReceipt.snapshotRawSha256,
-      capturedAt: rawReceipt.capturedAt,
-      snapshotFileSha256: rawReceipt.snapshotFileSha256,
-      rawObjectSha256: rawReceipt.rawObjectSha256,
-      byteSize: rawReceipt.byteSize,
-      storedAt: rawReceipt.storedAt,
-    },
+    rawReceipt: ledgerRawReceipt(rawReceipt),
     contentSha256: snapshot.contentSha256,
     redactedRequestFingerprint: snapshot.redactedRequestFingerprint,
     schemaFingerprint: snapshot.schemaFingerprint,
@@ -457,7 +539,15 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
     ...nextSource.admissionEvidence,
     productionUseNoteKo: `fresh KRIC standard snapshot ${snapshot.snapshotId} registration verified.`,
   };
-  const nextSnapshots = [...snapshots, nextLedger];
+  const seoulLedger = seoulRegistration == null ? null : buildSeoulRegistration({
+    inventory: nextInventory,
+    snapshots,
+    snapshot: seoulSnapshot,
+    ...seoulRegistration,
+    governancePolicySha256,
+    governancePolicyVersion,
+  });
+  const nextSnapshots = [...snapshots, ...(seoulLedger == null ? [] : [seoulLedger]), nextLedger];
   validateLineage(nextSnapshots);
   const nextInput = materializeAccessibilitySourceInput({
     input: structuredClone(input), kricSnapshot: snapshot, seoulSnapshot,
@@ -470,8 +560,11 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
   nextInput.kricStandardAccessibilityRoster = kricAccessibilityRoster;
   const kricRows = nextInput.facilityRows.filter(({ sourceId }) => sourceId === SOURCE_ID);
   const kricStatus = nextInput.accessibilityStatusEvidence.filter(({ sourceId }) => sourceId === SOURCE_ID);
+  const seoulStatus = nextInput.accessibilityStatusEvidence.filter(({ sourceId }) => sourceId === SEOUL_SOURCE_ID);
   if (kricRows.length === 0
-    || [...kricRows, ...kricStatus].some(({ sourceSnapshotId }) => sourceSnapshotId !== snapshot.snapshotId)) {
+    || [...kricRows, ...kricStatus].some(({ sourceSnapshotId }) => sourceSnapshotId !== snapshot.snapshotId)
+    || seoulStatus.length === 0
+    || seoulStatus.some(({ sourceSnapshotId }) => sourceSnapshotId !== seoulSnapshot.snapshotId)) {
     throw new Error("materialized KRIC snapshot identity is invalid");
   }
   return [nextInventory, nextSnapshots, nextInput].map((value) => `${JSON.stringify(value, null, 2)}\n`);
@@ -513,9 +606,9 @@ async function readFreshnessPolicy(repositoryRoot) {
   try { return JSON.parse(bytes); } catch { throw new Error("datapack freshness SLA is invalid"); }
 }
 
-function validateKricLicenseGovernance({ inventory, policySources, now }) {
-  const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
-  const entry = policySources.get(SOURCE_ID);
+function validateLicenseGovernance({ inventory, policySources, sourceId, label, now }) {
+  const source = inventory?.sources?.find(({ id }) => id === sourceId);
+  const entry = policySources.get(sourceId);
   const review = entry?.licenseReview;
   const reviewedAt = Date.parse(review?.reviewedAt);
   const nextReviewAt = Date.parse(review?.nextReviewAt);
@@ -525,7 +618,7 @@ function validateKricLicenseGovernance({ inventory, policySources, now }) {
     || review.approvedByRole !== entry?.approvalRole
     || !Number.isFinite(reviewedAt) || !Number.isFinite(nextReviewAt) || reviewedAt > now.getTime() || nextReviewAt <= now.getTime()
     || source.license?.redistributionAllowed !== true || !review.redistributionScopes?.includes("DERIVED_DATAPACK")) {
-    throw new Error("KRIC license governance is invalid");
+    throw new Error(`${label} license governance is invalid`);
   }
 }
 
@@ -540,7 +633,8 @@ async function readOptionalFile(file) {
 
 async function prepareRegistration({
   repositoryRoot, paths, snapshotFilePath, snapshotFileSha256, snapshotTargetPath,
-  rawReceipt, seoulSnapshot, now,
+  rawReceipt, seoulSnapshot, seoulSnapshotFilePath, seoulSnapshotFileSha256,
+  seoulSnapshotTargetPath, seoulRawReceipt, now,
 }) {
   await recoverKricStandardAccessibilitySnapshotTransaction({ repositoryRoot });
   const [snapshotBytes, ...original] = await Promise.all([
@@ -560,8 +654,61 @@ async function prepareRegistration({
   }
   const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
   const { policySources } = validateSourceGovernancePolicy({ policy: governancePolicy.policy, inventory, freshnessPolicy });
-  validateKricLicenseGovernance({ inventory, policySources, now });
-  await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
+  validateLicenseGovernance({ inventory, policySources, sourceId: SOURCE_ID, label: "KRIC", now });
+  const seoulInputs = [
+    seoulSnapshotFilePath, seoulSnapshotFileSha256, seoulSnapshotTargetPath, seoulRawReceipt,
+  ];
+  const freshSeoulRequested = seoulInputs.every((value) => value != null);
+  if (!freshSeoulRequested && seoulInputs.some((value) => value != null)) {
+    throw new Error("fresh Seoul registration inputs are incomplete");
+  }
+  let effectiveSeoulSnapshot = seoulSnapshot;
+  let seoulRegistration = null;
+  let seoulSnapshotBytes = null;
+  if (freshSeoulRequested) {
+    seoulSnapshotBytes = await readFile(requiredText(seoulSnapshotFilePath, "Seoul snapshot file path"));
+    effectiveSeoulSnapshot = readStagedSeoulSnapshot(seoulSnapshotBytes, seoulSnapshotFileSha256);
+    if (seoulRawReceipt?.snapshotFileSha256 !== seoulSnapshotFileSha256) {
+      throw new Error("Seoul raw receipt snapshot binding is invalid");
+    }
+    validateReceipt(effectiveSeoulSnapshot, seoulRawReceipt, now);
+    const seoulSnapshotPath = `tools/datapack/sources/${effectiveSeoulSnapshot.snapshotId}.json`;
+    const expectedSeoulTargetPath = path.join(path.resolve(repositoryRoot), seoulSnapshotPath);
+    if (!path.isAbsolute(requiredText(seoulSnapshotTargetPath, "Seoul snapshot target path"))
+      || path.resolve(seoulSnapshotTargetPath) !== expectedSeoulTargetPath) {
+      throw new Error("Seoul snapshot target path is invalid");
+    }
+    const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+      policy: governancePolicy.policy,
+      sourceId: SEOUL_SOURCE_ID,
+      retrievedAt: effectiveSeoulSnapshot.capturedAt,
+    });
+    if (seoulRawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
+      throw new Error("Seoul raw receipt rawRetentionExpiresAt does not match governance policy");
+    }
+    validateLicenseGovernance({ inventory, policySources, sourceId: SEOUL_SOURCE_ID, label: "Seoul", now });
+    const seoulFreshnessExpiresAt = deriveFreshnessExpiresAt({
+      policy: freshnessPolicy,
+      sourceClassId: policySources.get(SEOUL_SOURCE_ID).sourceClassId,
+      basisAt: effectiveSeoulSnapshot.capturedAt,
+      evaluationAt: now.toISOString(),
+    });
+    seoulRegistration = {
+      snapshotPath: seoulSnapshotPath,
+      snapshotFileSha256: seoulSnapshotFileSha256,
+      rawReceipt: seoulRawReceipt,
+      freshnessExpiresAt: seoulFreshnessExpiresAt,
+    };
+  } else {
+    await validateAdmittedSeoulSnapshot({
+      inventory,
+      snapshots,
+      input,
+      seoulSnapshot: effectiveSeoulSnapshot,
+      repositoryRoot,
+      now,
+    });
+  }
   const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy: freshnessPolicy,
@@ -571,13 +718,26 @@ async function prepareRegistration({
   });
   const staged = stageRegistries({
     inventory, snapshots, input,
-    snapshot, snapshotPath, snapshotFileSha256, rawReceipt, seoulSnapshot, kricAccessibilityRoster,
+    snapshot,
+    snapshotPath,
+    snapshotFileSha256,
+    rawReceipt,
+    seoulSnapshot: effectiveSeoulSnapshot,
+    seoulRegistration,
+    kricAccessibilityRoster,
     freshnessExpiresAt,
     governancePolicySha256: sha256(governancePolicy.bytes), governancePolicyVersion: governancePolicy.version, now,
   });
   const targetBytes = await readOptionalFile(snapshotTargetPath);
   if (targetBytes != null && !targetBytes.equals(snapshotBytes)) throw new Error("snapshot target already exists with different bytes");
+  const seoulTargetBytes = freshSeoulRequested ? await readOptionalFile(seoulSnapshotTargetPath) : null;
+  if (seoulTargetBytes != null && !seoulTargetBytes.equals(seoulSnapshotBytes)) {
+    throw new Error("Seoul snapshot target already exists with different bytes");
+  }
   return [
+    ...(freshSeoulRequested && seoulTargetBytes == null
+      ? [{ target: seoulSnapshotTargetPath, bytes: seoulSnapshotBytes }]
+      : []),
     ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
     ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),
   ];
@@ -609,6 +769,10 @@ export async function registerKricStandardAccessibilitySnapshot({
   snapshotTargetPath,
   rawReceipt,
   seoulSnapshot,
+  seoulSnapshotFilePath,
+  seoulSnapshotFileSha256,
+  seoulSnapshotTargetPath,
+  seoulRawReceipt,
   registryPaths,
   repositoryRoot = REPOSITORY_ROOT,
   now = new Date(),
@@ -626,7 +790,13 @@ export async function registerKricStandardAccessibilitySnapshot({
     await onLockAcquired?.();
     const outputs = await prepareRegistration({
       repositoryRoot, paths, snapshotFilePath, snapshotFileSha256, snapshotTargetPath,
-      rawReceipt, seoulSnapshot, now,
+      rawReceipt,
+      seoulSnapshot,
+      seoulSnapshotFilePath,
+      seoulSnapshotFileSha256,
+      seoulSnapshotTargetPath,
+      seoulRawReceipt,
+      now,
     });
     await commitTransaction({
       repositoryRoot,
@@ -654,6 +824,8 @@ export function parseKricStandardAccessibilitySnapshotRegistrationArgs(args) {
     ["--repository-root", "repositoryRoot"], ["--snapshot", "snapshotFilePath"],
     ["--snapshot-sha256", "snapshotFileSha256"], ["--raw-receipt", "rawReceiptPath"],
     ["--seoul-snapshot", "seoulSnapshotPath"],
+    ["--seoul-snapshot-sha256", "seoulSnapshotFileSha256"],
+    ["--seoul-raw-receipt", "seoulRawReceiptPath"],
   ]);
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index];
@@ -666,6 +838,10 @@ export function parseKricStandardAccessibilitySnapshotRegistrationArgs(args) {
   for (const key of ["repositoryRoot", "snapshotFilePath", "snapshotFileSha256", "rawReceiptPath", "seoulSnapshotPath"]) {
     if (typeof options[key] !== "string" || options[key].trim() === "") throw new Error("registration CLI arguments are invalid");
   }
+  const freshSeoulValues = [options.seoulSnapshotFileSha256, options.seoulRawReceiptPath];
+  if (!freshSeoulValues.every((value) => value == null) && !freshSeoulValues.every((value) => typeof value === "string" && value !== "")) {
+    throw new Error("registration CLI arguments are invalid");
+  }
   return options;
 }
 
@@ -674,12 +850,23 @@ export async function runKricStandardAccessibilitySnapshotRegistration(args) {
   const repositoryRoot = path.resolve(options.repositoryRoot);
   const snapshotBytes = await readFile(options.snapshotFilePath);
   const snapshot = readStagedSnapshot(snapshotBytes, options.snapshotFileSha256);
+  const seoulSnapshotBytes = await readFile(options.seoulSnapshotPath);
+  const freshSeoulRequested = options.seoulSnapshotFileSha256 != null;
+  const seoulSnapshot = freshSeoulRequested
+    ? readStagedSeoulSnapshot(seoulSnapshotBytes, options.seoulSnapshotFileSha256)
+    : JSON.parse(seoulSnapshotBytes);
   return registerKricStandardAccessibilitySnapshot({
     snapshotFilePath: options.snapshotFilePath,
     snapshotFileSha256: options.snapshotFileSha256,
     snapshotTargetPath: path.join(repositoryRoot, "tools/datapack/sources", `${snapshot.snapshotId}.json`),
     rawReceipt: JSON.parse(await readFile(options.rawReceiptPath, "utf8")),
-    seoulSnapshot: JSON.parse(await readFile(options.seoulSnapshotPath, "utf8")),
+    seoulSnapshot: freshSeoulRequested ? undefined : seoulSnapshot,
+    ...(freshSeoulRequested ? {
+      seoulSnapshotFilePath: options.seoulSnapshotPath,
+      seoulSnapshotFileSha256: options.seoulSnapshotFileSha256,
+      seoulSnapshotTargetPath: path.join(repositoryRoot, "tools/datapack/sources", `${seoulSnapshot.snapshotId}.json`),
+      seoulRawReceipt: JSON.parse(await readFile(options.seoulRawReceiptPath, "utf8")),
+    } : {}),
     registryPaths: Object.fromEntries([
       "tools/datapack/source-inventory.json", "tools/datapack/release/source-snapshots.json",
       "tools/datapack/inputs/capital-pilot-production-source-input.json",

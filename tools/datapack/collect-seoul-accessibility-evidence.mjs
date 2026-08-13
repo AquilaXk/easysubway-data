@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { constants as fileSystemConstants } from "node:fs";
-import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
@@ -198,6 +198,7 @@ export async function collectSeoulAccessibility({
   source = "accessibility",
   fetchImpl = fetch,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  retainRawResponses = false,
 }) {
   if (!Object.hasOwn(SOURCES, source)) throw new Error(`${INVALID_RESPONSE}: source`);
   const sourceConfig = SOURCES[source];
@@ -211,6 +212,7 @@ export async function collectSeoulAccessibility({
   }
   const collected = [];
   const rawPages = [];
+  const rawResponses = [];
   const rowIdentities = new Set();
   let receivedCount = 0;
   let pageNo = 1;
@@ -238,6 +240,9 @@ export async function collectSeoulAccessibility({
     let raw;
     try {
       raw = await response.text();
+      if (normalizedServiceKey.length >= 16 && raw.includes(normalizedServiceKey)) {
+        throw new Error(INVALID_RESPONSE);
+      }
       payload = JSON.parse(raw);
     } catch {
       throw new Error(INVALID_RESPONSE);
@@ -260,7 +265,18 @@ export async function collectSeoulAccessibility({
       if (rowIdentities.has(rowIdentity)) throw new Error(`${INVALID_RESPONSE}: pagination`);
       rowIdentities.add(rowIdentity);
     }
-    rawPages.push({ pageNo, totalCount: pageTotal, rawSha256: hashText(raw) });
+    const rawResponseSha256 = hashText(raw);
+    rawPages.push({ pageNo, totalCount: pageTotal, rawSha256: rawResponseSha256 });
+    if (retainRawResponses) {
+      const bytes = Buffer.from(raw);
+      rawResponses.push({
+        pageNo,
+        providerResultCode: "00",
+        rawResponseSha256,
+        byteSize: bytes.length,
+        bodyBase64: bytes.toString("base64"),
+      });
+    }
     const normalizedRows = normalizeAccessibilityRows(rows, { source });
     collected.push(...normalizedRows);
     receivedCount += rows.length;
@@ -272,7 +288,228 @@ export async function collectSeoulAccessibility({
   if (totalCount === 0 || collected.length === 0) {
     throw new Error(`${INVALID_RESPONSE}: emptyExhaustiveList`);
   }
-  return { rows: collected, rawRowCount: totalCount, rawSha256: hash(rawPages) };
+  return {
+    rows: collected,
+    rawRowCount: totalCount,
+    rawSha256: hash(rawPages),
+    ...(retainRawResponses ? { rawResponses } : {}),
+  };
+}
+
+export async function collectSeoulAccessibilityObservation({
+  endpoint = SOURCES.accessibility.endpoint,
+  serviceKey,
+  fetchImpl = fetch,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  retrievedAt = new Date().toISOString(),
+  previousSnapshot = null,
+} = {}) {
+  const collected = await collectSeoulAccessibility({
+    endpoint,
+    serviceKey,
+    source: "accessibility",
+    fetchImpl,
+    requestTimeoutMs,
+    retainRawResponses: true,
+  });
+  const snapshot = validateSeoulAccessibilitySnapshotIdentity(buildAccessibilitySnapshot(
+    collected.rows,
+    retrievedAt,
+    { source: "accessibility", ...collected, previousSnapshot },
+  ));
+  const responses = collected.rawResponses;
+  const rawArtifact = validateSeoulAccessibilityRawCollection({
+    schemaVersion: 1,
+    artifactKind: "seoul-accessibility-raw-collection",
+    sourceId: snapshot.sourceId,
+    snapshotId: snapshot.snapshotId,
+    capturedAt: snapshot.capturedAt,
+    snapshotRawSha256: snapshot.rawSha256,
+    credentialRedacted: true,
+    requestCount: responses.length,
+    inventorySha256: hash(responses.map(({ bodyBase64: _, ...response }) => response)),
+    responses,
+  }, snapshot);
+  return { snapshot, rawArtifact };
+}
+
+export function validateSeoulAccessibilitySnapshotIdentity(snapshot) {
+  const expectedKeys = [
+    "schemaVersion", "artifactKind", "sourceId", "snapshotId", "previousSnapshotId",
+    "retrievedAt", "capturedAt", "observedAt", "freshUntil", "credentialRedacted",
+    "absenceEvidenceMode", "rowCount", "normalizedRowCount", "rawSha256", "contentSha256",
+    "schemaFingerprint", "stations",
+  ];
+  const capturedAt = Date.parse(snapshot?.capturedAt);
+  const expectedId = `${SOURCES.accessibility.sourceId}-${typeof snapshot?.capturedAt === "string"
+    ? snapshot.capturedAt.replaceAll(/[-:.]/g, "") : ""}`;
+  if (!exactKeys(snapshot, expectedKeys)
+    || snapshot.schemaVersion !== 1
+    || snapshot.artifactKind !== SOURCES.accessibility.artifactKind
+    || snapshot.sourceId !== SOURCES.accessibility.sourceId
+    || snapshot.snapshotId !== expectedId
+    || !(snapshot.previousSnapshotId === null
+      || (typeof snapshot.previousSnapshotId === "string"
+        && snapshot.previousSnapshotId.startsWith(`${snapshot.sourceId}-`)))
+    || !Number.isFinite(capturedAt)
+    || new Date(capturedAt).toISOString() !== snapshot.capturedAt
+    || snapshot.retrievedAt !== snapshot.capturedAt
+    || snapshot.observedAt !== snapshot.capturedAt
+    || Date.parse(snapshot.freshUntil) !== capturedAt + 86_400_000
+    || snapshot.credentialRedacted !== true
+    || snapshot.absenceEvidenceMode !== "EXHAUSTIVE_LIST"
+    || !Number.isSafeInteger(snapshot.rowCount) || snapshot.rowCount < 1
+    || !Number.isSafeInteger(snapshot.normalizedRowCount) || snapshot.normalizedRowCount < 1
+    || snapshot.normalizedRowCount > snapshot.rowCount
+    || !/^[0-9a-f]{64}$/.test(snapshot.rawSha256 ?? "")
+    || !/^[0-9a-f]{64}$/.test(snapshot.contentSha256 ?? "")
+    || snapshot.schemaFingerprint !== hash(SOURCES.accessibility.schemaFields)
+    || !Array.isArray(snapshot.stations) || snapshot.stations.length < 1
+    || snapshot.contentSha256 !== hash(snapshot.stations)) {
+    throw new Error("Seoul accessibility snapshot identity is invalid");
+  }
+  let facilityCount = 0;
+  for (const station of snapshot.stations) {
+    if (!exactKeys(station, ["stationName", "lineName", "facilities"])
+      || typeof station.stationName !== "string" || station.stationName === ""
+      || typeof station.lineName !== "string" || station.lineName === ""
+      || !Array.isArray(station.facilities) || station.facilities.length < 1) {
+      throw new Error("Seoul accessibility snapshot identity is invalid");
+    }
+    for (const facility of station.facilities) {
+      if (!exactKeys(facility, ["operational", "situationCode", "situation", "pathDescription"])
+        || !(typeof facility.operational === "boolean" || facility.operational === null)
+        || !(typeof facility.situationCode === "string" || facility.situationCode === null)
+        || typeof facility.situation !== "string" || facility.situation === ""
+        || typeof facility.pathDescription !== "string" || facility.pathDescription === "") {
+        throw new Error("Seoul accessibility snapshot identity is invalid");
+      }
+      facilityCount += 1;
+    }
+  }
+  if (facilityCount !== snapshot.normalizedRowCount) {
+    throw new Error("Seoul accessibility snapshot identity is invalid");
+  }
+  return snapshot;
+}
+
+export function validateSeoulAccessibilityRawCollection(rawArtifact, snapshotValue) {
+  const snapshot = validateSeoulAccessibilitySnapshotIdentity(snapshotValue);
+  const expectedKeys = [
+    "schemaVersion", "artifactKind", "sourceId", "snapshotId", "capturedAt", "snapshotRawSha256",
+    "credentialRedacted", "requestCount", "inventorySha256", "responses",
+  ];
+  if (!exactKeys(rawArtifact, expectedKeys)
+    || rawArtifact.schemaVersion !== 1
+    || rawArtifact.artifactKind !== "seoul-accessibility-raw-collection"
+    || rawArtifact.sourceId !== snapshot.sourceId
+    || rawArtifact.snapshotId !== snapshot.snapshotId
+    || rawArtifact.capturedAt !== snapshot.capturedAt
+    || rawArtifact.snapshotRawSha256 !== snapshot.rawSha256
+    || rawArtifact.credentialRedacted !== true
+    || !Array.isArray(rawArtifact.responses)
+    || rawArtifact.requestCount !== rawArtifact.responses.length
+    || rawArtifact.requestCount < 1
+    || !/^[0-9a-f]{64}$/.test(rawArtifact.inventorySha256 ?? "")) {
+    throw new Error("Seoul accessibility raw collection is invalid");
+  }
+  const rawPages = [];
+  const providerRows = [];
+  let received = 0;
+  let totalCount;
+  for (const [index, response] of rawArtifact.responses.entries()) {
+    if (!exactKeys(response, [
+      "pageNo", "providerResultCode", "rawResponseSha256", "byteSize", "bodyBase64",
+    ]) || response.pageNo !== index + 1
+      || response.providerResultCode !== "00"
+      || !/^[0-9a-f]{64}$/.test(response.rawResponseSha256 ?? "")
+      || !Number.isSafeInteger(response.byteSize) || response.byteSize < 1
+      || typeof response.bodyBase64 !== "string" || response.bodyBase64 === "") {
+      throw new Error("Seoul accessibility raw collection is invalid");
+    }
+    const bytes = Buffer.from(response.bodyBase64, "base64");
+    if (bytes.toString("base64") !== response.bodyBase64
+      || bytes.length !== response.byteSize
+      || hashBytes(bytes) !== response.rawResponseSha256) {
+      throw new Error("Seoul accessibility raw collection is invalid");
+    }
+    let payload;
+    try { payload = JSON.parse(bytes); } catch { throw new Error("Seoul accessibility raw collection is invalid"); }
+    const body = payload?.response?.body;
+    const rows = body?.items?.item;
+    const pageTotal = Number(body?.totalCount);
+    if (payload?.response?.header?.resultCode !== "00" || !Array.isArray(rows)
+      || !Number.isSafeInteger(pageTotal) || pageTotal < 1
+      || (totalCount !== undefined && totalCount !== pageTotal)) {
+      throw new Error("Seoul accessibility raw collection is invalid");
+    }
+    totalCount = pageTotal;
+    received += rows.length;
+    providerRows.push(...rows);
+    rawPages.push({ pageNo: response.pageNo, totalCount: pageTotal, rawSha256: response.rawResponseSha256 });
+  }
+  const projected = buildAccessibilitySnapshot(
+    normalizeAccessibilityRows(providerRows),
+    snapshot.capturedAt,
+    { source: "accessibility", rawRowCount: totalCount, rawSha256: snapshot.rawSha256 },
+  );
+  if (received !== totalCount || received !== snapshot.rowCount
+    || snapshot.rawSha256 !== hash(rawPages)
+    || projected.normalizedRowCount !== snapshot.normalizedRowCount
+    || projected.contentSha256 !== snapshot.contentSha256
+    || JSON.stringify(projected.stations) !== JSON.stringify(snapshot.stations)
+    || rawArtifact.inventorySha256 !== hash(rawArtifact.responses.map(({ bodyBase64: _, ...response }) => response))) {
+    throw new Error("Seoul accessibility raw collection is invalid");
+  }
+  return rawArtifact;
+}
+
+export async function writeSeoulAccessibilityObservation({ outputRoot, observation } = {}) {
+  if (typeof outputRoot !== "string" || !isAbsolute(outputRoot)) {
+    throw new Error("Seoul observation output root must be absolute");
+  }
+  try {
+    await lstat(outputRoot);
+    throw new Error("Seoul observation output root already exists");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const { snapshot, rawArtifact } = observation ?? {};
+  validateSeoulAccessibilityRawCollection(rawArtifact, snapshot);
+  const snapshotFile = `${snapshot.snapshotId}.json`;
+  const rawArtifactFile = `${snapshot.snapshotId}.raw.json`;
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  const rawArtifactBytes = Buffer.from(`${JSON.stringify(rawArtifact, null, 2)}\n`);
+  const manifest = {
+    schemaVersion: 1,
+    artifactKind: "seoul-accessibility-observation",
+    sourceId: snapshot.sourceId,
+    capturedAt: snapshot.capturedAt,
+    snapshotId: snapshot.snapshotId,
+    snapshotRawSha256: snapshot.rawSha256,
+    snapshotFile,
+    snapshotFileSha256: hashBytes(snapshotBytes),
+    rawArtifactFile,
+    rawObjectSha256: hashBytes(rawArtifactBytes),
+    rawObjectChecksumSha256: createHash("sha256").update(rawArtifactBytes).digest("base64"),
+    rawObjectByteSize: rawArtifactBytes.length,
+    credentialRedacted: true,
+  };
+  await mkdir(dirname(outputRoot), { recursive: true });
+  const temporary = join(dirname(outputRoot), `.${basename(outputRoot)}.${randomUUID()}.tmp`);
+  await mkdir(temporary, { mode: 0o700 });
+  try {
+    await Promise.all([
+      writeFile(join(temporary, snapshotFile), snapshotBytes, { flag: "wx", mode: 0o600 }),
+      writeFile(join(temporary, rawArtifactFile), rawArtifactBytes, { flag: "wx", mode: 0o600 }),
+      writeFile(join(temporary, "observation.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o600 }),
+    ]);
+    await rename(temporary, outputRoot);
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
+  return manifest;
 }
 
 export async function writeSeoulAccessibilityEvidence({
@@ -401,11 +638,44 @@ function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function hashBytes(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function exactKeys(value, expected) {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === expected.length
+    && expected.every((key, index) => Object.keys(value)[index] === key);
+}
+
 function compare(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
 async function main() {
+  if (process.argv[2] === "--observation-root") {
+    const previousSnapshotArgument = process.argv[4] === "--previous-snapshot";
+    if (![4, previousSnapshotArgument ? 6 : -1].includes(process.argv.length)
+      || !isAbsolute(process.argv[3])) {
+      throw new Error(
+        "usage: collect-seoul-accessibility-evidence.mjs --observation-root <absolute-absent-path> [--previous-snapshot <repository-relative-path>]",
+      );
+    }
+    const serviceKey = process.env.DATA_GO_KR_SERVICE_KEY;
+    if (!serviceKey) throw new Error("DATA_GO_KR_SERVICE_KEY env is required");
+    let previousSnapshot = null;
+    if (previousSnapshotArgument) {
+      const canonicalSourceRoot = await realpath(SOURCE_SNAPSHOT_ROOT);
+      const canonicalPreviousPath = await realpath(resolve(REPOSITORY_ROOT, process.argv[5]));
+      if (!isPathWithin(canonicalSourceRoot, canonicalPreviousPath)) {
+        throw new Error(`${INVALID_RESPONSE}: snapshotIdentity`);
+      }
+      previousSnapshot = JSON.parse(await readFile(canonicalPreviousPath, "utf8"));
+    }
+    const observation = await collectSeoulAccessibilityObservation({ serviceKey, previousSnapshot });
+    await writeSeoulAccessibilityObservation({ outputRoot: process.argv[3], observation });
+    return;
+  }
   const sourceArgument = process.argv[6] === "--source";
   const previousSnapshotIndex = sourceArgument ? 8 : 6;
   const previousSnapshotArgument = process.argv[previousSnapshotIndex] === "--previous-snapshot";

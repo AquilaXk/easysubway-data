@@ -156,6 +156,64 @@ async function register(values, overrides = {}) {
   });
 }
 
+async function freshSeoulRegistration(values) {
+  const capturedAt = new Date(Date.parse(values.seoulSnapshot.capturedAt) + 30_000).toISOString();
+  const dateToken = capturedAt.slice(0, 10).replaceAll("-", "");
+  const freshSeoul = {
+    schemaVersion: values.seoulSnapshot.schemaVersion,
+    artifactKind: values.seoulSnapshot.artifactKind,
+    sourceId: values.seoulSnapshot.sourceId,
+    snapshotId: `seoul-metro-accessibility-${capturedAt.replaceAll(/[-:.]/g, "")}`,
+    previousSnapshotId: values.seoulSnapshot.snapshotId,
+    retrievedAt: capturedAt,
+    capturedAt,
+    observedAt: capturedAt,
+    freshUntil: new Date(Date.parse(capturedAt) + 86_400_000).toISOString(),
+    credentialRedacted: values.seoulSnapshot.credentialRedacted,
+    absenceEvidenceMode: values.seoulSnapshot.absenceEvidenceMode,
+    rowCount: values.seoulSnapshot.rowCount,
+    normalizedRowCount: values.seoulSnapshot.normalizedRowCount,
+    rawSha256: values.seoulSnapshot.rawSha256,
+    contentSha256: values.seoulSnapshot.contentSha256,
+    schemaFingerprint: values.seoulSnapshot.schemaFingerprint,
+    stations: values.seoulSnapshot.stations,
+  };
+  const seoulBytes = Buffer.from(`${JSON.stringify(freshSeoul, null, 2)}\n`);
+  const seoulSnapshotFilePath = path.join(path.dirname(values.snapshotFilePath), `${freshSeoul.snapshotId}.json`);
+  await writeFile(seoulSnapshotFilePath, seoulBytes);
+  const seoulSnapshotFileSha256 = sha256(seoulBytes);
+  const seoulRawReceipt = {
+    rawObjectUri: `s3://easysubway-datapack-sources/seoul-metro-accessibility/${dateToken}/${"d".repeat(64)}.json`,
+    sourceId: freshSeoul.sourceId,
+    snapshotId: freshSeoul.snapshotId,
+    snapshotRawSha256: freshSeoul.rawSha256,
+    capturedAt: freshSeoul.capturedAt,
+    snapshotFileSha256: seoulSnapshotFileSha256,
+    rawObjectSha256: "d".repeat(64),
+    byteSize: 1234,
+    storedAt: capturedAt,
+    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({
+      policy: values.governancePolicy,
+      sourceId: freshSeoul.sourceId,
+      retrievedAt: freshSeoul.capturedAt,
+    }),
+  };
+  const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
+  const seoulSnapshotTargetPath = path.join(repositoryRoot, "tools/datapack/sources", `${freshSeoul.snapshotId}.json`);
+  return {
+    freshSeoul,
+    seoulBytes,
+    seoulSnapshotTargetPath,
+    registration: {
+      seoulSnapshot: undefined,
+      seoulSnapshotFilePath,
+      seoulSnapshotFileSha256,
+      seoulSnapshotTargetPath,
+      seoulRawReceipt,
+    },
+  };
+}
+
 async function assertUnchanged(values) {
   assert.deepEqual(await Promise.all(registryPaths.map((relativePath) => readFile(values.paths[relativePath]))), values.before);
 }
@@ -226,6 +284,42 @@ test("fresh KRIC queries를 materialize해 세 registry의 동일 identity로 �
   assert.equal(kricRows.length, 4);
   assert.ok(kricRows.every(({ sourceSnapshotId, description }) => sourceSnapshotId === values.snapshot.snapshotId && description.startsWith("fresh ")));
   assert.ok(kricStatus.length > 0 && kricStatus.every(({ sourceSnapshotId }) => sourceSnapshotId === values.snapshot.snapshotId));
+});
+
+test("fresh Seoul companion과 KRIC snapshot을 같은 transaction에서 원자 등록한다", async (t) => {
+  const values = await fixture(t);
+  const { freshSeoul, seoulBytes, seoulSnapshotTargetPath, registration } = await freshSeoulRegistration(values);
+
+  await register(values, registration);
+
+  const [inventory, snapshots, input] = await Promise.all(registryPaths.map(async (relativePath) =>
+    JSON.parse(await readFile(values.paths[relativePath], "utf8"))));
+  const seoulSource = inventory.sources.find(({ id }) => id === freshSeoul.sourceId);
+  assert.equal(seoulSource.accessibilityAdmissionEvidence.snapshotId, freshSeoul.snapshotId);
+  assert.equal(seoulSource.accessibilityAdmissionEvidence.snapshotFileSha256, registration.seoulSnapshotFileSha256);
+  assert.equal(snapshots.at(-2).snapshotId, freshSeoul.snapshotId);
+  assert.equal(snapshots.at(-1).snapshotId, values.snapshot.snapshotId);
+  const seoulStatus = input.accessibilityStatusEvidence.filter(({ sourceId }) => sourceId === freshSeoul.sourceId);
+  assert.ok(seoulStatus.length > 0
+    && seoulStatus.every(({ sourceSnapshotId }) => sourceSnapshotId === freshSeoul.snapshotId));
+  assert.deepEqual(await readFile(seoulSnapshotTargetPath), seoulBytes);
+  assert.deepEqual(await readFile(values.snapshotTargetPath), await readFile(values.snapshotFilePath));
+});
+
+test("dual registration replace 실패는 두 snapshot과 세 registry를 함께 rollback한다", async (t) => {
+  const values = await fixture(t);
+  const { seoulSnapshotTargetPath, registration } = await freshSeoulRegistration(values);
+  await assert.rejects(register(values, {
+    ...registration,
+    atomicReplaceImpl: async (target, bytes, phase) => {
+      if (phase === 4) throw new Error("dual replace 4");
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, bytes);
+    },
+  }), /dual replace 4/);
+  await assertUnchanged(values);
+  await assert.rejects(readFile(seoulSnapshotTargetPath), { code: "ENOENT" });
+  await assert.rejects(readFile(values.snapshotTargetPath), { code: "ENOENT" });
 });
 
 test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject before writes", async (t) => {
@@ -629,18 +723,24 @@ test("직접 실행 CLI 인자는 중복, 누락, 알 수 없는 값을 거부�
 });
 
 test("직접 실행 CLI는 절대 경로로 격리 fixture를 등록하고 상대 경로 인자 누락을 거부한다", async (t) => {
-  const values = await fixture(t, new Date());
+  const values = await fixture(t, new Date(Date.now() - 60_000));
+  const freshSeoul = await freshSeoulRegistration(values);
   const script = fileURLToPath(new URL("./register-kric-standard-accessibility-snapshot.mjs", import.meta.url));
   const repositoryRoot = path.dirname(path.dirname(path.dirname(path.dirname(values.snapshotTargetPath))));
   const rawReceiptPath = path.join(repositoryRoot, "staging", "raw-receipt.json");
+  const seoulRawReceiptPath = path.join(repositoryRoot, "staging", "seoul-raw-receipt.json");
   await writeFile(rawReceiptPath, `${JSON.stringify(receipt(values.snapshot, values.snapshotFileSha256, values.rawRetentionExpiresAt))}\n`);
+  await writeFile(seoulRawReceiptPath, `${JSON.stringify(freshSeoul.registration.seoulRawReceipt)}\n`);
   const successful = spawnSync(process.execPath, [
     script, "--repository-root", repositoryRoot, "--snapshot", values.snapshotFilePath,
     "--snapshot-sha256", values.snapshotFileSha256, "--raw-receipt", rawReceiptPath,
-    "--seoul-snapshot", path.join(repositoryRoot, seoulSnapshotPath),
+    "--seoul-snapshot", freshSeoul.registration.seoulSnapshotFilePath,
+    "--seoul-snapshot-sha256", freshSeoul.registration.seoulSnapshotFileSha256,
+    "--seoul-raw-receipt", seoulRawReceiptPath,
   ], { encoding: "utf8" });
   assert.equal(successful.status, 0, successful.stderr);
   assert.equal(sha256(await readFile(values.snapshotTargetPath)), values.snapshotFileSha256);
+  assert.deepEqual(await readFile(freshSeoul.seoulSnapshotTargetPath), freshSeoul.seoulBytes);
   const missingArgs = spawnSync(process.execPath, ["tools/datapack/register-kric-standard-accessibility-snapshot.mjs"], {
     cwd: root,
     encoding: "utf8",
