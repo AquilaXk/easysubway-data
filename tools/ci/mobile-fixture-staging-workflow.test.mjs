@@ -87,6 +87,7 @@ test("CI는 EXIT path admission contract를 standalone contracts에서 실행한
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/plan-kric-exit-path-collection\.test\.mjs/);
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-current-kric-exit-collection-plan\.test\.mjs/);
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/collect-kric-exit-path-provider-snapshot\.test\.mjs/);
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-exit-path-admission\.test\.mjs/);
 });
