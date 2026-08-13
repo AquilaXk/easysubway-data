@@ -73,6 +73,27 @@ function topologyStationsByLine(topology) {
   return result;
 }
 
+function currentCapitalTopologyBinding(source, evidence, topologySourceId) {
+  if (evidence?.topologySourceId === topologySourceId) return "historical";
+  if (source.id !== "seoul-metro-route-map-positions") return null;
+  if (source.productionUseAllowed !== true
+    || source.license?.redistributionAllowed !== true
+    || evidence?.issue !== 2470
+    || evidence.admissionKind !== "official-file-latlon"
+    || evidence.materializer !== "tools/datapack/materialize-seoul-route-map-positions.mjs"
+    || evidence.verificationTest !== "tools/datapack/materialize-seoul-route-map-positions.test.mjs"
+    || [
+      evidence.topologySourceId,
+      evidence.topologySnapshotId,
+      evidence.topologyContentSha256,
+      evidence.topologyLineages,
+      evidence.currentTopologyAdmission,
+    ].some((value) => value !== undefined)) {
+    throw new Error("Seoul route-map position source contract is invalid");
+  }
+  return "current-official";
+}
+
 export function withCurrentCapitalTopologyAdmissions({
   inventory,
   topology,
@@ -103,7 +124,8 @@ export function withCurrentCapitalTopologyAdmissions({
   let admissionCount = 0;
   for (const source of next.sources) {
     const evidence = source.routeMapAdmissionEvidence;
-    if (evidence?.topologySourceId !== topology.sourceId) continue;
+    const binding = currentCapitalTopologyBinding(source, evidence, topology.sourceId);
+    if (binding == null) continue;
     const snapshotBytes = snapshotBytesByPath.get(evidence.snapshotPath);
     if (snapshotBytes == null
       || sha256(snapshotBytes) !== requiredSha256(evidence.snapshotSha256, `${source.id} snapshotSha256`)) {
@@ -111,15 +133,28 @@ export function withCurrentCapitalTopologyAdmissions({
     }
     const snapshot = parseSnapshot(snapshotBytes, `${source.id} position snapshot`);
     if (snapshot.sourceId !== source.id
-      || snapshot.topologySourceId !== evidence.topologySourceId
-      || snapshot.topologySnapshotId !== evidence.topologySnapshotId
-      || snapshot.topologyContentSha256 !== evidence.topologyContentSha256
-      || !same(snapshot.topologyLineages, evidence.topologyLineages)
       || !same(snapshot.lineIds, evidence.lineIds)
       || snapshot.stationCount !== evidence.stationCount
       || !Array.isArray(snapshot.positions)
       || snapshot.positions.length !== evidence.stationCount) {
       throw new Error(`${source.id} historical position admission mismatch`);
+    }
+    if (binding === "historical") {
+      if (snapshot.topologySourceId !== evidence.topologySourceId
+        || snapshot.topologySnapshotId !== evidence.topologySnapshotId
+        || snapshot.topologyContentSha256 !== evidence.topologyContentSha256
+        || !same(snapshot.topologyLineages, evidence.topologyLineages)) {
+        throw new Error(`${source.id} historical position admission mismatch`);
+      }
+    } else if (snapshot.positionsSha256 !== evidence.positionsSha256
+      || snapshot.rawSha256 !== evidence.rawSha256
+      || [
+        snapshot.topologySourceId,
+        snapshot.topologySnapshotId,
+        snapshot.topologyContentSha256,
+        snapshot.topologyLineages,
+      ].some((value) => value !== undefined)) {
+      throw new Error("Seoul route-map position snapshot identity is invalid");
     }
     if (new Set(evidence.lineIds).size !== evidence.lineIds.length || evidence.lineIds.length === 0) {
       throw new Error(`${source.id} admitted line set is invalid`);
@@ -145,6 +180,7 @@ export function withCurrentCapitalTopologyAdmissions({
     if (!same([...observedStationsByLine.keys()].sort(compareStrings), [...evidence.lineIds].sort(compareStrings))) {
       throw new Error(`${source.id} position line coverage mismatch`);
     }
+    if (binding === "current-official") evidence.topologySourceId = topology.sourceId;
     evidence.currentTopologyAdmission = {
       schemaVersion: 1,
       artifactKind: "capital-route-map-current-topology-admission",
