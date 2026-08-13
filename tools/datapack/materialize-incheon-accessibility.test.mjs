@@ -34,7 +34,7 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const gwangjuAccessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const incheonStationNow = new Date("2026-07-24T06:00:00.000Z");
+const incheonStationNow = new Date("2026-08-14T00:00:00.000Z");
 const accessibilityNow = new Date("2026-07-24T07:00:00.000Z");
 const SOURCE_ID = "incheon-transit-accessibility";
 const OPERATOR_ID = "incheon-transit";
@@ -44,8 +44,8 @@ const LINE7 = "line-15b3b8a93259";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
-// incheon station-info 누적 fixture coverage baseline(실측): supportedCount=31 → accessibility +3 = 34.
-const INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT = 31;
+// incheon station-info 누적 fixture coverage baseline(실측): supportedCount=32 → accessibility +3 = 35.
+const INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT = 32;
 const ACCESSIBILITY_SUPPORTED_COUNT = INCHEON_STATION_INFO_BASELINE_SUPPORTED_COUNT + 3;
 
 async function inputs() {
@@ -74,7 +74,7 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260813.json")),
     readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, "tools/datapack/sources/regional-official-svg-route-map-coordinates-20260624.csv"), "utf8"),

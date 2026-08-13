@@ -33,8 +33,8 @@ const LINE_ID = "line-7051a9c2525c";
 const ACCESSIBILITY_FIELDS = Object.freeze([
   "elevator", "escalator", "wheelchair_lift", "status", "verified_at",
 ]);
-// route-map 누적 fixture coverage baseline(실측, Busan accessibility 미포함): supportedCount=19 → +1 = 20.
-const ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 19;
+// route-map 누적 fixture coverage baseline(실측, Busan accessibility 미포함): supportedCount=20 → +1 = 21.
+const ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 20;
 const ACCESSIBILITY_SUPPORTED_COUNT = ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {

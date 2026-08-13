@@ -22,6 +22,8 @@ import {
   projectCapitalTopologyIntoCanonicalFixture,
 } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
+import { addCadence } from "./freshness-policy.mjs";
+import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
   requiresCurrentCapitalTopologyAdmission,
@@ -640,7 +642,7 @@ export function activateIncheonTopologyAdmission({
     topologySourceId: incheon.sourceId,
     topologySnapshotId: snapshotId,
     topologyContentSha256: incheon.contentSha256,
-    freshUntil: incheon.freshUntil,
+    freshUntil: new Date(addCadence(capturedAt, ROUTE_MAP_REVERIFICATION_CADENCE)).toISOString(),
   });
   return next;
 }

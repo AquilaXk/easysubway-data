@@ -39,9 +39,9 @@ const execFileAsync = promisify(execFile);
 const SOURCE_ID = "daejeon-transportation-route-map-positions";
 const LINE_ID = "line-7051a9c2525c";
 const OPERATOR_ID = "daejeon-transportation";
-// gwangju route_map 누적 fixture coverage baseline(실측): supportedCount=24.
+// gwangju route_map 누적 fixture coverage baseline(실측): supportedCount=25.
 // 이번 FILE admission이 daejeon route_map_positions +1을 만든다.
-const GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 24;
+const GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT = 25;
 const DAEJEON_ROUTE_MAP_SUPPORTED_COUNT = GWANGJU_ROUTE_MAP_BASELINE_SUPPORTED_COUNT + 1;
 
 async function inputs() {

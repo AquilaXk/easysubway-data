@@ -320,6 +320,11 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
   const membership = source?.membershipAdmissionEvidence;
   const routeMap = source?.routeMapAdmissionEvidence;
   const observedNow = now instanceof Date ? now.getTime() : Number.NaN;
+  const snapshotDate = /^\d{4}-\d{2}-\d{2}T/u.test(snapshot?.capturedAt ?? "")
+    ? snapshot.capturedAt.slice(0, 10).replaceAll("-", "")
+    : "";
+  const expectedSnapshotId = `${SOURCE_ID}-${snapshotDate}`;
+  const expectedSnapshotPath = `tools/datapack/sources/${expectedSnapshotId}.json`;
   const mappingSha256 = sha256(JSON.stringify(snapshot.scope.map((station) => ({
     stationId: station.stationId,
     lineId: station.lineId,
@@ -337,8 +342,9 @@ function requiredSource(inventory, snapshot, snapshotSha256, now) {
     || topology?.issue !== 2481
     || topology.materializer !== "tools/datapack/materialize-incheon-station-info.mjs"
     || topology.verificationTest !== "tools/datapack/materialize-incheon-station-info.test.mjs"
-    || topology.snapshotId !== "incheon-transit-station-info-20260724"
-    || topology.snapshotPath !== "tools/datapack/sources/incheon-transit-station-info-20260724.json"
+    || snapshotDate.length !== 8
+    || topology.snapshotId !== expectedSnapshotId
+    || topology.snapshotPath !== expectedSnapshotPath
     || topology.capturedAt !== snapshot.capturedAt
     || topology.freshUntil !== snapshot.freshUntil
     || topology.stationCount !== EXPECTED_TOPOLOGY_STATION_COUNT

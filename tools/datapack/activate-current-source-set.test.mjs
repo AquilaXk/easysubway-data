@@ -287,7 +287,7 @@ test("prepared candidate validation은 spec-selected current ITX evidence bytes�
 });
 
 test("current Incheon topology admission은 exact snapshot bytes와 fresh source identity에 결속된다", async () => {
-  const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260724.json";
+  const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260813.json";
   const [sourceInventory, snapshotBytes] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, snapshotPath)),
@@ -298,17 +298,19 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshot,
     snapshotBytes,
     snapshotPath,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-14T00:00:00.000Z"),
   });
   const source = activated.sources.find(({ id }) => id === "incheon-transit-station-info");
 
   assert.equal(source.requiredForProductionPack, false);
   assert.equal(source.productionUseAllowed, true);
-  assert.equal(source.topologyAdmissionEvidence.snapshotId, "incheon-transit-station-info-20260724");
+  assert.equal(source.topologyAdmissionEvidence.snapshotId, "incheon-transit-station-info-20260813");
+  assert.equal(source.topologyAdmissionEvidence.freshUntil, "2026-08-14T15:06:46.000Z");
   assert.equal(source.topologyAdmissionEvidence.contentSha256, snapshot.contentSha256);
   assert.equal(source.membershipAdmissionEvidence.membershipSourceSnapshotSha256, snapshot.scopeSha256);
   assert.equal(source.routeMapAdmissionEvidence.snapshotSha256, sha256(snapshotBytes));
   assert.equal(source.routeMapAdmissionEvidence.positionsSha256, snapshot.positionsSha256);
+  assert.equal(source.routeMapAdmissionEvidence.freshUntil, "2027-08-13T15:06:46.000Z");
 
   const changedEdges = structuredClone(snapshot);
   changedEdges.edges[0].toStationId = changedEdges.edges[2].toStationId;
@@ -324,7 +326,7 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshot: changedEdges,
     snapshotBytes: changedEdgeBytes,
     snapshotPath,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-14T00:00:00.000Z"),
   }), /content changed; re-admission required/);
 
   assert.throws(() => activateIncheonTopologyAdmission({
@@ -332,14 +334,14 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshot,
     snapshotBytes: Buffer.concat([snapshotBytes, Buffer.from(" ")]),
     snapshotPath,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-14T00:00:00.000Z"),
   }), /snapshot byte identity mismatch/);
   assert.throws(() => activateIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
     snapshotBytes,
     snapshotPath,
-    now: new Date("2026-07-25T06:00:00.000Z"),
+    now: new Date("2026-08-14T15:06:46.000Z"),
   }), /snapshot is stale/);
 });
 

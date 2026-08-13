@@ -346,11 +346,11 @@ test("병합된 부산·대전 admission과 공식 미지원 evidence를 88/270 
   const report = await readJsonAbsolute(reportPath);
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
-    supportedCount: 15,
+    supportedCount: 16,
     explicitlyUnsupportedCount: 4,
-    missingCount: 251,
-    supportedRatio: 0.0556,
-    terminalResolutionRatio: 0.0704,
+    missingCount: 250,
+    supportedRatio: 0.0593,
+    terminalResolutionRatio: 0.0741,
     completionReady: false,
   });
   assert.deepEqual(report.requirements
