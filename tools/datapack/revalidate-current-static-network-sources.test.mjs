@@ -178,7 +178,8 @@ test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 creden
 
   assert.equal(requested.length, 2);
   assert.equal(requested[0].url,
-    "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route?page=1&perPage=5");
+    "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf?page=1&perPage=5");
+  assert.doesNotMatch(requested[0].url, /uddi:urban-rail-full-route/u);
   assert.equal(requested[0].init.headers.Authorization, "Infuser encoded-key");
   assert.match(decodeURI(new URL(requested[1].url).pathname),
     /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/4호선$/);

@@ -5811,7 +5811,7 @@
       "domain": "station_line_membership",
       "displayName": "국토교통부_도시철도 전체노선",
       "detailUrl": "https://www.data.go.kr/data/15122916/fileData.do",
-      "requestUrl": "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route",
+      "requestUrl": "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf",
       "licenseEvidenceStatus": "confirmed_attribution",
       "sampleEvidenceStatus": "validated_live_sample",
       "admissionStatus": "admitted_to_production_inventory",
@@ -5820,7 +5820,7 @@
       "evidence": {
         "detailPageUrl": "https://www.data.go.kr/data/15122916/fileData.do",
         "retrievedAt": "2026-06-22",
-        "endpoint": "https://api.odcloud.kr/api/15122916/v1/uddi:urban-rail-full-route",
+        "endpoint": "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf",
         "usePermissionRange": "이용허락범위 제한 없음",
         "formats": [
           "JSON"
