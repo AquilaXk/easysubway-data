@@ -18206,11 +18206,13 @@ async function writeCurrentItxReleaseInputs(
     byteSize: topologyEvidence.pack.inputByteSize,
   };
   Object.assign(contract.sourceTimetableArtifact, {
+    artifactId: source.artifactId,
     artifactPath: sourcePath,
     sha256: sha256(sourceBytes),
     completenessEvidencePath: completenessPath,
     completenessEvidenceSha256: sha256(completenessBytes),
     freshUntil,
+    policyVersion: source.policyVersion,
     promotion: {
       mode: "UNCHANGED_AUTO",
       previousArtifactSha256: topologyEvidence.sourceArtifact.sha256,
