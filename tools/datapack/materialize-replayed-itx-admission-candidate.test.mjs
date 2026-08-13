@@ -71,6 +71,18 @@ function replayEvidence(overrides = {}) {
   return value;
 }
 
+function admissionEvidence(overrides = {}) {
+  const value = replayEvidence();
+  value.validationMode = "ADMISSION";
+  value.admissionStatus = "SUPPORTED";
+  value.snapshotDiff = { policyVersion: "itx-snapshot-anomaly-v1", status: "SUPPORTED", serviceDays: [] };
+  value.sourceTimetableArtifact.status = "SUPPORTED";
+  Object.assign(value, overrides);
+  const { evidenceHash: _ignored, ...withoutHash } = value;
+  value.evidenceHash = createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
+  return value;
+}
+
 function valueAfter(argv, name) {
   const index = argv.indexOf(name);
   assert.notEqual(index, -1, `${name} argument가 필요합니다`);
@@ -88,7 +100,7 @@ async function fixture() {
     completeness: path.join(directory, "completeness.json"),
   };
   await writeFile(values.capture, await capturedBytes());
-  await writeFile(values.replayEvidence, JSON.stringify(replayEvidence()));
+  await writeFile(values.replayEvidence, `${JSON.stringify(replayEvidence(), null, 2)}\n`);
   return values;
 }
 
@@ -109,22 +121,21 @@ test("successful replay identity를 network 없이 existing ADMISSION candidate 
     const result = await materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
-      runCompletenessImpl: async (options) => {
-        received = options;
+      collectCompletenessImpl: async (options) => {
         for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
           const response = await options.fetchImpl(request(operation, "different-runtime-key"));
           assert.match(await response.text(), new RegExp(operation));
         }
+        return admissionEvidence();
+      },
+      runCompletenessImpl: async (options) => {
+        received = options;
+        const artifact = await options.collectImpl({ fetchImpl: options.fetchImpl });
         await options.onPublicationEvent({ event: "before-stage-created" });
         await writeFile(valueAfter(options.argv, "--output"), "candidate\n");
         await writeFile(valueAfter(options.argv, "--completeness-output"), "completeness\n");
         return {
-          artifact: {
-            validationMode: "ADMISSION",
-            validationStatus: "SUPPORTED",
-            selectedServiceDates: SERVICE_DATES,
-            materialization: { status: "SUPPORTED" },
-          },
+          artifact,
           candidate: { validationStatus: "SUPPORTED" },
           outputSha256: "a".repeat(64),
           completenessEvidenceSha256: "b".repeat(64),
@@ -147,6 +158,24 @@ test("successful replay identity를 network 없이 existing ADMISSION candidate 
     assert.equal(await readFile(values.candidate, "utf8"), "candidate\n");
     assert.equal(await readFile(values.completeness, "utf8"), "completeness\n");
     assert.equal(result.outputSha256, "a".repeat(64));
+    assert.deepEqual(result.artifact.sourceTimetableArtifact.replayAdmissionProvenance, {
+      schemaVersion: 1,
+      capture: {
+        workflowRunId: "31620004435",
+        artifactId: "9150832350",
+        archiveSha256: "e1203894526b794fbf927b3e7c5da4e33507cbe26b12328ffc45c9da5b3085d5",
+        contentSha256: result.artifact.sourceTimetableArtifact.replayAdmissionProvenance.capture.contentSha256,
+        requestCount: 2,
+        observedAt: "2026-08-13T00:00:00.000Z",
+      },
+      replay: {
+        workflowRunId: "31679427374",
+        artifactId: "9172854009",
+        archiveSha256: "2bb09e208691896f27d372cdd7345e326e4f76a706c201ec3d48ed2fa0990247",
+        evidenceHash: replayEvidence().evidenceHash,
+      },
+      providerCallCount: 0,
+    });
   } finally {
     await rm(values.directory, { recursive: true, force: true });
   }
@@ -170,11 +199,46 @@ test("replay evidence/capture identity drift와 unconsumed record는 output 0으
     await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
-      runCompletenessImpl: async (options) => {
+      collectCompletenessImpl: async (options) => {
         await options.fetchImpl(request("GetVhcleKndList"));
+        return admissionEvidence();
+      },
+      runCompletenessImpl: async (options) => {
+        await options.collectImpl({ fetchImpl: options.fetchImpl });
         await options.onPublicationEvent({ event: "before-stage-created" });
       },
     }), /provider replay has 1 unconsumed record/);
+    await assert.rejects(readFile(values.candidate), /ENOENT/);
+    await assert.rejects(readFile(values.completeness), /ENOENT/);
+  } finally {
+    await rm(values.directory, { recursive: true, force: true });
+  }
+});
+
+test("capture-derived projection drift는 publication 전에 output 0으로 거부한다", async () => {
+  const values = await fixture();
+  let publicationStarted = false;
+  try {
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      collectCompletenessImpl: async (options) => {
+        for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
+          await options.fetchImpl(request(operation));
+        }
+        const artifact = admissionEvidence();
+        artifact.serviceDays[0].completedOdCount = 305;
+        const { evidenceHash: _ignored, ...withoutHash } = artifact;
+        artifact.evidenceHash = createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
+        return artifact;
+      },
+      runCompletenessImpl: async (options) => {
+        await options.collectImpl({ fetchImpl: options.fetchImpl });
+        publicationStarted = true;
+        await options.onPublicationEvent({ event: "before-stage-created" });
+      },
+    }), /capture-derived admission projection differs/);
+    assert.equal(publicationStarted, false);
     await assert.rejects(readFile(values.candidate), /ENOENT/);
     await assert.rejects(readFile(values.completeness), /ENOENT/);
   } finally {
@@ -188,12 +252,12 @@ test("tampered replay evidence hash는 collector 호출 전에 거부한다", as
   try {
     const tampered = replayEvidence();
     tampered.evidenceHash = "0".repeat(64);
-    await writeFile(values.replayEvidence, JSON.stringify(tampered));
+    await writeFile(values.replayEvidence, `${JSON.stringify(tampered, null, 2)}\n`);
     await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
       argv: argv(values),
       repositoryRoot: values.directory,
       runCompletenessImpl: async () => { calls += 1; },
-    }), /EVIDENCE_HASH/);
+    }), /successful replay evidence bytes are invalid/);
     assert.equal(calls, 0);
   } finally {
     await rm(values.directory, { recursive: true, force: true });

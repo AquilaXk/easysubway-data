@@ -1,10 +1,14 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { parseArgs } from "./check-timetable-snapshot-freshness.mjs";
-import { runKorailItxCompletenessCli } from "./collect-korail-itx-cheongchun-timetable.mjs";
+import {
+  collectKorailItxCheongchunCompleteness,
+  runKorailItxCompletenessCli,
+} from "./collect-korail-itx-cheongchun-timetable.mjs";
 import { inspectItxCurrentCollectionEvidenceCli } from "./inspect-itx-current-collection-evidence.mjs";
 import { createProviderResponseReplay } from "./provider-response-capture.mjs";
 
@@ -12,13 +16,26 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const OFFLINE_PROVIDER_KEY = "offline-provider-replay-key";
 const EXPECTED_SERVICE_DATES = Object.freeze({ "7": "20260822", "8": "20260813", "9": "20260816" });
 const EXPECTED_AGGREGATE = Object.freeze({ expectedOdCount: 918, completedOdCount: 918, failedOdCount: 0 });
+const CAPTURE_PROVENANCE = Object.freeze({
+  workflowRunId: "31620004435",
+  artifactId: "9150832350",
+  archiveSha256: "e1203894526b794fbf927b3e7c5da4e33507cbe26b12328ffc45c9da5b3085d5",
+});
+const REPLAY_PROVENANCE = Object.freeze({
+  workflowRunId: "31679427374",
+  artifactId: "9172854009",
+  archiveSha256: "2bb09e208691896f27d372cdd7345e326e4f76a706c201ec3d48ed2fa0990247",
+});
 
 export async function materializeReplayedItxAdmissionCandidateCli({
   argv = process.argv.slice(2),
   repositoryRoot = repoRoot,
   runCompletenessImpl = runKorailItxCompletenessCli,
+  collectCompletenessImpl = collectKorailItxCheongchunCompleteness,
 } = {}) {
   const args = candidateArgs(argv);
+  const replayEvidenceBytes = await readFile(args["replay-evidence"]);
+  const replayEvidence = parseReplayEvidence(replayEvidenceBytes);
   const inspection = await inspectItxCurrentCollectionEvidenceCli({
     argv: ["--evidence", args["replay-evidence"]],
   });
@@ -45,6 +62,16 @@ export async function materializeReplayedItxAdmissionCandidateCli({
     now: new Date(replay.capture.observedAt),
     repositoryRoot,
     fetchImpl: replay.fetchImpl,
+    collectImpl: async (options) => {
+      const artifact = await collectCompletenessImpl(options);
+      assertReplayProjection(artifact, replayEvidence);
+      artifact.sourceTimetableArtifact.replayAdmissionProvenance = replayAdmissionProvenance({
+        capture: replay.capture,
+        replayEvidence,
+      });
+      artifact.evidenceHash = evidenceHash(artifact);
+      return artifact;
+    },
     onPublicationEvent: async ({ event }) => {
       if (event === "before-stage-created") {
         replay.assertExhausted();
@@ -56,6 +83,67 @@ export async function materializeReplayedItxAdmissionCandidateCli({
   if (!exhaustionChecked) throw new Error("candidate publication did not verify capture exhaustion");
   validateResult(result);
   return result;
+}
+
+function parseReplayEvidence(bytes) {
+  let value;
+  try {
+    value = JSON.parse(bytes);
+  } catch (error) {
+    throw new Error("successful replay evidence bytes are invalid", { cause: error });
+  }
+  if (bytes.toString("utf8") !== `${JSON.stringify(value, null, 2)}\n`
+    || value?.evidenceHash !== evidenceHash(value)) {
+    throw new Error("successful replay evidence bytes are invalid");
+  }
+  return value;
+}
+
+function assertReplayProjection(admissionArtifact, replayEvidence) {
+  const normalized = structuredClone(admissionArtifact);
+  delete normalized.sourceTimetableArtifact?.replayAdmissionProvenance;
+  normalized.validationMode = "REPLAY";
+  normalized.admissionStatus = "REPLAY_ONLY";
+  normalized.admissionEligible = false;
+  normalized.snapshotDiff = {
+    policyVersion: "itx-snapshot-anomaly-v1",
+    status: "NOT_EVALUATED",
+    serviceDays: [],
+  };
+  if (normalized.failureStage === "SNAPSHOT_DIFF"
+    && normalized.failureReasonCode === "SNAPSHOT_ANOMALY_BLOCKED") {
+    delete normalized.failureStage;
+    delete normalized.failureReasonCode;
+  }
+  if (normalized.sourceTimetableArtifact?.status !== undefined) {
+    normalized.sourceTimetableArtifact.status = "REPLAY_ONLY";
+  }
+  normalized.evidenceHash = evidenceHash(normalized);
+  if (JSON.stringify(normalized) !== JSON.stringify(replayEvidence)) {
+    throw new Error("capture-derived admission projection differs from successful replay evidence");
+  }
+}
+
+function replayAdmissionProvenance({ capture, replayEvidence }) {
+  return {
+    schemaVersion: 1,
+    capture: {
+      ...CAPTURE_PROVENANCE,
+      contentSha256: capture.contentSha256,
+      requestCount: capture.requestCount,
+      observedAt: capture.observedAt,
+    },
+    replay: {
+      ...REPLAY_PROVENANCE,
+      evidenceHash: replayEvidence.evidenceHash,
+    },
+    providerCallCount: 0,
+  };
+}
+
+function evidenceHash(value) {
+  const { evidenceHash: _ignored, ...withoutHash } = value ?? {};
+  return createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
 }
 
 function candidateArgs(argv) {
