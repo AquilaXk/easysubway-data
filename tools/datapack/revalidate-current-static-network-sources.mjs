@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const MOLIT_SOURCE_ID = "molit-urban-rail-full-route";
 const SEOUL_SOURCE_ID = "seoulmetro-station-line-info";
@@ -31,8 +32,8 @@ function fail(code) {
 
 function assertExactKeys(value, expected, code = "SCHEMA") {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(code);
-  const actual = Object.keys(value).sort();
-  const sortedExpected = [...expected].sort();
+  const actual = Object.keys(value).sort(codepointCompare);
+  const sortedExpected = [...expected].sort(codepointCompare);
   if (actual.length !== sortedExpected.length
     || actual.some((key, index) => key !== sortedExpected[index])) fail(code);
 }
@@ -48,7 +49,7 @@ function parseJson(bytes) {
 
 function canonicalRecord(row, fields) {
   assertExactKeys(row, fields);
-  return Object.fromEntries([...fields].sort().map((field) => [field, row[field]]));
+  return Object.fromEntries([...fields].sort(codepointCompare).map((field) => [field, row[field]]));
 }
 
 function projectMolit(bytes) {
@@ -111,7 +112,7 @@ function requiredPrevious(previous, sourceId, fields) {
     || !SHA256.test(previous.rawSha256 ?? "")
     || !SHA256.test(previous.schemaFingerprint ?? "")
     || !SHA256.test(previous.redactedRequestFingerprint ?? "")
-    || previous.schemaFingerprint !== sha256(JSON.stringify([...fields].sort()))
+    || previous.schemaFingerprint !== sha256(JSON.stringify([...fields].sort(codepointCompare)))
     || !Array.isArray(previous.providerRecordHashes)
     || previous.providerRecordHashes.length !== 5
     || previous.providerRecordHashes.some((value) => !SHA256.test(value ?? ""))
@@ -132,7 +133,7 @@ function evidencePayload({ sourceId, previous, observedAt, responseBytes, record
       : "seoulmetro-line4-stations-one-to-five",
     rowCount: records.length,
     canonicalRawSha256: sha256(Buffer.from(`${JSON.stringify(records)}\n`)),
-    schemaFingerprint: sha256(JSON.stringify(Object.keys(records[0]).sort())),
+    schemaFingerprint: sha256(JSON.stringify(Object.keys(records[0]).sort(codepointCompare))),
     providerRecordHashesSha256: sha256(JSON.stringify(
       records.map((record) => sha256(JSON.stringify(record))),
     )),
