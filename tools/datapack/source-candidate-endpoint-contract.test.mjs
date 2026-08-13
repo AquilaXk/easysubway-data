@@ -74,6 +74,13 @@ const DATA_GO_FOCUSED_TESTS = Object.freeze({
 
 const document = JSON.parse(await readFile(CANDIDATES_PATH, "utf8"));
 
+test("Seoul 노선별 지하철역 operation은 blank placeholders와 4호선 request token을 쓴다", () => {
+  const candidate = document.candidates.find(({ id }) => id === "seoulmetro-station-line-info");
+  assert.ok(candidate);
+  assert.equal(candidate.evidence.sampleUrl,
+    "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5/%20/%20/4호선");
+});
+
 test("FACILITY provider probe는 canonical identity 없이 exact tuple evidence만 만든다", async () => {
   const tuple = { railOprIsttCd: "GX", lnCd: "A", stinCd: "X101", stationName: "운정중앙" };
   const evidence = await collectKricAccessibilityProviderTupleEvidence({
@@ -241,6 +248,22 @@ test("카탈로그의 endpoint·detail URL은 형식적으로 유효하고 crede
       assert.equal(url.hash, "", `${label} must not carry a fragment`);
     }
   }
+});
+
+test("MOLIT 도시철도 전체노선은 official public 20251211 CSV artifact만 쓴다", async () => {
+  const candidate = document.candidates.find(({ id }) => id === "molit-urban-rail-full-route");
+  assert.ok(candidate);
+  const expected = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N";
+  assert.equal(candidate.requestUrl, expected);
+  assert.equal(candidate.evidence.endpoint, expected);
+  assert.equal(candidate.serviceKeyHandling, "not_required");
+  assert.deepEqual(candidate.evidence.formats, ["CSV"]);
+  assert.doesNotMatch(JSON.stringify(candidate), /api\.odcloud|uddi:|Authorization/u);
+  const runner = await readFile(path.join(
+    DATAPACK_DIRECTORY,
+    "revalidate-current-static-network-sources.mjs",
+  ), "utf8");
+  assert.doesNotMatch(runner, /DATA_GO_KR_SERVICE_KEY|normalizeDataGoKrServiceKey|api\.odcloud|Authorization|serviceKey/u);
 });
 
 test("evidence.endpoint는 requestUrl과 같은 provider host를 가리킨다", () => {
