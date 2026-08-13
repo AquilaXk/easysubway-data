@@ -3,8 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { TextDecoder } from "node:util";
 
-import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
@@ -15,6 +15,11 @@ const SOURCE_IDS = Object.freeze([MOLIT_SOURCE_ID, SEOUL_SOURCE_ID]);
 const MOLIT_FIELDS = Object.freeze([
   "line_name", "operator_name", "region", "station_name", "station_sequence",
 ]);
+const MOLIT_CSV_HEADER = Object.freeze([
+  "권역", "권역명", "철도운영기관명", "노선명", "순번", "역명",
+]);
+const MOLIT_PUBLIC_CSV_URL =
+  "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003561913&fileDetailSn=1&insertDataPrcus=N";
 const SEOUL_PROVIDER_FIELDS = Object.freeze([
   "FR_CODE", "LINE_NUM", "STATION_CD", "STATION_NM", "STATION_NM_CHN",
   "STATION_NM_ENG", "STATION_NM_JPN",
@@ -52,16 +57,83 @@ function canonicalRecord(row, fields) {
   return Object.fromEntries([...fields].sort(codepointCompare).map((field) => [field, row[field]]));
 }
 
-function projectMolit(bytes) {
-  const document = parseJson(bytes);
-  assertExactKeys(document, ["currentCount", "data", "matchCount", "page", "perPage", "totalCount"]);
-  if (document.currentCount !== 5
-    || document.page !== 1
-    || document.perPage !== 5
-    || !Number.isSafeInteger(document.matchCount) || document.matchCount < 5
-    || !Number.isSafeInteger(document.totalCount) || document.totalCount < 5
-    || !Array.isArray(document.data) || document.data.length !== 5) fail("PROVIDER");
-  return document.data.map((row) => canonicalRecord(row, MOLIT_FIELDS));
+function parseCsv(csv) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  let quoteClosed = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index];
+    if (character === '"') {
+      if (!quoted) {
+        if (cell !== "" || quoteClosed) fail("SCHEMA");
+        quoted = true;
+      } else if (csv[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+        quoteClosed = true;
+      }
+    } else if (character === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+      quoteClosed = false;
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && csv[index + 1] === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => value !== "")) rows.push(row);
+      row = [];
+      cell = "";
+      quoteClosed = false;
+    } else {
+      if (quoteClosed) fail("SCHEMA");
+      cell += character;
+    }
+  }
+  if (quoted) fail("SCHEMA");
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function projectMolit(bytes, previous) {
+  if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > 1024 * 1024) fail("SCHEMA");
+  let csv;
+  try {
+    csv = new TextDecoder("euc-kr", { fatal: true }).decode(bytes);
+  } catch {
+    fail("SCHEMA");
+  }
+  const rows = parseCsv(csv);
+  if (rows.length < 6
+    || rows[0].length !== MOLIT_CSV_HEADER.length
+    || rows[0].some((value, index) => value !== MOLIT_CSV_HEADER[index])) fail("SCHEMA");
+  const records = rows.slice(1).map((row) => {
+    if (row.length !== MOLIT_CSV_HEADER.length) fail("SCHEMA");
+    const values = row.map((value) => value.trim());
+    if (values.some((value) => value === "")
+      || !/^[1-9][0-9]*$/u.test(values[4])
+      || !Number.isSafeInteger(Number(values[4]))) fail("SCHEMA");
+    return canonicalRecord({
+      line_name: values[3],
+      operator_name: values[2],
+      region: values[1],
+      station_name: values[5],
+      station_sequence: values[4],
+    }, MOLIT_FIELDS);
+  });
+  const recordsByHash = new Map(previous.providerRecordHashes.map((hash) => [hash, []]));
+  for (const record of records) {
+    const recordHash = sha256(JSON.stringify(record));
+    recordsByHash.get(recordHash)?.push(record);
+  }
+  const selected = previous.providerRecordHashes.map((hash) => recordsByHash.get(hash));
+  if (selected.some((matches) => matches?.length !== 1)) fail("CONTENT_CHANGED");
+  return selected.map(([record]) => record);
 }
 
 function projectSeoul(bytes) {
@@ -129,7 +201,7 @@ function evidencePayload({ sourceId, previous, observedAt, responseBytes, record
     previousSnapshotId: previous.snapshotId,
     observedAt,
     operation: sourceId === MOLIT_SOURCE_ID
-      ? "molit-urban-rail-full-route-page-1-five-rows"
+      ? "molit-urban-rail-full-route-file-five-records"
       : "seoulmetro-line4-stations-one-to-five",
     rowCount: records.length,
     canonicalRawSha256: sha256(Buffer.from(`${JSON.stringify(records)}\n`)),
@@ -185,13 +257,15 @@ export function buildCurrentStaticSourceRevalidation({
   ];
   const result = definitions.map(({ sourceId, key, fields, project }) => {
     const responseBytes = responseBytesBySource[key];
+    const previous = previousHead(sourceSnapshots, sourceId);
+    requiredPrevious(previous, sourceId, fields);
     return buildOne({
       sourceId,
-      previous: previousHead(sourceSnapshots, sourceId),
+      previous,
       observedAt,
       observedMillis,
       responseBytes,
-      records: project(responseBytes),
+      records: project(responseBytes, previous),
       fields,
     });
   });
@@ -206,21 +280,39 @@ function requiredSingleLine(value, label) {
   return value;
 }
 
-async function responseBytes(response, source) {
+async function responseBytes(response, source, expectedContentType) {
   if (!response || response.status !== 200 || !response.ok) {
     const status = Number.isSafeInteger(response?.status) ? response.status : "INVALID";
     fail(`${source}_HTTP_${status}`);
   }
   if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase()
-    !== "application/json") fail(`${source}_CONTENT_TYPE`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > 1024 * 1024) fail(`${source}_BODY_SIZE`);
-  return bytes;
+    !== expectedContentType) fail(`${source}_CONTENT_TYPE`);
+  if (!response.body || typeof response.body.getReader !== "function") fail(`${source}_BODY_SIZE`);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) fail(`${source}_BODY_SIZE`);
+      byteLength += value.byteLength;
+      if (byteLength > 1024 * 1024) {
+        await reader.cancel().catch(() => {});
+        fail(`${source}_BODY_SIZE`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  if (byteLength === 0) fail(`${source}_BODY_SIZE`);
+  return Buffer.concat(chunks, byteLength);
 }
 
-async function fetchSourceResponse({ source, url, init, fetchImpl }) {
+async function fetchSourceResponse({ source, url, init, fetchImpl, expectedContentType }) {
   try {
-    return await responseBytes(await fetchImpl(url, init), source);
+    return await responseBytes(await fetchImpl(url, init), source, expectedContentType);
   } catch (error) {
     if (error?.message?.startsWith("STATIC_SOURCE_REVALIDATION_")) throw error;
     fail(`${source}_TRANSPORT`);
@@ -228,17 +320,11 @@ async function fetchSourceResponse({ source, url, init, fetchImpl }) {
 }
 
 export async function fetchCurrentStaticSourceResponses({
-  dataGoKrServiceKey,
   seoulOpenApiKey,
   fetchImpl = fetch,
 }) {
-  const dataKey = normalizeDataGoKrServiceKey(dataGoKrServiceKey);
   const seoulKey = requiredSingleLine(seoulOpenApiKey, "SEOUL_OPENAPI_KEY");
-  const molitUrl = new URL(
-    "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf",
-  );
-  molitUrl.search = new URLSearchParams({ page: "1", perPage: "5" });
-  molitUrl.searchParams.set("serviceKey", dataKey);
+  const molitUrl = new URL(MOLIT_PUBLIC_CSV_URL);
   const seoulUrl = new URL(
     `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("4호선")}`,
   );
@@ -250,8 +336,9 @@ export async function fetchCurrentStaticSourceResponses({
       method: "GET",
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
-      headers: { accept: "application/json" },
+      headers: { accept: "application/octet-stream" },
     },
+    expectedContentType: "application/octet-stream",
   });
   const seoul = await fetchSourceResponse({
     source: "SEOUL",
@@ -263,6 +350,7 @@ export async function fetchCurrentStaticSourceResponses({
       signal: AbortSignal.timeout(15_000),
       headers: { accept: "application/json" },
     },
+    expectedContentType: "application/json",
   });
   return { molit, seoul };
 }
@@ -330,7 +418,6 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const sourceSnapshots = JSON.parse(await readFile(path.resolve(args["--source-snapshots"]), "utf8"));
   const responses = await fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: process.env.DATA_GO_KR_SERVICE_KEY,
     seoulOpenApiKey: process.env.SEOUL_OPENAPI_KEY,
   });
   const result = buildCurrentStaticSourceRevalidation({

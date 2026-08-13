@@ -59,7 +59,7 @@ function staticRevalidation(previous, observedAt = "2026-08-13T10:30:00.000Z") {
     previousSnapshotId: previous.snapshotId,
     observedAt,
     operation: previous.sourceId.startsWith("molit-")
-      ? "molit-urban-rail-full-route-page-1-five-rows"
+      ? "molit-urban-rail-full-route-file-five-records"
       : "seoulmetro-line4-stations-one-to-five",
     rowCount: 5,
     canonicalRawSha256: previous.rawSha256,

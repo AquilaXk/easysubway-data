@@ -211,7 +211,7 @@ function validateStaticRevalidation(previous, snapshot, evidence, sourceId) {
   const observedMillis = requiredUtcInstant(evidence.observedAt, "static revalidation observedAt");
   const expectedDate = evidence.observedAt.slice(0, 10).replaceAll("-", "");
   const expectedOperation = sourceId === "molit-urban-rail-full-route"
-    ? "molit-urban-rail-full-route-page-1-five-rows"
+    ? "molit-urban-rail-full-route-file-five-records"
     : "seoulmetro-line4-stations-one-to-five";
   if (evidence.schemaVersion !== 1
     || evidence.artifactKind !== "current-static-source-revalidation-evidence"
