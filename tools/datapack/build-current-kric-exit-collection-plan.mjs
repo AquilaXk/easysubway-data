@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { lstat, readFile, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -24,6 +25,9 @@ const INPUT_KEYS = [
   "incheonTopologyBytes",
 ];
 const CANONICAL_PACK_KEYS = ["manifest", "migrationSourceArtifact", "packs"];
+const CANONICAL_MANIFEST_KEYS = ["activePack", "channel", "keyId", "manifestVersion", "ttlSeconds"];
+const CANONICAL_ACTIVE_PACK_KEYS = ["id", "version"];
+const MIGRATION_SOURCE_KEYS = ["gzipSha256", "sqliteSha256"];
 const TARGET_KEYS = [
   "activeLineScopeEvidence", "activeLineScopes", "artifactKind", "claimLedger", "coverageGoal",
   "evidenceSources", "expansionRoadmap", "inactiveLineExclusions", "knownSourceDomains",
@@ -164,6 +168,22 @@ function validateCanonicalPack(value) {
   const [pack] = value.packs;
   if (pack?.id !== "capital" || pack.version !== "1" || pack.artifactKind !== "production" || pack.schemaVersion !== "1") {
     throw new Error("canonical pack identity mismatch");
+  }
+  assertKeys(value.manifest, CANONICAL_MANIFEST_KEYS, "canonical pack manifest keys");
+  if (value.manifest.manifestVersion !== 2 || value.manifest.channel !== "production"
+    || !Number.isInteger(value.manifest.ttlSeconds) || value.manifest.ttlSeconds <= 0) {
+    throw new Error("canonical pack manifest identity mismatch");
+  }
+  requiredString(value.manifest.keyId, "canonical pack manifest keyId");
+  assertKeys(value.manifest.activePack, CANONICAL_ACTIVE_PACK_KEYS, "canonical pack active identity keys");
+  if (value.manifest.activePack.id !== pack.id || value.manifest.activePack.version !== pack.version) {
+    throw new Error("canonical pack active identity mismatch");
+  }
+  assertKeys(value.migrationSourceArtifact, MIGRATION_SOURCE_KEYS, "canonical pack migration source keys");
+  for (const key of MIGRATION_SOURCE_KEYS) {
+    if (!/^[a-f0-9]{64}$/.test(value.migrationSourceArtifact[key] ?? "")) {
+      throw new Error("canonical pack migration source identity mismatch");
+    }
   }
   for (const field of REQUIRED_PACK_ARRAYS) {
     if (!Array.isArray(pack[field]) || pack[field].length === 0) throw new Error(`canonical pack ${field} must be non-empty`);
@@ -380,13 +400,24 @@ function parseArgs(argv) {
   return result;
 }
 
-async function readRegularSnapshot(target, label) {
-  const before = await lstat(target);
-  if (!before.isFile() || before.isSymbolicLink()) throw new Error(`${label} must be a regular file`);
-  const bytes = await readFile(target);
-  const after = await lstat(target);
-  if (!sameIdentity(before, after) || bytes.length !== after.size) throw new Error(`${label} changed during read`);
-  return { target, label, bytes, identity: identity(after) };
+export async function readRegularSnapshot(target, label, { openImpl = open } = {}) {
+  if (!Number.isInteger(constants.O_NOFOLLOW)) throw new Error(`${label} cannot enforce O_NOFOLLOW`);
+  let handle;
+  try {
+    handle = await openImpl(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    throw new Error(`${label} must be a regular file`, { cause: error });
+  }
+  try {
+    const before = await handle.stat();
+    if (!before.isFile()) throw new Error(`${label} must be a regular file`);
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (!sameIdentity(before, after) || bytes.length !== after.size) throw new Error(`${label} changed during read`);
+    return { target, label, bytes, identity: identity(after) };
+  } finally {
+    await handle.close();
+  }
 }
 
 async function assertSnapshotUnchanged(snapshot) {

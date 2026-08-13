@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
+import { constants } from "node:fs";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import {
-  buildCurrentKricExitCollectionPlan,
-  main,
-} from "./build-current-kric-exit-collection-plan.mjs";
+import * as currentPlan from "./build-current-kric-exit-collection-plan.mjs";
 import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-collection.mjs";
+
+const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
 
 const datapackRoot = fileURLToPath(new URL(".", import.meta.url));
 const currentNow = new Date("2026-08-13T16:00:00.000Z");
@@ -103,6 +103,40 @@ test("raw source identity는 candidate ID에 결속되고 provider scope drift�
   );
 });
 
+test("canonical wrapper manifest와 migration source identity drift는 plan 전에 거부한다", async () => {
+  const input = await readProductionBytes();
+
+  const missingManifest = JSON.parse(input.canonicalPackBytes);
+  missingManifest.manifest = null;
+  assert.throws(
+    () => buildPlan({
+      ...input,
+      canonicalPackBytes: Buffer.from(JSON.stringify(missingManifest)),
+    }),
+    /canonical pack manifest/,
+  );
+
+  const staleActivePack = JSON.parse(input.canonicalPackBytes);
+  staleActivePack.manifest.activePack.version = "0";
+  assert.throws(
+    () => buildPlan({
+      ...input,
+      canonicalPackBytes: Buffer.from(JSON.stringify(staleActivePack)),
+    }),
+    /canonical pack active identity/,
+  );
+
+  const invalidMigrationSource = JSON.parse(input.canonicalPackBytes);
+  invalidMigrationSource.migrationSourceArtifact.gzipSha256 = "A".repeat(64);
+  assert.throws(
+    () => buildPlan({
+      ...input,
+      canonicalPackBytes: Buffer.from(JSON.stringify(invalidMigrationSource)),
+    }),
+    /canonical pack migration source/,
+  );
+});
+
 test("canonical topology와 provider mapping drift는 plan output 전에 fail closed한다", async () => {
   const input = await readProductionBytes();
   const canonicalPack = JSON.parse(input.canonicalPackBytes);
@@ -156,6 +190,62 @@ test("CLI는 regular input만 한 번 읽고 existing·symlink output을 덮어�
   }
 });
 
+test("input snapshot은 O_NOFOLLOW single descriptor의 stat/read/stat에 결속된다", async () => {
+  assert.equal(typeof currentPlan.readRegularSnapshot, "function");
+  const bytes = Buffer.from("descriptor-bound");
+  const stableStat = fakeStat({ size: bytes.length });
+  const events = [];
+  const handle = {
+    async stat() {
+      events.push("stat");
+      return stableStat;
+    },
+    async readFile() {
+      events.push("read");
+      return bytes;
+    },
+    async close() {
+      events.push("close");
+    },
+  };
+  const snapshot = await currentPlan.readRegularSnapshot("/not-read-by-path", "input", {
+    openImpl: async (target, flags) => {
+      events.push(["open", target, flags]);
+      return handle;
+    },
+  });
+
+  assert.deepEqual(snapshot.bytes, bytes);
+  assert.deepEqual(events, [
+    ["open", "/not-read-by-path", constants.O_RDONLY | constants.O_NOFOLLOW],
+    "stat",
+    "read",
+    "stat",
+    "close",
+  ]);
+
+  let statCall = 0;
+  let closed = false;
+  await assert.rejects(
+    () => currentPlan.readRegularSnapshot("/replaced", "input", {
+      openImpl: async () => ({
+        async stat() {
+          statCall += 1;
+          return fakeStat({ ino: statCall });
+        },
+        async readFile() {
+          return Buffer.alloc(1);
+        },
+        async close() {
+          closed = true;
+        },
+      }),
+    }),
+    /input changed during read/,
+  );
+  assert.equal(closed, true);
+});
+
 test("preflight 실패는 output과 input bytes를 남기거나 바꾸지 않는다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-exit-production-failure-"));
   try {
@@ -206,4 +296,16 @@ function cliArgs(output, overrides = {}) {
     "--incheon-topology", productionPaths.incheonTopology,
     "--output", output,
   ];
+}
+
+function fakeStat(overrides = {}) {
+  return {
+    dev: 1,
+    ino: 1,
+    size: 1,
+    mtimeMs: 1,
+    mode: 0o100600,
+    isFile: () => true,
+    ...overrides,
+  };
 }
