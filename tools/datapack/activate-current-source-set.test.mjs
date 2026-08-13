@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
+import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   parseCurrentSourceActivationArgs, requireCleanBuilder,
@@ -478,6 +479,59 @@ test("generated current candidate spec은 expired ITX topology overlay를 재도
   });
 
   assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+});
+
+test("current capital topology는 canonical fixture에 repaired 8 directions만 추가한다", async () => {
+  const [fixture, topology] = await Promise.all([
+    readJson("tools/datapack/release/capital-production-canonical-pack.json"),
+    readJson("tools/datapack/sources/capital-route-topology-20260813.json"),
+  ]);
+  const pack = fixture.packs.find(({ id }) => id === "capital");
+  const topologyLineIds = new Set(topology.lines.map(({ lineId }) => lineId));
+  const isProjectedCapitalEdge = (edge) => edge.edgeType === "RIDE"
+    && edge.servicePattern === "LOCAL"
+    && (edge.serviceClass ?? "SUBWAY") === "SUBWAY"
+    && [edge.fromNodeId, edge.toNodeId]
+      .some((nodeId) => topologyLineIds.has(String(nodeId).split(":").at(-1)));
+  const retainedBefore = structuredClone(pack.networkEdges.filter((edge) => !isProjectedCapitalEdge(edge)));
+  const beforeItx = structuredClone(pack.networkEdges
+    .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+    .sort((left, right) => left.id.localeCompare(right.id, "en")));
+
+  const projected = projectCapitalTopologyIntoCanonicalFixture(fixture, topology);
+
+  assert.equal(projected.edgeCount, 1_438);
+  assert.equal(pack.networkEdges.filter(isProjectedCapitalEdge).length, 1_438);
+  assert.deepEqual(pack.networkEdges.filter((edge) => !isProjectedCapitalEdge(edge)), retainedBefore);
+  assert.deepEqual(
+    pack.networkEdges.filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
+      .sort((left, right) => left.id.localeCompare(right.id, "en")),
+    beforeItx,
+  );
+
+  const stations = new Map(pack.stations.map((station) => [station.id, station]));
+  const stationId = (lineId, nameKo) => {
+    const ids = pack.stationLines
+      .filter((membership) => membership.lineId === lineId
+        && stations.get(membership.stationId)?.nameKo === nameKo)
+      .map(({ stationId: value }) => value);
+    assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
+    return ids[0];
+  };
+  for (const [lineId, leftName, rightName] of [
+    ["line-30886152e4f8", "보문", "신설동"],
+    ["line-558d0bd8312d", "왕십리", "청량리"],
+    ["line-828f04afc588", "둔전", "전대.에버랜드"],
+    ["seoul-4", "오이도", "정왕"],
+  ]) {
+    const left = stationId(lineId, leftName);
+    const right = stationId(lineId, rightName);
+    for (const [from, to] of [[left, right], [right, left]]) {
+      const edge = pack.networkEdges.find(({ id }) => id === `edge-${lineId}-${from}-${to}`);
+      assert.equal(edge?.distanceMeters, 0);
+      assert.equal(edge?.serviceClass, "SUBWAY");
+    }
+  }
 });
 
 test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {

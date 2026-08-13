@@ -17,6 +17,7 @@ import {
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
+import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
@@ -1437,6 +1438,7 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
+    projectCapitalTopologyIntoCanonicalFixture(canonical, capitalTopology);
     const nextCanonicalBytes = jsonBytes(canonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
