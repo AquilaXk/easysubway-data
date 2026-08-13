@@ -190,9 +190,67 @@ test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 creden
     seoulOpenApiKey: "seoul-key",
     fetchImpl: async () => { throw new Error("encoded-key seoul-key raw-secret-sentinel"); },
   }), (error) => {
-    assert.equal(error.message, "STATIC_SOURCE_REVALIDATION_TRANSPORT");
+    assert.equal(error.message, "STATIC_SOURCE_REVALIDATION_MOLIT_TRANSPORT");
     return true;
   });
+});
+
+test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지 않는다", async () => {
+  const responses = responseBytes();
+  const cases = [
+    {
+      expected: "STATIC_SOURCE_REVALIDATION_MOLIT_HTTP_503",
+      fetchImpl: async () => new Response("raw-secret-sentinel", { status: 503 }),
+      calls: 1,
+    },
+    {
+      expected: "STATIC_SOURCE_REVALIDATION_SEOUL_CONTENT_TYPE",
+      fetchImpl: async (_url, _init, call) => call === 1
+        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/json" } })
+        : new Response("raw-secret-sentinel", { status: 200, headers: { "content-type": "text/plain" } }),
+      calls: 2,
+    },
+    {
+      expected: "STATIC_SOURCE_REVALIDATION_SEOUL_BODY_SIZE",
+      fetchImpl: async (_url, _init, call) => call === 1
+        ? new Response(responses.molit, { status: 200, headers: { "content-type": "application/json" } })
+        : new Response(Buffer.alloc(1024 * 1024 + 1), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      calls: 2,
+    },
+    {
+      expected: "STATIC_SOURCE_REVALIDATION_SEOUL_TRANSPORT",
+      fetchImpl: async (_url, _init, call) => {
+        if (call === 1) {
+          return new Response(responses.molit, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw new Error("raw-secret-sentinel seoul-key encoded-key");
+      },
+      calls: 2,
+    },
+  ];
+
+  for (const scenario of cases) {
+    let calls = 0;
+    await assert.rejects(fetchCurrentStaticSourceResponses({
+      dataGoKrServiceKey: "encoded-key",
+      seoulOpenApiKey: "seoul-key",
+      fetchImpl: (url, init) => {
+        calls += 1;
+        return scenario.fetchImpl(url, init, calls);
+      },
+    }), (error) => {
+      assert.equal(error.message, scenario.expected);
+      assert.doesNotMatch(error.message, /raw-secret|seoul-key|encoded-key|https?:/iu);
+      return true;
+    });
+    assert.equal(calls, scenario.calls);
+  }
 });
 
 test("malformed DATA_GO credential은 provider 호출 전에 거부한다", async () => {
