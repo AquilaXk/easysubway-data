@@ -4071,6 +4071,79 @@ test("fresh KORAIL admission은 travelerTrainRunPlan2만 호출하고 future inf
   });
 });
 
+test("current/future partial KORAIL plan은 runInfo 없이 TAGO corridor를 strict temporal-contain한다", async () => {
+  const runDate = "20260813";
+  const now = new Date("2026-08-13T00:00:00.000Z");
+  const exactPlan = {
+    ...planRow("02001", "용산", "춘천", `${runDate}060000`, `${runDate}080000`),
+    run_ymd: runDate,
+  };
+  const cases = [
+    {
+      relation: "departure_only",
+      valid: { departure: "춘천", arrival: "RAW-OUTER-ARRIVAL", start: "070000", end: "100000" },
+      invalid: { departure: "춘천", arrival: "RAW-OUTER-ARRIVAL", start: "070000", end: "090000" },
+      error: /KORAIL_PLAN_MISMATCH: 2002 arrival_time/,
+    },
+    {
+      relation: "arrival_only",
+      valid: { departure: "RAW-OUTER-DEPARTURE", arrival: "용산", start: "060000", end: "090000" },
+      invalid: { departure: "RAW-OUTER-DEPARTURE", arrival: "용산", start: "070000", end: "090000" },
+      error: /KORAIL_PLAN_MISMATCH: 2002 departure_time/,
+    },
+    {
+      relation: "neither",
+      valid: { departure: "RAW-OUTER-DEPARTURE", arrival: "RAW-OUTER-ARRIVAL", start: "060000", end: "100000" },
+      invalid: { departure: "RAW-OUTER-DEPARTURE", arrival: "RAW-OUTER-ARRIVAL", start: "070000", end: "100000" },
+      error: /KORAIL_PLAN_MISMATCH: 2002 departure_time/,
+    },
+  ];
+  const collect = async (candidate) => {
+    const requestedOperations = [];
+    const result = await collectKorailItxCheongchunPlan({
+      serviceKey: "key",
+      runDate,
+      kricServiceDayCode: "8",
+      stationCatalogPackPath: PACK_PATH,
+      trainNumberEvidence: {
+        ...trainNumberEvidence(),
+        schemaVersion: 2,
+        serviceDate: runDate,
+        ...tagoMaterializedFixture(),
+      },
+      now,
+      fetchImpl: async (url) => {
+        const operation = url.pathname.split("/").at(-1);
+        requestedOperations.push(operation);
+        assert.equal(operation, "travelerTrainRunPlan2");
+        return apiResponse([
+          exactPlan,
+          {
+            ...planRow(
+              "02002",
+              candidate.departure,
+              candidate.arrival,
+              `${runDate}${candidate.start}`,
+              `${runDate}${candidate.end}`,
+            ),
+            run_ymd: runDate,
+          },
+        ]);
+      },
+    });
+    return { result, requestedOperations };
+  };
+
+  for (const { relation, valid, invalid, error } of cases) {
+    const { result, requestedOperations } = await collect(valid);
+    assert.deepEqual(requestedOperations, ["travelerTrainRunPlan2"], relation);
+    assert.deepEqual(result.trainNumberSets.korailPlan, ["2001", "2002"], relation);
+    assert.deepEqual(result.operations.map(({ operation }) => operation), ["travelerTrainRunPlan2"], relation);
+    assert.doesNotMatch(JSON.stringify(result), /RAW-OUTER-(?:DEPARTURE|ARRIVAL)/, relation);
+    await assert.rejects(collect(invalid), error);
+  }
+});
+
 test("departure_only KORAIL plan은 날짜 전용 run info 세그먼트로만 보강한다", async () => {
   const requestedOperations = [];
   const artifact = await collectKorailItxCheongchunPlan({

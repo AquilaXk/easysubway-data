@@ -1311,6 +1311,7 @@ export async function collectKorailItxCheongchunPlan({
     transitStopTimes: trainNumberEvidence.transitStopTimes,
   };
   validateMaterializedProjection(materialized, kricServiceDayCode, "TAGO_OD_STOP_SEQUENCE_INVALID");
+  const useCurrentPlanContainment = runDate >= kstCalendarDate(now);
   const plans = await fetchAll({
     endpoint: `${API_ORIGIN}/B551457/run/v2/travelerTrainRunPlan2`,
     query: {
@@ -1324,12 +1325,19 @@ export async function collectKorailItxCheongchunPlan({
   const selected = validateKorailItxPlans({
     plans: plans.rows, materialized, runDate,
     allowDepartureOnly: true, allowArrivalOnly: true, allowNeither: true,
+    validateTemporalContainment: useCurrentPlanContainment,
   });
   let runInfo = null;
   const partialEndpointPlans = [
     ...selected.departureOnlyPlans, ...selected.arrivalOnlyPlans, ...selected.neitherPlans,
   ];
-  if (partialEndpointPlans.length > 0) {
+  if (partialEndpointPlans.length > 0 && useCurrentPlanContainment) {
+    selected.trainNumbers = [
+      ...selected.trainNumbers,
+      ...partialEndpointPlans.map(({ normalizedTrainNumber }) => normalizedTrainNumber),
+    ].sort(naturalCompare);
+    selected.trainSetHash = sha256(JSON.stringify(selected.trainNumbers));
+  } else if (partialEndpointPlans.length > 0) {
     runInfo = await fetchAll({
       endpoint: `${API_ORIGIN}/B551457/run/v2/travelerTrainRunInfo2`,
       query: {
@@ -1669,9 +1677,36 @@ function validateExactKorailPlanTimes({ plan, first, last, runDate, trainNumber 
   }
 }
 
+function validatePartialKorailPlanTimes({ plan, relation, first, last, runDate, trainNumber }) {
+  let planDeparture;
+  let planArrival;
+  try {
+    planDeparture = timestampSeconds(
+      plan.trn_plan_dptre_dt, runDate, `plan departure[${safeToken(trainNumber)}]`,
+    );
+    planArrival = timestampSeconds(
+      plan.trn_plan_arvl_dt, runDate, `plan arrival[${safeToken(trainNumber)}]`,
+    );
+  } catch {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} timestamp_format`);
+  }
+  if (planDeparture >= planArrival || first.departureSeconds >= last.arrivalSeconds) {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} timestamp_format`);
+  }
+  if ((relation === "departure_only" && planDeparture !== first.departureSeconds)
+    || (relation !== "departure_only" && planDeparture >= first.departureSeconds)) {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} departure_time`);
+  }
+  if ((relation === "arrival_only" && planArrival !== last.arrivalSeconds)
+    || (relation !== "arrival_only" && planArrival <= last.arrivalSeconds)) {
+    throw new Error(`KORAIL_PLAN_MISMATCH: ${safeToken(trainNumber)} arrival_time`);
+  }
+}
+
 export function validateKorailItxPlans({
   plans, materialized, runDate,
   allowDepartureOnly = false, allowArrivalOnly = false, allowNeither = false,
+  validateTemporalContainment = false,
 }) {
   if (!Array.isArray(plans)) throw new Error("KORAIL_PLAN_MISMATCH: plans");
   const trainNumbers = (materialized?.trainNumbers ?? []).map(normalizeTrainNumber).sort(naturalCompare);
@@ -1712,6 +1747,9 @@ export function validateKorailItxPlans({
         arrivalOnlyPlans,
         neitherPlans,
       });
+      if (validateTemporalContainment) {
+        validatePartialKorailPlanTimes({ plan, ...endpoint, runDate, trainNumber });
+      }
       continue;
     }
     validateExactKorailPlanTimes({ plan, ...endpoint, runDate, trainNumber });
@@ -1729,6 +1767,14 @@ export function validateKorailItxPlans({
     neitherPlans,
     trainSetHash: sha256(JSON.stringify(selectedTrainNumbers)),
   };
+}
+
+function kstCalendarDate(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) throw new Error("now must be a valid Date");
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value).map(({ type, value: part }) => [type, part]));
+  return `${parts.year}${parts.month}${parts.day}`;
 }
 
 function validateKorailItxDepartureOnlySegments({ infoRows, departureOnlyPlans, materialized, runDate }) {
