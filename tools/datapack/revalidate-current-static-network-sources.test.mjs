@@ -167,7 +167,7 @@ test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 creden
   const requested = [];
   const responses = responseBytes();
   const result = await fetchCurrentStaticSourceResponses({
-    dataGoKrServiceKey: "encoded-key",
+    dataGoKrServiceKey: "encoded%2Bkey",
     seoulOpenApiKey: "seoul-key",
     fetchImpl: async (url, init) => {
       requested.push({ url: String(url), init });
@@ -178,9 +178,10 @@ test("tracked provider boundary는 MOLIT와 Seoul을 exact one-call하고 creden
 
   assert.equal(requested.length, 2);
   assert.equal(requested[0].url,
-    "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf?page=1&perPage=5");
+    "https://api.odcloud.kr/api/15122916/v1/uddi:8ffc61a6-0f59-4fd0-9b85-d6fa25ed0acf?page=1&perPage=5&serviceKey=encoded%2Bkey");
   assert.doesNotMatch(requested[0].url, /uddi:urban-rail-full-route/u);
-  assert.equal(requested[0].init.headers.Authorization, "Infuser encoded-key");
+  assert.equal(new URL(requested[0].url).searchParams.get("serviceKey"), "encoded+key");
+  assert.equal(Object.hasOwn(requested[0].init.headers, "Authorization"), false);
   assert.match(decodeURI(new URL(requested[1].url).pathname),
     /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/4호선$/);
   assert.equal(result.molit.equals(responses.molit), true);
