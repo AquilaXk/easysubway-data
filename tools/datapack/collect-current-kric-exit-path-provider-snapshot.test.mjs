@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -158,6 +158,32 @@ test("provider 중간 실패는 retry와 partial output 없이 종료한다", as
     });
     assert.equal(calls, 2);
     await assert.rejects(() => readFile(output), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("snapshot write 실패는 final과 staging partial output을 남기지 않는다", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "easysubway-exit-live-write-failure-"));
+  try {
+    const planPath = path.join(directory, "plan.json");
+    const output = path.join(directory, "snapshot.json");
+    await writeFile(planPath, canonicalKricExitPathCollectionPlanJson(validPlan()));
+
+    await assert.rejects(() => main(cliArgs(planPath, output), {
+      candidatesDocument: candidatesDocument(),
+      env: { KRIC_SERVICE_KEY: SERVICE_KEY, RUNNER_TEMP: directory },
+      fetchImpl: async () => jsonResponse(providerSuccess([])),
+      now: CAPTURED_AT,
+      delayImpl: async () => {},
+      writeFileImpl: async (target, bytes, options) => {
+        await writeFile(target, bytes.subarray(0, 32), options);
+        throw new Error("injected snapshot write failure");
+      },
+    }), /injected snapshot write failure/);
+
+    await assert.rejects(() => readFile(output), { code: "ENOENT" });
+    assert.deepEqual(await readdir(directory), ["plan.json"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

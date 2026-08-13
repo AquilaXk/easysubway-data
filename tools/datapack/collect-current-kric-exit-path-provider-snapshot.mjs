@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { lstat, readFile, writeFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -41,8 +41,12 @@ export async function main(argv, {
   delayImpl,
   env = process.env,
   fetchImpl = fetch,
+  linkImpl = link,
   log = console.log,
+  mkdtempImpl = mkdtemp,
   now = new Date(),
+  removeImpl = rm,
+  writeFileImpl = writeFile,
 } = {}) {
   const args = parseArgs(argv);
   const serviceKey = requiredText(env.KRIC_SERVICE_KEY, "KRIC_SERVICE_KEY");
@@ -79,9 +83,37 @@ export async function main(argv, {
     throw new Error("RUNNER_TEMP changed during collection");
   }
   await outputMustBeAbsent(args.output);
-  await writeFile(args.output, bytes, { flag: "wx", mode: 0o600 });
+  await publishAtomicSnapshot({
+    bytes,
+    linkImpl,
+    mkdtempImpl,
+    output: args.output,
+    removeImpl,
+    runnerTemp,
+    writeFileImpl,
+  });
   log(`current KRIC EXIT raw snapshot ready: ${sanitizedReceiptJson(snapshot)}`);
   return snapshot;
+}
+
+async function publishAtomicSnapshot({
+  bytes,
+  linkImpl,
+  mkdtempImpl,
+  output,
+  removeImpl,
+  runnerTemp,
+  writeFileImpl,
+}) {
+  const stagingDirectory = await mkdtempImpl(path.join(runnerTemp, ".current-kric-exit-"));
+  const stagedOutput = path.join(stagingDirectory, "snapshot.json");
+  try {
+    await writeFileImpl(stagedOutput, bytes, { flag: "wx", mode: 0o600 });
+    await outputMustBeAbsent(output);
+    await linkImpl(stagedOutput, output);
+  } finally {
+    await removeImpl(stagingDirectory, { force: true, recursive: true });
+  }
 }
 
 function sanitizedReceiptJson(snapshot) {
