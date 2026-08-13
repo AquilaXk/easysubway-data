@@ -559,42 +559,17 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
     assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
     return ids[0];
   };
-  const reviewedPack = structuredClone(pack);
-  const reviewedTopologyEdges = [];
-  for (const line of topology.lines) {
-    for (const sourceEdge of line.edges) {
-      const from = stationId(line.lineId, sourceEdge.fromStationName);
-      const to = stationId(line.lineId, sourceEdge.toStationName);
-      reviewedTopologyEdges.push({
-        id: `edge-${line.lineId}-${from}-${to}`,
-        fromNodeId: `${from}:${line.lineId}`,
-        toNodeId: `${to}:${line.lineId}`,
-        durationSeconds: sourceEdge.durationSeconds,
-        distanceMeters: sourceEdge.distanceMeters,
-        edgeType: "RIDE",
-        servicePattern: "LOCAL",
-        serviceClass: "SUBWAY",
-        includesStairs: false,
-        stairAccessState: "UNKNOWN",
-        accessibilityStatus: "UNKNOWN",
-        reliabilityScore: 100,
-        facilityId: null,
-        sourceId: topology.sourceId,
-        sourceSnapshotId: "capital-route-topology-20260813",
-        providerRecordHash: sha256(JSON.stringify({ lineId: line.lineId, ...sourceEdge })),
-        provenanceKind: "OFFICIAL_SOURCE",
-        verificationStatus: "VERIFIED",
-        lastVerifiedAt: topology.capturedAt,
-        evidenceHash: line.contentSha256,
-        fieldProvenance: sourceEdge.distanceMeters === 0
-          ? { distance_meters: { derivationKind: "GENERATED" } }
-          : {},
-      });
-    }
-  }
-  reviewedPack.networkEdges = [...retainedBefore, ...reviewedTopologyEdges];
-
-  const projected = projectCapitalTopologyIntoCanonicalFixture(fixture, topology, reviewedPack);
+  const topologySnapshotId = "capital-route-topology-20260813";
+  const admissions = new Map(topology.lines.map(({ lineId }) => [lineId, {
+    verifiedAt: topology.capturedAt,
+    freshUntil: topology.freshUntil,
+  }]));
+  const projected = projectCapitalTopologyIntoCanonicalFixture(
+    fixture,
+    topology,
+    topologySnapshotId,
+    admissions,
+  );
 
   assert.equal(projected.edgeCount, 1_438);
   assert.equal(pack.networkEdges.filter(isProjectedCapitalEdge).length, 1_438);
@@ -607,21 +582,23 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
   const gusan = stationId("line-3f41718e0833", "구산");
   const eungam = stationId("line-3f41718e0833", "응암");
   const branchEdgeId = `edge-line-3f41718e0833-${gusan}-${eungam}`;
-  assert.equal(
-    pack.networkEdges.find(({ id }) => id === branchEdgeId)?.evidenceHash,
-    topology.lines.find(({ lineId }) => lineId === "line-3f41718e0833")?.contentSha256,
-  );
-  const unboundReviewedPack = structuredClone(reviewedPack);
-  const unboundBranchEdge = unboundReviewedPack.networkEdges.find(({ id }) => id === branchEdgeId);
-  assert.ok(unboundBranchEdge);
-  delete unboundBranchEdge.sourceId;
+  const branchEdge = pack.networkEdges.find(({ id }) => id === branchEdgeId);
+  assert.equal(branchEdge?.evidenceHash,
+    topology.lines.find(({ lineId }) => lineId === "line-3f41718e0833")?.contentSha256);
+  assert.equal(branchEdge?.sourceId, topology.sourceId);
+  assert.equal(branchEdge?.sourceSnapshotId, topologySnapshotId);
+  assert.equal(branchEdge?.provenanceKind, "OFFICIAL_SOURCE");
+  assert.equal(branchEdge?.verificationStatus, "VERIFIED");
+  const unboundAdmissions = new Map(admissions);
+  unboundAdmissions.delete("line-3f41718e0833");
   assert.throws(
     () => projectCapitalTopologyIntoCanonicalFixture(
       structuredClone(unprojectedFixture),
       topology,
-      unboundReviewedPack,
+      topologySnapshotId,
+      unboundAdmissions,
     ),
-    /capital topology reviewed edge admission mismatch/,
+    /capital topology line admission mismatch/,
   );
   for (const [lineId, leftName, rightName] of [
     ["line-30886152e4f8", "보문", "신설동"],

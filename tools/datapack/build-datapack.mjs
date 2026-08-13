@@ -1313,7 +1313,12 @@ function capitalTopologyCoreEdge(stationIds, lineId, sourceEdge) {
   };
 }
 
-export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, reviewedPack) {
+export function projectCapitalTopologyIntoCanonicalFixture(
+  fixture,
+  topology,
+  topologySnapshotId,
+  admissions,
+) {
   const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
   if (fixture?.manifest?.channel !== "production"
     || packs.length !== 1
@@ -1322,25 +1327,14 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
     || !Array.isArray(packs[0].stations)
     || !Array.isArray(packs[0].stationLines)
     || !Array.isArray(topology?.lines)
-    || reviewedPack?.id !== "capital"
-    || reviewedPack.artifactKind !== "production"
-    || !Array.isArray(reviewedPack.networkEdges)) {
+    || topology.sourceId !== "capital-route-topology"
+    || !/^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId ?? "")
+    || !(admissions instanceof Map)) {
     throw new Error("capital topology canonical fixture is invalid");
   }
   const pack = packs[0];
   const stationIds = capitalStationIdsByLine(pack);
-  const stationLineByNode = new Map(pack.stationLines.map((membership) => [
-    `${membership.stationId}:${membership.lineId}`,
-    membership,
-  ]));
   const lineIds = new Set(topology.lines.map(({ lineId }) => lineId));
-  const reviewedEdges = new Map();
-  for (const edge of reviewedPack.networkEdges) {
-    if (typeof edge?.id !== "string" || edge.id.length === 0 || reviewedEdges.has(edge.id)) {
-      throw new Error("capital topology reviewed edge identity is invalid");
-    }
-    reviewedEdges.set(edge.id, edge);
-  }
   const projected = [];
   const projectedIds = new Set();
   for (const line of topology.lines) {
@@ -1348,45 +1342,47 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
       || !Array.isArray(line.edges) || line.edgeCount !== line.edges.length) {
       throw new Error("capital topology canonical fixture projection is invalid");
     }
+    const admission = admissions.get(line.lineId);
+    if (admission == null
+      || requiredUtcDateString(admission.verifiedAt, "capital topology edge lastVerifiedAt")
+        !== topology.capturedAt
+      || requiredUtcDateString(admission.freshUntil, "capital topology edge freshUntil")
+        !== topology.freshUntil) {
+      throw new Error(`capital topology line admission mismatch: ${line.lineId}`);
+    }
     for (const sourceEdge of line.edges) {
       const core = capitalTopologyCoreEdge(stationIds, line.lineId, sourceEdge);
       if (projectedIds.has(core.id)) {
         throw new Error(`capital topology duplicate fixture edge: ${core.id}`);
       }
       projectedIds.add(core.id);
-      const reviewedEdge = reviewedEdges.get(core.id);
-      const materializedReviewedEdge = reviewedEdge == null ? null : {
-        ...reviewedEdge,
-        serviceClass: reviewedEdge.serviceClass ?? "SUBWAY",
-      };
-      const mismatchedCoreFields = reviewedEdge == null ? ["missing"] : Object.entries(core)
-        .filter(([key, value]) => materializedReviewedEdge[key] !== value)
-        .map(([key]) => key);
-      if (mismatchedCoreFields.length !== 0) {
-        throw new Error(
-          `capital topology reviewed edge mismatch: ${core.id} (${mismatchedCoreFields.join(",")})`,
-        );
-      }
-      const fromMembership = stationLineByNode.get(core.fromNodeId);
-      const toMembership = stationLineByNode.get(core.toNodeId);
-      if (fromMembership == null || toMembership == null) {
-        throw new Error(`capital topology reviewed edge membership mismatch: ${core.id}`);
-      }
-      const nonAdjacent = Math.abs(fromMembership.lineSequence - toMembership.lineSequence) !== 1;
-      if (nonAdjacent && (reviewedEdge.sourceId !== topology.sourceId
-        || !/^capital-route-topology-[0-9]{8}$/u.test(reviewedEdge.sourceSnapshotId ?? "")
-        || !/^[a-f0-9]{64}$/u.test(reviewedEdge.providerRecordHash ?? "")
-        || reviewedEdge.provenanceKind !== "OFFICIAL_SOURCE"
-        || reviewedEdge.verificationStatus !== "VERIFIED"
-        || reviewedEdge.evidenceHash !== line.contentSha256
-        || !/^[a-f0-9]{64}$/u.test(reviewedEdge.evidenceHash ?? ""))) {
-        throw new Error(`capital topology reviewed edge admission mismatch: ${core.id}`);
-      }
-      if (nonAdjacent) {
-        requiredUtcDateString(reviewedEdge.lastVerifiedAt, "capital topology edge lastVerifiedAt");
-      }
-      projected.push(structuredClone(materializedReviewedEdge));
+      projected.push({
+        ...core,
+        includesStairs: false,
+        stairAccessState: "UNKNOWN",
+        accessibilityStatus: "UNKNOWN",
+        reliabilityScore: 100,
+        facilityId: null,
+        sourceId: topology.sourceId,
+        sourceSnapshotId: topologySnapshotId,
+        providerRecordHash: sha256(Buffer.from(canonicalJson({ lineId: line.lineId, ...sourceEdge }))),
+        provenanceKind: "OFFICIAL_SOURCE",
+        verificationStatus: "VERIFIED",
+        lastVerifiedAt: admission.verifiedAt,
+        evidenceHash: line.contentSha256,
+        fieldProvenance: {
+          ...(topology.fieldsProvided.includes("duration_seconds") ? {} : {
+            duration_seconds: { derivationKind: "GENERATED" },
+          }),
+          ...(sourceEdge.distanceMeters === 0 ? {
+            distance_meters: { derivationKind: "GENERATED" },
+          } : {}),
+        },
+      });
     }
+  }
+  if (admissions.size !== topology.lines.length) {
+    throw new Error("capital topology admission line set mismatch");
   }
   const retained = pack.networkEdges.filter((edge) => !(edge.edgeType === "RIDE"
     && edge.servicePattern === "LOCAL"
