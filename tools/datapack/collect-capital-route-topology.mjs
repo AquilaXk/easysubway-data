@@ -457,6 +457,49 @@ function directedEdgeKey(fromStationName, toStationName) {
   return `${fromStationName}\u0000${toStationName}`;
 }
 
+const LINE8_ID = "line-2b2d9eaa53d0";
+const LINE8_BYEOLLAE_EXTENSION = Object.freeze([
+  "별내", "다산", "동구릉", "구리", "장자호수공원", "암사역사공원", "암사",
+]);
+
+function normalizeLine8ByeollaeExtension(line) {
+  if (line.lineId !== LINE8_ID) return line;
+  const branches = line.branchSequences.filter(({ branchName }) => branchName === "8호선");
+  if (branches.length !== 1) {
+    throw new Error("capital topology line 8 branch sequence is invalid");
+  }
+  const branch = branches[0];
+  const normalized = branch.stationNames.map(normalizeStationName);
+  const amsaIndex = normalized.indexOf("암사");
+  const expectedExtension = LINE8_BYEOLLAE_EXTENSION.slice(0, -1);
+  const observedExtension = normalized.slice(0, amsaIndex);
+  if (amsaIndex !== expectedExtension.length
+    || new Set(observedExtension).size !== expectedExtension.length
+    || expectedExtension.some((stationName) => !observedExtension.includes(stationName))) {
+    throw new Error("capital topology line 8 Byeollae extension identity mismatch");
+  }
+  branch.stationNames = [
+    ...expectedExtension,
+    branch.stationNames[amsaIndex],
+    ...branch.stationNames.slice(amsaIndex + 1),
+  ];
+
+  const extensionScope = new Set(LINE8_BYEOLLAE_EXTENSION);
+  const allowedDirections = new Set();
+  for (let index = 1; index < LINE8_BYEOLLAE_EXTENSION.length; index += 1) {
+    const left = LINE8_BYEOLLAE_EXTENSION[index - 1];
+    const right = LINE8_BYEOLLAE_EXTENSION[index];
+    allowedDirections.add(directedEdgeKey(left, right));
+    allowedDirections.add(directedEdgeKey(right, left));
+  }
+  line.edges = line.edges.filter(({ fromStationName, toStationName }) => (
+    !extensionScope.has(fromStationName)
+    || !extensionScope.has(toStationName)
+    || allowedDirections.has(directedEdgeKey(fromStationName, toStationName))
+  ));
+  return line;
+}
+
 /** Restore official branch-sequence adjacency without inventing distance evidence. */
 export function repairCapitalTopologyBranchCoverage(snapshot) {
   if (snapshot?.schemaVersion !== 1
@@ -476,7 +519,7 @@ export function repairCapitalTopologyBranchCoverage(snapshot) {
   }
 
   const lines = snapshot.lines.map((inputLine) => {
-    const line = structuredClone(inputLine);
+    const line = normalizeLine8ByeollaeExtension(structuredClone(inputLine));
     const edgesByDirection = new Map();
     const incidentStationNames = new Set();
     for (const edge of line.edges) {
@@ -510,7 +553,10 @@ export function repairCapitalTopologyBranchCoverage(snapshot) {
           throw new Error(`capital topology branch edge is asymmetric: ${line.lineId}`);
         }
         if (hasForward) continue;
-        if (incidentStationNames.has(fromStationName) && incidentStationNames.has(toStationName)) {
+        const repairInternalLine8Adjacency = line.lineId === LINE8_ID
+          && branch.branchName === "8호선";
+        if (!repairInternalLine8Adjacency
+          && incidentStationNames.has(fromStationName) && incidentStationNames.has(toStationName)) {
           continue;
         }
         const branchNames = [branch.branchName];
