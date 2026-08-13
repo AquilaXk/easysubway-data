@@ -297,15 +297,57 @@ test("provider transport·envelope·strict JSON·row drift는 partial snapshot�
     assert.equal(calls, 1, entry.label);
   }
 
-  let attempts = 0;
-  await assert.rejects(() => collectKricExitPathProviderSnapshot({
-    collectionPlan: validPlan(),
-    sourceId: "kric-station-movement-standard",
-    serviceKey: SERVICE_KEY,
-    fetchImpl: async () => { attempts += 1; throw new Error(`secret ${SERVICE_KEY}`); },
-    now: new Date(CAPTURED_AT),
-  }), /KRIC EXIT request failed/);
-  assert.equal(attempts, 1);
+  const transportCases = [{
+    label: "dns fetch",
+    phase: "fetch",
+    failure: new Error(SERVICE_KEY, { cause: { code: "ENOTFOUND" } }),
+    category: "NETWORK_DNS",
+  }, {
+    label: "tls fetch",
+    phase: "fetch",
+    failure: Object.assign(new Error(SERVICE_KEY), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }),
+    category: "NETWORK_TLS",
+  }, {
+    label: "timeout fetch",
+    phase: "fetch",
+    failure: new Error(SERVICE_KEY, { cause: { name: "TimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" } }),
+    category: "NETWORK_TIMEOUT",
+  }, {
+    label: "nested socket fetch",
+    phase: "fetch",
+    failure: new Error(SERVICE_KEY, { cause: new Error(SERVICE_KEY, { cause: { code: "ECONNRESET" } }) }),
+    category: "NETWORK_SOCKET",
+  }, {
+    label: "unknown fetch",
+    phase: "fetch",
+    failure: new Error(SERVICE_KEY),
+    category: "NETWORK_UNKNOWN",
+  }, {
+    label: "socket body",
+    phase: "body",
+    failure: Object.assign(new Error(SERVICE_KEY), { code: "UND_ERR_SOCKET" }),
+    category: "NETWORK_SOCKET",
+  }];
+  const queryId = validPlan().queryPlan[0].queryId;
+  for (const entry of transportCases) {
+    let attempts = 0;
+    await assert.rejects(() => collectKricExitPathProviderSnapshot({
+      collectionPlan: validPlan(),
+      sourceId: "kric-station-movement-standard",
+      serviceKey: SERVICE_KEY,
+      fetchImpl: async () => {
+        attempts += 1;
+        if (entry.phase === "fetch") throw entry.failure;
+        return { ok: true, arrayBuffer: async () => { throw entry.failure; } };
+      },
+      now: new Date(CAPTURED_AT),
+    }), (error) => {
+      assert.equal(error.message, `KRIC EXIT request failed: ${entry.category}: ${queryId}`);
+      assert.doesNotMatch(error.message, new RegExp(SERVICE_KEY));
+      return true;
+    }, entry.label);
+    assert.equal(attempts, 1, entry.label);
+  }
 });
 
 function validPlan() {
