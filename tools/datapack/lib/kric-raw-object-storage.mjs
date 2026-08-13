@@ -7,6 +7,19 @@ import { deriveRawRetentionExpiresAt } from "../source-governance-policy.mjs";
 const ACCESSIBILITY_BUCKET = "easysubway-datapack-sources";
 const SHA256 = /^[0-9a-f]{64}$/u;
 
+export function parseAccessibilityRawPublisherArgs(argv) {
+  const args = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = argv[index];
+    const value = argv[index + 1];
+    if (!name?.startsWith("--") || value == null || value.startsWith("--") || name.slice(2) in args) {
+      throw new Error("invalid arguments");
+    }
+    args[name.slice(2)] = value;
+  }
+  return args;
+}
+
 export async function publishAccessibilityRawObservation({
   observationRoot,
   receiptPath,

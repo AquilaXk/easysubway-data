@@ -9,7 +9,10 @@ import {
   validateSeoulAccessibilityRawCollection,
   validateSeoulAccessibilitySnapshotIdentity,
 } from "./collect-seoul-accessibility-evidence.mjs";
-import { publishAccessibilityRawObservation } from "./lib/kric-raw-object-storage.mjs";
+import {
+  parseAccessibilityRawPublisherArgs,
+  publishAccessibilityRawObservation,
+} from "./lib/kric-raw-object-storage.mjs";
 
 const execFileAsync = promisify(execFileCallback);
 const SOURCE_ID = "seoul-metro-accessibility";
@@ -40,21 +43,8 @@ export async function publishSeoulAccessibilityRawArtifact({
   });
 }
 
-function parseArgs(argv) {
-  const args = {};
-  for (let index = 0; index < argv.length; index += 2) {
-    const name = argv[index];
-    const value = argv[index + 1];
-    if (!name?.startsWith("--") || value == null || value.startsWith("--") || name.slice(2) in args) {
-      throw new Error("invalid arguments");
-    }
-    args[name.slice(2)] = value;
-  }
-  return args;
-}
-
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseAccessibilityRawPublisherArgs(process.argv.slice(2));
   const receipt = await publishSeoulAccessibilityRawArtifact({
     observationRoot: args.observation,
     receiptPath: args.receipt,
