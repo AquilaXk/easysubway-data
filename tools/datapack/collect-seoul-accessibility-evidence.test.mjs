@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,8 +10,11 @@ import { promisify } from "node:util";
 import {
   buildAccessibilitySnapshot,
   collectSeoulAccessibility,
+  collectSeoulAccessibilityObservation,
   normalizeAccessibilityRows,
+  seoulObservationOutputRoot,
   writeSeoulAccessibilityEvidence,
+  writeSeoulAccessibilityObservation,
 } from "./collect-seoul-accessibility-evidence.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -539,6 +543,75 @@ test("same-day captures keep distinct timestamped files and explicit lineage", a
       /snapshotIdentity/,
     );
   }
+});
+
+test("fresh Seoul observation은 snapshot·raw pages·manifest를 한 create-only directory에 결속한다", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "easysubway-seoul-observation-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const outputRoot = join(root, "observation");
+  const providerBody = JSON.stringify({
+    response: {
+      header: { resultCode: "00" },
+      body: {
+        totalCount: 1,
+        items: { item: [{ lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" }] },
+      },
+    },
+  });
+  const observation = await collectSeoulAccessibilityObservation({
+    endpoint: "https://apis.data.go.kr/example",
+    serviceKey: "secret-must-not-appear",
+    retrievedAt: "2026-08-14T00:00:00.000Z",
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => providerBody }),
+  });
+  const manifest = await writeSeoulAccessibilityObservation({ outputRoot, observation });
+  const files = (await readdir(outputRoot)).sort();
+  assert.deepEqual(files, [manifest.rawArtifactFile, manifest.snapshotFile, "observation.json"].sort());
+  const snapshotBytes = await readFile(join(outputRoot, manifest.snapshotFile));
+  const rawBytes = await readFile(join(outputRoot, manifest.rawArtifactFile));
+  assert.equal(createHash("sha256").update(snapshotBytes).digest("hex"), manifest.snapshotFileSha256);
+  assert.equal(createHash("sha256").update(rawBytes).digest("hex"), manifest.rawObjectSha256);
+  assert.equal(rawBytes.includes(Buffer.from("secret-must-not-appear")), false);
+  assert.equal(JSON.parse(rawBytes).responses[0].bodyBase64, Buffer.from(providerBody).toString("base64"));
+  await assert.rejects(
+    writeSeoulAccessibilityObservation({ outputRoot, observation }),
+    /output root already exists/,
+  );
+});
+
+test("raw observation은 URL·JSON escape로 반사된 service key도 보존 전에 거부한다", async () => {
+  const decodedKey = "abcdefghijklmnop+qr/stuvwxyz";
+  const encodedKey = encodeURIComponent(decodedKey);
+  const baseBody = JSON.stringify({
+    response: {
+      header: { resultCode: "00", credentialEcho: "REFLECTED_KEY" },
+      body: {
+        totalCount: 1,
+        items: { item: [{ lineNm: "4호선", stnNm: "사당", oprtngSitu: "M", dtlPstn: "대합실-승강장" }] },
+      },
+    },
+  });
+  for (const reflected of [encodedKey, decodedKey.replaceAll("+", "\\u002b").replaceAll("/", "\\/")]) {
+    await assert.rejects(
+      collectSeoulAccessibilityObservation({
+        endpoint: "https://apis.data.go.kr/example",
+        serviceKey: encodedKey,
+        retrievedAt: "2026-08-14T00:00:00.000Z",
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => baseBody.replace("REFLECTED_KEY", reflected),
+        }),
+      }),
+      /Seoul accessibility API response invalid/,
+    );
+  }
+});
+
+test("Seoul observation CLI output은 canonical temp root 아래 safe name으로만 구성한다", async () => {
+  const output = await seoulObservationOutputRoot("capture-20260814T000000Z");
+  assert.equal(output.startsWith(`${await realpath(tmpdir())}/easysubway-seoul-accessibility-`), true);
+  await assert.rejects(seoulObservationOutputRoot("../escape"), /directory name is invalid/);
 });
 
 test("snapshot content identity is stable when provider facility order changes", () => {
