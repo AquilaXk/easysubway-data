@@ -18,7 +18,7 @@ const MATERIALIZER = "tools/datapack/materialize-incheon-timetable.mjs";
 const VERIFICATION_TEST = "tools/datapack/materialize-incheon-timetable.test.mjs";
 const OPERATOR_ID = "incheon-transit";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
-const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
+const CAPTURED_TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
 const TOPOLOGY_CONTENT_SHA256 = "710878689282ba967697cd9411940b657a51eee5499106ed884d5bd9111501a8";
 const PACK_ID = "nationwide-incheon-schedule";
 const FRESHNESS_MILLIS = 24 * 60 * 60 * 1_000;
@@ -51,8 +51,8 @@ export function materializeIncheonTimetable({
   now = new Date(),
 } = {}) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
+  const activeTopologyId = activeTopologySnapshotId(topologySnapshot);
   if (topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
-    || topologySnapshot.snapshotId !== TOPOLOGY_SNAPSHOT_ID
     || topologySnapshot.contentSha256 !== TOPOLOGY_CONTENT_SHA256) {
     throw new Error("invalid Incheon topology snapshot");
   }
@@ -118,7 +118,8 @@ export function materializeIncheonTimetable({
       lineId: config.lineId,
       timetableSnapshotId: source.scheduleAdmissionEvidence.snapshotId,
       timetableContentSha256: timetable.contentSha256,
-      topologySnapshotId: TOPOLOGY_SNAPSHOT_ID,
+      capturedTopologySnapshotId: CAPTURED_TOPOLOGY_SNAPSHOT_ID,
+      activeTopologySnapshotId: activeTopologyId,
       topologyContentSha256: TOPOLOGY_CONTENT_SHA256,
     })),
     packContentSha256: materializedIncheonTimetablePackContentHash(pack, version),
@@ -151,7 +152,7 @@ function validateTimetableSnapshot(snapshot, config) {
     || JSON.stringify(snapshot.dayCodes) !== JSON.stringify(["WEEK", "HOLI"])
     || JSON.stringify(snapshot.directions) !== JSON.stringify(["up", "dn"])
     || snapshot.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || snapshot.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || snapshot.topologySnapshotId !== CAPTURED_TOPOLOGY_SNAPSHOT_ID
     || snapshot.topologyContentSha256 !== TOPOLOGY_CONTENT_SHA256
     || snapshot.tripsSha256 !== sha256(JSON.stringify(snapshot.trips))
     || snapshot.contentSha256 !== sha256(JSON.stringify({
@@ -170,6 +171,8 @@ function validateTimetableSnapshot(snapshot, config) {
 function requiredSource(inventory, config, timetable, topologySnapshot, now) {
   const source = inventory?.sources?.find(({ id }) => id === config.sourceId);
   const evidence = source?.scheduleAdmissionEvidence;
+  const activeTopologyId = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
+    ?.topologyAdmissionEvidence?.snapshotId;
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.capabilities?.schedule?.productionUseAllowed !== true
@@ -189,7 +192,7 @@ function requiredSource(inventory, config, timetable, topologySnapshot, now) {
     || evidence.rolloverTripCount !== timetable.rolloverTripCount
     || evidence.destinationLabelNormalizedCount !== timetable.destinationLabelNormalizedCount
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== activeTopologyId
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || evidence.topologyContentSha256 !== TOPOLOGY_CONTENT_SHA256
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
@@ -218,15 +221,27 @@ function requiredSource(inventory, config, timetable, topologySnapshot, now) {
 function validateTopologyLineage(inventory, evidence, topologySnapshot) {
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
     ?.topologyAdmissionEvidence;
+  const activeTopologyId = activeTopologySnapshotId(topologySnapshot);
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || evidence.topologySnapshotId !== activeTopologyId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
-    || topologyEvidence?.snapshotId !== TOPOLOGY_SNAPSHOT_ID
-    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${TOPOLOGY_SNAPSHOT_ID}.json`
-    || path.basename(topologyEvidence.snapshotPath, ".json") !== TOPOLOGY_SNAPSHOT_ID) {
+    || topologyEvidence?.snapshotId !== activeTopologyId
+    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${activeTopologyId}.json`
+    || path.basename(topologyEvidence.snapshotPath, ".json") !== activeTopologyId) {
     throw new Error("Incheon timetable topology lineage mismatch");
   }
+}
+
+function activeTopologySnapshotId(snapshot) {
+  const capturedDate = /^\d{4}-\d{2}-\d{2}T/u.test(snapshot?.capturedAt ?? "")
+    ? snapshot.capturedAt.slice(0, 10).replaceAll("-", "")
+    : "";
+  const expected = `${TOPOLOGY_SOURCE_ID}-${capturedDate}`;
+  if (capturedDate.length !== 8 || snapshot?.snapshotId !== expected) {
+    throw new Error("Incheon timetable active topology identity mismatch");
+  }
+  return expected;
 }
 
 function canonicalStations(pack, topologySnapshot) {
@@ -424,8 +439,8 @@ export async function runIncheonTimetableMaterializer(argv, { now = new Date() }
   const args = parseArgs(argv);
   const topologyPath = args["topology-snapshot"];
   const topologySnapshotId = path.basename(topologyPath, ".json");
-  if (topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID) {
-    throw new Error(`Incheon topology snapshot path must be ${TOPOLOGY_SNAPSHOT_ID}.json`);
+  if (!/^incheon-transit-station-info-\d{8}$/u.test(topologySnapshotId)) {
+    throw new Error("Incheon topology snapshot path is invalid");
   }
   const [baseFixture, inventory, topologySnapshot, line1, line2] = await Promise.all([
     readFile(args["base-fixture"], "utf8").then(JSON.parse),

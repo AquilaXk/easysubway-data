@@ -505,6 +505,44 @@ test("current capital snapshot repair는 branch 종착 4구간만 결정적으�
   assert.deepEqual(repairCapitalTopologyBranchCoverage(stale), repaired);
 });
 
+test("8호선 별내선 repair는 official station order와 canonical adjacency를 복구한다", async () => {
+  const input = JSON.parse(await readFile(
+    "tools/datapack/sources/capital-route-topology-20260813.json",
+    "utf8",
+  ));
+  const repaired = repairCapitalTopologyBranchCoverage(input);
+  const line = repaired.lines.find(({ lineId }) => lineId === "line-2b2d9eaa53d0");
+  assert.ok(line);
+  const branch = line.branchSequences.find(({ branchName }) => branchName === "8호선");
+  assert.deepEqual(branch?.stationNames.slice(0, 7), [
+    "별내", "다산", "동구릉", "구리", "장자호수공원", "암사역사공원", "암사",
+  ]);
+
+  const directedPairs = new Set(line.edges.map(
+    ({ fromStationName, toStationName }) => `${fromStationName}|${toStationName}`,
+  ));
+  for (const [left, right] of [
+    ["다산", "동구릉"],
+    ["장자호수공원", "암사역사공원"],
+  ]) {
+    for (const [from, to] of [[left, right], [right, left]]) {
+      const edge = line.edges.find(
+        ({ fromStationName, toStationName }) => fromStationName === from
+          && toStationName === to,
+      );
+      assert.equal(edge?.distanceMeters, 0);
+      assert.equal(edge?.durationSeconds, 0);
+    }
+  }
+  for (const key of [
+    "다산|암사역사공원", "암사역사공원|다산",
+    "별내|장자호수공원", "장자호수공원|별내",
+  ]) {
+    assert.equal(directedPairs.has(key), false, key);
+  }
+  assert.equal(repaired.totalEdgeCount, input.totalEdgeCount);
+});
+
 test("서해선 official file이 다른 노선을 함께 반환해도 서해선 branch만 수용한다", () => {
   const source = LINE_SOURCES.find(({ slug }) => slug === "seohae");
   const korailBytes = Buffer.from([

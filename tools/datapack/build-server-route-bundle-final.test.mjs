@@ -31,8 +31,8 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
-const FRESH_AT = "2026-08-07T00:00:00.000Z";
-const STALE_AT = "2026-08-10T00:00:00.000Z";
+const FRESH_AT = "2026-08-14T00:00:00.000Z";
+const STALE_AT = "2026-08-14T15:03:00.000Z";
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCRIPT = path.resolve("tools/datapack/build-server-route-bundle-final.mjs");
@@ -227,12 +227,12 @@ test("receipt와 promotion inventory를 함께 변조해도 actual bundle bytes 
 test("FINAL closure는 bundle보다 이른 source freshness cutoff를 거부한다", async (t) => {
   installSigningEnvironment(t);
   const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t, {
-    freshUntil: "2026-08-09T08:00:00.000+09:00",
+    freshUntil: "2026-09-09T00:00:00.000+09:00",
   });
   const output = path.join(fixture.temp, "release-rejected-source-cutoff");
   await assert.rejects(
     () => build(fixture, output, FRESH_AT, releaseEvidence, {
-      clock: () => Date.parse("2026-08-08T01:00:00.000Z"),
+      clock: () => Date.parse(FRESH_AT),
     }),
     /source freshness cutoff must cover candidate freshUntil/,
   );
@@ -582,7 +582,7 @@ async function createArtifact(
   stationLineInput,
   routeEdgeInput,
   evaluationAt,
-  freshUntil = "2026-08-08T08:00:00.000+09:00",
+  freshUntil = "2026-08-15T00:00:00.000+09:00",
 ) {
   const routePolicy = await readJson(path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"));
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
@@ -633,7 +633,7 @@ async function createArtifact(
     releaseSequence: 1,
     stationSetSha256: STATION_SET_SHA256,
     serviceTimezone: "Asia/Seoul",
-    activeFrom: "2026-08-07T09:00:00.000+09:00",
+    activeFrom: "2026-08-14T09:00:00.000+09:00",
     freshUntil,
     builtAt: FRESH_AT,
     buildSpecSha256: sha256(buildSpecBytes),
@@ -745,11 +745,11 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
     domain,
     state,
     sourceId: "official-accessibility",
-    sourceSnapshotId: "official-accessibility-20260806",
+    sourceSnapshotId: "official-accessibility-20260813",
     evidenceRawSha256: "b".repeat(64),
     providerRecordHash: "c".repeat(64),
-    capturedAt: "2026-08-06T00:00:00.000Z",
-    freshUntil: "2026-08-12T00:00:00.000Z",
+    capturedAt: "2026-08-13T15:06:46.000Z",
+    freshUntil: "2026-08-14T15:06:46.000Z",
     provenanceId: "official-provider",
     licenseId: "public-data-license",
     evidenceKind,

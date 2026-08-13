@@ -288,11 +288,11 @@ test("materialized SQLite·provenance가 대구 membership·topology·schedule 9
   }
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
-    supportedCount: 31,
+    supportedCount: 32,
     explicitlyUnsupportedCount: 4,
-    missingCount: 235,
-    supportedRatio: 0.1148,
-    terminalResolutionRatio: 0.1296,
+    missingCount: 234,
+    supportedRatio: 0.1185,
+    terminalResolutionRatio: 0.1333,
     completionReady: false,
   });
 });

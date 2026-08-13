@@ -1313,7 +1313,12 @@ function capitalTopologyCoreEdge(stationIds, lineId, sourceEdge) {
   };
 }
 
-export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology) {
+export function projectCapitalTopologyIntoCanonicalFixture(
+  fixture,
+  topology,
+  topologySnapshotId,
+  admissions,
+) {
   const packs = fixture?.packs?.filter(({ id }) => id === "capital") ?? [];
   if (fixture?.manifest?.channel !== "production"
     || packs.length !== 1
@@ -1321,7 +1326,10 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology) {
     || !Array.isArray(packs[0].networkEdges)
     || !Array.isArray(packs[0].stations)
     || !Array.isArray(packs[0].stationLines)
-    || !Array.isArray(topology?.lines)) {
+    || !Array.isArray(topology?.lines)
+    || topology.sourceId !== "capital-route-topology"
+    || !/^capital-route-topology-[0-9]{8}$/u.test(topologySnapshotId ?? "")
+    || !(admissions instanceof Map)) {
     throw new Error("capital topology canonical fixture is invalid");
   }
   const pack = packs[0];
@@ -1333,6 +1341,14 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology) {
     if (typeof line?.lineId !== "string" || line.lineId.length === 0
       || !Array.isArray(line.edges) || line.edgeCount !== line.edges.length) {
       throw new Error("capital topology canonical fixture projection is invalid");
+    }
+    const admission = admissions.get(line.lineId);
+    if (admission == null
+      || requiredUtcDateString(admission.verifiedAt, "capital topology edge lastVerifiedAt")
+        !== topology.capturedAt
+      || requiredUtcDateString(admission.freshUntil, "capital topology edge freshUntil")
+        !== topology.freshUntil) {
+      throw new Error(`capital topology line admission mismatch: ${line.lineId}`);
     }
     for (const sourceEdge of line.edges) {
       const core = capitalTopologyCoreEdge(stationIds, line.lineId, sourceEdge);
@@ -1349,6 +1365,9 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology) {
         facilityId: null,
       });
     }
+  }
+  if (admissions.size !== topology.lines.length) {
+    throw new Error("capital topology admission line set mismatch");
   }
   const retained = pack.networkEdges.filter((edge) => !(edge.edgeType === "RIDE"
     && edge.servicePattern === "LOCAL"

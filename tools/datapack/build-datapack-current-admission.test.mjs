@@ -106,7 +106,7 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
 test("source-separated current topology materialization은 Incheon 1/2 exact 116 edges만 교체한다", async () => {
   const [inventory, snapshotBytes, fixture] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260813.json")),
     readFile(path.join(root, "tools/datapack/release/capital-production-canonical-pack.json"), "utf8")
       .then(JSON.parse),
   ]);
@@ -115,7 +115,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     sourceInventory: inventory,
     snapshot,
     snapshotBytes,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-13T16:00:00.000Z"),
   });
   const pack = structuredClone(fixture.packs[0]);
   const incheonLineIds = new Set(["line-42b5805f3b5a", "line-98718184f016"]);
@@ -124,7 +124,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   ));
 
   assert.deepEqual(materializeIncheonNetworkEdges(pack, snapshot, admission), {
-    snapshotId: "incheon-transit-station-info-20260724",
+    snapshotId: "incheon-transit-station-info-20260813",
     edgeCount: 116,
   });
   const incheonEdges = pack.networkEdges.filter(({ fromNodeId }) => (
@@ -145,7 +145,7 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
     sourceInventory: inventory,
     snapshot,
     snapshotBytes,
-    now: new Date("2026-07-25T06:00:00.000Z"),
+    now: new Date("2026-08-14T15:06:46.000Z"),
   }), /Incheon topology admission is stale/);
 });
 

@@ -19,8 +19,6 @@ import {
 import { canonicalJson, validateManifest, withoutSignature } from "./lib/manifest-validation.mjs";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { routeServiceEvidenceSnapshot } from "./lib/route-service-evidence-preservation.mjs";
-import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
-import { activateIncheonTopologyAdmission } from "./activate-current-source-set.mjs";
 import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
@@ -11552,7 +11550,6 @@ test("공식 source ingest adapter는 provenance 전용 source를 production row
     "kric-station-elevator",
     "kric-station-escalator",
     "kric-wheelchair-lift-location",
-    "kric-station-convenience-standard",
   ]) {
     const outputDir = path.join(tmpdir(), `easysubway-source-ingest-provenance-only-${sourceId}-${Date.now()}`);
     const input = JSON.parse(await readFile(
@@ -15712,18 +15709,22 @@ async function capitalPilotProductionSourceInput() {
   return withTestProductionAccessibility(input);
 }
 
-test("공식 source ingest adapter는 provenance 전용 source와 test-only projection을 격리한다", async () => {
+test("공식 source ingest adapter는 current convenience source와 provenance 전용 source의 test-only projection을 격리한다", async () => {
   const outputDir = await mkdtemp(path.join(tmpdir(), "easysubway-test-only-accessibility-isolation-"));
   const raw = JSON.parse(await readFile(
     path.join(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"), "utf8",
   ));
   const trackedInventory = JSON.parse(await readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8"));
-  assert.equal(trackedInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").productionUseAllowed, false);
+  assert.equal(trackedInventory.sources.find(({ id }) => id === "kric-station-convenience-standard").productionUseAllowed, true);
   assert.equal(trackedInventory.sources.some(({ id }) => id === TEST_PRODUCTION_ACCESSIBILITY_SOURCE), false);
-  await assert.rejects(
-    importOfficialSourceInput(path.join(outputDir, "raw"), raw),
-    /kric-station-convenience-standard source inventory is provenance-only/,
-  );
+  const current = await importOfficialSourceInput(path.join(outputDir, "raw"), raw);
+  assert.equal(current.packs[0].artifactKind, "production");
+  assert.ok(current.packs[0].sourceInventory.some(
+    ({ id }) => id === "kric-station-convenience-standard",
+  ));
+  assert.ok(current.packs[0].facilities.some(
+    ({ sourceId }) => sourceId === "kric-station-convenience-standard",
+  ));
   const rawBeforeProjection = structuredClone(raw);
   const projected = withTestProductionAccessibility(raw);
   assert.deepEqual(raw, rawBeforeProjection);
@@ -18151,9 +18152,9 @@ async function writeCurrentItxReleaseInputs(
     payloadSha256: "2".repeat(64),
     manifestSha256: "3".repeat(64),
   };
-  const selectedServiceDates = { "7": "20260808", "8": "20260805", "9": "20260809" };
-  const observedAt = "2026-08-04T17:30:34.901Z";
-  const freshUntil = "2026-08-10T00:00:00+09:00";
+  const selectedServiceDates = { "7": "20260822", "8": "20260812", "9": "20260816" };
+  const observedAt = "2026-08-12T14:00:00.000Z";
+  const freshUntil = "2026-08-23T00:00:00+09:00";
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
 
@@ -18193,8 +18194,8 @@ async function writeCurrentItxReleaseInputs(
   const currentAdmission = JSON.parse(await readFile(
     "tools/datapack/itx-current-network-edge-admission-20260810.json", "utf8",
   ));
-  Object.assign(currentAdmission, { artifactId: "itx-current-network-edge-admission-20260805",
-    serviceDate: "20260805", observedAt, freshUntil: "2026-08-06T00:00:00+09:00",
+  Object.assign(currentAdmission, { artifactId: "itx-current-network-edge-admission-20260822",
+    serviceDate: "20260822", observedAt, freshUntil,
     previousArtifactSha256: sha256(sourceBytes) });
   const { evidenceHash: _currentEvidenceHash, ...currentWithoutEvidenceHash } = currentAdmission;
   currentAdmission.evidenceHash = sha256(Buffer.from(JSON.stringify(currentWithoutEvidenceHash)));
@@ -18248,8 +18249,7 @@ async function writeCurrentItxReleaseInputs(
     readFile(buildSpec.networkEdgeEvidence.capitalTopology.path, "utf8")
       .then(JSON.parse),
     readFile(buildSpec.networkEdgeEvidence.capitalTopologyCandidate.path, "utf8")
-      .then(JSON.parse)
-      .then(projectCapitalTopologyOwnership),
+      .then(JSON.parse),
   ]);
   const baselineTopologyPath = path.join(workspace, "capital-topology-baseline.json");
   const candidateTopologyPath = path.join(workspace, "capital-topology-candidate.json");
@@ -18262,7 +18262,16 @@ async function writeCurrentItxReleaseInputs(
       candidateTopology,
     ),
   )}\n`);
-  projectCapitalTopologyIntoCanonicalFixture(fixture, candidateTopology);
+  const candidateTopologyAdmissions = new Map(candidateTopology.lines.map(({ lineId }) => [lineId, {
+    verifiedAt: candidateTopology.capturedAt,
+    freshUntil: candidateTopology.freshUntil,
+  }]));
+  projectCapitalTopologyIntoCanonicalFixture(
+    fixture,
+    candidateTopology,
+    buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
+    candidateTopologyAdmissions,
+  );
   await writeFile(fixturePath, `${JSON.stringify(fixture)}\n`);
   await Promise.all([
     writeFile(baselineTopologyPath, baselineTopologyBytes),
@@ -18282,41 +18291,7 @@ async function writeCurrentItxReleaseInputs(
     sha256: sha256(topologyReverificationBytes),
   });
   const sourceInventory = JSON.parse(await readFile(buildSpec.networkEdgeEvidence.sourceInventory.path, "utf8"));
-  const snapshotPaths = sourceInventory.sources.flatMap(({ routeMapAdmissionEvidence: evidence }) => evidence?.snapshotPath ?? []);
-  const snapshotBytesByPath = new Map(await Promise.all(snapshotPaths.map(async (snapshotPath) =>
-    [snapshotPath, await readFile(snapshotPath)])));
-  let currentInventory = withCurrentCapitalTopologyAdmissions({ inventory: sourceInventory,
-    topology: candidateTopology, topologySnapshotId: buildSpec.networkEdgeEvidence.capitalTopologyCandidate.snapshotId,
-    reviewedAt: candidateTopology.capturedAt, snapshotBytesByPath });
-  const currentIncheonSnapshot = JSON.parse(await readFile(
-    "tools/datapack/sources/incheon-transit-station-info-20260724.json",
-    "utf8",
-  ));
-  Object.assign(currentIncheonSnapshot, {
-    capturedAt: "2026-08-04T18:00:00.000Z",
-    freshUntil: "2026-08-05T18:00:00.000Z",
-  });
-  const currentIncheonSnapshotPath = path.join(
-    workspace,
-    "incheon-transit-station-info-20260804.json",
-  );
-  const currentIncheonSnapshotBytes = Buffer.from(`${JSON.stringify(currentIncheonSnapshot)}\n`);
-  await writeFile(currentIncheonSnapshotPath, currentIncheonSnapshotBytes);
-  currentInventory = activateIncheonTopologyAdmission({
-    sourceInventory: currentInventory,
-    snapshot: currentIncheonSnapshot,
-    snapshotBytes: currentIncheonSnapshotBytes,
-    snapshotPath: "tools/datapack/sources/incheon-transit-station-info-20260804.json",
-    now: new Date("2026-08-04T19:00:00.000Z"),
-  });
-  const currentIncheonSource = currentInventory.sources.find(
-    ({ id }) => id === "incheon-transit-station-info",
-  );
-  const tempIncheonSnapshotPath = path.relative(root, currentIncheonSnapshotPath);
-  currentIncheonSource.topologyAdmissionEvidence.snapshotPath = tempIncheonSnapshotPath;
-  currentIncheonSource.routeMapAdmissionEvidence.snapshotPath = tempIncheonSnapshotPath;
-  assert.equal(currentIncheonSource.topologyAdmissionEvidence.freshUntil, currentIncheonSnapshot.freshUntil);
-  assert.equal(currentIncheonSource.routeMapAdmissionEvidence.snapshotSha256, sha256(currentIncheonSnapshotBytes));
+  const currentInventory = structuredClone(sourceInventory);
   const currentInventoryPath = path.join(workspace, "source-inventory.json");
   const currentInventoryBytes = Buffer.from(`${JSON.stringify(currentInventory)}\n`);
   await writeFile(currentInventoryPath, currentInventoryBytes);
@@ -18341,7 +18316,7 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
   return {
     buildSpecPath,
-    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-04T19:00:00.000Z" },
+    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-13T16:00:00.000Z" },
   };
 }
 

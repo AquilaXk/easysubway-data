@@ -32,8 +32,9 @@ function rejectItxReference(value, path = "fixture") {
 }
 
 /**
- * Produces the sole test-only materializer projection: capital@1 without its
- * historical route-service evidence. Timetable/topology rows are never filtered.
+ * Produces the sole test-only materializer projection: current capital@1 as-is,
+ * or historical capital@1 without its exact legacy route-service evidence.
+ * Timetable/topology rows are never filtered.
  */
 export function projectRegionalMaterializeFixture(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -55,18 +56,18 @@ export function projectRegionalMaterializeFixture(input) {
   if (pack.id !== "capital" || pack.version !== "1" || pack.artifactKind !== "production") {
     throw new Error("fixture must contain exactly one capital@1 pack");
   }
-  if (!Array.isArray(pack.routeServiceArtifactEvidence) || pack.routeServiceArtifactEvidence.length !== 1) {
-    throw new Error("capital@1 must contain exactly one legacy routeServiceArtifactEvidence");
+  if (!Array.isArray(pack.routeServiceArtifactEvidence)
+    || pack.routeServiceArtifactEvidence.length > 1) {
+    throw new Error("capital@1 must contain zero current or exactly one legacy routeServiceArtifactEvidence");
   }
 
-  const [legacyEvidence] = pack.routeServiceArtifactEvidence;
-  if (
-    !legacyEvidence ||
-    JSON.stringify(legacyEvidence) !== JSON.stringify(LEGACY_ROUTE_SERVICE_ARTIFACT_EVIDENCE)
-  ) {
-    throw new Error("capital@1 legacy routeServiceArtifactEvidence must match the exact known contract");
+  if (pack.routeServiceArtifactEvidence.length === 1) {
+    const [legacyEvidence] = pack.routeServiceArtifactEvidence;
+    if (JSON.stringify(legacyEvidence) !== JSON.stringify(LEGACY_ROUTE_SERVICE_ARTIFACT_EVIDENCE)) {
+      throw new Error("capital@1 legacy routeServiceArtifactEvidence must match the exact known contract");
+    }
+    delete pack.routeServiceArtifactEvidence;
   }
-  delete pack.routeServiceArtifactEvidence;
   rejectItxReference(fixture, "fixture");
   return fixture;
 }

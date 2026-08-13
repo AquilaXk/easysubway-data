@@ -35,15 +35,15 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const gwangjuAccessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const incheonStationNow = new Date("2026-07-24T06:00:00.000Z");
+const incheonStationNow = new Date("2026-08-14T00:00:00.000Z");
 const accessibilityNow = new Date("2026-07-24T07:00:00.000Z");
 const incheonTimetableNow = new Date("2026-07-24T08:00:00.000Z");
 const OPERATOR_ID = "incheon-transit";
 const LINE1 = "line-98718184f016";
 const LINE2 = "line-42b5805f3b5a";
 const LINE7 = "line-15b3b8a93259";
-// accessibility 누적 fixture coverage baseline(실측): supportedCount=34 → timetable +2 = 36.
-const ACCESSIBILITY_SUPPORTED_COUNT = 34;
+// accessibility 누적 fixture coverage baseline(실측): supportedCount=35 → timetable +2 = 37.
+const ACCESSIBILITY_SUPPORTED_COUNT = 35;
 const TIMETABLE_SUPPORTED_COUNT = ACCESSIBILITY_SUPPORTED_COUNT + 2;
 
 async function inputs() {
@@ -74,7 +74,7 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260813.json")),
     readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
     readJson("tools/datapack/sources/incheon-line1-train-timetable-20260724.json"),
     readJson("tools/datapack/sources/incheon-line2-train-timetable-20260724.json"),
@@ -138,13 +138,13 @@ async function inputs() {
   const accessibilityFixture = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,
-    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260724" },
+    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260813" },
     inventory,
     now: accessibilityNow,
   });
   return {
     accessibilityFixture,
-    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260724" },
+    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260813" },
     timetableSnapshots: { 1: line1Timetable, 2: line2Timetable },
     inventory,
   };
@@ -241,6 +241,18 @@ test("인천 timetable materializer는 snapshot·inventory·freshness·topology 
     inventory: badLineage,
     now: incheonTimetableNow,
   }), /inventory evidence|topology lineage/);
+
+  const badActiveTopology = {
+    ...values.topologySnapshot,
+    snapshotId: "incheon-transit-station-info-20260724",
+  };
+  assert.throws(() => materializeIncheonTimetable({
+    baseFixture: values.accessibilityFixture,
+    topologySnapshot: badActiveTopology,
+    timetableSnapshots: values.timetableSnapshots,
+    inventory: values.inventory,
+    now: incheonTimetableNow,
+  }), /active topology identity/);
 
   const admitted = materializeIncheonTimetable({
     baseFixture: values.accessibilityFixture,

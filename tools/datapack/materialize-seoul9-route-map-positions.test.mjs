@@ -42,9 +42,9 @@ const SOURCE_ID = "seoul-metro-line9-23-route-map-positions";
 const LINE_ID = "line-f0e747248a31";
 const FILE_OPERATOR_ID = "seoul-metro";
 const LINE_OPERATOR_ID = "operator-936e454d0bfb";
-// daejeon route_map 누적 fixture coverage baseline(실측): supportedCount=25.
+// daejeon route_map 누적 fixture coverage baseline(실측): supportedCount=26.
 // 이번 FILE admission이 seoul9 route_map_positions +1을 만든다.
-const DAEJEON_ROUTE_MAP_BASELINE = 25;
+const DAEJEON_ROUTE_MAP_BASELINE = 26;
 const SEOUL9_ROUTE_MAP_SUPPORTED_COUNT = DAEJEON_ROUTE_MAP_BASELINE + 1;
 const SCHEMATIC_X_MIN = 2284;
 const SCHEMATIC_X_MAX = 3171;

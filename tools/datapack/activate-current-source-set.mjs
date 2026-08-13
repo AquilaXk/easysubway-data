@@ -17,8 +17,13 @@ import {
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
 import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-info.mjs";
-import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
+import {
+  admittedCapitalLineEvidence,
+  projectCapitalTopologyIntoCanonicalFixture,
+} from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
+import { addCadence } from "./freshness-policy.mjs";
+import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 import {
   requiresCurrentCapitalTopologyAdmission,
@@ -80,6 +85,9 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
   "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json",
 ]);
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
+const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
+  "tools/datapack/reports/nationwide-coverage-tally.json",
+]);
 
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
@@ -437,6 +445,7 @@ export function activateStaticSourceRevalidations({
   sourceSnapshots,
   sourceInventory,
   revalidations,
+  governancePolicyBinding,
   canonicalPackSha256 = null,
   canonicalMembershipSha256 = null,
   buildNow,
@@ -449,6 +458,11 @@ export function activateStaticSourceRevalidations({
     || sourceInventory.artifactKind !== "production-source-inventory"
     || !Array.isArray(sourceInventory.sources)) {
     throw new Error("static revalidation inputs are invalid");
+  }
+  if (typeof governancePolicyBinding?.governancePolicyVersion !== "string"
+    || governancePolicyBinding.governancePolicyVersion.length === 0
+    || !SHA256.test(governancePolicyBinding.governancePolicySha256 ?? "")) {
+    throw new Error("static revalidation governance policy binding is invalid");
   }
   const buildMillis = requiredUtcInstant(buildNow, "static revalidation buildNow");
   if (!/^[0-9]{8}$/u.test(observationDate ?? "")) {
@@ -489,7 +503,18 @@ export function activateStaticSourceRevalidations({
     if (observedMillis > buildMillis || buildMillis >= freshnessMillis) {
       throw new Error("static revalidation is outside build time");
     }
-    nextSnapshots.push(structuredClone(revalidation.snapshot));
+    if ((revalidation.snapshot.governancePolicyVersion != null
+        && revalidation.snapshot.governancePolicyVersion
+          !== governancePolicyBinding.governancePolicyVersion)
+      || (revalidation.snapshot.governancePolicySha256 != null
+        && revalidation.snapshot.governancePolicySha256
+          !== governancePolicyBinding.governancePolicySha256)) {
+      throw new Error("static revalidation governance policy binding mismatch");
+    }
+    nextSnapshots.push({
+      ...structuredClone(revalidation.snapshot),
+      ...governancePolicyBinding,
+    });
     const source = requireOne(nextInventory.sources, ({ id }) => id === sourceId, sourceId);
     if (!source.admissionEvidence || typeof source.admissionEvidence !== "object") {
       throw new Error("static revalidation inventory admission evidence is missing");
@@ -545,9 +570,22 @@ export function activateIncheonTopologyAdmission({
     ({ id }) => id === "incheon-transit-station-info",
     "current Incheon topology source",
   );
+  const accessibilitySource = requireOne(
+    next.sources,
+    ({ id }) => id === "incheon-transit-accessibility",
+    "current Incheon accessibility source",
+  );
+  const timetableSources = ["incheon-line1-train-timetable", "incheon-line2-train-timetable"]
+    .map((sourceId) => requireOne(
+      next.sources,
+      ({ id }) => id === sourceId,
+      `current ${sourceId} source`,
+    ));
   const topology = source.topologyAdmissionEvidence;
   const membership = source.membershipAdmissionEvidence;
   const routeMap = source.routeMapAdmissionEvidence;
+  const accessibility = accessibilitySource.accessibilityAdmissionEvidence;
+  const schedules = timetableSources.map(({ scheduleAdmissionEvidence }) => scheduleAdmissionEvidence);
   if (source.requiredForProductionPack !== false
     || source.productionUseAllowed !== true
     || source.license?.redistributionAllowed !== true
@@ -574,6 +612,26 @@ export function activateIncheonTopologyAdmission({
   )));
   if (topology.contentSha256 !== incheon.contentSha256) {
     throw new Error("current Incheon topology content changed; re-admission required");
+  }
+  if (accessibility?.topologySourceId !== source.id
+    || accessibility.topologyContentSha256 !== incheon.contentSha256
+    || !Array.isArray(accessibility.topologyLineages)
+    || accessibility.topologyLineages.length !== 2
+    || !Array.isArray(accessibility.membershipLineages)
+    || accessibility.membershipLineages.length !== 1
+    || [...accessibility.topologyLineages, ...accessibility.membershipLineages].some((lineage) => (
+      lineage.sourceId !== source.id
+        || lineage.snapshotId !== accessibility.topologySnapshotId
+        || lineage.contentSha256 !== incheon.contentSha256
+    ))) {
+    throw new Error("current Incheon accessibility lineage contract is invalid");
+  }
+  if (schedules.some((schedule) => (
+    schedule?.topologySourceId !== source.id
+      || !/^incheon-transit-station-info-\d{8}$/u.test(schedule.topologySnapshotId ?? "")
+      || schedule.topologyContentSha256 !== incheon.contentSha256
+  ))) {
+    throw new Error("current Incheon timetable lineage contract is invalid");
   }
   source.observedDataUpdatedAt = incheon.observedDataUpdatedAt;
   source.retrievedAt = incheon.capturedAt.slice(0, 10);
@@ -617,8 +675,13 @@ export function activateIncheonTopologyAdmission({
     topologySourceId: incheon.sourceId,
     topologySnapshotId: snapshotId,
     topologyContentSha256: incheon.contentSha256,
-    freshUntil: incheon.freshUntil,
+    freshUntil: new Date(addCadence(capturedAt, ROUTE_MAP_REVERIFICATION_CADENCE)).toISOString(),
   });
+  accessibility.topologySnapshotId = snapshotId;
+  for (const lineage of [...accessibility.topologyLineages, ...accessibility.membershipLineages]) {
+    lineage.snapshotId = snapshotId;
+  }
+  for (const schedule of schedules) schedule.topologySnapshotId = snapshotId;
   return next;
 }
 
@@ -699,6 +762,10 @@ export function buildCurrentSourcePrimaryOutputs({
       sourceSnapshots,
       sourceInventory,
       revalidations: staticRevalidations,
+      governancePolicyBinding: {
+        governancePolicyVersion: handoff.governancePolicyVersion,
+        governancePolicySha256: handoff.governancePolicySha256,
+      },
       canonicalPackSha256: canonicalPackBytes == null ? null : sha256(canonicalPackBytes),
       canonicalMembershipSha256,
       buildNow,
@@ -1240,22 +1307,22 @@ function validationBuildSpec(spec, temporaryRoot) {
   return next;
 }
 
-async function validatePreparedCandidate({ temporaryRoot, spec, buildNow }) {
+export async function validatePreparedCandidate({
+  temporaryRoot,
+  spec,
+  buildNow,
+  runNodeImpl = runNode,
+}) {
   const validationSpecPath = await writeTempFile(
     temporaryRoot,
     "validation/candidate-build-spec.json",
     jsonBytes(validationBuildSpec(spec, temporaryRoot)),
   );
   const outputPath = path.join(temporaryRoot, "validation/output");
-  await runNode("tools/datapack/build-datapack.mjs", [
+  await runNodeImpl("tools/datapack/build-datapack.mjs", [
     "--build-spec", validationSpecPath,
     "--output", outputPath,
   ], { env: { EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow } });
-  await runNode("tools/datapack/validate-datapack.mjs", [
-    "--manifest", path.join(outputPath, "current.json"),
-    "--root", outputPath,
-    "--require-production",
-  ]);
 }
 
 function validateBuildNow(buildNow, handoff) {
@@ -1311,6 +1378,25 @@ export async function requireCleanBuilder(builderGitSha, {
   }
 }
 
+export async function readBuilderBaselineBytes(
+  builderGitSha,
+  relativePath,
+  repositoryRoot = root,
+) {
+  if (!/^[0-9a-f]{40}$/u.test(builderGitSha ?? "")
+    || !/^[A-Za-z0-9._/-]+$/u.test(relativePath ?? "")
+    || path.isAbsolute(relativePath)
+    || relativePath.split("/").includes("..")) {
+    throw new Error("builder baseline path identity is invalid");
+  }
+  const { stdout } = await execFileAsync(
+    "git",
+    ["show", `${builderGitSha}:${relativePath}`],
+    { cwd: path.resolve(repositoryRoot), encoding: "buffer", maxBuffer: MAX_BUFFER },
+  );
+  return Buffer.from(stdout);
+}
+
 export async function generateCurrentSourceActivation({
   capitalTopologyPath,
   incheonTopologyPath,
@@ -1352,11 +1438,18 @@ export async function generateCurrentSourceActivation({
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
   await requireCleanBuilder(builderGitSha, {
     check,
-    allowedDescendantPaths: [...CURRENT_SOURCE_ACTIVATION_OUTPUTS, topologyReverificationPath],
+    allowedDescendantPaths: [
+      ...CURRENT_SOURCE_ACTIVATION_OUTPUTS,
+      ...CURRENT_SOURCE_DOWNSTREAM_OUTPUTS,
+      topologyReverificationPath,
+    ],
   });
   validateBuildNow(buildNow, handoff);
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-source-activation-"));
   try {
+    const readMutableInput = (relativePath) => check
+      ? readBuilderBaselineBytes(builderGitSha, relativePath)
+      : readRegularBytes(root, relativePath);
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
       canonicalBytes,
@@ -1366,12 +1459,12 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, incheonTopologyPath, "current Incheon topology"),
       fetchCurrentRawArtifact(temporaryRoot, handoff),
       readRegularBytes(root, "tools/datapack/sources/capital-route-topology-20260724.json"),
-      readRegularBytes(root, "tools/datapack/release/source-snapshots.json"),
-      readRegularBytes(root, "tools/datapack/source-inventory.json"),
-      readRegularBytes(root, "tools/datapack/inputs/capital-pilot-production-source-input.json"),
+      readMutableInput("tools/datapack/release/source-snapshots.json"),
+      readMutableInput("tools/datapack/source-inventory.json"),
+      readMutableInput("tools/datapack/inputs/capital-pilot-production-source-input.json"),
       readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
-      readRegularBytes(root, "tools/datapack/release/candidate-build-spec.json"),
-      readRegularBytes(root, "tools/datapack/release/capital-production-canonical-pack.json"),
+      readMutableInput("tools/datapack/release/candidate-build-spec.json"),
+      readMutableInput("tools/datapack/release/capital-production-canonical-pack.json"),
       readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
@@ -1441,7 +1534,25 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
-    projectCapitalTopologyIntoCanonicalFixture(canonical, capitalTopology);
+    const capitalTopologySnapshotId = exactCurrentTopologySnapshotIdentity({
+      snapshot: capitalTopology,
+      snapshotBytes: capitalTopologyBytes,
+      snapshotPath: capitalTopologyPath,
+      prefix: "capital-route-topology",
+    });
+    const capitalAdmissions = admittedCapitalLineEvidence(
+      primary.sourceInventory,
+      capitalTopology,
+      capitalTopologySnapshotId,
+      capitalTopology.capturedAt,
+      new Date(buildNow),
+    );
+    projectCapitalTopologyIntoCanonicalFixture(
+      canonical,
+      capitalTopology,
+      capitalTopologySnapshotId,
+      capitalAdmissions,
+    );
     const nextCanonicalBytes = jsonBytes(canonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 

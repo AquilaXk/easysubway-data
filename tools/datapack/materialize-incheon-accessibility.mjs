@@ -8,7 +8,7 @@ import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-in
 
 const SOURCE_ID = "incheon-transit-accessibility";
 const TOPOLOGY_SOURCE_ID = "incheon-transit-station-info";
-const TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
+const CAPTURED_TOPOLOGY_SNAPSHOT_ID = "incheon-transit-station-info-20260724";
 const OPERATOR_ID = "incheon-transit";
 const PACK_ID = "nationwide-incheon-accessibility";
 const LINE1 = "line-98718184f016";
@@ -239,6 +239,8 @@ function validateSnapshot(snapshot) {
 function requiredSource(inventory, snapshot, topologySnapshot, now) {
   const source = inventory?.sources?.find(({ id }) => id === SOURCE_ID);
   const evidence = source?.accessibilityAdmissionEvidence;
+  const topologySnapshotId = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
+    ?.topologyAdmissionEvidence?.snapshotId;
   if (source?.productionUseAllowed !== true || source.license?.redistributionAllowed !== true
     || source.license?.type !== "PUBLIC_DATA_FREE_USE"
     || source.capabilities?.facility?.productionUseAllowed !== true
@@ -253,14 +255,13 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || evidence.facilityCount !== EXPECTED_FACILITY_COUNT
     || evidence.rawSha256 !== snapshot.rawSha256 || evidence.rowsSha256 !== snapshot.rowsSha256
     || evidence.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || !/^incheon-transit-station-info-\d{8}$/u.test(topologySnapshotId ?? "")
+    || evidence.topologySnapshotId !== topologySnapshotId
     || JSON.stringify(evidence.datasetIds) !== JSON.stringify(DATASET_IDS)
     || !Array.isArray(evidence.topologyLineages)
     || evidence.topologyLineages.length !== EXPECTED_TOPOLOGY_LINEAGE_COUNT
-    || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || !Array.isArray(evidence.membershipLineages)
     || evidence.membershipLineages.length !== EXPECTED_MEMBERSHIP_LINEAGE_COUNT
-    || JSON.stringify(evidence.membershipLineages) !== JSON.stringify(snapshot.membershipLineages)
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
@@ -271,8 +272,9 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || JSON.stringify(source.fieldsProvided) !== JSON.stringify(snapshot.fieldsProvided)) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
+  validateCapturedSnapshotLineage(snapshot, topologySnapshot);
   validateTopologyLineage(inventory, evidence, topologySnapshot);
-  validateMembershipLineage(evidence, topologySnapshot);
+  validateMembershipLineage(evidence, topologySnapshot, topologySnapshotId);
   const version = evidence.snapshotId.slice(-8);
   if (version !== compactSeoulDate(evidence.capturedAt)) {
     throw new Error(`${SOURCE_ID} snapshotId must match capturedAt Asia/Seoul date`);
@@ -287,23 +289,40 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
   return source;
 }
 
+function validateCapturedSnapshotLineage(snapshot, topologySnapshot) {
+  const lineages = [...snapshot.topologyLineages, ...snapshot.membershipLineages];
+  if (lineages.some((lineage) => (
+      lineage.sourceId !== TOPOLOGY_SOURCE_ID
+        || lineage.snapshotId !== CAPTURED_TOPOLOGY_SNAPSHOT_ID
+        || lineage.contentSha256 !== topologySnapshot.contentSha256
+        || !LINE_IDS.includes(lineage.lineId)
+  ))) {
+    throw new Error("Incheon accessibility captured topology lineage mismatch");
+  }
+}
+
 function validateTopologyLineage(inventory, evidence, topologySnapshot) {
   validateIncheonStationInfoSnapshot(topologySnapshot);
   const topologyEvidence = inventory?.sources?.find(({ id }) => id === TOPOLOGY_SOURCE_ID)
     ?.topologyAdmissionEvidence;
+  const topologySnapshotId = topologyEvidence?.snapshotId;
+  const expectedSnapshotId = activeTopologySnapshotId(topologySnapshot);
   if (evidence?.topologySourceId !== TOPOLOGY_SOURCE_ID
-    || evidence.topologySnapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || !/^incheon-transit-station-info-\d{8}$/u.test(topologySnapshotId ?? "")
+    || topologySnapshotId !== expectedSnapshotId
+    || topologyEvidence.snapshotPath !== `tools/datapack/sources/${expectedSnapshotId}.json`
+    || evidence.topologySnapshotId !== topologySnapshotId
     || evidence.topologyContentSha256 !== topologyEvidence?.contentSha256
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || topologySnapshot.sourceId !== TOPOLOGY_SOURCE_ID
-    || topologyEvidence?.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+    || topologyEvidence?.snapshotId !== topologySnapshotId
     || !Array.isArray(evidence.topologyLineages)
     || evidence.topologyLineages.length !== EXPECTED_TOPOLOGY_LINEAGE_COUNT
     || JSON.stringify(evidence.topologyLineages.map(({ lineId }) => lineId))
       !== JSON.stringify([...TOPOLOGY_LINE_IDS])
     || evidence.topologyLineages.some((lineage) => (
       lineage.sourceId !== TOPOLOGY_SOURCE_ID
-        || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+        || lineage.snapshotId !== topologySnapshotId
         || lineage.contentSha256 !== topologySnapshot.contentSha256
         || !TOPOLOGY_LINE_IDS.includes(lineage.lineId)
     ))) {
@@ -311,14 +330,26 @@ function validateTopologyLineage(inventory, evidence, topologySnapshot) {
   }
 }
 
-function validateMembershipLineage(evidence, topologySnapshot) {
+function activeTopologySnapshotId(snapshot) {
+  const capturedDate = /^\d{4}-\d{2}-\d{2}T/u.test(snapshot?.capturedAt ?? "")
+    ? snapshot.capturedAt.slice(0, 10).replaceAll("-", "")
+    : "";
+  const expected = `${TOPOLOGY_SOURCE_ID}-${capturedDate}`;
+  if (capturedDate.length !== 8
+    || (snapshot.snapshotId != null && snapshot.snapshotId !== expected)) {
+    throw new Error("Incheon accessibility active topology identity mismatch");
+  }
+  return expected;
+}
+
+function validateMembershipLineage(evidence, topologySnapshot, topologySnapshotId) {
   if (!Array.isArray(evidence?.membershipLineages)
     || evidence.membershipLineages.length !== EXPECTED_MEMBERSHIP_LINEAGE_COUNT
     || JSON.stringify(evidence.membershipLineages.map(({ lineId }) => lineId))
       !== JSON.stringify([...MEMBERSHIP_LINE_IDS])
     || evidence.membershipLineages.some((lineage) => (
       lineage.sourceId !== TOPOLOGY_SOURCE_ID
-        || lineage.snapshotId !== TOPOLOGY_SNAPSHOT_ID
+        || lineage.snapshotId !== topologySnapshotId
         || lineage.contentSha256 !== topologySnapshot.contentSha256
         || !MEMBERSHIP_LINE_IDS.includes(lineage.lineId)
         || TOPOLOGY_LINE_IDS.includes(lineage.lineId)

@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { emitStationCatalogFromBundledPack } from "./emit-station-catalog-from-bundled-pack.mjs";
+import { requiredUtcInstant } from "./lib/utc-instant.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
@@ -276,6 +277,10 @@ export function validateAdmittedSourceDocuments(
     || completeness?.validationMode !== "ADMISSION"
     || completeness?.validationStatus !== "SUPPORTED"
     || completeness?.materialization?.status !== "SUPPORTED"
+    || completeness?.admissionStatus !== source.promotionStatus
+    || !isUtcInstant(source?.observedAt)
+    || !isUtcInstant(completeness?.observedAt)
+    || completeness?.observedAt !== source.observedAt
     || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
     || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
       .includes(source.promotionStatus)
@@ -286,6 +291,15 @@ export function validateAdmittedSourceDocuments(
     || !completeness?.allowedConsumerIssues?.includes("#1400")
     || completeness?.credentialRedacted !== true) {
     throw new Error("ITX topology source identity is invalid");
+  }
+}
+
+function isUtcInstant(value) {
+  try {
+    requiredUtcInstant(value, "ITX observation timestamp");
+    return true;
+  } catch {
+    return false;
   }
 }
 

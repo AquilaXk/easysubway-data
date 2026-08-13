@@ -12,15 +12,53 @@ import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
+  readBuilderBaselineBytes,
   stageValidationItxTopologyEvidence,
+  validatePreparedCandidate,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
-import { projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
+import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+const TEST_GOVERNANCE_POLICY_BINDING = Object.freeze({
+  governancePolicyVersion: "2026-07-15",
+  governancePolicySha256: "9".repeat(64),
+});
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
+
+test("prepared current candidate 검증은 build를 수행하고 final release eligibility를 선점하지 않는다", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "prepared-current-candidate-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const calls = [];
+  await validatePreparedCandidate({
+    temporaryRoot,
+    buildNow: "2026-08-13T16:46:31Z",
+    spec: {
+      fixturePath: "tools/datapack/release/capital-production-canonical-pack.json",
+      itxTopologyEvidencePath: "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
+      itxTopologyEvidenceSha256: "a".repeat(64),
+      networkEdgeEvidence: {
+        sourceInventory: { path: "tools/datapack/source-inventory.json" },
+        capitalTopology: { path: "tools/datapack/sources/capital-route-topology-20260724.json" },
+        capitalTopologyCandidate: { path: "tools/datapack/sources/capital-route-topology-20260813.json" },
+        capitalTopologyReverification: {
+          path: "tools/datapack/release/capital-topology-reverification-20260813.json",
+        },
+        itxCoverageContract: { path: "tools/datapack/itx-cheongchun-coverage-contract.json" },
+      },
+    },
+    async runNodeImpl(script, args, options) {
+      calls.push({ script, args, options });
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].script, "tools/datapack/build-datapack.mjs");
+  assert.deepEqual(calls[0].args.slice(-2), ["--output", path.join(temporaryRoot, "validation/output")]);
+  assert.equal(calls[0].options.env.EASYSUBWAY_DATAPACK_BUILD_NOW, "2026-08-13T16:46:31Z");
+});
 
 test("activation loader는 historical binding과 서울 공식 current topology position bytes를 함께 로드한다", async (t) => {
   const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-position-snapshots-"));
@@ -249,7 +287,7 @@ test("prepared candidate validation은 spec-selected current ITX evidence bytes�
 });
 
 test("current Incheon topology admission은 exact snapshot bytes와 fresh source identity에 결속된다", async () => {
-  const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260724.json";
+  const snapshotPath = "tools/datapack/sources/incheon-transit-station-info-20260813.json";
   const [sourceInventory, snapshotBytes] = await Promise.all([
     readJson("tools/datapack/source-inventory.json"),
     readFile(path.join(root, snapshotPath)),
@@ -260,17 +298,35 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshot,
     snapshotBytes,
     snapshotPath,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-14T00:00:00.000Z"),
   });
   const source = activated.sources.find(({ id }) => id === "incheon-transit-station-info");
+  const accessibility = activated.sources.find(({ id }) => id === "incheon-transit-accessibility")
+    .accessibilityAdmissionEvidence;
+  const scheduleTopologySnapshotIds = [
+    "incheon-line1-train-timetable", "incheon-line2-train-timetable",
+  ].map((sourceId) => activated.sources.find(({ id }) => id === sourceId)
+    .scheduleAdmissionEvidence.topologySnapshotId);
 
   assert.equal(source.requiredForProductionPack, false);
   assert.equal(source.productionUseAllowed, true);
-  assert.equal(source.topologyAdmissionEvidence.snapshotId, "incheon-transit-station-info-20260724");
+  assert.equal(source.topologyAdmissionEvidence.snapshotId, "incheon-transit-station-info-20260813");
+  assert.equal(source.topologyAdmissionEvidence.freshUntil, "2026-08-14T15:06:46.000Z");
   assert.equal(source.topologyAdmissionEvidence.contentSha256, snapshot.contentSha256);
   assert.equal(source.membershipAdmissionEvidence.membershipSourceSnapshotSha256, snapshot.scopeSha256);
   assert.equal(source.routeMapAdmissionEvidence.snapshotSha256, sha256(snapshotBytes));
   assert.equal(source.routeMapAdmissionEvidence.positionsSha256, snapshot.positionsSha256);
+  assert.equal(source.routeMapAdmissionEvidence.freshUntil, "2027-08-13T15:06:46.000Z");
+  assert.equal(accessibility.topologySnapshotId, "incheon-transit-station-info-20260813");
+  assert.deepEqual(
+    [...accessibility.topologyLineages, ...accessibility.membershipLineages]
+      .map(({ snapshotId }) => snapshotId),
+    Array(3).fill("incheon-transit-station-info-20260813"),
+  );
+  assert.deepEqual(
+    scheduleTopologySnapshotIds,
+    Array(2).fill("incheon-transit-station-info-20260813"),
+  );
 
   const changedEdges = structuredClone(snapshot);
   changedEdges.edges[0].toStationId = changedEdges.edges[2].toStationId;
@@ -286,7 +342,7 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshot: changedEdges,
     snapshotBytes: changedEdgeBytes,
     snapshotPath,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-14T00:00:00.000Z"),
   }), /content changed; re-admission required/);
 
   assert.throws(() => activateIncheonTopologyAdmission({
@@ -294,14 +350,14 @@ test("current Incheon topology admission은 exact snapshot bytes와 fresh source
     snapshot,
     snapshotBytes: Buffer.concat([snapshotBytes, Buffer.from(" ")]),
     snapshotPath,
-    now: new Date("2026-07-24T07:00:00.000Z"),
+    now: new Date("2026-08-14T00:00:00.000Z"),
   }), /snapshot byte identity mismatch/);
   assert.throws(() => activateIncheonTopologyAdmission({
     sourceInventory,
     snapshot,
     snapshotBytes,
     snapshotPath,
-    now: new Date("2026-07-25T06:00:00.000Z"),
+    now: new Date("2026-08-14T15:06:46.000Z"),
   }), /snapshot is stale/);
 });
 
@@ -326,6 +382,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
   });
@@ -336,6 +393,11 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     assert.equal(source.admissionEvidence.revalidationEvidenceSha256, evidence.evidenceSha256);
     assert.equal(source.admissionEvidence.revalidationResponseSha256, evidence.responseSha256);
     assert.equal(source.retrievedAt, "2026-08-13");
+    const child = activated.sourceSnapshots.find(({ snapshotId }) => snapshotId === snapshot.snapshotId);
+    assert.equal(child.governancePolicyVersion,
+      TEST_GOVERNANCE_POLICY_BINDING.governancePolicyVersion);
+    assert.equal(child.governancePolicySha256,
+      TEST_GOVERNANCE_POLICY_BINDING.governancePolicySha256);
   }
 
   const tampered = structuredClone(revalidations);
@@ -344,6 +406,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: tampered,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
   }), /static revalidation evidence identity mismatch/);
@@ -352,6 +415,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: previous.map((snapshot) => staticRevalidation(snapshot, "2026-08-14T10:30:00.000Z")),
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:00.000Z",
     observationDate: "20260814",
   }), /static revalidation is outside build time/);
@@ -359,6 +423,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-09-12T10:30:00.000Z",
     observationDate: "20260813",
   }), /static revalidation is outside build time/);
@@ -366,6 +431,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260812",
   }), /static revalidation observation date mismatch/);
@@ -400,6 +466,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
     canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
     buildNow: "2026-08-13T10:30:01.000Z",
@@ -431,6 +498,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
       sourceSnapshots: previous,
       sourceInventory,
       revalidations: tampered,
+      governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
       canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
       canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
       buildNow: "2026-08-13T10:30:01.000Z",
@@ -447,6 +515,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: unbound,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
@@ -456,6 +525,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
     canonicalMembershipSha256: "f".repeat(64),
     buildNow: "2026-08-13T10:30:01.000Z",
@@ -528,6 +598,7 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
     readJson("tools/datapack/release/capital-production-canonical-pack.json"),
     readJson("tools/datapack/sources/capital-route-topology-20260813.json"),
   ]);
+  const unprojectedFixture = structuredClone(fixture);
   const pack = fixture.packs.find(({ id }) => id === "capital");
   const topologyLineIds = new Set(topology.lines.map(({ lineId }) => lineId));
   const isProjectedCapitalEdge = (edge) => edge.edgeType === "RIDE"
@@ -539,8 +610,36 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
   const beforeItx = structuredClone(pack.networkEdges
     .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
     .sort((left, right) => left.id.localeCompare(right.id, "en")));
-
-  const projected = projectCapitalTopologyIntoCanonicalFixture(fixture, topology);
+  const canonicalName = (value) => ({
+    능길: "신길온천",
+    김포공항역: "김포공항",
+    부천종합운동장역: "부천종합운동장",
+  })[normalizeStationName(value)] ?? normalizeStationName(value);
+  const stations = new Map(pack.stations.map((station) => [station.id, station]));
+  const stationIdsByLineName = new Map();
+  for (const membership of pack.stationLines) {
+    const stationName = canonicalName(stations.get(membership.stationId)?.nameKo);
+    const key = `${membership.lineId}\0${stationName}`;
+    const ids = stationIdsByLineName.get(key) ?? [];
+    ids.push(membership.stationId);
+    stationIdsByLineName.set(key, ids);
+  }
+  const stationId = (lineId, nameKo) => {
+    const ids = stationIdsByLineName.get(`${lineId}\0${canonicalName(nameKo)}`) ?? [];
+    assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
+    return ids[0];
+  };
+  const topologySnapshotId = "capital-route-topology-20260813";
+  const admissions = new Map(topology.lines.map(({ lineId }) => [lineId, {
+    verifiedAt: topology.capturedAt,
+    freshUntil: topology.freshUntil,
+  }]));
+  const projected = projectCapitalTopologyIntoCanonicalFixture(
+    fixture,
+    topology,
+    topologySnapshotId,
+    admissions,
+  );
 
   assert.equal(projected.edgeCount, 1_438);
   assert.equal(pack.networkEdges.filter(isProjectedCapitalEdge).length, 1_438);
@@ -550,16 +649,28 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
       .sort((left, right) => left.id.localeCompare(right.id, "en")),
     beforeItx,
   );
-
-  const stations = new Map(pack.stations.map((station) => [station.id, station]));
-  const stationId = (lineId, nameKo) => {
-    const ids = pack.stationLines
-      .filter((membership) => membership.lineId === lineId
-        && stations.get(membership.stationId)?.nameKo === nameKo)
-      .map(({ stationId: value }) => value);
-    assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
-    return ids[0];
-  };
+  const gusan = stationId("line-3f41718e0833", "구산");
+  const eungam = stationId("line-3f41718e0833", "응암");
+  const branchEdgeId = `edge-line-3f41718e0833-${gusan}-${eungam}`;
+  const branchEdge = pack.networkEdges.find(({ id }) => id === branchEdgeId);
+  assert.equal(branchEdge?.sourceId, undefined);
+  assert.equal(branchEdge?.sourceSnapshotId, undefined);
+  assert.equal(branchEdge?.providerRecordHash, undefined);
+  assert.equal(branchEdge?.evidenceHash, undefined);
+  assert.equal(branchEdge?.fieldProvenance, undefined);
+  assert.equal(branchEdge?.provenanceKind, undefined);
+  assert.equal(branchEdge?.verificationStatus, undefined);
+  const unboundAdmissions = new Map(admissions);
+  unboundAdmissions.delete("line-3f41718e0833");
+  assert.throws(
+    () => projectCapitalTopologyIntoCanonicalFixture(
+      structuredClone(unprojectedFixture),
+      topology,
+      topologySnapshotId,
+      unboundAdmissions,
+    ),
+    /capital topology line admission mismatch/,
+  );
   for (const [lineId, leftName, rightName] of [
     ["line-30886152e4f8", "보문", "신설동"],
     ["line-558d0bd8312d", "왕십리", "청량리"],
@@ -729,9 +840,9 @@ test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence�
   convenienceSource.productionUseAllowed = true;
 
   const fareSourceId = "seoul-metro-official-od-fares";
-  input.sourceIds = [...input.sourceIds, fareSourceId];
+  input.sourceIds = [...new Set([...input.sourceIds, fareSourceId])];
   input.coverageEvidence = [
-    ...input.coverageEvidence,
+    ...input.coverageEvidence.filter(({ sourceDomain }) => sourceDomain !== "official_od_fares"),
     {
       regionId: "capital",
       operatorId: "seoul-metro",
@@ -879,19 +990,25 @@ test("check mode는 builder code가 같은 output-only descendant만 수용한�
   await runGit("config", "user.name", "EasySubway Test");
   await runGit("config", "user.email", "test@example.invalid");
   await writeFile(path.join(repositoryRoot, "generator.mjs"), "export const version = 1;\n");
-  await runGit("add", "generator.mjs");
+  await writeFile(path.join(repositoryRoot, "baseline.json"), "{\"version\":0}\n");
+  await runGit("add", "generator.mjs", "baseline.json");
   await runGit("-c", "commit.gpgsign=false", "commit", "-qm", "builder");
   const { stdout: builderShaOutput } = await runGit("rev-parse", "HEAD");
   const builderSha = builderShaOutput.trim();
   await writeFile(path.join(repositoryRoot, "generated.json"), "{\"version\":1}\n");
-  await runGit("add", "generated.json");
+  await writeFile(path.join(repositoryRoot, "baseline.json"), "{\"version\":1}\n");
+  await runGit("add", "generated.json", "baseline.json");
   await runGit("-c", "commit.gpgsign=false", "commit", "-qm", "generated output");
 
   await requireCleanBuilder(builderSha, {
     check: true,
     repositoryRoot,
-    allowedDescendantPaths: ["generated.json"],
+    allowedDescendantPaths: ["generated.json", "baseline.json"],
   });
+  assert.deepEqual(
+    await readBuilderBaselineBytes(builderSha, "baseline.json", repositoryRoot),
+    Buffer.from('{"version":0}\n'),
+  );
 
   await writeFile(path.join(repositoryRoot, "generator.mjs"), "export const version = 2;\n");
   await runGit("add", "generator.mjs");
@@ -900,7 +1017,7 @@ test("check mode는 builder code가 같은 output-only descendant만 수용한�
     requireCleanBuilder(builderSha, {
       check: true,
       repositoryRoot,
-      allowedDescendantPaths: ["generated.json"],
+      allowedDescendantPaths: ["generated.json", "baseline.json"],
     }),
     /builder source|builder identity/,
   );

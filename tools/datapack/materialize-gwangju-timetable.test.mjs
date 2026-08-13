@@ -247,11 +247,11 @@ test("materialized SQLite·provenance가 광주 membership·topology·schedule 3
   });
   assert.deepEqual(report.summary.launchRequired, {
     totalCount: 270,
-    supportedCount: 22,
+    supportedCount: 23,
     explicitlyUnsupportedCount: 4,
-    missingCount: 244,
-    supportedRatio: 0.0815,
-    terminalResolutionRatio: 0.0963,
+    missingCount: 243,
+    supportedRatio: 0.0852,
+    terminalResolutionRatio: 0.1,
     completionReady: false,
   });
 });
