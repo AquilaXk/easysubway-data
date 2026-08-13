@@ -2,6 +2,7 @@
 import { constants as fileSystemConstants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeDataGoKrServiceKey } from "./lib/provider-call-integrity.mjs";
@@ -652,30 +653,40 @@ function compare(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-async function main() {
-  if (process.argv[2] === "--observation-root") {
+async function readPreviousSnapshot(relativePath) {
+  const canonicalSourceRoot = await realpath(SOURCE_SNAPSHOT_ROOT);
+  const canonicalPreviousPath = await realpath(resolve(REPOSITORY_ROOT, relativePath));
+  if (!isPathWithin(canonicalSourceRoot, canonicalPreviousPath)) {
+    throw new Error(`${INVALID_RESPONSE}: snapshotIdentity`);
+  }
+  return JSON.parse(await readFile(canonicalPreviousPath, "utf8"));
+}
+
+export async function seoulObservationOutputRoot(directoryName) {
+  if (typeof directoryName !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(directoryName)) {
+    throw new Error("Seoul observation directory name is invalid");
+  }
+  const canonicalTempRoot = await realpath(tmpdir());
+  return join(canonicalTempRoot, `easysubway-seoul-accessibility-${directoryName}`);
+}
+
+async function runObservationCli() {
     const previousSnapshotArgument = process.argv[4] === "--previous-snapshot";
     if (![4, previousSnapshotArgument ? 6 : -1].includes(process.argv.length)
-      || !isAbsolute(process.argv[3])) {
+      || process.argv[2] !== "--observation-name") {
       throw new Error(
-        "usage: collect-seoul-accessibility-evidence.mjs --observation-root <absolute-absent-path> [--previous-snapshot <repository-relative-path>]",
+        "usage: collect-seoul-accessibility-evidence.mjs --observation-name <safe-name> [--previous-snapshot <repository-relative-path>]",
       );
     }
     const serviceKey = process.env.DATA_GO_KR_SERVICE_KEY;
     if (!serviceKey) throw new Error("DATA_GO_KR_SERVICE_KEY env is required");
-    let previousSnapshot = null;
-    if (previousSnapshotArgument) {
-      const canonicalSourceRoot = await realpath(SOURCE_SNAPSHOT_ROOT);
-      const canonicalPreviousPath = await realpath(resolve(REPOSITORY_ROOT, process.argv[5]));
-      if (!isPathWithin(canonicalSourceRoot, canonicalPreviousPath)) {
-        throw new Error(`${INVALID_RESPONSE}: snapshotIdentity`);
-      }
-      previousSnapshot = JSON.parse(await readFile(canonicalPreviousPath, "utf8"));
-    }
+    const previousSnapshot = previousSnapshotArgument ? await readPreviousSnapshot(process.argv[5]) : null;
     const observation = await collectSeoulAccessibilityObservation({ serviceKey, previousSnapshot });
-    await writeSeoulAccessibilityObservation({ outputRoot: process.argv[3], observation });
-    return;
-  }
+    const outputRoot = await seoulObservationOutputRoot(process.argv[3]);
+    await writeSeoulAccessibilityObservation({ outputRoot, observation });
+}
+
+async function runLegacyCli() {
   const sourceArgument = process.argv[6] === "--source";
   const previousSnapshotIndex = sourceArgument ? 8 : 6;
   const previousSnapshotArgument = process.argv[previousSnapshotIndex] === "--previous-snapshot";
@@ -694,15 +705,9 @@ async function main() {
   if (!serviceKey) {
     throw new Error("DATA_GO_KR_SERVICE_KEY env is required");
   }
-  let previousSnapshot = null;
-  if (previousSnapshotArgument) {
-    const canonicalSourceRoot = await realpath(SOURCE_SNAPSHOT_ROOT);
-    const canonicalPreviousPath = await realpath(resolve(REPOSITORY_ROOT, process.argv[previousSnapshotIndex + 1]));
-    if (!isPathWithin(canonicalSourceRoot, canonicalPreviousPath)) {
-      throw new Error(`${INVALID_RESPONSE}: snapshotIdentity`);
-    }
-    previousSnapshot = JSON.parse(await readFile(canonicalPreviousPath, "utf8"));
-  }
+  const previousSnapshot = previousSnapshotArgument
+    ? await readPreviousSnapshot(process.argv[previousSnapshotIndex + 1])
+    : null;
   await writeSeoulAccessibilityEvidence({
     source,
     serviceKey,
@@ -710,6 +715,11 @@ async function main() {
     outputRoot: process.argv[5],
     previousSnapshot,
   });
+}
+
+async function main() {
+  if (process.argv[2] === "--observation-name") return runObservationCli();
+  return runLegacyCli();
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {

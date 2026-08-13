@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +12,7 @@ import {
   collectSeoulAccessibility,
   collectSeoulAccessibilityObservation,
   normalizeAccessibilityRows,
+  seoulObservationOutputRoot,
   writeSeoulAccessibilityEvidence,
   writeSeoulAccessibilityObservation,
 } from "./collect-seoul-accessibility-evidence.mjs";
@@ -576,6 +577,12 @@ test("fresh Seoul observation은 snapshot·raw pages·manifest를 한 create-onl
     writeSeoulAccessibilityObservation({ outputRoot, observation }),
     /output root already exists/,
   );
+});
+
+test("Seoul observation CLI output은 canonical temp root 아래 safe name으로만 구성한다", async () => {
+  const output = await seoulObservationOutputRoot("capture-20260814T000000Z");
+  assert.equal(output.startsWith(`${await realpath(tmpdir())}/easysubway-seoul-accessibility-`), true);
+  await assert.rejects(seoulObservationOutputRoot("../escape"), /directory name is invalid/);
 });
 
 test("snapshot content identity is stable when provider facility order changes", () => {

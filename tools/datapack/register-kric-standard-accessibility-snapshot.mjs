@@ -631,6 +631,75 @@ async function readOptionalFile(file) {
   }
 }
 
+async function prepareSeoulRegistration({
+  repositoryRoot,
+  inventory,
+  snapshots,
+  input,
+  governancePolicy,
+  freshnessPolicy,
+  policySources,
+  seoulSnapshot,
+  seoulSnapshotFilePath,
+  seoulSnapshotFileSha256,
+  seoulSnapshotTargetPath,
+  seoulRawReceipt,
+  now,
+}) {
+  const freshValues = [
+    seoulSnapshotFilePath, seoulSnapshotFileSha256, seoulSnapshotTargetPath, seoulRawReceipt,
+  ];
+  const freshRequested = freshValues.every((value) => value != null);
+  if (!freshRequested) {
+    if (freshValues.some((value) => value != null)) throw new Error("fresh Seoul registration inputs are incomplete");
+    await validateAdmittedSeoulSnapshot({ inventory, snapshots, input, seoulSnapshot, repositoryRoot, now });
+    return { snapshot: seoulSnapshot, registration: null, snapshotBytes: null, targetBytes: null };
+  }
+
+  const snapshotBytes = await readFile(requiredText(seoulSnapshotFilePath, "Seoul snapshot file path"));
+  const snapshot = readStagedSeoulSnapshot(snapshotBytes, seoulSnapshotFileSha256);
+  if (seoulRawReceipt?.snapshotFileSha256 !== seoulSnapshotFileSha256) {
+    throw new Error("Seoul raw receipt snapshot binding is invalid");
+  }
+  validateReceipt(snapshot, seoulRawReceipt, now);
+  const snapshotPath = `tools/datapack/sources/${snapshot.snapshotId}.json`;
+  const expectedTargetPath = path.join(path.resolve(repositoryRoot), snapshotPath);
+  if (!path.isAbsolute(requiredText(seoulSnapshotTargetPath, "Seoul snapshot target path"))
+    || path.resolve(seoulSnapshotTargetPath) !== expectedTargetPath) {
+    throw new Error("Seoul snapshot target path is invalid");
+  }
+  const expectedRetention = deriveRawRetentionExpiresAt({
+    policy: governancePolicy.policy,
+    sourceId: SEOUL_SOURCE_ID,
+    retrievedAt: snapshot.capturedAt,
+  });
+  if (seoulRawReceipt.rawRetentionExpiresAt !== expectedRetention) {
+    throw new Error("Seoul raw receipt rawRetentionExpiresAt does not match governance policy");
+  }
+  validateLicenseGovernance({ inventory, policySources, sourceId: SEOUL_SOURCE_ID, label: "Seoul", now });
+  const freshnessExpiresAt = deriveFreshnessExpiresAt({
+    policy: freshnessPolicy,
+    sourceClassId: policySources.get(SEOUL_SOURCE_ID).sourceClassId,
+    basisAt: snapshot.capturedAt,
+    evaluationAt: now.toISOString(),
+  });
+  const targetBytes = await readOptionalFile(seoulSnapshotTargetPath);
+  if (targetBytes != null && !targetBytes.equals(snapshotBytes)) {
+    throw new Error("Seoul snapshot target already exists with different bytes");
+  }
+  return {
+    snapshot,
+    snapshotBytes,
+    targetBytes,
+    registration: {
+      snapshotPath,
+      snapshotFileSha256: seoulSnapshotFileSha256,
+      rawReceipt: seoulRawReceipt,
+      freshnessExpiresAt,
+    },
+  };
+}
+
 async function prepareRegistration({
   repositoryRoot, paths, snapshotFilePath, snapshotFileSha256, snapshotTargetPath,
   rawReceipt, seoulSnapshot, seoulSnapshotFilePath, seoulSnapshotFileSha256,
@@ -655,60 +724,21 @@ async function prepareRegistration({
   const [inventory, snapshots, input] = original.map((bytes) => JSON.parse(bytes));
   const { policySources } = validateSourceGovernancePolicy({ policy: governancePolicy.policy, inventory, freshnessPolicy });
   validateLicenseGovernance({ inventory, policySources, sourceId: SOURCE_ID, label: "KRIC", now });
-  const seoulInputs = [
-    seoulSnapshotFilePath, seoulSnapshotFileSha256, seoulSnapshotTargetPath, seoulRawReceipt,
-  ];
-  const freshSeoulRequested = seoulInputs.every((value) => value != null);
-  if (!freshSeoulRequested && seoulInputs.some((value) => value != null)) {
-    throw new Error("fresh Seoul registration inputs are incomplete");
-  }
-  let effectiveSeoulSnapshot = seoulSnapshot;
-  let seoulRegistration = null;
-  let seoulSnapshotBytes = null;
-  if (freshSeoulRequested) {
-    seoulSnapshotBytes = await readFile(requiredText(seoulSnapshotFilePath, "Seoul snapshot file path"));
-    effectiveSeoulSnapshot = readStagedSeoulSnapshot(seoulSnapshotBytes, seoulSnapshotFileSha256);
-    if (seoulRawReceipt?.snapshotFileSha256 !== seoulSnapshotFileSha256) {
-      throw new Error("Seoul raw receipt snapshot binding is invalid");
-    }
-    validateReceipt(effectiveSeoulSnapshot, seoulRawReceipt, now);
-    const seoulSnapshotPath = `tools/datapack/sources/${effectiveSeoulSnapshot.snapshotId}.json`;
-    const expectedSeoulTargetPath = path.join(path.resolve(repositoryRoot), seoulSnapshotPath);
-    if (!path.isAbsolute(requiredText(seoulSnapshotTargetPath, "Seoul snapshot target path"))
-      || path.resolve(seoulSnapshotTargetPath) !== expectedSeoulTargetPath) {
-      throw new Error("Seoul snapshot target path is invalid");
-    }
-    const expectedRawRetentionExpiresAt = deriveRawRetentionExpiresAt({
-      policy: governancePolicy.policy,
-      sourceId: SEOUL_SOURCE_ID,
-      retrievedAt: effectiveSeoulSnapshot.capturedAt,
-    });
-    if (seoulRawReceipt.rawRetentionExpiresAt !== expectedRawRetentionExpiresAt) {
-      throw new Error("Seoul raw receipt rawRetentionExpiresAt does not match governance policy");
-    }
-    validateLicenseGovernance({ inventory, policySources, sourceId: SEOUL_SOURCE_ID, label: "Seoul", now });
-    const seoulFreshnessExpiresAt = deriveFreshnessExpiresAt({
-      policy: freshnessPolicy,
-      sourceClassId: policySources.get(SEOUL_SOURCE_ID).sourceClassId,
-      basisAt: effectiveSeoulSnapshot.capturedAt,
-      evaluationAt: now.toISOString(),
-    });
-    seoulRegistration = {
-      snapshotPath: seoulSnapshotPath,
-      snapshotFileSha256: seoulSnapshotFileSha256,
-      rawReceipt: seoulRawReceipt,
-      freshnessExpiresAt: seoulFreshnessExpiresAt,
-    };
-  } else {
-    await validateAdmittedSeoulSnapshot({
-      inventory,
-      snapshots,
-      input,
-      seoulSnapshot: effectiveSeoulSnapshot,
-      repositoryRoot,
-      now,
-    });
-  }
+  const preparedSeoul = await prepareSeoulRegistration({
+    repositoryRoot,
+    inventory,
+    snapshots,
+    input,
+    governancePolicy,
+    freshnessPolicy,
+    policySources,
+    seoulSnapshot,
+    seoulSnapshotFilePath,
+    seoulSnapshotFileSha256,
+    seoulSnapshotTargetPath,
+    seoulRawReceipt,
+    now,
+  });
   const kricAccessibilityRoster = validateKricAccessibilityCoverage(snapshot, input);
   const freshnessExpiresAt = deriveFreshnessExpiresAt({
     policy: freshnessPolicy,
@@ -722,21 +752,17 @@ async function prepareRegistration({
     snapshotPath,
     snapshotFileSha256,
     rawReceipt,
-    seoulSnapshot: effectiveSeoulSnapshot,
-    seoulRegistration,
+    seoulSnapshot: preparedSeoul.snapshot,
+    seoulRegistration: preparedSeoul.registration,
     kricAccessibilityRoster,
     freshnessExpiresAt,
     governancePolicySha256: sha256(governancePolicy.bytes), governancePolicyVersion: governancePolicy.version, now,
   });
   const targetBytes = await readOptionalFile(snapshotTargetPath);
   if (targetBytes != null && !targetBytes.equals(snapshotBytes)) throw new Error("snapshot target already exists with different bytes");
-  const seoulTargetBytes = freshSeoulRequested ? await readOptionalFile(seoulSnapshotTargetPath) : null;
-  if (seoulTargetBytes != null && !seoulTargetBytes.equals(seoulSnapshotBytes)) {
-    throw new Error("Seoul snapshot target already exists with different bytes");
-  }
   return [
-    ...(freshSeoulRequested && seoulTargetBytes == null
-      ? [{ target: seoulSnapshotTargetPath, bytes: seoulSnapshotBytes }]
+    ...(preparedSeoul.registration != null && preparedSeoul.targetBytes == null
+      ? [{ target: seoulSnapshotTargetPath, bytes: preparedSeoul.snapshotBytes }]
       : []),
     ...(targetBytes == null ? [{ target: snapshotTargetPath, bytes: snapshotBytes }] : []),
     ...paths.map((target, index) => ({ target, bytes: Buffer.from(staged[index]) })),

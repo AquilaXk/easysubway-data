@@ -300,8 +300,8 @@ test("fresh Seoul companion과 KRIC snapshot을 같은 transaction에서 원자 
   assert.equal(snapshots.at(-2).snapshotId, freshSeoul.snapshotId);
   assert.equal(snapshots.at(-1).snapshotId, values.snapshot.snapshotId);
   const seoulStatus = input.accessibilityStatusEvidence.filter(({ sourceId }) => sourceId === freshSeoul.sourceId);
-  assert.ok(seoulStatus.length > 0
-    && seoulStatus.every(({ sourceSnapshotId }) => sourceSnapshotId === freshSeoul.snapshotId));
+  assert.ok(seoulStatus.length > 0);
+  assert.ok(seoulStatus.every(({ sourceSnapshotId }) => sourceSnapshotId === freshSeoul.snapshotId));
   assert.deepEqual(await readFile(seoulSnapshotTargetPath), seoulBytes);
   assert.deepEqual(await readFile(values.snapshotTargetPath), await readFile(values.snapshotFilePath));
 });
