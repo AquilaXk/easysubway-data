@@ -38,11 +38,13 @@ export function materializeAccessibilitySourceInput({ input, kricSnapshot, seoul
   }
   const facilityRows = [];
   const absenceRows = [];
+  const snapshotQueries = kricSnapshot.queries ?? [];
+  validateKricProviderRows(snapshotQueries);
   const regionalRoster = input.kricStandardAccessibilityRoster;
   const regionalRosterKeys = regionalRoster == null ? null : exactRosterKeys(regionalRoster);
   const regionalQueries = regionalRosterKeys == null
-    ? (kricSnapshot.queries ?? [])
-    : (kricSnapshot.queries ?? []).filter((query) => regionalRosterKeys.has(rosterKey(query)));
+    ? snapshotQueries
+    : snapshotQueries.filter((query) => regionalRosterKeys.has(rosterKey(query)));
   for (const query of regionalQueries) {
     const mapping = mappings.get(query.stationId);
     if (!mapping || mapping.lineId !== query.lineId || !Array.isArray(query.rows)) {
@@ -230,6 +232,16 @@ function exactRosterKeys(values) {
   const keys = new Set(values.map(rosterKey));
   if (keys.size !== values.length) throw new Error("KRIC accessibility roster is invalid");
   return keys;
+}
+
+function validateKricProviderRows(queries) {
+  for (const query of queries) {
+    if (!Array.isArray(query?.rows)) throw new Error(`KRIC snapshot canonical mapping missing: ${query?.stationId}`);
+    for (const row of query.rows) {
+      if (!KRIC_FACILITY_CODES.has(row.gubun)) throw new Error(`unknown KRIC facility code: ${row.gubun}`);
+      if (FACILITY_TYPES.has(row.gubun)) kricFloorLabel(row);
+    }
+  }
 }
 
 function tuple(query) {
