@@ -360,8 +360,20 @@ test("active canonical source inventory excludes retired movement snapshot heads
 test("candidate-fixtures-only sync succeeds without reading mobile pack paths", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-candidate-fixtures-"));
   const repository = path.resolve(import.meta.dirname, "../..");
+  const candidateBuildSpecPath = "tools/datapack/release/candidate-build-spec.json";
+  const candidateBuildSpec = JSON.parse(
+    await readFile(path.join(repository, candidateBuildSpecPath), "utf8"),
+  );
+  const topologyEvidencePath = candidateBuildSpec.itxTopologyEvidencePath;
+  assert.equal(typeof topologyEvidencePath, "string");
+  assert.equal(path.isAbsolute(topologyEvidencePath), false);
+  assert.equal(topologyEvidencePath.split("/").includes(".."), false);
+  assert.equal(
+    path.resolve(repository, topologyEvidencePath).startsWith(`${repository}${path.sep}`),
+    true,
+  );
   const files = [
-    "tools/datapack/release/candidate-build-spec.json",
+    candidateBuildSpecPath,
     "tools/datapack/release/source-snapshots.json",
     "tools/datapack/source-inventory.json",
     "tools/datapack/release/release-request.json",
@@ -371,6 +383,7 @@ test("candidate-fixtures-only sync succeeds without reading mobile pack paths", 
     "release/product-gates/datapack-freshness-sla.json",
     "tools/datapack/release/capital-production-reviewed-pack.json",
     "tools/datapack/itx-cheongchun-topology-evidence.json",
+    topologyEvidencePath,
   ];
   try {
     for (const relativePath of files) {
