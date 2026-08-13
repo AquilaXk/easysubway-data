@@ -86,7 +86,7 @@ export async function publishKricAccessibilityRawArtifact({
     checksumSha256,
     byteSize: rawArtifactBytes.length,
     expectedBucketOwner: trustedBucketOwner,
-    versionId: requiredText(head.VersionId, "S3 VersionId"),
+    versionId: head.VersionId == null ? null : requiredText(head.VersionId, "S3 VersionId"),
     etag: requiredText(head.ETag, "S3 ETag"),
     storedAt: requiredUtcInstant(head.LastModified, "S3 LastModified"),
     rawRetentionExpiresAt,
