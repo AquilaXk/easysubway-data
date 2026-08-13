@@ -200,9 +200,7 @@ function evidencePayload({ sourceId, previous, observedAt, responseBytes, record
     sourceId,
     previousSnapshotId: previous.snapshotId,
     observedAt,
-    operation: sourceId === MOLIT_SOURCE_ID
-      ? "molit-urban-rail-full-route-file-five-records"
-      : "seoulmetro-line4-stations-one-to-five",
+    operation: operationForSource(sourceId),
     rowCount: records.length,
     canonicalRawSha256: sha256(Buffer.from(`${JSON.stringify(records)}\n`)),
     schemaFingerprint: sha256(JSON.stringify(Object.keys(records[0]).sort(codepointCompare))),
@@ -213,6 +211,19 @@ function evidencePayload({ sourceId, previous, observedAt, responseBytes, record
     outcome: "NO_CHANGE_REVALIDATED",
     credentialRedacted: true,
   };
+}
+
+function operationForSource(sourceId) {
+  return sourceId === MOLIT_SOURCE_ID
+    ? "molit-urban-rail-full-route-file-five-records"
+    : "seoulmetro-line4-stations-one-to-five";
+}
+
+function sourceDefinitions() {
+  return [
+    { sourceId: MOLIT_SOURCE_ID, key: "molit", fields: MOLIT_FIELDS, project: projectMolit },
+    { sourceId: SEOUL_SOURCE_ID, key: "seoul", fields: SEOUL_FIELDS, project: projectSeoul },
+  ];
 }
 
 function buildOne({ sourceId, previous, observedAt, observedMillis, responseBytes, records, fields }) {
@@ -251,11 +262,7 @@ export function buildCurrentStaticSourceRevalidation({
 }) {
   if (!Array.isArray(sourceSnapshots) || !responseBytesBySource) fail("ARGUMENT");
   const observedMillis = requiredObservedAt(observedAt);
-  const definitions = [
-    { sourceId: MOLIT_SOURCE_ID, key: "molit", fields: MOLIT_FIELDS, project: projectMolit },
-    { sourceId: SEOUL_SOURCE_ID, key: "seoul", fields: SEOUL_FIELDS, project: projectSeoul },
-  ];
-  const result = definitions.map(({ sourceId, key, fields, project }) => {
+  const result = sourceDefinitions().map(({ sourceId, key, fields, project }) => {
     const responseBytes = responseBytesBySource[key];
     const previous = previousHead(sourceSnapshots, sourceId);
     requiredPrevious(previous, sourceId, fields);
@@ -271,6 +278,52 @@ export function buildCurrentStaticSourceRevalidation({
   });
   validateLineage([...structuredClone(sourceSnapshots), ...result.map(({ snapshot }) => snapshot)]);
   return result;
+}
+
+function buildCurrentStaticSourceChangeCapture({
+  sourceSnapshots,
+  observedAt,
+  responseBytesBySource,
+}) {
+  if (!Array.isArray(sourceSnapshots) || !responseBytesBySource) fail("ARGUMENT");
+  const observedMillis = requiredObservedAt(observedAt);
+  const sources = sourceDefinitions().map(({ sourceId, key, fields, project }) => {
+    const responseBytes = responseBytesBySource[key];
+    const previous = previousHead(sourceSnapshots, sourceId);
+    requiredPrevious(previous, sourceId, fields);
+    let status = "UNCHANGED";
+    try {
+      buildOne({
+        sourceId,
+        previous,
+        observedAt,
+        observedMillis,
+        responseBytes,
+        records: project(responseBytes, previous),
+        fields,
+      });
+    } catch (error) {
+      if (error?.message !== "STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED") throw error;
+      status = "CONTENT_CHANGED";
+    }
+    return {
+      sourceId,
+      operation: operationForSource(sourceId),
+      status,
+      responseSha256: sha256(responseBytes),
+      responseByteSize: responseBytes.length,
+      rawFile: key === "molit" ? "molit-response.bin" : "seoul-response.json",
+    };
+  });
+  if (!sources.some(({ status }) => status === "CONTENT_CHANGED")) fail("ARGUMENT");
+  return {
+    schemaVersion: 1,
+    artifactKind: "current-static-source-change-capture",
+    observedAt,
+    outcome: "CHANGE_REVIEW_REQUIRED",
+    sources,
+    credentialRedacted: true,
+  };
 }
 
 function requiredSingleLine(value, label) {
@@ -364,7 +417,7 @@ function serializedOutputs(result) {
   ]);
 }
 
-export async function writeCurrentStaticSourceRevalidation({ outputDirectory, result }) {
+async function writeAbsentDirectory({ outputDirectory, entries }) {
   if (!path.isAbsolute(outputDirectory ?? "")) fail("OUTPUT");
   const parent = path.dirname(outputDirectory);
   const temporary = path.join(parent, `.${path.basename(outputDirectory)}.tmp-${randomUUID()}`);
@@ -381,7 +434,7 @@ export async function writeCurrentStaticSourceRevalidation({ outputDirectory, re
     await requireAbsentOutput();
     await mkdir(temporary, { mode: 0o700 });
     const names = [];
-    for (const [name, bytes] of serializedOutputs(result)) {
+    for (const [name, bytes] of entries) {
       await writeFile(path.join(temporary, name), bytes, { flag: "wx", mode: 0o600 });
       names.push(name);
     }
@@ -401,16 +454,100 @@ export async function writeCurrentStaticSourceRevalidation({ outputDirectory, re
   }
 }
 
+export async function writeCurrentStaticSourceRevalidation({ outputDirectory, result }) {
+  return writeAbsentDirectory({ outputDirectory, entries: serializedOutputs(result) });
+}
+
+function serializedChangeCapture(capture, responseBytesBySource) {
+  assertExactKeys(capture, [
+    "schemaVersion", "artifactKind", "observedAt", "outcome", "sources", "credentialRedacted",
+  ], "ARGUMENT");
+  if (capture.schemaVersion !== 1
+    || capture.artifactKind !== "current-static-source-change-capture"
+    || capture.outcome !== "CHANGE_REVIEW_REQUIRED"
+    || capture.credentialRedacted !== true
+    || !Array.isArray(capture.sources) || capture.sources.length !== 2) fail("ARGUMENT");
+  const responses = [responseBytesBySource.molit, responseBytesBySource.seoul];
+  const entries = capture.sources.map((source, index) => {
+    const expectedSourceId = SOURCE_IDS[index];
+    const expectedFile = index === 0 ? "molit-response.bin" : "seoul-response.json";
+    const bytes = responses[index];
+    assertExactKeys(source, [
+      "sourceId", "operation", "status", "responseSha256", "responseByteSize", "rawFile",
+    ], "ARGUMENT");
+    if (!Buffer.isBuffer(bytes)
+      || source.sourceId !== expectedSourceId
+      || source.operation !== operationForSource(expectedSourceId)
+      || !new Set(["UNCHANGED", "CONTENT_CHANGED"]).has(source.status)
+      || source.responseSha256 !== sha256(bytes)
+      || source.responseByteSize !== bytes.length
+      || source.rawFile !== expectedFile) fail("ARGUMENT");
+    return [expectedFile, bytes];
+  });
+  entries.push(["change-evidence.json", Buffer.from(`${JSON.stringify(capture, null, 2)}\n`)]);
+  return entries;
+}
+
+export async function writeCurrentStaticSourceChangeCapture({
+  outputDirectory,
+  capture,
+  responseBytesBySource,
+}) {
+  return writeAbsentDirectory({
+    outputDirectory,
+    entries: serializedChangeCapture(capture, responseBytesBySource),
+  });
+}
+
+export async function runCurrentStaticSourceRevalidation({
+  sourceSnapshots,
+  observedAt,
+  responseBytesBySource,
+  outputDirectory,
+  changeOutputDirectory,
+}) {
+  try {
+    const result = buildCurrentStaticSourceRevalidation({
+      sourceSnapshots,
+      observedAt,
+      responseBytesBySource,
+    });
+    const outputs = await writeCurrentStaticSourceRevalidation({ outputDirectory, result });
+    return { outcome: "NO_CHANGE_REVALIDATED", sourceCount: 2, outputs };
+  } catch (error) {
+    if (error?.message === "STATIC_SOURCE_REVALIDATION_CONTENT_CHANGED"
+      && changeOutputDirectory != null) {
+      const capture = buildCurrentStaticSourceChangeCapture({
+        sourceSnapshots,
+        observedAt,
+        responseBytesBySource,
+      });
+      await writeCurrentStaticSourceChangeCapture({
+        outputDirectory: changeOutputDirectory,
+        capture,
+        responseBytesBySource,
+      });
+    }
+    throw error;
+  }
+}
+
 function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
-    if (!new Set(["--source-snapshots", "--observed-at", "--output-directory"]).has(flag)) fail("ARGUMENT");
+    if (!new Set([
+      "--source-snapshots", "--observed-at", "--output-directory", "--change-output-directory",
+    ]).has(flag)) fail("ARGUMENT");
     const value = argv[index + 1];
     if (!value || value.startsWith("--") || args[flag]) fail("ARGUMENT");
     args[flag] = value;
   }
-  if (Object.keys(args).length !== 3) fail("ARGUMENT");
+  if (!["--source-snapshots", "--observed-at", "--output-directory"]
+    .every((flag) => args[flag] != null)
+    || ![3, 4].includes(Object.keys(args).length)) fail("ARGUMENT");
+  if (args["--change-output-directory"] != null
+    && !path.isAbsolute(args["--change-output-directory"])) fail("ARGUMENT");
   return args;
 }
 
@@ -420,16 +557,14 @@ async function main() {
   const responses = await fetchCurrentStaticSourceResponses({
     seoulOpenApiKey: process.env.SEOUL_OPENAPI_KEY,
   });
-  const result = buildCurrentStaticSourceRevalidation({
+  const result = await runCurrentStaticSourceRevalidation({
     sourceSnapshots,
     observedAt: args["--observed-at"],
     responseBytesBySource: responses,
-  });
-  await writeCurrentStaticSourceRevalidation({
     outputDirectory: path.resolve(args["--output-directory"]),
-    result,
+    changeOutputDirectory: args["--change-output-directory"],
   });
-  process.stdout.write(`${JSON.stringify({ outcome: "NO_CHANGE_REVALIDATED", sourceCount: 2 })}\n`);
+  process.stdout.write(`${JSON.stringify({ outcome: result.outcome, sourceCount: result.sourceCount })}\n`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
