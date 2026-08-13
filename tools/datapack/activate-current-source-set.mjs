@@ -83,6 +83,9 @@ export const CURRENT_SOURCE_ACTIVATION_OUTPUTS = Object.freeze([
   "tools/datapack/release/candidate-build-spec.json", "tools/datapack/release/release-request.json", "tools/datapack/release/hash-evidence.json",
 ]);
 const allowedOutputPaths = new Set(CURRENT_SOURCE_ACTIVATION_OUTPUTS);
+const CURRENT_SOURCE_DOWNSTREAM_OUTPUTS = Object.freeze([
+  "tools/datapack/reports/nationwide-coverage-tally.json",
+]);
 
 function isAllowedActivationOutput(relativePath) {
   return allowedOutputPaths.has(relativePath)
@@ -440,6 +443,7 @@ export function activateStaticSourceRevalidations({
   sourceSnapshots,
   sourceInventory,
   revalidations,
+  governancePolicyBinding,
   canonicalPackSha256 = null,
   canonicalMembershipSha256 = null,
   buildNow,
@@ -452,6 +456,11 @@ export function activateStaticSourceRevalidations({
     || sourceInventory.artifactKind !== "production-source-inventory"
     || !Array.isArray(sourceInventory.sources)) {
     throw new Error("static revalidation inputs are invalid");
+  }
+  if (typeof governancePolicyBinding?.governancePolicyVersion !== "string"
+    || governancePolicyBinding.governancePolicyVersion.length === 0
+    || !SHA256.test(governancePolicyBinding.governancePolicySha256 ?? "")) {
+    throw new Error("static revalidation governance policy binding is invalid");
   }
   const buildMillis = requiredUtcInstant(buildNow, "static revalidation buildNow");
   if (!/^[0-9]{8}$/u.test(observationDate ?? "")) {
@@ -492,7 +501,18 @@ export function activateStaticSourceRevalidations({
     if (observedMillis > buildMillis || buildMillis >= freshnessMillis) {
       throw new Error("static revalidation is outside build time");
     }
-    nextSnapshots.push(structuredClone(revalidation.snapshot));
+    if ((revalidation.snapshot.governancePolicyVersion != null
+        && revalidation.snapshot.governancePolicyVersion
+          !== governancePolicyBinding.governancePolicyVersion)
+      || (revalidation.snapshot.governancePolicySha256 != null
+        && revalidation.snapshot.governancePolicySha256
+          !== governancePolicyBinding.governancePolicySha256)) {
+      throw new Error("static revalidation governance policy binding mismatch");
+    }
+    nextSnapshots.push({
+      ...structuredClone(revalidation.snapshot),
+      ...governancePolicyBinding,
+    });
     const source = requireOne(nextInventory.sources, ({ id }) => id === sourceId, sourceId);
     if (!source.admissionEvidence || typeof source.admissionEvidence !== "object") {
       throw new Error("static revalidation inventory admission evidence is missing");
@@ -702,6 +722,10 @@ export function buildCurrentSourcePrimaryOutputs({
       sourceSnapshots,
       sourceInventory,
       revalidations: staticRevalidations,
+      governancePolicyBinding: {
+        governancePolicyVersion: handoff.governancePolicyVersion,
+        governancePolicySha256: handoff.governancePolicySha256,
+      },
       canonicalPackSha256: canonicalPackBytes == null ? null : sha256(canonicalPackBytes),
       canonicalMembershipSha256,
       buildNow,
@@ -1374,7 +1398,11 @@ export async function generateCurrentSourceActivation({
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
   await requireCleanBuilder(builderGitSha, {
     check,
-    allowedDescendantPaths: [...CURRENT_SOURCE_ACTIVATION_OUTPUTS, topologyReverificationPath],
+    allowedDescendantPaths: [
+      ...CURRENT_SOURCE_ACTIVATION_OUTPUTS,
+      ...CURRENT_SOURCE_DOWNSTREAM_OUTPUTS,
+      topologyReverificationPath,
+    ],
   });
   validateBuildNow(buildNow, handoff);
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "current-source-activation-"));

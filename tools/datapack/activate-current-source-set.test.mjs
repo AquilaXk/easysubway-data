@@ -20,6 +20,10 @@ import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
+const TEST_GOVERNANCE_POLICY_BINDING = Object.freeze({
+  governancePolicyVersion: "2026-07-15",
+  governancePolicySha256: "9".repeat(64),
+});
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
@@ -360,6 +364,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
   });
@@ -370,6 +375,11 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     assert.equal(source.admissionEvidence.revalidationEvidenceSha256, evidence.evidenceSha256);
     assert.equal(source.admissionEvidence.revalidationResponseSha256, evidence.responseSha256);
     assert.equal(source.retrievedAt, "2026-08-13");
+    const child = activated.sourceSnapshots.find(({ snapshotId }) => snapshotId === snapshot.snapshotId);
+    assert.equal(child.governancePolicyVersion,
+      TEST_GOVERNANCE_POLICY_BINDING.governancePolicyVersion);
+    assert.equal(child.governancePolicySha256,
+      TEST_GOVERNANCE_POLICY_BINDING.governancePolicySha256);
   }
 
   const tampered = structuredClone(revalidations);
@@ -378,6 +388,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: tampered,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
   }), /static revalidation evidence identity mismatch/);
@@ -386,6 +397,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: previous.map((snapshot) => staticRevalidation(snapshot, "2026-08-14T10:30:00.000Z")),
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:00.000Z",
     observationDate: "20260814",
   }), /static revalidation is outside build time/);
@@ -393,6 +405,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-09-12T10:30:00.000Z",
     observationDate: "20260813",
   }), /static revalidation is outside build time/);
@@ -400,6 +413,7 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260812",
   }), /static revalidation observation date mismatch/);
@@ -434,6 +448,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
     canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
     buildNow: "2026-08-13T10:30:01.000Z",
@@ -465,6 +480,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
       sourceSnapshots: previous,
       sourceInventory,
       revalidations: tampered,
+      governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
       canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
       canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
       buildNow: "2026-08-13T10:30:01.000Z",
@@ -481,6 +497,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: unbound,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     canonicalMembershipSha256: revalidations[1].evidence.canonicalMembershipSha256,
     buildNow: "2026-08-13T10:30:01.000Z",
     observationDate: "20260813",
@@ -490,6 +507,7 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    governancePolicyBinding: TEST_GOVERNANCE_POLICY_BINDING,
     canonicalPackSha256: sha256("current pack with unrelated ITX topology change"),
     canonicalMembershipSha256: "f".repeat(64),
     buildNow: "2026-08-13T10:30:01.000Z",
