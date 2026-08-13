@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -231,4 +231,11 @@ test("validated four-file output은 absent directory에 한 번만 publish한다
     writeCurrentStaticSourceRevalidation({ outputDirectory, result }),
     /output directory must be absent/,
   );
+  const existingEmpty = path.join(parent, "existing-empty");
+  await mkdir(existingEmpty);
+  await assert.rejects(
+    writeCurrentStaticSourceRevalidation({ outputDirectory: existingEmpty, result }),
+    /output directory must be absent/,
+  );
+  assert.deepEqual(await readdir(existingEmpty), []);
 });

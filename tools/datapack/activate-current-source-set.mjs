@@ -246,6 +246,8 @@ export function activateStaticSourceRevalidations({
   sourceSnapshots,
   sourceInventory,
   revalidations,
+  buildNow,
+  observationDate,
 }) {
   if (!Array.isArray(sourceSnapshots)
     || !Array.isArray(revalidations)
@@ -254,6 +256,10 @@ export function activateStaticSourceRevalidations({
     || sourceInventory.artifactKind !== "production-source-inventory"
     || !Array.isArray(sourceInventory.sources)) {
     throw new Error("static revalidation inputs are invalid");
+  }
+  const buildMillis = requiredUtcInstant(buildNow, "static revalidation buildNow");
+  if (!/^[0-9]{8}$/u.test(observationDate ?? "")) {
+    throw new Error("static revalidation observation date mismatch");
   }
   const heads = validateLineage(sourceSnapshots).headsBySource;
   const nextSnapshots = structuredClone(sourceSnapshots);
@@ -269,6 +275,20 @@ export function activateStaticSourceRevalidations({
       `static revalidation previous ${sourceId}`,
     );
     validateStaticRevalidation(previous, revalidation.snapshot, revalidation.evidence, sourceId);
+    const observedMillis = requiredUtcInstant(
+      revalidation.snapshot.retrievedAt,
+      "static revalidation retrievedAt",
+    );
+    const freshnessMillis = requiredUtcInstant(
+      revalidation.snapshot.freshnessExpiresAt,
+      "static revalidation freshnessExpiresAt",
+    );
+    if (revalidation.snapshot.retrievedAt.slice(0, 10).replaceAll("-", "") !== observationDate) {
+      throw new Error("static revalidation observation date mismatch");
+    }
+    if (observedMillis > buildMillis || buildMillis >= freshnessMillis) {
+      throw new Error("static revalidation is outside build time");
+    }
     nextSnapshots.push(structuredClone(revalidation.snapshot));
     const source = requireOne(nextInventory.sources, ({ id }) => id === sourceId, sourceId);
     if (!source.admissionEvidence || typeof source.admissionEvidence !== "object") {
@@ -442,6 +462,7 @@ export function buildCurrentSourcePrimaryOutputs({
   sourceSnapshots,
   sourceInventory,
   staticRevalidations,
+  staticRevalidationDate,
   productionInput,
   officialOdFareQuotes,
   baselineTopology,
@@ -462,7 +483,13 @@ export function buildCurrentSourcePrimaryOutputs({
   if (!Array.isArray(sourceSnapshots)) throw new Error("current source snapshots are required");
   const staticSources = staticRevalidations == null
     ? { sourceSnapshots: structuredClone(sourceSnapshots), sourceInventory: structuredClone(sourceInventory) }
-    : activateStaticSourceRevalidations({ sourceSnapshots, sourceInventory, revalidations: staticRevalidations });
+    : activateStaticSourceRevalidations({
+      sourceSnapshots,
+      sourceInventory,
+      revalidations: staticRevalidations,
+      buildNow,
+      observationDate: staticRevalidationDate,
+    });
   const previous = requireOne(
     staticSources.sourceSnapshots,
     ({ snapshotId }) => snapshotId === handoff.previousSnapshotId,
@@ -1087,6 +1114,11 @@ export async function generateCurrentSourceActivation({
   if (revalidationDirectories.size !== 1) {
     throw new Error("current static revalidation inputs must share one observation directory");
   }
+  const revalidationDateMatch = /current-static-revalidation-([0-9]{8})$/u
+    .exec([...revalidationDirectories][0]);
+  if (revalidationDateMatch == null) {
+    throw new Error("current static revalidation observation directory is invalid");
+  }
   const topologyReverificationPath =
     `tools/datapack/release/capital-topology-reverification-${capitalPathMatch[1]}.json`;
   await requireCleanBuilder(builderGitSha, {
@@ -1129,6 +1161,7 @@ export async function generateCurrentSourceActivation({
       rawArtifactBytes: rawArtifact.bytes,
       sourceSnapshots: parseJson(sourceSnapshotBytes, "source snapshots"),
       sourceInventory,
+      staticRevalidationDate: revalidationDateMatch[1],
       staticRevalidations: [
         {
           snapshot: parseJson(molitRevalidationSnapshotBytes, "MOLIT revalidation snapshot"),

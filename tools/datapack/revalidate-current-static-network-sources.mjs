@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -261,7 +261,17 @@ export async function writeCurrentStaticSourceRevalidation({ outputDirectory, re
   if (!path.isAbsolute(outputDirectory ?? "")) fail("OUTPUT");
   const parent = path.dirname(outputDirectory);
   const temporary = path.join(parent, `.${path.basename(outputDirectory)}.tmp-${randomUUID()}`);
+  const requireAbsentOutput = async () => {
+    try {
+      await lstat(outputDirectory);
+    } catch (error) {
+      if (error?.code === "ENOENT") return;
+      throw error;
+    }
+    throw new Error("output directory must be absent");
+  };
   try {
+    await requireAbsentOutput();
     await mkdir(temporary, { mode: 0o700 });
     const names = [];
     for (const [name, bytes] of serializedOutputs(result)) {
@@ -269,6 +279,7 @@ export async function writeCurrentStaticSourceRevalidation({ outputDirectory, re
       names.push(name);
     }
     try {
+      await requireAbsentOutput();
       await rename(temporary, outputDirectory);
     } catch (error) {
       if (error?.code === "EEXIST" || error?.code === "ENOTEMPTY") {

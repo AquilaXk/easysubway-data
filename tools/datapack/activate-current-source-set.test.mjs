@@ -49,6 +49,8 @@ function staticRoot(sourceId) {
 }
 
 function staticRevalidation(previous, observedAt = "2026-08-13T10:30:00.000Z") {
+  const observedMillis = Date.parse(observedAt);
+  const date = observedAt.slice(0, 10).replaceAll("-", "");
   const evidencePayload = {
     schemaVersion: 1,
     artifactKind: "current-static-source-revalidation-evidence",
@@ -70,15 +72,15 @@ function staticRevalidation(previous, observedAt = "2026-08-13T10:30:00.000Z") {
   const evidence = { ...evidencePayload, evidenceSha256: sha256(JSON.stringify(evidencePayload)) };
   const snapshot = {
     ...structuredClone(previous),
-    snapshotId: `${previous.sourceId}-revalidated-20260813`,
+    snapshotId: `${previous.sourceId}-revalidated-${date}`,
     retrievedAt: observedAt,
     previousSnapshotId: previous.snapshotId,
     diffSummary: {
       status: "NO_CHANGE", rawHashChanged: false, schemaHashChanged: false,
       requestHashChanged: false, sourceUpdatedAtChanged: false, rowDelta: 0, coverageDelta: 0,
     },
-    freshnessExpiresAt: "2026-09-12T10:30:00.000Z",
-    rawRetentionExpiresAt: "2026-11-11T10:30:00.000Z",
+    freshnessExpiresAt: new Date(observedMillis + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    rawRetentionExpiresAt: new Date(observedMillis + 90 * 24 * 60 * 60 * 1000).toISOString(),
     revalidationEvidenceSha256: evidence.evidenceSha256,
   };
   return { evidence, snapshot };
@@ -190,6 +192,8 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations,
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260813",
   });
   assert.equal(activated.sourceSnapshots.length, 4);
   for (const { snapshot, evidence } of revalidations) {
@@ -206,7 +210,31 @@ test("static revalidation은 exact two NO_CHANGE child heads와 inventory eviden
     sourceSnapshots: previous,
     sourceInventory,
     revalidations: tampered,
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260813",
   }), /static revalidation evidence identity mismatch/);
+
+  assert.throws(() => activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations: previous.map((snapshot) => staticRevalidation(snapshot, "2026-08-14T10:30:00.000Z")),
+    buildNow: "2026-08-13T10:30:00.000Z",
+    observationDate: "20260814",
+  }), /static revalidation is outside build time/);
+  assert.throws(() => activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations,
+    buildNow: "2026-09-12T10:30:00.000Z",
+    observationDate: "20260813",
+  }), /static revalidation is outside build time/);
+  assert.throws(() => activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations,
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260812",
+  }), /static revalidation observation date mismatch/);
 });
 
 test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
