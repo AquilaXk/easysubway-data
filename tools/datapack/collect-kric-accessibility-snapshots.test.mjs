@@ -662,6 +662,29 @@ test("standard observation은 snapshot과 canonical raw inventory를 absent dire
     /credential reflection rejected/u,
   );
 
+  const embeddedOutputRoot = path.join(directory, "embedded-observation");
+  await assert.rejects(
+    (async () => {
+      const embedded = await collectKricStandardAccessibilityObservation({
+        roster: [tuple],
+        serviceKey: "reflected-secret",
+        fetchImpl: async () => response(200, [{
+          dtlLoc: "url-prefix-reflected-secret-suffix",
+          grndDvCd: "1",
+          gubun: "EV",
+          imgPath: "",
+          mlFmlDvCd: "",
+          stinFlor: 1,
+          trfcWeakDvCd: "01",
+          "diagnostic-reflected-secret-key": "redacted",
+        }]),
+      });
+      await writeKricStandardAccessibilityObservation({ outputRoot: embeddedOutputRoot, observation: embedded });
+    })(),
+    /credential reflection rejected/u,
+  );
+  await assert.rejects(readFile(path.join(embeddedOutputRoot, "observation.json")), { code: "ENOENT" });
+
   await writeKricStandardAccessibilityObservation({ outputRoot, observation });
   const manifest = JSON.parse(await readFile(path.join(outputRoot, "observation.json"), "utf8"));
   assert.equal(manifest.snapshotId, observation.snapshot.snapshotId);

@@ -88,9 +88,10 @@ export function requiredAccount(value, label) {
 
 export function requiredUtcInstant(value, label) {
   const text = requiredText(value, label);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(text)
-    || Number.isNaN(Date.parse(text))) throw new Error(`${label} must be a UTC instant`);
-  return text;
+  const timestamp = Date.parse(text);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/u.test(text)
+    || Number.isNaN(timestamp)) throw new Error(`${label} must be a UTC instant`);
+  return new Date(timestamp).toISOString();
 }
 
 function safeAwsFailureCode(error) {

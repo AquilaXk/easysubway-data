@@ -66,7 +66,7 @@ function fakeAws(values, { preconditionFailed = false, failAt = null } = {}) {
         ChecksumSHA256: manifest.rawObjectChecksumSha256,
         VersionId: "version-1",
         ETag: "\"etag\"",
-        LastModified: "2026-08-14T00:01:00.000Z",
+        LastModified: "2026-08-14T00:01:00+00:00",
         Metadata: {
           sha256: manifest.rawObjectSha256,
           "artifact-kind": "kric-accessibility-raw-collection",
@@ -94,6 +94,7 @@ test("accessibility raw publisher는 observation identity를 content-addressed o
   assert.equal(receipt.snapshotRawSha256, values.observation.snapshot.rawSha256);
   assert.match(receipt.rawObjectUri, /^s3:\/\/easysubway-datapack-sources\/kric-station-convenience-standard\/20260814\/[0-9a-f]{64}\.json$/u);
   assert.match(receipt.rawRetentionExpiresAt, /^2026-11-/u);
+  assert.equal(receipt.storedAt, "2026-08-14T00:01:00.000Z");
   assert.deepEqual(JSON.parse(await readFile(values.receiptPath, "utf8")), receipt);
   assert.deepEqual(aws.calls.map((args) => args.slice(0, 2)), [
     ["sts", "get-caller-identity"], ["s3api", "put-object"], ["s3api", "head-object"],
@@ -123,4 +124,18 @@ test("publisher는 exact existing object만 허용하고 AWS 오류를 credentia
     (error) => error.message === "KRIC accessibility raw object upload failed: AccessDenied"
       && !error.message.includes("secret-must-not-appear"),
   );
+
+  const invalidPolicy = await fixture(t);
+  const untouchedAws = fakeAws(invalidPolicy);
+  await assert.rejects(
+    publishKricAccessibilityRawArtifact({
+      observationRoot: invalidPolicy.observationRoot,
+      receiptPath: invalidPolicy.receiptPath,
+      expectedBucketOwner: ACCOUNT,
+      repositoryRoot: path.join(invalidPolicy.root, "missing-repository"),
+      execFileImpl: untouchedAws.execFileImpl,
+    }),
+    /ENOENT/u,
+  );
+  assert.equal(untouchedAws.calls.length, 0);
 });

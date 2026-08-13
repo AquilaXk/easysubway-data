@@ -51,6 +51,15 @@ export async function publishKricAccessibilityRawArtifact({
   const checksumSha256 = createHash("sha256").update(rawArtifactBytes).digest("base64");
   const dateToken = snapshot.capturedAt.slice(0, 10).replaceAll("-", "");
   const objectKey = `${SOURCE_ID}/${dateToken}/${rawObjectSha256}.json`;
+  const governancePolicy = JSON.parse(await readFile(
+    path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"),
+    "utf8",
+  ));
+  const rawRetentionExpiresAt = deriveRawRetentionExpiresAt({
+    policy: governancePolicy,
+    sourceId: SOURCE_ID,
+    retrievedAt: snapshot.capturedAt,
+  });
   const { head, trustedBucketOwner, idempotentExistingObject } = await publishImmutableKricRawObject({
     execFileImpl,
     errorPrefix: "KRIC accessibility raw object",
@@ -64,7 +73,6 @@ export async function publishKricAccessibilityRawArtifact({
     artifactKind: ARTIFACT_KIND,
     sourceId: SOURCE_ID,
   });
-  const governancePolicy = JSON.parse(await readFile(path.join(path.resolve(repositoryRoot), "tools/datapack/source-governance-policy.json"), "utf8"));
   const receipt = {
     schemaVersion: 1,
     artifactKind: "kric-accessibility-raw-object-receipt",
@@ -81,11 +89,7 @@ export async function publishKricAccessibilityRawArtifact({
     versionId: requiredText(head.VersionId, "S3 VersionId"),
     etag: requiredText(head.ETag, "S3 ETag"),
     storedAt: requiredUtcInstant(head.LastModified, "S3 LastModified"),
-    rawRetentionExpiresAt: deriveRawRetentionExpiresAt({
-      policy: governancePolicy,
-      sourceId: SOURCE_ID,
-      retrievedAt: snapshot.capturedAt,
-    }),
+    rawRetentionExpiresAt,
     idempotentExistingObject,
   };
   await writeKricRawReceipt(resolvedReceipt, receipt, { mode: 0o600 });

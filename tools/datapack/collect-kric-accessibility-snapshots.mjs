@@ -769,10 +769,10 @@ function exactKeys(value, expected) {
 }
 
 function containsStringValue(value, expected) {
-  if (typeof value === "string") return value === expected;
+  if (typeof value === "string") return value.includes(expected);
   if (Array.isArray(value)) return value.some((item) => containsStringValue(item, expected));
   return value != null && typeof value === "object"
-    && Object.values(value).some((item) => containsStringValue(item, expected));
+    && Object.entries(value).some(([key, item]) => key.includes(expected) || containsStringValue(item, expected));
 }
 
 function tableExists(database, table) {
