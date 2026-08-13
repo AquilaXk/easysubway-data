@@ -37,25 +37,25 @@
   },
   "sourceSnapshots": {
     "note": "historical source snapshot lineage는 유지하고 canonical capital sourceInventory의 active source만 release snapshot으로 소비한다. retired KRIC movement 2종은 소비하지 않는다.",
-    "order": "release snapshot 순서: molit-urban-rail-full-route → seoulmetro-station-line-info → seoulmetro-cyberstation-route-map → kric-subway-timetable → seoul-metro-accessibility → kric-station-convenience-standard",
+    "order": "release snapshot 순서: seoulmetro-cyberstation-route-map → seoul-metro-accessibility → kric-station-convenience-standard → molit-urban-rail-full-route → seoulmetro-station-line-info → kric-subway-timetable",
     "committedVerificationCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,e=require('./tools/datapack/release/hash-evidence.json');for(const n of s.filter(x=>a.has(x.sourceId)&&h[x.sourceId]===x.snapshotId)){const q=e.perSourceEvidence.find(x=>x.snapshotId===n.snapshotId);if(!q||c.createHash('sha256').update(JSON.stringify([n])).digest('hex')!==q.perSourceSnapshotSetHash)throw new Error('source snapshot evidence mismatch: '+n.sourceId)}})\"",
     "timetableEvidenceCommand": "node -e \"const s=require('./tools/datapack/release/source-snapshots.json').find(n=>n.sourceId==='kric-subway-timetable'),i=require('./tools/datapack/source-inventory.json').sources.find(n=>n.id==='kric-subway-timetable').admissionEvidence,p=require('./tools/datapack/inputs/capital-pilot-production-source-input.json').scheduleProvenance;if(!(s&&i&&p&&s.snapshotId===i.snapshotId&&s.snapshotId===p.sourceSnapshotId&&s.rawSha256===i.rawSha256&&s.schemaFingerprint===i.schemaFingerprint))throw new Error('timetable snapshot evidence mismatch')\"",
     "specRowRawSha256Note": "build-spec sourceSnapshots[].rawSha256는 admissionEvidence.rawSha256(=raw 바이트 해시, fixture 주석 선례 'admission sample.rawSha256')를 기입. snapshot 객체 내부 rawSha256는 canonical(minified·key정렬) raw 해시로 값이 다르며 source-snapshots.json에 보존됨.",
     "governanceOverlayNote": "retained legacy root 5종과 timetable의 원천 identity를 유지하고 신규 접근성 snapshot 2종을 추가했다. build-spec의 freshnessExpiresAt·rawRetentionExpiresAt·governance policy binding은 현행 정책에서 파생하며 validator가 임의 연장을 차단한다."
   },
   "sourceSnapshotSetHash": {
-    "value": "0e97eac43e5e87b82f7a053ded3b1f7d3804e6810f0b3566955d15997f70cd3a",
+    "value": "774f2deb85aaae928e42ccaa038be59b57d51cf709700430558e22cd867bcb80",
     "contract": "source별 head 6종의 byte-ordered JSON hash와 build spec·release request가 일치해야 한다.",
     "reproductionCommand": "node -e \"import('./tools/datapack/source-snapshot-policy.mjs').then(({validateLineage})=>{const c=require('crypto'),s=require('./tools/datapack/release/source-snapshots.json'),p=require('./tools/datapack/release/capital-production-canonical-pack.json'),a=new Set(p.packs.find(x=>x.id==='capital').sourceInventory.map(x=>x.id)),h=validateLineage(s).headsBySource,r=s.filter(n=>a.has(n.sourceId)&&h[n.sourceId]===n.snapshotId);console.log(c.createHash('sha256').update(JSON.stringify(r)).digest('hex'))})\""
   },
   "sourceInventorySha256": {
-    "value": "e8305ef120bda741cc36e370b1747b06e5e33cd491ecf98449d00288dd26e5d6",
+    "value": "1fd038b78420cabd71f320e3ce6a02f091ca3b9f3d7b3f3228bee01d5f550959",
     "contract": "run-source-admission-pipeline.mjs의 공식 sha256(JSON.stringify(admittedInventory)) 계약. 현행 브랜치의 tools/datapack/source-inventory.json이 최종 admitted inventory이며 워크플로 빌드가 실제로 소비하는 인벤토리와 동일 파일.",
     "reproductionCommand": "node -e \"const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(fs.readFileSync('tools/datapack/source-inventory.json','utf8')))).digest('hex'))\""
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "c22a82aa55f52b85b08e15ded56ee7cf46ba0a36ea050b73224d0b3e79f8682a",
+    "sha256": "e3046a9e769713acf16a9a9235d77c19404a99d28792a985728dd5e0de34a0f4",
     "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
     "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
@@ -71,32 +71,11 @@
   },
   "perSourceEvidence": [
     {
-      "sourceId": "molit-urban-rail-full-route",
-      "snapshotId": "molit-urban-rail-full-route-capital-admission-20260712",
-      "rawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
-      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
-      "perSourceSnapshotSetHash": "6810d86ce484465d9e6c23e29b827228a48cd08a00fea61aa7545b88b9466a38"
-    },
-    {
-      "sourceId": "seoulmetro-station-line-info",
-      "snapshotId": "seoulmetro-station-line-info-capital-admission-20260712",
-      "rawSha256": "5f1d9ec2036fbba6d7a7cfb710ce4353d332a74c8086c63e1b282d6985278008",
-      "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
-      "perSourceSnapshotSetHash": "7cd9209bd79399731bc3f5d4aa34b1467755a38072eafbfd6a5f172ad99bcda5"
-    },
-    {
       "sourceId": "seoulmetro-cyberstation-route-map",
       "snapshotId": "seoulmetro-cyberstation-route-map-capital-admission-20260712",
       "rawSha256": "ce6499be2b634fad8f0cd0d2f1edf074ed0452de897f9460e3472850d4ba91ba",
       "adminReviewRecordHash": "4ea77265d144baa6b06e8f10152743420006f7581b24ffd68b21367341aa1b6c",
       "perSourceSnapshotSetHash": "f66882ed69618b8c7e0d3e3746d914ef122ce7889c0ae015730b92bc6e51e19b"
-    },
-    {
-      "sourceId": "kric-subway-timetable",
-      "snapshotId": "kric-subway-timetable-line4-pilot-20260709",
-      "rawSha256": "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
-      "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
-      "perSourceSnapshotSetHash": "06ba5b27632fb6c3218f16ebff4ade46ed81e598ad4969c95c5fdc180c17c828"
     },
     {
       "sourceId": "seoul-metro-accessibility",
@@ -111,6 +90,27 @@
       "rawSha256": "d7d8c1385d9a96b9344803604436e03b5f3a516cc3a9bd0c34311c07ff1952a6",
       "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
       "perSourceSnapshotSetHash": "2bc25a164809cec41059602522ef3e558a1296a0a78e0f185bf53f2f1aaa2bd5"
+    },
+    {
+      "sourceId": "molit-urban-rail-full-route",
+      "snapshotId": "molit-urban-rail-full-route-revalidated-20260813",
+      "rawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
+      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
+      "perSourceSnapshotSetHash": "c73fcd64dade7d53c3829207167af62fb55f3f0a0e8e82c2a80480a0a84e7b8d"
+    },
+    {
+      "sourceId": "seoulmetro-station-line-info",
+      "snapshotId": "seoulmetro-station-line-info-change-admitted-20260813",
+      "rawSha256": "6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b",
+      "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
+      "perSourceSnapshotSetHash": "027a3672b47b78bd5e89b6e3ad6c1d93bf952e77f7fa8799522ece8e001c16e3"
+    },
+    {
+      "sourceId": "kric-subway-timetable",
+      "snapshotId": "kric-subway-timetable-line4-pilot-20260809",
+      "rawSha256": "d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064",
+      "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
+      "perSourceSnapshotSetHash": "c2345aac83b263df7f827743af29672f6f601ff956f8a8d08464e5eef8b1ae0d"
     }
   ],
   "officialOdFareEvidence": {
