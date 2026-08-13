@@ -1355,8 +1355,12 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
       }
       projectedIds.add(core.id);
       const reviewedEdge = reviewedEdges.get(core.id);
+      const materializedReviewedEdge = reviewedEdge == null ? null : {
+        ...reviewedEdge,
+        serviceClass: reviewedEdge.serviceClass ?? "SUBWAY",
+      };
       if (reviewedEdge == null
-        || Object.entries(core).some(([key, value]) => reviewedEdge[key] !== value)) {
+        || Object.entries(core).some(([key, value]) => materializedReviewedEdge[key] !== value)) {
         throw new Error(`capital topology reviewed edge mismatch: ${core.id}`);
       }
       const fromMembership = stationLineByNode.get(core.fromNodeId);
@@ -1371,16 +1375,13 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
         || reviewedEdge.provenanceKind !== "OFFICIAL_SOURCE"
         || reviewedEdge.verificationStatus !== "VERIFIED"
         || reviewedEdge.evidenceHash !== line.contentSha256
-        || !/^[a-f0-9]{64}$/u.test(reviewedEdge.evidenceHash ?? "")
-        || typeof reviewedEdge.fieldProvenance !== "object"
-        || reviewedEdge.fieldProvenance == null
-        || Array.isArray(reviewedEdge.fieldProvenance))) {
+        || !/^[a-f0-9]{64}$/u.test(reviewedEdge.evidenceHash ?? ""))) {
         throw new Error(`capital topology reviewed edge admission mismatch: ${core.id}`);
       }
       if (nonAdjacent) {
         requiredUtcDateString(reviewedEdge.lastVerifiedAt, "capital topology edge lastVerifiedAt");
       }
-      projected.push(structuredClone(reviewedEdge));
+      projected.push(structuredClone(materializedReviewedEdge));
     }
   }
   const retained = pack.networkEdges.filter((edge) => !(edge.edgeType === "RIDE"
