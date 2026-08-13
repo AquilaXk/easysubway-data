@@ -1,0 +1,78 @@
+name: ITX Current Replay Admission Candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: itx-current-replay-admission-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    name: ITX current replay admission candidate
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: ITX replay admission / Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: ITX replay admission / Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.19.0"
+
+      - name: ITX replay admission / Download retained extended capture
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: AquilaXk/easysubway-data
+          run-id: 31620004435
+          name: itx-current-collection-continuation-31620004435
+          path: ${{ runner.temp }}/itx-replay-admission-capture
+          github-token: ${{ github.token }}
+
+      - name: ITX replay admission / Download successful replay evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: AquilaXk/easysubway-data
+          run-id: 31679427374
+          name: itx-current-collection-offline-replay-31679427374
+          path: ${{ runner.temp }}/itx-replay-admission-evidence
+          github-token: ${{ github.token }}
+
+      - name: ITX replay admission / Prepare temp output
+        run: mkdir -p "${{ runner.temp }}/itx-replay-admission-output"
+
+      - name: ITX replay admission / Emit station catalog pack
+        run: |
+          set -euo pipefail
+          node tools/datapack/emit-station-catalog-pack.mjs \
+            --output "${{ runner.temp }}/itx-replay-admission-output/station-catalog-pack" \
+            --catalog-pack-id "itx-current-station-catalog-v1"
+
+      - name: ITX replay admission / Materialize admission candidate
+        run: |
+          set -euo pipefail
+          node tools/datapack/materialize-replayed-itx-admission-candidate.mjs \
+            --capture "${{ runner.temp }}/itx-replay-admission-capture/provider-response-extended-capture.json" \
+            --replay-evidence "${{ runner.temp }}/itx-replay-admission-evidence/itx-replay.json" \
+            --station-catalog-pack "${{ runner.temp }}/itx-replay-admission-output/station-catalog-pack" \
+            --candidate-output "${{ runner.temp }}/itx-replay-admission-output/candidate.json" \
+            --completeness-output "${{ runner.temp }}/itx-replay-admission-output/completeness.json"
+
+      - name: ITX replay admission / Upload candidate evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: itx-current-replay-admission-candidate-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/itx-replay-admission-output/candidate.json
+            ${{ runner.temp }}/itx-replay-admission-output/completeness.json
+          if-no-files-found: error
+          retention-days: 14
