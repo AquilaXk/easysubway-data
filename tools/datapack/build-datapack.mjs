@@ -1329,6 +1329,10 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
   }
   const pack = packs[0];
   const stationIds = capitalStationIdsByLine(pack);
+  const stationLineByNode = new Map(pack.stationLines.map((membership) => [
+    `${membership.stationId}:${membership.lineId}`,
+    membership,
+  ]));
   const lineIds = new Set(topology.lines.map(({ lineId }) => lineId));
   const reviewedEdges = new Map();
   for (const edge of reviewedPack.networkEdges) {
@@ -1352,8 +1356,16 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
       projectedIds.add(core.id);
       const reviewedEdge = reviewedEdges.get(core.id);
       if (reviewedEdge == null
-        || Object.entries(core).some(([key, value]) => reviewedEdge[key] !== value)
-        || reviewedEdge.sourceId !== topology.sourceId
+        || Object.entries(core).some(([key, value]) => reviewedEdge[key] !== value)) {
+        throw new Error(`capital topology reviewed edge mismatch: ${core.id}`);
+      }
+      const fromMembership = stationLineByNode.get(core.fromNodeId);
+      const toMembership = stationLineByNode.get(core.toNodeId);
+      if (fromMembership == null || toMembership == null) {
+        throw new Error(`capital topology reviewed edge membership mismatch: ${core.id}`);
+      }
+      const nonAdjacent = Math.abs(fromMembership.lineSequence - toMembership.lineSequence) !== 1;
+      if (nonAdjacent && (reviewedEdge.sourceId !== topology.sourceId
         || !/^capital-route-topology-[0-9]{8}$/u.test(reviewedEdge.sourceSnapshotId ?? "")
         || !/^[a-f0-9]{64}$/u.test(reviewedEdge.providerRecordHash ?? "")
         || reviewedEdge.provenanceKind !== "OFFICIAL_SOURCE"
@@ -1362,10 +1374,12 @@ export function projectCapitalTopologyIntoCanonicalFixture(fixture, topology, re
         || !/^[a-f0-9]{64}$/u.test(reviewedEdge.evidenceHash ?? "")
         || typeof reviewedEdge.fieldProvenance !== "object"
         || reviewedEdge.fieldProvenance == null
-        || Array.isArray(reviewedEdge.fieldProvenance)) {
+        || Array.isArray(reviewedEdge.fieldProvenance))) {
         throw new Error(`capital topology reviewed edge admission mismatch: ${core.id}`);
       }
-      requiredUtcDateString(reviewedEdge.lastVerifiedAt, "capital topology edge lastVerifiedAt");
+      if (nonAdjacent) {
+        requiredUtcDateString(reviewedEdge.lastVerifiedAt, "capital topology edge lastVerifiedAt");
+      }
       projected.push(structuredClone(reviewedEdge));
     }
   }
