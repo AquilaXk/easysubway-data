@@ -241,7 +241,7 @@ test("tracked provider boundary는 public MOLIT CSV와 Seoul을 exact one-call�
   assert.equal(Object.hasOwn(requested[0].init.headers, "Authorization"), false);
   assert.deepEqual(requested[0].init.headers, { accept: "application/octet-stream" });
   assert.match(decodeURI(new URL(requested[1].url).pathname),
-    /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/04호선$/);
+    /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/ \/ \/4호선$/);
   assert.equal(result.molit.equals(responses.molit), true);
   assert.equal(result.seoul.equals(responses.seoul), true);
 
