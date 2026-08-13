@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, readFile, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -18,6 +18,8 @@ const EXPECTED_SERVICE_DATES = Object.freeze({ "7": "20260822", "8": "20260813",
 const EXPECTED_AGGREGATE = Object.freeze({ expectedOdCount: 918, completedOdCount: 918, failedOdCount: 0 });
 const EXPECTED_CAPTURE_BYTES_SHA256 = "3dc2b1f68dc32e8a47cb442483a04762103d6cf55d97db96f35017a6f4b2ee94";
 const EXPECTED_REPLAY_EVIDENCE_BYTES_SHA256 = "68440e73376ee9825ff7f2d4898ffee4399676616a7773e0f5f7fd066cba10be";
+const EXPECTED_CAPTURE_CONTENT_SHA256 = "99e8272ecf344a14e9723651279bd3f5e3cf9db382edbc3dad571a1f9c0bc6fd";
+const EXPECTED_REPLAY_EVIDENCE_HASH = "9fd4131cda3776003f3031a1ab252a5e655fb0d9da9aeec61060d4cbc704abe4";
 const CAPTURE_PROVENANCE = Object.freeze({
   workflowRunId: "31620004435",
   artifactId: "9150832350",
@@ -36,6 +38,8 @@ export async function materializeReplayedItxAdmissionCandidateCli({
   collectCompletenessImpl = collectKorailItxCheongchunCompleteness,
   expectedCaptureBytesSha256 = EXPECTED_CAPTURE_BYTES_SHA256,
   expectedReplayEvidenceBytesSha256 = EXPECTED_REPLAY_EVIDENCE_BYTES_SHA256,
+  expectedCaptureContentSha256 = EXPECTED_CAPTURE_CONTENT_SHA256,
+  expectedReplayEvidenceHash = EXPECTED_REPLAY_EVIDENCE_HASH,
 } = {}) {
   const args = candidateArgs(argv);
   const replayEvidenceBytes = await readFile(args["replay-evidence"]);
@@ -43,6 +47,9 @@ export async function materializeReplayedItxAdmissionCandidateCli({
     throw new Error("retained replay evidence bytes differ");
   }
   const replayEvidence = parseReplayEvidence(replayEvidenceBytes);
+  if (replayEvidence.evidenceHash !== expectedReplayEvidenceHash) {
+    throw new Error("retained replay evidence identity differs");
+  }
   const inspection = await inspectItxCurrentCollectionEvidenceCli({
     argv: ["--evidence", args["replay-evidence"]],
   });
@@ -53,53 +60,112 @@ export async function materializeReplayedItxAdmissionCandidateCli({
     throw new Error("retained capture bytes differ");
   }
   const replay = createProviderResponseReplay({ captureBytes });
+  if (replay.capture.contentSha256 !== expectedCaptureContentSha256) {
+    throw new Error("retained capture content identity differs");
+  }
   if (JSON.stringify(replay.capture.selectedServiceDates) !== JSON.stringify(inspection.selectedServiceDates)) {
     throw new Error("replay evidence and capture service dates differ");
   }
 
-  let exhaustionChecked = false;
-  let deferredCollectionFailure = null;
-  const result = await runCompletenessImpl({
-    argv: [
-      "--day8-date", EXPECTED_SERVICE_DATES["8"],
-      "--day7-date", EXPECTED_SERVICE_DATES["7"],
-      "--day9-date", EXPECTED_SERVICE_DATES["9"],
-      "--station-catalog-pack", args["station-catalog-pack"],
-      "--output", args["candidate-output"],
-      "--completeness-output", args["completeness-output"],
-    ],
-    env: {},
-    providerServiceKey: OFFLINE_PROVIDER_KEY,
-    now: new Date(replay.capture.observedAt),
-    repositoryRoot,
-    fetchImpl: replay.fetchImpl,
-    collectImpl: async (options) => {
-      try {
-        const artifact = await collectCompletenessImpl(options);
-        assertReplayProjection(artifact, replayEvidence);
-        artifact.sourceTimetableArtifact.replayAdmissionProvenance = replayAdmissionProvenance({
-          capture: replay.capture,
-          replayEvidence,
-        });
-        artifact.evidenceHash = evidenceHash(artifact);
-        return artifact;
-      } catch (error) {
-        deferredCollectionFailure ??= error;
-        return { validationStatus: "MISSING" };
-      }
-    },
-    onPublicationEvent: async ({ event }) => {
-      if (event === "before-stage-created") {
-        if (deferredCollectionFailure !== null) throw deferredCollectionFailure;
-        replay.assertExhausted();
-        exhaustionChecked = true;
-      }
-    },
-  });
-  replay.assertExhausted();
-  if (!exhaustionChecked) throw new Error("candidate publication did not verify capture exhaustion");
-  validateResult(result);
-  return result;
+  const outputParent = path.dirname(args["candidate-output"]);
+  if (path.dirname(args["completeness-output"]) !== outputParent) {
+    throw new Error("candidate and completeness output parents must match");
+  }
+  const stage = await mkdtemp(path.join(outputParent, ".itx-replay-admission-"));
+  const stagedCandidate = path.join(stage, "candidate.json");
+  const stagedCompleteness = path.join(stage, "completeness.json");
+  try {
+    let exhaustionChecked = false;
+    let deferredCollectionFailure = null;
+    const result = await runCompletenessImpl({
+      argv: [
+        "--day8-date", EXPECTED_SERVICE_DATES["8"],
+        "--day7-date", EXPECTED_SERVICE_DATES["7"],
+        "--day9-date", EXPECTED_SERVICE_DATES["9"],
+        "--station-catalog-pack", args["station-catalog-pack"],
+        "--output", stagedCandidate,
+        "--completeness-output", stagedCompleteness,
+      ],
+      env: {},
+      providerServiceKey: OFFLINE_PROVIDER_KEY,
+      now: new Date(replay.capture.observedAt),
+      repositoryRoot,
+      fetchImpl: replay.fetchImpl,
+      collectImpl: async (options) => {
+        try {
+          const artifact = await collectCompletenessImpl(options);
+          assertReplayProjection(artifact, replayEvidence);
+          artifact.sourceTimetableArtifact.replayAdmissionProvenance = replayAdmissionProvenance({
+            capture: replay.capture,
+            replayEvidence,
+          });
+          artifact.evidenceHash = evidenceHash(artifact);
+          return artifact;
+        } catch (error) {
+          deferredCollectionFailure ??= error;
+          return { validationStatus: "MISSING" };
+        }
+      },
+      onPublicationEvent: async ({ event }) => {
+        if (event === "before-stage-created") {
+          if (deferredCollectionFailure !== null) throw deferredCollectionFailure;
+          replay.assertExhausted();
+          exhaustionChecked = true;
+        }
+      },
+    });
+    replay.assertExhausted();
+    if (!exhaustionChecked) throw new Error("candidate publication did not verify capture exhaustion");
+    validateResult(result);
+    const candidateBytes = await readFile(stagedCandidate);
+    const completenessBytes = await readFile(stagedCompleteness);
+    if (sha256(candidateBytes) !== result.outputSha256
+      || sha256(completenessBytes) !== result.completenessEvidenceSha256) {
+      throw new Error("staged replay admission output identity is invalid");
+    }
+    await publishFinalOutputs({
+      stagedCandidate,
+      stagedCompleteness,
+      candidateOutput: args["candidate-output"],
+      completenessOutput: args["completeness-output"],
+    });
+    return result;
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+
+async function publishFinalOutputs({ stagedCandidate, stagedCompleteness, candidateOutput, completenessOutput }) {
+  const candidateIdentity = await lstat(stagedCandidate);
+  const completenessIdentity = await lstat(stagedCompleteness);
+  let completenessPublished = false;
+  try {
+    await link(stagedCompleteness, completenessOutput);
+    completenessPublished = true;
+    if (!sameIdentity(await lstat(completenessOutput), completenessIdentity)) {
+      throw new Error("final replay admission output identity is invalid");
+    }
+    await link(stagedCandidate, candidateOutput);
+    if (!sameIdentity(await lstat(candidateOutput), candidateIdentity)) {
+      throw new Error("final replay admission output identity is invalid");
+    }
+  } catch (error) {
+    if (completenessPublished) await removeOwnedOutput(completenessOutput, completenessIdentity);
+    await removeOwnedOutput(candidateOutput, candidateIdentity);
+    throw error;
+  }
+}
+
+async function removeOwnedOutput(output, identity) {
+  try {
+    if (sameIdentity(await lstat(output), identity)) await unlink(output);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
+function sameIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 function parseReplayEvidence(bytes) {

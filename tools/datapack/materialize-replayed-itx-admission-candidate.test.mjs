@@ -108,6 +108,8 @@ async function fixture() {
   await writeFile(values.replayEvidence, replayBytes);
   values.captureBytesSha256 = createHash("sha256").update(captureBytes).digest("hex");
   values.replayBytesSha256 = createHash("sha256").update(replayBytes).digest("hex");
+  values.captureContentSha256 = JSON.parse(captureBytes).contentSha256;
+  values.replayEvidenceHash = JSON.parse(replayBytes).evidenceHash;
   return values;
 }
 
@@ -115,6 +117,8 @@ function pins(values, overrides = {}) {
   return {
     expectedCaptureBytesSha256: values.captureBytesSha256,
     expectedReplayEvidenceBytesSha256: values.replayBytesSha256,
+    expectedCaptureContentSha256: values.captureContentSha256,
+    expectedReplayEvidenceHash: values.replayEvidenceHash,
     ...overrides,
   };
 }
@@ -148,32 +152,39 @@ test("successful replay identity를 network 없이 existing ADMISSION candidate 
         received = options;
         const artifact = await options.collectImpl({ fetchImpl: options.fetchImpl });
         await options.onPublicationEvent({ event: "before-stage-created" });
-        await writeFile(valueAfter(options.argv, "--output"), "candidate\n");
-        await writeFile(valueAfter(options.argv, "--completeness-output"), "completeness\n");
+        const candidateBytes = "candidate\n";
+        const completenessBytes = "completeness\n";
+        await writeFile(valueAfter(options.argv, "--output"), candidateBytes);
+        await writeFile(valueAfter(options.argv, "--completeness-output"), completenessBytes);
         return {
           artifact,
           candidate: { validationStatus: "SUPPORTED" },
-          outputSha256: "a".repeat(64),
-          completenessEvidenceSha256: "b".repeat(64),
+          outputSha256: createHash("sha256").update(candidateBytes).digest("hex"),
+          completenessEvidenceSha256: createHash("sha256").update(completenessBytes).digest("hex"),
           exitCode: 0,
         };
       },
     });
 
-    assert.deepEqual(received.argv, [
+    assert.deepEqual(received.argv.slice(0, 8), [
       "--day8-date", SERVICE_DATES["8"],
       "--day7-date", SERVICE_DATES["7"],
       "--day9-date", SERVICE_DATES["9"],
       "--station-catalog-pack", values.stationCatalogPack,
-      "--output", values.candidate,
-      "--completeness-output", values.completeness,
     ]);
+    const stagedCandidate = valueAfter(received.argv, "--output");
+    const stagedCompleteness = valueAfter(received.argv, "--completeness-output");
+    assert.equal(path.dirname(stagedCandidate), path.dirname(stagedCompleteness));
+    assert.equal(path.dirname(path.dirname(stagedCandidate)), values.directory);
+    assert.match(path.basename(path.dirname(stagedCandidate)), /^\.itx-replay-admission-/);
+    assert.notEqual(stagedCandidate, values.candidate);
+    assert.notEqual(stagedCompleteness, values.completeness);
     assert.deepEqual(received.env, {});
     assert.equal(received.providerServiceKey, "offline-provider-replay-key");
     assert.equal(received.now.toISOString(), "2026-08-13T00:00:00.000Z");
     assert.equal(await readFile(values.candidate, "utf8"), "candidate\n");
     assert.equal(await readFile(values.completeness, "utf8"), "completeness\n");
-    assert.equal(result.outputSha256, "a".repeat(64));
+    assert.equal(result.outputSha256, createHash("sha256").update("candidate\n").digest("hex"));
     assert.deepEqual(result.artifact.sourceTimetableArtifact.replayAdmissionProvenance, {
       schemaVersion: 1,
       capture: {
@@ -208,6 +219,7 @@ test("replay evidence/capture identity drift와 unconsumed record는 output 0으
       repositoryRoot: values.directory,
       ...pins(values, {
         expectedCaptureBytesSha256: createHash("sha256").update(driftedCapture).digest("hex"),
+        expectedCaptureContentSha256: JSON.parse(driftedCapture).contentSha256,
       }),
       runCompletenessImpl: async () => { calls += 1; },
     }), /replay evidence and capture service dates differ/);
@@ -300,6 +312,40 @@ test("retained capture와 replay evidence의 exact member bytes가 아니면 col
       runCompletenessImpl: async () => { calls += 1; },
     }), /retained replay evidence bytes differ/);
     assert.equal(calls, 0);
+    await assert.rejects(readFile(values.candidate), /ENOENT/);
+    await assert.rejects(readFile(values.completeness), /ENOENT/);
+  } finally {
+    await rm(values.directory, { recursive: true, force: true });
+  }
+});
+
+test("staged output identity 검증 실패는 final candidate와 completeness를 남기지 않는다", async () => {
+  const values = await fixture();
+  try {
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      ...pins(values),
+      collectCompletenessImpl: async (options) => {
+        for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
+          await options.fetchImpl(request(operation));
+        }
+        return admissionEvidence();
+      },
+      runCompletenessImpl: async (options) => {
+        const artifact = await options.collectImpl({ fetchImpl: options.fetchImpl });
+        await options.onPublicationEvent({ event: "before-stage-created" });
+        await writeFile(valueAfter(options.argv, "--output"), "candidate\n");
+        await writeFile(valueAfter(options.argv, "--completeness-output"), "completeness\n");
+        return {
+          artifact,
+          candidate: { validationStatus: "SUPPORTED" },
+          outputSha256: "0".repeat(64),
+          completenessEvidenceSha256: "1".repeat(64),
+          exitCode: 0,
+        };
+      },
+    }), /staged replay admission output identity is invalid/);
     await assert.rejects(readFile(values.candidate), /ENOENT/);
     await assert.rejects(readFile(values.completeness), /ENOENT/);
   } finally {
