@@ -41,7 +41,7 @@ async function fixture(t) {
   return { root, observationRoot, observation, receiptPath: path.join(root, "receipt.json") };
 }
 
-function fakeAws(values, { preconditionFailed = false, failAt = null } = {}) {
+function fakeAws(values, { preconditionFailed = false, failAt = null, versionId = "version-1" } = {}) {
   const calls = [];
   const execFileImpl = async (_command, args) => {
     calls.push(args);
@@ -64,7 +64,7 @@ function fakeAws(values, { preconditionFailed = false, failAt = null } = {}) {
       return { stdout: JSON.stringify({
         ContentLength: manifest.rawObjectByteSize,
         ChecksumSHA256: manifest.rawObjectChecksumSha256,
-        VersionId: "version-1",
+        ...(versionId == null ? {} : { VersionId: versionId }),
         ETag: "\"etag\"",
         LastModified: "2026-08-14T00:01:00+00:00",
         Metadata: {
@@ -99,6 +99,20 @@ test("accessibility raw publisher는 observation identity를 content-addressed o
   assert.deepEqual(aws.calls.map((args) => args.slice(0, 2)), [
     ["sts", "get-caller-identity"], ["s3api", "put-object"], ["s3api", "head-object"],
   ]);
+});
+
+test("unversioned bucket object는 versionId null receipt로 명시한다", async (t) => {
+  const values = await fixture(t);
+  const aws = fakeAws(values, { versionId: null });
+  const receipt = await publishKricAccessibilityRawArtifact({
+    observationRoot: values.observationRoot,
+    receiptPath: values.receiptPath,
+    expectedBucketOwner: ACCOUNT,
+    execFileImpl: aws.execFileImpl,
+  });
+
+  assert.equal(receipt.versionId, null);
+  assert.deepEqual(JSON.parse(await readFile(values.receiptPath, "utf8")), receipt);
 });
 
 test("publisher는 exact existing object만 허용하고 AWS 오류를 credential-safe하게 정제한다", async (t) => {
