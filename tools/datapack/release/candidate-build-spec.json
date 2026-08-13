@@ -9,7 +9,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "02a59401da9564325cb25fdf9e7f751d9d06b5013648f907fecfbd0ee7ed616a"
+      "sha256": "28bc70159d1eb01248d5a6a0196f1916f243a188a7dac0b27ac184cb5668b5bb"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -44,11 +44,11 @@
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
     "seoulmetro-cyberstation-route-map-capital-admission-20260712",
-    "seoul-metro-accessibility-20260728",
-    "kric-station-convenience-standard-20260728T184503338Z",
     "molit-urban-rail-full-route-revalidated-20260813",
     "seoulmetro-station-line-info-change-admitted-20260813",
-    "kric-subway-timetable-line4-pilot-20260809"
+    "kric-subway-timetable-line4-pilot-20260809",
+    "seoul-metro-accessibility-20260813T213842955Z",
+    "kric-station-convenience-standard-20260813T200604805Z"
   ],
   "sourceSnapshots": [
     {
@@ -65,40 +65,6 @@
       "credentialRedacted": true,
       "freshnessExpiresAt": "2027-07-12T00:00:00.000Z",
       "rawRetentionExpiresAt": "2026-10-10T00:00:00.000Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
-    },
-    {
-      "snapshotId": "seoul-metro-accessibility-20260728",
-      "sourceId": "seoul-metro-accessibility",
-      "rawObjectUri": "s3://easysubway-datapack-sources/seoul-metro-accessibility/20260728.json",
-      "rawSha256": "93a6d2fd9f0d4e9a76ccbe85d2ac87bbcbfeb257bd1406810d78f424a6c756b5",
-      "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
-      "schemaFingerprint": "6660b7a4b309d07f49ba1e3cd4bd524d4e2e07e4d47fd7a8c99bceb4d9b5b386",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-26T15:35:25.704Z",
-      "rawRetentionExpiresAt": "2026-10-26T15:35:25.704Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
-    },
-    {
-      "snapshotId": "kric-station-convenience-standard-20260728T184503338Z",
-      "sourceId": "kric-station-convenience-standard",
-      "rawObjectUri": "s3://easysubway-datapack-sources/kric-station-convenience-standard/20260728T184503338Z.json",
-      "rawSha256": "d7d8c1385d9a96b9344803604436e03b5f3a516cc3a9bd0c34311c07ff1952a6",
-      "redactedRequestFingerprint": "c79ea74625e730ef2251c7eff62198049a442f9fe40573acc876b9549d39c634",
-      "schemaFingerprint": "8ed2824f779a7ced304e86b83b634ea21d353b45b5ea9d3ca276a9e1dbfca187",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-10-26T18:45:03.338Z",
-      "rawRetentionExpiresAt": "2026-10-26T18:45:03.338Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     },
@@ -152,14 +118,48 @@
       "rawRetentionExpiresAt": "2026-11-07T12:04:20.479Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+    },
+    {
+      "snapshotId": "seoul-metro-accessibility-20260813T213842955Z",
+      "sourceId": "seoul-metro-accessibility",
+      "rawObjectUri": "s3://easysubway-datapack-sources/seoul-metro-accessibility/20260813/779bb29c84822c17ea8cadf972d8b712371f4d7795bd7b7d03e88d79b82b6b35.json",
+      "rawSha256": "779bb29c84822c17ea8cadf972d8b712371f4d7795bd7b7d03e88d79b82b6b35",
+      "redactedRequestFingerprint": "f2b9752b0554f3945909d44e7f42dddc5ca8d87b1d14f6cfd542291120c9faa5",
+      "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "9ccbf78e88d905207134ca3ad08ef7e99fbbdff16c4503b13c4ed925a99b5303",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-11-11T21:38:42.955Z",
+      "rawRetentionExpiresAt": "2026-11-11T21:38:42.955Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+    },
+    {
+      "snapshotId": "kric-station-convenience-standard-20260813T200604805Z",
+      "sourceId": "kric-station-convenience-standard",
+      "rawObjectUri": "s3://easysubway-datapack-sources/kric-station-convenience-standard/20260813/ef4bdf42a50d74cd38941d8ff7f09b03b0265a75c0b06969a3772538d75307ac.json",
+      "rawSha256": "ef4bdf42a50d74cd38941d8ff7f09b03b0265a75c0b06969a3772538d75307ac",
+      "redactedRequestFingerprint": "8dada6c3dff32f654dbc71097b49beeef20a115fb051836adb76e7f76d757e17",
+      "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "96bf75ccd91ac4c519fb98e198804eef53423badfae334603082027173c2e407",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-11-11T20:06:04.805Z",
+      "rawRetentionExpiresAt": "2026-11-11T20:06:04.805Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     }
   ],
-  "sourceSnapshotSetHash": "774f2deb85aaae928e42ccaa038be59b57d51cf709700430558e22cd867bcb80",
+  "sourceSnapshotSetHash": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "e485e8e28064794042f509a04436eb6af2b2bfc6ea49ec5bcb48a8aa7a37ecc9",
+  "sourceInventorySha256": "8d638c59313b8544733e58d28987637ae57ad0c3613bfb99936428226b3316ab",
   "builderGitSha": "e03e341c855a2caf0da01c048c423914ca1da674",
   "builderVersion": "build-datapack.mjs@26",
   "officialOdFareEvidence": {
