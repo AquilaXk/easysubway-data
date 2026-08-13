@@ -199,6 +199,26 @@ test("row order/value/field/provider/schema mismatch는 child output을 만들�
   }
 });
 
+test("Seoul 4호선 projection은 provider exact 04호선 token만 허용한다", () => {
+  for (const lineTokens of [
+    Array(5).fill("01호선"),
+    ["04호선", "04호선", "01호선", "04호선", "04호선"],
+  ]) {
+    const responses = responseBytes();
+    const document = JSON.parse(responses.seoul);
+    document.SearchSTNBySubwayLineInfo.row.forEach((row, index) => {
+      row.LINE_NUM = lineTokens[index];
+    });
+    responses.seoul = Buffer.from(JSON.stringify(document));
+
+    assert.throws(() => buildCurrentStaticSourceRevalidation({
+      sourceSnapshots: previousSnapshots(),
+      observedAt,
+      responseBytesBySource: responses,
+    }), /STATIC_SOURCE_REVALIDATION_PROVIDER/);
+  }
+});
+
 test("tracked provider boundary는 public MOLIT CSV와 Seoul을 exact one-call한다", async () => {
   const requested = [];
   const responses = responseBytes();
@@ -221,7 +241,7 @@ test("tracked provider boundary는 public MOLIT CSV와 Seoul을 exact one-call�
   assert.equal(Object.hasOwn(requested[0].init.headers, "Authorization"), false);
   assert.deepEqual(requested[0].init.headers, { accept: "application/octet-stream" });
   assert.match(decodeURI(new URL(requested[1].url).pathname),
-    /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/4호선$/);
+    /\/seoul-key\/json\/SearchSTNBySubwayLineInfo\/1\/5\/\/\/04호선$/);
   assert.equal(result.molit.equals(responses.molit), true);
   assert.equal(result.seoul.equals(responses.seoul), true);
 

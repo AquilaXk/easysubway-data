@@ -147,6 +147,7 @@ function projectSeoul(bytes) {
     || !Array.isArray(envelope.row) || envelope.row.length !== 5) fail("PROVIDER");
   return envelope.row.map((row) => {
     const provider = canonicalRecord(row, SEOUL_PROVIDER_FIELDS);
+    if (provider.LINE_NUM !== "04호선") fail("PROVIDER");
     return canonicalRecord({
       line: provider.LINE_NUM,
       station_code: provider.STATION_CD,
@@ -379,7 +380,7 @@ export async function fetchCurrentStaticSourceResponses({
   const seoulKey = requiredSingleLine(seoulOpenApiKey, "SEOUL_OPENAPI_KEY");
   const molitUrl = new URL(MOLIT_PUBLIC_CSV_URL);
   const seoulUrl = new URL(
-    `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("4호선")}`,
+    `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("04호선")}`,
   );
   const molit = await fetchSourceResponse({
     source: "MOLIT",

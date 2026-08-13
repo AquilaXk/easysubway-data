@@ -7070,7 +7070,7 @@
         "detailPageUrl": "https://data.seoul.go.kr/dataList/OA-15442/S/1/datasetView.do",
         "retrievedAt": "2026-06-21",
         "endpoint": "http://openapi.seoul.go.kr:8088/{serviceKey}/json/SearchSTNBySubwayLineInfo",
-        "sampleUrl": "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5///4호선",
+        "sampleUrl": "http://openapi.seoul.go.kr:8088/[서비스키값]/json/SearchSTNBySubwayLineInfo/1/5///04호선",
         "usePermissionRange": "공공누리 1유형",
         "formats": [
           "JSON"
