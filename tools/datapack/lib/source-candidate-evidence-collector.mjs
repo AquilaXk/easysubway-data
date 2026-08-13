@@ -415,7 +415,7 @@ function controlOperationSucceeded(raw, format, expectedSuccess) {
 }
 
 // 같은 실행·같은 키로 카탈로그가 지정한 대조군을 호출한다. 실패는 어떤 이유든 "failed"로 닫는다.
-async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) {
+export async function runProviderControlOperation({ controlOperation, serviceKey, fetchImpl = fetch }) {
   try {
     const url = new URL(controlOperation.sampleUrl);
     url.searchParams.set("serviceKey", serviceKey);
@@ -442,7 +442,7 @@ async function runControlOperation({ controlOperation, serviceKey, fetchImpl }) 
 // 대상 operation이 곧 대조군이면 그 호출은 독립 대조가 아니라 같은 operation의 재시도다.
 // 성공을 그대로 인정하면 방금 접근 가능함이 증명된 operation에 권한 미보유 판정이 나온다.
 async function resolveControlOperationStatus({ controlOperation, candidateId, serviceKey, fetchImpl }) {
-  const status = await runControlOperation({ controlOperation, serviceKey, fetchImpl });
+  const status = await runProviderControlOperation({ controlOperation, serviceKey, fetchImpl });
   return status === "succeeded" && controlOperation.candidateId === candidateId ? "self-succeeded" : status;
 }
 
