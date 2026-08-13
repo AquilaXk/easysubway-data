@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "datapack-candidate-build-spec",
-  "candidateId": "capital-pilot-candidate-20260813",
+  "candidateId": "capital-pilot-candidate-20260712",
   "productionScopeId": "capital_pilot_android_v1",
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
@@ -9,7 +9,7 @@
   "networkEdgeEvidence": {
     "sourceInventory": {
       "path": "tools/datapack/source-inventory.json",
-      "sha256": "63fd6b98eb17c5af66a345822357c38fa32c0b74b61274bba1a11ab829e029de"
+      "sha256": "0c2dc632573dd0163276601b0fe63ed18515d2276104ee311b27f1919919ef60"
     },
     "capitalTopology": {
       "path": "tools/datapack/sources/capital-route-topology-20260724.json",
@@ -17,24 +17,24 @@
       "snapshotId": "capital-route-topology-20260724"
     },
     "capitalTopologyCandidate": {
-      "path": "tools/datapack/sources/capital-route-topology-20260813.json",
-      "sha256": "d94370c7b3fadab17119b2b8c452e02018568c1c162c012416592b18f8c359c7",
-      "snapshotId": "capital-route-topology-20260813"
+      "path": "tools/datapack/sources/capital-route-topology-20260804.json",
+      "sha256": "108fb323b74e6d529de31fcde6ba1245ff0513eee46ec87d8dd175dca66e78b3",
+      "snapshotId": "capital-route-topology-20260804"
     },
     "capitalTopologyReverification": {
-      "path": "tools/datapack/release/capital-topology-reverification-20260813.json",
-      "sha256": "0746477425af89be125d9c21d885332501184c810205a96820be6ce5bc919b33"
+      "path": "tools/datapack/release/capital-topology-reverification-20260804.json",
+      "sha256": "a47ef359d22f1ffaa9bd62d0582045ea25f02f2c37a418cc24bdc9005c3cbba2"
     },
     "capitalTopologyAdmission": {
       "schemaVersion": 1,
       "artifactKind": "capital-network-edge-admission",
       "issue": 2649,
       "status": "ADMITTED",
-      "snapshotId": "capital-route-topology-20260813",
-      "contentSha256": "a2218c9072fc89ea12ea167da767db7598dc3af7f6d93d340d9f906b48410c2d",
-      "reviewedAt": "2026-08-13T15:06:46.000Z",
-      "reverifiedAt": "2026-08-13T15:06:46.000Z",
-      "freshUntil": "2026-08-14T15:06:46.000Z"
+      "snapshotId": "capital-route-topology-20260724",
+      "contentSha256": "0492df28ff51dc4262508363e960ed1a5fed847d3aa5f593ea62ad0fd3d773f3",
+      "reviewedAt": "2026-07-27T21:38:29.000Z",
+      "reverifiedAt": "2026-08-04T18:47:51.000Z",
+      "freshUntil": "2026-08-05T17:30:34.901Z"
     },
     "itxCoverageContract": {
       "path": "tools/datapack/itx-cheongchun-coverage-contract.json",
@@ -43,14 +43,48 @@
   },
   "sourceSnapshotEvidencePath": "tools/datapack/release/source-snapshots.json",
   "sourceSnapshotIds": [
+    "molit-urban-rail-full-route-capital-admission-20260712",
+    "seoulmetro-station-line-info-capital-admission-20260712",
     "seoulmetro-cyberstation-route-map-capital-admission-20260712",
+    "kric-subway-timetable-line4-pilot-20260709",
     "seoul-metro-accessibility-20260728",
-    "kric-station-convenience-standard-20260728T184503338Z",
-    "molit-urban-rail-full-route-revalidated-20260813",
-    "seoulmetro-station-line-info-change-admitted-20260813",
-    "kric-subway-timetable-line4-pilot-20260809"
+    "kric-station-convenience-standard-20260728T184503338Z"
   ],
   "sourceSnapshots": [
+    {
+      "snapshotId": "molit-urban-rail-full-route-capital-admission-20260712",
+      "sourceId": "molit-urban-rail-full-route",
+      "rawObjectUri": "s3://easysubway-datapack-sources/molit-urban-rail-full-route/20260712.json",
+      "rawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
+      "redactedRequestFingerprint": "0083ea2781e850663cc12de4ddb21e508959c6683923a724dd73cc54e0b16ba1",
+      "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-08-11T00:00:00.000Z",
+      "rawRetentionExpiresAt": "2026-10-10T00:00:00.000Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+    },
+    {
+      "snapshotId": "seoulmetro-station-line-info-capital-admission-20260712",
+      "sourceId": "seoulmetro-station-line-info",
+      "rawObjectUri": "s3://easysubway-datapack-sources/seoulmetro-station-line-info/20260712.json",
+      "rawSha256": "5f1d9ec2036fbba6d7a7cfb710ce4353d332a74c8086c63e1b282d6985278008",
+      "redactedRequestFingerprint": "3b31ceed0978b1e3b6494931abb8c87b0acac5e8b5837301a0e3f3e7807818b9",
+      "schemaFingerprint": "8826ff26d7eb0edc39e2232e144917777a8829edf6574cb2c07292915f1fa1a7",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-08-11T00:00:00.000Z",
+      "rawRetentionExpiresAt": "2026-10-10T00:00:00.000Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+    },
     {
       "snapshotId": "seoulmetro-cyberstation-route-map-capital-admission-20260712",
       "sourceId": "seoulmetro-cyberstation-route-map",
@@ -65,6 +99,23 @@
       "credentialRedacted": true,
       "freshnessExpiresAt": "2027-07-12T00:00:00.000Z",
       "rawRetentionExpiresAt": "2026-10-10T00:00:00.000Z",
+      "governancePolicyVersion": "2026-07-15",
+      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
+    },
+    {
+      "snapshotId": "kric-subway-timetable-line4-pilot-20260709",
+      "sourceId": "kric-subway-timetable",
+      "rawObjectUri": "s3://easysubway-datapack-sources/kric-subway-timetable/20260709.json",
+      "rawSha256": "7c8badc40b31498d71d5326c50df0f87ee349103b18e416a32c133363e22e8cc",
+      "redactedRequestFingerprint": "4ab1e2d84e511733f7f2c95023d853089d6f31e9a39cfe617037edc58112b1aa",
+      "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
+      "licenseStatus": "PASS",
+      "redistributionAllowed": true,
+      "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
+      "snapshotStatus": "LOCKED",
+      "credentialRedacted": true,
+      "freshnessExpiresAt": "2026-08-08T00:00:00.000Z",
+      "rawRetentionExpiresAt": "2026-10-07T00:00:00.000Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     },
@@ -101,67 +152,16 @@
       "rawRetentionExpiresAt": "2026-10-26T18:45:03.338Z",
       "governancePolicyVersion": "2026-07-15",
       "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
-    },
-    {
-      "snapshotId": "molit-urban-rail-full-route-revalidated-20260813",
-      "sourceId": "molit-urban-rail-full-route",
-      "rawObjectUri": "s3://easysubway-datapack-sources/molit-urban-rail-full-route/20260712.json",
-      "rawSha256": "3ad2a676f45d23c1f39a90dc13f3a040c92ac05a01c43b9e6bbb82bf07172268",
-      "redactedRequestFingerprint": "0083ea2781e850663cc12de4ddb21e508959c6683923a724dd73cc54e0b16ba1",
-      "schemaFingerprint": "07a90f2fcca80323978aa63eff05b24e8ad431b579a1fad05f989d175114250c",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "adminReviewRecordHash": "deb0280494956f8ff72fabc34bec250ff17a30b702ac32c6a4589f3d1e302395",
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-09-12T14:02:45.000Z",
-      "rawRetentionExpiresAt": "2026-11-11T14:02:45.000Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
-    },
-    {
-      "snapshotId": "seoulmetro-station-line-info-change-admitted-20260813",
-      "sourceId": "seoulmetro-station-line-info",
-      "rawObjectUri": "oci://easysubway-datapacks/source-raw/seoulmetro-station-line-info/20260813/6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b.json",
-      "rawSha256": "6e6060813eb9d029d5ffc0259a59553b37bfbd902fe1e03ff8246da3453bc29b",
-      "redactedRequestFingerprint": "232d34ee0f51ecac89240fcbc00d81e89622e800188ed7cb8d9eb7561cfecf8d",
-      "schemaFingerprint": "8826ff26d7eb0edc39e2232e144917777a8829edf6574cb2c07292915f1fa1a7",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "adminReviewRecordHash": "c64feb8bd9bf6db8be936f11d7fe3e8d5a867b16be6e037f13bf55da01e2be4d",
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-09-12T14:02:45.000Z",
-      "rawRetentionExpiresAt": "2026-11-11T14:02:45.000Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
-    },
-    {
-      "snapshotId": "kric-subway-timetable-line4-pilot-20260809",
-      "sourceId": "kric-subway-timetable",
-      "rawObjectUri": "oci://easysubway-datapacks/source-raw/kric-subway-timetable/20260809/d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064.json",
-      "rawSha256": "d8ee1a9351ade3465a955ffabeade294eaccf65449fc1fc1998240fdba87e064",
-      "redactedRequestFingerprint": "bb6302775c0afecf0b5e6d3c7e4bf89cdec4a2cfef01fbb80d2ea5ace234f0f7",
-      "schemaFingerprint": "44585c58909db0d14ed103ecf357291e4f337fc432e9e8938043a39097d904ff",
-      "licenseStatus": "PASS",
-      "redistributionAllowed": true,
-      "adminReviewRecordHash": "d36b1f0441b02adc109f1d08263fe3f3bc063dbead7d9915bf4304619ac83db4",
-      "snapshotStatus": "LOCKED",
-      "credentialRedacted": true,
-      "freshnessExpiresAt": "2026-09-08T12:04:20.479Z",
-      "rawRetentionExpiresAt": "2026-11-07T12:04:20.479Z",
-      "governancePolicyVersion": "2026-07-15",
-      "governancePolicySha256": "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70"
     }
   ],
-  "sourceSnapshotSetHash": "774f2deb85aaae928e42ccaa038be59b57d51cf709700430558e22cd867bcb80",
+  "sourceSnapshotSetHash": "0e97eac43e5e87b82f7a053ded3b1f7d3804e6810f0b3566955d15997f70cd3a",
   "approvedAliasLedgerHash": "9a74e31d64e53f38ab575d6a7731f72138523dd34f1f6756dbed8573e3bdeabc",
   "facilityEvidenceLedgerHash": "b3ffc88b4a9ce3515340366885beaace718c70058608567513f378e198935981",
   "routeEvidenceLedgerHash": "da884d0ff0138e009587753ec541997c29da57370e056dd8d3f6ad2687ad9fa9",
   "approvedOverrideSetHash": "ee5364319442d0bb4590d83e149631635c65ab59f1f3254fdbf196e04ec0f3cd",
-  "sourceInventorySha256": "4385cd942b1ad0529fdf0b42bd66f72fd8bf87b3735a9917e365cb3febc419ee",
-  "builderGitSha": "4e05f292b20f9c94ae92f5568734bd5be39d464f",
-  "builderVersion": "build-datapack.mjs@26",
+  "sourceInventorySha256": "e8305ef120bda741cc36e370b1747b06e5e33cd491ecf98449d00288dd26e5d6",
+  "builderGitSha": "70918c22823d27cc18613e9a95af691ade3b2369",
+  "builderVersion": "build-datapack.mjs@24",
   "officialOdFareEvidence": {
     "sourceId": "seoul-metro-official-od-fares",
     "snapshotId": "seoul-metro-official-od-fares-20260712",
