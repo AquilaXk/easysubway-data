@@ -428,11 +428,31 @@ export function buildKricAccessibilityRoster({ activeLineScopes, fixture, canoni
 }
 
 export async function loadCanonicalStationLinesFromBundledIndex({ bundledIndex, bundledRoot }) {
+  if (typeof bundledRoot !== "string" || !path.isAbsolute(bundledRoot)) {
+    throw new Error("bundled root is invalid");
+  }
+  const resolvedPacks = (bundledIndex?.packs ?? []).map((pack, index) => {
+    const packUrl = pack?.url;
+    const packPath = typeof packUrl === "string" ? path.resolve(bundledRoot, packUrl) : "";
+    const relativePackPath = packPath === "" ? "" : path.relative(bundledRoot, packPath);
+    if (typeof packUrl !== "string"
+      || packUrl === ""
+      || path.isAbsolute(packUrl)
+      || packUrl.includes("\\")
+      || !packUrl.endsWith(".sqlite.gz")
+      || relativePackPath === ""
+      || relativePackPath === ".."
+      || relativePackPath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePackPath)) {
+      throw new Error(`${pack?.id ?? "unknown"}: pack url is invalid`);
+    }
+    return { index, pack, packPath };
+  });
   const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-accessibility-roster-"));
   try {
     const memberships = new Map();
-    for (const [index, pack] of (bundledIndex?.packs ?? []).entries()) {
-      const sqliteBytes = gunzipSync(await readFile(path.resolve(bundledRoot, pack.asset)));
+    for (const { index, pack, packPath } of resolvedPacks) {
+      const sqliteBytes = gunzipSync(await readFile(packPath));
       if (hashBytes(sqliteBytes) !== pack.sqliteSha256) throw new Error(`${pack.id}:SQLITE_SHA256_MISMATCH`);
       const sqlitePath = path.join(temporaryDirectory, `${index}.sqlite`);
       await writeFile(sqlitePath, sqliteBytes);
@@ -626,7 +646,7 @@ async function main(argv) {
   ]);
   const canonicalStationLines = await loadCanonicalStationLinesFromBundledIndex({
     bundledIndex,
-    bundledRoot: path.resolve(path.dirname(args["bundled-index"]), "../.."),
+    bundledRoot: args["bundled-root"],
   });
   const roster = buildKricAccessibilityRoster({
     activeLineScopes: targets.activeLineScopes,
@@ -666,9 +686,10 @@ function parseArgs(argv) {
     args[argv[index].slice(2)] = argv[index + 1];
     index += 2;
   }
-  for (const name of ["bundled-index", "targets", "fixture", "route-rosters", "output-root"]) {
+  for (const name of ["bundled-index", "bundled-root", "targets", "fixture", "route-rosters", "output-root"]) {
     if (!args[name]) throw new Error(`missing --${name}`);
   }
+  if (!path.isAbsolute(args["bundled-root"])) throw new Error("--bundled-root must be absolute");
   if (!path.isAbsolute(args["output-root"])) throw new Error("--output-root must be absolute");
   return args;
 }
