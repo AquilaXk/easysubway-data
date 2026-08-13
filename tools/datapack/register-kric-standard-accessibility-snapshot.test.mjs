@@ -426,15 +426,10 @@ test("admitted Seoul snapshot object, file, evidence, and ledger mismatch reject
   }
 });
 
-test("KRIC snapshot requires the admitted full tuple roster and persists it", async (t) => {
+test("KRIC snapshot includes and persists the exact regional tuple roster", async (t) => {
   for (const invalidRoster of [
     roster.slice(1),
-    [...roster, {
-      ...roster[0],
-      stationId: "station-extra",
-      stinCd: "999",
-      canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-extra", lineId: "seoul-4" }],
-    }],
+    [...roster, { ...roster[0], stinCd: "999" }],
     [{ ...roster[0], stinCd: "999" }, roster[1]],
   ]) {
     const values = await fixture(t);
@@ -446,6 +441,21 @@ test("KRIC snapshot requires the admitted full tuple roster and persists it", as
   await register(values);
   const input = JSON.parse(await readFile(values.paths[registryPaths[2]], "utf8"));
   assert.equal(input.kricStandardAccessibilityRoster.length, 2);
+
+  const regionalValues = await fixture(t);
+  const unrelated = {
+    ...roster[0],
+    stationId: "station-extra",
+    lineId: "line-extra",
+    stinCd: "999",
+    canonicalMappings: [{ artifactId: "bundled-capital", stationId: "station-extra", lineId: "line-extra" }],
+  };
+  await stageSnapshot(regionalValues, await snapshotFor([...roster, unrelated]));
+  await register(regionalValues);
+  const regionalInput = JSON.parse(await readFile(regionalValues.paths[registryPaths[2]], "utf8"));
+  assert.deepEqual(regionalInput.kricStandardAccessibilityRoster, input.kricStandardAccessibilityRoster);
+  assert.equal(regionalInput.facilityRows.some(({ id }) => id.includes("station-extra")), false);
+  assert.equal(regionalInput.accessibilityStatusEvidence.some(({ stationId }) => stationId === "station-extra"), false);
 });
 
 test("KRIC scope의 station과 line projection은 실제 station-line rows로 충족해야 한다", async (t) => {

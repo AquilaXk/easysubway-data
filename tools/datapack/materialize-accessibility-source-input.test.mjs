@@ -63,6 +63,28 @@ test("fresh KRIC codes와 Seoul status만 production source input으로 material
     "kric-station-convenience-standard",
     "seoul-metro-accessibility",
   ]);
+  const regionalProjection = materializeAccessibilitySourceInput({
+    input: {
+      ...input,
+      kricStandardAccessibilityRoster: [Object.fromEntries(
+        ["stationId", "lineId", "railOprIsttCd", "lnCd", "stinCd"].map((field) => [field, kricSnapshot.queries[0][field]]),
+      )],
+    },
+    kricSnapshot: {
+      ...kricSnapshot,
+      queries: [
+        ...kricSnapshot.queries,
+        {
+          stationId: "station-outside-region", lineId: "line-outside-region",
+          railOprIsttCd: "KR", lnCd: "K1", stinCd: "K999",
+          providerRecordHash: "f".repeat(64), rows: [{ gubun: "EV", grndDvCd: "1", stinFlor: 1, dtlLoc: "외부 지역" }],
+        },
+      ],
+    },
+    seoulSnapshot,
+  });
+  assert.deepEqual(regionalProjection.facilityRows, output.facilityRows);
+  assert.deepEqual(regionalProjection.accessibilityStatusEvidence, output.accessibilityStatusEvidence);
   const sameTypeRows = [
     { gubun: "EV", grndDvCd: "1", stinFlor: 1, dtlLoc: "대합실 A" },
     { gubun: "EV", grndDvCd: "2", stinFlor: 2, dtlLoc: "대합실 B" },
