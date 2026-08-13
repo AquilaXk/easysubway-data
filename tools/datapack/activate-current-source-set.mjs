@@ -804,7 +804,6 @@ export function buildCurrentCandidateSpec({
   currentTopologyBytes,
   currentTopologyPath,
   topologyReverificationBytes,
-  itxCurrentTopologyAdmissionBytes,
 }) {
   if (!baseSpec || baseSpec.schemaVersion !== 1
     || baseSpec.artifactKind !== "datapack-candidate-build-spec"
@@ -813,8 +812,7 @@ export function buildCurrentCandidateSpec({
   }
   if (!Buffer.isBuffer(sourceInventoryBytes)
     || !Buffer.isBuffer(currentTopologyBytes)
-    || !Buffer.isBuffer(topologyReverificationBytes)
-    || !Buffer.isBuffer(itxCurrentTopologyAdmissionBytes)) {
+    || !Buffer.isBuffer(topologyReverificationBytes)) {
     throw new Error("current capital topology candidate identity is invalid");
   }
   const topologySnapshotId = exactCurrentTopologySnapshotIdentity({
@@ -860,10 +858,6 @@ export function buildCurrentCandidateSpec({
       reviewedAt: currentTopology.capturedAt,
       reverifiedAt: currentTopology.capturedAt,
       freshUntil: currentTopology.freshUntil,
-    },
-    itxCurrentTopologyAdmission: {
-      path: "tools/datapack/itx-current-network-edge-admission-20260810.json",
-      sha256: sha256(itxCurrentTopologyAdmissionBytes),
     },
   };
   return spec;
@@ -1239,9 +1233,6 @@ function validationBuildSpec(spec, temporaryRoot) {
   Object.assign(next.networkEdgeEvidence.itxCoverageContract, {
     path: path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
   });
-  Object.assign(next.networkEdgeEvidence.itxCurrentTopologyAdmission, {
-    path: path.join(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
-  });
   return next;
 }
 
@@ -1364,7 +1355,7 @@ export async function generateCurrentSourceActivation({
   try {
     const [capitalTopologyBytes, incheonTopologyBytes, rawArtifact, baselineTopologyBytes, sourceSnapshotBytes,
       sourceInventoryBytes, productionInputBytes, quoteBundleBytes, baseSpecBytes,
-      canonicalBytes, itxCurrentTopologyAdmissionBytes,
+      canonicalBytes,
       molitRevalidationSnapshotBytes, molitRevalidationEvidenceBytes,
       seoulRevalidationSnapshotBytes, seoulRevalidationEvidenceBytes] = await Promise.all([
       readRegularBytes(root, capitalTopologyPath, "current capital topology"),
@@ -1377,7 +1368,6 @@ export async function generateCurrentSourceActivation({
       readRegularBytes(root, "tools/datapack/official-od-fare-quotes.json"),
       readRegularBytes(root, "tools/datapack/release/candidate-build-spec.json"),
       readRegularBytes(root, "tools/datapack/release/capital-production-canonical-pack.json"),
-      readRegularBytes(root, "tools/datapack/itx-current-network-edge-admission-20260810.json"),
       readRegularBytes(root, molitRevalidationSnapshotPath, "MOLIT revalidation snapshot"),
       readRegularBytes(root, molitRevalidationEvidencePath, "MOLIT revalidation evidence"),
       readRegularBytes(root, seoulRevalidationSnapshotPath, "Seoul revalidation snapshot"),
@@ -1458,7 +1448,6 @@ export async function generateCurrentSourceActivation({
       currentTopologyBytes: capitalTopologyBytes,
       currentTopologyPath: capitalTopologyPath,
       topologyReverificationBytes: primaryBytes.reverification,
-      itxCurrentTopologyAdmissionBytes,
     });
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[5], jsonBytes(nextSpec));
     await prepareReleaseEvidenceRoot(temporaryRoot, nextSpec);

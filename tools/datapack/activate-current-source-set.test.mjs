@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-pack.mjs";
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
-  buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
+  buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
   parseCurrentSourceActivationArgs, requireCleanBuilder,
   stageValidationItxTopologyEvidence,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
@@ -457,6 +457,27 @@ test("current canonical pack은 admitted Seoul five-record membership을 그대�
     ),
     /current Seoul canonical membership mismatch/,
   );
+});
+
+test("generated current candidate spec은 expired ITX topology overlay를 재도입하지 않는다", async () => {
+  const currentTopologyPath = "tools/datapack/sources/capital-route-topology-20260813.json";
+  const [baseSpec, currentTopologyBytes] = await Promise.all([
+    readJson("tools/datapack/release/candidate-build-spec.json"),
+    readFile(path.join(root, currentTopologyPath)),
+  ]);
+  const currentTopology = JSON.parse(currentTopologyBytes.toString("utf8"));
+
+  const next = buildCurrentCandidateSpec({
+    baseSpec,
+    builderGitSha: "a".repeat(40),
+    sourceInventoryBytes: Buffer.from("{}"),
+    currentTopology,
+    currentTopologyBytes,
+    currentTopologyPath,
+    topologyReverificationBytes: Buffer.from("{}"),
+  });
+
+  assert.equal(Object.hasOwn(next.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
 });
 
 test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
