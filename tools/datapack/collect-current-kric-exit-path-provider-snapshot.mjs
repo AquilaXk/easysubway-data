@@ -176,7 +176,7 @@ function parseArgs(argv) {
   };
 }
 
-function validateProviderBoundary({ document, serviceKey, sourceId }) {
+export function validateProviderBoundary({ document, serviceKey, sourceId }) {
   const source = KRIC_EXIT_PATH_SOURCES[sourceId];
   if (!source) throw new Error(`unsupported KRIC EXIT source: ${sourceId}`);
   const integrity = resolveProviderCallIntegrity(document, PROVIDER_ID, { required: true });
@@ -195,7 +195,7 @@ function validateProviderBoundary({ document, serviceKey, sourceId }) {
   }
 }
 
-function parseCanonicalPlan(bytes) {
+export function parseCanonicalPlan(bytes) {
   let value;
   try {
     value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));

@@ -94,6 +94,34 @@ export async function collectKricExitPathProviderSnapshot({
   return snapshot;
 }
 
+export function resolveKricExitPathProviderQuery({ collectionPlan, queryId, sourceId } = {}) {
+  const source = KRIC_EXIT_PATH_SOURCES[sourceId];
+  if (!source) throw new Error(`unsupported KRIC EXIT source: ${sourceId ?? "[missing]"}`);
+  if (typeof queryId !== "string" || !/^[0-9a-f]{64}$/.test(queryId)) {
+    throw new Error("KRIC EXIT query ID is invalid");
+  }
+  const query = validateCollectionPlan(collectionPlan).find((candidate) => candidate.queryId === queryId);
+  if (!query) throw new Error("KRIC EXIT query ID is not present in the collection plan");
+  return { query, source };
+}
+
+export async function probeKricExitPathProviderQuery({
+  collectionPlan,
+  queryId,
+  sourceId,
+  serviceKey,
+  fetchImpl = fetch,
+  requestTimeoutMs = 30_000,
+} = {}) {
+  const { query, source } = resolveKricExitPathProviderQuery({ collectionPlan, queryId, sourceId });
+  if (typeof serviceKey !== "string" || serviceKey.length === 0) throw new Error("KRIC_SERVICE_KEY is required");
+  if (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 1 || requestTimeoutMs > MAX_REQUEST_TIMEOUT_MS) {
+    throw new Error("KRIC EXIT request timeout is invalid");
+  }
+  if (typeof fetchImpl !== "function") throw new TypeError("KRIC EXIT probe dependency is invalid");
+  return collectQuery({ fetchImpl, query, requestTimeoutMs, serviceKey, source });
+}
+
 export function canonicalKricExitPathProviderSnapshotJson(snapshot) {
   assertKeys(snapshot, SNAPSHOT_KEYS, "KRIC EXIT provider snapshot keys");
   assertSha256(snapshot.snapshotDigest, "KRIC EXIT provider snapshot digest");
