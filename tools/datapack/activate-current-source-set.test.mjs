@@ -14,7 +14,7 @@ import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
   stageValidationItxTopologyEvidence,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
-import { projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
+import { normalizeStationName, projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -539,8 +539,61 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
   const beforeItx = structuredClone(pack.networkEdges
     .filter(({ serviceClass }) => serviceClass === "ITX_CHEONGCHUN")
     .sort((left, right) => left.id.localeCompare(right.id, "en")));
+  const canonicalName = (value) => ({
+    능길: "신길온천",
+    김포공항역: "김포공항",
+    부천종합운동장역: "부천종합운동장",
+  })[normalizeStationName(value)] ?? normalizeStationName(value);
+  const stations = new Map(pack.stations.map((station) => [station.id, station]));
+  const stationIdsByLineName = new Map();
+  for (const membership of pack.stationLines) {
+    const stationName = canonicalName(stations.get(membership.stationId)?.nameKo);
+    const key = `${membership.lineId}\0${stationName}`;
+    const ids = stationIdsByLineName.get(key) ?? [];
+    ids.push(membership.stationId);
+    stationIdsByLineName.set(key, ids);
+  }
+  const stationId = (lineId, nameKo) => {
+    const ids = stationIdsByLineName.get(`${lineId}\0${canonicalName(nameKo)}`) ?? [];
+    assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
+    return ids[0];
+  };
+  const reviewedPack = structuredClone(pack);
+  const reviewedTopologyEdges = [];
+  for (const line of topology.lines) {
+    for (const sourceEdge of line.edges) {
+      const from = stationId(line.lineId, sourceEdge.fromStationName);
+      const to = stationId(line.lineId, sourceEdge.toStationName);
+      reviewedTopologyEdges.push({
+        id: `edge-${line.lineId}-${from}-${to}`,
+        fromNodeId: `${from}:${line.lineId}`,
+        toNodeId: `${to}:${line.lineId}`,
+        durationSeconds: sourceEdge.durationSeconds,
+        distanceMeters: sourceEdge.distanceMeters,
+        edgeType: "RIDE",
+        servicePattern: "LOCAL",
+        serviceClass: "SUBWAY",
+        includesStairs: false,
+        stairAccessState: "UNKNOWN",
+        accessibilityStatus: "UNKNOWN",
+        reliabilityScore: 100,
+        facilityId: null,
+        sourceId: topology.sourceId,
+        sourceSnapshotId: "capital-route-topology-20260813",
+        providerRecordHash: sha256(JSON.stringify({ lineId: line.lineId, ...sourceEdge })),
+        provenanceKind: "OFFICIAL_SOURCE",
+        verificationStatus: "VERIFIED",
+        lastVerifiedAt: topology.capturedAt,
+        evidenceHash: line.contentSha256,
+        fieldProvenance: sourceEdge.distanceMeters === 0
+          ? { distance_meters: { derivationKind: "GENERATED" } }
+          : {},
+      });
+    }
+  }
+  reviewedPack.networkEdges = [...retainedBefore, ...reviewedTopologyEdges];
 
-  const projected = projectCapitalTopologyIntoCanonicalFixture(fixture, topology);
+  const projected = projectCapitalTopologyIntoCanonicalFixture(fixture, topology, reviewedPack);
 
   assert.equal(projected.edgeCount, 1_438);
   assert.equal(pack.networkEdges.filter(isProjectedCapitalEdge).length, 1_438);
@@ -550,16 +603,21 @@ test("current capital topology는 canonical fixture에 repaired 8 directions만 
       .sort((left, right) => left.id.localeCompare(right.id, "en")),
     beforeItx,
   );
-
-  const stations = new Map(pack.stations.map((station) => [station.id, station]));
-  const stationId = (lineId, nameKo) => {
-    const ids = pack.stationLines
-      .filter((membership) => membership.lineId === lineId
-        && stations.get(membership.stationId)?.nameKo === nameKo)
-      .map(({ stationId: value }) => value);
-    assert.equal(ids.length, 1, `${lineId}:${nameKo}`);
-    return ids[0];
-  };
+  assert.equal(
+    pack.networkEdges.filter(isProjectedCapitalEdge)
+      .every((edge) => edge.sourceId === topology.sourceId
+        && edge.provenanceKind === "OFFICIAL_SOURCE"
+        && edge.verificationStatus === "VERIFIED"),
+    true,
+  );
+  const gusan = stationId("line-3f41718e0833", "구산");
+  const eungam = stationId("line-3f41718e0833", "응암");
+  assert.equal(
+    pack.networkEdges.find(
+      ({ id }) => id === `edge-line-3f41718e0833-${gusan}-${eungam}`,
+    )?.evidenceHash,
+    topology.lines.find(({ lineId }) => lineId === "line-3f41718e0833")?.contentSha256,
+  );
   for (const [lineId, leftName, rightName] of [
     ["line-30886152e4f8", "보문", "신설동"],
     ["line-558d0bd8312d", "왕십리", "청량리"],

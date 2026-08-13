@@ -1441,7 +1441,7 @@ export async function generateCurrentSourceActivation({
       parseJson(canonicalBytes, "canonical pack"),
       reviewedCapital,
     );
-    projectCapitalTopologyIntoCanonicalFixture(canonical, capitalTopology);
+    projectCapitalTopologyIntoCanonicalFixture(canonical, capitalTopology, reviewedCapital);
     const nextCanonicalBytes = jsonBytes(canonical, false);
     await writeTempFile(temporaryRoot, CURRENT_SOURCE_ACTIVATION_OUTPUTS[4], nextCanonicalBytes);
 
