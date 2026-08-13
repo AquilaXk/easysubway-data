@@ -94,6 +94,17 @@ function currentCapitalTopologyBinding(source, evidence, topologySourceId) {
   return "current-official";
 }
 
+export function requiresCurrentCapitalTopologyAdmission(
+  source,
+  topologySourceId = "capital-route-topology",
+) {
+  return currentCapitalTopologyBinding(
+    source,
+    source?.routeMapAdmissionEvidence,
+    topologySourceId,
+  ) != null;
+}
+
 export function withCurrentCapitalTopologyAdmissions({
   inventory,
   topology,

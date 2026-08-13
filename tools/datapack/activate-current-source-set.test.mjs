@@ -11,7 +11,7 @@ import { syncCanonicalFixture } from "./apply-accessibility-evidence-to-bundled-
 import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
 import { activateIncheonTopologyAdmission, activateStaticSourceRevalidations,
   buildCurrentCandidateSpec, buildCurrentSourcePrimaryOutputs, commitCurrentSourceActivation,
-  parseCurrentSourceActivationArgs, requireCleanBuilder,
+  collectPositionSnapshotBytes, parseCurrentSourceActivationArgs, requireCleanBuilder,
   stageValidationItxTopologyEvidence,
   verifyCurrentSeoulCanonicalMembership } from "./activate-current-source-set.mjs";
 import { projectCapitalTopologyOwnership } from "./collect-capital-route-topology.mjs";
@@ -21,6 +21,48 @@ const root = path.resolve(import.meta.dirname, "../..");
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function readJson(relativePath) { return JSON.parse(await readFile(path.join(root, relativePath), "utf8")); }
+
+test("activation loader는 historical binding과 서울 공식 current topology position bytes를 함께 로드한다", async (t) => {
+  const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), "current-position-snapshots-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  const historicalPath = "tools/datapack/sources/historical-position.json";
+  const seoulPath = "tools/datapack/sources/seoul-position.json";
+  const historicalBytes = Buffer.from("historical");
+  const seoulBytes = Buffer.from("seoul-current");
+  await mkdir(path.join(repositoryRoot, "tools/datapack/sources"), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(repositoryRoot, historicalPath), historicalBytes),
+    writeFile(path.join(repositoryRoot, seoulPath), seoulBytes),
+  ]);
+  const sourceInventory = {
+    sources: [
+      {
+        id: "historical-position",
+        routeMapAdmissionEvidence: {
+          topologySourceId: "capital-route-topology",
+          snapshotPath: historicalPath,
+        },
+      },
+      {
+        id: "seoul-metro-route-map-positions",
+        productionUseAllowed: true,
+        license: { redistributionAllowed: true },
+        routeMapAdmissionEvidence: {
+          issue: 2470,
+          admissionKind: "official-file-latlon",
+          materializer: "tools/datapack/materialize-seoul-route-map-positions.mjs",
+          verificationTest: "tools/datapack/materialize-seoul-route-map-positions.test.mjs",
+          snapshotPath: seoulPath,
+        },
+      },
+    ],
+  };
+
+  const result = await collectPositionSnapshotBytes(sourceInventory, repositoryRoot);
+  assert.deepEqual([...result.keys()], [historicalPath, seoulPath]);
+  assert.deepEqual(result.get(historicalPath), historicalBytes);
+  assert.deepEqual(result.get(seoulPath), seoulBytes);
+});
 
 function staticRoot(sourceId) {
   return {

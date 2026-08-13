@@ -20,7 +20,10 @@ import { validateIncheonStationInfoSnapshot } from "./collect-incheon-station-in
 import { projectCapitalTopologyIntoCanonicalFixture } from "./build-datapack.mjs";
 import { loadCapitalRouteTopologySnapshot } from "./apply-capital-route-topology-to-bundled-pack.mjs";
 import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { withCurrentCapitalTopologyAdmissions } from "./rebind-capital-route-map-admissions.mjs";
+import {
+  requiresCurrentCapitalTopologyAdmission,
+  withCurrentCapitalTopologyAdmissions,
+} from "./rebind-capital-route-map-admissions.mjs";
 import { buildSnapshotDiff, validateLineage } from "./source-snapshot-policy.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -1128,17 +1131,17 @@ export async function commitCurrentSourceActivation({
   }
 }
 
-async function collectPositionSnapshotBytes(sourceInventory) {
+export async function collectPositionSnapshotBytes(sourceInventory, repositoryRoot = root) {
   const snapshotBytesByPath = new Map();
   for (const source of sourceInventory.sources ?? []) {
     const evidence = source.routeMapAdmissionEvidence;
-    if (evidence?.topologySourceId !== "capital-route-topology") continue;
+    if (!requiresCurrentCapitalTopologyAdmission(source)) continue;
     if (snapshotBytesByPath.has(evidence.snapshotPath)) {
       throw new Error(`duplicate capital position snapshot path: ${evidence.snapshotPath}`);
     }
     snapshotBytesByPath.set(
       evidence.snapshotPath,
-      await readRegularBytes(root, evidence.snapshotPath, `${source.id} position snapshot`),
+      await readRegularBytes(repositoryRoot, evidence.snapshotPath, `${source.id} position snapshot`),
     );
   }
   if (snapshotBytesByPath.size === 0) throw new Error("capital position snapshots are missing");
