@@ -397,7 +397,9 @@ function validateKricAccessibilityCoverage(snapshot, input) {
     throw new Error("KRIC accessibility roster coverage is invalid");
   }
   const queryRoster = sortedUniqueRoster(snapshot.queries ?? []);
-  if (queryRoster.length !== roster.length || queryRoster.some((tuple, index) => rosterKey(tuple) !== rosterKey(roster[index]))) {
+  const rosterKeys = new Set(roster.map(rosterKey));
+  if (roster.some((tuple) => !queryRoster.some((query) => rosterKey(query) === rosterKey(tuple)))
+    || queryRoster.some((tuple) => rosterStations.has(`${tuple.stationId}\0${tuple.lineId}`) && !rosterKeys.has(rosterKey(tuple)))) {
     throw new Error("KRIC accessibility snapshot coverage is invalid");
   }
   return roster;
@@ -550,7 +552,8 @@ function stageRegistries({ inventory, snapshots, input, snapshot, snapshotPath, 
   const nextSnapshots = [...snapshots, ...(seoulLedger == null ? [] : [seoulLedger]), nextLedger];
   validateLineage(nextSnapshots);
   const nextInput = materializeAccessibilitySourceInput({
-    input: structuredClone(input), kricSnapshot: snapshot, seoulSnapshot,
+    input: { ...structuredClone(input), kricStandardAccessibilityRoster: kricAccessibilityRoster },
+    kricSnapshot: snapshot, seoulSnapshot,
   });
   nextInput.kricStandardAccessibilitySnapshot = {
     snapshotId: snapshot.snapshotId,

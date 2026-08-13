@@ -113,6 +113,7 @@ test("CI는 EXIT path admission contract를 owned required runner에서 실행�
     "tools/datapack/build-current-kric-exit-collection-plan.test.mjs",
     "tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs",
     "tools/datapack/collect-current-kric-exit-path-provider-snapshot.test.mjs",
+    "tools/datapack/diagnose-current-kric-exit-path-query.test.mjs",
     "tools/datapack/build-exit-path-admission.test.mjs",
   ]);
 });
