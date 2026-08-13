@@ -53,6 +53,52 @@ test("eligible official facility와 exhaustive absence를 Data #8 evidence로 �
   assert.deepEqual(materialized.rows.filter(({ domain }) => domain === "FACILITY").map(({ state }) => state), [
     "VERIFIED_PRESENT", "VERIFIED_ABSENT",
   ]);
+
+  const withStaleDuplicate = validInput();
+  withStaleDuplicate.sources.push(sourceRegistration({
+    sourceId: "kric-facility-old",
+    snapshotId: "kric-facility-old",
+    rawSha256: "3".repeat(64),
+    freshUntil: OBSERVED_AT,
+  }));
+  withStaleDuplicate.facilityRows = [
+    facilityRow({ strictRouteEligible: true }),
+    ...requiredAbsenceRows({ stationId: "station-b", providerRecordHash: "b".repeat(64) }),
+    facilityRow({
+      stationId: "station-b",
+      facilityType: "ELEVATOR",
+      evidenceKind: "NOT_EXISTS",
+      installationStatus: "NOT_INSTALLED",
+      operationalStatus: "NOT_APPLICABLE",
+      statusMeaning: "EXHAUSTIVE_LIST_ABSENCE",
+      sourceId: "kric-facility-old",
+      sourceSnapshotId: "kric-facility-old",
+      providerRecordHash: "3".repeat(64),
+      strictRouteEligible: false,
+      strictRouteEligibleReason: "FACILITY_NOT_INSTALLED",
+    }),
+  ];
+  assert.equal(buildFacilityAccessibilityAdmission(withStaleDuplicate).decision, "GO");
+
+  const conflicting = validInput();
+  conflicting.facilityRows = [
+    facilityRow({ strictRouteEligible: true }),
+    ...requiredAbsenceRows({ stationId: "station-b", providerRecordHash: "b".repeat(64) }),
+    facilityRow({
+      stationId: "station-b",
+      facilityType: "ELEVATOR",
+      evidenceKind: "EXISTS",
+      installationStatus: "NOT_INSTALLED",
+      operationalStatus: "NOT_APPLICABLE",
+      statusMeaning: "CONFLICTING_OBSERVATION",
+      providerRecordHash: "e".repeat(64),
+      strictRouteEligible: false,
+      strictRouteEligibleReason: "CONFLICTING_FACILITY_EVIDENCE",
+    }),
+  ];
+  const conflictingResult = buildFacilityAccessibilityAdmission(conflicting);
+  assert.equal(conflictingResult.decision, "NO_GO");
+  assert.equal(conflictingResult.stateSummary.ADMITTED_VERIFIED_ABSENCE, 0);
 });
 
 test("current route-ineligible status는 UNKNOWN이고 evidence 부재는 MISSING이다", () => {
@@ -118,6 +164,48 @@ test("stale source와 candidate/source/station-line identity drift를 fail close
   const unmapped = validInput();
   unmapped.facilityRows = [facilityRow({ stationId: "station-z" })];
   assert.throws(() => buildFacilityAccessibilityAdmission(unmapped), /unmapped facility evidence/);
+
+  const futureSource = validInput();
+  futureSource.sources[0].capturedAt = "2026-08-14T00:00:00.001Z";
+  futureSource.facilityRows = [facilityRow({ strictRouteEligible: true })];
+  assert.throws(() => buildFacilityAccessibilityAdmission(futureSource), /source is future-dated/);
+
+  const futureRow = validInput();
+  futureRow.facilityRows = [facilityRow({
+    strictRouteEligible: true,
+    verifiedAt: "2026-08-14T00:00:00.001Z",
+    retrievedAt: "2026-08-14T00:00:00.001Z",
+  })];
+  assert.throws(() => buildFacilityAccessibilityAdmission(futureRow), /row is future-dated/);
+
+  const nonOverlapping = validInput();
+  nonOverlapping.stationLines = nonOverlapping.stationLines.filter(({ stationId }) => stationId === "station-a");
+  refreshCandidate(nonOverlapping);
+  nonOverlapping.sources = [
+    sourceRegistration({ capturedAt: "2026-08-10T00:00:00.000Z", freshUntil: "2026-08-11T00:00:00.000Z" }),
+    sourceRegistration({
+      sourceId: "seoul-accessibility",
+      snapshotId: "seoul-accessibility-current",
+      rawSha256: "2".repeat(64),
+      capturedAt: "2026-08-12T00:00:00.000Z",
+      freshUntil: "2026-08-13T00:00:00.000Z",
+      provenanceId: "seoul-official-source",
+      licenseId: "public-data-free-use",
+    }),
+  ];
+  nonOverlapping.facilityRows = requiredAbsenceRows().map((row, index) => index === 0 ? row : {
+    ...row,
+    sourceId: "seoul-accessibility",
+    sourceSnapshotId: "seoul-accessibility-current",
+  });
+  const nonOverlappingResult = buildFacilityAccessibilityAdmission(nonOverlapping);
+  assert.equal(nonOverlappingResult.cells[0].state, "STALE");
+  assert.doesNotThrow(() => materializeStationLineAccessibility({
+    candidate: nonOverlapping.candidate,
+    stationLines: nonOverlapping.stationLines,
+    evidenceRows: nonOverlappingResult.materializerEvidenceRows,
+    observedAt: nonOverlapping.observedAt,
+  }));
 });
 
 test("output은 input order와 input object mutation에 독립적이다", () => {
@@ -141,6 +229,30 @@ test("output은 input order와 input object mutation에 독립적이다", () => 
     canonicalFacilityAccessibilityAdmissionJson(secondResult),
   );
   assert.match(firstResult.admissionDigest, /^[a-f0-9]{64}$/);
+
+  const tiedFirst = validInput();
+  tiedFirst.stationLines = tiedFirst.stationLines.filter(({ stationId }) => stationId === "station-a");
+  refreshCandidate(tiedFirst);
+  tiedFirst.facilityRows = [
+    facilityRow({
+      facilityType: "ACCESSIBILITY_STATUS_PROBE",
+      strictRouteEligible: false,
+      strictRouteEligibleReason: "Z_REASON",
+      evidenceHash: "1".repeat(64),
+    }),
+    facilityRow({
+      facilityType: "ACCESSIBILITY_STATUS_PROBE",
+      strictRouteEligible: false,
+      strictRouteEligibleReason: "A_REASON",
+      evidenceHash: "2".repeat(64),
+    }),
+  ];
+  const tiedSecond = structuredClone(tiedFirst);
+  tiedSecond.facilityRows.reverse();
+  assert.equal(
+    canonicalFacilityAccessibilityAdmissionJson(buildFacilityAccessibilityAdmission(tiedFirst)),
+    canonicalFacilityAccessibilityAdmissionJson(buildFacilityAccessibilityAdmission(tiedSecond)),
+  );
 });
 
 function validInput() {

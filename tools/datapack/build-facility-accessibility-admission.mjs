@@ -34,9 +34,9 @@ export function buildFacilityAccessibilityAdmission(input) {
   const candidate = validateCandidate(input.candidate);
   const observedAt = requiredUtcInstant(input.observedAt, "observedAt");
   const stationLines = validateStationLines(input.stationLines, candidate.stationSetSha256);
-  const sources = validateSources(input.sources, candidate.sourceSetSha256);
+  const sources = validateSources(input.sources, candidate.sourceSetSha256, observedAt);
   const sourceIndex = new Map(sources.map((source) => [sourceKey(source.sourceId, source.snapshotId), source]));
-  const rows = validateFacilityRows(input.facilityRows, stationLines, sourceIndex);
+  const rows = validateFacilityRows(input.facilityRows, stationLines, sourceIndex, observedAt);
   const rowsByStationLine = groupRows(rows);
   const cells = stationLines.map((stationLine) => buildCell({
     stationLine,
@@ -105,7 +105,7 @@ function validateStationLines(value, expectedStationSetSha256) {
   return stationLines;
 }
 
-function validateSources(value, expectedSourceSetSha256) {
+function validateSources(value, expectedSourceSetSha256, observedAt) {
   if (!Array.isArray(value) || value.length === 0) throw new Error("sources must be a non-empty array");
   const sources = value.map((source) => {
     assertKeys(source, SOURCE_KEYS, "FACILITY source keys");
@@ -120,6 +120,7 @@ function validateSources(value, expectedSourceSetSha256) {
     }
     const capturedAt = requiredUtcInstant(source.capturedAt, "FACILITY source capturedAt");
     const freshUntil = requiredUtcInstant(source.freshUntil, "FACILITY source freshUntil");
+    if (capturedAt > observedAt) throw new Error("FACILITY source is future-dated");
     if (freshUntil <= capturedAt) throw new Error("FACILITY source freshness interval is invalid");
     return canonicalObject({
       ...source,
@@ -136,7 +137,7 @@ function validateSources(value, expectedSourceSetSha256) {
   return sources;
 }
 
-function validateFacilityRows(value, stationLines, sourceIndex) {
+function validateFacilityRows(value, stationLines, sourceIndex, observedAt) {
   if (!Array.isArray(value)) throw new Error("facilityRows must be an array");
   const stationLineIndex = new Set(stationLines.map(stationAndLineKey));
   const rows = value.map((row) => {
@@ -155,8 +156,9 @@ function validateFacilityRows(value, stationLines, sourceIndex) {
     if (typeof row.strictRouteEligible !== "boolean") throw new Error("FACILITY strictRouteEligible must be boolean");
     assertSha256(row.providerRecordHash, "FACILITY providerRecordHash");
     assertSha256(row.evidenceHash, "FACILITY evidenceHash");
-    requiredUtcInstant(row.verifiedAt, "FACILITY verifiedAt");
-    requiredUtcInstant(row.retrievedAt, "FACILITY retrievedAt");
+    const verifiedAt = requiredUtcInstant(row.verifiedAt, "FACILITY verifiedAt");
+    const retrievedAt = requiredUtcInstant(row.retrievedAt, "FACILITY retrievedAt");
+    if (verifiedAt > observedAt || retrievedAt > observedAt) throw new Error("FACILITY row is future-dated");
     if (!stationLineIndex.has(stationAndLineKey(row))) {
       throw new Error("unmapped facility evidence");
     }
@@ -212,10 +214,10 @@ function buildCell({ stationLine, rows, sourceIndex, observedAt }) {
     return cellWithEvidence(base, "ADMITTED_FACILITY_PATH", "OFFICIAL_FACILITY_OPERATION_AVAILABLE", freshEligible);
   }
   if (admittedEligible.length > 0) {
-    return cellWithEvidence(base, "STALE", "FACILITY_SOURCE_STALE", admittedEligible);
+    return cellWithEvidence(base, "STALE", "FACILITY_SOURCE_STALE", [admittedEligible[0]]);
   }
   if (eligible.length > 0) {
-    return cellWithEvidence(base, "UNKNOWN", "SOURCE_NOT_PRODUCTION_ADMITTED", eligible);
+    return cellWithEvidence(base, "UNKNOWN", "SOURCE_NOT_PRODUCTION_ADMITTED", [eligible[0]]);
   }
 
   const requiredRows = rows.filter(({ facilityType }) => REQUIRED_FACILITY_TYPES.includes(facilityType));
@@ -223,26 +225,35 @@ function buildCell({ stationLine, rows, sourceIndex, observedAt }) {
     row.facilityType === facilityType && isVerifiedAbsence(row)
   )));
   const exhaustiveAbsence = absentRows.every((matches) => matches.length > 0)
-    && !requiredRows.some(({ installationStatus }) => installationStatus === "INSTALLED");
+    && requiredRows.every(isVerifiedAbsence);
   if (exhaustiveAbsence) {
-    const evidence = absentRows.flat();
-    const sources = evidence.map((row) => sourceIndex.get(sourceKey(row.sourceId, row.sourceSnapshotId)));
-    if (sources.every(({ productionUseAllowed }) => productionUseAllowed)
-      && evidence.every((row) => isSourceUsable(sourceIndex.get(sourceKey(row.sourceId, row.sourceSnapshotId)), observedAt))) {
+    const admittedRows = absentRows.map((matches) => matches.filter((row) => (
+      sourceIndex.get(sourceKey(row.sourceId, row.sourceSnapshotId)).productionUseAllowed
+    )));
+    const freshWitnesses = admittedRows.map((matches) => matches.find((row) => (
+      isSourceUsable(sourceIndex.get(sourceKey(row.sourceId, row.sourceSnapshotId)), observedAt)
+    )));
+    if (freshWitnesses.every(Boolean)) {
       return cellWithEvidence(
         base,
         "ADMITTED_VERIFIED_ABSENCE",
         "OFFICIAL_REQUIRED_FACILITIES_ABSENT",
-        evidence,
+        freshWitnesses,
       );
     }
-    if (sources.every(({ productionUseAllowed }) => productionUseAllowed)) {
-      return cellWithEvidence(base, "STALE", "FACILITY_SOURCE_STALE", evidence);
+    if (admittedRows.every((matches) => matches.length > 0)) {
+      const staleCause = admittedRows.find((matches) => !matches.some((row) => (
+        isSourceUsable(sourceIndex.get(sourceKey(row.sourceId, row.sourceSnapshotId)), observedAt)
+      )))[0];
+      return cellWithEvidence(base, "STALE", "FACILITY_SOURCE_STALE", [staleCause]);
     }
-    return cellWithEvidence(base, "UNKNOWN", "SOURCE_NOT_PRODUCTION_ADMITTED", evidence);
+    const unadmittedCause = absentRows.find((matches) => !matches.some((row) => (
+      sourceIndex.get(sourceKey(row.sourceId, row.sourceSnapshotId)).productionUseAllowed
+    )))[0];
+    return cellWithEvidence(base, "UNKNOWN", "SOURCE_NOT_PRODUCTION_ADMITTED", [unadmittedCause]);
   }
 
-  const cause = requiredRows.find(({ installationStatus }) => installationStatus === "INSTALLED") ?? rows[0];
+  const cause = requiredRows.find((row) => !isVerifiedAbsence(row)) ?? rows[0];
   const source = sourceIndex.get(sourceKey(cause.sourceId, cause.sourceSnapshotId));
   if (!isSourceUsable(source, observedAt) && source.productionUseAllowed) {
     return cellWithEvidence(base, "STALE", "FACILITY_SOURCE_STALE", [cause]);
@@ -300,6 +311,12 @@ function materializerEvidenceRow(cell, candidate, sourceIndex) {
     : cell.state === "ADMITTED_VERIFIED_ABSENCE"
       ? ["VERIFIED_ABSENT", "EXHAUSTIVE_LIST"]
       : ["UNKNOWN", "UNSUPPORTED"];
+  const capturedAt = sources.map(({ capturedAt: value }) => value).toSorted(compareBytes).at(-1);
+  const freshUntil = sources.map(({ freshUntil: value }) => value).toSorted(compareBytes)[0];
+  if (requiredUtcInstant(freshUntil, "FACILITY evidence freshUntil")
+    <= requiredUtcInstant(capturedAt, "FACILITY evidence capturedAt")) {
+    throw new Error("FACILITY evidence freshness interval is invalid");
+  }
   return canonicalObject({
     ...candidate,
     stationId: cell.stationId,
@@ -313,8 +330,8 @@ function materializerEvidenceRow(cell, candidate, sourceIndex) {
     providerRecordHash: cell.evidenceIdentity.providerRecordHashes.length === 1
       ? cell.evidenceIdentity.providerRecordHashes[0]
       : sha256(canonicalJson(cell.evidenceIdentity.providerRecordHashes)),
-    capturedAt: sources.map(({ capturedAt }) => capturedAt).toSorted(compareBytes).at(-1),
-    freshUntil: sources.map(({ freshUntil }) => freshUntil).toSorted(compareBytes)[0],
+    capturedAt,
+    freshUntil,
     provenanceId: singleSource?.provenanceId ?? `facility-accessibility-composite-${identityDigest}`,
     licenseId: singleSource?.licenseId ?? `facility-accessibility-composite-${identityDigest}`,
     evidenceKind,
@@ -350,7 +367,8 @@ function compareFacilityRows(left, right) {
     || compareBytes(left.facilityType, right.facilityType)
     || compareBytes(left.sourceId, right.sourceId)
     || compareBytes(left.sourceSnapshotId, right.sourceSnapshotId)
-    || compareBytes(left.providerRecordHash, right.providerRecordHash);
+    || compareBytes(left.providerRecordHash, right.providerRecordHash)
+    || compareBytes(canonicalJson(left), canonicalJson(right));
 }
 
 function assertKeys(value, expected, label) {
