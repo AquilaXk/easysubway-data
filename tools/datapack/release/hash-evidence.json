@@ -55,7 +55,7 @@
   },
   "fixturePath": {
     "value": "tools/datapack/release/capital-production-canonical-pack.json",
-    "sha256": "e3046a9e769713acf16a9a9235d77c19404a99d28792a985728dd5e0de34a0f4",
+    "sha256": "261263ce984362bee27ed23d23685cc28b1d026c26c4664bf895095541d98b22",
     "contract": "#2648에서 배포 중인 capital SQLite 전체를 lossless fixture로 고정하고, 2c72677b builder가 전체 ITX readmission chain과 최종 output identity를 검증한다.",
     "reproductionCommand": "shasum -a 256 tools/datapack/release/capital-production-canonical-pack.json"
   },
