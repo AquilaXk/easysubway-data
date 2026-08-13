@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -289,7 +289,9 @@ test("전체 station-line을 다음 snapshot roster 입력으로 읽는다", asy
   const directory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-current-claim-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const sqlitePath = path.join(directory, "capital.sqlite");
-  const gzipPath = `${sqlitePath}.gz`;
+  const catalogDirectory = path.join(directory, "catalog");
+  const gzipPath = path.join(catalogDirectory, "capital.sqlite.gz");
+  await mkdir(catalogDirectory);
   const database = new DatabaseSync(sqlitePath);
   database.exec(`
     CREATE TABLE stations (id TEXT PRIMARY KEY, name_ko TEXT);
@@ -308,7 +310,7 @@ test("전체 station-line을 다음 snapshot roster 입력으로 읽는다", asy
   await writeFile(gzipPath, gzipSync(sqliteBytes));
 
   const memberships = await loadCanonicalStationLinesFromBundledIndex({
-    bundledIndex: { packs: [{ id: "capital", asset: path.basename(gzipPath), sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") }] },
+    bundledIndex: { packs: [{ id: "capital", url: `catalog/${path.basename(gzipPath)}`, sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") }] },
     bundledRoot: directory,
   });
 
@@ -317,6 +319,21 @@ test("전체 station-line을 다음 snapshot roster 입력으로 읽는다", asy
   }, {
     artifactId: "bundled-capital", stationId: "station-b", lineId: "line-a", stationCode: "102", names: ["미평가역"],
   }]);
+
+  await assert.rejects(
+    loadCanonicalStationLinesFromBundledIndex({
+      bundledIndex: { packs: [{ id: "capital", asset: path.basename(gzipPath), sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") }] },
+      bundledRoot: directory,
+    }),
+    /pack url is invalid/,
+  );
+  await assert.rejects(
+    loadCanonicalStationLinesFromBundledIndex({
+      bundledIndex: { packs: [{ id: "capital", url: "../capital.sqlite.gz", sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") }] },
+      bundledRoot: directory,
+    }),
+    /pack url is invalid/,
+  );
 });
 
 test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero를 보존한다", async () => {
