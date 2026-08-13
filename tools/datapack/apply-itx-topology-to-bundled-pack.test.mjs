@@ -1211,6 +1211,32 @@ test("source와 completeness evidence exact binding을 요구한다", async () =
   ), /source identity is invalid/));
 });
 
+test("completeness top-level admission metadata는 source와 exact 결속한다", async (context) => {
+  const cases = [
+    ["missing-admission-status", (completeness) => { delete completeness.admissionStatus; }],
+    ["mismatched-admission-status", (completeness) => { completeness.admissionStatus = "SUPPORTED"; }],
+    ["missing-observed-at", (completeness) => { delete completeness.observedAt; }],
+    ["mismatched-observed-at", (completeness) => {
+      completeness.observedAt = "2026-08-12T16:55:25.801Z";
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    await context.test(name, async () => {
+      const documents = await trackedLegacyDocuments();
+      mutate(documents.completeness);
+      rebindAdmissionDocuments(documents);
+      assert.throws(() => validateAdmittedSourceDocuments(
+        documents.contract,
+        documents.reference,
+        documents.source,
+        documents.completeness,
+        sha256(documents.sourceBytes),
+        sha256(documents.completenessBytes),
+      ), /source identity is invalid/);
+    });
+  }
+});
+
 test("reversed down direction, missing U/D, incomplete stops, disconnected components를 거부한다", async (context) => {
   const cases = [
     ["reversed-down", (source) => {
