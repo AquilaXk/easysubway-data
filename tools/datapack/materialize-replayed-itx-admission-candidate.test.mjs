@@ -1,0 +1,201 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  createProviderResponseRecorder,
+  providerResponseCaptureBytes,
+} from "./provider-response-capture.mjs";
+import { materializeReplayedItxAdmissionCandidateCli } from "./materialize-replayed-itx-admission-candidate.mjs";
+
+const SERVICE_DATES = Object.freeze({ "7": "20260822", "8": "20260813", "9": "20260816" });
+
+function request(operation, key = "capture-key") {
+  return `https://apis.data.go.kr/1613000/TrainInfo/${operation}?serviceKey=${key}&_type=json`;
+}
+
+async function capturedBytes(serviceDates = SERVICE_DATES) {
+  const recorder = createProviderResponseRecorder({
+    observedAt: "2026-08-13T00:00:00.000Z",
+    selectedServiceDates: serviceDates,
+    fetchImpl: async (url) => new Response(JSON.stringify({ operation: new URL(url).pathname.split("/").at(-1) }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+  await recorder.fetchImpl(request("GetVhcleKndList"));
+  await recorder.fetchImpl(request("GetCtyCodeList"));
+  return providerResponseCaptureBytes(recorder.captureArtifact());
+}
+
+function replayEvidence(overrides = {}) {
+  const value = {
+    schemaVersion: 2,
+    artifactKind: "korail-itx-cheongchun-completeness-evidence",
+    serviceId: "ITX_CHEONGCHUN",
+    observedAt: "2026-08-13T00:00:00.000Z",
+    timezone: "Asia/Seoul",
+    validationMode: "REPLAY",
+    selectedServiceDates: SERVICE_DATES,
+    validationStatus: "SUPPORTED",
+    admissionStatus: "REPLAY_ONLY",
+    admissionEligible: false,
+    allowedConsumerIssues: [],
+    legacyDaejeonRowCount: 0,
+    legacyYongsanDaejeonTripCount: 0,
+    serviceDays: ["8", "7", "9"].map((dayCd) => ({
+      dayCd,
+      serviceDate: SERVICE_DATES[dayCd],
+      status: "SUPPORTED",
+      expectedOdCount: 306,
+      completedOdCount: 306,
+      failedOdCount: 0,
+    })),
+    snapshotDiff: { policyVersion: "itx-snapshot-anomaly-v1", status: "NOT_EVALUATED", serviceDays: [] },
+    sourceTimetableArtifact: {
+      status: "REPLAY_ONLY",
+      artifactId: "itx-cheongchun-source-timetable-20260813000000000",
+      policyVersion: "itx-snapshot-anomaly-v1",
+      freshUntil: "2026-08-23T00:00:00+09:00",
+    },
+    materialization: { status: "SUPPORTED" },
+    stationCatalogPackIdentity: { id: "capital" },
+    credentialRedacted: true,
+    ...overrides,
+  };
+  const { evidenceHash: _ignored, ...withoutHash } = value;
+  value.evidenceHash = createHash("sha256").update(JSON.stringify(withoutHash)).digest("hex");
+  return value;
+}
+
+function valueAfter(argv, name) {
+  const index = argv.indexOf(name);
+  assert.notEqual(index, -1, `${name} argument가 필요합니다`);
+  return argv[index + 1];
+}
+
+async function fixture() {
+  const directory = await mkdtemp(path.join(tmpdir(), "itx-replay-admission-"));
+  const values = {
+    directory,
+    capture: path.join(directory, "capture.json"),
+    replayEvidence: path.join(directory, "replay.json"),
+    stationCatalogPack: path.join(directory, "station-catalog-pack"),
+    candidate: path.join(directory, "candidate.json"),
+    completeness: path.join(directory, "completeness.json"),
+  };
+  await writeFile(values.capture, await capturedBytes());
+  await writeFile(values.replayEvidence, JSON.stringify(replayEvidence()));
+  return values;
+}
+
+function argv(values) {
+  return [
+    "--capture", values.capture,
+    "--replay-evidence", values.replayEvidence,
+    "--station-catalog-pack", values.stationCatalogPack,
+    "--candidate-output", values.candidate,
+    "--completeness-output", values.completeness,
+  ];
+}
+
+test("successful replay identity를 network 없이 existing ADMISSION candidate boundary로 전달한다", async () => {
+  const values = await fixture();
+  let received;
+  try {
+    const result = await materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      runCompletenessImpl: async (options) => {
+        received = options;
+        for (const operation of ["GetVhcleKndList", "GetCtyCodeList"]) {
+          const response = await options.fetchImpl(request(operation, "different-runtime-key"));
+          assert.match(await response.text(), new RegExp(operation));
+        }
+        await options.onPublicationEvent({ event: "before-stage-created" });
+        await writeFile(valueAfter(options.argv, "--output"), "candidate\n");
+        await writeFile(valueAfter(options.argv, "--completeness-output"), "completeness\n");
+        return {
+          artifact: {
+            validationMode: "ADMISSION",
+            validationStatus: "SUPPORTED",
+            selectedServiceDates: SERVICE_DATES,
+            materialization: { status: "SUPPORTED" },
+          },
+          candidate: { validationStatus: "SUPPORTED" },
+          outputSha256: "a".repeat(64),
+          completenessEvidenceSha256: "b".repeat(64),
+          exitCode: 0,
+        };
+      },
+    });
+
+    assert.deepEqual(received.argv, [
+      "--day8-date", SERVICE_DATES["8"],
+      "--day7-date", SERVICE_DATES["7"],
+      "--day9-date", SERVICE_DATES["9"],
+      "--station-catalog-pack", values.stationCatalogPack,
+      "--output", values.candidate,
+      "--completeness-output", values.completeness,
+    ]);
+    assert.deepEqual(received.env, {});
+    assert.equal(received.providerServiceKey, "offline-provider-replay-key");
+    assert.equal(received.now.toISOString(), "2026-08-13T00:00:00.000Z");
+    assert.equal(await readFile(values.candidate, "utf8"), "candidate\n");
+    assert.equal(await readFile(values.completeness, "utf8"), "completeness\n");
+    assert.equal(result.outputSha256, "a".repeat(64));
+  } finally {
+    await rm(values.directory, { recursive: true, force: true });
+  }
+});
+
+test("replay evidence/capture identity drift와 unconsumed record는 output 0으로 거부한다", async () => {
+  const values = await fixture();
+  let calls = 0;
+  try {
+    await writeFile(values.capture, await capturedBytes({ ...SERVICE_DATES, "8": "20260814" }));
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      runCompletenessImpl: async () => { calls += 1; },
+    }), /replay evidence and capture service dates differ/);
+    assert.equal(calls, 0);
+    await assert.rejects(readFile(values.candidate), /ENOENT/);
+    await assert.rejects(readFile(values.completeness), /ENOENT/);
+
+    await writeFile(values.capture, await capturedBytes());
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      runCompletenessImpl: async (options) => {
+        await options.fetchImpl(request("GetVhcleKndList"));
+        await options.onPublicationEvent({ event: "before-stage-created" });
+      },
+    }), /provider replay has 1 unconsumed record/);
+    await assert.rejects(readFile(values.candidate), /ENOENT/);
+    await assert.rejects(readFile(values.completeness), /ENOENT/);
+  } finally {
+    await rm(values.directory, { recursive: true, force: true });
+  }
+});
+
+test("tampered replay evidence hash는 collector 호출 전에 거부한다", async () => {
+  const values = await fixture();
+  let calls = 0;
+  try {
+    const tampered = replayEvidence();
+    tampered.evidenceHash = "0".repeat(64);
+    await writeFile(values.replayEvidence, JSON.stringify(tampered));
+    await assert.rejects(materializeReplayedItxAdmissionCandidateCli({
+      argv: argv(values),
+      repositoryRoot: values.directory,
+      runCompletenessImpl: async () => { calls += 1; },
+    }), /EVIDENCE_HASH/);
+    assert.equal(calls, 0);
+  } finally {
+    await rm(values.directory, { recursive: true, force: true });
+  }
+});

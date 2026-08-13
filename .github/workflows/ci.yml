@@ -159,8 +159,10 @@ jobs:
           tools/ci/itx-current-collection-workflow.test.mjs
           tools/ci/itx-current-collection-continuation-workflow.test.mjs
           tools/ci/itx-current-collection-offline-replay-workflow.test.mjs
+          tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs
           tools/datapack/continue-current-itx-collection.test.mjs
           tools/datapack/replay-current-itx-collection.test.mjs
+          tools/datapack/materialize-replayed-itx-admission-candidate.test.mjs
           tools/datapack/provider-response-capture.test.mjs
           tools/datapack/lib/provider-call-integrity.test.mjs
           tools/datapack/source-candidate-endpoint-contract.test.mjs
