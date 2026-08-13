@@ -158,6 +158,18 @@ test("row order/value/field/provider/schema mismatch는 child output을 만들�
       responses.molit[firstSequence + 1] = 0x30;
     },
     (responses) => {
+      const selectedSequence = responses.molit.indexOf(Buffer.from(",30,"));
+      assert.notEqual(selectedSequence, -1);
+      const stationStart = selectedSequence + 4;
+      responses.molit = Buffer.concat([
+        responses.molit.subarray(0, stationStart + 2),
+        Buffer.from('"'),
+        responses.molit.subarray(stationStart + 2, stationStart + 4),
+        Buffer.from('"'),
+        responses.molit.subarray(stationStart + 4),
+      ]);
+    },
+    (responses) => {
       responses.molit = Buffer.concat([responses.molit, Buffer.from([0x81])]);
     },
     (responses) => {
@@ -276,6 +288,36 @@ test("provider 실패는 source와 closed HTTP stage만 분류하고 retry하지
     });
     assert.equal(calls, scenario.calls);
   }
+});
+
+test("oversized response stream은 1 MiB 직후 취소하고 전체 body를 적재하지 않는다", async () => {
+  let reads = 0;
+  let cancelled = false;
+  const response = {
+    status: 200,
+    ok: true,
+    headers: new Headers({ "content-type": "application/octet-stream" }),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            reads += 1;
+            return { done: false, value: Buffer.alloc(600 * 1024) };
+          },
+          async cancel() { cancelled = true; },
+          releaseLock() {},
+        };
+      },
+    },
+    async arrayBuffer() { throw new Error("whole body must not be buffered"); },
+  };
+
+  await assert.rejects(fetchCurrentStaticSourceResponses({
+    seoulOpenApiKey: "seoul-key",
+    fetchImpl: async () => response,
+  }), /STATIC_SOURCE_REVALIDATION_MOLIT_BODY_SIZE/);
+  assert.equal(reads, 2);
+  assert.equal(cancelled, true);
 });
 
 test("validated four-file output은 absent directory에 한 번만 publish한다", async (context) => {

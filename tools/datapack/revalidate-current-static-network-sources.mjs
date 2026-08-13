@@ -62,25 +62,33 @@ function parseCsv(csv) {
   let row = [];
   let cell = "";
   let quoted = false;
+  let quoteClosed = false;
   for (let index = 0; index < csv.length; index += 1) {
     const character = csv[index];
     if (character === '"') {
-      if (quoted && csv[index + 1] === '"') {
+      if (!quoted) {
+        if (cell !== "" || quoteClosed) fail("SCHEMA");
+        quoted = true;
+      } else if (csv[index + 1] === '"') {
         cell += '"';
         index += 1;
       } else {
         quoted = !quoted;
+        quoteClosed = true;
       }
     } else if (character === "," && !quoted) {
       row.push(cell);
       cell = "";
+      quoteClosed = false;
     } else if ((character === "\n" || character === "\r") && !quoted) {
       if (character === "\r" && csv[index + 1] === "\n") index += 1;
       row.push(cell);
       if (row.some((value) => value !== "")) rows.push(row);
       row = [];
       cell = "";
+      quoteClosed = false;
     } else {
+      if (quoteClosed) fail("SCHEMA");
       cell += character;
     }
   }
@@ -279,9 +287,27 @@ async function responseBytes(response, source, expectedContentType) {
   }
   if (response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase()
     !== expectedContentType) fail(`${source}_CONTENT_TYPE`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > 1024 * 1024) fail(`${source}_BODY_SIZE`);
-  return bytes;
+  if (!response.body || typeof response.body.getReader !== "function") fail(`${source}_BODY_SIZE`);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) fail(`${source}_BODY_SIZE`);
+      byteLength += value.byteLength;
+      if (byteLength > 1024 * 1024) {
+        await reader.cancel().catch(() => {});
+        fail(`${source}_BODY_SIZE`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  if (byteLength === 0) fail(`${source}_BODY_SIZE`);
+  return Buffer.concat(chunks, byteLength);
 }
 
 async function fetchSourceResponse({ source, url, init, fetchImpl, expectedContentType }) {
