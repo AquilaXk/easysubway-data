@@ -1076,7 +1076,7 @@ function svgRowFromCsv(row) {
   };
 }
 
-function providerLineScopesFor(catalog, coverageScopes, lines) {
+export function providerLineScopesFor(catalog, coverageScopes, lines) {
   validateKricProviderCodeCatalogIdentity(catalog);
   if (catalog?.artifactKind !== "kric-provider-line-catalog" || !Array.isArray(catalog.providerLines)
     || !Number.isInteger(catalog.stationRecordCount) || catalog.stationRecordCount < 1) {
