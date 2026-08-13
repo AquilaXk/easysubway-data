@@ -171,6 +171,45 @@ test("서울 공식 1~8호선 position snapshot은 current capital topology admi
   assert.throws(() => rebind(invalid), /Seoul route-map position source contract is invalid/);
 });
 
+test("tracked 서울 공식 position snapshot의 exact renamed-station aliases는 current 22-line admission을 완성한다", async () => {
+  const [inventory, topology] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260813.json"), "utf8").then(JSON.parse),
+  ]);
+  const snapshotBytesByPath = new Map();
+  for (const source of inventory.sources) {
+    if (source.routeMapAdmissionEvidence?.topologySourceId === "capital-route-topology"
+      || source.id === "seoul-metro-route-map-positions") {
+      snapshotBytesByPath.set(
+        source.routeMapAdmissionEvidence.snapshotPath,
+        await readFile(path.join(root, source.routeMapAdmissionEvidence.snapshotPath)),
+      );
+    }
+  }
+  const rebound = withCurrentCapitalTopologyAdmissions({
+    inventory,
+    topology,
+    topologySnapshotId: "capital-route-topology-20260813",
+    reviewedAt: topology.capturedAt,
+    snapshotBytesByPath,
+  });
+  const admissions = admittedCapitalLineEvidence(
+    rebound,
+    topology,
+    "capital-route-topology-20260813",
+    topology.capturedAt,
+    new Date("2026-08-13T16:19:47.000Z"),
+  );
+
+  assert.equal(admissions.size, 22);
+  for (const lineId of [
+    "line-472a81add377", "seoul-4", "line-80fc4d5350d4",
+    "line-15b3b8a93259", "line-2b2d9eaa53d0",
+  ]) {
+    assert.equal(admissions.has(lineId), true, lineId);
+  }
+});
+
 test("current topology에 없는 station은 input을 변경하지 않고 거부한다", () => {
   const values = fixture("없는역");
   const before = structuredClone(values.inventory);

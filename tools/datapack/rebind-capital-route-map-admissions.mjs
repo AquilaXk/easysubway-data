@@ -11,9 +11,13 @@ import { replaceFileAtomically } from "./refresh-route-map-admission-freshness.m
 const root = path.resolve(import.meta.dirname, "../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
 const STATION_ALIASES = Object.freeze({
+  당고개: "불암산",
   능길: "신길온천",
   김포공항역: "김포공항",
   부천종합운동장역: "부천종합운동장",
+  서울: "서울역",
+  뚝섬유원지: "자양",
+  하남검단산: "하남검단산역",
 });
 
 function sha256(bytes) {
