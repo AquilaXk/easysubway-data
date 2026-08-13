@@ -240,6 +240,8 @@ function validateStaticSourceChangeAdmission(
     || evidence.redactedRequestFingerprint !== snapshot.redactedRequestFingerprint
     || evidence.providerRecordHashesSha256 !== sha256(JSON.stringify(snapshot.providerRecordHashes))
     || !SHA256.test(evidence.responseSha256 ?? "")
+    || !SHA256.test(evidence.canonicalPackSha256 ?? "")
+    || !SHA256.test(canonicalPackSha256 ?? "")
     || evidence.canonicalPackSha256 !== canonicalPackSha256
     || !SHA256.test(evidence.canonicalMembershipSha256 ?? "")
     || evidence.rawObjectUri !== snapshot.rawObjectUri

@@ -353,6 +353,19 @@ test("activation은 MOLIT no-change와 Seoul changed-source admission의 exact m
       observationDate: "20260813",
     }), /static revalidation evidence identity mismatch/);
   }
+
+  const unbound = structuredClone(revalidations);
+  unbound[1].evidence.canonicalPackSha256 = null;
+  const { evidenceSha256: _staleEvidenceSha256, ...unboundPayload } = unbound[1].evidence;
+  unbound[1].evidence.evidenceSha256 = sha256(JSON.stringify(unboundPayload));
+  unbound[1].snapshot.revalidationEvidenceSha256 = unbound[1].evidence.evidenceSha256;
+  assert.throws(() => activateStaticSourceRevalidations({
+    sourceSnapshots: previous,
+    sourceInventory,
+    revalidations: unbound,
+    buildNow: "2026-08-13T10:30:01.000Z",
+    observationDate: "20260813",
+  }), /static revalidation evidence identity mismatch/);
 });
 
 test("primary source set은 current KRIC·7-source·two-topology identity를 한 번에 활성화한다", async () => {
