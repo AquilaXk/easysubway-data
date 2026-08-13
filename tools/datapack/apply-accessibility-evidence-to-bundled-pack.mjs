@@ -226,7 +226,8 @@ export function syncCanonicalFixture(canonical, reviewedPack) {
     .concat(reviewedPack.stationFacilityEvidence);
   pack.networkEdges = (pack.networkEdges ?? [])
     .filter((edge) => !isAccessibilityRouteEdge(edge))
-    .concat(accessibilityRouteEdges(reviewedPack));
+    .concat(accessibilityRouteEdges(reviewedPack))
+    .sort((left, right) => codepointCompare(left.id, right.id));
   pack.stationExits = (pack.stationExits ?? []).map((exit) =>
     exit.hasElevatorConnection ? { ...exit, hasElevatorConnection: false } : exit);
   const freshSources = reviewedPack.sourceInventory;

@@ -4416,8 +4416,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "daily",
-      "observedDataUpdatedAt": "2026-07-28",
-      "retrievedAt": "2026-07-28",
+      "observedDataUpdatedAt": "2026-08-13",
+      "retrievedAt": "2026-08-13",
       "license": {
         "type": "KOGL-1",
         "name": "공공누리 1유형",
@@ -4488,7 +4488,7 @@
           "productionUseAllowed": true,
           "unlockStatus": "not_required"
         },
-        "productionUseNoteKo": "fresh exhaustive snapshot과 reviewed accessibility evidence에 결속된 static facility rows만 production use를 허용한다.",
+        "productionUseNoteKo": "fresh KRIC standard snapshot kric-station-convenience-standard-20260813T200604805Z registration verified.",
         "sourceInventorySha256": "d9be49ab573a6437fb069ae7ebe1c8e988253501387b456e31344fd6a835536e"
       },
       "accessibilityAdmissionEvidence": {
@@ -4496,15 +4496,15 @@
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "39978b3c3dd3fb64b7f15d739453b19ad0b51a0f216cea22d3efb77dbfebf398",
-        "snapshotId": "kric-station-convenience-standard-20260728T184503338Z",
-        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260728T184503338Z.json",
-        "capturedAt": "2026-07-28T18:45:03.338Z",
-        "observedAt": "2026-07-28T18:45:03.338Z",
-        "freshUntil": "2026-07-29T18:45:03.338Z",
-        "rawSha256": "aef4063a61ab3172361d8a44eceff6b1c709261ec4c5f139f27f0a1db9a3afe5",
-        "contentSha256": "063975fd27b899204e7d4240cb4c56c9f010ce79ed3aa65c3e544374c47914ba",
+        "snapshotId": "kric-station-convenience-standard-20260813T200604805Z",
+        "snapshotPath": "tools/datapack/sources/kric-station-convenience-standard-20260813T200604805Z.json",
+        "capturedAt": "2026-08-13T20:06:04.805Z",
+        "observedAt": "2026-08-13T20:06:04.805Z",
+        "freshUntil": "2026-08-14T20:06:04.805Z",
+        "rawSha256": "cee8364e72adec1c6d405978239c3972962a5085ee7bf366ef37d7c2df803d90",
+        "contentSha256": "403201b6e3baa0d60b1e99486d6fae3332140d35014e9e57d8a7c0e36e860ea1",
         "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
-        "snapshotFileSha256": "cf03e3ed45813f66210c2be445e4f496469d81a59464e9a7fb51f08daffcf1a9",
+        "snapshotFileSha256": "6ce9dbb793284021f8a342ef53f841c44af9334077ddf30797ca7aafdaea1e7e",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST"
       }
     },
@@ -7025,8 +7025,8 @@
       "requiredForProductionPack": true,
       "productionUseAllowed": true,
       "updateFrequency": "realtime",
-      "observedDataUpdatedAt": "2026-07-28",
-      "retrievedAt": "2026-07-28",
+      "observedDataUpdatedAt": "2026-08-13",
+      "retrievedAt": "2026-08-13",
       "license": {
         "type": "PUBLIC_DATA_FREE_USE",
         "name": "공공데이터포털 이용허락범위 제한 없음",
@@ -7109,22 +7109,22 @@
           "unlockStatus": "approved",
           "productionUseAllowed": true
         },
-        "productionUseNoteKo": "capital 팩 production inventory 소비 대상으로 승격(교통약자 승강기 실시간 운행상황). strict route 보장은 별도 계약으로 유지."
+        "productionUseNoteKo": "fresh Seoul accessibility snapshot seoul-metro-accessibility-20260813T213842955Z registration verified."
       },
       "accessibilityAdmissionEvidence": {
         "issue": 2609,
         "decision": "APPROVED",
         "productionUseAllowed": true,
         "licenseEvidenceHash": "cd1063d4aa4b6290b1f4edabb9a74e62d70f8da5044aa4608b7f1e45e10c5963",
-        "snapshotId": "seoul-metro-accessibility-20260728",
-        "snapshotPath": "tools/datapack/sources/seoul-metro-accessibility-20260728.json",
-        "capturedAt": "2026-07-28T15:35:25.704Z",
-        "observedAt": "2026-07-28T15:35:25.704Z",
-        "freshUntil": "2026-07-29T15:35:25.704Z",
-        "rawSha256": "07e91cc7d035dd60e753c25b1a4dd4a306b757f3a74f7364eb38f9c3ef43c1ba",
-        "contentSha256": "bedfd9067948539b6285dba3ad24cd1ae0dac0166095466fb7f4b2df4e31b8aa",
+        "snapshotId": "seoul-metro-accessibility-20260813T213842955Z",
+        "snapshotPath": "tools/datapack/sources/seoul-metro-accessibility-20260813T213842955Z.json",
+        "capturedAt": "2026-08-13T21:38:42.955Z",
+        "observedAt": "2026-08-13T21:38:42.955Z",
+        "freshUntil": "2026-08-14T21:38:42.955Z",
+        "rawSha256": "1615d0fb1fd9a4823b8bfc3e6fed25314a11a0df279c789612b073d0e281d03d",
+        "contentSha256": "dcbb98aed3d23ab7d2c506e7b07234530eab0600d57f9691f8b3b77735568917",
         "schemaFingerprint": "89175633c9f84c1593c92cfcb89dc25a64030d970be6c8970d51097dc7075982",
-        "snapshotFileSha256": "9b55ab8e99a1ad2a11274f684b445dc1eb7f47f82abaca8f567985351324dd11",
+        "snapshotFileSha256": "5eca3872be18515099924bd6bb1bc863ab4c2f7b89d15cd10eb3ae68896a0bcb",
         "absenceEvidenceMode": "EXHAUSTIVE_LIST"
       }
     },

@@ -1,0 +1,991 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "kric-accessibility-snapshot",
+  "sourceId": "kric-station-convenience-standard",
+  "snapshotId": "kric-station-convenience-standard-20260813T200604805Z",
+  "capturedAt": "2026-08-13T20:06:04.805Z",
+  "observedAt": "2026-08-13T20:06:04.805Z",
+  "freshUntil": "2026-08-14T20:06:04.805Z",
+  "credentialRedacted": true,
+  "providerResultCode": "00",
+  "schemaStatus": "PASS",
+  "absenceEvidenceMode": "EXHAUSTIVE_LIST",
+  "queryCount": 7,
+  "rowCount": 93,
+  "rawSha256": "cee8364e72adec1c6d405978239c3972962a5085ee7bf366ef37d7c2df803d90",
+  "contentSha256": "403201b6e3baa0d60b1e99486d6fae3332140d35014e9e57d8a7c0e36e860ea1",
+  "schemaFingerprint": "6cf45df8488510187063c4b7396ca9628295d6961becdcf1de87f2ae521e8591",
+  "redactedRequestFingerprint": "8dada6c3dff32f654dbc71097b49beeef20a115fb051836adb76e7f76d757e17",
+  "queries": [
+    {
+      "stationId": "station-gangnam",
+      "lineId": "shinbundang",
+      "railOprIsttCd": "DX",
+      "lnCd": "D1",
+      "stinCd": "4307",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-gangnam",
+          "lineId": "shinbundang"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "5e5f34b4ab5ce154de102166c10f68b9627ce0d2101f5309a1a20b840042a5a1",
+      "providerRecordHash": "7f2f799a89ae26df1889b21c25bce74b4dd067b8790ea9566bddfe1947af10f6",
+      "rows": [
+        {
+          "dtlLoc": "(B1)상가층2호선연결통로",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B2)2호선교대방향승강장4-4출입문근처,(B3)환승통로교대방면근처",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B2)2호선역삼방향승강장7-1출입문근처,(B3)환승통로잠실방면근처",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(1)3번출입구근처,(B1)상가층중앙,(B3)고객센터앞대합실",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(1)6번출입구근처,(B1)상가층중앙,(B3)대합실수유실옆",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B3)대합실중앙표내는곳근처,(B4)양재방향승강장5-2출입문앞",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 4,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B3)대합실중앙표내는곳근처,(B4)신논현방향승강장2-1출입문앞",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 4,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B1) 상가층 E/S #12, 13 상단",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B1) 상가층 E/S #12, 13 상단",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B1) 상가층 E/S #12, 13 상단",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(B1) 상가층 E/S #12, 13 상단",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(B3) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 3,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B3) 대합실층 중앙 표 내는 곳 상선승강장 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 3,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B3) 대합실층 중앙 표 내는 곳 상선승강장 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 3,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B3) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 3,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B3) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 3,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(B3) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 3,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(B3) F/A 대합실 GS편의점 옆",
+          "grndDvCd": "2",
+          "gubun": "INFO",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B3) 고객안내센터 옆",
+          "grndDvCd": "2",
+          "gubun": "FEED",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        }
+      ]
+    },
+    {
+      "stationId": "station-jeongja",
+      "lineId": "shinbundang",
+      "railOprIsttCd": "DX",
+      "lnCd": "D1",
+      "stinCd": "4312",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-jeongja",
+          "lineId": "shinbundang"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "ecb78393222f5db30318ca8a59f6c08efa3022145954426f0069ed85e1693c28",
+      "providerRecordHash": "d6446b348854d8b55d088a460625a314a2c1badab7c8a09edc0307d7d2c17555",
+      "rows": [
+        {
+          "dtlLoc": "(1F)6번출입구뒤(B1)비운임구역대합실표내는곳방향",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B1)미금역방향승강장6-4출입문앞(B2)환승표내는곳방향통로",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B1)수내역방향승강장1-1출입문앞(B2)환승표내는곳방향통로",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B2)운임구역대합실표내는곳방향(B3)미금역방향승강장4-1출입문앞",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B2)운임구역대합실표내는곳방향(B3)판교역방향승강장3-4출입문앞",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B2) 대합실층 중앙 표 내는 곳 하선승강장 방향 ",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B2) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B2) 대합실층 중앙 표 내는 곳 하선승강장 방향 ",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B2) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(B2) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(B2) 대합실층 중앙 표 내는 곳 통과 전 좌측 방향",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(B2) 대합실 E/V #1 근처",
+          "grndDvCd": "2",
+          "gubun": "INFO",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(B2) 대합실 고객센터 내 ",
+          "grndDvCd": "2",
+          "gubun": "FEED",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/DX/DX_D1_0511.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        }
+      ]
+    },
+    {
+      "stationId": "station-sangnoksu",
+      "lineId": "seoul-4",
+      "railOprIsttCd": "KR",
+      "lnCd": "4",
+      "stinCd": "448",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-sangnoksu",
+          "lineId": "seoul-4"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "b1861732237e57ca55771c70051c27d05e34ab212b284e17a360711148566459",
+      "providerRecordHash": "bb149246274cfc8fc49b99a198a3204bd99d0ab387251189ca72ff14a3c2a124",
+      "rows": [
+        {
+          "dtlLoc": "(1층)표내는곳내반월방향계단옆",
+          "grndDvCd": "1",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(1층)표내는곳내한대앞방향계단옆",
+          "grndDvCd": "1",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 옆, 2번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 내 역무실 맞은편, 3번/4번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 내 역무실 맞은편, 3번/4번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 옆, 2번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 내 역무실 맞은편, 3번/4번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 옆, 2번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 옆, 2번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(1층) 표 내는 곳 내 역무실 맞은편, 3번/4번 출입구 방향",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/KR/KR_4_0275.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        }
+      ]
+    },
+    {
+      "stationId": "station-seongsu",
+      "lineId": "seoul-2",
+      "railOprIsttCd": "S1",
+      "lnCd": "2",
+      "stinCd": "211",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-seongsu",
+          "lineId": "seoul-2"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "44cd1cb939a32d3a2d062d4604fd33c0ecf6747b5df163286241c721880e2d1b",
+      "providerRecordHash": "62ed74be46e61b32f5afa1f7aaccf6a2b1dec03a11263da0146ad1e03e029c1f",
+      "rows": [
+        {
+          "dtlLoc": "뚝섬방면7-1",
+          "grndDvCd": "1",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "건대입구방면4-4",
+          "grndDvCd": "1",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "1번출구측",
+          "grndDvCd": "1",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "4번출구측",
+          "grndDvCd": "1",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "가대합실 해피박스옆",
+          "grndDvCd": "1",
+          "gubun": "ELEC",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "대합실 2층 2번출입구측  ",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "대합실 2층 2번출입구측  ",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "대합실 2층 2번출입구측  ",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "대합실 2층 2번출입구측  ",
+          "grndDvCd": "1",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "2층 대합실",
+          "grndDvCd": "1",
+          "gubun": "INFO",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "1번출구방면 게이트 안쪽",
+          "grndDvCd": "1",
+          "gubun": "FEED",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0314.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        }
+      ]
+    },
+    {
+      "stationId": "station-gangnam",
+      "lineId": "seoul-2",
+      "railOprIsttCd": "S1",
+      "lnCd": "2",
+      "stinCd": "222",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-gangnam",
+          "lineId": "seoul-2"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "5ca37703a19786f3f5606d371764c351d1bb09a2ed8d87c2a1079b709249cd60",
+      "providerRecordHash": "ec52e239904ed578a506e040712f145b9c0879497e5ceb6124086441159866f7",
+      "rows": [
+        {
+          "dtlLoc": "10번출구측",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "1번출구측",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "역삼방면8-1",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "교대방면3-4",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "대합실 1층 역무실쪽(1,12번출입구쪽),표 내는 곳 내부",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "대합실 1층 역무실쪽(1,12번출입구쪽),표 내는 곳 내부",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "대합실 1층 역무실쪽(1,12번출입구쪽),표 내는 곳 내부",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "대합실 1층 역무실쪽(1,12번출입구쪽),표 내는 곳 내부",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "B1층 대합실",
+          "grndDvCd": "2",
+          "gubun": "INFO",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "B1 고객안전실  앞",
+          "grndDvCd": "2",
+          "gubun": "FEED",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0017.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        }
+      ]
+    },
+    {
+      "stationId": "station-sadang",
+      "lineId": "seoul-2",
+      "railOprIsttCd": "S1",
+      "lnCd": "2",
+      "stinCd": "226",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-sadang",
+          "lineId": "seoul-2"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "631009b24d8d4cf2f283bcb6afa8c372fe70d278f160bc82ad79c060fc8b25ac",
+      "providerRecordHash": "939cbcf3de6ceb25a6a6756cded06948b442eba6df8c19813a97d7696c181b4c",
+      "rows": [
+        {
+          "dtlLoc": "14번출구측",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "6번출구측",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "방배방면4-4",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "13번 출입구에서 지하1층으로 내려온 후 40M",
+          "grndDvCd": "2",
+          "gubun": "ELEC",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "지하1층 대합실 1,2번 출입구 쪽(방배측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 7,8번 출입구 쪽(낙성대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 1,2번 출입구 쪽(방배측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 7,8번 출입구 쪽(낙성대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 1,2번 출입구 쪽(방배측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 7,8번 출입구 쪽(낙성대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 7,8번 출입구 쪽(낙성대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "지하1층 대합실 1,2번 출입구 쪽(방배측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "B1층 대합실",
+          "grndDvCd": "2",
+          "gubun": "INFO",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_2_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        }
+      ]
+    },
+    {
+      "stationId": "station-sadang",
+      "lineId": "seoul-4",
+      "railOprIsttCd": "S1",
+      "lnCd": "4",
+      "stinCd": "433",
+      "canonicalMappings": [
+        {
+          "artifactId": "bundled-capital",
+          "stationId": "station-sadang",
+          "lineId": "seoul-4"
+        }
+      ],
+      "status": "PRESENT",
+      "rawResponseSha256": "909c21a92ce694655bfa3583decb7b0ff8e9758747024e73a5ea226924dd2de7",
+      "providerRecordHash": "a4c7d9b3e78f54e459470b3691c3f63f99caebf2dd5fbf461a0049bd7c94a2b4",
+      "rows": [
+        {
+          "dtlLoc": "9,10번출구사이",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "총신대입구방면9-2",
+          "grndDvCd": "2",
+          "gubun": "EV",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 3,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "9번 출입구에서 지하1층으로 내려온 직진 우측 100M",
+          "grndDvCd": "2",
+          "gubun": "ELEC",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 1,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "(지하1층 총신대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(지하1층 남태령측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(지하1층 총신대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(지하1층 남태령측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(지하1층 총신대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(지하1층 남태령측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(지하1층 총신대측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(지하1층 남태령측)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 1,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(지하2층 환승통로)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(지하2층 환승통로)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "1"
+        },
+        {
+          "dtlLoc": "(지하2층 환승통로)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "1",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "(지하2층 환승통로)",
+          "grndDvCd": "2",
+          "gubun": "TOLT",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": "2",
+          "stinFlor": 2,
+          "trfcWeakDvCd": "2"
+        },
+        {
+          "dtlLoc": "B2층 대합실",
+          "grndDvCd": "2",
+          "gubun": "INFO",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        },
+        {
+          "dtlLoc": "B2 고객안전실  내부",
+          "grndDvCd": "2",
+          "gubun": "FEED",
+          "imgPath": "http://hc.kric.go.kr/hc/ext/images/visual/handicapped/cnv/S1/S1_4_0257.png",
+          "mlFmlDvCd": null,
+          "stinFlor": 2,
+          "trfcWeakDvCd": null
+        }
+      ]
+    }
+  ]
+}
