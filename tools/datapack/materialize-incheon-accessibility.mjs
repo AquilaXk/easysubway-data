@@ -259,10 +259,8 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || JSON.stringify(evidence.datasetIds) !== JSON.stringify(DATASET_IDS)
     || !Array.isArray(evidence.topologyLineages)
     || evidence.topologyLineages.length !== EXPECTED_TOPOLOGY_LINEAGE_COUNT
-    || JSON.stringify(evidence.topologyLineages) !== JSON.stringify(snapshot.topologyLineages)
     || !Array.isArray(evidence.membershipLineages)
     || evidence.membershipLineages.length !== EXPECTED_MEMBERSHIP_LINEAGE_COUNT
-    || JSON.stringify(evidence.membershipLineages) !== JSON.stringify(snapshot.membershipLineages)
     || evidence.topologyContentSha256 !== topologySnapshot.contentSha256
     || JSON.stringify(source.coverageScope) !== JSON.stringify({
       regionIds: ["capital"],
@@ -273,6 +271,7 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     || JSON.stringify(source.fieldsProvided) !== JSON.stringify(snapshot.fieldsProvided)) {
     throw new Error(`${SOURCE_ID} inventory evidence does not match snapshot`);
   }
+  validateCapturedSnapshotLineage(snapshot, topologySnapshot);
   validateTopologyLineage(inventory, evidence, topologySnapshot);
   validateMembershipLineage(evidence, topologySnapshot, topologySnapshotId);
   const version = evidence.snapshotId.slice(-8);
@@ -287,6 +286,20 @@ function requiredSource(inventory, snapshot, topologySnapshot, now) {
     throw new Error(`${SOURCE_ID} evidence freshness is invalid`);
   }
   return source;
+}
+
+function validateCapturedSnapshotLineage(snapshot, topologySnapshot) {
+  const lineages = [...snapshot.topologyLineages, ...snapshot.membershipLineages];
+  const snapshotIds = new Set(lineages.map(({ snapshotId }) => snapshotId));
+  if (snapshotIds.size !== 1
+    || lineages.some((lineage) => (
+      lineage.sourceId !== TOPOLOGY_SOURCE_ID
+        || !/^incheon-transit-station-info-\d{8}$/u.test(lineage.snapshotId ?? "")
+        || lineage.contentSha256 !== topologySnapshot.contentSha256
+        || !LINE_IDS.includes(lineage.lineId)
+    ))) {
+    throw new Error("Incheon accessibility captured topology lineage mismatch");
+  }
 }
 
 function validateTopologyLineage(inventory, evidence, topologySnapshot) {
