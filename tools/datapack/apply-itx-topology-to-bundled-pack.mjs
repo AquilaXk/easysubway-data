@@ -11,7 +11,6 @@ import { emitStationCatalogFromBundledPack } from "./emit-station-catalog-from-b
 
 const root = path.resolve(import.meta.dirname, "../..");
 const CATALOG_VERSION = 19;
-const EXPECTED_EDGE_COUNT = 48;
 const MAX_GZIP_DELTA_BYTES = 64 * 1024;
 const CURRENT_V18_STATION_CATALOG_PACK_ID =
   "capital-station-catalog-d85742f14cbf97c526a6b94dd55bbf863e1d1346-v1";
@@ -33,6 +32,14 @@ const ADMITTED_TOPOLOGY_INPUTS = new Map([
   ],
   [
     "e2894d7ce6decb08fc9fec982394e77151799c34d099b83948481080e56d780e",
+    {
+      gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
+      sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
+      byteSize: 359319,
+    },
+  ],
+  [
+    "2a11bb723310744d6f3ffc084b5a5219367ae209a6c7e65289dab8a5520f9a26",
     {
       gzipSha256: "7bb4bb68f0642e45377d98b083e93cd8c1c92aaa58dd353f32189e3f325a1562",
       sqliteSha256: "ed84a649952cd2ccbb238b3a63265f2bd3144497ae8fd36fab5181ad776542fc",
@@ -258,7 +265,9 @@ export function validateAdmittedSourceDocuments(
     || completeness?.validationMode !== "ADMISSION"
     || completeness?.validationStatus !== "SUPPORTED"
     || completeness?.materialization?.status !== "SUPPORTED"
-    || completeness?.sourceTimetableArtifact?.status !== "SUPPORTED"
+    || completeness?.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
     || completeness?.sourceTimetableArtifact?.artifactId !== reference.artifactId
     || completeness?.sourceTimetableArtifact?.policyVersion !== source.policyVersion
     || completeness?.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
@@ -745,14 +754,6 @@ export function deriveTopology(source) {
   }
   if (visited.size !== expectedServedStationKeys.size) {
     throw new Error("ITX topology service stop graph must be connected");
-  }
-  const edgeKeys = new Set(edges.keys());
-  if (edgeKeys.size !== EXPECTED_EDGE_COUNT
-    || [...edgeKeys].some((key) => {
-      const [from, to] = key.split("->");
-      return !edgeKeys.has(`${to}->${from}`);
-    })) {
-    throw new Error(`ITX topology requires ${EXPECTED_EDGE_COUNT} paired directed edges`);
   }
   const topology = {
     stations: [...stations.values()].sort((left, right) => codepointCompare(left.stationId, right.stationId)

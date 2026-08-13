@@ -27,14 +27,6 @@ function rehashAdmission(admission) {
   return admission;
 }
 
-function validateAdmission(admission, contract, source, now = currentNow) {
-  return validateItxCurrentTopologyAdmission(admission, {
-    previousArtifactSha256: contract.sourceTimetableArtifact.sha256,
-    stationSequences: source.stationSequences,
-    now,
-  });
-}
-
 function networkEdgeEvidenceFixture() {
   return {
     sourceInventory: { path: "source-inventory.json", sha256: "1".repeat(64) },
@@ -177,11 +169,11 @@ test("source-separated current topology materialization은 Incheon 1/2 exact 116
   }), /Incheon topology admission is stale/);
 });
 
-test("networkEdgeEvidence는 activation 뒤 current ITX admission을 필수로 수용한다", () => {
+test("networkEdgeEvidence는 current source evidence와 historical topology overlay를 구분한다", () => {
   const legacy = networkEdgeEvidenceFixture();
-  assert.throws(
-    () => candidateNetworkEdgeEvidence(legacy),
-    /itxCurrentTopologyAdmission is required/,
+  assert.equal(
+    Object.hasOwn(candidateNetworkEdgeEvidence(legacy), "itxCurrentTopologyAdmissionSha256"),
+    false,
   );
 
   const current = {
@@ -270,9 +262,16 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
     path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"),
     "utf8",
   ));
-  const source = JSON.parse(await readFile(path.join(root, contract.sourceTimetableArtifact.artifactPath), "utf8"));
+  const source = JSON.parse(await readFile(
+    path.join(root, contract.sourceTimetableArtifact.promotion.previousArtifactPath),
+    "utf8",
+  ));
 
-  const validated = validateAdmission(admission, contract, source);
+  const validated = validateItxCurrentTopologyAdmission(admission, {
+    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+    stationSequences: source.stationSequences,
+    now: currentNow,
+  });
   assert.equal(validated.sourceId, "itx-current-network-edge-admission");
   assert.equal(validated.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
   assert.equal(validated.freshUntil, "2026-08-11T00:00:00+09:00");
@@ -287,19 +286,26 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
   const pairTampered = structuredClone(admission);
   pairTampered.pairHashes[0] = "0".repeat(64);
   rehashAdmission(pairTampered);
-  assert.throws(() => validateAdmission(pairTampered, contract, source), /identity mismatch/);
+  assert.throws(() => validateItxCurrentTopologyAdmission(pairTampered, {
+    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+    stationSequences: source.stationSequences,
+    now: currentNow,
+  }), /identity mismatch/);
 
-  assert.throws(() => validateAdmission(
-    admission,
-    contract,
-    source,
-    new Date("2026-08-11T00:00:00.000Z"),
-  ), /stale/);
+  assert.throws(() => validateItxCurrentTopologyAdmission(admission, {
+    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+    stationSequences: source.stationSequences,
+    now: new Date("2026-08-11T00:00:00.000Z"),
+  }), /stale/);
 
   const extended = structuredClone(admission);
   extended.freshUntil = "2027-08-11T00:00:00+09:00";
   rehashAdmission(extended);
-  assert.throws(() => validateAdmission(extended, contract, source), /freshUntil.*serviceDate/);
+  assert.throws(() => validateItxCurrentTopologyAdmission(extended, {
+    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+    stationSequences: source.stationSequences,
+    now: currentNow,
+  }), /freshUntil.*serviceDate/);
 
   const invalidDate = structuredClone(admission);
   invalidDate.serviceDate = "20260230";
@@ -307,15 +313,38 @@ test("tracked current ITX admission은 admitted pair와 fresh evidence identity�
   invalidDate.observedAt = "2026-02-28T00:00:00.000Z";
   invalidDate.freshUntil = "2026-03-01T00:00:00+09:00";
   rehashAdmission(invalidDate);
-  assert.throws(() => validateAdmission(
-    invalidDate,
-    contract,
-    source,
-    new Date("2026-02-28T01:00:00.000Z"),
-  ), /serviceDate is invalid/);
+  assert.throws(() => validateItxCurrentTopologyAdmission(invalidDate, {
+    previousArtifactSha256: contract.sourceTimetableArtifact.promotion.previousArtifactSha256,
+    stationSequences: source.stationSequences,
+    now: new Date("2026-02-28T01:00:00.000Z"),
+  }), /serviceDate is invalid/);
 });
 
-test("tracked migrated v19 ITX evidence는 exact v18 lineage와 두 route-service domain을 유지한다", async () => {
+test("tracked current source topology evidence는 expired overlay 없이 exact admission을 만든다", async () => {
+  const [buildSpec, contract] = await Promise.all([
+    readFile(path.join(root, "tools/datapack/release/candidate-build-spec.json"), "utf8").then(JSON.parse),
+    readFile(path.join(root, "tools/datapack/itx-cheongchun-coverage-contract.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.equal(Object.hasOwn(buildSpec.networkEdgeEvidence, "itxCurrentTopologyAdmission"), false);
+  const fixture = {
+    packs: [{ transitTrips: [], networkEdges: [{ serviceClass: "ITX_CHEONGCHUN" }] }],
+  };
+  const topology = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+  process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = "2026-08-13T00:00:00.000Z";
+  try {
+    const admitted = await admittedItxNetworkEdgeEvidence(contract, topology);
+    assert.equal(admitted.sourceSnapshotId, contract.sourceTimetableArtifact.artifactId);
+    assert.equal(admitted.pairHashes.size, 84);
+    assert.equal(admitted.routeServiceArtifactEvidence.artifactEvidence.admissionStatus, "ADMITTED");
+    assert.equal(admitted.routeServiceArtifactEvidence.stationCatalogEvidence.admissionStatus, "ADMITTED");
+  } finally {
+    if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
+    else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
+  }
+});
+
+test("historical migrated v19 ITX evidence는 구조를 유지하지만 current source로 승격되지 않는다", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "build-current-migrated-itx-"));
   const evidencePath = path.join(directory, "itx-topology-evidence.json");
   const stationIdentity = {
@@ -419,28 +448,15 @@ test("tracked migrated v19 ITX evidence는 exact v18 lineage와 두 route-servic
     ]);
     const previousBuildNow = process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
     process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = currentNow.toISOString();
-    let admitted;
     try {
-      admitted = await admittedItxNetworkEdgeEvidence(contract, validated, currentAdmission);
+      await assert.rejects(
+        admittedItxNetworkEdgeEvidence(contract, validated, currentAdmission),
+        /ITX network edge topology is not admitted/,
+      );
     } finally {
       if (previousBuildNow == null) delete process.env.EASYSUBWAY_DATAPACK_BUILD_NOW;
       else process.env.EASYSUBWAY_DATAPACK_BUILD_NOW = previousBuildNow;
     }
-    assert.equal(admitted.sourceSnapshotId, "itx-current-network-edge-admission-20260810");
-    assert.deepEqual(admitted.routeServiceArtifactEvidence.stationCatalogEvidence, {
-      serviceClass: "ITX_CHEONGCHUN",
-      stationCatalogArtifactKind: stationIdentity.artifactKind,
-      stationCatalogManifestVersion: stationIdentity.manifestVersion,
-      stationCatalogPackId: stationIdentity.catalogPackId,
-      stationCatalogStationSetSha256: stationIdentity.stationSetSha256,
-      stationCatalogPayloadSha256: stationIdentity.payloadSha256,
-      stationCatalogManifestSha256: stationIdentity.manifestSha256,
-      admissionStatus: "ADMITTED",
-      admissionEligible: true,
-      freshUntil: currentAdmission.freshUntil,
-      sourceIssue: 2649,
-    });
-
     const forged = structuredClone(evidence);
     forged.migration.inputPack.sha256 = "0".repeat(64);
     const forgedBytes = Buffer.from(`${JSON.stringify(forged, null, 2)}\n`);

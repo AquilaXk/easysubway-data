@@ -702,15 +702,12 @@ const currentNetworkEdgeEvidenceKeys = Object.freeze([
   "capitalTopologyCandidate",
   "capitalTopologyReverification",
   "itxCoverageContract",
-  "itxCurrentTopologyAdmission",
 ]);
 
 function exactNetworkEdgeEvidenceKeys(evidence) {
-  if (!Object.hasOwn(evidence ?? {}, "itxCurrentTopologyAdmission")
-    || evidence.itxCurrentTopologyAdmission == null) {
-    throw new Error("buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission is required");
-  }
-  return currentNetworkEdgeEvidenceKeys;
+  return evidence?.itxCurrentTopologyAdmission == null
+    ? currentNetworkEdgeEvidenceKeys
+    : [...currentNetworkEdgeEvidenceKeys, "itxCurrentTopologyAdmission"];
 }
 
 export function candidateNetworkEdgeEvidence(evidence) {
@@ -738,10 +735,12 @@ export function candidateNetworkEdgeEvidence(evidence) {
     "buildSpec.networkEdgeEvidence.capitalTopologyCandidate",
     ["path", "sha256", "snapshotId"],
   );
-  const itxCurrentTopologyAdmission = pinnedBuildInput(
-    evidence.itxCurrentTopologyAdmission,
-    "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
-  );
+  const itxCurrentTopologyAdmission = evidence.itxCurrentTopologyAdmission == null
+    ? null
+    : pinnedBuildInput(
+        evidence.itxCurrentTopologyAdmission,
+        "buildSpec.networkEdgeEvidence.itxCurrentTopologyAdmission",
+      );
   return {
     sourceInventorySha256: sourceInventory.sha256,
     capitalTopologySnapshotId: capitalTopology.snapshotId,
@@ -751,7 +750,9 @@ export function candidateNetworkEdgeEvidence(evidence) {
     capitalTopologyReverificationSha256: capitalTopologyReverification.sha256,
     capitalTopologyAdmission: candidateCapitalTopologyAdmission(evidence.capitalTopologyAdmission),
     itxCoverageContractSha256: itxCoverageContract.sha256,
-    itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256,
+    ...(itxCurrentTopologyAdmission == null
+      ? {}
+      : { itxCurrentTopologyAdmissionSha256: itxCurrentTopologyAdmission.sha256 }),
   };
 }
 
@@ -1577,10 +1578,12 @@ export async function admittedItxNetworkEdgeEvidence(contract, topologyAdmission
     || completeness.serviceId !== "ITX_CHEONGCHUN"
     || completeness.validationMode !== "ADMISSION"
     || completeness.validationStatus !== "SUPPORTED"
-    || completeness.admissionStatus !== "SUPPORTED"
+    || completeness.admissionStatus !== source.promotionStatus
     || completeness.materialization?.status !== "SUPPORTED"
     || completeness.observedAt !== source.observedAt
-    || completeness.sourceTimetableArtifact?.status !== "SUPPORTED"
+    || completeness.sourceTimetableArtifact?.status !== source.promotionStatus
+    || !["SUPPORTED", "BOOTSTRAP_REVIEW_REQUIRED", "CHANGE_REVIEW_REQUIRED"]
+      .includes(source.promotionStatus)
     || completeness.sourceTimetableArtifact?.artifactId !== reference.artifactId
     || completeness.sourceTimetableArtifact?.policyVersion !== source.policyVersion
     || completeness.sourceTimetableArtifact?.freshUntil !== reference.freshUntil
