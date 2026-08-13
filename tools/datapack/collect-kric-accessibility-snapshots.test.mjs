@@ -334,6 +334,15 @@ test("전체 station-line을 다음 snapshot roster 입력으로 읽는다", asy
     }),
     /pack url is invalid/,
   );
+  for (const invalidUrl of [gzipPath, "catalog/capital.sqlite"]) {
+    await assert.rejects(
+      loadCanonicalStationLinesFromBundledIndex({
+        bundledIndex: { packs: [{ id: "capital", url: invalidUrl, sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") }] },
+        bundledRoot: directory,
+      }),
+      /pack url is invalid/,
+    );
+  }
 });
 
 test("KRIC accessibility snapshot은 tuple을 정렬하고 present/explicit-zero를 보존한다", async () => {
