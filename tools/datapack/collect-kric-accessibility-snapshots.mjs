@@ -431,24 +431,27 @@ export async function loadCanonicalStationLinesFromBundledIndex({ bundledIndex, 
   if (typeof bundledRoot !== "string" || !path.isAbsolute(bundledRoot)) {
     throw new Error("bundled root is invalid");
   }
+  const resolvedPacks = (bundledIndex?.packs ?? []).map((pack, index) => {
+    const packUrl = pack?.url;
+    const packPath = typeof packUrl === "string" ? path.resolve(bundledRoot, packUrl) : "";
+    const relativePackPath = packPath === "" ? "" : path.relative(bundledRoot, packPath);
+    if (typeof packUrl !== "string"
+      || packUrl === ""
+      || path.isAbsolute(packUrl)
+      || packUrl.includes("\\")
+      || !packUrl.endsWith(".sqlite.gz")
+      || relativePackPath === ""
+      || relativePackPath === ".."
+      || relativePackPath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePackPath)) {
+      throw new Error(`${pack?.id ?? "unknown"}: pack url is invalid`);
+    }
+    return { index, pack, packPath };
+  });
   const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "easysubway-kric-accessibility-roster-"));
   try {
     const memberships = new Map();
-    for (const [index, pack] of (bundledIndex?.packs ?? []).entries()) {
-      const packUrl = pack?.url;
-      const packPath = typeof packUrl === "string" ? path.resolve(bundledRoot, packUrl) : "";
-      const relativePackPath = packPath === "" ? "" : path.relative(bundledRoot, packPath);
-      if (typeof packUrl !== "string"
-        || packUrl === ""
-        || path.isAbsolute(packUrl)
-        || packUrl.includes("\\")
-        || !packUrl.endsWith(".sqlite.gz")
-        || relativePackPath === ""
-        || relativePackPath === ".."
-        || relativePackPath.startsWith(`..${path.sep}`)
-        || path.isAbsolute(relativePackPath)) {
-        throw new Error(`${pack?.id ?? "unknown"}: pack url is invalid`);
-      }
+    for (const { index, pack, packPath } of resolvedPacks) {
       const sqliteBytes = gunzipSync(await readFile(packPath));
       if (hashBytes(sqliteBytes) !== pack.sqliteSha256) throw new Error(`${pack.id}:SQLITE_SHA256_MISMATCH`);
       const sqlitePath = path.join(temporaryDirectory, `${index}.sqlite`);

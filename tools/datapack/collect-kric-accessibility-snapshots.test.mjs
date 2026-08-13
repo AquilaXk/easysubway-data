@@ -334,6 +334,18 @@ test("전체 station-line을 다음 snapshot roster 입력으로 읽는다", asy
     }),
     /pack url is invalid/,
   );
+  await assert.rejects(
+    loadCanonicalStationLinesFromBundledIndex({
+      bundledIndex: {
+        packs: [
+          { id: "missing", url: "catalog/missing.sqlite.gz", sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") },
+          { id: "invalid", url: "../capital.sqlite.gz", sqliteSha256: createHash("sha256").update(sqliteBytes).digest("hex") },
+        ],
+      },
+      bundledRoot: directory,
+    }),
+    /invalid: pack url is invalid/,
+  );
   for (const invalidUrl of [gzipPath, "catalog/capital.sqlite"]) {
     await assert.rejects(
       loadCanonicalStationLinesFromBundledIndex({
