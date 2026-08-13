@@ -690,13 +690,17 @@ async function requestRows({ operation, tuple, serviceKey, fetchImpl, requestTim
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
   } catch (error) {
-    throw new Error(`KRIC accessibility request failed: ${classifyTransportFailure(error)}: ${requestIdentity}`);
+    throw new Error(`KRIC accessibility request failed: ${classifyTransportFailure(error) ?? "NETWORK_UNKNOWN"}: ${requestIdentity}`);
   }
   if (!response?.ok) throw new Error(`KRIC accessibility HTTP ${response?.status ?? "unknown"}: ${requestIdentity}`);
   let payload;
   try {
     payload = await response.json();
-  } catch {
+  } catch (error) {
+    const transportFailure = classifyTransportFailure(error);
+    if (transportFailure != null) {
+      throw new Error(`KRIC accessibility request failed: ${transportFailure}: ${requestIdentity}`);
+    }
     throw new Error(`KRIC accessibility schema invalid: ${requestIdentity}`);
   }
   const rawResponseBytes = Buffer.from(JSON.stringify(payload));
@@ -762,18 +766,23 @@ function classifyTransportFailure(error) {
       name = typeof current.name === "string" ? current.name : "";
       cause = current.cause;
     } catch {
-      return "NETWORK_UNKNOWN";
+      return null;
     }
     if (dnsCodes.has(code)) return "NETWORK_DNS";
-    if (code.startsWith("ERR_TLS_") || code.startsWith("CERT_")
-      || ["DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"].includes(code)) {
+    if (code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_") || code.startsWith("CERT_")
+      || [
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      ].includes(code)) {
       return "NETWORK_TLS";
     }
     if (timeoutCodes.has(code) || name === "AbortError" || name === "TimeoutError") return "NETWORK_TIMEOUT";
     if (socketCodes.has(code)) return "NETWORK_SOCKET";
     current = cause;
   }
-  return "NETWORK_UNKNOWN";
+  return null;
 }
 
 function tupleKey(tuple) {

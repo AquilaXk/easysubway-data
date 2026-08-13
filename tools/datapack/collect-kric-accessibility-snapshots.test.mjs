@@ -616,6 +616,8 @@ test("transport 실패는 bounded cause에서 비밀 없는 closed 원인만 분
   const cases = [
     [new Error(secret, { cause: { code: "ENOTFOUND" } }), "NETWORK_DNS"],
     [Object.assign(new Error(secret), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }), "NETWORK_TLS"],
+    [Object.assign(new Error(secret), { code: "UNABLE_TO_GET_ISSUER_CERT_LOCALLY" }), "NETWORK_TLS"],
+    [Object.assign(new Error(secret), { code: "ERR_SSL_WRONG_VERSION_NUMBER" }), "NETWORK_TLS"],
     [new Error(secret, { cause: { name: "TimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" } }), "NETWORK_TIMEOUT"],
     [new Error(secret, { cause: new Error(secret, { cause: { code: "ECONNRESET" } }) }), "NETWORK_SOCKET"],
     [new Error(secret), "NETWORK_UNKNOWN"],
@@ -638,6 +640,33 @@ test("transport 실패는 bounded cause에서 비밀 없는 closed 원인만 분
     });
     assert.equal(calls, 1);
   }
+});
+
+test("response body transport 실패만 closed network 원인으로 분류한다", async () => {
+  await assert.rejects(() => collectKricAccessibilitySnapshots({
+    roster: roster.slice(0, 1),
+    operations: [operation],
+    serviceKey: "key",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => { throw Object.assign(new Error("redacted"), { code: "UND_ERR_BODY_TIMEOUT" }); },
+    }),
+  }), {
+    name: "Error",
+    message: "KRIC accessibility request failed: NETWORK_TIMEOUT: kric-station-elevator/S1/2/202",
+  });
+
+  await assert.rejects(() => collectKricAccessibilitySnapshots({
+    roster: roster.slice(0, 1),
+    operations: [operation],
+    serviceKey: "key",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => { throw new SyntaxError("malformed provider JSON"); },
+    }),
+  }), /KRIC accessibility schema invalid: kric-station-elevator\/S1\/2\/202/);
 });
 
 test("standard observation은 snapshot과 canonical raw inventory를 absent directory에 함께 게시한다", async (t) => {
