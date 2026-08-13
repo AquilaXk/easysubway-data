@@ -380,7 +380,7 @@ export async function fetchCurrentStaticSourceResponses({
   const seoulKey = requiredSingleLine(seoulOpenApiKey, "SEOUL_OPENAPI_KEY");
   const molitUrl = new URL(MOLIT_PUBLIC_CSV_URL);
   const seoulUrl = new URL(
-    `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5///${encodeURIComponent("04호선")}`,
+    `http://openapi.seoul.go.kr:8088/${encodeURIComponent(seoulKey)}/json/SearchSTNBySubwayLineInfo/1/5/${encodeURIComponent(" ")}/${encodeURIComponent(" ")}/${encodeURIComponent("4호선")}`,
   );
   const molit = await fetchSourceResponse({
     source: "MOLIT",
