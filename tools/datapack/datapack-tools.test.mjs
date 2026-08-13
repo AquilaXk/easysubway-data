@@ -22,6 +22,10 @@ import {
   buildCapitalTopologyReverificationEvidence,
   projectCapitalTopologyOwnership,
 } from "./collect-capital-route-topology.mjs";
+import {
+  deriveTopology as deriveItxTopology,
+  projectItxTopologyIntoCanonicalFixture,
+} from "./apply-itx-topology-to-bundled-pack.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -18149,7 +18153,6 @@ async function writeCurrentItxReleaseInputs(
   const freshUntil = "2026-08-10T00:00:00+09:00";
   const fixture = JSON.parse(await readFile("tools/datapack/release/capital-production-canonical-pack.json", "utf8"));
   for (const pack of fixture.packs) delete pack.routeServiceArtifactEvidence;
-  mutateFixture?.(fixture);
 
   const completeness = JSON.parse(await readFile(
     "tools/datapack/sources/itx-cheongchun-source-timetable-20260727071853886-completeness-evidence.json",
@@ -18178,6 +18181,8 @@ async function writeCurrentItxReleaseInputs(
   source.completenessEvidenceSha256 = sha256(completenessBytes);
   const { evidenceHash: _sourceEvidenceHash, ...sourceWithoutEvidenceHash } = source;
   source.evidenceHash = sha256(Buffer.from(JSON.stringify(sourceWithoutEvidenceHash)));
+  projectItxTopologyIntoCanonicalFixture(fixture, deriveItxTopology(source));
+  mutateFixture?.(fixture);
   const sourcePath = path.join(workspace, "itx-source.json");
   const sourceBytes = Buffer.from(`${JSON.stringify(source)}\n`);
   await writeFile(sourcePath, sourceBytes);
