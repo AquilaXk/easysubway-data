@@ -15,7 +15,10 @@ import {
   validateCapitalTopologyReverification,
   validateItxCurrentTopologyAdmission,
 } from "./build-datapack.mjs";
-import { buildCapitalTopologyReverificationEvidence } from "./collect-capital-route-topology.mjs";
+import {
+  buildCapitalTopologyReverificationEvidence,
+  projectCapitalTopologyOwnership,
+} from "./collect-capital-route-topology.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -59,29 +62,6 @@ function networkEdgeEvidenceFixture() {
   };
 }
 
-function capitalTopologyWithoutIncheon(topology) {
-  const incheonLineIds = new Set(["line-98718184f016", "line-42b5805f3b5a"]);
-  const lines = topology.lines.filter(({ lineId }) => !incheonLineIds.has(lineId));
-  const topologyGaps = topology.topologyGaps ?? [];
-  return {
-    ...structuredClone(topology),
-    lines,
-    lineCount: lines.length,
-    totalEdgeCount: lines.reduce((sum, { edgeCount }) => sum + edgeCount, 0),
-    contentSha256: sha256(Buffer.from(JSON.stringify({
-      lines: lines.map(({ lineId, edgeCount, stationCount, contentSha256, rawSha256, datasetId }) => ({
-        lineId,
-        edgeCount,
-        stationCount,
-        contentSha256,
-        rawSha256,
-        datasetId,
-      })),
-      topologyGaps,
-    }))),
-  };
-}
-
 test("source-separated current topology는 capital과 Incheon 1/2 line ownership을 겹치지 않는다", async () => {
   const [capital, incheon] = await Promise.all([
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260724.json"), "utf8")
@@ -89,7 +69,7 @@ test("source-separated current topology는 capital과 Incheon 1/2 line ownership
     readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260724.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const projectedCapital = capitalTopologyWithoutIncheon(capital);
+  const projectedCapital = projectCapitalTopologyOwnership(capital);
 
   assert.deepEqual(
     validateSourceSeparatedCurrentTopology({ capitalTopology: projectedCapital, incheonSnapshot: incheon }),
@@ -228,8 +208,8 @@ test("source-separated reverification은 historical baseline도 동일 ownership
     readFile(path.join(root, "tools/datapack/sources/capital-route-topology-20260804.json"), "utf8")
       .then(JSON.parse),
   ]);
-  const projectedBaseline = capitalTopologyWithoutIncheon(baseline);
-  const projectedCandidate = capitalTopologyWithoutIncheon(candidate);
+  const projectedBaseline = projectCapitalTopologyOwnership(baseline);
+  const projectedCandidate = projectCapitalTopologyOwnership(candidate);
   const evidence = buildCapitalTopologyReverificationEvidence(projectedBaseline, projectedCandidate);
   const admission = {
     schemaVersion: 1,
