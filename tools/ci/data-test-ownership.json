@@ -220,6 +220,7 @@
     {"path":"tools/datapack/emit-artifact-components.test.mjs","semanticOwner":"data8","classes":["required-pr"],"durationMs":2502},
     {"path":"tools/datapack/emit-station-catalog-from-bundled-pack.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":318},
     {"path":"tools/datapack/emit-station-catalog-pack.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":382},
+    {"path":"tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":77},
     {"path":"tools/datapack/evaluate-route-accessibility-edges.test.mjs","semanticOwner":"data9","classes":["required-pr"],"durationMs":216},
     {"path":"tools/datapack/export-bundled-pack-fixture.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":120},
     {"path":"tools/datapack/fetch-kasi-public-holiday-calendar.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":148},
