@@ -35,6 +35,7 @@ const FRESH_AT = "2026-08-14T00:00:00.000Z";
 const STALE_AT = "2026-08-14T15:03:00.000Z";
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
+const SCOPED_STATION_SET_SHA256 = sha256(Buffer.from(canonicalJson(["station-a", "station-b"])));
 const SCRIPT = path.resolve("tools/datapack/build-server-route-bundle-final.mjs");
 const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
@@ -552,10 +553,6 @@ async function createFixture(t, options = {}) {
   await copyRepositoryInputs(repositoryRoot);
   const policyPath = path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json");
   const policy = await readJson(policyPath);
-  policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256([]);
-  await writeFile(policyPath, `${JSON.stringify(policy, null, 2)}\n`);
-  const repositoryGitSha = initializeRepository(repositoryRoot);
-
   const buildSpec = await readJson(path.join(repositoryRoot, "tools/datapack/release/candidate-build-spec.json"));
   const artifactRoot = path.join(temp, "server-route-bundle");
   const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
@@ -564,6 +561,14 @@ async function createFixture(t, options = {}) {
     sha256(Buffer.from("topology payload")),
   );
   options.configureInputs?.({ stationLineInput, routeEdgeInput });
+  policy.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
+    routeEdgeInput.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
+  );
+  policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
+    routeEdgeInput.routeEdges.filter(({ edgeType, serviceClass }) => edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN"),
+  );
+  await writeFile(policyPath, `${JSON.stringify(policy, null, 2)}\n`);
+  const repositoryGitSha = initializeRepository(repositoryRoot);
   const { manifest } = await createArtifact(
     repositoryRoot,
     artifactRoot,
@@ -739,7 +744,7 @@ async function mutateAccessibilityPayload(fixture, sql) {
 function completeStationLineInput(sourceSetSha256) {
   const candidate = {
     candidateId: BUNDLE_ID,
-    stationSetSha256: STATION_SET_SHA256,
+    stationSetSha256: SCOPED_STATION_SET_SHA256,
     sourceSetSha256,
     mappingContractVersion: "station-line-v1",
     materializerVersion: "1",
@@ -781,7 +786,7 @@ function completeRouteEdgeInput(sourceSetSha256, topologySha256) {
     stationSetSha256: STATION_SET_SHA256,
     sourceSetSha256,
     topologySha256,
-    policyVersion: "route-edge-evaluation-v1",
+    policyVersion: "route-edge-evaluation-v2",
     evaluatorVersion: "1",
   };
   const stationLines = [
@@ -793,6 +798,7 @@ function completeRouteEdgeInput(sourceSetSha256, topologySha256) {
     stationLines,
     routeEdges: [
       edge({ edgeId: "entry-a", edgeType: "ENTRY", fromNodeId: "station-a", toNodeId: "station-a:line-1" }),
+      edge({ edgeId: "entry-b", edgeType: "ENTRY", fromNodeId: "station-b", toNodeId: "station-b:line-1" }),
       edge({ edgeId: "ride-a-b", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" }),
     ],
   };

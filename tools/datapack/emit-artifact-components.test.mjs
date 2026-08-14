@@ -10,6 +10,7 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { emitArtifactComponents } from "./emit-artifact-components.mjs";
+import { buildCurrentRouteEdgeInput, canonicalCurrentRouteEdgeInputJson } from "./build-current-route-edge-input.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -26,6 +27,42 @@ const CURRENT_ACTIVE_FROM = "2026-08-14T09:00:00.000+09:00";
 const CURRENT_FRESH_UNTIL = "2026-08-15T00:00:00.000+09:00";
 const CURRENT_EVALUATION_AT = "2026-08-14T00:00:00.000Z";
 
+test("current Data #9 seed는 full topology와 policy-required materialization subset을 exact projection한다", async () => {
+  const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
+    readFile("tools/datapack/release/capital-production-canonical-pack.json"),
+    readFile("tools/datapack/release/candidate-build-spec.json"),
+    readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
+    readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
+    readFile("release/product-gates/route-edge-evaluation-policy.json"),
+  ]);
+  const input = buildCurrentRouteEdgeInput({
+    canonicalPack: JSON.parse(fixtureBytes),
+    buildSpec: JSON.parse(buildSpecBytes),
+    stationLineInput: JSON.parse(stationLineBytes),
+    materialization: JSON.parse(materializationBytes),
+    policy: JSON.parse(policyBytes),
+  });
+  const trackedBytes = await readFile("tools/datapack/release/current-route-edge-evaluation/route-edge-input.json", "utf8");
+  assert.equal(trackedBytes, canonicalCurrentRouteEdgeInputJson(input));
+
+  assert.equal(input.candidate.topologySha256, undefined);
+  assert.equal(input.candidate.stationSetSha256, "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17");
+  assert.equal(JSON.parse(stationLineBytes).candidate.stationSetSha256, "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f");
+  assert.equal(input.stationLines.length, 1108);
+  assert.equal(input.routeEdges.length, 2224);
+  assert.deepEqual(Object.fromEntries(input.routeEdges.reduce((counts, edge) => {
+    counts.set(edge.edgeType, (counts.get(edge.edgeType) ?? 0) + 1);
+    return counts;
+  }, new Map())), { ENTRY: 2, EXIT: 2, RIDE: 2220 });
+  assert.throws(() => buildCurrentRouteEdgeInput({
+    canonicalPack: JSON.parse(fixtureBytes),
+    buildSpec: JSON.parse(buildSpecBytes),
+    stationLineInput: { ...JSON.parse(stationLineBytes), stationLines: [] },
+    materialization: JSON.parse(materializationBytes),
+    policy: JSON.parse(policyBytes),
+  }), /materialization|subset|identity/i);
+});
+
 test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {
   const temp = await mkdtemp(path.join(os.tmpdir(), "artifact-emitter-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
@@ -34,7 +71,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const source = path.join(temp, "source.sqlite");
   const db = new DatabaseSync(source);
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
-  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
+  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('entry-s1','s1','s1:l1',0,0,'ENTRY','','SUBWAY'),('exit-s1','s1:l1','s1',0,0,'EXIT','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
   db.close();
   const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-14T15:00:00.000Z" };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
@@ -47,6 +84,10 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   await writeFile(path.join(temp, "current.provenance.json"), canonicalJson({ schemaVersion: 1, artifactKind: "datapack-field-provenance", manifestSha256: hash(Buffer.from(canonicalJson(current))), packs: current.packs, candidateBuild: { buildSpecSha256: hash(spec) } }));
   const stationLineInput = completeStationLineInput(buildSpec.sourceSnapshotSetHash);
   const routeEdgeInput = completeRouteEdgeInput(buildSpec.sourceSnapshotSetHash);
+  routePolicy.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
+    routeEdgeInput.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
+  );
+  await writeFile(routePolicyPath, `${JSON.stringify(routePolicy, null, 2)}\n`);
   const run = (name, values = {}) => emitArtifactComponents({ repositoryRoot: fixtureRoot, sourceSqlite: source, sourceProvenance: path.join(temp, "current.provenance.json"), buildSpec: "tools/datapack/release/candidate-build-spec.json", output: path.join(temp, name), mapPackId: "map-v1", catalogPackId: "catalog-v1", bundleId: "bundle-v1", releaseSequence: "1", activeFrom: CURRENT_ACTIVE_FROM, freshUntil: CURRENT_FRESH_UNTIL, builtAt: CURRENT_EVALUATION_AT, keyId: "test-key", evaluationAt: CURRENT_EVALUATION_AT, stationLineInput, routeEdgeInput, ...values });
   const applySourceSql = (sql) => { const mutation = new DatabaseSync(source); mutation.exec(sql); mutation.close(); };
   await run("one"); await run("two"); await run("three");
@@ -78,12 +119,12 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const operatorMismatch = structuredClone(stationLineInput);
   operatorMismatch.stationLines = operatorMismatch.stationLines.map((line) => ({ ...line, operatorId: "other-operator" }));
   operatorMismatch.evidenceRows = operatorMismatch.evidenceRows.map((row) => ({ ...row, operatorId: "other-operator" }));
-  await assert.rejects(() => run("station-line-operator-mismatch", { stationLineInput: operatorMismatch }), /station-line materializer source projection mismatch/);
+  await assert.rejects(() => run("station-line-operator-mismatch", { stationLineInput: operatorMismatch }), /unmapped materialization row/);
   assert.equal(await exists(path.join(temp, "station-line-operator-mismatch")), false);
 
   applySourceSql("INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l2','o1','2호선','Line 2','#654321'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l2',1)");
   await writeBindings(temp, source, current, spec);
-  await assert.rejects(() => run("station-line-source-subset"), /station-line materializer source projection mismatch/);
+  await assert.rejects(() => run("station-line-source-subset"), /route-edge station-line source projection mismatch/);
   assert.equal(await exists(path.join(temp, "station-line-source-subset")), false);
   applySourceSql("DELETE FROM station_lines WHERE line_id='l2'; DELETE FROM lines WHERE id='l2'");
 
@@ -312,14 +353,13 @@ function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); 
 function completeStationLineInput(sourceSetSha256) {
   const candidate = {
     candidateId: "bundle-v1",
-    stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2"]))),
+    stationSetSha256: hash(Buffer.from(canonicalJson(["s1"]))),
     sourceSetSha256,
     mappingContractVersion: "station-line-v1",
     materializerVersion: "1",
   };
   const stationLines = [
     { stationId: "s1", lineId: "l1", operatorId: "o1" },
-    { stationId: "s2", lineId: "l1", operatorId: "o1" },
   ];
   const evidenceRows = stationLines.flatMap((line) => ["FACILITY", "EXIT", "TRANSFER"].map((domain) => ({
     ...candidate,
@@ -342,29 +382,24 @@ function completeStationLineInput(sourceSetSha256) {
   return { candidate, stationLines, evidenceRows };
 }
 function completeRouteEdgeInput(sourceSetSha256) {
-  const rawEdge = {
-    edgeId: "ride-s1-s2",
-    edgeType: "RIDE",
-    fromNodeId: "s1:l1",
-    toNodeId: "s2:l1",
-    durationSeconds: 120,
-    distanceMeters: 1000,
-    servicePattern: "LOCAL",
-    serviceClass: "SUBWAY",
-  };
+  const rawEdges = [
+    { edgeId: "entry-s1", edgeType: "ENTRY", fromNodeId: "s1", toNodeId: "s1:l1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
+    { edgeId: "exit-s1", edgeType: "EXIT", fromNodeId: "s1:l1", toNodeId: "s1", durationSeconds: 0, distanceMeters: 0, servicePattern: "", serviceClass: "SUBWAY" },
+    { edgeId: "ride-s1-s2", edgeType: "RIDE", fromNodeId: "s1:l1", toNodeId: "s2:l1", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL", serviceClass: "SUBWAY" },
+  ];
   return {
     candidate: {
       candidateId: "bundle-v1",
       stationSetSha256: hash(Buffer.from(canonicalJson(["s1", "s2"]))),
       sourceSetSha256,
-      policyVersion: "route-edge-evaluation-v1",
+      policyVersion: "route-edge-evaluation-v2",
       evaluatorVersion: "1",
     },
     stationLines: [
       { stationId: "s1", lineId: "l1", operatorId: "o1", lineSequence: 1 },
       { stationId: "s2", lineId: "l1", operatorId: "o1", lineSequence: 2 },
     ],
-    routeEdges: [{ ...rawEdge, edgeSha256: routeEdgeSha256(rawEdge) }],
+    routeEdges: rawEdges.map((edge) => ({ ...edge, edgeSha256: routeEdgeSha256(edge) })),
   };
 }
 async function payloadDigest(artifact) {
