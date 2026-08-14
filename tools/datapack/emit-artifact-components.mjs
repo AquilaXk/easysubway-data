@@ -175,10 +175,11 @@ async function emitMap(root, out, db, ids, stationSetSha256, build) {
   const lineIds = new Set(rows.map((row) => row.lineId));
   for (const row of db.prepare("SELECT line_id,svg_color FROM route_map_line_tracks WHERE region='수도권'").all()) lineIds.add(row.line_id);
   const lineStyles = [...lineIds].sort(bytes).map((lineId) => {
+    const colors = db.prepare("SELECT DISTINCT svg_color FROM route_map_line_tracks WHERE region='수도권' AND line_id=? AND svg_color<>'' ORDER BY svg_color COLLATE BINARY").all(lineId).map((row) => row.svg_color);
     const line = db.prepare("SELECT color FROM lines WHERE id=?").get(lineId);
     if (!line) throw new Error("map line is missing");
-    if (db.prepare("SELECT 1 FROM route_map_line_tracks WHERE region='수도권' AND line_id=? AND svg_color<>'' AND svg_color<>?").get(lineId, line.color)) throw new Error("svg color disagrees");
-    return { lineId, color: line.color };
+    if (colors.length > 1) throw new Error("map line requires one svg color");
+    return { lineId, color: colors[0] ?? line.color };
   });
   const displayed = new Map(); for (const row of rows) displayed.set(row.stationId, [...(displayed.get(row.stationId) ?? []), row.lineId]);
   const interchanges = [...displayed].filter(([, lines]) => new Set(lines).size >= 2).sort(([a], [b]) => bytes(a, b)).map(([stationId, lines]) => ({ stationId, lineIds: [...new Set(lines)].sort(bytes) }));

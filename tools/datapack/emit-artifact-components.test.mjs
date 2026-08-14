@@ -80,7 +80,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   const source = path.join(temp, "source.sqlite");
   const db = new DatabaseSync(source);
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
-  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('entry-s1','s1','s1:l1',0,0,'ENTRY','','SUBWAY'),('exit-s1','s1:l1','s1',0,0,'EXIT','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
+  db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('entry-s1','s1','s1:l1',0,0,'ENTRY','','SUBWAY'),('exit-s1','s1:l1','s1',0,0,'EXIT','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#abcdef','source','source','https://example.test','license','PASS');");
   db.close();
   const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-14T20:06:04.805Z" };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
@@ -108,6 +108,18 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     assert.deepEqual(await readFile(path.join(temp, "one", file)), await readFile(path.join(temp, "two", file)), `two: ${file}`);
     assert.deepEqual(await readFile(path.join(temp, "one", file)), await readFile(path.join(temp, "three", file)), `three: ${file}`);
   }
+  applySourceSql("DELETE FROM route_map_line_tracks");
+  await writeBindings(temp, source, current, spec);
+  await run("no-svg-color");
+  assert.deepEqual(JSON.parse(await readFile(path.join(temp, "no-svg-color/map-pack/payload/line-styles.json"), "utf8")), [{ lineId: "l1", color: "#123456" }]);
+  applySourceSql("INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#abcdef','source','source','https://example.test','license','PASS')");
+  await writeBindings(temp, source, current, spec);
+  applySourceSql("INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',2,'M1','#fedcba','source','source','https://example.test','license','PASS')");
+  await writeBindings(temp, source, current, spec);
+  await assert.rejects(() => run("multiple-svg-colors"), /requires one svg color/);
+  assert.equal(await exists(path.join(temp, "multiple-svg-colors")), false);
+  applySourceSql("DELETE FROM route_map_line_tracks WHERE track_index=2");
+  await writeBindings(temp, source, current, spec);
   for (const [name, mutate, pattern] of [
     ["route-seed-extra-topology", (seed) => { seed.candidate.topologySha256 = "f".repeat(64); }, /route-edge seed candidate keys mismatch/],
     ["route-seed-missing-version", (seed) => { delete seed.candidate.evaluatorVersion; }, /route-edge seed candidate keys mismatch/],
@@ -177,7 +189,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
     { stationId: "s1", lineId: "l1", region: "수도권", x: 1, y: 2, labelDx: 0, labelDy: 0, labelPolygon: "raw polygon", upPath: "", downPath: "" },
     { stationId: "s2", lineId: "l1", region: "수도권", x: 3, y: 4, labelDx: 0, labelDy: 0, labelPolygon: "raw polygon", upPath: "", downPath: "" },
   ]);
-  assert.deepEqual(JSON.parse(await readFile(path.join(mapRoot, "payload/line-styles.json"), "utf8")), [{ lineId: "l1", color: "#123456" }]);
+  assert.deepEqual(JSON.parse(await readFile(path.join(mapRoot, "payload/line-styles.json"), "utf8")), [{ lineId: "l1", color: "#abcdef" }]);
   assert.deepEqual(JSON.parse(await readFile(path.join(mapRoot, "payload/interchange-layout.json"), "utf8")), []);
   const catalogRoot = path.join(temp, "one", "station-catalog-pack");
   const catalogManifest = JSON.parse(await readFile(path.join(catalogRoot, "manifest.json"), "utf8"));
