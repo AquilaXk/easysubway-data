@@ -23,9 +23,9 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 
 const SCRIPT = path.resolve("tools/datapack/emit-artifact-components.mjs");
-const CURRENT_ACTIVE_FROM = "2026-08-14T09:00:00.000+09:00";
-const CURRENT_FRESH_UNTIL = "2026-08-15T00:00:00.000+09:00";
-const CURRENT_EVALUATION_AT = "2026-08-14T00:00:00.000Z";
+const CURRENT_ACTIVE_FROM = "2026-08-15T00:34:07.000+09:00";
+const CURRENT_FRESH_UNTIL = "2026-08-15T05:06:04.805+09:00";
+const CURRENT_EVALUATION_AT = "2026-08-14T15:34:07.000Z";
 
 test("current Data #9 seed는 full topology와 policy-required materialization subset을 exact projection한다", async () => {
   const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
@@ -82,7 +82,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   db.exec(await readFile(path.join(fixtureRoot, "tools/datapack/schema/catalog-schema.sql"), "utf8"));
   db.exec("INSERT INTO operators VALUES('o1','운영사','Operator'); INSERT INTO lines(id,operator_id,name_ko,name_en,color) VALUES('l1','o1','1호선','Line 1','#123456'); INSERT INTO stations(id,name_ko,name_en,normalized_name,region) VALUES('s1','가역','Ga','가역','수도권'),('s2','나역','Na','나역','수도권'); INSERT INTO station_aliases(station_id,alias,normalized_alias) VALUES('s1','가','가'); INSERT INTO station_lines(station_id,line_id,line_sequence) VALUES('s1','l1',1),('s2','l1',2); INSERT INTO network_edges(id,from_node_id,to_node_id,duration_seconds,distance_meters,edge_type,service_pattern,service_class) VALUES('entry-s1','s1','s1:l1',0,0,'ENTRY','','SUBWAY'),('exit-s1','s1:l1','s1',0,0,'EXIT','','SUBWAY'),('ride-s1-s2','s1:l1','s2:l1',120,1000,'RIDE','LOCAL','SUBWAY'); INSERT INTO realtime_provider_line_mappings(provider_id,provider_line_id,line_id,source_id) VALUES('p','pl','l1','source'); INSERT INTO realtime_provider_station_mappings(provider_id,provider_line_id,provider_station_id,station_id,line_id,source_id) VALUES('p','pl','ps','s1','l1','source'); INSERT INTO station_pathway_nodes(id,station_id,line_id,node_type,label) VALUES('path-null','s1',NULL,'CONCOURSE','대합실'); INSERT INTO route_map_positions(station_id,line_id,region,x,y,label_dx,label_dy,label_polygon,up_path,down_path,source_id,source_name,source_url,license,license_status) VALUES('s1','l1','수도권',1,2,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'),('s2','l1','수도권',3,4,0,0,'raw polygon','','','source','source','https://example.test','license','PASS'); INSERT INTO route_map_line_tracks(region,line_id,track_index,path,svg_color,source_id,source_name,source_url,license,license_status) VALUES('수도권','l1',1,'M0','#123456','source','source','https://example.test','license','PASS');");
   db.close();
-  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-14T15:00:00.000Z" };
+  const current = { packs: [{ id: "capital", artifactKind: "production", sqliteSha256: hash(await readFile(source)) }], expiresAt: "2026-08-14T20:06:04.805Z" };
   await writeFile(path.join(temp, "current.json"), canonicalJson(current));
   const spec = await readFile(path.join(fixtureRoot, "tools/datapack/release/candidate-build-spec.json"));
   const buildSpec = JSON.parse(spec);
@@ -267,7 +267,7 @@ test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만
   }
   await writeBindings(temp, source, current, spec);
 
-  await assert.rejects(() => run("late", { freshUntil: "2026-08-15T00:00:00.001+09:00" }), /source freshness/);
+  await assert.rejects(() => run("late", { freshUntil: "2026-08-15T05:06:04.806+09:00" }), /source freshness/);
   assert.equal(await exists(path.join(temp, "late")), false);
 
   const timezoneLessCurrent = { ...current, expiresAt: "2026-08-14T15:00:00.000" };

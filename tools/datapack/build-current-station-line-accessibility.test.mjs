@@ -14,7 +14,7 @@ import {
 import { canonicalStationLineAccessibilityJson } from "./materialize-station-line-accessibility.mjs";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const OBSERVED_AT = "2026-08-14T09:50:00.000Z";
+const OBSERVED_AT = "2026-08-14T15:34:07.000Z";
 const BASE_INPUT = await trackedInput();
 const ADMISSION_FILES = [
   "tools/datapack/release/facility-source-admission.json",
@@ -48,7 +48,7 @@ test("current FACILITY·EXIT·TRANSFER를 exact six-cell eligible materializatio
     { stationId: "station-sangnoksu", domain: "TRANSFER", state: "NOT_APPLICABLE" },
   ]);
   assert.equal(result.stationLineInput.evidenceRows.length, 6);
-  assert.equal(result.materialization.materializationDigest, "faa3c24af33843185f42c800028391cf4e7c17ee82ddbb1539962a985fc82ba8");
+  assert.equal(result.materialization.materializationDigest, "561ef3dde0f68e1223b05897d71a193d73b67b34cb677fc91201e99a4ae9eabb");
 });
 
 test("handoff identity·domain·freshness drift는 current materialization을 만들지 않는다", () => {

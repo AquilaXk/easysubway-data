@@ -1,11 +1,11 @@
 {
-  "admissionDigest": "e3dee749e4a4c9810eac907964dd93fe072d68c5f66fe9fbcec12474f45cf82a",
+  "admissionDigest": "1f2a3f09dbbc3e79c3ff88f0ef5690033ab6775f7bf2b8a1ceedc80f82ac28ea",
   "artifactKind": "facility-source-admission-matrix",
   "candidate": {
-    "candidateId": "capital-pilot-candidate-20260813",
+    "candidateId": "capital-pilot-candidate-20260814",
     "mappingContractVersion": "station-line-v1",
     "materializerVersion": "1",
-    "sourceSetSha256": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
+    "sourceSetSha256": "9de79f88e3c986b7e3eed36b1037f6a1a6bab4084a5371e61667ceac3ca0130b",
     "stationSetSha256": "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f"
   },
   "cellStateSummary": {
@@ -19,7 +19,7 @@
   "cells": [
     {
       "admissionReason": "OFFICIAL_REQUIRED_FACILITY_PRESENT",
-      "candidateId": "capital-pilot-candidate-20260813",
+      "candidateId": "capital-pilot-candidate-20260814",
       "capturedAt": "2026-08-13T20:06:04.805Z",
       "domain": "FACILITY",
       "evidenceRawSha256": "ef4bdf42a50d74cd38941d8ff7f09b03b0265a75c0b06969a3772538d75307ac",
@@ -32,7 +32,7 @@
       "provenanceId": "6ce9dbb793284021f8a342ef53f841c44af9334077ddf30797ca7aafdaea1e7e",
       "providerRecordHash": "b3061472be90b7c002904018f635e449167255729c1154b32fb16387eef6a07c",
       "sourceId": "kric-station-convenience-standard",
-      "sourceSetSha256": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
+      "sourceSetSha256": "9de79f88e3c986b7e3eed36b1037f6a1a6bab4084a5371e61667ceac3ca0130b",
       "sourceSnapshotId": "kric-station-convenience-standard-20260813T200604805Z",
       "state": "ADMITTED_FACILITY_PRESENT",
       "stationId": "station-sadang",
@@ -43,7 +43,7 @@
     },
     {
       "admissionReason": "OFFICIAL_REQUIRED_FACILITY_PRESENT",
-      "candidateId": "capital-pilot-candidate-20260813",
+      "candidateId": "capital-pilot-candidate-20260814",
       "capturedAt": "2026-08-13T20:06:04.805Z",
       "domain": "FACILITY",
       "evidenceRawSha256": "ef4bdf42a50d74cd38941d8ff7f09b03b0265a75c0b06969a3772538d75307ac",
@@ -56,7 +56,7 @@
       "provenanceId": "6ce9dbb793284021f8a342ef53f841c44af9334077ddf30797ca7aafdaea1e7e",
       "providerRecordHash": "e5dca197f76f75a45f45e087b36ab8a8cb0eab3304cdecd353d14f0abd53a468",
       "sourceId": "kric-station-convenience-standard",
-      "sourceSetSha256": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
+      "sourceSetSha256": "9de79f88e3c986b7e3eed36b1037f6a1a6bab4084a5371e61667ceac3ca0130b",
       "sourceSnapshotId": "kric-station-convenience-standard-20260813T200604805Z",
       "state": "ADMITTED_FACILITY_PRESENT",
       "stationId": "station-sangnoksu",
@@ -309,7 +309,7 @@
   },
   "materializerEvidenceRows": [
     {
-      "candidateId": "capital-pilot-candidate-20260813",
+      "candidateId": "capital-pilot-candidate-20260814",
       "capturedAt": "2026-08-13T20:06:04.805Z",
       "domain": "FACILITY",
       "evidenceKind": "OBSERVED",
@@ -324,14 +324,14 @@
       "provenanceId": "6ce9dbb793284021f8a342ef53f841c44af9334077ddf30797ca7aafdaea1e7e",
       "providerRecordHash": "b3061472be90b7c002904018f635e449167255729c1154b32fb16387eef6a07c",
       "sourceId": "kric-station-convenience-standard",
-      "sourceSetSha256": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
+      "sourceSetSha256": "9de79f88e3c986b7e3eed36b1037f6a1a6bab4084a5371e61667ceac3ca0130b",
       "sourceSnapshotId": "kric-station-convenience-standard-20260813T200604805Z",
       "state": "VERIFIED_PRESENT",
       "stationId": "station-sadang",
       "stationSetSha256": "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f"
     },
     {
-      "candidateId": "capital-pilot-candidate-20260813",
+      "candidateId": "capital-pilot-candidate-20260814",
       "capturedAt": "2026-08-13T20:06:04.805Z",
       "domain": "FACILITY",
       "evidenceKind": "OBSERVED",
@@ -346,14 +346,14 @@
       "provenanceId": "6ce9dbb793284021f8a342ef53f841c44af9334077ddf30797ca7aafdaea1e7e",
       "providerRecordHash": "e5dca197f76f75a45f45e087b36ab8a8cb0eab3304cdecd353d14f0abd53a468",
       "sourceId": "kric-station-convenience-standard",
-      "sourceSetSha256": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
+      "sourceSetSha256": "9de79f88e3c986b7e3eed36b1037f6a1a6bab4084a5371e61667ceac3ca0130b",
       "sourceSnapshotId": "kric-station-convenience-standard-20260813T200604805Z",
       "state": "VERIFIED_PRESENT",
       "stationId": "station-sangnoksu",
       "stationSetSha256": "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f"
     }
   ],
-  "observedAt": "2026-08-13T23:18:58.000Z",
+  "observedAt": "2026-08-14T15:34:07.000Z",
   "queryPartition": {
     "ambiguous": [],
     "joined": [
@@ -472,7 +472,7 @@
     "snapshotPayloadRawSha256": "cee8364e72adec1c6d405978239c3972962a5085ee7bf366ef37d7c2df803d90",
     "sourceId": "kric-station-convenience-standard"
   },
-  "sourceInputIdentitySha256": "6eb57867ccdf8b70ceffefea688be38a00f35ae7571a21dbabc36a36ca5032bd",
+  "sourceInputIdentitySha256": "585c0e6dc4a25489457168f533945e5e6f4d799d719d08b262c222c0be5abdda",
   "stationLineMappingSha256": "bdb6a1d691791fd17842703410c9c9c23e3dc964d289a040d5f485d0873db01d",
   "stationLineSetSha256": "4cce46ce7050b0a830a7d68558a7f1a21186c475c67400ccfa1aab06496bb419"
 }

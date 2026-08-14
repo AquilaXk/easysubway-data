@@ -1,8 +1,8 @@
 {
-  "admissionDigest": "8431808200dcf69c542d20c8a884d142c9c8e3da98be1df8d7a135a46c0a7e1c",
-  "approvedAt": "2026-08-14T09:30:00.000Z",
+  "admissionDigest": "980ff67717804653ef1b352d64354e87fc8b691e91282701ddfaa29e13e88f83",
+  "approvedAt": "2026-08-14T15:34:07.000Z",
   "artifactKind": "transfer-topology-source-admission",
-  "candidateId": "capital-pilot-candidate-20260813",
+  "candidateId": "capital-pilot-candidate-20260814",
   "coverageScope": {
     "absenceEvidenceMode": "EXHAUSTIVE_OFFICIAL_FILE",
     "notApplicableTargetCount": 1,
@@ -27,7 +27,7 @@
   "snapshotId": "molit-railway-transfer-movement-20250811",
   "sortedContentSha256": "7be53c0eb6d56c5aee1dc6e917d1f94d40464716505bf6cad04ae062859b7d5a",
   "sourceId": "molit-railway-transfer-movement",
-  "sourceSnapshotSetHash": "8b1eacc95d09966b61013a99fa47383bbc78b80b560ee4aa62a606dffa8c289d",
+  "sourceSnapshotSetHash": "9de79f88e3c986b7e3eed36b1037f6a1a6bab4084a5371e61667ceac3ca0130b",
   "stationLineMappingSha256": "573e9ed21934f035a178cd23b6b4b64e95a81f0eecd6ef77e3d1ceaafbae77b8",
   "stationLineSetSha256": "4cce46ce7050b0a830a7d68558a7f1a21186c475c67400ccfa1aab06496bb419",
   "stationSetSha256": "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f"
