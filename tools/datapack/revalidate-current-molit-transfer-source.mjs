@@ -106,15 +106,19 @@ async function loadLockedSnapshot(repositoryRoot) {
       bytes: gunzipSync(gzipBytes),
       capturedAt: metadata.capturedAt,
     });
-    if (rebuilt.rawSha256 !== metadata.rawSha256
-      || rebuilt.gzipSha256 !== metadata.gzipSha256
-      || rebuilt.sortedContentSha256 !== metadata.sortedContentSha256
-      || rebuilt.schemaFingerprint !== metadata.schemaFingerprint
-      || rebuilt.rowCount !== metadata.rowCount) fail("SNAPSHOT");
+    const {
+      gzipBytes: ignoredGzipBytes,
+      gzipSha256: ignoredRebuiltGzipSha256,
+      rows,
+      ...rebuiltMetadata
+    } = rebuilt;
+    const { gzipSha256: ignoredMetadataGzipSha256, ...logicalMetadata } = metadata;
+    if (JSON.stringify({ ...rebuiltMetadata, gzipPath: path.basename(SNAPSHOT_PATH) })
+      !== JSON.stringify(logicalMetadata)) fail("SNAPSHOT");
     return {
       metadata,
       metadataFileSha256: sha256(metadataBytes),
-      rows: rebuilt.rows,
+      rows,
     };
   } catch (error) {
     if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(error?.message ?? "")) throw error;

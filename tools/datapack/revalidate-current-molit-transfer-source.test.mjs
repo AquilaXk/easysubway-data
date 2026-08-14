@@ -90,7 +90,7 @@ test("content/schema/total pagination drift는 output 없이 fail closed한다",
 
 test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실패한다", async () => {
   const cases = [
-    { env: {}, fetchImpl: async () => { throw new Error("must not call"); }, expectedCalls: 0 },
+    { env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" }, fetchImpl: async () => { throw new Error("must not call"); }, expectedCalls: 0 },
     { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => new Response(
       `provider body ${serviceKey}`,
       { status: 503, headers: { "content-type": "text/plain" } },
