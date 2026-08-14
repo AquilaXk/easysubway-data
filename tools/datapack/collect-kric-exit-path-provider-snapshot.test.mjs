@@ -172,6 +172,44 @@ test("JSON escape와 URL encoding은 credential echo 검사를 우회하지 못�
   }
 });
 
+test("invalid envelope은 query와 bounded safe key inventory만 진단한다", async () => {
+  const collectionPlan = validPlan();
+  const queryId = collectionPlan.queryPlan[0].queryId;
+  const privateValue = "raw-provider-private-value";
+  const unsafeKey = "unsafe provider key";
+  const extraKeys = Object.fromEntries(Array.from({ length: 14 }, (_, index) => [
+    `safe${String(index).padStart(2, "0")}`,
+    privateValue,
+  ]));
+  let calls = 0;
+
+  await assert.rejects(() => collectKricExitPathProviderSnapshot({
+    collectionPlan,
+    sourceId: "kric-station-movement-standard",
+    serviceKey: SERVICE_KEY,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(JSON.stringify({
+        body: { items: [], [unsafeKey]: privateValue },
+        resultCode: "03",
+        ...extraKeys,
+        [unsafeKey]: privateValue,
+      }));
+    },
+    now: new Date(CAPTURED_AT),
+  }), (error) => {
+    assert.equal(error.message,
+      `KRIC EXIT response envelope keys mismatch: ${queryId}/03; `
+      + "keys=body,resultCode,safe00,safe01,safe02,safe03,safe04,safe05,safe06,safe07,safe08,safe09; "
+      + "bodyKeys=items");
+    assert.doesNotMatch(error.message, new RegExp(privateValue));
+    assert.doesNotMatch(error.message, new RegExp(unsafeKey));
+    assert.doesNotMatch(error.message, /safe10|safe11|safe12|safe13/);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
 test("plan/source/time/request 경계는 첫 provider call 전에 fail closed한다", async () => {
   const cases = [{
     label: "unsupported source",
