@@ -92,6 +92,7 @@ test("KRIC EXIT secret 동기화는 fixed repository secret을 stdin으로만 �
       DATA_GO_KR_SERVICE_KEY: "other-provider-secret",
       PATH: "/usr/bin",
       GH_HOST: "github.example.test",
+      GH_CONFIG_DIR: "/tmp/synthetic-gh-config",
       SAFE_ENV: "must-not-be-forwarded",
     },
     spawnImpl(command, args, options) {
@@ -116,6 +117,7 @@ test("KRIC EXIT secret 동기화는 fixed repository secret을 stdin으로만 �
   assert.deepEqual(calls[0].options.env, {
     PATH: "/usr/bin",
     GH_HOST: "github.example.test",
+    GH_CONFIG_DIR: "/tmp/synthetic-gh-config",
   });
   assert.doesNotMatch(calls[0].args.join(" "), /synthetic-kric|DATA_GO_KR/);
   assert.equal(calls[0].child.input(), serviceKey);

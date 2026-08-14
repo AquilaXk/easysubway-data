@@ -7,6 +7,7 @@ const CHILD_ENV_NAMES = Object.freeze([
   "TMPDIR",
   "XDG_CONFIG_HOME",
   "GH_HOST",
+  "GH_CONFIG_DIR",
   "GH_TOKEN",
   "GITHUB_TOKEN",
   "HTTP_PROXY",
