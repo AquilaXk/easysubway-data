@@ -36,6 +36,7 @@ import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
 const FRESH_AT = "2026-08-14T15:34:07.000Z";
 const STALE_AT = "2026-08-14T20:06:04.806Z";
+const CANDIDATE_ID = "capital-pilot-candidate-20260814";
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCOPED_STATION_SET_SHA256 = sha256(Buffer.from(canonicalJson(["station-a", "station-b"])));
@@ -212,6 +213,30 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
     /embedded station-line accessibility evidence mismatch/,
   );
   await assert.rejects(() => readFile(tamperedOutput), /ENOENT/);
+});
+
+test("handoff candidate와 signed bundle identity를 분리한다", async (t) => {
+  const fixture = await createFixture(t);
+  assert.equal(fixture.buildSpec.candidateId, CANDIDATE_ID);
+  assert.equal(fixture.stationLineInput.candidate.candidateId, CANDIDATE_ID);
+  assert.equal(fixture.routeEdgeInput.candidate.candidateId, CANDIDATE_ID);
+  assert.notEqual(CANDIDATE_ID, BUNDLE_ID);
+
+  const output = path.join(fixture.temp, "distinct-candidate-bundle");
+  await build(fixture, output, FRESH_AT);
+  const final = await readJson(path.join(output, "server-route-bundle-final.json"));
+  assert.equal(final.candidate.bundleId, BUNDLE_ID);
+
+  for (const [name, mutate] of [
+    ["station", (value) => { value.stationLineInput.candidate.candidateId = "other-candidate"; }],
+    ["route", (value) => { value.routeEdgeInput.candidate.candidateId = "other-candidate"; }],
+  ]) {
+    const rejected = await createFixture(t);
+    mutate(rejected);
+    const rejectedOutput = path.join(rejected.temp, `wrong-${name}-candidate`);
+    await assert.rejects(() => build(rejected, rejectedOutput, FRESH_AT), /candidate identity mismatch/);
+    await assert.rejects(() => readFile(rejectedOutput), /ENOENT/);
+  }
 });
 
 test("embedded #8/#9 evidence의 missing·extra·digest mismatch는 fail closed한다", async (t) => {
@@ -845,7 +870,7 @@ async function mutateAccessibilityPayload(fixture, sql) {
 
 function completeStationLineInput(sourceSetSha256) {
   const candidate = {
-    candidateId: BUNDLE_ID,
+    candidateId: CANDIDATE_ID,
     stationSetSha256: SCOPED_STATION_SET_SHA256,
     sourceSetSha256,
     mappingContractVersion: "station-line-v1",
@@ -884,7 +909,7 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
 
 function completeRouteEdgeInput(sourceSetSha256, topologySha256) {
   const candidate = {
-    candidateId: BUNDLE_ID,
+    candidateId: CANDIDATE_ID,
     stationSetSha256: STATION_SET_SHA256,
     sourceSetSha256,
     topologySha256,
