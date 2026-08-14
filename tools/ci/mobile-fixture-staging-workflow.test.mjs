@@ -81,6 +81,7 @@ test("CI는 TRANSFER topology admission contract를 standalone contracts에서 �
   const ci = readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-transfer-topology-admission\.test\.mjs/);
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/revalidate-current-molit-transfer-source\.test\.mjs/);
 });
 
 test("CI는 EXIT path admission contract를 standalone contracts에서 실행한다", () => {

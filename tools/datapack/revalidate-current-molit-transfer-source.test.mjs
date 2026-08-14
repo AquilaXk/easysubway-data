@@ -1,0 +1,189 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { gunzipSync } from "node:zlib";
+
+import { buildMolitRailwayTransferMovementSnapshot } from "./collect-molit-railway-transfer-movement.mjs";
+import { runCurrentMolitTransferSourceRevalidation } from "./revalidate-current-molit-transfer-source.mjs";
+
+const root = path.resolve(import.meta.dirname, "../..");
+const serviceKey = "test+transfer/service=key";
+const observedAt = "2026-08-14T00:30:00.000Z";
+const providerColumns = [
+  "철도운영기관코드", "선명", "역명", "환승이동순서", "이동내용상세", "환승이동내용",
+];
+const columnProjection = Object.freeze({
+  철도운영기관코드: "RAIL_OPR_ISTT_CD",
+  선명: "LN_NM",
+  역명: "STIN_NM",
+  환승이동순서: "CHTN_MV_TP_ORDR",
+  이동내용상세: "MV_CONT_DTL",
+  환승이동내용: "CHTN_MV_CONT",
+});
+const trackedRows = await loadTrackedRows();
+
+test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change evidence를 쓴다", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-revalidation-"));
+  try {
+    const output = path.join(directory, "evidence.json");
+    const calls = [];
+    const evidence = await runCurrentMolitTransferSourceRevalidation({
+      argv: ["--observed-at", observedAt, "--output", output],
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: paginatedFetch(trackedRows, calls),
+      repositoryRoot: root,
+    });
+
+    assert.equal(calls.length, Math.ceil(trackedRows.length / 1000));
+    assert.deepEqual(calls.map(({ page }) => page), Array.from({ length: calls.length }, (_, index) => index + 1));
+    assert.ok(calls.every(({ perPage, returnType, credential, redirect, signal }) =>
+      perPage === "1000" && returnType === "JSON" && credential === serviceKey
+      && redirect === "error" && signal instanceof AbortSignal));
+    assert.equal(evidence.outcome, "NO_CHANGE_REVALIDATED");
+    assert.equal(evidence.lockedSnapshot.rowCount, 8054);
+    assert.equal(evidence.providerObservation.totalCount, 8054);
+    assert.equal(evidence.credentialRedacted, true);
+    assert.match(evidence.evidenceHash, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(JSON.parse(await readFile(output, "utf8")), evidence);
+    assert.equal((await stat(output)).mode & 0o777, 0o600);
+    assert.doesNotMatch(JSON.stringify(evidence), /test\+transfer|serviceKey|환승통로|api\.odcloud\.kr/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("content/schema/total pagination drift는 output 없이 fail closed한다", async () => {
+  const cases = [
+    (rows) => { rows[0].역명 = "변조역"; },
+    (rows) => { rows[0].EXTRA = "raw-provider-sentinel"; },
+    (_rows, state) => { state.totalCount = 8055; },
+    (_rows, state) => { state.pageOverride = 2; },
+  ];
+  for (const mutate of cases) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-invalid-"));
+    try {
+      const output = path.join(directory, "evidence.json");
+      const rows = structuredClone(trackedRows);
+      const state = {};
+      mutate(rows, state);
+      await assert.rejects(
+        runCurrentMolitTransferSourceRevalidation({
+          argv: ["--observed-at", observedAt, "--output", output],
+          env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+          fetchImpl: paginatedFetch(rows, [], state),
+          repositoryRoot: root,
+        }),
+        (error) => {
+          assert.match(error.message, /^MOLIT_TRANSFER_REVALIDATION_[A-Z_]+$/u);
+          assert.doesNotMatch(error.message, /raw-provider-sentinel|변조역|test\+transfer/u);
+          return true;
+        },
+      );
+      await assert.rejects(stat(output), { code: "ENOENT" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실패한다", async () => {
+  const cases = [
+    { env: {}, fetchImpl: async () => { throw new Error("must not call"); }, expectedCalls: 0 },
+    { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => new Response(
+      `provider body ${serviceKey}`,
+      { status: 503, headers: { "content-type": "text/plain" } },
+    ), expectedCalls: 1 },
+    { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => { throw new Error(serviceKey); }, expectedCalls: 1 },
+  ];
+  for (const entry of cases) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-boundary-"));
+    let calls = 0;
+    try {
+      const output = path.join(directory, "evidence.json");
+      await assert.rejects(
+        runCurrentMolitTransferSourceRevalidation({
+          argv: ["--observed-at", observedAt, "--output", output],
+          env: entry.env,
+          fetchImpl: async (...args) => { calls += 1; return entry.fetchImpl(...args); },
+          repositoryRoot: root,
+        }),
+        (error) => {
+          assert.match(error.message, /^MOLIT_TRANSFER_REVALIDATION_[A-Z_]+$/u);
+          assert.doesNotMatch(error.message, new RegExp(serviceKey.replaceAll("+", "\\+")));
+          return true;
+        },
+      );
+      assert.equal(calls, entry.expectedCalls);
+      await assert.rejects(stat(output), { code: "ENOENT" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("existing output와 symlink output은 provider 호출 전 보존한다", async () => {
+  for (const kind of ["regular", "symlink"]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-output-"));
+    let calls = 0;
+    try {
+      const output = path.join(directory, "evidence.json");
+      const sentinel = path.join(directory, "sentinel.json");
+      await writeFile(sentinel, "sentinel\n");
+      if (kind === "regular") await writeFile(output, "existing\n");
+      else await symlink(sentinel, output);
+      await assert.rejects(
+        runCurrentMolitTransferSourceRevalidation({
+          argv: ["--observed-at", observedAt, "--output", output],
+          env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+          fetchImpl: async () => { calls += 1; throw new Error("must not call"); },
+          repositoryRoot: root,
+        }),
+        /MOLIT_TRANSFER_REVALIDATION_OUTPUT/u,
+      );
+      assert.equal(calls, 0);
+      assert.equal(await readFile(sentinel, "utf8"), "sentinel\n");
+      if (kind === "regular") assert.equal(await readFile(output, "utf8"), "existing\n");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+async function loadTrackedRows() {
+  const [metadata, gzipBytes] = await Promise.all([
+    readFile(new URL("./sources/molit-railway-transfer-movement-20250811.csv.gz.json", import.meta.url), "utf8"),
+    readFile(new URL("./sources/molit-railway-transfer-movement-20250811.csv.gz", import.meta.url)),
+  ]);
+  const parsed = JSON.parse(metadata);
+  return buildMolitRailwayTransferMovementSnapshot({
+    bytes: gunzipSync(gzipBytes),
+    capturedAt: parsed.capturedAt,
+  }).rows.map((row) => Object.fromEntries(providerColumns.map((providerColumn) => [
+    providerColumn,
+    providerColumn === "환승이동순서" ? Number(row[columnProjection[providerColumn]]) : row[columnProjection[providerColumn]],
+  ])));
+}
+
+function paginatedFetch(rows, calls, state = {}) {
+  return async (url, options) => {
+    const parsed = new URL(url);
+    const page = Number(parsed.searchParams.get("page"));
+    const perPage = parsed.searchParams.get("perPage");
+    const returnType = parsed.searchParams.get("returnType");
+    const credential = parsed.searchParams.get("serviceKey");
+    calls.push({ page, perPage, returnType, credential, redirect: options.redirect, signal: options.signal });
+    const pageNumber = state.pageOverride ?? page;
+    const start = (page - 1) * 1000;
+    const data = rows.slice(start, start + 1000);
+    return new Response(JSON.stringify({
+      currentCount: data.length,
+      data,
+      matchCount: state.totalCount ?? rows.length,
+      page: pageNumber,
+      perPage: 1000,
+      totalCount: state.totalCount ?? rows.length,
+    }), { status: 200, headers: { "content-type": "application/json;charset=UTF-8" } });
+  };
+}
