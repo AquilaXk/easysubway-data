@@ -433,6 +433,11 @@ test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail clo
         await writeFile(releaseEvidence.promotionRequestPath, "changed");
       },
     }), /promotionRequestPath changed during FINAL build/],
+    ["eligibility-changed-during-build", async ({ releaseEvidence }) => ({
+      beforeReleaseOutput: async () => {
+        await writeFile(releaseEvidence.eligibilityReportPath, "changed");
+      },
+    }), /eligibilityReportPath changed during FINAL build/],
   ]) {
     await t.test(name, async () => {
       const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);

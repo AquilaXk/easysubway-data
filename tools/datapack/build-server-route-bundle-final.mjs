@@ -162,7 +162,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
         state: routeEdgeGateState(evaluation),
         evidenceSha256: sha256(evaluationBytes),
       },
-      routeAccessibilityEligibility: eligibility,
+      routeAccessibilityEligibility: eligibility.gate,
       artifactInventory: { state: "PASS", evidenceSha256: sha256(artifactInventoryBytes) },
       signature: artifact.signedManifestRawSha256 === null
         ? { state: "UNAVAILABLE", evidenceSha256: null }
@@ -179,6 +179,7 @@ export async function buildServerRouteBundleFinalEvidence(input) {
       artifact.publicationObjects,
       sourceFreshness,
     );
+  if (release !== null && eligibility.file !== null) release.files.push(eligibility.file);
   const final = release?.final ?? prePublicationFinal;
   const finalBytes = Buffer.from(canonicalServerRouteBundleFinalJson(final));
 
@@ -680,8 +681,11 @@ function parseCanonicalJson(bytes, label) {
 }
 
 async function routeAccessibilityEligibilityGate({ reportPath, candidate, materialization, materializationBytes, evaluation, evaluationBytes }) {
-  if (reportPath === undefined) return { state: "UNAVAILABLE", evidenceSha256: null };
-  const bytes = await readNonEmptyRegular(path.resolve(requiredRaw(reportPath, "eligibility report")), "eligibility report");
+  if (reportPath === undefined) {
+    return { gate: { state: "UNAVAILABLE", evidenceSha256: null }, file: null };
+  }
+  const target = path.resolve(requiredRaw(reportPath, "eligibility report"));
+  const bytes = await readNonEmptyRegular(target, "eligibility report");
   const report = parseCanonicalJson(bytes, "eligibility report");
   assertKeys(report, [
     "schemaVersion", "artifactKind", "decision", "candidate", "stationLineAccessibility", "routeEdgeEvaluation", "blockers", "eligibilitySha256",
@@ -714,10 +718,16 @@ async function routeAccessibilityEligibilityGate({ reportPath, candidate, materi
     && report.routeEdgeEvaluation?.evaluationDigest === evaluation.evaluationDigest
     && report.routeEdgeEvaluation?.evidenceSha256 === sha256(evaluationBytes)
     && (report.decision === "ELIGIBLE" ? report.blockers.length === 0 : report.blockers.length > 0);
-  if (!matches) return { state: "IDENTITY_MISMATCH", evidenceSha256 };
+  const file = { key: "eligibilityReportPath", target, bytes };
+  if (!matches) {
+    return { gate: { state: "IDENTITY_MISMATCH", evidenceSha256 }, file };
+  }
   return {
-    state: report.decision === "ELIGIBLE" ? "PASS" : "INELIGIBLE",
-    evidenceSha256,
+    gate: {
+      state: report.decision === "ELIGIBLE" ? "PASS" : "INELIGIBLE",
+      evidenceSha256,
+    },
+    file,
   };
 }
 
