@@ -238,7 +238,23 @@ async function assertAbsentOutput(output) {
   }
 }
 
-async function publishResult(output, result) {
+function sameOwnedFile(file, identity) {
+  return file.isFile()
+    && !file.isSymbolicLink()
+    && file.dev === identity.dev
+    && file.ino === identity.ino
+    && file.size === identity.size
+    && (file.mode & 0o777) === 0o600;
+}
+
+async function removeOwnedFile(filePath, identity) {
+  try {
+    const current = await lstat(filePath);
+    if (sameOwnedFile(current, identity)) await unlink(filePath);
+  } catch {}
+}
+
+async function publishResult(output, result, fixture) {
   const temporary = `${output}.tmp-${randomUUID()}`;
   let handle;
   let identity;
@@ -255,15 +271,16 @@ async function publishResult(output, result) {
     handle = undefined;
     await link(temporary, output);
     linked = true;
+    await fixture.afterLink?.({ output, temporary });
     const published = await lstat(output);
-    if (!published.isFile() || published.isSymbolicLink()
-      || published.dev !== identity.dev || published.ino !== identity.ino
-      || published.size !== identity.size || (published.mode & 0o777) !== 0o600) fail("OUTPUT");
-    await unlink(temporary);
+    if (!sameOwnedFile(published, identity)) fail("OUTPUT");
+    await removeOwnedFile(temporary, identity);
   } catch (error) {
     try { await handle?.close(); } catch {}
-    try { if (linked) await unlink(output); } catch {}
-    try { await unlink(temporary); } catch {}
+    if (identity) {
+      if (linked) await removeOwnedFile(output, identity);
+      await removeOwnedFile(temporary, identity);
+    }
     if (/^MOLIT_TRANSFER_FRESHNESS_/u.test(error?.message ?? "")) throw error;
     fail("OUTPUT");
   }
@@ -272,6 +289,7 @@ async function publishResult(output, result) {
 export async function runCurrentMolitTransferFreshnessEvaluation({
   argv = process.argv.slice(2),
   now = Date.now(),
+  publishFixture = {},
   repositoryRoot = path.resolve(import.meta.dirname, "../.."),
 } = {}) {
   const args = parseArgs(argv);
@@ -301,7 +319,7 @@ export async function runCurrentMolitTransferFreshnessEvaluation({
     now,
     policy,
   });
-  await publishResult(args.output, result);
+  await publishResult(args.output, result, publishFixture);
   return result;
 }
 

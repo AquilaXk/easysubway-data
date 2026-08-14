@@ -163,6 +163,24 @@ test("policy/time/file/output boundary는 mismatch에서 mutation 0을 유지한
       now,
     }), /MOLIT_TRANSFER_FRESHNESS_OUTPUT/);
     assert.equal(await readFile(output, "utf8"), "owner-bytes");
+
+    await rm(output, { force: true });
+    let replacedTemporary;
+    await assert.rejects(() => runCurrentMolitTransferFreshnessEvaluation({
+      argv: ["--revalidation-evidence", evidencePath, "--evaluation-at", evaluationAt, "--output", output],
+      now,
+      publishFixture: {
+        afterLink: async ({ temporary }) => {
+          replacedTemporary = temporary;
+          await rm(output, { force: true });
+          await rm(temporary, { force: true });
+          await writeFile(output, "foreign-output");
+          await writeFile(temporary, "foreign-temporary");
+        },
+      },
+    }), /MOLIT_TRANSFER_FRESHNESS_OUTPUT/);
+    assert.equal(await readFile(output, "utf8"), "foreign-output");
+    assert.equal(await readFile(replacedTemporary, "utf8"), "foreign-temporary");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
