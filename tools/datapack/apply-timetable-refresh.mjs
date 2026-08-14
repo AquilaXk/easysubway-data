@@ -269,7 +269,7 @@ async function validateCurrentTransactionOutputs(repoRoot) {
     SEED_PATH,
     EVIDENCE_PATH,
     RUNTIME_EVIDENCE_PATH,
-  ].sort();
+  ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   if (new Set(outputPaths).size !== outputPaths.length) {
     throw new Error("transaction output inventory contains duplicate paths");
   }
