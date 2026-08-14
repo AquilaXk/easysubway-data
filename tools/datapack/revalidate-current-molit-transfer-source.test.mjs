@@ -158,6 +158,8 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
     ...[
       ["ENOTFOUND", "PROVIDER_DNS"],
       ["ERR_TLS_CERT_ALTNAME_INVALID", "PROVIDER_TLS"],
+      ["SELF_SIGNED_CERT_IN_CHAIN", "PROVIDER_TLS"],
+      ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "PROVIDER_TLS"],
     ].map(([causeCode, code]) => ({
       env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
       fetchImpl: async () => { throw Object.assign(new Error(serviceKey), { cause: { code: causeCode } }); },
@@ -183,6 +185,16 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
       }), { status: 200, headers: { "content-type": "application/json" } }),
       expectedCalls: 1,
       expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_BODY",
+    },
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => new Response(new ReadableStream({
+        pull(controller) {
+          controller.error(Object.assign(new Error(serviceKey), { name: "TimeoutError" }));
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+      expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_TIMEOUT",
     },
     {
       env: { DATA_GO_KR_SERVICE_KEY: serviceKey },

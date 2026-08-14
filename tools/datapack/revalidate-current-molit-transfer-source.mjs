@@ -20,6 +20,25 @@ const CANDIDATES_PATH = "tools/datapack/source-candidates.json";
 const PER_PAGE = 1000;
 const REQUEST_TIMEOUT_MILLIS = 15_000;
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
+const TLS_AUTHORIZATION_ERROR_CODES = new Set([
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERROR_IN_CERT_NOT_AFTER_FIELD",
+  "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+  "ERROR_IN_CRL_LAST_UPDATE_FIELD",
+  "ERROR_IN_CRL_NEXT_UPDATE_FIELD",
+  "INVALID_CA",
+  "INVALID_PURPOSE",
+  "PATH_LENGTH_EXCEEDED",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+  "UNABLE_TO_DECRYPT_CRL_SIGNATURE",
+  "UNABLE_TO_GET_CRL",
+  "UNABLE_TO_GET_CRL_ISSUER",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
 const PROVIDER_COLUMNS = Object.freeze([
   "철도운영기관코드", "선명", "역명", "환승이동순서", "이동내용상세", "환승이동내용",
 ]);
@@ -203,7 +222,8 @@ function classifyTransportFailure(error) {
   if (new Set(["ENOTFOUND", "EAI_AGAIN"]).has(code)) return "PROVIDER_DNS";
   if (typeof code === "string" && (code.startsWith("ERR_TLS_")
     || code.startsWith("CERT_")
-    || new Set(["DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"]).has(code))) {
+    || code.startsWith("CRL_")
+    || TLS_AUTHORIZATION_ERROR_CODES.has(code))) {
     return "PROVIDER_TLS";
   }
   if (error?.name === "TimeoutError" || error?.name === "AbortError"
@@ -250,6 +270,7 @@ async function readBoundedResponseBody(response) {
   } catch (error) {
     try { await reader.cancel(); } catch {}
     if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(error?.message ?? "")) throw error;
+    if (classifyTransportFailure(error) === "PROVIDER_TIMEOUT") fail("PROVIDER_TIMEOUT");
     fail("PROVIDER_BODY");
   }
   if (totalBytes === 0) fail("PROVIDER_BODY");
