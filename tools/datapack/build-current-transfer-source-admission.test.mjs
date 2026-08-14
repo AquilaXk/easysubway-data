@@ -71,6 +71,11 @@ test("ambiguous target mapping과 partial official identity는 absence admission
   );
   assert.throws(() => buildCurrentTransferSourceAdmission(ambiguous), /target mapping/i);
 
+  const wrongStation = cloneInput();
+  wrongStation.productionInput.kricStandardAccessibilityRoster
+    .find(({ stationId }) => stationId === "station-sadang").stinCd = "448";
+  assert.throws(() => buildCurrentTransferSourceAdmission(wrongStation), /target mapping/i);
+
   const partial = cloneInput();
   partial.metadata.rowCount = 8_053;
   assert.throws(() => buildCurrentTransferSourceAdmission(partial), /source|snapshot|identity/i);
@@ -105,6 +110,7 @@ test("tracked current TRANSFER handoff는 exact two-cell GO identity를 고정�
   ]);
   const source = JSON.parse(sourceBytes);
   const admission = JSON.parse(admissionBytes);
+  const fresh = buildCurrentTransferSourceAdmission(cloneInput());
   assert.equal(source.admissionDigest, "8431808200dcf69c542d20c8a884d142c9c8e3da98be1df8d7a135a46c0a7e1c");
   assert.equal(admission.admissionDigest, "d925818a23ee26a553ec07cc381cb350240d3774d057dec59b4af9a186fbebdd");
   assert.equal(source.revalidationEvidenceSha256, EVIDENCE.evidenceHash);
@@ -119,6 +125,8 @@ test("tracked current TRANSFER handoff는 exact two-cell GO identity를 고정�
   });
   assert.equal(canonicalCurrentTransferSourceAdmissionJson(source), sourceBytes.toString("utf8"));
   assert.equal(`${canonicalTransferTopologyAdmissionJson(admission)}\n`, admissionBytes.toString("utf8"));
+  assert.equal(canonicalCurrentTransferSourceAdmissionJson(fresh.sourceAdmission), sourceBytes.toString("utf8"));
+  assert.equal(`${canonicalTransferTopologyAdmissionJson(fresh.admission)}\n`, admissionBytes.toString("utf8"));
 });
 
 async function trackedInput() {

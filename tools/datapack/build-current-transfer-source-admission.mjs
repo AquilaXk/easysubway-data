@@ -351,7 +351,8 @@ function validateFreshness({
 function validateTargetMappings({ facility, productionInput, providerCodeCatalog }) {
   validateKricProviderCodeCatalogIdentity(providerCodeCatalog);
   if (!Array.isArray(productionInput?.kricStandardAccessibilityRoster)
-    || !Array.isArray(productionInput.stationLineRows)) {
+    || !Array.isArray(productionInput.stationLineRows)
+    || !Array.isArray(productionInput.stationMappings)) {
     throw new Error("current TRANSFER target mapping missing");
   }
   const cells = [...facility.cells].sort((left, right) => compareBytes(
@@ -368,7 +369,16 @@ function validateTargetMappings({ facility, productionInput, providerCodeCatalog
     const stationRows = productionInput.stationLineRows.filter((entry) =>
       entry.sourceId === "molit-urban-rail-full-route"
       && entry.lineId === cell.lineId && entry.stationCode === roster.stinCd);
-    if (stationRows.length !== 1 || stationRows[0].stationNameKo !== stationRows[0].normalizedName) {
+    const stationMappings = stationRows.length === 1
+      ? productionInput.stationMappings.filter((entry) =>
+        entry.sourceId === "molit-urban-rail-full-route"
+        && entry.sourceStationCode === stationRows[0].sourceStationCode
+        && entry.lineId === cell.lineId)
+      : [];
+    if (stationRows.length !== 1 || stationRows[0].stationNameKo !== stationRows[0].normalizedName
+      || stationMappings.length !== 1 || stationMappings[0].stationId !== cell.stationId
+      || stationMappings[0].stationLineId !== `${cell.stationId}:${cell.lineId}`
+      || stationMappings[0].mappingStatus !== "active") {
       throw new Error("current TRANSFER target mapping ambiguous");
     }
     return canonicalObject({
