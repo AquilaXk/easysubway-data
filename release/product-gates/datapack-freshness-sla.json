@@ -54,6 +54,17 @@
       "freshnessMetric": "routeMapPositionFreshnessRatio"
     },
     {
+      "id": "annual_official_file",
+      "sourceIds": ["molit-railway-transfer-movement"],
+      "examples": ["official annual railway transfer movement CSV"],
+      "basisField": "observedAt",
+      "reverificationCadence": "P1Y",
+      "offlinePackEligible": true,
+      "eventTriggers": ["official file revision", "station transfer path revision", "line or station opening"],
+      "changePublishSla": "P14D",
+      "freshnessMetric": "freshnessValidRatio"
+    },
+    {
       "id": "realtime_overlay",
       "sourceIds": [],
       "examples": ["Seoul TOPIS arrival", "provider train position"],
