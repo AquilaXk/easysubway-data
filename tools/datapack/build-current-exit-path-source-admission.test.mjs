@@ -49,7 +49,7 @@ test("tracked current EXIT handoff는 exact immutable snapshot과 GO admission�
     readFile(new URL("./release/current-exit-admission/exit-path-source-admission.json", import.meta.url)),
   ]);
   assert.equal(sha256(normalizedBytes), "aff6a382042e8cd6d493f1c7a89d3496242f7c04b67dfaf81bc6d0eacd4c176f");
-  assert.equal(sha256(admissionBytes), "22aaa4363742713172fe367ed5a7697f1c5bb1d0d6244ff39c180ed6c3c5e03c");
+  assert.equal(sha256(admissionBytes), "965decb43a399958f41eaa6a0144da20d04f49c791a822eaf62b8e99c0386d4b");
   const normalized = JSON.parse(normalizedBytes);
   const admission = JSON.parse(admissionBytes);
   assert.equal(normalized.providerSnapshotIdentity.snapshotDigest,
@@ -57,7 +57,7 @@ test("tracked current EXIT handoff는 exact immutable snapshot과 GO admission�
   assert.equal(normalized.providerSnapshotIdentity.rawSha256,
     "6eeb132847590f702babffdc22c7ed8188efa560ad42b78623e258ca79420bbd");
   assert.equal(admission.admissionDigest,
-    "13baa3ecf6d603063c76307b912537c7528002bb86b5e434d465962e833d5dca");
+    "d64f812b5e35680886e9377eda33e6fbabf1530c4da8b6f933b1204149a61f4c");
   assert.equal(admission.decision, "GO");
   assert.deepEqual(admission.stateSummary, {
     ADMITTED_EXIT_PATH: 2,

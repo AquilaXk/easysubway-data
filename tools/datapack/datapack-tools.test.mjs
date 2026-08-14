@@ -18317,7 +18317,7 @@ async function writeCurrentItxReleaseInputs(
   await writeFile(buildSpecPath, `${JSON.stringify(buildSpec)}\n`);
   return {
     buildSpecPath,
-    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-13T16:00:00.000Z" },
+    env: { ...productionEnv, EASYSUBWAY_DATAPACK_BUILD_NOW: "2026-08-14T16:00:00.000Z" },
   };
 }
 

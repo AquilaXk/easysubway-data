@@ -18,9 +18,9 @@ const TRANSFER_FILE = "tools/datapack/release/current-transfer-admission/transfe
 const INPUT_FILE = "station-line-input.json";
 const MATERIALIZATION_FILE = "station-line-accessibility.json";
 const EXPECTED_ADMISSION_DIGESTS = {
-  EXIT: "13baa3ecf6d603063c76307b912537c7528002bb86b5e434d465962e833d5dca",
-  FACILITY: "e3dee749e4a4c9810eac907964dd93fe072d68c5f66fe9fbcec12474f45cf82a",
-  TRANSFER: "d925818a23ee26a553ec07cc381cb350240d3774d057dec59b4af9a186fbebdd",
+  EXIT: "d64f812b5e35680886e9377eda33e6fbabf1530c4da8b6f933b1204149a61f4c",
+  FACILITY: "1f2a3f09dbbc3e79c3ff88f0ef5690033ab6775f7bf2b8a1ceedc80f82ac28ea",
+  TRANSFER: "c9b5d0a883b06129a8339904437f69220627f5ee62b7020b320e0eb8ea4cdfbc",
 };
 const CANDIDATE_KEYS = [
   "candidateId", "mappingContractVersion", "materializerVersion", "sourceSetSha256", "stationSetSha256",

@@ -10,7 +10,7 @@ import {
 } from "./build-facility-source-admission.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const FRESH_AT = "2026-08-13T23:18:58.000Z";
+const FRESH_AT = "2026-08-14T15:34:07.000Z";
 
 test("current FACILITY official source admission은 exact six-cell handoff를 만든다", async () => {
   const input = await currentInput();
@@ -19,7 +19,7 @@ test("current FACILITY official source admission은 exact six-cell handoff를 �
 
   assert.deepEqual(input, before);
   assert.equal(result.decision, "GO");
-  assert.equal(result.candidate.candidateId, "capital-pilot-candidate-20260813");
+  assert.equal(result.candidate.candidateId, "capital-pilot-candidate-20260814");
   assert.equal(result.queryPartition.summary.totalCount, 7);
   assert.equal(result.queryPartition.summary.partitionedQueryCount, 7);
   assert.equal(result.queryPartition.summary.joinedCount, 2);
