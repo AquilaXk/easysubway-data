@@ -151,7 +151,7 @@ async function makeFixture(t) {
 }
 
 // 워크플로가 만드는 promotion.patch를 흉내: source-B 추가 + contract를 B로 repoint.
-async function buildPromotionPatch(dir) {
+async function buildPromotionPatch(dir, { ancillaryPath = null } = {}) {
   await writeFile(
     path.join(dir, sourcePathFor(SOURCE_B)),
     sourceFor(SOURCE_B, FRESH_B),
@@ -159,17 +159,60 @@ async function buildPromotionPatch(dir) {
   await writeFile(path.join(dir, completenessPathFor(SOURCE_B)), completenessFor(SOURCE_B));
   await writeFile(path.join(dir, CONTRACT_PATH), contractFor(SOURCE_B, FRESH_B));
   await writeFile(path.join(dir, TOPOLOGY_EVIDENCE_PATH), topologyEvidenceFor(SOURCE_B, FRESH_B));
+  if (ancillaryPath != null) {
+    await writeFile(path.join(dir, ancillaryPath), "ancillary\n");
+  }
   await git(dir, ["add", "-N", "tools/datapack/sources", CONTRACT_PATH, TOPOLOGY_EVIDENCE_PATH]);
   const { stdout } = await git(dir, ["diff", "--", "tools/datapack/sources", CONTRACT_PATH, TOPOLOGY_EVIDENCE_PATH]);
   // 클린 트리로 복원한다.
   await git(dir, ["reset", "-q"]);
   await rm(path.join(dir, sourcePathFor(SOURCE_B)));
   await rm(path.join(dir, completenessPathFor(SOURCE_B)));
+  if (ancillaryPath != null) {
+    await rm(path.join(dir, ancillaryPath));
+  }
   await git(dir, ["checkout", "--", CONTRACT_PATH]);
   await git(dir, ["checkout", "--", TOPOLOGY_EVIDENCE_PATH]);
   const patchPath = path.join(dir, "promotion.patch");
   await writeFile(patchPath, stdout);
   return patchPath;
+}
+
+async function writeForgedCurrentReceipt(dir, patchPath) {
+  const outputPaths = [
+    sourcePathFor(SOURCE_A),
+    completenessPathFor(SOURCE_A),
+    CONTRACT_PATH,
+    TOPOLOGY_EVIDENCE_PATH,
+    SEED_PATH,
+    EVIDENCE_PATH,
+    RUNTIME_EVIDENCE_PATH,
+  ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  const outputs = await Promise.all(outputPaths.map(async (outputPath) => {
+    const bytes = await readFile(path.join(dir, outputPath));
+    return { path: outputPath, sha256: sha256(bytes), byteSize: bytes.length };
+  }));
+  const unsigned = {
+    schemaVersion: 1,
+    artifactKind: "timetable-refresh-transaction-receipt",
+    status: "APPLIED",
+    inputPatchSha256: sha256(await readFile(patchPath)),
+    sourceArtifactIdBefore: SOURCE_A,
+    sourceArtifactIdAfter: SOURCE_A,
+    sourceArtifactSha256: sha256(await readFile(path.join(dir, sourcePathFor(SOURCE_A)))),
+    completenessEvidenceSha256: sha256(
+      await readFile(path.join(dir, completenessPathFor(SOURCE_A))),
+    ),
+    policyVersion: "itx-snapshot-anomaly-v1",
+    freshUntilBefore: FRESH_A,
+    freshUntilAfter: FRESH_A,
+    freshnessExtensionResultSha256: null,
+    outputs,
+  };
+  await writeFile(path.join(dir, RECEIPT_PATH), `${JSON.stringify({
+    ...unsigned,
+    transactionSha256: sha256(Buffer.from(canonicalJson(unsigned), "utf8")),
+  }, null, 2)}\n`);
 }
 
 async function buildSameSourceFreshnessPatch(dir) {
@@ -473,6 +516,38 @@ test("멱등성: 동일 patch와 verified receipt 재실행은 명시적 NO_OP�
   assert.equal(second.status, "NO_OP");
   assert.equal(second.transactionSha256, first.transactionSha256);
   assert.equal(build.calls.count, 1, "재실행에서 재산출은 호출되지 않아야 한다");
+});
+
+test("미적용 patch SHA로 만든 self-consistent receipt는 NO_OP을 만들 수 없다", async (t) => {
+  const dir = await makeFixture(t);
+  const patchPath = await buildPromotionPatch(dir);
+  const build = makeBuildStub(dir);
+  await writeForgedCurrentReceipt(dir, patchPath);
+
+  await assert.rejects(
+    applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: build.run }),
+    /receipt.*patch.*applied|reverse apply/i,
+  );
+  assert.equal(build.calls.count, 0);
+  assert.equal(
+    JSON.parse(await readFile(path.join(dir, CONTRACT_PATH), "utf8"))
+      .sourceTimetableArtifact.artifactId,
+    SOURCE_A,
+  );
+});
+
+test("receipt inventory가 증명하지 않는 ancillary source path는 patch에서 거부한다", async (t) => {
+  const dir = await makeFixture(t);
+  const ancillaryPath = "tools/datapack/sources/ancillary-evidence.json";
+  const patchPath = await buildPromotionPatch(dir, { ancillaryPath });
+  const build = makeBuildStub(dir);
+
+  await assert.rejects(
+    applyTimetableRefresh({ patchPath, repoRoot: dir, runSnapshotBuild: build.run }),
+    /patch output inventory|unexpected patch path/i,
+  );
+  await assert.rejects(readFile(path.join(dir, ancillaryPath)), { code: "ENOENT" });
+  assert.equal(build.calls.count, 0);
 });
 
 test("동일 receipt의 output drift는 재적용 없이 fail closed한다", async (t) => {

@@ -484,6 +484,11 @@ export async function applyTimetableRefresh({
       }
     }
     await verifyReceiptOutputs(repoRoot, existingReceipt);
+    try {
+      await runGit(["apply", "--reverse", "--check", resolvedPatch]);
+    } catch {
+      throw new Error("transaction receipt cannot prove that the patch is already applied");
+    }
     return {
       status: "NO_OP",
       patchPath: resolvedPatch,
@@ -563,6 +568,27 @@ export async function applyTimetableRefresh({
       patchedSource?.freshUntil,
       "patched source freshUntil",
     );
+    const patchedSourcePath = requiredRepositoryRelativePath(
+      patchedSource?.artifactPath,
+      "patched source artifact path",
+    );
+    const patchedCompletenessPath = requiredRepositoryRelativePath(
+      patchedSource?.completenessEvidencePath,
+      "patched completeness evidence path",
+    );
+    const allowedPatchPaths = new Set([
+      patchedSourcePath,
+      patchedCompletenessPath,
+      CONTRACT_PATH,
+      TOPOLOGY_EVIDENCE_PATH,
+    ]);
+    const unexpectedPatchPaths = changedFiles.filter((file) => !allowedPatchPaths.has(file));
+    if (unexpectedPatchPaths.length > 0 || !changedFiles.includes(patchedSourcePath)) {
+      throw new Error(
+        "patch output inventory is not the exact source/contract/topology transaction set: "
+        + unexpectedPatchPaths.join(", "),
+      );
+    }
     let freshnessExtensionResultSha256 = null;
     if (sourceArtifactIdAfter === before.sourceArtifactId) {
       if (extensionResult == null) {
