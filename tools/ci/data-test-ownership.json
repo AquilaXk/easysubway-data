@@ -289,6 +289,7 @@
     {"path":"tools/datapack/refresh-route-map-admission-freshness.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":142},
     {"path":"tools/datapack/register-kric-standard-accessibility-snapshot.test.mjs","semanticOwner":"data39","classes":["required-pr"],"durationMs":2317},
     {"path":"tools/datapack/replay-current-itx-collection.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":59},
+    {"path":"tools/datapack/revalidate-current-molit-transfer-source.test.mjs","semanticOwner":"data27","classes":["required-pr"],"durationMs":1110},
     {"path":"tools/datapack/revalidate-current-static-network-sources.test.mjs","semanticOwner":"data28","classes":["required-pr"],"durationMs":64},
     {"path":"tools/datapack/rollback-manifest.test.mjs","semanticOwner":"data7","classes":["required-pr"],"durationMs":3330},
     {"path":"tools/datapack/route-map-coverage-scope.test.mjs","semanticOwner":"data38","classes":["required-pr"],"durationMs":1470},

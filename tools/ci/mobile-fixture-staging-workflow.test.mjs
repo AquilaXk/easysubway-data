@@ -103,8 +103,11 @@ test("CI는 pinned Mobile fixture workflow 계약을 owned required runner에서
   assertRequiredOwned(["tools/ci/mobile-fixture-staging-workflow.test.mjs"]);
 });
 
-test("CI는 TRANSFER topology admission contract를 owned required runner에서 실행한다", () => {
-  assertRequiredOwned(["tools/datapack/build-transfer-topology-admission.test.mjs"]);
+test("CI는 TRANSFER topology admission과 current source revalidation contract를 owned required runner에서 실행한다", () => {
+  assertRequiredOwned([
+    "tools/datapack/build-transfer-topology-admission.test.mjs",
+    "tools/datapack/revalidate-current-molit-transfer-source.test.mjs",
+  ]);
 });
 
 test("CI는 EXIT path admission contract를 owned required runner에서 실행한다", () => {
