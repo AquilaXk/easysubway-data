@@ -239,6 +239,10 @@ function validateSourceContext({
     (entry) => entry.sourceId === SOURCE_ID && entry.snapshotId === snapshot.snapshotId,
     "FACILITY candidate source membership",
   );
+  if (ledger.schemaFingerprint !== snapshot.schemaFingerprint
+    || candidateMember.schemaFingerprint !== snapshot.schemaFingerprint) {
+    throw new Error("FACILITY schema fingerprint mismatch");
+  }
   if (!candidateBuildSpec.sourceSnapshotIds.includes(snapshot.snapshotId)
     || candidateBuildSpec.sourceSnapshotIds.filter((value) => value === snapshot.snapshotId).length !== 1) {
     throw new Error("FACILITY candidate source id membership mismatch");
@@ -307,7 +311,7 @@ function buildStationContext(productionInput, candidateBuildSpec) {
   const lineIds = uniqueStrings(scope.includedLineIds, "included line id").sort(compareBytes);
   const operatorIds = uniqueStrings(scope.includedOperatorIds, "included operator id").sort(compareBytes);
   const regionIds = uniqueStrings(scope.includedRegionIds, "included region id").sort(compareBytes);
-  if (lineIds.length !== 1 || operatorIds.length !== 1 || regionIds.length !== 1) {
+  if (stationIds.length !== 2 || lineIds.length !== 1 || operatorIds.length !== 1 || regionIds.length !== 1) {
     throw new Error("FACILITY current scope cardinality mismatch");
   }
   if (!Array.isArray(productionInput.stationMappings) || !Array.isArray(productionInput.stationLineRows)

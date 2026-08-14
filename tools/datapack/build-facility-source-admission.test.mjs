@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import test from "node:test";
 
@@ -108,6 +109,31 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
   assert.equal(unmatchedResult.decision, "NO_GO");
   assert.equal(unmatchedResult.inputEvidencePartition.summary.unmatchedCount, 1);
   assert.deepEqual(unmatchedResult.materializerEvidenceRows, []);
+
+  const schemaDrift = await currentInput();
+  const ledger = sourceSnapshotEntry(schemaDrift);
+  const candidateMember = schemaDrift.candidateBuildSpec.sourceSnapshots.find(({ snapshotId }) =>
+    snapshotId === ledger.snapshotId);
+  ledger.schemaFingerprint = "drifted-schema";
+  candidateMember.schemaFingerprint = "drifted-schema";
+  schemaDrift.candidateBuildSpec.sourceSnapshotSetHash = sha256(JSON.stringify(
+    schemaDrift.candidateBuildSpec.sourceSnapshotIds.map((snapshotId) =>
+      schemaDrift.sourceSnapshots.find((entry) => entry.snapshotId === snapshotId)),
+  ));
+  assert.throws(
+    () => buildFacilitySourceAdmission(schemaDrift),
+    /schema fingerprint mismatch/,
+  );
+
+  const emptyScope = await currentInput();
+  emptyScope.productionInput.supportedV1Scope.includedStationIds = [];
+  emptyScope.productionInput.supportedV1Scope.facilityCoverageDenominator.expectedRows = 0;
+  emptyScope.productionInput.facilityRows = [];
+  emptyScope.productionInput.accessibilityStatusEvidence = [];
+  assert.throws(
+    () => buildFacilitySourceAdmission(emptyScope),
+    /current scope cardinality mismatch/,
+  );
 });
 
 test("consumer input order가 달라도 admission bytes와 caller input은 동일하다", async () => {
@@ -137,4 +163,8 @@ function sourceEntry(input) {
 function sourceSnapshotEntry(input) {
   return input.sourceSnapshots.find(({ snapshotId }) =>
     snapshotId === "kric-station-convenience-standard-20260813T200604805Z");
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
