@@ -11,9 +11,6 @@ import { constants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import {
   buildServerRouteBundleFinalEvidence,
 } from "./build-server-route-bundle-final.mjs";
-import {
-  canonicalFacilitySourceAdmissionJson,
-} from "./build-facility-source-admission.mjs";
 import { GENERATED_ACCESSIBILITY_EVIDENCE_TABLE_DDL } from "./emit-artifact-components.mjs";
 import {
   canonicalJson,
@@ -43,28 +40,22 @@ const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
 const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "pem" });
 
-test("current FACILITY admission handoff를 Data #8 materializer가 exact candidate identity로 수용한다", async () => {
-  const target = path.resolve("tools/datapack/release/facility-source-admission.json");
-  const bytes = await readFile(target);
-  const handoff = JSON.parse(bytes);
+test("current Data #8 three-handoff input과 materialization bytes를 exact consumer로 수용한다", async () => {
+  const [inputBytes, materializationBytes] = await Promise.all([
+    readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
+    readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
+  ]);
+  const input = JSON.parse(inputBytes);
+  const tracked = JSON.parse(materializationBytes);
 
-  assert.equal(canonicalFacilitySourceAdmissionJson(handoff), bytes.toString("utf8"));
-  assert.equal(handoff.decision, "GO");
-  assert.equal(handoff.denominatorRows.length, 6);
-  assert.equal(handoff.cells.length, 2);
-  assert.equal(handoff.materializerEvidenceRows.length, 2);
-
+  assert.equal(inputBytes.toString("utf8"), canonicalJson(input));
+  assert.equal(materializationBytes.toString("utf8"), canonicalStationLineAccessibilityJson(tracked));
   const materialized = materializeStationLineAccessibility({
-    candidate: handoff.candidate,
-    observedAt: handoff.observedAt,
-    stationLines: handoff.cells.map(({ stationId, lineId, operatorId }) => ({
-      stationId, lineId, operatorId,
-    })),
-    evidenceRows: handoff.materializerEvidenceRows,
+    ...input,
+    observedAt: "2026-08-14T09:50:00.000Z",
   });
-  assert.equal(materialized.stateSummary.VERIFIED_PRESENT, 2);
-  assert.equal(materialized.rows.filter(({ domain, state }) =>
-    domain === "FACILITY" && state === "VERIFIED_PRESENT").length, 2);
+  assert.equal(canonicalStationLineAccessibilityJson(materialized), materializationBytes.toString("utf8"));
+  assert.equal(materialized.materializationDigest, "faa3c24af33843185f42c800028391cf4e7c17ee82ddbb1539962a985fc82ba8");
 });
 
 test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FINAL로 결속한다", async (t) => {
