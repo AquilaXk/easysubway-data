@@ -3,6 +3,8 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-fixture",
   "productionScopeId": "capital_pilot_android_v1",
+  "publishedAt": "2026-08-14T15:34:07.000Z",
+  "releaseSequence": 1,
   "fixturePath": "tools/datapack/fixtures/catalog-fixture.json",
   "sourceSnapshotIds": [
     "snapshot-molit-urban-rail-full-route-fixture",
