@@ -126,12 +126,76 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
   let oversizedCancelled = false;
   let chunkIndex = 0;
   const cases = [
-    { env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" }, fetchImpl: async () => { throw new Error("must not call"); }, expectedCalls: 0 },
-    { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => new Response(
-      `provider body ${serviceKey}`,
-      { status: 503, headers: { "content-type": "text/plain" } },
-    ), expectedCalls: 1 },
-    { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => { throw new Error(serviceKey); }, expectedCalls: 1 },
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" },
+      fetchImpl: async () => { throw new Error("must not call"); },
+      expectedCalls: 0,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_CREDENTIAL",
+    },
+    ...[
+      [401, "PROVIDER_HTTP_AUTHORIZATION"],
+      [429, "PROVIDER_HTTP_RATE_LIMIT"],
+      [503, "PROVIDER_HTTP_SERVER"],
+      [418, "PROVIDER_HTTP_OTHER"],
+    ].map(([status, code]) => ({
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => new Response(`provider body ${serviceKey}`, {
+        status,
+        headers: { "content-type": "text/plain" },
+      }),
+      expectedCalls: 1,
+      expectedCode: `MOLIT_TRANSFER_REVALIDATION_${code}`,
+    })),
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => new Response("not json", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      }),
+      expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_CONTENT_TYPE",
+    },
+    ...[
+      ["ENOTFOUND", "PROVIDER_DNS"],
+      ["ERR_TLS_CERT_ALTNAME_INVALID", "PROVIDER_TLS"],
+      ["SELF_SIGNED_CERT_IN_CHAIN", "PROVIDER_TLS"],
+      ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "PROVIDER_TLS"],
+    ].map(([causeCode, code]) => ({
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => { throw Object.assign(new Error(serviceKey), { cause: { code: causeCode } }); },
+      expectedCalls: 1,
+      expectedCode: `MOLIT_TRANSFER_REVALIDATION_${code}`,
+    })),
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => { throw Object.assign(new Error(serviceKey), { name: "TimeoutError" }); },
+      expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_TIMEOUT",
+    },
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => { throw new Error(serviceKey); },
+      expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_NETWORK",
+    },
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => new Response(new ReadableStream({
+        pull(controller) { controller.error(new Error(serviceKey)); },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+      expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_BODY",
+    },
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => new Response(new ReadableStream({
+        pull(controller) {
+          controller.error(Object.assign(new Error(serviceKey), { name: "TimeoutError" }));
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+      expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_TIMEOUT",
+    },
     {
       env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
       fetchImpl: async () => new Response(new ReadableStream({
@@ -143,6 +207,7 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
         cancel() { oversizedCancelled = true; },
       }), { status: 200, headers: { "content-type": "application/json" } }),
       expectedCalls: 1,
+      expectedCode: "MOLIT_TRANSFER_REVALIDATION_PROVIDER_BODY_TOO_LARGE",
       assertAfter: () => assert.equal(oversizedCancelled, true),
     },
   ];
@@ -159,7 +224,7 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
           repositoryRoot: root,
         }),
         (error) => {
-          assert.match(error.message, /^MOLIT_TRANSFER_REVALIDATION_[A-Z_]+$/u);
+          assert.equal(error.message, entry.expectedCode);
           assert.doesNotMatch(error.message, new RegExp(serviceKey.replaceAll("+", "\\+")));
           return true;
         },
