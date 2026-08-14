@@ -259,10 +259,16 @@ function classifyProviderPayload(payload, queryId) {
   if (Array.isArray(payload)) {
     providerRows = payload;
   } else {
+    let headerOnly = false;
     try {
       assertKeys(payload, ["body", "header"], "KRIC EXIT response envelope keys");
     } catch {
-      throw new Error(buildEnvelopeDiagnostic(payload, queryId));
+      try {
+        assertKeys(payload, ["header"], "KRIC EXIT response envelope keys");
+        headerOnly = true;
+      } catch {
+        throw new Error(buildEnvelopeDiagnostic(payload, queryId));
+      }
     }
     if (!payload.header || typeof payload.header !== "object" || Array.isArray(payload.header)) {
       throw new Error(`KRIC EXIT response header mismatch: ${queryId}`);
@@ -270,6 +276,17 @@ function classifyProviderPayload(payload, queryId) {
     providerResultCode = payload.header.resultCode;
     if (typeof providerResultCode !== "string" || !/^[A-Za-z0-9._-]{1,32}$/.test(providerResultCode)) {
       throw new Error(`KRIC EXIT provider result invalid: ${queryId}/UNKNOWN`);
+    }
+    if (providerResultCode !== "00" && providerResultCode !== "03") {
+      throw new Error(`KRIC EXIT provider result invalid: ${queryId}/${providerResultCode}`);
+    }
+    if (headerOnly) {
+      if (providerResultCode !== "03") {
+        throw new Error(`KRIC EXIT provider header-only shape mismatch: ${queryId}/${providerResultCode}`);
+      }
+      providerRows = [];
+      resultState = "PROVIDER_NO_DATA";
+      return { providerResultCode, providerRows, resultState };
     }
     if (!Array.isArray(payload.body)) {
       throw new TypeError(`KRIC EXIT response body must be an array: ${queryId}`);
@@ -280,8 +297,6 @@ function classifyProviderPayload(payload, queryId) {
       resultState = "PROVIDER_NO_DATA";
     } else if (providerResultCode === "00") {
       resultState = providerRows.length === 0 ? "EXPLICIT_ZERO" : "ROWS_OBSERVED";
-    } else {
-      throw new Error(`KRIC EXIT provider result invalid: ${queryId}/${providerResultCode}`);
     }
   }
   return { providerResultCode, providerRows, resultState };
