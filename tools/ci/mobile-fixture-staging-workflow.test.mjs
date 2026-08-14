@@ -82,6 +82,7 @@ test("CI는 TRANSFER topology admission contract를 standalone contracts에서 �
   const standalone = namedWorkflowStep(ci, "Verify standalone contracts");
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-transfer-topology-admission\.test\.mjs/);
   assert.match(standalone, /node --test[\s\S]*tools\/datapack\/revalidate-current-molit-transfer-source\.test\.mjs/);
+  assert.match(standalone, /node --test[\s\S]*tools\/datapack\/build-current-transfer-source-admission\.test\.mjs/);
 });
 
 test("CI는 EXIT path admission contract를 standalone contracts에서 실행한다", () => {
