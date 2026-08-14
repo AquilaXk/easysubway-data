@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,6 +21,7 @@ const CANDIDATES_PATH = "tools/datapack/source-candidates.json";
 const PER_PAGE = 1000;
 const REQUEST_TIMEOUT_MILLIS = 15_000;
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
+const MAX_OFFICIAL_FILE_BYTES = 4 * 1024 * 1024;
 const TLS_AUTHORIZATION_ERROR_CODES = new Set([
   "DEPTH_ZERO_SELF_SIGNED_CERT",
   "ERROR_IN_CERT_NOT_AFTER_FIELD",
@@ -76,7 +78,7 @@ function exactKeys(value, keys) {
 }
 
 function parseArgs(argv) {
-  const allowed = new Set(["observed-at", "output"]);
+  const allowed = new Set(["observed-at", "official-file", "output"]);
   const args = {};
   for (let index = 0; index < argv.length; index += 2) {
     const option = argv[index];
@@ -87,10 +89,19 @@ function parseArgs(argv) {
     }
     args[key] = value;
   }
-  if (Object.keys(args).length !== 2 || !path.isAbsolute(args.output)) fail("ARGUMENT");
+  const expectedArgumentCount = Object.hasOwn(args, "official-file") ? 3 : 2;
+  if (Object.keys(args).length !== expectedArgumentCount
+    || !path.isAbsolute(args.output)
+    || (Object.hasOwn(args, "official-file") && !path.isAbsolute(args["official-file"]))) {
+    fail("ARGUMENT");
+  }
   const observedAtMillis = requiredUtcInstant(args["observed-at"], "observedAt");
   if (new Date(observedAtMillis).toISOString() !== args["observed-at"]) fail("ARGUMENT");
-  return { observedAt: args["observed-at"], output: path.resolve(args.output) };
+  return {
+    observedAt: args["observed-at"],
+    officialFile: args["official-file"] ? path.resolve(args["official-file"]) : null,
+    output: path.resolve(args.output),
+  };
 }
 
 async function assertAbsentOutput(output) {
@@ -320,7 +331,59 @@ async function collectProviderObservation({ fetchImpl, serviceKey, locked }) {
   return { pageCount, pageResponseSha256, canonicalRowsSha256, totalCount: rows.length };
 }
 
-function buildEvidence({ observedAt, locked, observation }) {
+async function readOfficialFile(filePath) {
+  let handle;
+  try {
+    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const before = await handle.stat();
+    if (!before.isFile() || before.size < 1 || before.size > MAX_OFFICIAL_FILE_BYTES) {
+      fail("OFFICIAL_FILE");
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (!after.isFile()
+      || after.dev !== before.dev
+      || after.ino !== before.ino
+      || after.size !== before.size
+      || bytes.length !== before.size) {
+      fail("OFFICIAL_FILE");
+    }
+    return bytes;
+  } catch (error) {
+    if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(error?.message ?? "")) throw error;
+    fail("OFFICIAL_FILE");
+  } finally {
+    try { await handle?.close(); } catch {}
+  }
+}
+
+async function collectOfficialFileObservation({ filePath, locked }) {
+  const bytes = await readOfficialFile(filePath);
+  let rebuilt;
+  try {
+    rebuilt = buildMolitRailwayTransferMovementSnapshot({
+      bytes,
+      capturedAt: locked.metadata.capturedAt,
+    });
+  } catch {
+    fail("CONTENT");
+  }
+  if (rebuilt.rawSha256 !== locked.metadata.rawSha256
+    || rebuilt.rowCount !== locked.metadata.rowCount
+    || rebuilt.schemaFingerprint !== locked.metadata.schemaFingerprint
+    || rebuilt.sortedContentSha256 !== locked.metadata.sortedContentSha256
+    || rebuilt.rows.length !== locked.rows.length) {
+    fail("CONTENT");
+  }
+  return {
+    rawSha256: rebuilt.rawSha256,
+    byteSize: bytes.length,
+    canonicalRowsSha256: rebuilt.sortedContentSha256,
+    totalCount: rebuilt.rowCount,
+  };
+}
+
+function buildEvidence({ observedAt, locked, observation, operation }) {
   const payload = {
     schemaVersion: 1,
     artifactKind: "current-molit-transfer-source-revalidation-evidence",
@@ -328,12 +391,7 @@ function buildEvidence({ observedAt, locked, observation }) {
     sourceId: MOLIT_RAILWAY_TRANSFER_MOVEMENT_SOURCE_ID,
     snapshotId: MOLIT_RAILWAY_TRANSFER_MOVEMENT_SNAPSHOT_ID,
     observedAt,
-    operation: {
-      method: "GET",
-      operationId: "15130556-v1-uddi-93021737-5337-442c-9006-b9748f87d0a4",
-      perPage: PER_PAGE,
-      returnType: "JSON",
-    },
+    operation,
     lockedSnapshot: {
       metadataPath: METADATA_PATH,
       metadataFileSha256: locked.metadataFileSha256,
@@ -415,15 +473,37 @@ export async function runCurrentMolitTransferSourceRevalidation({
   try {
     const args = parseArgs(argv);
     await assertAbsentOutput(args.output);
-    let serviceKey;
-    try {
-      serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
-    } catch {
-      fail("CREDENTIAL");
-    }
     const locked = await loadLockedSnapshot(path.resolve(repositoryRoot), readFileImpl);
-    const observation = await collectProviderObservation({ fetchImpl, serviceKey, locked });
-    const evidence = buildEvidence({ observedAt: args.observedAt, locked, observation });
+    let observation;
+    let operation;
+    if (args.officialFile) {
+      observation = await collectOfficialFileObservation({ filePath: args.officialFile, locked });
+      operation = {
+        method: "FILE_DOWNLOAD",
+        operationId: "15130556-fileData-20250811",
+        detailPageUrl: locked.metadata.detailUrl,
+      };
+    } else {
+      let serviceKey;
+      try {
+        serviceKey = normalizeDataGoKrServiceKey(env.DATA_GO_KR_SERVICE_KEY);
+      } catch {
+        fail("CREDENTIAL");
+      }
+      observation = await collectProviderObservation({ fetchImpl, serviceKey, locked });
+      operation = {
+        method: "GET",
+        operationId: "15130556-v1-uddi-93021737-5337-442c-9006-b9748f87d0a4",
+        perPage: PER_PAGE,
+        returnType: "JSON",
+      };
+    }
+    const evidence = buildEvidence({
+      observedAt: args.observedAt,
+      locked,
+      observation,
+      operation,
+    });
     await publishEvidence(args.output, evidence, publishFixture);
     return evidence;
   } catch (error) {

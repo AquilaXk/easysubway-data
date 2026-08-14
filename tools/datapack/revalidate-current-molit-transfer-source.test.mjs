@@ -23,6 +23,9 @@ const columnProjection = Object.freeze({
   이동내용상세: "MV_CONT_DTL",
   환승이동내용: "CHTN_MV_CONT",
 });
+const trackedRawBytes = gunzipSync(await readFile(
+  new URL("./sources/molit-railway-transfer-movement-20250811.csv.gz", import.meta.url),
+));
 const trackedRows = await loadTrackedRows();
 
 test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change evidence를 쓴다", async () => {
@@ -50,8 +53,58 @@ test("current ODCloud rows가 locked snapshot과 같으면 sanitized no-change e
     assert.deepEqual(JSON.parse(await readFile(output, "utf8")), evidence);
     assert.equal((await stat(output)).mode & 0o777, 0o600);
     assert.doesNotMatch(JSON.stringify(evidence), /test\+transfer|serviceKey|환승통로|api\.odcloud\.kr/u);
+
+    const officialFile = path.join(directory, "official.csv");
+    const officialOutput = path.join(directory, "official-evidence.json");
+    await writeFile(officialFile, trackedRawBytes);
+    let officialProviderCalls = 0;
+    const officialEvidence = await runCurrentMolitTransferSourceRevalidation({
+      argv: [
+        "--observed-at", observedAt,
+        "--official-file", officialFile,
+        "--output", officialOutput,
+      ],
+      env: {},
+      fetchImpl: async () => { officialProviderCalls += 1; throw new Error("must not call"); },
+      repositoryRoot: root,
+    });
+    assert.equal(officialProviderCalls, 0);
+    assert.equal(officialEvidence.operation.operationId, "15130556-fileData-20250811");
+    assert.equal(officialEvidence.providerObservation.totalCount, 8054);
+    assert.equal(officialEvidence.providerObservation.rawSha256, evidence.lockedSnapshot.rawSha256);
+    assert.doesNotMatch(JSON.stringify(officialEvidence), /official\.csv|api\.odcloud\.kr/u);
+    assert.deepEqual(JSON.parse(await readFile(officialOutput, "utf8")), officialEvidence);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+
+  const fileDirectory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-official-file-"));
+  try {
+    const officialFile = path.join(fileDirectory, "official.csv");
+    const tamperedFile = path.join(fileDirectory, "tampered.csv");
+    const linkedFile = path.join(fileDirectory, "linked.csv");
+    const tamperedBytes = Buffer.from(trackedRawBytes);
+    tamperedBytes[tamperedBytes.length - 1] ^= 1;
+    await writeFile(officialFile, trackedRawBytes);
+    await writeFile(tamperedFile, tamperedBytes);
+    await symlink(officialFile, linkedFile);
+    for (const input of [tamperedFile, linkedFile]) {
+      const output = path.join(fileDirectory, `${path.basename(input)}.evidence.json`);
+      let calls = 0;
+      await assert.rejects(
+        runCurrentMolitTransferSourceRevalidation({
+          argv: ["--observed-at", observedAt, "--official-file", input, "--output", output],
+          env: {},
+          fetchImpl: async () => { calls += 1; throw new Error("must not call"); },
+          repositoryRoot: root,
+        }),
+        /MOLIT_TRANSFER_REVALIDATION_(?:CONTENT|OFFICIAL_FILE)/u,
+      );
+      assert.equal(calls, 0);
+      await assert.rejects(stat(output), { code: "ENOENT" });
+    }
+  } finally {
+    await rm(fileDirectory, { recursive: true, force: true });
   }
 });
 
