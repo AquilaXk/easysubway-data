@@ -180,8 +180,8 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
   assert.equal(final.result, "NO_GO");
   assert.deepEqual(final.blockers, [
     "publication:UNAVAILABLE",
-    "routeAccessibilityEligibility:UNAVAILABLE",
     "rebuildParityPromotion:UNAVAILABLE",
+    "routeAccessibilityEligibility:UNAVAILABLE",
     "signature:UNAVAILABLE",
   ]);
   assert.equal(final.candidate.repository, "AquilaXk/easysubway-data");
