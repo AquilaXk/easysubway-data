@@ -644,12 +644,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     throw new Error("buildSpec.builderGitSha must be a git sha");
   }
   requiredString(buildSpec.builderVersion, "buildSpec.builderVersion");
-  const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
-  const artifactFreshUntil = await validateAndApplyNetworkEdgeProvenance(
-    buildSpec,
-    fixture,
-    itxTopologyEvidence,
-  );
+  const artifactFreshUntil = await applyCandidateNetworkEdgeProjection(buildSpec, fixture);
   return {
     officialOdFareEvidence: validateOfficialOdFareEvidence(
       buildSpec.officialOdFareEvidence,
@@ -659,6 +654,11 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     ),
     artifactFreshUntil,
   };
+}
+
+export async function applyCandidateNetworkEdgeProjection(buildSpec, fixture) {
+  const itxTopologyEvidence = await validateTrackedItxTopologyEvidence(buildSpec, fixture);
+  return validateAndApplyNetworkEdgeProvenance(buildSpec, fixture, itxTopologyEvidence);
 }
 
 function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvidence) {

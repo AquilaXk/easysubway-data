@@ -37,7 +37,7 @@
       "sameLine": true,
       "measuredSpeedKmhMinimum": 15,
       "measuredSpeedKmhMaximum": 110,
-      "admittedEdgeSetSha256": "868ca0be328cb171aefac5273c63cebd23495d5cffc49841b5f22b405c3e1ed8",
+      "admittedEdgeSetSha256": "c2c871f70d6158649af9ea8b0c3bdaebb7c6715223d021cb8c77b39f42f20529",
       "digestShape": "sqlite-route-graph-v1"
     },
     "itxCheongchunExpress": {

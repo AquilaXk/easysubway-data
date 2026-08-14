@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { routeEdgeSha256 } from "./evaluate-route-accessibility-edges.mjs";
 import { canonicalCurrentStationLineInputJson } from "./build-current-station-line-accessibility.mjs";
+import { applyCandidateNetworkEdgeProjection } from "./build-datapack.mjs";
 import { canonicalStationLineAccessibilityJson } from "./materialize-station-line-accessibility.mjs";
 
 const BUILD_SPEC_FILE = "tools/datapack/release/candidate-build-spec.json";
@@ -31,6 +32,12 @@ export function buildCurrentRouteEdgeInput({ canonicalPack, buildSpec, stationLi
   return canonicalObject({ candidate, stationLines, routeEdges });
 }
 
+export async function buildCurrentSourceRouteEdgeInput(input) {
+  const canonicalPack = structuredClone(input.canonicalPack);
+  await applyCandidateNetworkEdgeProjection(input.buildSpec, canonicalPack);
+  return buildCurrentRouteEdgeInput({ ...input, canonicalPack });
+}
+
 export function canonicalCurrentRouteEdgeInputJson(value) {
   assertKeys(value, ["candidate", "stationLines", "routeEdges"], "current route-edge input keys");
   assertKeys(value.candidate, ["candidateId", "evaluatorVersion", "policyVersion", "sourceSetSha256", "stationSetSha256"], "current route-edge candidate keys");
@@ -50,7 +57,13 @@ export async function main(argv, { repositoryRoot = fileURLToPath(new URL("../..
     readCanonicalJson(path.join(root, MATERIALIZATION_FILE), "station-line materialization", canonicalStationLineAccessibilityJson),
     readJson(path.join(root, POLICY_FILE)),
   ]);
-  const result = buildCurrentRouteEdgeInput({ canonicalPack, buildSpec, stationLineInput, materialization, policy });
+  const result = await buildCurrentSourceRouteEdgeInput({
+    canonicalPack,
+    buildSpec,
+    stationLineInput,
+    materialization,
+    policy,
+  });
   const bytes = canonicalCurrentRouteEdgeInputJson(result);
   await publish(output, bytes);
   log(JSON.stringify({ stationLineCount: result.stationLines.length, routeEdgeCount: result.routeEdges.length, routeEdgeInputSha256: sha256(bytes) }));
