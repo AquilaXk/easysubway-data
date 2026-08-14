@@ -13,9 +13,9 @@ const inventoryPaths = [
   "apps/mobile/assets/datapacks/source-inventory.json",
 ];
 
-export function applyRouteMapFreshnessExtension(inventory, { input, policy }) {
+export function applyRouteMapFreshnessExtension(inventory, { input, policy, now = Date.now() }) {
   const next = structuredClone(inventory);
-  const result = evaluateFreshnessExtension({ input, policy });
+  const result = evaluateFreshnessExtension({ input, policy, now });
   if (result.decision !== "EXTENDED") {
     return { inventory: next, result, changed: false };
   }

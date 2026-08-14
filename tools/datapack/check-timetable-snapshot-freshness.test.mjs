@@ -19,6 +19,7 @@ import {
 } from "./freshness-policy.mjs";
 
 const FRESH_UNTIL = "2026-07-27T00:00:00+09:00";
+const EXTENSION_NOW = Date.parse("2026-08-14T00:00:00.000Z");
 const root = path.resolve(import.meta.dirname, "../..");
 const freshUntilMs = Date.parse(FRESH_UNTIL);
 const at = (secondsBefore) => new Date(freshUntilMs - secondsBefore * 1000);
@@ -184,8 +185,8 @@ test("CLI는 critical snapshot을 무조건 fail-closed하고 evidence/metrics/g
 
 test("freshness extension은 exact positive identity만 policy와 bounds 안에서 결정적으로 연장한다", async () => {
   const input = extensionInput();
-  const first = evaluateFreshnessExtension({ input, policy: EXTENSION_POLICY });
-  const second = evaluateFreshnessExtension({ input: structuredClone(input), policy: structuredClone(EXTENSION_POLICY) });
+  const first = evaluateExtension(input);
+  const second = evaluateExtension(structuredClone(input), structuredClone(EXTENSION_POLICY));
 
   assert.deepEqual(second, first);
   assert.equal(first.decision, "EXTENDED");
@@ -243,7 +244,7 @@ test("freshness extension은 exact positive identity만 policy와 bounds 안에�
 
 test("freshness extension은 missing/no-op/negative/unknown과 non-monotonic candidate를 연장하지 않는다", () => {
   assert.deepEqual(
-    evaluateFreshnessExtension({ input: extensionInput({ observation: null }), policy: EXTENSION_POLICY }),
+    evaluateExtension(extensionInput({ observation: null })),
     expectExtensionDecision("NO_EXTENSION", "OBSERVATION_MISSING"),
   );
 
@@ -255,7 +256,7 @@ test("freshness extension은 missing/no-op/negative/unknown과 non-monotonic can
     const input = extensionInput();
     input.observation.outcome = outcome;
     assert.deepEqual(
-      evaluateFreshnessExtension({ input, policy: EXTENSION_POLICY }),
+      evaluateExtension(input),
       expectExtensionDecision("NO_EXTENSION", reasonCode, input),
     );
   }
@@ -264,7 +265,7 @@ test("freshness extension은 missing/no-op/negative/unknown과 non-monotonic can
     sourceIdentity: { currentFreshUntil: "2026-09-30T00:00:00.000Z" },
   });
   assert.deepEqual(
-    evaluateFreshnessExtension({ input: nonMonotonic, policy: EXTENSION_POLICY }),
+    evaluateExtension(nonMonotonic),
     expectExtensionDecision("NO_EXTENSION", "EXTENSION_NOT_MONOTONIC", nonMonotonic),
   );
 });
@@ -272,13 +273,13 @@ test("freshness extension은 missing/no-op/negative/unknown과 non-monotonic can
 test("freshness extension은 malformed/stale/future 또는 policy/source identity mismatch를 INELIGIBLE로 닫는다", () => {
   const policyMismatch = extensionInput({ policyBinding: { policySha256: "d".repeat(64) } });
   assert.equal(
-    evaluateFreshnessExtension({ input: policyMismatch, policy: EXTENSION_POLICY }).reasonCode,
+    evaluateExtension(policyMismatch).reasonCode,
     "POLICY_IDENTITY_MISMATCH",
   );
 
   const sourceClassMismatch = extensionInput({ policyBinding: { sourceClassId: "other-class" } });
   assert.equal(
-    evaluateFreshnessExtension({ input: sourceClassMismatch, policy: EXTENSION_POLICY }).reasonCode,
+    evaluateExtension(sourceClassMismatch).reasonCode,
     "SOURCE_CLASS_INELIGIBLE",
   );
 
@@ -291,7 +292,7 @@ test("freshness extension은 malformed/stale/future 또는 policy/source identit
     const identityMismatch = extensionInput();
     identityMismatch.observation[key] = value;
     assert.equal(
-      evaluateFreshnessExtension({ input: identityMismatch, policy: EXTENSION_POLICY }).reasonCode,
+      evaluateExtension(identityMismatch).reasonCode,
       "SOURCE_IDENTITY_MISMATCH",
     );
   }
@@ -299,37 +300,73 @@ test("freshness extension은 malformed/stale/future 또는 policy/source identit
   const stale = extensionInput();
   stale.observation.observedAt = "2026-07-01T00:00:00.000Z";
   assert.equal(
-    evaluateFreshnessExtension({ input: stale, policy: EXTENSION_POLICY }).reasonCode,
+    evaluateExtension(stale).reasonCode,
     "OBSERVATION_STALE",
   );
 
   const future = extensionInput();
   future.observation.observedAt = "2026-08-14T00:05:00.001Z";
   assert.equal(
-    evaluateFreshnessExtension({ input: future, policy: EXTENSION_POLICY }).reasonCode,
+    evaluateExtension(future).reasonCode,
     "OBSERVATION_IN_FUTURE",
   );
 
   const invalidBound = extensionInput();
   invalidBound.observation.providerValidUntil = invalidBound.observation.observedAt;
   assert.equal(
-    evaluateFreshnessExtension({ input: invalidBound, policy: EXTENSION_POLICY }).reasonCode,
+    evaluateExtension(invalidBound).reasonCode,
     "OBSERVATION_BOUND_INVALID",
   );
 
   const malformed = extensionInput();
   malformed.unexpected = true;
-  const malformedResult = evaluateFreshnessExtension({ input: malformed, policy: EXTENSION_POLICY });
+  const malformedResult = evaluateExtension(malformed);
   assert.equal(malformedResult.decision, "INELIGIBLE");
   assert.equal(malformedResult.reasonCode, "INPUT_SCHEMA_INVALID");
   assert.equal(evaluateFreshnessExtension().reasonCode, "INPUT_SCHEMA_INVALID");
   assert.equal(
-    evaluateFreshnessExtension({ input: extensionInput(), policy: { sourceClasses: [null] } }).decision,
+    evaluateExtension(extensionInput(), { sourceClasses: [null] }).decision,
     "INELIGIBLE",
   );
 });
 
+test("freshness extension은 trusted process clock skew 밖의 evaluationAt을 거부한다", () => {
+  for (const [evaluationAt, currentFreshUntil] of [
+    ["2099-01-01T00:00:00.000Z", "2098-12-31T00:00:00.000Z"],
+    ["2000-01-01T00:00:00.000Z", "1999-12-31T00:00:00.000Z"],
+  ]) {
+    const input = extensionInput({ evaluationAt, sourceIdentity: { currentFreshUntil } });
+    input.observation.observedAt = evaluationAt;
+    input.observation.providerValidUntil = null;
+    input.observation.sourceValidUntil = null;
+    input.observation.licenseValidUntil = null;
+
+    const result = evaluateFreshnessExtension({ input, policy: EXTENSION_POLICY });
+    assert.equal(result.decision, "INELIGIBLE");
+    assert.equal(result.reasonCode, "EVALUATION_TIME_INVALID");
+  }
+});
+
+test("freshness extension은 missing 또는 unsupported policy schemaVersion을 거부한다", () => {
+  for (const schemaVersion of [undefined, 3]) {
+    const policy = structuredClone(EXTENSION_POLICY);
+    if (schemaVersion === undefined) delete policy.schemaVersion;
+    else policy.schemaVersion = schemaVersion;
+    const input = extensionInput({
+      policyBinding: { policySha256: freshnessPolicySha256(policy) },
+    });
+
+    const result = evaluateFreshnessExtension({ input, policy });
+    assert.equal(result.decision, "INELIGIBLE");
+    assert.equal(result.reasonCode, "POLICY_SCHEMA_INVALID");
+  }
+});
+
 function expectExtensionDecision(decision, reasonCode, input = extensionInput({ observation: null })) {
-  const result = evaluateFreshnessExtension({ input, policy: EXTENSION_POLICY });
+  const result = evaluateExtension(input);
   return { ...result, decision, reasonCode, extendedFreshUntil: null };
+}
+
+function evaluateExtension(input, policy = EXTENSION_POLICY) {
+  return evaluateFreshnessExtension({ input, policy, now: EXTENSION_NOW });
 }

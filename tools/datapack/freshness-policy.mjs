@@ -99,16 +99,26 @@ export function freshnessPolicySha256(policy) {
   return sha256(Buffer.from(canonicalJson(policy), "utf8"));
 }
 
-export function evaluateFreshnessExtension({ input, policy } = {}) {
+export function evaluateFreshnessExtension({ input, policy, now = Date.now() } = {}) {
   const context = extensionResultContext(input);
   if (!validExtensionInputEnvelope(input)) {
+    return extensionResult(context, "INELIGIBLE", "INPUT_SCHEMA_INVALID");
+  }
+
+  const trustedNowMillis = Number.isSafeInteger(now) ? now : Number.NaN;
+  if (!Number.isFinite(trustedNowMillis)) {
     return extensionResult(context, "INELIGIBLE", "INPUT_SCHEMA_INVALID");
   }
 
   const timeline = resolveExtensionTimeline(input, context);
   if (timeline.failure) return resultFromFailure(context, timeline.failure);
 
-  const policyResolution = resolveExtensionPolicy(policy, input, timeline.evaluationMillis);
+  const policyResolution = resolveExtensionPolicy(
+    policy,
+    input,
+    timeline.evaluationMillis,
+    trustedNowMillis,
+  );
   if (policyResolution.failure) return resultFromFailure(context, policyResolution.failure);
 
   return evaluateExtensionObservation({ input, context, timeline, policyResolution });
@@ -212,8 +222,8 @@ function resolveExtensionTimeline(input, context) {
   }
 }
 
-function resolveExtensionPolicy(policy, input, evaluationMillis) {
-  if (!isRecord(policy)) {
+function resolveExtensionPolicy(policy, input, evaluationMillis, trustedNowMillis) {
+  if (!isRecord(policy) || policy.schemaVersion !== 2) {
     return { failure: extensionFailure("INELIGIBLE", "POLICY_SCHEMA_INVALID") };
   }
   let actualPolicySha256;
@@ -237,7 +247,13 @@ function resolveExtensionPolicy(policy, input, evaluationMillis) {
       sourceClass.clockSkewSeconds ?? policy.clockSkewSeconds ?? 0,
       "clockSkewSeconds",
     ) * 1_000;
+    if (!Number.isSafeInteger(clockSkewMillis)) {
+      throw new Error("clockSkewSeconds exceeds safe time range");
+    }
     addCadence(evaluationMillis, cadence);
+    if (Math.abs(evaluationMillis - trustedNowMillis) > clockSkewMillis) {
+      return { failure: extensionFailure("INELIGIBLE", "EVALUATION_TIME_INVALID") };
+    }
     return { cadence, clockSkewMillis };
   } catch {
     return { failure: extensionFailure("INELIGIBLE", "POLICY_SCHEMA_INVALID") };

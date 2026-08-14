@@ -13,6 +13,7 @@ import {
 import { freshnessPolicySha256 } from "./freshness-policy.mjs";
 
 const paths = ["canonical.json", "mobile.json"];
+const now = Date.parse("2026-08-14T00:00:00.000Z");
 const inventoryValue = {
   sources: [{
     id: "route-map-source",
@@ -77,7 +78,7 @@ test("route-map consumer는 shared EXTENDED receipt만 전파하고 모든 실�
   ]), /source inventory mirrors must be byte-identical before refresh/);
   assert.doesNotThrow(() => assertInventoryMirrorByteParity(paths.map(() => ({ bytes: Buffer.from(inventory) }))));
 
-  const extended = applyRouteMapFreshnessExtension(inventoryValue, { input: input(), policy });
+  const extended = applyRouteMapFreshnessExtension(inventoryValue, { input: input(), policy, now });
   assert.equal(extended.changed, true);
   assert.equal(
     extended.inventory.sources[0].routeMapAdmissionEvidence.freshUntil,
@@ -90,7 +91,7 @@ test("route-map consumer는 shared EXTENDED receipt만 전파하고 모든 실�
   assert.equal(inventoryValue.sources[0].routeMapAdmissionEvidence.freshnessExtension, undefined);
 
   const noChangeInput = input({ outcome: "NO_CHANGE" });
-  const noChange = applyRouteMapFreshnessExtension(inventoryValue, { input: noChangeInput, policy });
+  const noChange = applyRouteMapFreshnessExtension(inventoryValue, { input: noChangeInput, policy, now });
   assert.equal(noChange.changed, false);
   assert.deepEqual(noChange.inventory, inventoryValue);
 
@@ -98,14 +99,18 @@ test("route-map consumer는 shared EXTENDED receipt만 전파하고 모든 실�
   mismatchedInventoryInput.sourceIdentity.snapshotId = "other-snapshot";
   mismatchedInventoryInput.observation.snapshotId = "other-snapshot";
   assert.throws(
-    () => applyRouteMapFreshnessExtension(inventoryValue, { input: mismatchedInventoryInput, policy }),
+    () => applyRouteMapFreshnessExtension(inventoryValue, {
+      input: mismatchedInventoryInput,
+      policy,
+      now,
+    }),
     /route-map admission identity mismatch/,
   );
 
   const duplicateSource = structuredClone(inventoryValue);
   duplicateSource.sources.push(structuredClone(duplicateSource.sources[0]));
   assert.throws(
-    () => applyRouteMapFreshnessExtension(duplicateSource, { input: input(), policy }),
+    () => applyRouteMapFreshnessExtension(duplicateSource, { input: input(), policy, now }),
     /exactly one route-map source/,
   );
 });
