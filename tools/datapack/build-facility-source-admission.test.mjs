@@ -134,6 +134,17 @@ test("three-way raw identity mismatch와 duplicate/unmapped evidence를 거부�
     () => buildFacilitySourceAdmission(emptyScope),
     /current scope cardinality mismatch/,
   );
+
+  const duplicateMapping = await currentInput();
+  const sangnoksu = duplicateMapping.productionInput.stationMappings.find((row) =>
+    row.stationId === "station-sangnoksu" && row.sourceId === "molit-urban-rail-full-route");
+  const sadang = duplicateMapping.productionInput.stationMappings.find((row) =>
+    row.stationId === "station-sadang" && row.sourceId === "molit-urban-rail-full-route");
+  sadang.sourceStationCode = sangnoksu.sourceStationCode;
+  assert.throws(
+    () => buildFacilitySourceAdmission(duplicateMapping),
+    /source mapping tuple is ambiguous/,
+  );
 });
 
 test("consumer input order가 달라도 admission bytes와 caller input은 동일하다", async () => {

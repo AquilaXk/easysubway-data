@@ -356,6 +356,12 @@ function buildStationContext(productionInput, candidateBuildSpec) {
       sourceStationCode: mapping.sourceStationCode,
     });
   }).sort(compareStationLines);
+  const sourceMappingKeys = new Set();
+  for (const stationLine of stationLines) {
+    const key = `${stationLine.sourceId}\0${stationLine.sourceStationCode}\0${stationLine.lineId}`;
+    if (sourceMappingKeys.has(key)) throw new Error("FACILITY source mapping tuple is ambiguous");
+    sourceMappingKeys.add(key);
+  }
   if (scope.facilityCoverageDenominator.expectedRows !== stationLines.length * requiredTypes.length) {
     throw new Error("FACILITY denominator count mismatch");
   }
