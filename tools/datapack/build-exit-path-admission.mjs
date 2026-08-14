@@ -335,7 +335,7 @@ function validateSourceAdmission({
   value, candidate, snapshot, rawSha256, observedAt, stationLineMappingSha256,
 }) {
   assertKeys(value, SOURCE_ADMISSION_KEYS, "EXIT source admission keys");
-  if (value.schemaVersion !== 1 || value.artifactKind !== "exit-path-source-admission") {
+  if (value.schemaVersion !== 2 || value.artifactKind !== "exit-path-source-admission") {
     throw new Error("EXIT source admission schema mismatch");
   }
   for (const key of [

@@ -114,6 +114,61 @@ test("raw identity, candidate identity와 source license drift를 fail closed한
   }
 });
 
+test("station-line query와 source coverage를 provider mapping·inventory에 exact 결속한다", () => {
+  const crossProvider = validInput();
+  const stationA = crossProvider.collectionPlan.stationLineQueries
+    .find(({ stationLineId }) => stationLineId === "station-a:seoul-4");
+  const stationAQuery = crossProvider.collectionPlan.queryPlan
+    .find(({ providerStationId }) => providerStationId === "101");
+  const foreignQuery = crossProvider.collectionPlan.queryPlan
+    .find(({ providerStationId }) => providerStationId === "103");
+  for (const key of ["operatorName", "lineName", "stationName", "regionId"]) {
+    foreignQuery[key] = stationAQuery[key];
+  }
+  stationA.queryIds = [foreignQuery.queryId];
+  rebindCollectionPlan(crossProvider);
+  const crossProviderSnapshot = JSON.parse(crossProvider.providerSnapshotBytes);
+  crossProviderSnapshot.queryPlan = structuredClone(crossProvider.collectionPlan.queryPlan);
+  crossProviderSnapshot.queryPlanSha256 = crossProvider.collectionPlan.queryPlanSha256;
+  crossProviderSnapshot.collectionPlanDigest = crossProvider.collectionPlan.collectionPlanDigest;
+  crossProviderSnapshot.results = crossProviderSnapshot.results.map((result) =>
+    result.queryId === foreignQuery.queryId
+      ? providerResult(result.queryId, "ROWS_OBSERVED")
+      : result);
+  crossProvider.providerSnapshotBytes = providerSnapshotBytes(crossProviderSnapshot);
+  assert.throws(
+    () => buildCurrentExitPathSourceAdmission(crossProvider),
+    /current EXIT provider mapping mismatch/,
+  );
+
+  const outsideOperator = validInput();
+  for (const cell of outsideOperator.facilityAdmission.cells) cell.operatorId = "outside-operator";
+  rebindFacilityAdmission(outsideOperator);
+  assert.throws(
+    () => buildCurrentExitPathSourceAdmission(outsideOperator),
+    /current EXIT source coverage mismatch/,
+  );
+
+  const outsideRegion = validInput();
+  const selectedIds = new Set(outsideRegion.collectionPlan.stationLineQueries
+    .filter(({ stationLineId }) => stationLineId !== "station-c:seoul-4")
+    .flatMap(({ queryIds }) => queryIds));
+  for (const query of outsideRegion.collectionPlan.queryPlan) {
+    if (selectedIds.has(query.queryId)) query.regionId = "outside-region";
+  }
+  rebindCollectionPlan(outsideRegion);
+  const outsideRegionSnapshot = JSON.parse(outsideRegion.providerSnapshotBytes);
+  outsideRegionSnapshot.queryPlan = structuredClone(outsideRegion.collectionPlan.queryPlan);
+  outsideRegionSnapshot.queryPlanSha256 = outsideRegion.collectionPlan.queryPlanSha256;
+  outsideRegionSnapshot.collectionPlanDigest = outsideRegion.collectionPlan.collectionPlanDigest;
+  outsideRegion.providerSnapshotBytes = providerSnapshotBytes(outsideRegionSnapshot);
+  rebindFacilityAdmission(outsideRegion);
+  assert.throws(
+    () => buildCurrentExitPathSourceAdmission(outsideRegion),
+    /current EXIT source coverage mismatch/,
+  );
+});
+
 test("CLI는 normalized snapshot과 admission을 absent directory에 함께 쓴다", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-exit-admission-"));
   const input = validInput();
@@ -395,6 +450,36 @@ function providerSnapshotBytes(snapshot) {
   return Buffer.from(canonicalJson({ ...payload, snapshotDigest: sha256(canonicalJson(payload)) }));
 }
 
+function rebindCollectionPlan(input) {
+  input.collectionPlan.queryPlanSha256 = sha256(canonicalJson(input.collectionPlan.queryPlan));
+  const { collectionPlanDigest: ignored, ...payload } = input.collectionPlan;
+  input.collectionPlan.collectionPlanDigest = sha256(canonicalJson(payload));
+}
+
+function rebindFacilityAdmission(input) {
+  const projected = input.facilityAdmission.cells.map((cell) => {
+    const queryIds = input.collectionPlan.stationLineQueries
+      .find(({ stationLineId }) => stationLineId === `${cell.stationId}:${cell.lineId}`).queryIds;
+    const query = input.collectionPlan.queryPlan.find(({ queryId }) => queryIds.includes(queryId));
+    return {
+      stationId: cell.stationId,
+      stationName: query.stationName,
+      stationAliases: [],
+      regionId: query.regionId,
+      lineId: cell.lineId,
+      lineName: query.lineName,
+      operatorId: cell.operatorId,
+      operatorName: query.operatorName,
+    };
+  }).sort(compareStationLines);
+  input.facilityAdmission.stationLineSetSha256 = sha256(canonicalJson(projected.map(({
+    stationId, lineId, operatorId,
+  }) => ({ stationId, lineId, operatorId }))));
+  input.facilityAdmission.stationLineMappingSha256 = sha256(canonicalJson(projected));
+  const { admissionDigest: ignored, ...payload } = input.facilityAdmission;
+  input.facilityAdmission.admissionDigest = sha256(canonicalJson(payload));
+}
+
 function canonicalJson(value) {
   return JSON.stringify(canonicalObject(value));
 }
@@ -410,6 +495,12 @@ function compareQueries(left, right) {
     || compareBytes(left.providerNextStationId, right.providerNextStationId)
     || compareBytes(left.routeEdgeId, right.routeEdgeId)
     || compareBytes(left.queryId, right.queryId);
+}
+
+function compareStationLines(left, right) {
+  return compareBytes(left.stationId, right.stationId)
+    || compareBytes(left.lineId, right.lineId)
+    || compareBytes(left.operatorId, right.operatorId);
 }
 
 function compareBytes(left, right) {

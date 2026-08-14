@@ -35,6 +35,7 @@ const PROVIDER_ROW_KEYS = [
 const PROVIDER_STATES = new Set([
   "ROWS_OBSERVED", "EXPLICIT_ZERO", "PROVIDER_NO_DATA", "PROVIDER_RESULT_UNVERIFIED",
 ]);
+const SOURCE_COVERAGE_KEYS = ["regionIds", "operatorIds", "sourceDomains"];
 const COLLECTION_PLAN_KEYS = [
   "schemaVersion", "artifactKind", "candidate", "providerMappings", "routeEdges",
   "queryPlan", "stationLineQueries", "queryPlanSha256", "collectionPlanDigest",
@@ -65,7 +66,11 @@ export function buildCurrentExitPathSourceAdmission(input) {
     input.sourceSnapshots,
   );
   const source = validateSourceInventory(input.sourceInventory);
-  const stationContext = buildStationContext(facilityAdmission, collectionPlan);
+  const stationContext = buildStationContext(
+    facilityAdmission,
+    collectionPlan,
+    source.coverageScope,
+  );
   const selectedQueryIds = new Set(stationContext.queries.map(({ queryId }) => queryId));
   const resultByQuery = new Map(providerSnapshot.results.map((result) => [result.queryId, result]));
   const normalizedResults = stationContext.queries.map((query) => normalizeResult(resultByQuery.get(query.queryId)));
@@ -100,7 +105,7 @@ export function buildCurrentExitPathSourceAdmission(input) {
   });
   const normalizedSnapshotBytes = Buffer.from(canonicalJson(normalizedSnapshot));
   const sourceAdmission = canonicalObject({
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactKind: "exit-path-source-admission",
     candidateId: facilityAdmission.candidate.candidateId,
     sourceId: providerSnapshot.sourceId,
@@ -366,8 +371,17 @@ function validateSourceInventory(value) {
     throw new Error("source license mismatch");
   }
   for (const key of ["type", "name", "attribution", "evidenceUrl"]) assertNonBlank(license[key], `source license ${key}`);
-  if (!source.coverageScope?.regionIds?.includes("capital")
-    || !source.coverageScope?.sourceDomains?.includes("indoor_movement_paths")
+  assertKeys(source.coverageScope, SOURCE_COVERAGE_KEYS, "source coverage scope keys");
+  for (const key of SOURCE_COVERAGE_KEYS) {
+    const values = source.coverageScope[key];
+    if (!Array.isArray(values) || values.length === 0
+      || values.some((value) => typeof value !== "string" || value.trim() === "")
+      || new Set(values).size !== values.length) {
+      throw new Error("source coverage scope mismatch");
+    }
+  }
+  if (!source.coverageScope.regionIds.includes("capital")
+    || !source.coverageScope.sourceDomains.includes("indoor_movement_paths")
     || source.admissionEvidence?.decision !== "APPROVED") {
     throw new Error("source admission evidence mismatch");
   }
@@ -375,7 +389,7 @@ function validateSourceInventory(value) {
   return source;
 }
 
-function buildStationContext(facilityAdmission, collectionPlan) {
+function buildStationContext(facilityAdmission, collectionPlan, sourceCoverage) {
   const candidate = facilityAdmission.candidate;
   const queryPlan = collectionPlan.queryPlan;
   const queryById = new Map(queryPlan.map((query) => [query.queryId, query]));
@@ -422,6 +436,11 @@ function buildStationContext(facilityAdmission, collectionPlan) {
       throw new Error(`current EXIT station-line query inventory mismatch: ${stationLineKey}`);
     }
     if (matchingQueries.length === 0) throw new Error(`current EXIT station-line query missing: ${stationLineKey}`);
+    if (matchingQueries.some((query) => query.providerOperatorId !== providerMapping.providerOperatorId
+      || query.providerLineId !== providerMapping.providerLineId
+      || query.providerStationId !== providerMapping.providerStationId)) {
+      throw new Error(`current EXIT provider mapping mismatch: ${stationLineKey}`);
+    }
     const nameIdentities = new Map(matchingQueries.map((query) => [canonicalJson({
       operatorName: query.operatorName,
       lineName: query.lineName,
@@ -430,6 +449,10 @@ function buildStationContext(facilityAdmission, collectionPlan) {
     }), query]));
     if (nameIdentities.size !== 1) throw new Error(`current EXIT station-line query ambiguous: ${stationLineKey}`);
     const query = nameIdentities.values().next().value;
+    if (!sourceCoverage.regionIds.includes(query.regionId)
+      || !sourceCoverage.operatorIds.includes(cell.operatorId)) {
+      throw new Error(`current EXIT source coverage mismatch: ${stationLineKey}`);
+    }
     stationLines.push(canonicalObject({
       stationId: cell.stationId,
       stationName: query.stationName,

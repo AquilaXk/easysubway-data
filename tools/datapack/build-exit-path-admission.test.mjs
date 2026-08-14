@@ -235,6 +235,13 @@ test("expanded EXIT query shape를 legacy normalized snapshot v1로 수용하지
   assert.throws(() => buildExitPathAdmission(input), /EXIT snapshot schema mismatch/);
 });
 
+test("expanded EXIT source admission v2는 legacy v1 shape와 구분된다", () => {
+  const input = validInput();
+  input.sourceAdmission.schemaVersion = 1;
+
+  assert.throws(() => buildExitPathAdmission(input), /EXIT source admission schema mismatch/);
+});
+
 test("duplicate query/result/record와 malformed result shape는 output 전에 거부한다", () => {
   const duplicateQuery = validInput();
   const duplicateQuerySnapshot = parseSnapshot(duplicateQuery);
@@ -440,7 +447,7 @@ function validInput() {
     candidate,
     observedAt: OBSERVED_AT,
     sourceAdmission: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       artifactKind: "exit-path-source-admission",
       candidateId: candidate.candidateId,
       sourceId: snapshot.sourceId,
