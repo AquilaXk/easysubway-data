@@ -4,25 +4,37 @@ import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { addCadence } from "./freshness-policy.mjs";
-import { requiredUtcInstant } from "./lib/utc-instant.mjs";
-import { ROUTE_MAP_REVERIFICATION_CADENCE } from "./lib/route-map-admission-freshness.mjs";
+import { evaluateFreshnessExtension } from "./freshness-policy.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const policyPath = "release/product-gates/datapack-freshness-sla.json";
 const inventoryPaths = [
   "tools/datapack/source-inventory.json",
   "apps/mobile/assets/datapacks/source-inventory.json",
 ];
 
-export function withRouteMapAdmissionFreshness(inventory) {
+export function applyRouteMapFreshnessExtension(inventory, { input, policy, now = Date.now() }) {
   const next = structuredClone(inventory);
-  for (const source of next.sources ?? []) {
-    const evidence = source.routeMapAdmissionEvidence;
-    if (!evidence) continue;
-    const capturedAt = requiredUtcInstant(evidence.capturedAt, `${source.id} route-map capturedAt`);
-    evidence.freshUntil = new Date(addCadence(capturedAt, ROUTE_MAP_REVERIFICATION_CADENCE)).toISOString();
+  const result = evaluateFreshnessExtension({ input, policy, now });
+  if (result.decision !== "EXTENDED") {
+    return { inventory: next, result, changed: false };
   }
-  return next;
+
+  const matchingSources = (next.sources ?? []).filter(({ id }) => id === result.sourceId);
+  if (matchingSources.length !== 1) {
+    throw new Error("freshness extension requires exactly one route-map source");
+  }
+  const evidence = matchingSources[0].routeMapAdmissionEvidence;
+  if (!evidence
+    || evidence.snapshotId !== input.sourceIdentity.snapshotId
+    || evidence.snapshotSha256 !== input.sourceIdentity.snapshotSha256
+    || evidence.rawSha256 !== input.sourceIdentity.rawEvidenceSha256
+    || evidence.freshUntil !== input.sourceIdentity.currentFreshUntil) {
+    throw new Error("route-map admission identity mismatch");
+  }
+  evidence.freshUntil = result.extendedFreshUntil;
+  evidence.freshnessExtension = result;
+  return { inventory: next, result, changed: true };
 }
 
 export function assertInventoryMirrorByteParity(inventories) {
@@ -101,13 +113,27 @@ export async function replaceInventoryMirrors(
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  if (args.length !== 2 || args[0] !== "--input" || args[1].length === 0) {
+    throw new Error("usage: refresh-route-map-admission-freshness.mjs --input <extension-input.json>");
+  }
   const inventories = await Promise.all(inventoryPaths.map(async (relativePath) => ({
     relativePath,
     bytes: await readFile(path.join(root, relativePath)),
   })));
   assertInventoryMirrorByteParity(inventories);
-  const canonical = withRouteMapAdmissionFreshness(JSON.parse(inventories[0].bytes.toString("utf8")));
-  const bytes = `${JSON.stringify(canonical, null, 2)}\n`;
+  const [input, policy] = await Promise.all([
+    readFile(path.resolve(process.cwd(), args[1]), "utf8").then(JSON.parse),
+    readFile(path.join(root, policyPath), "utf8").then(JSON.parse),
+  ]);
+  const update = applyRouteMapFreshnessExtension(
+    JSON.parse(inventories[0].bytes.toString("utf8")),
+    { input, policy },
+  );
+  if (!update.changed) {
+    throw new Error(`freshness extension rejected: ${update.result.decision}/${update.result.reasonCode}`);
+  }
+  const bytes = `${JSON.stringify(update.inventory, null, 2)}\n`;
   await replaceInventoryMirrors(inventories.map(({ relativePath, bytes: originalBytes }) => ({
     targetPath: path.join(root, relativePath),
     originalBytes,
