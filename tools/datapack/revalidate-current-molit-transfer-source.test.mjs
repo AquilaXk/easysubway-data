@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -86,9 +87,44 @@ test("content/schema/total pagination drift는 output 없이 fail closed한다",
       await rm(directory, { recursive: true, force: true });
     }
   }
+
+  const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-metadata-drift-"));
+  let calls = 0;
+  try {
+    const metadataPath = path.join(root, "tools/datapack/sources/molit-railway-transfer-movement-20250811.csv.gz.json");
+    const candidatesPath = path.join(root, "tools/datapack/source-candidates.json");
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    metadata.gzipSha256 = "0".repeat(64);
+    const metadataBytes = Buffer.from(JSON.stringify(metadata));
+    const candidates = JSON.parse(await readFile(candidatesPath, "utf8"));
+    const candidate = candidates.candidates.find(({ id }) => id === "molit-railway-transfer-movement");
+    candidate.rawSnapshotAdmission.metadataFileSha256 = createHash("sha256").update(metadataBytes).digest("hex");
+    const candidatesBytes = Buffer.from(JSON.stringify(candidates));
+    const output = path.join(directory, "evidence.json");
+    await assert.rejects(
+      runCurrentMolitTransferSourceRevalidation({
+        argv: ["--observed-at", observedAt, "--output", output],
+        env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+        fetchImpl: async () => { calls += 1; throw new Error("must not call"); },
+        readFileImpl: async (file) => {
+          if (path.resolve(file) === metadataPath) return metadataBytes;
+          if (path.resolve(file) === candidatesPath) return candidatesBytes;
+          return readFile(file);
+        },
+        repositoryRoot: root,
+      }),
+      /MOLIT_TRANSFER_REVALIDATION_SNAPSHOT/u,
+    );
+    assert.equal(calls, 0);
+    await assert.rejects(stat(output), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실패한다", async () => {
+  let oversizedCancelled = false;
+  let chunkIndex = 0;
   const cases = [
     { env: { DATA_GO_KR_SERVICE_KEY: "invalid%ZZ" }, fetchImpl: async () => { throw new Error("must not call"); }, expectedCalls: 0 },
     { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => new Response(
@@ -96,6 +132,19 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
       { status: 503, headers: { "content-type": "text/plain" } },
     ), expectedCalls: 1 },
     { env: { DATA_GO_KR_SERVICE_KEY: serviceKey }, fetchImpl: async () => { throw new Error(serviceKey); }, expectedCalls: 1 },
+    {
+      env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+      fetchImpl: async () => new Response(new ReadableStream({
+        pull(controller) {
+          if (chunkIndex === 0) controller.enqueue(new Uint8Array(4 * 1024 * 1024));
+          else controller.enqueue(new Uint8Array(1));
+          chunkIndex += 1;
+        },
+        cancel() { oversizedCancelled = true; },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+      expectedCalls: 1,
+      assertAfter: () => assert.equal(oversizedCancelled, true),
+    },
   ];
   for (const entry of cases) {
     const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-boundary-"));
@@ -116,6 +165,7 @@ test("credential/HTTP/transport boundary는 retry와 raw reflection 없이 실�
         },
       );
       assert.equal(calls, entry.expectedCalls);
+      entry.assertAfter?.();
       await assert.rejects(stat(output), { code: "ENOENT" });
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -148,6 +198,27 @@ test("existing output와 symlink output은 provider 호출 전 보존한다", as
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  }
+
+  const directory = await mkdtemp(path.join(os.tmpdir(), "molit-transfer-post-link-"));
+  try {
+    const output = path.join(directory, "evidence.json");
+    const calls = [];
+    await assert.rejects(
+      runCurrentMolitTransferSourceRevalidation({
+        argv: ["--observed-at", observedAt, "--output", output],
+        env: { DATA_GO_KR_SERVICE_KEY: serviceKey },
+        fetchImpl: paginatedFetch(trackedRows, calls),
+        publishFixture: { afterLink: async ({ output: linkedOutput }) => chmod(linkedOutput, 0o400) },
+        repositoryRoot: root,
+      }),
+      /MOLIT_TRANSFER_REVALIDATION_PUBLISH/u,
+    );
+    assert.equal(calls.length, Math.ceil(trackedRows.length / 1000));
+    await assert.rejects(stat(output), { code: "ENOENT" });
+    assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

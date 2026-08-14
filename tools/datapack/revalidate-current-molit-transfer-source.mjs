@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash, randomUUID } from "node:crypto";
-import { link, lstat, open, readFile, rm, stat, unlink } from "node:fs/promises";
+import { link, lstat, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
@@ -90,12 +90,12 @@ async function assertAbsentOutput(output) {
   if (!parent.isDirectory() || parent.isSymbolicLink()) fail("OUTPUT");
 }
 
-async function loadLockedSnapshot(repositoryRoot) {
+async function loadLockedSnapshot(repositoryRoot, readFileImpl) {
   try {
     const [metadataBytes, gzipBytes, candidatesBytes] = await Promise.all([
-      readFile(path.join(repositoryRoot, METADATA_PATH)),
-      readFile(path.join(repositoryRoot, SNAPSHOT_PATH)),
-      readFile(path.join(repositoryRoot, CANDIDATES_PATH)),
+      readFileImpl(path.join(repositoryRoot, METADATA_PATH)),
+      readFileImpl(path.join(repositoryRoot, SNAPSHOT_PATH)),
+      readFileImpl(path.join(repositoryRoot, CANDIDATES_PATH)),
     ]);
     const metadata = JSON.parse(metadataBytes);
     const candidates = JSON.parse(candidatesBytes);
@@ -140,6 +140,7 @@ function validateCandidate(candidate, metadata, metadataBytes, gzipBytes) {
     || admission.metadataPath !== METADATA_PATH
     || admission.metadataFileSha256 !== sha256(metadataBytes)
     || admission.rawSha256 !== metadata.rawSha256
+    || admission.gzipSha256 !== metadata.gzipSha256
     || admission.gzipSha256 !== sha256(gzipBytes)
     || admission.rowCount !== metadata.rowCount
     || admission.status !== "LOCKED") fail("SNAPSHOT");
@@ -167,13 +168,7 @@ async function fetchPage({ fetchImpl, serviceKey, page, expectedTotalCount }) {
   if (!response?.ok || !/^application\/json(?:\s*;|$)/iu.test(response.headers.get("content-type") ?? "")) {
     fail("PROVIDER");
   }
-  let bytes;
-  try {
-    bytes = Buffer.from(await response.arrayBuffer());
-  } catch {
-    fail("PROVIDER");
-  }
-  if (bytes.length === 0 || bytes.length > MAX_PAGE_BYTES) fail("PROVIDER");
+  const bytes = await readBoundedResponseBody(response);
   let document;
   try {
     document = JSON.parse(bytes.toString("utf8"));
@@ -199,6 +194,41 @@ async function fetchPage({ fetchImpl, serviceKey, page, expectedTotalCount }) {
     rows: document.data.map(canonicalProviderRow),
     responseSha256: sha256(bytes),
   };
+}
+
+async function readBoundedResponseBody(response) {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    if (!/^(?:0|[1-9][0-9]*)$/u.test(contentLength)
+      || !Number.isSafeInteger(Number(contentLength))
+      || Number(contentLength) > MAX_PAGE_BYTES) {
+      try { await response.body?.cancel(); } catch {}
+      fail("PROVIDER");
+    }
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) fail("PROVIDER");
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) fail("PROVIDER");
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PAGE_BYTES) {
+        try { await reader.cancel(); } catch {}
+        fail("PROVIDER");
+      }
+      chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+    }
+  } catch (error) {
+    try { await reader.cancel(); } catch {}
+    if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(error?.message ?? "")) throw error;
+    fail("PROVIDER");
+  }
+  if (totalBytes === 0) fail("PROVIDER");
+  return Buffer.concat(chunks, totalBytes);
 }
 
 function canonicalProviderRow(row) {
@@ -273,22 +303,56 @@ function buildEvidence({ observedAt, locked, observation }) {
   return { ...payload, evidenceHash: sha256(JSON.stringify(payload)) };
 }
 
-async function publishEvidence(output, evidence) {
+function sameOwnedFile(file, identity) {
+  return file.isFile()
+    && !file.isSymbolicLink()
+    && file.dev === identity.dev
+    && file.ino === identity.ino
+    && file.size === identity.size;
+}
+
+function sameValidatedFile(file, identity) {
+  return sameOwnedFile(file, identity) && (file.mode & 0o777) === 0o600;
+}
+
+async function removeOwnedFile(filePath, identity) {
+  try {
+    const current = await lstat(filePath);
+    if (sameOwnedFile(current, identity)) await unlink(filePath);
+  } catch {}
+}
+
+async function publishEvidence(output, evidence, fixture) {
   const temporary = `${output}.tmp-${randomUUID()}`;
   let handle;
+  let opened;
+  let completed;
+  let linked = false;
   try {
     handle = await open(temporary, "wx", 0o600);
-    await handle.writeFile(`${JSON.stringify(evidence, null, 2)}\n`);
+    opened = await handle.stat();
+    if (!opened.isFile()) fail("PUBLISH");
+    const bytes = Buffer.from(`${JSON.stringify(evidence, null, 2)}\n`);
+    await handle.writeFile(bytes);
+    await handle.chmod(0o600);
     await handle.sync();
+    completed = await handle.stat();
+    if (!completed.isFile() || (completed.mode & 0o777) !== 0o600
+      || completed.dev !== opened.dev || completed.ino !== opened.ino
+      || completed.size !== bytes.length) fail("PUBLISH");
     await handle.close();
     handle = undefined;
     await link(temporary, output);
-    const published = await stat(output);
-    if (!published.isFile() || (published.mode & 0o777) !== 0o600) fail("PUBLISH");
+    linked = true;
+    await fixture.afterLink?.({ output, temporary });
+    const published = await lstat(output);
+    if (!sameValidatedFile(published, completed)) fail("PUBLISH");
     await unlink(temporary);
   } catch (error) {
     try { await handle?.close(); } catch {}
-    await rm(temporary, { force: true });
+    const identity = completed ?? opened;
+    if (linked && identity) await removeOwnedFile(output, identity);
+    if (identity) await removeOwnedFile(temporary, identity);
     if (/^MOLIT_TRANSFER_REVALIDATION_/u.test(error?.message ?? "")) throw error;
     fail("PUBLISH");
   }
@@ -298,6 +362,8 @@ export async function runCurrentMolitTransferSourceRevalidation({
   argv = process.argv.slice(2),
   env = process.env,
   fetchImpl = fetch,
+  readFileImpl = readFile,
+  publishFixture = {},
   repositoryRoot = path.resolve(import.meta.dirname, "../.."),
 } = {}) {
   try {
@@ -309,10 +375,10 @@ export async function runCurrentMolitTransferSourceRevalidation({
     } catch {
       fail("CREDENTIAL");
     }
-    const locked = await loadLockedSnapshot(path.resolve(repositoryRoot));
+    const locked = await loadLockedSnapshot(path.resolve(repositoryRoot), readFileImpl);
     const observation = await collectProviderObservation({ fetchImpl, serviceKey, locked });
     const evidence = buildEvidence({ observedAt: args.observedAt, locked, observation });
-    await publishEvidence(args.output, evidence);
+    await publishEvidence(args.output, evidence, publishFixture);
     return evidence;
   } catch (error) {
     if (/^MOLIT_TRANSFER_REVALIDATION_[A-Z_]+$/u.test(error?.message ?? "")) throw error;
