@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   admittedIncheonTopologyEvidence,
   admittedItxNetworkEdgeEvidence,
+  applyCandidateReleaseIdentity,
   candidateNetworkEdgeEvidence,
   materializeIncheonNetworkEdges,
   validateTrackedItxTopologyEvidence,
@@ -23,6 +26,7 @@ import {
 const root = path.resolve(import.meta.dirname, "../..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const currentNow = new Date("2026-08-10T00:00:00.000Z");
+const execFileAsync = promisify(execFile);
 
 function rehashAdmission(admission) {
   delete admission.evidenceHash;
@@ -61,6 +65,83 @@ function networkEdgeEvidenceFixture() {
     itxCoverageContract: { path: "itx-coverage.json", sha256: "6".repeat(64) },
   };
 }
+
+test("candidate build spec release identity는 wall clock과 workflow run number에 무관하다", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "candidate-build-release-identity-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const buildSpecPath = "tools/datapack/release/candidate-build-spec.json";
+  const buildSpec = JSON.parse(await readFile(path.join(root, buildSpecPath), "utf8"));
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  });
+
+  async function build(name, buildNow, runNumber) {
+    const output = path.join(directory, name);
+    await execFileAsync(process.execPath, [
+      "tools/datapack/build-datapack.mjs",
+      "--build-spec", buildSpecPath,
+      "--output", output,
+    ], {
+      cwd: root,
+      env: {
+        ...process.env,
+        EASYSUBWAY_DATAPACK_BUILD_NOW: buildNow,
+        EASYSUBWAY_DATAPACK_SIGNING_PRIVATE_KEY_PEM: privateKey,
+        EASYSUBWAY_DATAPACK_SIGNING_KEY_ID: "production-v1",
+        GITHUB_RUN_NUMBER: runNumber,
+      },
+    });
+    return {
+      manifest: await readFile(path.join(output, "current.json")),
+      provenance: await readFile(path.join(output, "current.provenance.json")),
+      sqlite: await readFile(path.join(output, "catalog/capital-v1.sqlite")),
+      gzip: await readFile(path.join(output, "catalog/capital-v1.sqlite.gz")),
+    };
+  }
+
+  const first = await build("first", "2026-08-14T16:00:00.000Z", "101");
+  const second = await build("second", "2026-08-14T17:00:00.000Z", "202");
+  const manifest = JSON.parse(first.manifest);
+  const provenance = JSON.parse(first.provenance);
+
+  assert.equal(manifest.publishedAt, buildSpec.publishedAt);
+  assert.equal(manifest.releaseSequence, buildSpec.releaseSequence);
+  assert.equal(provenance.candidateBuild.publishedAt, buildSpec.publishedAt);
+  assert.equal(provenance.candidateBuild.releaseSequence, buildSpec.releaseSequence);
+  for (const key of ["manifest", "provenance", "sqlite", "gzip"]) {
+    assert.deepEqual(first[key], second[key], `${key} bytes drifted`);
+  }
+
+  const missingPublishedAt = structuredClone(buildSpec);
+  delete missingPublishedAt.publishedAt;
+  assert.throws(
+    () => applyCandidateReleaseIdentity(missingPublishedAt, { manifest: {} }),
+    /buildSpec\.publishedAt must be a non-empty string/,
+  );
+  assert.throws(
+    () => applyCandidateReleaseIdentity(
+      { ...buildSpec, publishedAt: "2026-08-14T15:34:07.000" },
+      { manifest: {} },
+    ),
+    /buildSpec\.publishedAt must include timezone offset/,
+  );
+  assert.throws(
+    () => applyCandidateReleaseIdentity({ ...buildSpec, releaseSequence: 0 }, { manifest: {} }),
+    /buildSpec\.releaseSequence must be a positive integer/,
+  );
+  assert.throws(
+    () => applyCandidateReleaseIdentity(buildSpec, {
+      manifest: { publishedAt: "2026-08-14T15:34:08.000Z" },
+    }),
+    /manifest\.publishedAt must match buildSpec\.publishedAt/,
+  );
+  assert.throws(
+    () => applyCandidateReleaseIdentity(buildSpec, { manifest: { releaseSequence: 2 } }),
+    /manifest\.releaseSequence must match buildSpec\.releaseSequence/,
+  );
+});
 
 test("source-separated current topology는 capital과 Incheon 1/2 line ownership을 겹치지 않는다", async () => {
   const [capital, incheon] = await Promise.all([

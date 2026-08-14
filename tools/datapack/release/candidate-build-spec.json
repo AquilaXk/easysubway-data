@@ -3,6 +3,8 @@
   "artifactKind": "datapack-candidate-build-spec",
   "candidateId": "capital-pilot-candidate-20260814",
   "productionScopeId": "capital_pilot_android_v1",
+  "publishedAt": "2026-08-14T15:34:07.000Z",
+  "releaseSequence": 1,
   "fixturePath": "tools/datapack/release/capital-production-canonical-pack.json",
   "itxTopologyEvidencePath": "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
   "itxTopologyEvidenceSha256": "4b2a1cd58f85642a6ba5d0d6e5caedb09ea8b7b282c1cc6427e34956204f0579",
