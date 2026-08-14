@@ -6,13 +6,18 @@ import test from "node:test";
 
 import { parsePrepareCurrentServerRouteBundleFinalArgs, prepareCurrentServerRouteBundleFinal } from "./prepare-current-server-route-bundle-final.mjs";
 
-test("current FINAL preparation은 closed stage order와 output inventory를 보존한다", async (t) => {
+const TOPOLOGY_SHA256 = "b".repeat(64);
+
+test("current FINAL preparation은 emitted topology identity와 closed stage order를 보존한다", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "current-final-preparation-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const output = path.join(root, "output");
   const stationLineInputPath = path.join(root, "station.json");
   const routeEdgeInputPath = path.join(root, "route.json");
-  await Promise.all([writeFile(stationLineInputPath, "{}"), writeFile(routeEdgeInputPath, "{}")]);
+  await Promise.all([
+    writeFile(stationLineInputPath, "{}"),
+    writeFile(routeEdgeInputPath, '{"candidate":{"candidateId":"candidate"}}'),
+  ]);
   const calls = [];
   const argv = [
     "--source-sqlite", "source.sqlite", "--source-provenance", "provenance.json", "--build-spec", "tools/datapack/release/candidate-build-spec.json",
@@ -41,6 +46,11 @@ test("current FINAL preparation은 closed stage order와 output inventory를 보
       await mkdir(input.output, { recursive: true });
       await writeFile(path.join(input.output, ".done"), name);
     }
+    if (name === "emit") {
+      const artifact = path.join(input.output, "server-route-bundle");
+      await mkdir(artifact, { recursive: true });
+      await writeFile(path.join(artifact, "manifest.signing-input.json"), `{"topologySha256":"${TOPOLOGY_SHA256}"}`);
+    }
     if (name === "sign") {
       await Promise.all([
         writeFile(stationLineInputPath, '{"mutated":true}'),
@@ -63,11 +73,57 @@ test("current FINAL preparation은 closed stage order와 output inventory를 보
   assert.equal(calls[3][1].prepublicationRoot, calls[2][1].output);
   assert.equal(calls[4][1].eligibilityReportPath, calls[3][1].output);
   assert.equal(calls[0][1].evaluationAt, "2026-08-14T00:00:00.000Z");
+  const expectedRouteInput = {
+    candidate: { candidateId: "candidate", topologySha256: TOPOLOGY_SHA256 },
+  };
+  assert.deepEqual(calls[2][1].routeEdgeInput, expectedRouteInput);
+  assert.deepEqual(calls[4][1].routeEdgeInput, expectedRouteInput);
   assert.notEqual(calls[3][1].stationLineInput, stationLineInputPath);
   assert.notEqual(calls[3][1].routeEdgeInput, routeEdgeInputPath);
-  assert.deepEqual(eligibilityInputBytes, ["{}", "{}"]);
+  assert.deepEqual(eligibilityInputBytes, [
+    "{}",
+    `{"candidate":{"candidateId":"candidate","topologySha256":"${TOPOLOGY_SHA256}"}}`,
+  ]);
   assert.deepEqual((await readdir(output)).sort(), ["bound", "components", "provisional", "route-accessibility-eligibility.json", "signed-server-route-bundle"]);
   assert.equal(await readFile(path.join(output, "route-accessibility-eligibility.json"), "utf8"), "eligibility");
+});
+
+test("emitted topology identity의 missing·noncanonical·invalid 값은 output 없이 거부한다", async (t) => {
+  for (const [name, manifestBytes, pattern] of [
+    ["missing", null, /emitted signing input is missing/],
+    ["noncanonical", `{"topologySha256": "${TOPOLOGY_SHA256}"}`, /emitted signing input must be canonical JSON/],
+    ["invalid", '{"topologySha256":"not-a-sha"}', /emitted topology sha256 must be lowercase SHA-256/],
+  ]) {
+    await t.test(name, async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), `current-final-topology-${name}-`));
+      t.after(() => rm(root, { recursive: true, force: true }));
+      const stationLineInputPath = path.join(root, "station.json");
+      const routeEdgeInputPath = path.join(root, "route.json");
+      const output = path.join(root, "output");
+      await Promise.all([
+        writeFile(stationLineInputPath, "{}"),
+        writeFile(routeEdgeInputPath, '{"candidate":{"candidateId":"candidate"}}'),
+      ]);
+      await assert.rejects(() => prepareCurrentServerRouteBundleFinal({
+        output,
+        repositoryGitSha: "a".repeat(40),
+        evaluationAt: "2026-08-14T00:00:00.000Z",
+        stationLineInputPath,
+        routeEdgeInputPath,
+        stages: {
+          emit: async ({ output: stageOutput }) => {
+            const artifact = path.join(stageOutput, "server-route-bundle");
+            await mkdir(artifact, { recursive: true });
+            if (manifestBytes !== null) {
+              await writeFile(path.join(artifact, "manifest.signing-input.json"), manifestBytes);
+            }
+          },
+          sign: async () => { throw new Error("sign must not run"); },
+        },
+      }), pattern);
+      await assert.rejects(() => readFile(output), /ENOENT/);
+    });
+  }
 });
 
 test("current FINAL preparation middle failure는 output 없이 종료하고 publisher를 의존하지 않는다", async (t) => {
