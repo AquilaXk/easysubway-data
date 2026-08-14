@@ -632,6 +632,7 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
   }
   requiredString(buildSpec.candidateId, "buildSpec.candidateId");
   requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId");
+  applyCandidateReleaseIdentity(buildSpec, fixture);
   await resolveBuildInputPath(buildSpec.fixturePath, "buildSpec.fixturePath");
   requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds");
   const sourceSnapshots = requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots");
@@ -654,6 +655,32 @@ async function validateCandidateBuildSpec(buildSpec, fixture, admissions, admiss
     ),
     artifactFreshUntil,
   };
+}
+
+export function applyCandidateReleaseIdentity(buildSpec, fixture) {
+  const publishedAt = requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt");
+  const releaseSequence = requiredPositiveInteger(
+    buildSpec.releaseSequence,
+    "buildSpec.releaseSequence",
+  );
+  const manifest = fixture?.manifest;
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error("fixture.manifest must be an object");
+  }
+  if (
+    manifest.publishedAt !== undefined
+    && requiredUtcDateString(manifest.publishedAt, "manifest.publishedAt") !== publishedAt
+  ) {
+    throw new Error("manifest.publishedAt must match buildSpec.publishedAt");
+  }
+  if (
+    manifest.releaseSequence !== undefined
+    && requiredPositiveInteger(manifest.releaseSequence, "manifest.releaseSequence") !== releaseSequence
+  ) {
+    throw new Error("manifest.releaseSequence must match buildSpec.releaseSequence");
+  }
+  Object.assign(manifest, { publishedAt, releaseSequence });
+  return { publishedAt, releaseSequence };
 }
 
 export async function applyCandidateNetworkEdgeProjection(
@@ -685,6 +712,8 @@ function candidateBuildProvenance(buildSpec, buildSpecSha256, officialOdFareEvid
     artifactKind: requiredString(buildSpec.artifactKind, "buildSpec.artifactKind"),
     candidateId: requiredString(buildSpec.candidateId, "buildSpec.candidateId"),
     productionScopeId: requiredString(buildSpec.productionScopeId, "buildSpec.productionScopeId"),
+    publishedAt: requiredUtcDateString(buildSpec.publishedAt, "buildSpec.publishedAt"),
+    releaseSequence: requiredPositiveInteger(buildSpec.releaseSequence, "buildSpec.releaseSequence"),
     buildSpecSha256,
     sourceSnapshotIds: requiredStringArray(buildSpec.sourceSnapshotIds, "buildSpec.sourceSnapshotIds"),
     sourceSnapshots: requiredSourceSnapshots(buildSpec.sourceSnapshots, "buildSpec.sourceSnapshots"),
