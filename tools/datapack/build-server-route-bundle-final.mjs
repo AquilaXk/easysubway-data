@@ -97,14 +97,15 @@ export async function buildServerRouteBundleFinalEvidence(input) {
   const repositoryGitSha = await verifiedRepositoryGitSha(repositoryRoot, input.repositoryGitSha);
 
   const fixed = await readFixedInputs(repositoryRoot);
+  const candidateId = requiredRaw(fixed.buildSpec.value.candidateId, "build spec candidate id");
   const artifact = await inspectArtifact(artifactRoot, fixed);
   const sourceFreshness = evaluateSourceFreshness({ fixed, artifact, evaluationAt });
-  const stationLineInput = validateStationLineInput(input.stationLineInput, artifact);
+  const stationLineInput = validateStationLineInput(input.stationLineInput, artifact, candidateId);
   const materialization = materializeStationLineAccessibility({
     ...stationLineInput,
     observedAt: evaluationAt,
   });
-  const routeEdgeInput = validateRouteEdgeInput(input.routeEdgeInput, artifact);
+  const routeEdgeInput = validateRouteEdgeInput(input.routeEdgeInput, artifact, candidateId);
   const evaluation = evaluateRouteAccessibilityEdges({
     ...routeEdgeInput,
     evaluationAt,
@@ -612,29 +613,29 @@ function evaluateSourceFreshness({ fixed, artifact, evaluationAt }) {
   };
 }
 
-function validateStationLineInput(value, artifact) {
+function validateStationLineInput(value, artifact, candidateId) {
   assertKeys(value, ["candidate", "stationLines", "evidenceRows"], "station-line input keys");
-  assertCandidateBinding(value.candidate, artifact, false);
+  assertCandidateBinding(value.candidate, artifact, false, candidateId);
   if (!Array.isArray(value.stationLines) || !Array.isArray(value.evidenceRows)) {
     throw new Error("station-line arrays are required");
   }
   return value;
 }
 
-function validateRouteEdgeInput(value, artifact) {
+function validateRouteEdgeInput(value, artifact, candidateId) {
   assertKeys(value, ["candidate", "stationLines", "routeEdges"], "route-edge input keys");
-  assertCandidateBinding(value.candidate, artifact, true);
+  assertCandidateBinding(value.candidate, artifact, true, candidateId);
   if (!Array.isArray(value.stationLines) || !Array.isArray(value.routeEdges)) {
     throw new Error("route-edge arrays are required");
   }
   return value;
 }
 
-function assertCandidateBinding(candidate, artifact, requireTopology) {
+function assertCandidateBinding(candidate, artifact, requireTopology, expectedCandidateId) {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     throw new Error("candidate identity is required");
   }
-  if (candidate.candidateId !== artifact.manifest.bundleId) throw new Error("candidate identity mismatch");
+  if (candidate.candidateId !== expectedCandidateId) throw new Error("candidate identity mismatch");
   if (requireTopology && candidate.stationSetSha256 !== artifact.manifest.stationSetSha256) throw new Error("station set identity mismatch");
   if (candidate.sourceSetSha256 !== artifact.provenance.sourceSnapshotSetHash) throw new Error("source set identity mismatch");
   if (requireTopology && candidate.topologySha256 !== artifact.manifest.topologySha256) {
