@@ -130,6 +130,7 @@
     {"path":"tools/ci/itx-current-collection-offline-replay-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":37},
     {"path":"tools/ci/itx-current-collection-workflow.test.mjs","semanticOwner":"data29","classes":["required-pr"],"durationMs":130},
     {"path":"tools/ci/itx-current-replay-admission-candidate-workflow.test.mjs","semanticOwner":"data96","classes":["required-pr"],"durationMs":41},
+    {"path":"tools/ci/kric-exit-path-provider-snapshot-workflow.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":42},
     {"path":"tools/ci/kric-exit-timeout-diagnostic-workflow.test.mjs","semanticOwner":"data26","classes":["required-pr"],"durationMs":39},
     {"path":"tools/ci/mobile-fixture-staging-workflow.test.mjs","semanticOwner":"data25","classes":["required-pr"],"durationMs":122},
     {"path":"tools/ci/public-sensitivity-owner-receipt-caller.test.mjs","semanticOwner":"data118","classes":["required-pr"],"durationMs":125},
