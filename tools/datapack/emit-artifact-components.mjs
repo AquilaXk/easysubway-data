@@ -244,12 +244,6 @@ function buildGeneratedEvidence(input) {
     ...input.stationLineInput,
     observedAt: input.evaluationAt,
   });
-  assertExactProjection(
-    input.stationLineInput.stationLines,
-    sourceStationLines(input.source, false),
-    ["stationId", "lineId", "operatorId"],
-    "station-line materializer source projection",
-  );
   const routeEdgeSeed = requireObject(input.routeEdgeInput, "route-edge seed input");
   assertKeys(routeEdgeSeed, ["candidate", "stationLines", "routeEdges"], "route-edge seed input keys");
   const candidateSeed = requireObject(routeEdgeSeed.candidate, "route-edge seed candidate");
@@ -327,7 +321,6 @@ function assertStationLineCandidate(candidate, input) {
   requireObject(candidate, "station-line candidate");
   for (const [field, expected, label] of [
     ["candidateId", input.bundleId, "candidate"],
-    ["stationSetSha256", input.stationSetSha256, "station set"],
     ["sourceSetSha256", input.sourceSetSha256, "source set"],
   ]) {
     if (candidate[field] !== expected) throw new Error(`station-line ${label} identity mismatch`);

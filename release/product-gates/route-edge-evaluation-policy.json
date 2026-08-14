@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "artifactKind": "route-edge-evaluation-policy",
-  "policyVersion": "route-edge-evaluation-v1",
+  "policyVersion": "route-edge-evaluation-v2",
   "states": [
     "PASS",
     "BLOCKED",
@@ -35,14 +35,15 @@
       "serviceClass": "SUBWAY",
       "servicePattern": "LOCAL",
       "sameLine": true,
-      "lineSequenceDelta": 1,
       "measuredSpeedKmhMinimum": 15,
-      "measuredSpeedKmhMaximum": 110
+      "measuredSpeedKmhMaximum": 110,
+      "admittedEdgeSetSha256": "868ca0be328cb171aefac5273c63cebd23495d5cffc49841b5f22b405c3e1ed8",
+      "digestShape": "sqlite-route-graph-v1"
     },
     "itxCheongchunExpress": {
       "serviceClass": "ITX_CHEONGCHUN",
       "servicePattern": "EXPRESS",
-      "admittedEdgeSetSha256": "da771d5264efd198989b6e1c589c130620274f7c7d99c423909f3a1c5acf2b2f",
+      "admittedEdgeSetSha256": "894c37b5cbc62aa8ac296821fab07da537f41802dc5fbe2a806a4a37ccc19f36",
       "digestShape": "sqlite-route-graph-v1"
     }
   }

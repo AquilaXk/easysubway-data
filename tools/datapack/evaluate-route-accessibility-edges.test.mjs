@@ -16,6 +16,9 @@ import {
 
 const NOW = "2026-08-10T00:00:00.000Z";
 const HASH = "a".repeat(64);
+const MATERIALIZATION_STATION_SET_SHA256 = createHash("sha256")
+  .update(JSON.stringify(["station-a", "station-b", "station-c"]))
+  .digest("hex");
 const policy = JSON.parse(readFileSync(
   new URL("../../release/product-gates/route-edge-evaluation-policy.json", import.meta.url),
   "utf8",
@@ -24,7 +27,7 @@ const policy = JSON.parse(readFileSync(
 function materializationCandidate(overrides = {}) {
   return {
     candidateId: "candidate-capital-1",
-    stationSetSha256: "1".repeat(64),
+    stationSetSha256: MATERIALIZATION_STATION_SET_SHA256,
     sourceSetSha256: "2".repeat(64),
     mappingContractVersion: "station-line-v1",
     materializerVersion: "1",
@@ -56,7 +59,7 @@ function stationLines() {
 function evidence(overrides = {}) {
   return {
     candidateId: "candidate-capital-1",
-    stationSetSha256: "1".repeat(64),
+    stationSetSha256: MATERIALIZATION_STATION_SET_SHA256,
     sourceSetSha256: "2".repeat(64),
     sourceId: "official-accessibility",
     sourceSnapshotId: "official-accessibility-20260809",
@@ -79,11 +82,11 @@ function evidence(overrides = {}) {
   };
 }
 
-function materialization() {
+function materialization(lines = stationLines()) {
   return materializeStationLineAccessibility({
     candidate: materializationCandidate(),
     observedAt: NOW,
-    stationLines: stationLines().map(({ lineSequence: _lineSequence, ...line }) => line),
+    stationLines: lines.map(({ lineSequence: _lineSequence, ...line }) => line),
     evidenceRows: [
       evidence(),
       evidence({ domain: "EXIT", state: "VERIFIED_ABSENT", evidenceKind: "EXPLICIT_ZERO", evidenceReason: "official zero exit" }),
@@ -93,6 +96,17 @@ function materialization() {
       evidence({ stationId: "station-b", domain: "TRANSFER" }),
       evidence({ stationId: "station-c", lineId: "line-3", operatorId: "operator-3", freshUntil: NOW }),
     ],
+  });
+}
+
+function emptyMaterialization() {
+  return materializeStationLineAccessibility({
+    candidate: materializationCandidate({
+      stationSetSha256: createHash("sha256").update("[]").digest("hex"),
+    }),
+    observedAt: NOW,
+    stationLines: [],
+    evidenceRows: [],
   });
 }
 
@@ -145,6 +159,9 @@ function rebindMaterialization(value) {
 
 function policyForEdges(edges) {
   const value = structuredClone(policy);
+  value.rideInvariant.subwayLocal.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
+    edges.filter(({ edgeType, serviceClass, servicePattern }) => edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"),
+  );
   value.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256 = canonicalRideEdgeSetSha256(
     edges.filter(({ edgeType, serviceClass }) => edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN"),
   );
@@ -193,24 +210,24 @@ test("모든 route edge를 한 번씩 평가하고 blocked·unresolved edge도 �
 test("SUBWAY LOCAL과 policy-bound ITX EXPRESS RIDE invariant를 exact하게 강제한다", () => {
   const local = routeEdges().find(({ edgeId }) => edgeId === "ride-a-b");
   const localPolicy = policyForEdges([local]);
-  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), localPolicy).results[0].state, "PASS");
+  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: [local], materialization: emptyMaterialization() }), localPolicy).results[0].state, "PASS");
   assert.throws(
     () => evaluateRouteAccessibilityEdges(input({ routeEdges: [local] }), policy),
-    /ITX EXPRESS edge set identity mismatch/,
+    /SUBWAY LOCAL edge set identity mismatch/,
   );
 
   const nonAdjacent = edge({ edgeId: "ride-a-c", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-c:line-3", durationSeconds: 120, distanceMeters: 1000, servicePattern: "LOCAL" });
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [nonAdjacent] }), localPolicy), /SUBWAY LOCAL RIDE must connect adjacent station-line sequences/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [nonAdjacent] }), localPolicy), /SUBWAY LOCAL edge set identity mismatch/);
   const tooFast = edge({ edgeId: "ride-fast", edgeType: "RIDE", fromNodeId: "station-a:line-1", toNodeId: "station-b:line-1", durationSeconds: 1, distanceMeters: 1000, servicePattern: "LOCAL" });
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [tooFast] }), localPolicy), /RIDE speed is outside policy bounds/);
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [tooFast], materialization: emptyMaterialization() }), policyForEdges([tooFast])), /RIDE speed is outside policy bounds/);
 
   const itxEdges = [
     edge({ edgeId: "itx-1", edgeType: "RIDE", fromNodeId: "station-a:line-1:EXPRESS", toNodeId: "station-b:line-1:EXPRESS", durationSeconds: 120, distanceMeters: 1000, servicePattern: "EXPRESS", serviceClass: "ITX_CHEONGCHUN" }),
   ];
   const fixturePolicy = policyForEdges(itxEdges);
-  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: itxEdges }), fixturePolicy).results[0].state, "PASS");
+  assert.equal(evaluateRouteAccessibilityEdges(input({ routeEdges: itxEdges, materialization: emptyMaterialization() }), fixturePolicy).results[0].state, "PASS");
   assert.throws(() => evaluateRouteAccessibilityEdges(input({ routeEdges: [edge({ ...itxEdges[0], edgeId: "itx-tampered" })] }), fixturePolicy), /ITX EXPRESS edge set identity mismatch/);
-  assert.equal(policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256, "da771d5264efd198989b6e1c589c130620274f7c7d99c423909f3a1c5acf2b2f");
+  assert.equal(policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256, "894c37b5cbc62aa8ac296821fab07da537f41802dc5fbe2a806a4a37ccc19f36");
 
   const crossStationTransfer = edge({
     edgeId: "transfer-cross-station",
@@ -265,9 +282,26 @@ test("identity·closed schema·digest·endpoint·denominator 오류를 fail clos
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [edge({ edgeId: "unmapped-station", edgeType: "FUTURE_EDGE", fromNodeId: "station-z", toNodeId: "station-b:line-1" })],
   }), unitPolicy), /unmapped route edge endpoint/);
-  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+  assert.doesNotThrow(() => evaluateRouteAccessibilityEdges(input({
     candidate: evaluationCandidate({ stationSetSha256: "9".repeat(64) }),
-  }), unitPolicy), /materialization station set identity mismatch/);
+  }), unitPolicy));
+  const scopedDrift = materialization();
+  scopedDrift.candidate.stationSetSha256 = "9".repeat(64);
+  scopedDrift.rows = scopedDrift.rows.map((row) => ({ ...row, stationSetSha256: "9".repeat(64) }));
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    materialization: rebindMaterialization(scopedDrift),
+  }), unitPolicy), /materialization scoped station set identity mismatch/);
+  const missingCell = materialization();
+  const removed = missingCell.rows.pop();
+  missingCell.stateSummary[removed.state] -= 1;
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    materialization: rebindMaterialization(missingCell),
+  }), unitPolicy), /materialization policy target denominator mismatch/);
+  const extraLine = { stationId: "station-d", lineId: "line-4", operatorId: "operator-4", lineSequence: 1 };
+  assert.throws(() => evaluateRouteAccessibilityEdges(input({
+    stationLines: [...stationLines(), extraLine],
+    materialization: materialization([...stationLines(), extraLine]),
+  }), unitPolicy), /materialization policy target denominator mismatch/);
   assert.throws(() => evaluateRouteAccessibilityEdges(input({
     routeEdges: [{ ...routeEdges()[0], edgeSha256: "0".repeat(64) }],
   }), unitPolicy), /route edge sha256 mismatch/);
