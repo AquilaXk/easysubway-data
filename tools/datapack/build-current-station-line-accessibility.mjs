@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { canonicalExitPathAdmissionJson } from "./build-exit-path-admission.mjs";
 import { canonicalFacilitySourceAdmissionJson } from "./build-facility-source-admission.mjs";
@@ -260,20 +260,20 @@ function compareBytes(left, right) {
 }
 
 function assertKeys(value, expected, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
-  const actual = Object.keys(value).sort(compareBytes);
-  const wanted = [...expected].sort(compareBytes);
-  if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
-    throw new Error(`${label} mismatch`);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
   }
+  const actual = new Set(Object.keys(value));
+  if (actual.size !== expected.length || expected.some((key) => !actual.has(key))) throw new Error(`${label} mismatch`);
 }
 
 function canonicalObject(value) {
   if (Array.isArray(value)) return value.map(canonicalObject);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort(compareBytes).map((key) => [key, canonicalObject(value[key])]));
-  }
-  return value;
+  if (value === null || typeof value !== "object") return value;
+  return Object.keys(value).sort(compareBytes).reduce((result, key) => {
+    result[key] = canonicalObject(value[key]);
+    return result;
+  }, {});
 }
 
 function canonicalJson(value) {
@@ -281,11 +281,12 @@ function canonicalJson(value) {
 }
 
 function sameIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode;
+  return ["dev", "ino", "mode"].every((key) => left[key] === right[key]);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main(process.argv.slice(2)).catch((error) => {
+const invokedAsScript = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (invokedAsScript) {
+  main(process.argv.slice(2)).then(undefined, (error) => {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
   });
