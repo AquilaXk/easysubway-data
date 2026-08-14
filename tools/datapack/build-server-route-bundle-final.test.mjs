@@ -46,147 +46,56 @@ const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "p
 
 test("current accessibility eligibility는 canonical prepublication evidence만 집계한다", async (t) => {
   const fixture = await createFixture(t);
+  await writeEligibilityInputs(fixture);
   const prepublicationRoot = path.join(fixture.temp, "prepublication");
-  const output = path.join(fixture.temp, "eligibility.json");
   await build(fixture, prepublicationRoot, FRESH_AT);
 
-  const report = await buildRouteAccessibilityEligibility({ prepublicationRoot, output });
+  const report = await buildRouteAccessibilityEligibility(eligibilityInput(
+    fixture,
+    prepublicationRoot,
+    path.join(fixture.temp, "eligibility.json"),
+  ));
   assert.equal(report.decision, "ELIGIBLE");
   assert.equal(report.stationLineAccessibility.rowCount, 6);
   assert.equal(report.routeEdgeEvaluation.edgeCount, fixture.routeEdgeInput.routeEdges.length);
-  assert.equal(report.eligibilitySha256, sha256(Buffer.from(canonicalJson({
-    schemaVersion: report.schemaVersion,
-    artifactKind: report.artifactKind,
-    decision: report.decision,
-    candidate: report.candidate,
-    stationLineAccessibility: report.stationLineAccessibility,
-    routeEdgeEvaluation: report.routeEdgeEvaluation,
-    blockers: report.blockers,
-  }))));
-
-  const unresolvedRoot = path.join(fixture.temp, "unresolved");
-  await cp(prepublicationRoot, unresolvedRoot, { recursive: true });
-  const unresolvedPath = path.join(unresolvedRoot, "station-line-accessibility.json");
-  const unresolved = await readJson(unresolvedPath);
-  const priorState = unresolved.rows[0].state;
-  unresolved.rows[0].state = "UNKNOWN";
-  unresolved.stateSummary[priorState] -= 1;
-  unresolved.stateSummary.UNKNOWN += 1;
-  unresolved.materializationDigest = sha256(Buffer.from(canonicalJson({
-    candidate: unresolved.candidate,
-    rows: unresolved.rows,
-    stateSummary: unresolved.stateSummary,
-  })));
-  await writeCanonical(unresolvedPath, unresolved);
-  const unresolvedRoutePath = path.join(unresolvedRoot, "route-edge-evaluation.json");
-  const unresolvedRoute = await readJson(unresolvedRoutePath);
-  const changedCell = unresolved.rows[0];
-  for (const result of unresolvedRoute.results) {
-    result.materializationDigest = unresolved.materializationDigest;
-    if (result.materializationCells.some((cell) => cell.stationId === changedCell.stationId
-      && cell.lineId === changedCell.lineId && cell.operatorId === changedCell.operatorId && cell.domain === changedCell.domain)) {
-      result.materializationCells = result.materializationCells.map((cell) => (
-        cell.stationId === changedCell.stationId && cell.lineId === changedCell.lineId
-          && cell.operatorId === changedCell.operatorId && cell.domain === changedCell.domain
-          ? { ...changedCell, effectiveState: "UNKNOWN" }
-          : cell
-      ));
-      result.state = "UNKNOWN";
-      result.reason = "required materialization is unknown";
-    }
-    result.evidenceSha256 = sha256(Buffer.from(canonicalJson(Object.fromEntries(
-      Object.entries(result).filter(([key]) => key !== "evidenceSha256"),
-    ))));
-  }
-  unresolvedRoute.stateSummary = Object.fromEntries(Object.keys(unresolvedRoute.stateSummary).map((state) => [state,
-    unresolvedRoute.results.filter((result) => result.state === state).length,
-  ]));
-  unresolvedRoute.eligible = false;
-  unresolvedRoute.evaluationDigest = sha256(Buffer.from(canonicalJson({
-    candidate: unresolvedRoute.candidate,
-    evaluationAt: unresolvedRoute.evaluationAt,
-    denominator: unresolvedRoute.denominator,
-    results: unresolvedRoute.results,
-    stateSummary: unresolvedRoute.stateSummary,
-    eligible: unresolvedRoute.eligible,
-  })));
-  await writeCanonical(unresolvedRoutePath, unresolvedRoute);
-  const unresolvedFinalPath = path.join(unresolvedRoot, "server-route-bundle-final.json");
-  const unresolvedFinal = await readJson(unresolvedFinalPath);
-  unresolvedFinal.gates.stationLineAccessibility.evidenceSha256 = await fileSha(unresolvedPath);
-  unresolvedFinal.finalSha256 = sha256(Buffer.from(canonicalJson({
-    schemaVersion: unresolvedFinal.schemaVersion,
-    artifactKind: unresolvedFinal.artifactKind,
-    result: unresolvedFinal.result,
-    candidate: unresolvedFinal.candidate,
-    gates: unresolvedFinal.gates,
-    blockers: unresolvedFinal.blockers,
-  })));
-  await writeCanonical(unresolvedFinalPath, unresolvedFinal);
-  await rebindEligibilityFinalGate(unresolvedRoot, "routeEdgeEvaluation", unresolvedRoutePath);
-  const ineligible = await buildRouteAccessibilityEligibility({
-    prepublicationRoot: unresolvedRoot,
-    output: path.join(fixture.temp, "ineligible.json"),
+  const unresolvedFixture = await createFixture(t, {
+    configureInputs: ({ stationLineInput }) => {
+      stationLineInput.evidenceRows[0] = {
+        ...stationLineInput.evidenceRows[0],
+        state: "UNKNOWN",
+        evidenceKind: "PROVIDER_NO_DATA",
+        evidenceReason: "official record unavailable",
+      };
+    },
   });
+  await writeEligibilityInputs(unresolvedFixture);
+  const unresolvedRoot = path.join(unresolvedFixture.temp, "prepublication");
+  await build(unresolvedFixture, unresolvedRoot, FRESH_AT);
+  const ineligible = await buildRouteAccessibilityEligibility(eligibilityInput(
+    unresolvedFixture,
+    unresolvedRoot,
+    path.join(unresolvedFixture.temp, "ineligible.json"),
+  ));
   assert.equal(ineligible.decision, "INELIGIBLE");
   assert.ok(ineligible.blockers.includes("stationLineAccessibility:UNKNOWN"));
 
-  const mixedRoot = path.join(fixture.temp, "mixed");
-  await cp(prepublicationRoot, mixedRoot, { recursive: true });
-  const mixedStationPath = path.join(mixedRoot, "station-line-accessibility.json");
-  const mixedStation = await readJson(mixedStationPath);
-  mixedStation.rows[0] = { ...mixedStation.rows[0], sourceId: "different-current-source" };
-  mixedStation.materializationDigest = sha256(Buffer.from(canonicalJson({
-    candidate: mixedStation.candidate,
-    rows: mixedStation.rows,
-    stateSummary: mixedStation.stateSummary,
-  })));
-  await writeCanonical(mixedStationPath, mixedStation);
-  await rebindEligibilityFinalGate(mixedRoot, "stationLineAccessibility", mixedStationPath);
-  await assert.rejects(
-    () => buildRouteAccessibilityEligibility({ prepublicationRoot: mixedRoot, output: path.join(fixture.temp, "mixed.json") }),
-    /route edge evaluation result identity mismatch|route edge evaluation materialization cell mismatch/,
-  );
-  await assert.rejects(() => readFile(path.join(fixture.temp, "mixed.json")), /ENOENT/);
-
-  const forgedRoot = path.join(fixture.temp, "forged");
-  await cp(prepublicationRoot, forgedRoot, { recursive: true });
-  const forgedPath = path.join(forgedRoot, "route-edge-evaluation.json");
-  const forged = await readJson(forgedPath);
-  forged.results[1] = structuredClone(forged.results[0]);
-  forged.denominator.digest = sha256(Buffer.from(canonicalJson(
-    forged.results.map((result) => ({ edgeId: result.edgeId, edgeSha256: result.rawEdgeSha256 })),
-  )));
-  forged.evaluationDigest = sha256(Buffer.from(canonicalJson({
-    candidate: forged.candidate,
-    evaluationAt: forged.evaluationAt,
-    denominator: forged.denominator,
-    results: forged.results,
-    stateSummary: forged.stateSummary,
-    eligible: forged.eligible,
-  })));
-  await writeCanonical(forgedPath, forged);
-  await rebindEligibilityFinalGate(forgedRoot, "routeEdgeEvaluation", forgedPath);
-  await assert.rejects(
-    () => buildRouteAccessibilityEligibility({ prepublicationRoot: forgedRoot, output: path.join(fixture.temp, "forged.json") }),
-    /route edge evaluation edge identity mismatch|route edge evaluation result order mismatch/,
-  );
-  await assert.rejects(() => readFile(path.join(fixture.temp, "forged.json")), /ENOENT/);
-
-  const malformedRoot = path.join(fixture.temp, "malformed");
-  await cp(prepublicationRoot, malformedRoot, { recursive: true });
-  const malformedPath = path.join(malformedRoot, "route-edge-evaluation.json");
-  const malformed = await readJson(malformedPath);
-  malformed.evaluationDigest = "0".repeat(64);
-  await writeCanonical(malformedPath, malformed);
-  await assert.rejects(
-    () => buildRouteAccessibilityEligibility({
-      prepublicationRoot: malformedRoot,
-      output: path.join(fixture.temp, "malformed.json"),
-    }),
-    /route edge evaluation digest mismatch/,
-  );
-  await assert.rejects(() => readFile(path.join(fixture.temp, "malformed.json")), /ENOENT/);
+  for (const name of [
+    "source-freshness.json",
+    "artifact-inventory.json",
+    "station-line-accessibility.json",
+    "route-edge-evaluation.json",
+    "server-route-bundle-final.json",
+  ]) {
+    const root = path.join(fixture.temp, `mutated-${name}`);
+    await cp(prepublicationRoot, root, { recursive: true });
+    const target = path.join(root, name);
+    const value = await readJson(target);
+    value.reviewMutation = true;
+    await writeCanonical(target, value);
+    const output = path.join(fixture.temp, `${name}.eligibility.json`);
+    await assert.rejects(() => buildRouteAccessibilityEligibility(eligibilityInput(fixture, root, output)), /prepublication .* mismatch/);
+    await assert.rejects(() => readFile(output), /ENOENT/);
+  }
 });
 
 test("current Data #8 three-handoff input과 materialization bytes를 exact consumer로 수용한다", async () => {
@@ -1219,19 +1128,24 @@ async function build(fixture, output, evaluationAt, releaseEvidence = undefined,
   });
 }
 
-async function rebindEligibilityFinalGate(root, gate, evidencePath) {
-  const finalPath = path.join(root, "server-route-bundle-final.json");
-  const final = await readJson(finalPath);
-  final.gates[gate].evidenceSha256 = await fileSha(evidencePath);
-  final.finalSha256 = sha256(Buffer.from(canonicalJson({
-    schemaVersion: final.schemaVersion,
-    artifactKind: final.artifactKind,
-    result: final.result,
-    candidate: final.candidate,
-    gates: final.gates,
-    blockers: final.blockers,
-  })));
-  await writeCanonical(finalPath, final);
+function eligibilityInput(fixture, prepublicationRoot, output) {
+  return {
+    prepublicationRoot,
+    artifactRoot: fixture.artifactRoot,
+    stationLineInput: path.join(fixture.temp, "eligibility-station-line-input.json"),
+    routeEdgeInput: path.join(fixture.temp, "eligibility-route-edge-input.json"),
+    repositoryGitSha: fixture.repositoryGitSha,
+    evaluationAt: FRESH_AT,
+    output,
+    repositoryRoot: fixture.repositoryRoot,
+  };
+}
+
+async function writeEligibilityInputs(fixture) {
+  await Promise.all([
+    writeCanonical(path.join(fixture.temp, "eligibility-station-line-input.json"), fixture.stationLineInput),
+    writeCanonical(path.join(fixture.temp, "eligibility-route-edge-input.json"), fixture.routeEdgeInput),
+  ]);
 }
 
 function installSigningEnvironment(t) {
