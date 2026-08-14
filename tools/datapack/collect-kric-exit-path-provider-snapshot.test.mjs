@@ -93,7 +93,7 @@ test("exact query plan을 one-attempt KRIC provider snapshot으로 정규화한�
 
 test("explicit zero와 provider no-data를 path admission 없이 구분한다", async () => {
   const collectionPlan = validPlan();
-  const responses = [providerSuccess([]), providerNoData()];
+  const responses = [providerSuccess([]), providerNoDataHeaderOnly()];
   const paths = [];
   const snapshot = await collectKricExitPathProviderSnapshot({
     collectionPlan,
@@ -295,6 +295,14 @@ test("provider transport·envelope·strict JSON·row drift는 partial snapshot�
     response: jsonResponse(JSON.stringify({ header: { resultCode: "99" }, body: [] })),
     expected: /KRIC EXIT provider result invalid/,
   }, {
+    label: "header-only success",
+    response: jsonResponse(JSON.stringify({ header: { resultCode: "00" } })),
+    expected: /KRIC EXIT provider header-only shape mismatch/,
+  }, {
+    label: "header-only no-data with extra key",
+    response: jsonResponse(JSON.stringify({ header: { resultCode: "03" }, extra: true })),
+    expected: /KRIC EXIT response envelope keys mismatch/,
+  }, {
     label: "no-data with rows",
     response: jsonResponse(JSON.stringify({ header: { resultCode: "03" }, body: [providerRow("path-a", "1")] })),
     expected: /KRIC EXIT provider no-data shape mismatch/,
@@ -462,8 +470,8 @@ function providerSuccess(rows) {
   return JSON.stringify({ header: { resultCode: "00", resultMsg: "NORMAL SERVICE" }, body: rows });
 }
 
-function providerNoData() {
-  return JSON.stringify({ header: { resultCode: "03", resultMsg: "NO DATA" }, body: [] });
+function providerNoDataHeaderOnly() {
+  return JSON.stringify({ header: { resultCode: "03", resultMsg: "NO DATA" } });
 }
 
 function providerSuccessWithIntegerLiteral(literal) {
