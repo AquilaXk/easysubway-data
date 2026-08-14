@@ -776,10 +776,18 @@ export function buildCurrentSourcePrimaryOutputs({
     ({ snapshotId }) => snapshotId === handoff.previousSnapshotId,
     "previous KRIC source snapshot",
   );
-  if (staticSources.sourceSnapshots.some(({ snapshotId }) => snapshotId === handoff.snapshotId)) {
-    throw new Error("current KRIC source snapshot is already present");
+  const expectedCurrentKric = currentKricSnapshot(previous, handoff);
+  const existingCurrentKric = staticSources.sourceSnapshots.filter(
+    ({ snapshotId }) => snapshotId === handoff.snapshotId,
+  );
+  if (existingCurrentKric.length > 1
+    || existingCurrentKric.length === 1
+      && JSON.stringify(existingCurrentKric[0]) !== JSON.stringify(expectedCurrentKric)) {
+    throw new Error("current KRIC source snapshot identity mismatch");
   }
-  const nextSnapshots = [...staticSources.sourceSnapshots, currentKricSnapshot(previous, handoff)];
+  const nextSnapshots = existingCurrentKric.length === 1
+    ? [...staticSources.sourceSnapshots]
+    : [...staticSources.sourceSnapshots, expectedCurrentKric];
   validateLineage(nextSnapshots);
 
   const capital = loadCapitalRouteTopologySnapshot(currentTopology);

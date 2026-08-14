@@ -171,6 +171,25 @@ test("서울 공식 1~8호선 position snapshot은 current capital topology admi
   assert.throws(() => rebind(invalid), /Seoul route-map position source contract is invalid/);
 });
 
+test("서울 공식 current position admission은 다음 current topology에 exact 재결속된다", () => {
+  const values = seoulOfficialFixture();
+  const first = rebind(values);
+  const repeated = rebind({ ...values, inventory: first });
+
+  assert.deepEqual(
+    repeated.sources[0].routeMapAdmissionEvidence.currentTopologyAdmission,
+    first.sources[0].routeMapAdmissionEvidence.currentTopologyAdmission,
+  );
+
+  const drifted = structuredClone(first);
+  drifted.sources[0].routeMapAdmissionEvidence
+    .currentTopologyAdmission.positionSnapshotSha256 = "f".repeat(64);
+  assert.throws(
+    () => rebind({ ...values, inventory: drifted }),
+    /Seoul route-map position source contract is invalid/,
+  );
+});
+
 test("tracked 서울 공식 position snapshot의 exact renamed-station aliases는 current 22-line admission을 완성한다", async () => {
   const [inventory, topology] = await Promise.all([
     readFile(path.join(root, "tools/datapack/source-inventory.json"), "utf8").then(JSON.parse),

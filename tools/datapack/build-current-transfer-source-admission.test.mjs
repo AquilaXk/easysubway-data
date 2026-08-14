@@ -15,7 +15,7 @@ import { canonicalTransferTopologyAdmissionJson } from "./build-transfer-topolog
 import { evaluateCurrentMolitTransferFreshness } from "./evaluate-current-molit-transfer-freshness.mjs";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const OBSERVED_AT = "2026-08-14T09:30:00.000Z";
+const OBSERVED_AT = "2026-08-14T15:34:07.000Z";
 const EVALUATED_AT = "2026-08-14T05:30:38.000Z";
 const EVIDENCE = observationEvidence();
 const BASE_INPUT = await trackedInput();
@@ -111,8 +111,8 @@ test("tracked current TRANSFER handoff는 exact two-cell GO identity를 고정�
   const source = JSON.parse(sourceBytes);
   const admission = JSON.parse(admissionBytes);
   const fresh = buildCurrentTransferSourceAdmission(cloneInput());
-  assert.equal(source.admissionDigest, "8431808200dcf69c542d20c8a884d142c9c8e3da98be1df8d7a135a46c0a7e1c");
-  assert.equal(admission.admissionDigest, "d925818a23ee26a553ec07cc381cb350240d3774d057dec59b4af9a186fbebdd");
+  assert.equal(source.admissionDigest, "980ff67717804653ef1b352d64354e87fc8b691e91282701ddfaa29e13e88f83");
+  assert.equal(admission.admissionDigest, "c9b5d0a883b06129a8339904437f69220627f5ee62b7020b320e0eb8ea4cdfbc");
   assert.equal(source.revalidationEvidenceSha256, EVIDENCE.evidenceHash);
   assert.equal(source.freshnessResultSha256, BASE_INPUT.freshnessResult.resultSha256);
   assert.deepEqual(admission.stateSummary, {

@@ -78,21 +78,52 @@ function topologyStationsByLine(topology) {
 }
 
 function currentCapitalTopologyBinding(source, evidence, topologySourceId) {
-  if (evidence?.topologySourceId === topologySourceId) return "historical";
-  if (source.id !== "seoul-metro-route-map-positions") return null;
+  if (source.id !== "seoul-metro-route-map-positions") {
+    return evidence?.topologySourceId === topologySourceId ? "historical" : null;
+  }
+  const currentAdmission = evidence?.currentTopologyAdmission;
+  const initialAdmission = [
+    evidence?.topologySourceId,
+    evidence?.topologySnapshotId,
+    evidence?.topologyContentSha256,
+    evidence?.topologyLineages,
+    currentAdmission,
+  ].every((value) => value === undefined);
+  const recurrentAdmission = currentAdmission != null
+    && evidence.topologySourceId === topologySourceId
+    && [evidence.topologySnapshotId, evidence.topologyContentSha256, evidence.topologyLineages]
+      .every((value) => value === undefined)
+    && same(Object.keys(currentAdmission), [
+      "schemaVersion", "artifactKind", "issue", "status", "topologySnapshotId",
+      "topologyContentSha256", "positionSnapshotSha256", "reviewedAt", "freshUntil",
+      "topologyLineages",
+    ])
+    && currentAdmission.schemaVersion === 1
+    && currentAdmission.artifactKind === "capital-route-map-current-topology-admission"
+    && currentAdmission.issue === 2776
+    && currentAdmission.status === "ADMITTED"
+    && /^capital-route-topology-[0-9]{8}$/u.test(currentAdmission.topologySnapshotId ?? "")
+    && SHA256.test(currentAdmission.topologyContentSha256 ?? "")
+    && currentAdmission.positionSnapshotSha256 === evidence.snapshotSha256
+    && Number.isFinite(Date.parse(currentAdmission.reviewedAt))
+    && new Date(currentAdmission.reviewedAt).toISOString() === currentAdmission.reviewedAt
+    && Number.isFinite(Date.parse(currentAdmission.freshUntil))
+    && new Date(currentAdmission.freshUntil).toISOString() === currentAdmission.freshUntil
+    && Date.parse(currentAdmission.reviewedAt) < Date.parse(currentAdmission.freshUntil)
+    && Array.isArray(evidence.lineIds)
+    && same(currentAdmission.topologyLineages, [...evidence.lineIds].sort(compareStrings).map((lineId) => ({
+      sourceId: topologySourceId,
+      snapshotId: currentAdmission.topologySnapshotId,
+      contentSha256: currentAdmission.topologyContentSha256,
+      lineId,
+    })));
   if (source.productionUseAllowed !== true
     || source.license?.redistributionAllowed !== true
     || evidence?.issue !== 2470
     || evidence.admissionKind !== "official-file-latlon"
     || evidence.materializer !== "tools/datapack/materialize-seoul-route-map-positions.mjs"
     || evidence.verificationTest !== "tools/datapack/materialize-seoul-route-map-positions.test.mjs"
-    || [
-      evidence.topologySourceId,
-      evidence.topologySnapshotId,
-      evidence.topologyContentSha256,
-      evidence.topologyLineages,
-      evidence.currentTopologyAdmission,
-    ].some((value) => value !== undefined)) {
+    || !initialAdmission && !recurrentAdmission) {
     throw new Error("Seoul route-map position source contract is invalid");
   }
   return "current-official";

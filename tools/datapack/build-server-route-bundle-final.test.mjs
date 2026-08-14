@@ -34,8 +34,8 @@ import {
 } from "./materialize-station-line-accessibility.mjs";
 import { signServerRouteBundle } from "./sign-server-route-bundle.mjs";
 
-const FRESH_AT = "2026-08-14T00:00:00.000Z";
-const STALE_AT = "2026-08-14T15:03:00.000Z";
+const FRESH_AT = "2026-08-14T15:34:07.000Z";
+const STALE_AT = "2026-08-14T20:06:04.806Z";
 const BUNDLE_ID = "capital-route-bundle-1";
 const STATION_SET_SHA256 = "1".repeat(64);
 const SCOPED_STATION_SET_SHA256 = sha256(Buffer.from(canonicalJson(["station-a", "station-b"])));
@@ -137,10 +137,10 @@ test("current Data #8 three-handoff input과 materialization bytes를 exact cons
   assert.equal(materializationBytes.toString("utf8"), canonicalStationLineAccessibilityJson(tracked));
   const materialized = materializeStationLineAccessibility({
     ...input,
-    observedAt: "2026-08-14T09:50:00.000Z",
+    observedAt: FRESH_AT,
   });
   assert.equal(canonicalStationLineAccessibilityJson(materialized), materializationBytes.toString("utf8"));
-  assert.equal(materialized.materializationDigest, "faa3c24af33843185f42c800028391cf4e7c17ee82ddbb1539962a985fc82ba8");
+  assert.equal(materialized.materializationDigest, "561ef3dde0f68e1223b05897d71a193d73b67b34cb677fc91201e99a4ae9eabb");
 });
 
 test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FINAL로 결속한다", async (t) => {
@@ -424,7 +424,7 @@ test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail clo
       await rename(releaseEvidence.approvalEvidencePath, target);
       await symlink(target, releaseEvidence.approvalEvidencePath);
     }, /approvalEvidencePath must be a regular non-symlink/],
-    ["stale", async () => {}, /embedded route-edge evaluation evidence mismatch/, STALE_AT],
+    ["stale", async () => {}, /embedded station-line accessibility evidence mismatch/, STALE_AT],
     ["wall-clock-expired", async () => ({
       clock: () => Date.parse(STALE_AT),
     }), /candidate freshUntil must be in the future at FINAL closure/],
@@ -707,7 +707,7 @@ async function createArtifact(
   stationLineInput,
   routeEdgeInput,
   evaluationAt,
-  freshUntil = "2026-08-15T00:00:00.000+09:00",
+  freshUntil = "2026-08-15T05:06:04.805+09:00",
 ) {
   const routePolicy = await readJson(path.join(repositoryRoot, "release/product-gates/route-edge-evaluation-policy.json"));
   const materialization = materializeStationLineAccessibility({ ...stationLineInput, observedAt: evaluationAt });
@@ -758,7 +758,7 @@ async function createArtifact(
     releaseSequence: 1,
     stationSetSha256: STATION_SET_SHA256,
     serviceTimezone: "Asia/Seoul",
-    activeFrom: "2026-08-14T09:00:00.000+09:00",
+    activeFrom: "2026-08-15T00:34:07.000+09:00",
     freshUntil,
     builtAt: FRESH_AT,
     buildSpecSha256: sha256(buildSpecBytes),
@@ -873,8 +873,8 @@ function evidence(candidate, line, domain, state, evidenceKind, evidenceReason) 
     sourceSnapshotId: "official-accessibility-20260813",
     evidenceRawSha256: "b".repeat(64),
     providerRecordHash: "c".repeat(64),
-    capturedAt: "2026-08-13T15:06:46.000Z",
-    freshUntil: "2026-08-14T15:06:46.000Z",
+    capturedAt: FRESH_AT,
+    freshUntil: "2026-08-14T20:06:04.805Z",
     provenanceId: "official-provider",
     licenseId: "public-data-license",
     evidenceKind,

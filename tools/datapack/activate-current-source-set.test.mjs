@@ -755,11 +755,11 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
     freshUntil: "2026-08-11T20:21:15.000Z",
   };
   const currentIncheonTopologyBytes = Buffer.from(`${JSON.stringify(currentIncheonTopology)}\n`);
-  const result = buildCurrentSourcePrimaryOutputs({
+  const build = (sourceSnapshots) => buildCurrentSourcePrimaryOutputs({
     handoff,
     rawArtifact: { collectedAt: handoff.collectedAt },
     rawArtifactBytes,
-    sourceSnapshots: [previousSnapshot],
+    sourceSnapshots,
     sourceInventory: inventory,
     productionInput: { sourceIds: sourceIds.slice(0, 6) },
     officialOdFareQuotes,
@@ -801,6 +801,7 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
       return { artifactKind: "capital-topology-reverification-evidence" };
     },
   });
+  const result = build([previousSnapshot]);
 
   assert.equal(result.sourceSnapshots.at(-1).snapshotId, handoff.snapshotId);
   assert.deepEqual(result.sourceSnapshots.at(-1).diffSummary, {
@@ -826,6 +827,13 @@ test("primary source set은 current KRIC·7-source·two-topology identity를 한
   assert.deepEqual(result.productionInput.movementPathCandidates, []);
   assert.equal(result.productionInput.scheduleProvenance.sourceSnapshotId, handoff.snapshotId);
   assert.equal(result.topologyReverification.artifactKind, "capital-topology-reverification-evidence");
+
+  const repeated = build(result.sourceSnapshots);
+  assert.deepEqual(repeated.sourceSnapshots, result.sourceSnapshots);
+
+  const drifted = structuredClone(result.sourceSnapshots);
+  drifted.at(-1).rawSha256 = "f".repeat(64);
+  assert.throws(() => build(drifted), /current KRIC source snapshot identity mismatch/);
 });
 
 test("current 7-source input은 exact OD fare 2건과 빈 legacy route evidence를 reviewed pack에 보존한다", async (context) => {

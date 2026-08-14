@@ -35,7 +35,7 @@ process.env.EASYSUBWAY_DATAPACK_PRODUCTION_FIXTURE_VALIDATION_ONLY = "true";
 const topologyNow = new Date("2026-07-19T18:14:03.004Z");
 const timetableNow = new Date("2026-07-20T13:09:00.000Z");
 const gwangjuAccessibilityNow = new Date("2026-07-24T03:00:00.000Z");
-const incheonStationNow = new Date("2026-08-14T00:00:00.000Z");
+const incheonStationNow = new Date("2026-08-14T16:00:00.000Z");
 const accessibilityNow = new Date("2026-07-24T07:00:00.000Z");
 const incheonTimetableNow = new Date("2026-07-24T08:00:00.000Z");
 const OPERATOR_ID = "incheon-transit";
@@ -74,7 +74,7 @@ async function inputs() {
     readJson("tools/datapack/sources/gwangju-transportation-route-topology-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-cyberstation-timetable-20260720.json"),
     readJson("tools/datapack/sources/gwangju-transportation-accessibility-20260724.json"),
-    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260813.json")),
+    readFile(path.join(root, "tools/datapack/sources/incheon-transit-station-info-20260814.json")),
     readJson("tools/datapack/sources/incheon-transit-accessibility-20260724.json"),
     readJson("tools/datapack/sources/incheon-line1-train-timetable-20260724.json"),
     readJson("tools/datapack/sources/incheon-line2-train-timetable-20260724.json"),
@@ -138,13 +138,13 @@ async function inputs() {
   const accessibilityFixture = materializeIncheonAccessibility({
     baseFixture: incheonFixture,
     accessibilitySnapshot,
-    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260813" },
+    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260814" },
     inventory,
     now: accessibilityNow,
   });
   return {
     accessibilityFixture,
-    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260813" },
+    topologySnapshot: { ...incheonSnapshot, snapshotId: "incheon-transit-station-info-20260814" },
     timetableSnapshots: { 1: line1Timetable, 2: line2Timetable },
     inventory,
   };

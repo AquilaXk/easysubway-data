@@ -12,14 +12,14 @@ import { canonicalKricExitPathCollectionPlanJson } from "./plan-kric-exit-path-c
 const { buildCurrentKricExitCollectionPlan, main } = currentPlan;
 
 const datapackRoot = fileURLToPath(new URL(".", import.meta.url));
-const currentNow = new Date("2026-08-13T16:00:00.000Z");
+const currentNow = new Date("2026-08-14T16:00:00.000Z");
 const productionPaths = Object.freeze({
   canonicalPack: path.join(datapackRoot, "release/capital-production-canonical-pack.json"),
   coverageTargets: path.join(datapackRoot, "nationwide-coverage-targets.json"),
   providerCodeCatalog: path.join(datapackRoot, "sources/kric-provider-code-catalog-20260228.json"),
   routeRosters: path.join(datapackRoot, "sources/kric-nationwide-route-rosters-20260730T203926676Z.json"),
   sourceInventory: path.join(datapackRoot, "source-inventory.json"),
-  incheonTopology: path.join(datapackRoot, "sources/incheon-transit-station-info-20260813.json"),
+  incheonTopology: path.join(datapackRoot, "sources/incheon-transit-station-info-20260814.json"),
 });
 
 const buildPlan = (input) => buildCurrentKricExitCollectionPlan(input, { now: currentNow });
