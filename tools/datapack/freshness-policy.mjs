@@ -105,124 +105,13 @@ export function evaluateFreshnessExtension({ input, policy } = {}) {
     return extensionResult(context, "INELIGIBLE", "INPUT_SCHEMA_INVALID");
   }
 
-  let evaluationMillis;
-  let currentFreshUntilMillis;
-  try {
-    evaluationMillis = requiredUtcInstant(input.evaluationAt, "evaluationAt");
-    currentFreshUntilMillis = requiredUtcInstant(
-      input.sourceIdentity.currentFreshUntil,
-      "sourceIdentity.currentFreshUntil",
-    );
-  } catch {
-    return extensionResult(context, "INELIGIBLE", "INPUT_SCHEMA_INVALID");
-  }
-  context.evaluatedAt = new Date(evaluationMillis).toISOString();
-  context.currentFreshUntil = new Date(currentFreshUntilMillis).toISOString();
+  const timeline = resolveExtensionTimeline(input, context);
+  if (timeline.failure) return resultFromFailure(context, timeline.failure);
 
-  if (!isRecord(policy)) {
-    return extensionResult(context, "INELIGIBLE", "POLICY_SCHEMA_INVALID");
-  }
-  let actualPolicySha256;
-  try {
-    actualPolicySha256 = freshnessPolicySha256(policy);
-  } catch {
-    return extensionResult(context, "INELIGIBLE", "POLICY_SCHEMA_INVALID");
-  }
-  if (input.policyBinding.policySha256 !== actualPolicySha256) {
-    return extensionResult(context, "INELIGIBLE", "POLICY_IDENTITY_MISMATCH");
-  }
+  const policyResolution = resolveExtensionPolicy(policy, input, timeline.evaluationMillis);
+  if (policyResolution.failure) return resultFromFailure(context, policyResolution.failure);
 
-  const matchingClasses = Array.isArray(policy.sourceClasses)
-    ? policy.sourceClasses.filter((entry) => (
-      isRecord(entry) && entry.id === input.policyBinding.sourceClassId
-    ))
-    : [];
-  if (matchingClasses.length !== 1
-    || !Array.isArray(matchingClasses[0].sourceIds)
-    || !matchingClasses[0].sourceIds.includes(input.sourceIdentity.sourceId)) {
-    return extensionResult(context, "INELIGIBLE", "SOURCE_CLASS_INELIGIBLE");
-  }
-  const sourceClass = matchingClasses[0];
-  const cadence = sourceClass.reverificationCadence ?? sourceClass.maximumReverificationCadence;
-  let clockSkewMillis;
-  try {
-    clockSkewMillis = requiredNonNegativeInteger(
-      sourceClass.clockSkewSeconds ?? policy.clockSkewSeconds ?? 0,
-      "clockSkewSeconds",
-    ) * 1_000;
-    addCadence(evaluationMillis, cadence);
-  } catch {
-    return extensionResult(context, "INELIGIBLE", "POLICY_SCHEMA_INVALID");
-  }
-
-  if (input.observation == null) {
-    return extensionResult(context, "NO_EXTENSION", "OBSERVATION_MISSING");
-  }
-  if (!validObservation(input.observation)) {
-    return extensionResult(context, "INELIGIBLE", "OBSERVATION_SCHEMA_INVALID");
-  }
-  const observation = input.observation;
-  context.observationEvidenceSha256 = observation.evidenceSha256;
-
-  if (SOURCE_IDENTITY_KEYS.filter((key) => key !== "currentFreshUntil").some((key) => (
-    observation[key] !== input.sourceIdentity[key]
-  ))) {
-    return extensionResult(context, "INELIGIBLE", "SOURCE_IDENTITY_MISMATCH");
-  }
-
-  let observedMillis;
-  try {
-    observedMillis = requiredUtcInstant(observation.observedAt, "observation.observedAt");
-  } catch {
-    return extensionResult(context, "INELIGIBLE", "OBSERVATION_SCHEMA_INVALID");
-  }
-  context.observedAt = new Date(observedMillis).toISOString();
-  if (observedMillis > evaluationMillis + clockSkewMillis) {
-    return extensionResult(context, "INELIGIBLE", "OBSERVATION_IN_FUTURE");
-  }
-
-  let policyCandidateMillis;
-  try {
-    policyCandidateMillis = addCadence(observedMillis, cadence);
-  } catch {
-    return extensionResult(context, "INELIGIBLE", "POLICY_SCHEMA_INVALID");
-  }
-  if (policyCandidateMillis <= evaluationMillis) {
-    return extensionResult(context, "INELIGIBLE", "OBSERVATION_STALE");
-  }
-
-  const boundMillis = [];
-  for (const key of ["providerValidUntil", "sourceValidUntil", "licenseValidUntil"]) {
-    if (observation[key] == null) continue;
-    let value;
-    try {
-      value = requiredUtcInstant(observation[key], `observation.${key}`);
-    } catch {
-      return extensionResult(context, "INELIGIBLE", "OBSERVATION_BOUND_INVALID");
-    }
-    if (value <= observedMillis) {
-      return extensionResult(context, "INELIGIBLE", "OBSERVATION_BOUND_INVALID");
-    }
-    boundMillis.push(value);
-  }
-
-  if (observation.outcome !== "POSITIVE") {
-    return extensionResult(
-      context,
-      "NO_EXTENSION",
-      `OBSERVATION_${observation.outcome}`,
-    );
-  }
-
-  const candidateMillis = Math.min(policyCandidateMillis, ...boundMillis);
-  if (candidateMillis <= evaluationMillis) {
-    return extensionResult(context, "NO_EXTENSION", "EXTENSION_BOUND_EXHAUSTED");
-  }
-  if (candidateMillis <= currentFreshUntilMillis) {
-    return extensionResult(context, "NO_EXTENSION", "EXTENSION_NOT_MONOTONIC");
-  }
-  context.extendedFreshUntil = new Date(candidateMillis).toISOString();
-  return extensionResult(context, "EXTENDED", "POSITIVE_OBSERVATION_EXTENDED");
+  return evaluateExtensionObservation({ input, context, timeline, policyResolution });
 }
 
 export function decideScheduledRun({
@@ -308,6 +197,153 @@ function validObservation(observation) {
     ].every((value) => value == null || typeof value === "string");
 }
 
+function resolveExtensionTimeline(input, context) {
+  try {
+    const evaluationMillis = requiredUtcInstant(input.evaluationAt, "evaluationAt");
+    const currentFreshUntilMillis = requiredUtcInstant(
+      input.sourceIdentity.currentFreshUntil,
+      "sourceIdentity.currentFreshUntil",
+    );
+    context.evaluatedAt = new Date(evaluationMillis).toISOString();
+    context.currentFreshUntil = new Date(currentFreshUntilMillis).toISOString();
+    return { evaluationMillis, currentFreshUntilMillis };
+  } catch {
+    return { failure: extensionFailure("INELIGIBLE", "INPUT_SCHEMA_INVALID") };
+  }
+}
+
+function resolveExtensionPolicy(policy, input, evaluationMillis) {
+  if (!isRecord(policy)) {
+    return { failure: extensionFailure("INELIGIBLE", "POLICY_SCHEMA_INVALID") };
+  }
+  let actualPolicySha256;
+  try {
+    actualPolicySha256 = freshnessPolicySha256(policy);
+  } catch {
+    return { failure: extensionFailure("INELIGIBLE", "POLICY_SCHEMA_INVALID") };
+  }
+  if (input.policyBinding.policySha256 !== actualPolicySha256) {
+    return { failure: extensionFailure("INELIGIBLE", "POLICY_IDENTITY_MISMATCH") };
+  }
+
+  const sourceClass = exactSourceClass(policy, input.policyBinding.sourceClassId);
+  if (!sourceClass || !sourceClass.sourceIds.includes(input.sourceIdentity.sourceId)) {
+    return { failure: extensionFailure("INELIGIBLE", "SOURCE_CLASS_INELIGIBLE") };
+  }
+
+  const cadence = sourceClass.reverificationCadence ?? sourceClass.maximumReverificationCadence;
+  try {
+    const clockSkewMillis = requiredNonNegativeInteger(
+      sourceClass.clockSkewSeconds ?? policy.clockSkewSeconds ?? 0,
+      "clockSkewSeconds",
+    ) * 1_000;
+    addCadence(evaluationMillis, cadence);
+    return { cadence, clockSkewMillis };
+  } catch {
+    return { failure: extensionFailure("INELIGIBLE", "POLICY_SCHEMA_INVALID") };
+  }
+}
+
+function exactSourceClass(policy, sourceClassId) {
+  const matchingClasses = Array.isArray(policy.sourceClasses)
+    ? policy.sourceClasses.filter((entry) => isRecord(entry) && entry.id === sourceClassId)
+    : [];
+  return matchingClasses.length === 1 && Array.isArray(matchingClasses[0].sourceIds)
+    ? matchingClasses[0]
+    : null;
+}
+
+function evaluateExtensionObservation({ input, context, timeline, policyResolution }) {
+  const observation = input.observation;
+  if (observation == null) {
+    return extensionResult(context, "NO_EXTENSION", "OBSERVATION_MISSING");
+  }
+  if (!validObservation(observation)) {
+    return extensionResult(context, "INELIGIBLE", "OBSERVATION_SCHEMA_INVALID");
+  }
+  context.observationEvidenceSha256 = observation.evidenceSha256;
+  if (!sameObservationIdentity(observation, input.sourceIdentity)) {
+    return extensionResult(context, "INELIGIBLE", "SOURCE_IDENTITY_MISMATCH");
+  }
+
+  const timing = resolveObservationTiming(observation, timeline.evaluationMillis, policyResolution);
+  if (timing.failure) return resultFromFailure(context, timing.failure);
+  context.observedAt = new Date(timing.observedMillis).toISOString();
+
+  const bounds = resolveObservationBounds(observation, timing.observedMillis);
+  if (bounds.failure) return resultFromFailure(context, bounds.failure);
+  if (observation.outcome !== "POSITIVE") {
+    return extensionResult(context, "NO_EXTENSION", `OBSERVATION_${observation.outcome}`);
+  }
+  return positiveExtensionResult(context, timeline, timing.policyCandidateMillis, bounds.values);
+}
+
+function sameObservationIdentity(observation, sourceIdentity) {
+  return SOURCE_IDENTITY_KEYS
+    .filter((key) => key !== "currentFreshUntil")
+    .every((key) => observation[key] === sourceIdentity[key]);
+}
+
+function resolveObservationTiming(observation, evaluationMillis, { cadence, clockSkewMillis }) {
+  let observedMillis;
+  try {
+    observedMillis = requiredUtcInstant(observation.observedAt, "observation.observedAt");
+  } catch {
+    return { failure: extensionFailure("INELIGIBLE", "OBSERVATION_SCHEMA_INVALID") };
+  }
+  if (observedMillis > evaluationMillis + clockSkewMillis) {
+    return { failure: extensionFailure("INELIGIBLE", "OBSERVATION_IN_FUTURE") };
+  }
+
+  let policyCandidateMillis;
+  try {
+    policyCandidateMillis = addCadence(observedMillis, cadence);
+  } catch {
+    return { failure: extensionFailure("INELIGIBLE", "POLICY_SCHEMA_INVALID") };
+  }
+  return policyCandidateMillis <= evaluationMillis
+    ? { failure: extensionFailure("INELIGIBLE", "OBSERVATION_STALE") }
+    : { observedMillis, policyCandidateMillis };
+}
+
+function resolveObservationBounds(observation, observedMillis) {
+  const values = [];
+  for (const key of ["providerValidUntil", "sourceValidUntil", "licenseValidUntil"]) {
+    if (observation[key] == null) continue;
+    let value;
+    try {
+      value = requiredUtcInstant(observation[key], `observation.${key}`);
+    } catch {
+      return { failure: extensionFailure("INELIGIBLE", "OBSERVATION_BOUND_INVALID") };
+    }
+    if (value <= observedMillis) {
+      return { failure: extensionFailure("INELIGIBLE", "OBSERVATION_BOUND_INVALID") };
+    }
+    values.push(value);
+  }
+  return { values };
+}
+
+function positiveExtensionResult(context, timeline, policyCandidateMillis, bounds) {
+  const candidateMillis = Math.min(policyCandidateMillis, ...bounds);
+  if (candidateMillis <= timeline.evaluationMillis) {
+    return extensionResult(context, "NO_EXTENSION", "EXTENSION_BOUND_EXHAUSTED");
+  }
+  if (candidateMillis <= timeline.currentFreshUntilMillis) {
+    return extensionResult(context, "NO_EXTENSION", "EXTENSION_NOT_MONOTONIC");
+  }
+  context.extendedFreshUntil = new Date(candidateMillis).toISOString();
+  return extensionResult(context, "EXTENDED", "POSITIVE_OBSERVATION_EXTENDED");
+}
+
+function extensionFailure(decisionValue, reasonCode) {
+  return { decision: decisionValue, reasonCode };
+}
+
+function resultFromFailure(context, failure) {
+  return extensionResult(context, failure.decision, failure.reasonCode);
+}
+
 function extensionResultContext(input) {
   const identity = isRecord(input?.sourceIdentity) ? input.sourceIdentity : {};
   const policyBinding = isRecord(input?.policyBinding) ? input.policyBinding : {};
@@ -352,8 +388,9 @@ function extensionResult(context, decisionValue, reasonCode) {
 }
 
 function hasExactKeys(value, keys) {
-  return isRecord(value)
-    && Object.keys(value).toSorted().join("\u0000") === keys.toSorted().join("\u0000");
+  if (!isRecord(value)) return false;
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
 function isRecord(value) {
