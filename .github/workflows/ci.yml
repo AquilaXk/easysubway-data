@@ -137,6 +137,7 @@ jobs:
           tools/datapack/build-transfer-topology-admission.test.mjs
           tools/datapack/revalidate-current-molit-transfer-source.test.mjs
           tools/datapack/evaluate-current-molit-transfer-freshness.test.mjs
+          tools/datapack/build-current-transfer-source-admission.test.mjs
           tools/datapack/plan-kric-exit-path-collection.test.mjs
           tools/datapack/build-current-kric-exit-collection-plan.test.mjs
           tools/datapack/collect-kric-exit-path-provider-snapshot.test.mjs
