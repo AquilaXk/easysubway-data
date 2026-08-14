@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,7 +10,11 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { canonicalJson } from "./lib/manifest-validation.mjs";
 import { emitArtifactComponents } from "./emit-artifact-components.mjs";
-import { buildCurrentRouteEdgeInput, canonicalCurrentRouteEdgeInputJson } from "./build-current-route-edge-input.mjs";
+import {
+  buildCurrentRouteEdgeInput,
+  buildCurrentSourceRouteEdgeInput,
+  canonicalCurrentRouteEdgeInputJson,
+} from "./build-current-route-edge-input.mjs";
 import {
   canonicalRouteEdgeEvaluationJson,
   canonicalRideEdgeSetSha256,
@@ -35,12 +39,13 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
     readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
     readFile("release/product-gates/route-edge-evaluation-policy.json"),
   ]);
-  const input = buildCurrentRouteEdgeInput({
+  const policy = JSON.parse(policyBytes);
+  const input = await buildCurrentSourceRouteEdgeInput({
     canonicalPack: JSON.parse(fixtureBytes),
     buildSpec: JSON.parse(buildSpecBytes),
     stationLineInput: JSON.parse(stationLineBytes),
     materialization: JSON.parse(materializationBytes),
-    policy: JSON.parse(policyBytes),
+    policy,
   });
   const trackedBytes = await readFile("tools/datapack/release/current-route-edge-evaluation/route-edge-input.json", "utf8");
   assert.equal(trackedBytes, canonicalCurrentRouteEdgeInputJson(input));
@@ -49,11 +54,27 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
   assert.equal(input.candidate.stationSetSha256, "18de0faea1cf3f4fd26ea6799a6b4ce7bcc319a609b435f1b1eefa6164c4bb17");
   assert.equal(JSON.parse(stationLineBytes).candidate.stationSetSha256, "58561f44334f0fc6a48911685e3730152156b4cd5c642bfdfdcd1a652400ed9f");
   assert.equal(input.stationLines.length, 1108);
-  assert.equal(input.routeEdges.length, 2224);
+  assert.equal(input.routeEdges.length, 2232);
   assert.deepEqual(Object.fromEntries(input.routeEdges.reduce((counts, edge) => {
     counts.set(edge.edgeType, (counts.get(edge.edgeType) ?? 0) + 1);
     return counts;
-  }, new Map())), { ENTRY: 2, EXIT: 2, RIDE: 2220 });
+  }, new Map())), { ENTRY: 2, EXIT: 2, RIDE: 2228 });
+  const localRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
+    edgeType === "RIDE" && serviceClass === "SUBWAY" && servicePattern === "LOCAL"
+  ));
+  const itxRideEdges = input.routeEdges.filter(({ edgeType, serviceClass, servicePattern }) => (
+    edgeType === "RIDE" && serviceClass === "ITX_CHEONGCHUN" && servicePattern === "EXPRESS"
+  ));
+  assert.equal(localRideEdges.length, 2144);
+  assert.equal(itxRideEdges.length, 84);
+  assert.equal(
+    canonicalRideEdgeSetSha256(localRideEdges),
+    policy.rideInvariant.subwayLocal.admittedEdgeSetSha256,
+  );
+  assert.equal(
+    canonicalRideEdgeSetSha256(itxRideEdges),
+    policy.rideInvariant.itxCheongchunExpress.admittedEdgeSetSha256,
+  );
   assert.throws(() => buildCurrentRouteEdgeInput({
     canonicalPack: JSON.parse(fixtureBytes),
     buildSpec: JSON.parse(buildSpecBytes),
@@ -70,6 +91,49 @@ test("current Data #9 seed는 full topology와 policy-required materialization s
     materialization: staleOperatorMaterialization,
     policy: JSON.parse(policyBytes),
   }), /materialization|subset|identity/i);
+});
+
+test("current Data #9 seed는 alternate repository root의 nested projection evidence만 소비한다", async (t) => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "current-route-edge-root-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const repositoryRoot = path.join(temp, "repository");
+  const nestedEvidencePaths = [
+    "tools/datapack/source-inventory.json",
+    "tools/datapack/sources/capital-route-topology-20260724.json",
+    "tools/datapack/sources/capital-route-topology-20260814.json",
+    "tools/datapack/release/capital-topology-reverification-20260814.json",
+    "tools/datapack/itx-cheongchun-coverage-contract.json",
+    "tools/datapack/itx-cheongchun-topology-evidence-20260812165525800.json",
+    "tools/datapack/sources/incheon-transit-station-info-20260814.json",
+  ];
+  for (const relative of nestedEvidencePaths) {
+    const destination = path.join(repositoryRoot, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(relative, destination);
+  }
+
+  const [fixtureBytes, buildSpecBytes, stationLineBytes, materializationBytes, policyBytes] = await Promise.all([
+    readFile("tools/datapack/release/capital-production-canonical-pack.json"),
+    readFile("tools/datapack/release/candidate-build-spec.json"),
+    readFile("tools/datapack/release/current-station-line-accessibility/station-line-input.json"),
+    readFile("tools/datapack/release/current-station-line-accessibility/station-line-accessibility.json"),
+    readFile("release/product-gates/route-edge-evaluation-policy.json"),
+  ]);
+  const buildSpec = JSON.parse(buildSpecBytes);
+  const sourceInventoryPath = path.join(repositoryRoot, buildSpec.networkEdgeEvidence.sourceInventory.path);
+  const alternateSourceInventoryBytes = Buffer.concat([await readFile(sourceInventoryPath), Buffer.from(" ")]);
+  await writeFile(sourceInventoryPath, alternateSourceInventoryBytes);
+  buildSpec.networkEdgeEvidence.sourceInventory.sha256 = hash(alternateSourceInventoryBytes);
+
+  const input = await buildCurrentSourceRouteEdgeInput({
+    canonicalPack: JSON.parse(fixtureBytes),
+    buildSpec,
+    stationLineInput: JSON.parse(stationLineBytes),
+    materialization: JSON.parse(materializationBytes),
+    policy: JSON.parse(policyBytes),
+    repositoryRoot,
+  });
+  assert.equal(input.routeEdges.length, 2232);
 });
 
 test("server-route-bundle은 current #8/#9 evidence를 accessibility bytes에만 결속한다", async (t) => {
