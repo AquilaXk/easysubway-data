@@ -44,6 +44,33 @@ const signingKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const signingPrivateKey = signingKeys.privateKey.export({ type: "pkcs8", format: "pem" });
 const signingPublicKey = signingKeys.publicKey.export({ type: "spki", format: "pem" });
 
+test("route accessibility eligibility report를 FINAL gate에 bound한다", async (t) => {
+  const fixture = await createFixture(t);
+  const provisional = path.join(fixture.temp, "provisional");
+  await build(fixture, provisional, FRESH_AT);
+  const reportPath = await createEligibilityReport(fixture, provisional, "eligibility.json");
+  const bound = path.join(fixture.temp, "bound");
+  await build(fixture, bound, FRESH_AT, undefined, { eligibilityReportPath: reportPath });
+  const boundFinal = await readJson(path.join(bound, "server-route-bundle-final.json"));
+  assert.deepEqual(boundFinal.gates.routeAccessibilityEligibility, {
+    state: "PASS",
+    evidenceSha256: await fileSha(reportPath),
+  });
+
+  const drifted = await readJson(reportPath);
+  delete drifted.eligibilitySha256;
+  drifted.stationLineAccessibility.rowCount += 1;
+  const driftedReportPath = path.join(fixture.temp, "eligibility-drift.json");
+  await writeCanonical(driftedReportPath, {
+    ...drifted,
+    eligibilitySha256: sha256(Buffer.from(canonicalJson(drifted))),
+  });
+  const mismatch = path.join(fixture.temp, "eligibility-mismatch");
+  await build(fixture, mismatch, FRESH_AT, undefined, { eligibilityReportPath: driftedReportPath });
+  const mismatchFinal = await readJson(path.join(mismatch, "server-route-bundle-final.json"));
+  assert.equal(mismatchFinal.gates.routeAccessibilityEligibility.state, "IDENTITY_MISMATCH");
+});
+
 test("current accessibility eligibility는 canonical prepublication evidence만 집계한다", async (t) => {
   const fixture = await createFixture(t);
   await writeEligibilityInputs(fixture);
@@ -143,6 +170,7 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
   assert.deepEqual(final.gates, {
     artifactInventory: { state: "PASS", evidenceSha256: await fileSha(path.join(firstOutput, "artifact-inventory.json")) },
     publication: { state: "UNAVAILABLE", evidenceSha256: null },
+    routeAccessibilityEligibility: { state: "UNAVAILABLE", evidenceSha256: null },
     rebuildParityPromotion: { state: "UNAVAILABLE", evidenceSha256: null },
     routeEdgeEvaluation: { state: "PASS", evidenceSha256: await fileSha(path.join(firstOutput, "route-edge-evaluation.json")) },
     signature: { state: "UNAVAILABLE", evidenceSha256: null },
@@ -153,6 +181,7 @@ test("embedded #8/#9 evidence와 current keyless bytes를 deterministic NO_GO FI
   assert.deepEqual(final.blockers, [
     "publication:UNAVAILABLE",
     "rebuildParityPromotion:UNAVAILABLE",
+    "routeAccessibilityEligibility:UNAVAILABLE",
     "signature:UNAVAILABLE",
   ]);
   assert.equal(final.candidate.repository, "AquilaXk/easysubway-data");
@@ -217,7 +246,7 @@ test("current-key signed manifest는 signature gate만 닫고 publication·parit
   const final = await readJson(path.join(output, "server-route-bundle-final.json"));
   assert.equal(final.candidate.signedManifestRawSha256, manifestSha256);
   assert.deepEqual(final.gates.signature, { state: "PASS", evidenceSha256: manifestSha256 });
-  assert.deepEqual(final.blockers, ["publication:UNAVAILABLE", "rebuildParityPromotion:UNAVAILABLE"]);
+  assert.deepEqual(final.blockers, ["publication:UNAVAILABLE", "rebuildParityPromotion:UNAVAILABLE", "routeAccessibilityEligibility:UNAVAILABLE"]);
   assert.equal(final.result, "NO_GO");
   const inventory = await readJson(path.join(output, "artifact-inventory.json"));
   assert.equal(inventory.signedManifestRawSha256, manifestSha256);
@@ -245,8 +274,15 @@ test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로
   await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
   fixture.artifactRoot = signedRoot;
 
+  const provisionalOutput = path.join(fixture.temp, "provisional-final");
+  await build(fixture, provisionalOutput, FRESH_AT);
+  const eligibilityReportPath = await createEligibilityReport(
+    fixture,
+    provisionalOutput,
+    "release-eligibility.json",
+  );
   const prePublicationOutput = path.join(fixture.temp, "pre-publication-final");
-  await build(fixture, prePublicationOutput, FRESH_AT);
+  await build(fixture, prePublicationOutput, FRESH_AT, undefined, { eligibilityReportPath });
   const prePublicationFinal = await readJson(
     path.join(prePublicationOutput, "server-route-bundle-final.json"),
   );
@@ -256,7 +292,10 @@ test("publication receipt와 three-run promotion을 동일 candidate FINAL GO로
     "rebuildParityPromotion:UNAVAILABLE",
   ]);
 
-  const releaseEvidence = await createReleaseEvidence(fixture, prePublicationFinal);
+  const releaseEvidence = {
+    ...await createReleaseEvidence(fixture, prePublicationFinal),
+    eligibilityReportPath,
+  };
   const output = path.join(fixture.temp, "release-final");
   await build(fixture, output, FRESH_AT, releaseEvidence);
 
@@ -394,6 +433,11 @@ test("release evidence mismatch·stale·mutation은 FINAL output 전에 fail clo
         await writeFile(releaseEvidence.promotionRequestPath, "changed");
       },
     }), /promotionRequestPath changed during FINAL build/],
+    ["eligibility-changed-during-build", async ({ releaseEvidence }) => ({
+      beforeReleaseOutput: async () => {
+        await writeFile(releaseEvidence.eligibilityReportPath, "changed");
+      },
+    }), /eligibilityReportPath changed during FINAL build/],
   ]) {
     await t.test(name, async () => {
       const { fixture, releaseEvidence } = await prepareSignedReleaseFixture(t);
@@ -573,6 +617,7 @@ test("standalone CLI release mode는 exact evidence set만 받아 GO를 생성�
     "--repository-git-sha", fixture.repositoryGitSha,
     "--evaluation-at", FRESH_AT,
     "--output", output,
+    "--eligibility-report", releaseEvidence.eligibilityReportPath,
     "--publication-receipt", releaseEvidence.publicationReceiptPath,
     "--promotion-request", releaseEvidence.promotionRequestPath,
     "--promotion-component", releaseEvidence.promotionComponentPath,
@@ -1041,14 +1086,24 @@ async function prepareSignedReleaseFixture(t, options = {}) {
   const signedRoot = path.join(fixture.temp, "signed-release-fixture");
   await signServerRouteBundle({ input: fixture.artifactRoot, output: signedRoot });
   fixture.artifactRoot = signedRoot;
+  const provisionalOutput = path.join(fixture.temp, "provisional-fixture");
+  await build(fixture, provisionalOutput, FRESH_AT);
+  const eligibilityReportPath = await createEligibilityReport(
+    fixture,
+    provisionalOutput,
+    "fixture-eligibility.json",
+  );
   const prePublicationOutput = path.join(fixture.temp, "pre-publication-fixture");
-  await build(fixture, prePublicationOutput, FRESH_AT);
+  await build(fixture, prePublicationOutput, FRESH_AT, undefined, { eligibilityReportPath });
   const prePublicationFinal = await readJson(
     path.join(prePublicationOutput, "server-route-bundle-final.json"),
   );
   return {
     fixture,
-    releaseEvidence: await createReleaseEvidence(fixture, prePublicationFinal),
+    releaseEvidence: {
+      ...await createReleaseEvidence(fixture, prePublicationFinal),
+      eligibilityReportPath,
+    },
   };
 }
 
@@ -1114,6 +1169,7 @@ async function rewritePromotionEvidence(releaseEvidence, mutate) {
 }
 
 async function build(fixture, output, evaluationAt, releaseEvidence = undefined, extraInput = {}) {
+  const { eligibilityReportPath, ...releaseOnly } = releaseEvidence ?? {};
   return buildServerRouteBundleFinalEvidence({
     repositoryRoot: fixture.repositoryRoot,
     repositoryGitSha: fixture.repositoryGitSha,
@@ -1122,10 +1178,41 @@ async function build(fixture, output, evaluationAt, releaseEvidence = undefined,
     routeEdgeInput: fixture.routeEdgeInput,
     evaluationAt,
     output,
-    ...(releaseEvidence === undefined ? {} : { releaseEvidence }),
+    ...(releaseEvidence === undefined ? {} : { releaseEvidence: releaseOnly, eligibilityReportPath }),
     ...(releaseEvidence === undefined ? {} : { clock: () => Date.parse(FRESH_AT) }),
     ...extraInput,
   });
+}
+
+async function createEligibilityReport(fixture, prepublicationRoot, name) {
+  const final = await readJson(path.join(prepublicationRoot, "server-route-bundle-final.json"));
+  const station = await readJson(path.join(prepublicationRoot, "station-line-accessibility.json"));
+  const route = await readJson(path.join(prepublicationRoot, "route-edge-evaluation.json"));
+  const payload = {
+    schemaVersion: 1,
+    artifactKind: "route-accessibility-eligibility",
+    decision: "ELIGIBLE",
+    candidate: final.candidate,
+    stationLineAccessibility: {
+      rowCount: station.rows.length,
+      stateSummary: station.stateSummary,
+      materializationDigest: station.materializationDigest,
+      evidenceSha256: await fileSha(path.join(prepublicationRoot, "station-line-accessibility.json")),
+    },
+    routeEdgeEvaluation: {
+      edgeCount: route.results.length,
+      stateSummary: route.stateSummary,
+      evaluationDigest: route.evaluationDigest,
+      evidenceSha256: await fileSha(path.join(prepublicationRoot, "route-edge-evaluation.json")),
+    },
+    blockers: [],
+  };
+  const reportPath = path.join(fixture.temp, name);
+  await writeCanonical(reportPath, {
+    ...payload,
+    eligibilitySha256: sha256(Buffer.from(canonicalJson(payload))),
+  });
+  return reportPath;
 }
 
 function eligibilityInput(fixture, prepublicationRoot, output) {

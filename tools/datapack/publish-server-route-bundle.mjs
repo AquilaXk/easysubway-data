@@ -21,6 +21,7 @@ const PASS_GATES = [
   "sourceFreshness",
   "stationLineAccessibility",
   "routeEdgeEvaluation",
+  "routeAccessibilityEligibility",
   "artifactInventory",
   "signature",
 ];
